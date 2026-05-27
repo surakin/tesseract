@@ -459,7 +459,6 @@ private:
     // are inherited from tesseract::ShellBase.
 
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
-    static constexpr UINT_PTR kSearchDebounceTimer = 3;
     static constexpr UINT_PTR kScrollDebounceTimerId = 4;
     static constexpr UINT_PTR kVerifDoneTimerId = 5;
     static constexpr UINT_PTR kMarkReadTimerId = 6;
@@ -468,6 +467,7 @@ private:
     static constexpr UINT kAnimTimerHz = 16; // ~60 fps
     bool anim_timer_running_ = false;
     std::string pending_search_text_;
+    uint64_t search_generation_ = 0;
 
     // ShellBase virtual hooks (Win32 implementations).
     void navigate_to_room_(const std::string& room_id) override

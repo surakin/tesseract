@@ -1855,7 +1855,8 @@ Factories factories(Backend& b)
 {
     Backend::Impl& impl = b.impl();
     return Factories{impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get(),
-                     impl.font_fallback.Get(), impl.noto_emoji_face.Get()};
+                     impl.font_fallback.Get(), impl.noto_emoji_face.Get(),
+                     impl.d2d_dev.Get(), impl.d3d.Get()};
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -24,8 +24,10 @@
 #include <vector>
 #include <cstdint>
 
+struct ID2D1Device;
 struct ID2D1Factory1;
 struct ID2D1RenderTarget;
+struct ID3D11Device;
 struct IDWriteFactory2;
 struct IDWriteFontFallback;
 struct IDWriteFontFace;
@@ -117,6 +119,10 @@ struct Factories
     // Noto Color Emoji IDWriteFontFace for IProvideFontInfo injection.
     // Null when the embedded font resource is absent or loading failed.
     IDWriteFontFace*  noto_emoji_face;
+    // D2D/D3D devices for creating ID2D1DeviceContext-backed surfaces.
+    // Null until the first window is created (device is lazy-initialised).
+    ID2D1Device*      d2d_device;
+    ID3D11Device*     d3d_device;
 };
 Factories factories(Backend&);
 

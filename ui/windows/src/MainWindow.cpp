@@ -1068,17 +1068,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_TIMER:
-        if (wParam == kSearchDebounceTimer)
-        {
-            KillTimer(hwnd, kSearchDebounceTimer);
-            if (self->room_list_view_)
-            {
-                self->room_list_view_->set_search_text(
-                    self->pending_search_text_);
-            }
-            self->refresh_room_list();
-            return 0;
-        }
         if (wParam == kAnimTimerId)
         {
             self->on_anim_tick();
@@ -1337,7 +1326,7 @@ void MainWindow::on_create(HWND hwnd)
         };
         room_list_view_->on_search_clear = [this]
         {
-            KillTimer(hwnd_, kSearchDebounceTimer);
+            ++search_generation_; // cancel any pending debounce callback
             pending_search_text_.clear();
             if (room_search_field_)
             {
@@ -2053,8 +2042,16 @@ void MainWindow::on_create(HWND hwnd)
             [this](const std::string& q)
             {
                 pending_search_text_ = q;
-                KillTimer(hwnd_, kSearchDebounceTimer);
-                SetTimer(hwnd_, kSearchDebounceTimer, 500, nullptr);
+                const uint64_t gen = ++search_generation_;
+                main_app_surface_->host().post_delayed(500,
+                    [this, gen]
+                    {
+                        if (gen != search_generation_)
+                            return;
+                        if (room_list_view_)
+                            room_list_view_->set_search_text(pending_search_text_);
+                        refresh_room_list();
+                    });
             });
 
         room_text_area_ = main_app_surface_->host().make_text_area();

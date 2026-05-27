@@ -5,10 +5,13 @@
 #include <tesseract/settings.h>
 
 #include <commctrl.h>
-#include <d2d1.h>      // ID2D1HwndRenderTarget, D2D1_RENDER_TARGET_PROPERTIES
-#include <d2d1_1.h>    // ID2D1Factory1 full definition (CreateHwndRenderTarget)
-#include <dwrite.h>    // IDWriteTextFormat, DWRITE_FONT_WEIGHT_* enums
-#include <dwrite_2.h>  // IDWriteFactory2::CreateTextFormat
+#include <d2d1.h>           // ID2D1HwndRenderTarget, D2D1_RENDER_TARGET_PROPERTIES
+#include <d2d1_1.h>         // ID2D1Factory1, ID2D1DeviceContext, ID2D1Bitmap1
+#include <d2d1_1helper.h>   // D2D1::BitmapProperties1
+#include <d3d11.h>          // ID3D11Device (for swap chain creation)
+#include <dxgi1_2.h>        // IDXGISwapChain1, IDXGIFactory2
+#include <dwrite.h>         // IDWriteTextFormat, DWRITE_FONT_WEIGHT_* enums
+#include <dwrite_2.h>       // IDWriteFactory2::CreateTextFormat
 #include <richedit.h>  // MSFTEDIT_CLASS, RichEdit ES_* flags
 #include <textserv.h>  // ITextHost2, ITextServices2, TXTBIT_*, TXTNS_*
 #include <imm.h>       // ImmGetContext / ImmReleaseContext
@@ -399,6 +402,10 @@ static bool is_emoji_codepoint(char32_t cp)
 // 0 = let RichEdit choose the face (return fontFaceIdCurrent unchanged).
 // 1 = Noto Color Emoji (GetFontFace returns noto_face_).
 static constexpr DWORD kNotoFaceId = 1u;
+
+// Blink timer ID used by Win32RichEditArea for the D2D caret.
+// Must not clash with MSFTEDIT's own timer IDs (typically 1–4).
+static constexpr UINT kRichEditCaretTimerId = 0xCAFEu;
 
 } // namespace
 
@@ -1281,10 +1288,13 @@ class Win32RichEditArea : public NativeTextArea,
 {
 public:
     Win32RichEditArea(HWND parent, int ctrl_id, IWICImagingFactory* wic,
-                      ID2D1Factory1* d2d_factory, IDWriteFactory2* dwrite,
+                      ID2D1Device* d2d_device, ID3D11Device* d3d_device,
+                      IDWriteFactory2* dwrite,
                       const Theme* theme, IDWriteFontFace* noto_face)
         : parent_(parent), id_(ctrl_id), wic_(wic),
-          d2d_factory_(d2d_factory), theme_(theme), noto_face_(noto_face)
+          d2d_device_(d2d_device), d3d_device_(d3d_device),
+          dwrite_(dwrite),
+          theme_(theme), noto_face_(noto_face)
     {
         // Register the host window class once per process.
         static bool s_cls = []() -> bool
@@ -1376,8 +1386,13 @@ public:
         // 1. Text services holds a raw back-reference to us (ITextHost).
         //    Destroying it first prevents further TxNotify/TxGetDC calls.
         text_svc_.Reset();
-        // 2. D2D render target holds a reference to the HWND handle.
-        rt_.Reset();
+        // 2. D2D device context must be detached from its target before
+        //    the swap chain can be destroyed.
+        if (dc_)
+            dc_->SetTarget(nullptr);
+        dc_bitmap_.Reset();
+        dc_.Reset();
+        swap_chain_.Reset();
         // 3. Now it is safe to destroy the host window.
         if (hwnd_)
         {
@@ -1404,11 +1419,11 @@ public:
             *ppv = static_cast<ITextHost2*>(this);
             return S_OK;
         }
-        if (IsEqualGUID(riid, kIID_IProvideFontInfo))
-        {
-            *ppv = static_cast<IProvideFontInfo*>(this);
-            return S_OK;
-        }
+        // IProvideFontInfo intentionally NOT exposed: when registered, MSFTEDIT
+        // replaces its DWrite font fallback with our callbacks.  Returning
+        // fontFaceIdCurrent / nullptr from the callbacks suppresses fallback
+        // entirely, producing .notdef boxes.  Without the interface, MSFTEDIT
+        // runs its own DWrite fallback and selects Segoe UI Emoji normally.
         *ppv = nullptr;
         return E_NOINTERFACE;
     }
@@ -1449,22 +1464,40 @@ public:
 
     void TxInvalidateRect(LPCRECT prc, BOOL fMode) override
     {
-        InvalidateRect(hwnd_, prc, fMode);
+        // Suppress re-invalidation during TxDrawD2D to prevent a paint storm:
+        // MSFTEDIT may call TxInvalidateRect inside TxDrawD2D, which would
+        // post a new WM_PAINT, which would call TxDrawD2D again, ad infinitum.
+        if (!in_paint_)
+            InvalidateRect(hwnd_, prc, fMode);
+        else
+            needs_repaint_ = true;
     }
     void TxViewChange(BOOL fUpdate) override
     {
+        // Use async InvalidateRect instead of synchronous UpdateWindow.
+        // UpdateWindow sends WM_PAINT synchronously and causes reentrancy when
+        // called during TxDrawD2D (MSFTEDIT calls TxViewChange mid-draw).
         if (fUpdate)
-            UpdateWindow(hwnd_);
+        {
+            if (!in_paint_)
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            else
+                needs_repaint_ = true;
+        }
     }
 
-    // In D2D mode (TXTBIT_D2DDWRITE) the caret is drawn by TxDrawD2D as a
-    // logical glyph, not as a Win32 system caret.  CreateCaret/ShowCaret/
-    // SetCaretPos would create a flashing GDI object that is invisible on the
-    // D2D surface.  Return success without touching the system caret; the
-    // actual caret paint happens in on_paint() → TxDrawD2D().
+    // MSFTEDIT in D2D mode may call these when the cursor position changes
+    // (e.g. after a click or arrow key).  TxSetCaretPos triggers a repaint so
+    // our self-drawn caret follows; the others are no-ops.
     BOOL TxCreateCaret(HBITMAP, INT, INT) override { return TRUE; }
     BOOL TxShowCaret(BOOL) override { return TRUE; }
-    BOOL TxSetCaretPos(INT, INT) override { return TRUE; }
+    BOOL TxSetCaretPos(INT /*x*/, INT /*y*/) override
+    {
+        // Force a caret repaint whenever MSFTEDIT tells us the cursor moved.
+        if (!in_paint_)
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        return TRUE;
+    }
     BOOL TxSetTimer(UINT idTimer, UINT uTimeout) override
     {
         return SetTimer(hwnd_, idTimer, uTimeout, nullptr) != 0;
@@ -1486,7 +1519,22 @@ public:
         else
             ReleaseCapture();
     }
-    void TxSetFocus() override { SetFocus(hwnd_); }
+    void TxSetFocus() override
+    {
+        // Intentional no-op.
+        //
+        // hwnd_ acquires focus through normal OS mechanics: the user clicks
+        // it, Win32 delivers WM_SETFOCUS, and our wnd_proc forwards that to
+        // TxSendMessage(WM_SETFOCUS) — MSFTEDIT is fully notified.
+        //
+        // MSFTEDIT also calls TxSetFocus() from its own internal timer
+        // callbacks (set via TxSetTimer / TxKillTimer).  Calling
+        // SetFocus(hwnd_) here would steal focus from any other control that
+        // the user legitimately focused (e.g. the room-search text field),
+        // breaking keyboard input there.  With a real host HWND there is no
+        // need to programmatically re-focus: if the user wants the compose
+        // bar they will click it.
+    }
     void TxSetCursor(HCURSOR hcur, BOOL /*fText*/) override
     {
         SetCursor(hcur);
@@ -1661,12 +1709,14 @@ public:
         *pdwExStyle = hwnd_ ? static_cast<DWORD>(GetWindowLongW(hwnd_, GWL_EXSTYLE)) : 0;
         return S_OK;
     }
-    // TxShowDropCaret is the D2D-mode caret hook: the engine draws the caret
-    // inside TxDrawD2D and toggles it on each blink-timer tick.  Invalidate
-    // the rect so the next WM_PAINT picks up the new caret state.
-    HRESULT TxShowDropCaret(BOOL /*fShow*/, HDC /*hdc*/,
-                            LPCRECT prc) override
+    // TxShowDropCaret — D2D-mode caret hook.
+    // MSFTEDIT does NOT draw the caret inside TxDrawD2D; instead it calls us
+    // on each blink-timer tick with the current show/hide state + caret rect.
+    // We store the state and let on_paint() paint the 1px vertical bar after
+    // TxDrawD2D returns.
+    HRESULT TxShowDropCaret(BOOL /*fShow*/, HDC /*hdc*/, LPCRECT prc) override
     {
+        // Not used in D2D mode (MSFTEDIT uses TxShowCaret/TxSetCaretPos).
         InvalidateRect(hwnd_, prc, FALSE);
         return S_OK;
     }
@@ -1753,20 +1803,19 @@ public:
         }
         runCount = pos;
 
-        if (first_emoji && noto_face_)
-            return kNotoFaceId;
-        return fontFaceIdCurrent; // no override — keep whatever RichEdit chose
+        // Don't intercept — let MSFTEDIT's own DWrite font fallback select
+        // Segoe UI Emoji, which it colour-renders via TO_DEFAULTCOLOREMOJI +
+        // ID2D1DeviceContext.  IProvideFontInfo with an externally-injected
+        // IDWriteFontFace* only works for fonts in MSFTEDIT's internal
+        // collection; Noto (loaded in-memory) renders blank through this path.
+        (void)first_emoji;
+        return fontFaceIdCurrent;
     }
 
     IDWriteFontFace* STDMETHODCALLTYPE GetFontFace(DWORD fontFaceId) override
     {
-        if (fontFaceId == kNotoFaceId && noto_face_)
-        {
-            // Caller takes ownership of one reference.
-            noto_face_->AddRef();
-            return noto_face_;
-        }
-        return nullptr; // nullptr → use the control's default font
+        (void)fontFaceId;
+        return nullptr; // pass-through — MSFTEDIT uses its own face
     }
 
     BSTR STDMETHODCALLTYPE GetSerializableFontName(DWORD fontFaceId) override
@@ -1890,15 +1939,28 @@ public:
     {
         if (!text_svc_ || !hwnd_)
             return 0.f;
-        RECT client{};
-        GetClientRect(hwnd_, &client);
-        int w = client.right - client.left;
-        if (w <= 0)
-            return 0.f;
 
         HDC hdc  = GetDC(hwnd_);
         int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
         int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
+
+        // Minimum plausible height: one line of body text (pt → px) + padding.
+        // Used as a floor so that early calls before the first layout pass
+        // (when TxGetNaturalSize may return out_h=0) don't shrink the control
+        // to a few pixels.
+        const float body_pt  = static_cast<float>(
+            tesseract::Settings::instance().font_body);
+        const float min_line = body_pt * (static_cast<float>(dpiY) / 72.f);
+
+        RECT client{};
+        GetClientRect(hwnd_, &client);
+        int w = client.right - client.left;
+        if (w <= 0)
+        {
+            ReleaseDC(hwnd_, hdc);
+            return 0.f; // set_rect falls back to rh when nh==0
+        }
+
         // Width in HIMETRIC (1 inch = 2540 HM, LOGPIXELSX px/inch).
         SIZEL extent{MulDiv(w, 2540, dpiX), 0x7FFFFFFF};
         LONG  out_w = 0, out_h = 0;
@@ -1906,10 +1968,14 @@ public:
             ->TxGetNaturalSize(DVASPECT_CONTENT, hdc, nullptr, nullptr,
                                TXTNS_FITTOCONTENT, &extent, &out_w, &out_h);
         ReleaseDC(hwnd_, hdc);
+
         // Convert HIMETRIC height back to pixels; add 4 px top + 4 px bottom
         // padding (mirrors the +8 px in Win32NativeTextArea).
         float px_h = static_cast<float>(
             MulDiv(static_cast<int>(out_h), dpiY, 2540));
+        // Guard: TxGetNaturalSize returns 0 before the first layout pass.
+        if (px_h < min_line)
+            px_h = min_line;
         return px_h + 8.f;
     }
 
@@ -2071,23 +2137,123 @@ private:
         return lr == 0;
     }
 
+    // Attach the swap chain's back buffer as the device context render target.
+    void attach_swap_chain_bitmap()
+    {
+        using Microsoft::WRL::ComPtr;
+        if (!swap_chain_ || !dc_) return;
+        ComPtr<IDXGISurface> surface;
+        if (FAILED(swap_chain_->GetBuffer(0, IID_PPV_ARGS(surface.GetAddressOf()))))
+            return;
+        // Read the HWND DPI so D2D coordinates match the window's pixel density.
+        float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
+        if (dpi == 0.f) dpi = 96.f;
+        // Alpha mode MUST match the swap chain (IGNORE = opaque, no per-pixel alpha).
+        D2D1_BITMAP_PROPERTIES1 bmpProps = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
+            dpi, dpi);
+        ComPtr<ID2D1Bitmap1> bmp;
+        if (FAILED(dc_->CreateBitmapFromDxgiSurface(surface.Get(), &bmpProps,
+                                                     bmp.GetAddressOf())))
+            return;
+        dc_bitmap_ = bmp;
+        dc_->SetTarget(bmp.Get());
+        dc_->SetDpi(dpi, dpi);
+    }
+
+    // Ensure a DXGI flip-model swap chain + ID2D1DeviceContext exists for the
+    // host HWND.  Replaces the old ID2D1HwndRenderTarget so that TxDrawD2D
+    // receives a real ID2D1DeviceContext, which MSFTEDIT QIs for internally to
+    // enable its full colour-glyph pipeline (COLR v0/v1, PNG bitmap emoji).
     void ensure_render_target(int w, int h)
     {
-        if (rt_)
+        using Microsoft::WRL::ComPtr;
+        if (!d2d_device_ || !d3d_device_ || !hwnd_ || w <= 0 || h <= 0)
+            return;
+
+        if (swap_chain_ && dc_)
         {
-            D2D1_SIZE_U sz = rt_->GetPixelSize();
-            if (static_cast<int>(sz.width) != w ||
-                static_cast<int>(sz.height) != h)
-                rt_->Resize(D2D1::SizeU(w, h));
+            DXGI_SWAP_CHAIN_DESC1 desc{};
+            swap_chain_->GetDesc1(&desc);
+            if (static_cast<int>(desc.Width)  == w &&
+                static_cast<int>(desc.Height) == h)
+                return; // already the right size
+
+            // Resize: detach bitmap, resize buffers, re-attach.
+            dc_->SetTarget(nullptr);
+            dc_bitmap_.Reset();
+            HRESULT hr = swap_chain_->ResizeBuffers(
+                0, static_cast<UINT>(w), static_cast<UINT>(h),
+                DXGI_FORMAT_UNKNOWN, 0);
+            if (FAILED(hr))
+            {
+                dc_.Reset();
+                swap_chain_.Reset();
+            }
+            else
+            {
+                attach_swap_chain_bitmap();
+            }
             return;
         }
-        if (!d2d_factory_ || !hwnd_ || w <= 0 || h <= 0)
+
+        // First-time creation: get the DXGI factory from the D3D device.
+        ComPtr<IDXGIDevice> dxgi_dev;
+        if (FAILED(d3d_device_->QueryInterface(IID_PPV_ARGS(dxgi_dev.GetAddressOf()))))
             return;
-        D2D1_RENDER_TARGET_PROPERTIES rtp = D2D1::RenderTargetProperties();
-        D2D1_HWND_RENDER_TARGET_PROPERTIES htp =
-            D2D1::HwndRenderTargetProperties(hwnd_, D2D1::SizeU(w, h));
-        d2d_factory_->CreateHwndRenderTarget(&rtp, &htp,
-                                              rt_.GetAddressOf());
+        ComPtr<IDXGIAdapter> adapter;
+        if (FAILED(dxgi_dev->GetAdapter(adapter.GetAddressOf())))
+            return;
+        ComPtr<IDXGIFactory2> factory;
+        if (FAILED(adapter->GetParent(IID_PPV_ARGS(factory.GetAddressOf()))))
+            return;
+
+        // Use the blit-model swap chain (DISCARD, BufferCount=1).
+        // FLIP_DISCARD is not reliably supported on child HWNDs on all Win10
+        // configurations and silently fails, leaving nothing on screen.
+        DXGI_SWAP_CHAIN_DESC1 desc{};
+        desc.Width       = static_cast<UINT>(w);
+        desc.Height      = static_cast<UINT>(h);
+        desc.Format      = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        desc.BufferCount = 1;
+        desc.SwapEffect  = DXGI_SWAP_EFFECT_DISCARD;
+        desc.AlphaMode   = DXGI_ALPHA_MODE_IGNORE;
+
+        ComPtr<IDXGISwapChain1> sc;
+        {
+            HRESULT hr = factory->CreateSwapChainForHwnd(
+                d3d_device_, hwnd_, &desc, nullptr, nullptr,
+                sc.GetAddressOf());
+            if (FAILED(hr))
+            {
+                wchar_t buf[128];
+                swprintf_s(buf, L"[tk_re] CreateSwapChainForHwnd failed hr=0x%08X\n",
+                           static_cast<unsigned>(hr));
+                OutputDebugStringW(buf);
+                return;
+            }
+        }
+
+        ComPtr<ID2D1DeviceContext> dc;
+        {
+            HRESULT hr = d2d_device_->CreateDeviceContext(
+                D2D1_DEVICE_CONTEXT_OPTIONS_NONE, dc.GetAddressOf());
+            if (FAILED(hr))
+            {
+                wchar_t buf[128];
+                swprintf_s(buf, L"[tk_re] CreateDeviceContext failed hr=0x%08X\n",
+                           static_cast<unsigned>(hr));
+                OutputDebugStringW(buf);
+                return;
+            }
+        }
+
+        swap_chain_ = sc;
+        dc_         = dc;
+        attach_swap_chain_bitmap();
     }
 
     void on_paint()
@@ -2097,25 +2263,100 @@ private:
         int w = client.right - client.left;
         int h = client.bottom - client.top;
         ensure_render_target(w, h);
-        if (!rt_ || !text_svc_)
+        if (!dc_ || !swap_chain_ || !text_svc_)
             return;
 
         const tk::Color bg = theme_ ? theme_->palette.compose_card_bg
                                      : tk::Color{255, 255, 255, 255};
 
-        rt_->BeginDraw();
-        rt_->Clear(D2D1::ColorF(bg.r / 255.f, bg.g / 255.f, bg.b / 255.f));
+        dc_->BeginDraw();
+        dc_->Clear(D2D1::ColorF(bg.r / 255.f, bg.g / 255.f, bg.b / 255.f));
 
-        // TxDrawD2D expects LPCRECTL; RECTL and RECT are layout-identical.
+        // Pass the ID2D1DeviceContext (as ID2D1RenderTarget*) to TxDrawD2D.
+        // MSFTEDIT QIs for ID2D1DeviceContext internally to enable its full
+        // colour-glyph pipeline (required for COLR v1 / PNG emoji fonts).
         RECTL bounds{client.left, client.top, client.right, client.bottom};
-        text_svc_->TxDrawD2D(rt_.Get(), &bounds, nullptr, TXTVIEW_ACTIVE);
+        in_paint_ = true;
+        text_svc_->TxDrawD2D(dc_.Get(), &bounds, nullptr, TXTVIEW_ACTIVE);
+        in_paint_ = false;
+
+        // D2D-mode caret: MSFTEDIT never calls ITextHost caret APIs in D2D
+        // mode (EM_POSFROMCHAR returns (0,0) in windowless D2D). We build a
+        // temporary IDWriteTextLayout that mirrors the content and call
+        // HitTestTextPosition to get the exact caret position in DIPs.
+        // Blinking is driven by kRichEditCaretTimerId.
+        if (is_caret_on() && GetFocus() == hwnd_ && text_svc_
+            && dwrite_ && placeholder_fmt_)
+        {
+            // Collapsed selection only — TxDrawD2D already renders the highlight
+            // when a range is selected.
+            DWORD sel_start = 0, sel_end = 0;
+            {
+                LRESULT lr = 0;
+                text_svc_->TxSendMessage(EM_GETSEL,
+                    reinterpret_cast<WPARAM>(&sel_start),
+                    reinterpret_cast<LPARAM>(&sel_end), &lr);
+            }
+
+            if (sel_start == sel_end)
+            {
+                // Get current text as UTF-16 for the layout.
+                LRESULT tlen = 0;
+                text_svc_->TxSendMessage(WM_GETTEXTLENGTH, 0, 0, &tlen);
+                std::wstring tw(static_cast<size_t>(tlen), L'\0');
+                if (tlen > 0)
+                    text_svc_->TxSendMessage(WM_GETTEXT,
+                        static_cast<WPARAM>(tlen + 1),
+                        reinterpret_cast<LPARAM>(tw.data()), &tlen);
+
+                // Build a layout matching our char format.  placeholder_fmt_
+                // uses the same typeface and size as the compose text, so the
+                // glyph advances are identical.
+                const float dpi   = static_cast<float>(GetDpiForWindow(hwnd_));
+                const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
+                const float dip_w = (client.right - client.left) / scale;
+
+                using Microsoft::WRL::ComPtr;
+                ComPtr<IDWriteTextLayout> layout;
+                if (SUCCEEDED(dwrite_->CreateTextLayout(
+                        tw.c_str(), static_cast<UINT32>(tw.size()),
+                        placeholder_fmt_.Get(), dip_w, 100000.f,
+                        layout.GetAddressOf())))
+                {
+                    const UINT32 pos = static_cast<UINT32>(
+                        std::min(static_cast<LRESULT>(tw.size()),
+                                 static_cast<LRESULT>(sel_end)));
+                    float caretX = 0.f, caretY = 0.f;
+                    DWRITE_HIT_TEST_METRICS htm{};
+                    layout->HitTestTextPosition(pos, FALSE,
+                                                &caretX, &caretY, &htm);
+
+                    const float caret_h = htm.height > 2.f ? htm.height : 16.f;
+
+                    ComPtr<ID2D1SolidColorBrush> caret_brush;
+                    const tk::Color tc = theme_
+                        ? theme_->palette.text_primary
+                        : tk::Color{0, 0, 0, 255};
+                    dc_->CreateSolidColorBrush(
+                        D2D1::ColorF(tc.r / 255.f, tc.g / 255.f, tc.b / 255.f),
+                        caret_brush.GetAddressOf());
+                    if (caret_brush)
+                    {
+                        const D2D1_RECT_F cr = D2D1::RectF(
+                            caretX, caretY,
+                            caretX + 1.5f, caretY + caret_h);
+                        dc_->FillRectangle(cr, caret_brush.Get());
+                    }
+                }
+            }
+        }
 
         // Placeholder: drawn when the control is empty and not focused.
         if (!placeholder_.empty() && is_text_empty() && GetFocus() != hwnd_)
         {
             using Microsoft::WRL::ComPtr;
             ComPtr<ID2D1SolidColorBrush> brush;
-            rt_->CreateSolidColorBrush(
+            dc_->CreateSolidColorBrush(
                 D2D1::ColorF(0.5f, 0.5f, 0.5f, 0.8f),
                 brush.GetAddressOf());
             if (brush && placeholder_fmt_)
@@ -2125,27 +2366,101 @@ private:
                     static_cast<float>(client.top) + 4.f,
                     static_cast<float>(client.right) - 8.f,
                     static_cast<float>(client.bottom) - 4.f);
-                rt_->DrawText(placeholder_.c_str(),
+                dc_->DrawText(placeholder_.c_str(),
                               static_cast<UINT32>(placeholder_.size()),
                               placeholder_fmt_.Get(), r, brush.Get());
             }
         }
 
-        HRESULT hr = rt_->EndDraw();
-        if (hr == D2DERR_RECREATE_TARGET)
+        HRESULT hr = dc_->EndDraw();
+        if (SUCCEEDED(hr))
         {
-            rt_.Reset();
+            swap_chain_->Present(0, 0);
+        }
+        else if (hr == D2DERR_RECREATE_TARGET)
+        {
+            dc_->SetTarget(nullptr);
+            dc_bitmap_.Reset();
+            dc_.Reset();
+            swap_chain_.Reset();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        }
+
+        // If MSFTEDIT requested a repaint during TxDrawD2D (suppressed by
+        // in_paint_ guard), post it now as an async invalidate.
+        if (needs_repaint_)
+        {
+            needs_repaint_ = false;
             InvalidateRect(hwnd_, nullptr, FALSE);
         }
     }
 
     void on_size(int w, int h)
     {
-        if (rt_ && w > 0 && h > 0)
-            rt_->Resize(D2D1::SizeU(w, h));
+        // Resize the swap chain to match the new HWND dimensions so there is
+        // no gap or stretch between paint calls.  If the device context is not
+        // yet created, ensure_render_target will create it at the right size.
+        if (swap_chain_ && dc_ && w > 0 && h > 0)
+        {
+            dc_->SetTarget(nullptr);
+            dc_bitmap_.Reset();
+            swap_chain_->ResizeBuffers(0, static_cast<UINT>(w),
+                                       static_cast<UINT>(h),
+                                       DXGI_FORMAT_UNKNOWN, 0);
+            attach_swap_chain_bitmap();
+        }
         if (text_svc_)
             text_svc_->OnTxPropertyBitsChange(TXTBIT_CLIENTRECTCHANGE,
                                                TXTBIT_CLIENTRECTCHANGE);
+    }
+
+    // ── Hit-test helper ───────────────────────────────────────────────────
+    // Returns true when the caret should be visible (elapsed-time based blink).
+    // Because we record focus_tick_ on WM_SETFOCUS (not on each interaction),
+    // the phase is never reset by mouse clicks, so blinking stays steady.
+    bool is_caret_on() const
+    {
+        if (blink_ms_ == 0 || blink_ms_ == INFINITE) return true;
+        const ULONGLONG elapsed = GetTickCount64() - focus_tick_;
+        return (elapsed / blink_ms_) % 2 == 0;
+    }
+
+    // MSFTEDIT's WM_LBUTTONDOWN hit test is broken in D2D/windowless mode —
+    // it always resolves to position 1 regardless of click x.  This helper
+    // uses IDWriteTextLayout::HitTestPoint to map client-pixel coordinates to
+    // a UTF-16 character index, which we then push back via EM_SETSEL.
+    UINT32 hit_test_client_pos(int x_px, int y_px) const
+    {
+        if (!dwrite_ || !placeholder_fmt_ || !text_svc_) return 0;
+        RECT cli{};
+        GetClientRect(hwnd_, &cli);
+        const float dpi   = static_cast<float>(GetDpiForWindow(hwnd_));
+        const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
+        const float dip_w = (cli.right - cli.left) / scale;
+
+        LRESULT tlen = 0;
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxSendMessage(WM_GETTEXTLENGTH, 0, 0, &tlen);
+        std::wstring tw(static_cast<size_t>(tlen), L'\0');
+        if (tlen > 0)
+            const_cast<ITextServices2*>(text_svc_.Get())
+                ->TxSendMessage(WM_GETTEXT,
+                    static_cast<WPARAM>(tlen + 1),
+                    reinterpret_cast<LPARAM>(tw.data()), &tlen);
+
+        using Microsoft::WRL::ComPtr;
+        ComPtr<IDWriteTextLayout> layout;
+        if (FAILED(dwrite_->CreateTextLayout(
+                tw.c_str(), static_cast<UINT32>(tw.size()),
+                placeholder_fmt_.Get(), dip_w, 100000.f,
+                layout.GetAddressOf())))
+            return 0;
+
+        BOOL isTrailing = FALSE, isInside = FALSE;
+        DWRITE_HIT_TEST_METRICS htm{};
+        layout->HitTestPoint(x_px / scale, y_px / scale,
+                              &isTrailing, &isInside, &htm);
+        return htm.textPosition + (isTrailing ? 1u : 0u);
     }
 
     // ── Host WndProc ──────────────────────────────────────────────────────
@@ -2249,6 +2564,11 @@ private:
             {
                 LRESULT r = 0;
                 self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                // Navigation keys (arrows, Home, End, …) move the cursor
+                // without changing text — EN_CHANGE never fires.  Force a
+                // repaint so the self-drawn caret follows immediately.
+                if (!self->in_paint_)
+                    InvalidateRect(hwnd, nullptr, FALSE);
                 return r;
             }
             break;
@@ -2290,9 +2610,33 @@ private:
             break;
 
         case WM_SETFOCUS:
+            if (self)
+            {
+                // Record the focus timestamp so is_caret_on() can compute
+                // phase from elapsed time.  Timer only drives repaints; it
+                // does NOT toggle a bool, so re-firing SetTimer here (which
+                // resets the countdown) can never suppress a blink.
+                self->focus_tick_ = GetTickCount64();
+                self->blink_ms_   = GetCaretBlinkTime();
+                const UINT blink  = self->blink_ms_;
+                if (blink != INFINITE && blink > 0)
+                    SetTimer(hwnd, kRichEditCaretTimerId, blink, nullptr);
+                if (!self->placeholder_.empty())
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                if (self->text_svc_)
+                {
+                    LRESULT r = 0;
+                    self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                }
+            }
+            return 0;
+
         case WM_KILLFOCUS:
             if (self)
             {
+                KillTimer(hwnd, kRichEditCaretTimerId);
+                // focus_tick_ is left as-is; is_caret_on() is only queried
+                // when GetFocus()==hwnd_, so no caret is drawn after blur.
                 if (!self->placeholder_.empty())
                     InvalidateRect(hwnd, nullptr, FALSE);
                 if (self->text_svc_)
@@ -2304,6 +2648,13 @@ private:
             return 0;
 
         case WM_TIMER:
+            if (self && wParam == kRichEditCaretTimerId)
+            {
+                // Just trigger a repaint; is_caret_on() computes visibility
+                // from elapsed time, so the phase never drifts from resets.
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
             if (self && self->text_svc_)
             {
                 LRESULT r = 0;
@@ -2312,9 +2663,54 @@ private:
             return 0;
 
         case WM_LBUTTONDOWN:
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                // MSFTEDIT's D2D/windowless hit test is broken — it always
+                // resolves to position 1.  Use IDWriteTextLayout::HitTestPoint
+                // for accurate character placement, then commit via EM_SETSEL.
+                {
+                    const UINT32 pos = self->hit_test_client_pos(
+                        GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                    self->drag_anchor_ = pos;
+                    LRESULT lr = 0;
+                    self->text_svc_->TxSendMessage(EM_SETSEL,
+                        static_cast<WPARAM>(pos),
+                        static_cast<LPARAM>(pos), &lr);
+                }
+                if (!self->in_paint_)
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                return r;
+            }
+            break;
+
+        case WM_MOUSEMOVE:
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                // When dragging (LButton held), extend the selection from the
+                // anchor set on WM_LBUTTONDOWN using our DWrite hit test.
+                if (wParam & MK_LBUTTON)
+                {
+                    const UINT32 pos = self->hit_test_client_pos(
+                        GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                    const UINT32 lo = std::min(self->drag_anchor_, pos);
+                    const UINT32 hi = std::max(self->drag_anchor_, pos);
+                    LRESULT lr = 0;
+                    self->text_svc_->TxSendMessage(EM_SETSEL,
+                        static_cast<WPARAM>(lo),
+                        static_cast<LPARAM>(hi), &lr);
+                    if (!self->in_paint_)
+                        InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                return r;
+            }
+            break;
+
         case WM_LBUTTONUP:
         case WM_LBUTTONDBLCLK:
-        case WM_MOUSEMOVE:
         case WM_RBUTTONDOWN:
         case WM_RBUTTONUP:
         case WM_MOUSEWHEEL:
@@ -2358,17 +2754,37 @@ private:
     bool visible_          = true;
     float last_height_     = 0.f;
     Rect  last_rect_       = {-1.f, -1.f, -1.f, -1.f};
+    // D2D-mode caret: MSFTEDIT never calls ITextHost caret methods in D2D
+    // mode.  We drive blinking via kRichEditCaretTimerId and derive position
+    // from IDWriteTextLayout::HitTestTextPosition on each paint.
+    // Visibility is computed from elapsed time (GetTickCount64 - focus_tick_)
+    // so SetTimer resets only fire off the repaint — not toggle a bool.
+    ULONGLONG focus_tick_  = 0;    // GetTickCount64() when we gained focus
+    UINT      blink_ms_    = 530;  // GetCaretBlinkTime() result; INFINITE = no blink
+    UINT32 drag_anchor_    = 0;    // text position where LButton was pressed
+    // Paint-storm guard: set true while inside TxDrawD2D so TxInvalidateRect /
+    // TxViewChange don't synchronously re-enter on_paint().
+    bool in_paint_       = false;
+    bool needs_repaint_  = false;
 
     IWICImagingFactory* wic_         = nullptr; // borrowed; lifetime ≥ this
-    ID2D1Factory1*      d2d_factory_ = nullptr; // borrowed; lifetime ≥ this
+    ID2D1Device*        d2d_device_  = nullptr; // borrowed; lifetime ≥ this
+    ID3D11Device*       d3d_device_  = nullptr; // borrowed; lifetime ≥ this
+    IDWriteFactory2*    dwrite_      = nullptr; // borrowed; lifetime ≥ this
     const Theme*        theme_       = nullptr; // borrowed; lifetime ≥ this
     IDWriteFontFace*    noto_face_   = nullptr; // borrowed; Noto Color Emoji face (may be null)
 
     std::wstring placeholder_; // UTF-16 cue banner drawn in on_paint()
 
-    Microsoft::WRL::ComPtr<ITextServices2>        text_svc_;
-    Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> rt_;
-    Microsoft::WRL::ComPtr<IDWriteTextFormat>     placeholder_fmt_;
+    Microsoft::WRL::ComPtr<ITextServices2>   text_svc_;
+    // DXGI flip-model swap chain + ID2D1DeviceContext replace the old
+    // ID2D1HwndRenderTarget so TxDrawD2D receives a real device context,
+    // which MSFTEDIT QIs for internally to enable its full colour-glyph
+    // pipeline (required for COLR v1 / PNG emoji fonts like Noto).
+    Microsoft::WRL::ComPtr<IDXGISwapChain1>  swap_chain_;
+    Microsoft::WRL::ComPtr<ID2D1DeviceContext> dc_;
+    Microsoft::WRL::ComPtr<ID2D1Bitmap1>     dc_bitmap_; // current back-buffer target
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> placeholder_fmt_;
 
     CHARFORMAT2W char_fmt_{};
     PARAFORMAT2  para_fmt_{};
@@ -2480,8 +2896,8 @@ public:
         int id = next_ctrl_id_++;
         auto fac = d2d::factories(backend_singleton());
         auto area = std::make_unique<Win32RichEditArea>(
-            hwnd_, id, fac.wic, fac.d2d, fac.dwrite, theme_,
-            fac.noto_emoji_face);
+            hwnd_, id, fac.wic, fac.d2d_device, fac.d3d_device,
+            fac.dwrite, theme_, fac.noto_emoji_face);
         areas_by_id_.emplace(id, area.get());
         return area;
     }
