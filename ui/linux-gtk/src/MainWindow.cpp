@@ -2057,6 +2057,18 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     settings_widget_->set_cache_sizes(local, sdk);
             });
         };
+        settings_widget_->on_local_avatar_changed =
+            [this](std::string new_mxc)
+        {
+            my_avatar_url_ = new_mxc;
+            if (active_account_index_ >= 0 &&
+                active_account_index_ <
+                    static_cast<int>(accounts_.size()))
+            {
+                accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+            }
+            populate_user_strip();
+        };
     }
 
     // Escape key: close viewer overlays. Attached to the window so it fires

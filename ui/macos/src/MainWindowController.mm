@@ -4644,6 +4644,26 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (s && s->_shell->settings_controller_)
                 s->_shell->settings_controller_->remove_avatar();
         };
+        // Override the shared SettingsView's on_avatar_changed (which only
+        // updates the in-settings AccountSection chip) so the sidebar
+        // UserInfo strip also refreshes after a self-avatar change.
+        _shell->settings_controller_->on_avatar_changed =
+            [ws](std::string mxc)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            s->_shell->my_avatar_url_ = mxc;
+            if (s->_shell->active_account_index_ >= 0 &&
+                s->_shell->active_account_index_ <
+                    static_cast<int>(s->_shell->accounts_.size()))
+            {
+                s->_shell->accounts_[s->_shell->active_account_index_]
+                    ->avatar_url = s->_shell->my_avatar_url_;
+            }
+            s->_settingsView->set_avatar_url(mxc);
+            if (s->_settingsSurface) s->_settingsSurface->relayout();
+            [s _populateUserStrip];
+        };
     }
 }
 

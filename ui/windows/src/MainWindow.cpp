@@ -3171,6 +3171,18 @@ void MainWindow::start_login()
         if (!ok) settings_view_->set_name_error(std::move(error));
         settings_surface_->relayout();
     };
+    settings_controller_->on_avatar_changed = [this](std::string mxc)
+    {
+        my_avatar_url_ = mxc;
+        if (active_account_index_ >= 0 &&
+            active_account_index_ < static_cast<int>(accounts_.size()))
+        {
+            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+        }
+        settings_view_->set_avatar_url(mxc);
+        settings_surface_->relayout();
+        populate_user_strip();
+    };
 }
 
 void MainWindow::on_login_succeeded()
@@ -3369,6 +3381,18 @@ void MainWindow::on_login_succeeded()
         settings_view_->set_name_busy(false);
         if (!ok) settings_view_->set_name_error(std::move(error));
         settings_surface_->relayout();
+    };
+    settings_controller_->on_avatar_changed = [this](std::string mxc)
+    {
+        my_avatar_url_ = mxc;
+        if (active_account_index_ >= 0 &&
+            active_account_index_ < static_cast<int>(accounts_.size()))
+        {
+            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+        }
+        settings_view_->set_avatar_url(mxc);
+        settings_surface_->relayout();
+        populate_user_strip();
     };
 }
 
