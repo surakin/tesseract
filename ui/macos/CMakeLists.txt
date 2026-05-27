@@ -101,9 +101,23 @@ install(TARGETS tesseract_macos
         COMPONENT Application)
 
 set(TESSERACT_MAC_CODESIGN_IDENTITY "" CACHE STRING
-    "codesign identity (e.g. 'Developer ID Application: Foo (TEAMID)') — empty = no signing")
+    "codesign identity (e.g. 'Developer ID Application: Foo (TEAMID)') — empty = ad-hoc signing")
 set(TESSERACT_MAC_NOTARIZE_PROFILE "" CACHE STRING
     "notarytool keychain profile name — empty = no notarization")
+
+# Sign the build-dir app after every build so macOS accepts UNUserNotificationCenter
+# permission requests. Uses the real identity when one is configured, ad-hoc otherwise.
+if(TESSERACT_MAC_CODESIGN_IDENTITY)
+    set(_tesseract_sign_id "${TESSERACT_MAC_CODESIGN_IDENTITY}")
+else()
+    set(_tesseract_sign_id "-")
+endif()
+add_custom_command(TARGET tesseract_macos POST_BUILD
+    COMMAND codesign --force --deep --sign "${_tesseract_sign_id}"
+            "$<TARGET_BUNDLE_DIR:tesseract_macos>"
+    COMMENT "Signing Tesseract.app (identity: ${_tesseract_sign_id})"
+    VERBATIM
+)
 
 if(TESSERACT_MAC_CODESIGN_IDENTITY)
     install(CODE "

@@ -4967,14 +4967,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
 
-    // Window on screen: no popup. Bounce dock if not focused.
-    if (winVisible)
+    // Bounce dock if window is visible but not focused.
+    if (winVisible && !winFocused)
     {
-        if (!winFocused)
-        {
-            [self _requestUserAttention];
-        }
-        return;
+        [self _requestUserAttention];
     }
 
     UNMutableNotificationContent* content =
