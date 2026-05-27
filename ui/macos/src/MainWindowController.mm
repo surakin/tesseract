@@ -29,6 +29,8 @@
 #include "views/ShortcodePopup.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
+#include "views/SlashCommandEngine.h"
+#include "views/SlashCommandPopup.h"
 #include <tesseract/mentions.h>
 
 #include <ImageIO/ImageIO.h>
@@ -366,6 +368,12 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                                cursorRect:(tk::Rect)cursor;
 - (void)hideShortcodePopup;
 - (BOOL)shortcodePopupVisible;
+- (void)showSlashPopupWithSuggestions:
+            (const std::vector<tesseract::views::SlashCommandSuggestion>&)
+                suggestions
+                           cursorRect:(tk::Rect)cursor;
+- (void)hideSlashPopup;
+- (BOOL)slashPopupVisible;
 - (void)showMentionPopupAtCursor:(tk::Rect)cursor rows:(int)rows;
 - (void)hideMentionPopup;
 - (BOOL)mentionPopupVisible;
@@ -437,6 +445,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onSpaceBack;
 - (void)_onComposeSend;
 - (void)_relayoutShortcodePopupIfVisible;
+- (void)_relayoutSlashPopupIfVisible;
 @end
 
 namespace
@@ -1409,6 +1418,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::unique_ptr<tk::macos::Surface> _mentionPopupSurface;
     tesseract::views::MentionPopup* _mentionPopupWidget; // borrowed from root
     std::unique_ptr<tesseract::views::MentionController> _mentionController;
+
+    // Slash-command autocomplete popup — NSPanel hosting a tk::macos::Surface.
+    NSPanel* _slashPanel;
+    std::unique_ptr<tk::macos::Surface> _slashPopupSurface;
+    tesseract::views::SlashCommandPopup*
+        _slashPopupWidget; // borrowed from root
+    tesseract::views::SlashCommandEngine _slashEngine;
 
     // AppKit chrome.
     LoginView* _loginView;
@@ -2798,8 +2814,96 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     c->_roomView->set_current_text(s);
                 }
 
-                // ── Shortcode detection ─────────────────────────────────────────
+                // ── Slash-command detection ────────────────────────────────────
                 int cursor = c->_roomTextArea->cursor_byte_pos();
+                {
+                    auto m = c->_slashEngine.find_prefix(s, cursor);
+                    if (m.has_value())
+                    {
+                        auto items = c->_slashEngine.lookup(m->prefix);
+                        if (items.empty())
+                        {
+                            [c hideSlashPopup];
+                        }
+                        else
+                        {
+                            // Guarded hides — don't wipe set_on_popup_nav unnecessarily.
+                            if ([c shortcodePopupVisible])
+                            {
+                                [c hideShortcodePopup];
+                            }
+                            if ([c mentionPopupVisible])
+                            {
+                                [c hideMentionPopup];
+                            }
+                            [c showSlashPopupWithSuggestions:items
+                                                 cursorRect:c->_roomTextArea
+                                                                ->cursor_rect()];
+                            // Install nav handler unconditionally on every matching tick.
+                            _roomTextArea->set_on_popup_nav(
+                                [weakSelf](
+                                    tk::NativeTextArea::NavKey nk) -> bool
+                                {
+                                    MainWindowController* c2 = weakSelf;
+                                    if (!c2 || ![c2 slashPopupVisible])
+                                    {
+                                        return false;
+                                    }
+                                    int cur =
+                                        c2->_slashPopupWidget->selected_index();
+                                    int n = c2->_slashPopupWidget->visible_rows();
+                                    if (n <= 0)
+                                    {
+                                        return true;
+                                    }
+                                    switch (nk)
+                                    {
+                                    case tk::NativeTextArea::NavKey::Up:
+                                        c2->_slashPopupWidget->set_selected_index(
+                                            std::max(0, cur - 1));
+                                        c2->_slashPopupSurface->host()
+                                            .request_repaint();
+                                        return true;
+                                    case tk::NativeTextArea::NavKey::Down:
+                                        c2->_slashPopupWidget->set_selected_index(
+                                            std::min(n - 1, cur + 1));
+                                        c2->_slashPopupSurface->host()
+                                            .request_repaint();
+                                        return true;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                    {
+                                        int sel = std::max(
+                                            0,
+                                            c2->_slashPopupWidget
+                                                ->selected_index());
+                                        if (sel < n &&
+                                            c2->_slashPopupWidget->on_accepted)
+                                        {
+                                            c2->_slashPopupWidget->on_accepted(
+                                                c2->_slashPopupWidget
+                                                    ->suggestion_at(sel));
+                                        }
+                                        return true;
+                                    }
+                                    case tk::NativeTextArea::NavKey::ShiftTab:
+                                        return false;
+                                    case tk::NativeTextArea::NavKey::Escape:
+                                        [c2 hideSlashPopup];
+                                        return true;
+                                    }
+                                    return false;
+                                });
+                        }
+                        return; // skip shortcode/mention handling
+                    }
+                    if ([c slashPopupVisible])
+                    {
+                        [c hideSlashPopup];
+                    }
+                }
+                // ── End slash-command detection ─────────────────────────────────
+
+                // ── Shortcode detection ─────────────────────────────────────────
 
                 auto complete =
                     c->_shell->shortcode_engine_.find_complete(s, cursor);
@@ -2813,6 +2917,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                             : ":" + complete->prefix + ":";
                     c->_roomTextArea->replace_range(complete->start,
                                                     complete->end, r);
+                    [c hideSlashPopup];
                     [c hideShortcodePopup];
                     [c hideMentionPopup];
                     return;
@@ -2920,6 +3025,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return;
                 }
+                [c hideSlashPopup];
                 [c hideShortcodePopup];
                 [c hideMentionPopup];
                 // ── End shortcode detection ─────────────────────────────────────
@@ -2934,6 +3040,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 }
                 if (c->_mentionController && c->_mentionController->on_submit())
                 {
+                    return;
+                }
+                if ([c slashPopupVisible])
+                {
+                    int i = c->_slashPopupWidget->selected_index();
+                    if (i >= 0 && i < c->_slashPopupWidget->visible_rows() &&
+                        c->_slashPopupWidget->on_accepted)
+                    {
+                        c->_slashPopupWidget->on_accepted(
+                            c->_slashPopupWidget->suggestion_at(i));
+                    }
+                    else
+                    {
+                        [c hideSlashPopup];
+                    }
                     return;
                 }
                 if ([c shortcodePopupVisible])
@@ -3462,6 +3583,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         _shortcodePopupSurface->set_theme(t);
     }
+    if (_slashPopupSurface)
+    {
+        _slashPopupSurface->set_theme(t);
+    }
     if (_mentionPopupSurface)
     {
         _mentionPopupSurface->set_theme(t);
@@ -3747,6 +3872,148 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _roomTextArea->set_on_popup_nav(nullptr);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Slash-command suggestion popup
+// ---------------------------------------------------------------------------
+
+- (BOOL)slashPopupVisible
+{
+    return _slashPanel && _slashPanel.isVisible;
+}
+
+- (void)_relayoutSlashPopupIfVisible
+{
+    if ([self slashPopupVisible] && _slashPopupSurface)
+    {
+        _slashPopupSurface->relayout();
+    }
+}
+
+- (void)showSlashPopupWithSuggestions:
+            (const std::vector<tesseract::views::SlashCommandSuggestion>&)
+                suggestions
+                           cursorRect:(tk::Rect)cursor
+{
+    int rows = std::min((int)suggestions.size(),
+                        int(tesseract::views::SlashCommandPopup::kMaxRows));
+    NSSize size =
+        NSMakeSize(tesseract::views::SlashCommandPopup::kWidth,
+                   rows * tesseract::views::SlashCommandPopup::kRowHeight);
+
+    if (!_slashPanel)
+    {
+        NSRect frame = NSMakeRect(0, 0, size.width, size.height);
+        _slashPanel = [[NSPanel alloc]
+            initWithContentRect:frame
+                      styleMask:NSWindowStyleMaskNonactivatingPanel |
+                                NSWindowStyleMaskBorderless
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
+        _slashPanel.floatingPanel = YES;
+        _slashPanel.hidesOnDeactivate = NO;
+        _slashPanel.becomesKeyOnlyIfNeeded = YES;
+
+        _slashPopupSurface =
+            std::make_unique<tk::macos::Surface>(_mainAppSurface->theme());
+        auto pw = std::make_unique<tesseract::views::SlashCommandPopup>();
+        _slashPopupWidget = pw.get();
+        _slashPopupSurface->set_root(std::move(pw));
+
+        __weak MainWindowController* weakSelf = self;
+        _slashPopupWidget->on_accepted =
+            [weakSelf](tesseract::views::SlashCommandSuggestion s)
+        {
+            MainWindowController* c = weakSelf;
+            if (!c)
+            {
+                return;
+            }
+            [c hideSlashPopup];
+            if (!c->_roomTextArea)
+            {
+                return;
+            }
+            if (!c->_shell->client_ || c->_shell->current_room_id_.empty())
+            {
+                return;
+            }
+            if (s.args_hint.empty())
+            {
+                std::string body = "/" + s.name;
+                (void)tesseract::dispatch_compose_send(
+                    *c->_shell->client_, c->_shell->current_room_id_,
+                    body, std::string{});
+                c->_roomTextArea->set_text("");
+                if (c->_roomView)
+                {
+                    c->_roomView->set_current_text({});
+                }
+            }
+            else
+            {
+                std::string body = "/" + s.name + " ";
+                c->_roomTextArea->set_text(body);
+            }
+        };
+        _slashPopupWidget->on_dismissed = [weakSelf]
+        {
+            if (MainWindowController* c = weakSelf)
+            {
+                [c hideSlashPopup];
+            }
+        };
+
+        NSView* popupView =
+            (__bridge NSView*)_slashPopupSurface->view_handle();
+        [_slashPanel setContentView:popupView];
+    }
+
+    _slashPopupWidget->set_suggestions(suggestions);
+    _slashPopupWidget->set_selected_index(0);
+    [_slashPanel setContentSize:size];
+    _slashPopupSurface->relayout();
+
+    // Map cursor_local (TKSurfaceView y-down) → screen coords (y-up).
+    NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
+    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
+    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
+    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
+
+    NSRect screenFrame = _slashPanel.screen
+                             ? _slashPanel.screen.visibleFrame
+                             : [NSScreen mainScreen].visibleFrame;
+
+    // Prefer above the cursor; fall back to below when the panel would be
+    // clipped at the top of the screen (mirrors shortcode popup behaviour).
+    CGFloat panelH = size.height;
+    CGFloat y_above = screenPt.y + 4;
+    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - panelH;
+    CGFloat x = screenPt.x;
+    CGFloat y =
+        (y_above + panelH <= screenFrame.origin.y + screenFrame.size.height)
+            ? y_above
+            : y_below;
+    x = std::clamp(x, screenFrame.origin.x,
+                   screenFrame.origin.x + screenFrame.size.width - size.width);
+    y = std::clamp(y, screenFrame.origin.y,
+                   screenFrame.origin.y + screenFrame.size.height -
+                       size.height);
+
+    [_slashPanel setFrameOrigin:NSMakePoint(x, y)];
+    [_slashPanel orderFront:nil];
+}
+
+- (void)hideSlashPopup
+{
+    [_slashPanel orderOut:nil];
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_on_popup_nav(nullptr);
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 - (BOOL)mentionPopupVisible
 {
@@ -5765,6 +6032,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             return;
         }
     }
+    [self hideSlashPopup];
     [self hideShortcodePopup];
     _shell->handle_compose_room_leaving_(_shell->current_room_id_);
     if (!_shell->current_room_id_.empty() &&
