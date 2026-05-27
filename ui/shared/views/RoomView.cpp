@@ -757,6 +757,10 @@ void RoomView::clear_room()
     {
         compose_bar_->set_enabled(false);
     }
+    // Drop any pinned-events state from the previous room so it can't bleed
+    // into the next set_room() before refresh_pinned_for_current_room_ runs
+    // (e.g. account switch → onRoomSelected fast-path skips tab_select_room).
+    set_pinned({});
 }
 
 void RoomView::set_messages(std::vector<MessageRowData> msgs, bool room_switch)
