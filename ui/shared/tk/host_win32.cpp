@@ -5,8 +5,22 @@
 #include <tesseract/settings.h>
 
 #include <commctrl.h>
+#include <d2d1.h>      // ID2D1HwndRenderTarget, D2D1_RENDER_TARGET_PROPERTIES
+#include <d2d1_1.h>    // ID2D1Factory1 full definition (CreateHwndRenderTarget)
+#include <dwrite.h>    // IDWriteTextFormat, DWRITE_FONT_WEIGHT_* enums
+#include <dwrite_2.h>  // IDWriteFactory2::CreateTextFormat
 #include <richedit.h>  // MSFTEDIT_CLASS, RichEdit ES_* flags
+#include <textserv.h>  // ITextHost2, ITextServices2, TXTBIT_*, TXTNS_*
+#include <imm.h>       // ImmGetContext / ImmReleaseContext
 #include <windowsx.h> // GET_X_LPARAM / GET_Y_LPARAM
+
+// Typography flags added in later Windows 10 SDKs; define if absent.
+#ifndef TO_DEFAULTCOLOREMOJI
+#define TO_DEFAULTCOLOREMOJI 0x1000
+#endif
+#ifndef TO_DISPLAYFONTCOLOR
+#define TO_DISPLAYFONTCOLOR 0x2000
+#endif
 #include <wincodec.h>
 #include <objidl.h>
 #include <ole2.h>     // RegisterDragDrop / IDropTarget
@@ -282,7 +296,61 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
     return true;
 }
 
+// ── UTF-8 byte offset to UTF-16 code unit count ──────────────────────────
+// Used by both Win32NativeTextArea and Win32RichEditArea for replace_range().
+// Returns the number of UTF-16 code units in the first `byte_offset` bytes
+// of `utf8`; clamped to [0, utf8.size()].
+static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
+{
+    byte_offset = std::clamp(byte_offset, 0, (int)utf8.size());
+    int wlen =
+        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
+    return wlen < 0 ? 0 : wlen;
+}
+
+// ITextHost / ITextHost2 / ITextServices2 IIDs extracted from MSFTEDIT.DLL
+// exports (no import lib ships with the Windows SDK; textserv.h declares them
+// as EXTERN_C const IID without providing a definition).
+//
+// Verified against MSFTEDIT.DLL 10.0.26100 via dumpbin:
+//   ITextHost      RVA 0x2B34D8 → {13e670f4-1a5a-11cf-abeb-00aa00b65ea1}
+//   ITextHost2     RVA 0x2AE2E8 → {13e670f5-1a5a-11cf-abeb-00aa00b65ea1}
+//   ITextServices  RVA 0x2AE210 → {8d33f740-cf58-11ce-a89d-00aa006cadc5}
+//   ITextServices2 RVA 0x2AE1C0 → {8d33f741-cf58-11ce-a89d-00aa006cadc5}
+static constexpr GUID kIID_ITextHost = {
+    0x13e670f4,
+    0x1a5a,
+    0x11cf,
+    {0xab, 0xeb, 0x00, 0xaa, 0x00, 0xb6, 0x5e, 0xa1}};
+static constexpr GUID kIID_ITextHost2 = {
+    0x13e670f5,
+    0x1a5a,
+    0x11cf,
+    {0xab, 0xeb, 0x00, 0xaa, 0x00, 0xb6, 0x5e, 0xa1}};
+static constexpr GUID kIID_ITextServices2 = {
+    0x8d33f741,
+    0xcf58,
+    0x11ce,
+    {0xa8, 0x9d, 0x00, 0xaa, 0x00, 0x6c, 0xad, 0xc5}};
+
 } // namespace
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Win32TextAreaBase — internal base stored in Host::areas_by_id_
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Both Win32NativeTextArea (RICHEDIT50W child HWND) and Win32RichEditArea
+// (windowless ITextServices2 host HWND) inherit from this so the Host can
+// store either in areas_by_id_ and call notify_changed() uniformly.
+
+class Win32TextAreaBase
+{
+public:
+    virtual ~Win32TextAreaBase() = default;
+    virtual void notify_changed() = 0;
+    virtual int  ctrl_id() const = 0;
+    virtual HWND hwnd()    const = 0;
+};
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Win32NativeTextField — EDIT-control NativeTextField
@@ -503,7 +571,7 @@ private:
 // Enter falls through and inserts a newline. Natural height comes from a
 // CalcTextSize-ish measurement: line count × DT_HEIGHT_OF_FIRST_LINE.
 
-class Win32NativeTextArea : public NativeTextArea
+class Win32NativeTextArea : public NativeTextArea, public Win32TextAreaBase
 {
 public:
     Win32NativeTextArea(HWND parent, int ctrl_id,
@@ -1125,6 +1193,1030 @@ private:
     std::vector<MentionEntry> mentions_;
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Win32RichEditArea — windowless RichEdit via ITextServices2 + TxDrawD2D
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Architecture:
+//   - A plain WS_CHILD HWND (class "tk_re_host") is the visible host window.
+//   - This object implements ITextHost2, which the windowless RichEdit calls
+//     for all host services (DC, caret, invalidation, notifications, …).
+//   - CreateTextServices() (GetProcAddress from Msftedit.dll) creates the
+//     ITextServices2 object; we forward WM_* through TxSendMessage.
+//   - WM_PAINT calls ITextServices2::TxDrawD2D() on an ID2D1HwndRenderTarget.
+//   - TXTBIT_D2DDWRITE (returned by TxGetPropertyBits) routes the control's
+//     internal rendering through D2D/DirectWrite, enabling colour emoji.
+
+class Win32RichEditArea : public NativeTextArea,
+                          public Win32TextAreaBase,
+                          public ITextHost2
+{
+public:
+    Win32RichEditArea(HWND parent, int ctrl_id, IWICImagingFactory* wic,
+                      ID2D1Factory1* d2d_factory, IDWriteFactory2* dwrite,
+                      const Theme* theme)
+        : parent_(parent), id_(ctrl_id), wic_(wic),
+          d2d_factory_(d2d_factory), theme_(theme)
+    {
+        // Register the host window class once per process.
+        static bool s_cls = []() -> bool
+        {
+            WNDCLASSEXW wc{};
+            wc.cbSize        = sizeof(wc);
+            wc.style         = CS_HREDRAW | CS_VREDRAW;
+            wc.lpfnWndProc   = &Win32RichEditArea::wnd_proc;
+            wc.hInstance     = GetModuleHandleW(nullptr);
+            wc.hCursor       = LoadCursorW(nullptr, IDC_IBEAM);
+            wc.hbrBackground = nullptr;
+            wc.lpszClassName = L"tk_re_host";
+            return RegisterClassExW(&wc) != 0 ||
+                   GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+        }();
+        (void)s_cls;
+
+        // Create the host HWND; pass `this` as lpCreateParams so WM_NCCREATE
+        // can stash it in GWLP_USERDATA before any other message arrives.
+        hwnd_ = CreateWindowExW(0, L"tk_re_host", L"",
+                                 WS_CHILD | WS_VISIBLE, 0, 0, 200, 40,
+                                 parent_,
+                                 reinterpret_cast<HMENU>(
+                                     static_cast<INT_PTR>(id_)),
+                                 GetModuleHandleW(nullptr), this);
+        if (!hwnd_)
+            return;
+
+        // Load Msftedit.dll and locate CreateTextServices (once per process).
+        typedef HRESULT(WINAPI* PCreateTS)(IUnknown*, ITextHost*, IUnknown**);
+        static HMODULE s_msftedit = LoadLibraryW(L"MSFTEDIT.DLL");
+        static PCreateTS s_create =
+            s_msftedit
+                ? reinterpret_cast<PCreateTS>(
+                      GetProcAddress(s_msftedit, "CreateTextServices"))
+                : nullptr;
+        if (!s_create)
+            return;
+
+        // Default character format: Segoe UI Variable Text, font_body pt.
+        char_fmt_.cbSize    = sizeof(char_fmt_);
+        char_fmt_.dwMask    = CFM_FACE | CFM_SIZE | CFM_CHARSET | CFM_COLOR;
+        char_fmt_.dwEffects = CFE_AUTOCOLOR;
+        // yHeight is in twips (1 pt = 20 twips).
+        char_fmt_.yHeight  = tesseract::Settings::instance().font_body * 20;
+        char_fmt_.bCharSet = DEFAULT_CHARSET;
+        wcscpy_s(char_fmt_.szFaceName, L"Segoe UI Variable Text");
+
+        // Default paragraph format: left-aligned.
+        para_fmt_.cbSize     = sizeof(para_fmt_);
+        para_fmt_.dwMask     = PFM_ALIGNMENT;
+        para_fmt_.wAlignment = PFA_LEFT;
+
+        // Create the windowless text services object, then QI ITextServices2.
+        using Microsoft::WRL::ComPtr;
+        ComPtr<IUnknown> unk;
+        if (FAILED(s_create(nullptr, static_cast<ITextHost*>(this),
+                            unk.GetAddressOf())))
+            return;
+        if (FAILED(unk->QueryInterface(kIID_ITextServices2,
+                reinterpret_cast<void**>(text_svc_.GetAddressOf()))))
+            return;
+
+        // Enable colour emoji + colour font display through DirectWrite.
+        LRESULT lr = 0;
+        text_svc_->TxSendMessage(EM_SETTYPOGRAPHYOPTIONS,
+            TO_DEFAULTCOLOREMOJI | TO_DISPLAYFONTCOLOR,
+            TO_DEFAULTCOLOREMOJI | TO_DISPLAYFONTCOLOR, &lr);
+
+        // Notify text services of the initial client rect.
+        text_svc_->OnTxPropertyBitsChange(TXTBIT_CLIENTRECTCHANGE,
+                                           TXTBIT_CLIENTRECTCHANGE);
+
+        // Pre-build an IDWriteTextFormat for the placeholder cue string.
+        if (dwrite)
+        {
+            const float dip_size =
+                tesseract::Settings::instance().font_body * (96.f / 72.f);
+            dwrite->CreateTextFormat(L"Segoe UI Variable Text", nullptr,
+                DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL, dip_size, L"",
+                placeholder_fmt_.GetAddressOf());
+        }
+    }
+
+    ~Win32RichEditArea() override
+    {
+        // Release in strict order:
+        // 1. Text services holds a raw back-reference to us (ITextHost).
+        //    Destroying it first prevents further TxNotify/TxGetDC calls.
+        text_svc_.Reset();
+        // 2. D2D render target holds a reference to the HWND handle.
+        rt_.Reset();
+        // 3. Now it is safe to destroy the host window.
+        if (hwnd_)
+        {
+            DestroyWindow(hwnd_);
+            hwnd_ = nullptr;
+        }
+    }
+
+    // ── IUnknown ──────────────────────────────────────────────────────────
+    //
+    // Win32RichEditArea is owned by the caller (unique_ptr); ref counting is
+    // a no-op.  We respond to QI for ITextHost/ITextHost2 so the text
+    // services object can locate its host interface.
+
+    ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
+    ULONG STDMETHODCALLTYPE Release() override { return 1; }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
+    {
+        if (!ppv)
+            return E_POINTER;
+        if (riid == IID_IUnknown || IsEqualGUID(riid, kIID_ITextHost) ||
+            IsEqualGUID(riid, kIID_ITextHost2))
+        {
+            *ppv = static_cast<ITextHost2*>(this);
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    // ── ITextHost ─────────────────────────────────────────────────────────
+
+    HDC TxGetDC() override { return GetDC(hwnd_); }
+    INT TxReleaseDC(HDC hdc) override { return ReleaseDC(hwnd_, hdc); }
+
+    BOOL TxShowScrollBar(INT fnBar, BOOL fShow) override
+    {
+        (void)fnBar;
+        (void)fShow;
+        return FALSE;
+    }
+    BOOL TxEnableScrollBar(INT fuSBFlags, INT fuArrowflags) override
+    {
+        (void)fuSBFlags;
+        (void)fuArrowflags;
+        return FALSE;
+    }
+    BOOL TxSetScrollRange(INT fnBar, LONG nMinPos, INT nMaxPos,
+                          BOOL fRedraw) override
+    {
+        (void)fnBar;
+        (void)nMinPos;
+        (void)nMaxPos;
+        (void)fRedraw;
+        return FALSE;
+    }
+    BOOL TxSetScrollPos(INT fnBar, INT nPos, BOOL fRedraw) override
+    {
+        (void)fnBar;
+        (void)nPos;
+        (void)fRedraw;
+        return FALSE;
+    }
+
+    void TxInvalidateRect(LPCRECT prc, BOOL fMode) override
+    {
+        InvalidateRect(hwnd_, prc, fMode);
+    }
+    void TxViewChange(BOOL fUpdate) override
+    {
+        if (fUpdate)
+            UpdateWindow(hwnd_);
+    }
+
+    // In D2D mode (TXTBIT_D2DDWRITE) the caret is drawn by TxDrawD2D as a
+    // logical glyph, not as a Win32 system caret.  CreateCaret/ShowCaret/
+    // SetCaretPos would create a flashing GDI object that is invisible on the
+    // D2D surface.  Return success without touching the system caret; the
+    // actual caret paint happens in on_paint() → TxDrawD2D().
+    BOOL TxCreateCaret(HBITMAP, INT, INT) override { return TRUE; }
+    BOOL TxShowCaret(BOOL) override { return TRUE; }
+    BOOL TxSetCaretPos(INT, INT) override { return TRUE; }
+    BOOL TxSetTimer(UINT idTimer, UINT uTimeout) override
+    {
+        return SetTimer(hwnd_, idTimer, uTimeout, nullptr) != 0;
+    }
+    void TxKillTimer(UINT idTimer) override { KillTimer(hwnd_, idTimer); }
+
+    void TxScrollWindowEx(INT dx, INT dy, LPCRECT lprcScroll,
+                          LPCRECT lprcClip, HRGN hrgnUpdate,
+                          LPRECT lprcUpdate, UINT fuScroll) override
+    {
+        ScrollWindowEx(hwnd_, dx, dy, lprcScroll, lprcClip, hrgnUpdate,
+                       lprcUpdate, fuScroll);
+    }
+
+    void TxSetCapture(BOOL fCapture) override
+    {
+        if (fCapture)
+            SetCapture(hwnd_);
+        else
+            ReleaseCapture();
+    }
+    void TxSetFocus() override { SetFocus(hwnd_); }
+    void TxSetCursor(HCURSOR hcur, BOOL /*fText*/) override
+    {
+        SetCursor(hcur);
+    }
+    BOOL TxScreenToClient(LPPOINT lppt) override
+    {
+        return ScreenToClient(hwnd_, lppt);
+    }
+    BOOL TxClientToScreen(LPPOINT lppt) override
+    {
+        return ClientToScreen(hwnd_, lppt);
+    }
+
+    HRESULT TxActivate(LONG* plOldState) override
+    {
+        (void)plOldState;
+        return S_OK;
+    }
+    HRESULT TxDeactivate(LONG lNewState) override
+    {
+        (void)lNewState;
+        return S_OK;
+    }
+
+    HRESULT TxGetClientRect(LPRECT prc) override
+    {
+        GetClientRect(hwnd_, prc);
+        return S_OK;
+    }
+    HRESULT TxGetViewInset(LPRECT prc) override
+    {
+        // No internal padding; natural_height() adds 8 px externally.
+        SetRectEmpty(prc);
+        return S_OK;
+    }
+
+    HRESULT TxGetCharFormat(const CHARFORMATW** ppCF) override
+    {
+        *ppCF = reinterpret_cast<const CHARFORMATW*>(&char_fmt_);
+        return S_OK;
+    }
+    HRESULT TxGetParaFormat(const PARAFORMAT** ppPF) override
+    {
+        *ppPF = reinterpret_cast<const PARAFORMAT*>(&para_fmt_);
+        return S_OK;
+    }
+
+    COLORREF TxGetSysColor(int nIndex) override
+    {
+        // Map text foreground to the theme's text_primary colour so it tracks
+        // dark/light mode; fall back to system colours for everything else
+        // (selection highlight, etc.).
+        if (nIndex == COLOR_WINDOWTEXT && theme_)
+        {
+            const auto& c = theme_->palette.text_primary;
+            return RGB(c.r, c.g, c.b);
+        }
+        return GetSysColor(nIndex);
+    }
+
+    HRESULT TxGetBackStyle(TXTBACKSTYLE* pstyle) override
+    {
+        // We clear to compose_card_bg in on_paint() before TxDrawD2D, so
+        // the text services object renders transparently over our fill.
+        *pstyle = TXTBACK_TRANSPARENT;
+        return S_OK;
+    }
+    HRESULT TxGetMaxLength(DWORD* plength) override
+    {
+        *plength = INFINITE;
+        return S_OK;
+    }
+    HRESULT TxGetScrollBars(DWORD* pdwScrollBar) override
+    {
+        *pdwScrollBar = 0; // compose bar has no scrollbars; it auto-grows
+        return S_OK;
+    }
+    HRESULT TxGetPasswordChar(_Out_ TCHAR* pch) override
+    {
+        *pch = 0;
+        return S_FALSE;
+    }
+    HRESULT TxGetAcceleratorPos(LONG* pcp) override
+    {
+        *pcp = -1;
+        return S_FALSE;
+    }
+    HRESULT TxGetExtent(LPSIZEL /*lpExtent*/) override { return E_NOTIMPL; }
+
+    HRESULT OnTxCharFormatChange(const CHARFORMATW* /*pcf*/) override
+    {
+        return S_OK;
+    }
+    HRESULT OnTxParaFormatChange(const PARAFORMAT* /*ppf*/) override
+    {
+        return S_OK;
+    }
+
+    // CRITICAL: TXTBIT_D2DDWRITE switches the control's internal rendering
+    // from GDI/Uniscribe to D2D/DirectWrite.  Without this bit, colour emoji
+    // render as monochrome outlines.
+    HRESULT TxGetPropertyBits(DWORD dwMask, DWORD* pdwBits) override
+    {
+        constexpr DWORD kBits = TXTBIT_RICHTEXT | TXTBIT_MULTILINE |
+                                TXTBIT_WORDWRAP | TXTBIT_D2DDWRITE;
+        *pdwBits = kBits & dwMask;
+        return S_OK;
+    }
+
+    // EN_CHANGE fires synchronously inside TxSendMessage.  The
+    // suppress_changed_ guard is already set whenever we call EM_REPLACESEL
+    // from set_text / replace_range, so spurious on_changed_ calls are
+    // filtered inside notify_changed().
+    HRESULT TxNotify(DWORD iNotify, void* pv) override
+    {
+        (void)pv;
+        if (iNotify == EN_CHANGE)
+            notify_changed();
+        return S_OK;
+    }
+
+    HIMC TxImmGetContext() override { return ImmGetContext(hwnd_); }
+    void TxImmReleaseContext(HIMC himc) override
+    {
+        ImmReleaseContext(hwnd_, himc);
+    }
+    HRESULT TxGetSelectionBarWidth(LONG* pl) override
+    {
+        *pl = 0;
+        return S_OK;
+    }
+
+    // ── ITextHost2 ────────────────────────────────────────────────────────
+
+    BOOL TxIsDoubleClickPending() override { return FALSE; }
+
+    HRESULT TxGetWindow(HWND* phwnd) override
+    {
+        *phwnd = hwnd_;
+        return S_OK;
+    }
+    HRESULT TxSetForegroundWindow() override
+    {
+        SetForegroundWindow(hwnd_);
+        return S_OK;
+    }
+    HPALETTE TxGetPalette() override { return nullptr; }
+    HRESULT  TxGetEastAsianFlags(LONG* pFlags) override
+    {
+        (void)pFlags;
+        return E_NOTIMPL;
+    }
+    HCURSOR TxSetCursor2(HCURSOR hcur, BOOL /*bText*/) override
+    {
+        HCURSOR prev = GetCursor();
+        if (hcur)
+            SetCursor(hcur);
+        return prev;
+    }
+    // Called when text services is being destroyed.  Our destructor resets
+    // text_svc_ first, so by the time this fires we are already done with it.
+    void TxFreeTextServicesNotification() override {}
+
+    HRESULT TxGetEditStyle(DWORD /*dwItem*/, DWORD* pdwData) override
+    {
+        *pdwData = 0;
+        return S_OK;
+    }
+    HRESULT TxGetWindowStyles(DWORD* pdwStyle, DWORD* pdwExStyle) override
+    {
+        *pdwStyle   = hwnd_ ? static_cast<DWORD>(GetWindowLongW(hwnd_, GWL_STYLE))   : 0;
+        *pdwExStyle = hwnd_ ? static_cast<DWORD>(GetWindowLongW(hwnd_, GWL_EXSTYLE)) : 0;
+        return S_OK;
+    }
+    // TxShowDropCaret is the D2D-mode caret hook: the engine draws the caret
+    // inside TxDrawD2D and toggles it on each blink-timer tick.  Invalidate
+    // the rect so the next WM_PAINT picks up the new caret state.
+    HRESULT TxShowDropCaret(BOOL /*fShow*/, HDC /*hdc*/,
+                            LPCRECT prc) override
+    {
+        InvalidateRect(hwnd_, prc, FALSE);
+        return S_OK;
+    }
+    HRESULT TxDestroyCaret() override { return S_OK; }
+    HRESULT TxGetHorzExtent(LONG* plHorzExtent) override
+    {
+        RECT r{};
+        GetClientRect(hwnd_, &r);
+        *plHorzExtent = r.right - r.left;
+        return S_OK;
+    }
+
+    // ── Win32TextAreaBase ─────────────────────────────────────────────────
+
+    void notify_changed() override
+    {
+        if (suppress_changed_)
+            return;
+        std::string t = text();
+        if (on_changed_)
+            on_changed_(t);
+        float h = natural_height();
+        if (h != last_height_ && on_height_changed_)
+        {
+            last_height_ = h;
+            on_height_changed_(h);
+        }
+    }
+    int  ctrl_id() const override { return id_; }
+    HWND hwnd()    const override { return hwnd_; }
+
+    // ── NativeTextArea ────────────────────────────────────────────────────
+
+    void set_rect(Rect r) override
+    {
+        if (!hwnd_)
+            return;
+        if (r.x == last_rect_.x && r.y == last_rect_.y &&
+            r.w == last_rect_.w && r.h == last_rect_.h)
+            return;
+        last_rect_ = r;
+        // Mirror Win32NativeTextArea::set_rect: size the HWND to the natural
+        // text height and centre it vertically inside `r` so the parent
+        // D2D surface can draw the card border in the space above and below.
+        // If content overflows the envelope, fill the full height instead.
+        const int rh  = static_cast<int>(std::round(r.h));
+        const int nh  = static_cast<int>(natural_height());
+        const int h   = (nh > 0 && nh < rh) ? nh : rh;
+        const int y   = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
+        SetWindowPos(hwnd_, nullptr,
+                     static_cast<int>(std::floor(r.x)), y,
+                     static_cast<int>(std::round(r.w)), h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    void set_text(std::string text) override
+    {
+        if (!text_svc_)
+            return;
+        suppress_changed_ = true;
+        std::wstring w = utf8_to_wide(text);
+        LRESULT lr = 0;
+        text_svc_->TxSendMessage(WM_SETTEXT, 0,
+                                  reinterpret_cast<LPARAM>(w.c_str()), &lr);
+        suppress_changed_ = false;
+        mentions_.clear();
+        float h = natural_height();
+        if (h != last_height_ && on_height_changed_)
+        {
+            last_height_ = h;
+            on_height_changed_(h);
+        }
+    }
+
+    std::string text() const override
+    {
+        if (!text_svc_)
+            return {};
+        LRESULT len = 0;
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxSendMessage(WM_GETTEXTLENGTH, 0, 0, &len);
+        if (len <= 0)
+            return {};
+        std::wstring w(static_cast<std::size_t>(len), L'\0');
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxSendMessage(WM_GETTEXT, static_cast<WPARAM>(len + 1),
+                            reinterpret_cast<LPARAM>(w.data()), &len);
+        std::string s = wide_to_utf8(w);
+        // RichEdit uses \r as paragraph separator; normalise to \n.
+        for (auto& c : s)
+            if (c == '\r')
+                c = '\n';
+        return s;
+    }
+
+    void set_placeholder(std::string text) override
+    {
+        placeholder_ = utf8_to_wide(text);
+        if (hwnd_)
+            InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+
+    void set_focused(bool focused) override
+    {
+        if (hwnd_ && focused)
+            SetFocus(hwnd_);
+    }
+
+    void set_visible(bool visible) override
+    {
+        visible_ = visible;
+        if (hwnd_)
+            ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
+    }
+    bool visible() const override { return visible_; }
+
+    void set_enabled(bool enabled) override
+    {
+        if (hwnd_)
+            EnableWindow(hwnd_, enabled ? TRUE : FALSE);
+    }
+
+    float natural_height() const override
+    {
+        if (!text_svc_ || !hwnd_)
+            return 0.f;
+        RECT client{};
+        GetClientRect(hwnd_, &client);
+        int w = client.right - client.left;
+        if (w <= 0)
+            return 0.f;
+
+        HDC hdc  = GetDC(hwnd_);
+        int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+        int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
+        // Width in HIMETRIC (1 inch = 2540 HM, LOGPIXELSX px/inch).
+        SIZEL extent{MulDiv(w, 2540, dpiX), 0x7FFFFFFF};
+        LONG  out_w = 0, out_h = 0;
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxGetNaturalSize(DVASPECT_CONTENT, hdc, nullptr, nullptr,
+                               TXTNS_FITTOCONTENT, &extent, &out_w, &out_h);
+        ReleaseDC(hwnd_, hdc);
+        // Convert HIMETRIC height back to pixels; add 4 px top + 4 px bottom
+        // padding (mirrors the +8 px in Win32NativeTextArea).
+        float px_h = static_cast<float>(
+            MulDiv(static_cast<int>(out_h), dpiY, 2540));
+        return px_h + 8.f;
+    }
+
+    void set_on_changed(std::function<void(const std::string&)> cb) override
+    {
+        on_changed_ = std::move(cb);
+    }
+    void set_on_submit(std::function<void()> cb) override
+    {
+        on_submit_ = std::move(cb);
+    }
+    void set_on_height_changed(std::function<void(float)> cb) override
+    {
+        on_height_changed_ = std::move(cb);
+    }
+    void set_on_image_paste(ImagePasteHandler cb) override
+    {
+        on_image_paste_ = std::move(cb);
+    }
+
+    void insert_at_cursor(std::string text) override
+    {
+        if (!text_svc_)
+            return;
+        std::wstring w = utf8_to_wide(text);
+        LRESULT lr = 0;
+        text_svc_->TxSendMessage(EM_REPLACESEL, TRUE,
+                                  reinterpret_cast<LPARAM>(w.c_str()), &lr);
+    }
+
+    tk::Rect cursor_rect() const override
+    {
+        if (!text_svc_ || !hwnd_)
+            return {};
+        LRESULT sel_start = 0;
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxSendMessage(EM_GETSEL,
+                            reinterpret_cast<WPARAM>(&sel_start), 0, nullptr);
+
+        // RichEdit EM_POSFROMCHAR: wParam = POINTL*, lParam = char index.
+        POINTL pt{};
+        LRESULT r = 0;
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxSendMessage(EM_POSFROMCHAR,
+                            reinterpret_cast<WPARAM>(&pt),
+                            static_cast<LPARAM>(sel_start), &r);
+
+        POINT win_pt{static_cast<LONG>(pt.x), static_cast<LONG>(pt.y)};
+        MapWindowPoints(hwnd_, GetParent(hwnd_), &win_pt, 1);
+
+        // Estimate line height from the char format (twips → pixels).
+        HDC hdc  = GetDC(hwnd_);
+        int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
+        ReleaseDC(hwnd_, hdc);
+        float line_h =
+            static_cast<float>(char_fmt_.yHeight) / 20.f * (dpiY / 72.f);
+
+        return {static_cast<float>(win_pt.x), static_cast<float>(win_pt.y),
+                1.f, line_h};
+    }
+
+    void replace_range(int start, int end, std::string utf8_text) override
+    {
+        if (!text_svc_)
+            return;
+        std::string cur = text();
+        int ws = utf8_byte_to_utf16_len(cur, start);
+        int we = utf8_byte_to_utf16_len(cur, end);
+        suppress_changed_ = true;
+        LRESULT lr = 0;
+        text_svc_->TxSendMessage(EM_SETSEL, static_cast<WPARAM>(ws),
+                                  static_cast<LPARAM>(we), &lr);
+        std::wstring wide = utf8_to_wide(utf8_text);
+        text_svc_->TxSendMessage(EM_REPLACESEL, TRUE,
+                                  reinterpret_cast<LPARAM>(wide.c_str()), &lr);
+        suppress_changed_ = false;
+        if (on_changed_)
+            on_changed_(text());
+    }
+
+    void set_on_popup_nav(std::function<bool(NavKey)> fn) override
+    {
+        popup_nav_ = std::move(fn);
+    }
+    void set_on_edit_last(std::function<bool()> fn) override
+    {
+        on_edit_last_ = std::move(fn);
+    }
+
+    int cursor_byte_pos() const override
+    {
+        if (!text_svc_)
+            return 0;
+        LRESULT sel_end = 0;
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxSendMessage(EM_GETSEL, 0,
+                            reinterpret_cast<LPARAM>(&sel_end), nullptr);
+        std::string t = text();
+        std::wstring w = utf8_to_wide(t);
+        int caret = static_cast<int>(
+            std::min(static_cast<LRESULT>(w.size()), sel_end));
+        return WideCharToMultiByte(CP_UTF8, 0, w.c_str(), caret,
+                                   nullptr, 0, nullptr, nullptr);
+    }
+
+    void insert_mention(int start, int end, const std::string& user_id,
+                        const std::string& display_name, bool is_room) override
+    {
+        std::string visual = is_room ? "@room" : ("@" + display_name);
+        replace_range(start, end, visual + " ");
+        mentions_.push_back({visual, user_id, display_name, is_room});
+    }
+
+    std::vector<tesseract::MentionSeg> mention_draft() const override
+    {
+        std::vector<tesseract::MentionSeg> segs;
+        std::string t = text();
+        std::size_t pos = 0;
+        auto push_text = [&](const std::string& s)
+        {
+            if (!s.empty())
+            {
+                tesseract::MentionSeg seg;
+                seg.kind = tesseract::MentionSeg::Kind::Text;
+                seg.text = s;
+                segs.push_back(std::move(seg));
+            }
+        };
+        for (const auto& e : mentions_)
+        {
+            std::size_t at = t.find(e.visual, pos);
+            if (at == std::string::npos)
+                continue;
+            push_text(t.substr(pos, at - pos));
+            tesseract::MentionSeg seg;
+            seg.kind         = tesseract::MentionSeg::Kind::Mention;
+            seg.user_id      = e.user_id;
+            seg.display_name = e.display_name;
+            seg.is_room      = e.is_room;
+            segs.push_back(std::move(seg));
+            pos = at + e.visual.size();
+        }
+        push_text(t.substr(pos));
+        return segs;
+    }
+
+    void set_mention_colors(Color, Color) override {}
+
+private:
+    // ── D2D render target helpers ─────────────────────────────────────────
+
+    bool is_text_empty() const
+    {
+        if (!text_svc_)
+            return true;
+        LRESULT lr = 0;
+        const_cast<ITextServices2*>(text_svc_.Get())
+            ->TxSendMessage(WM_GETTEXTLENGTH, 0, 0, &lr);
+        return lr == 0;
+    }
+
+    void ensure_render_target(int w, int h)
+    {
+        if (rt_)
+        {
+            D2D1_SIZE_U sz = rt_->GetPixelSize();
+            if (static_cast<int>(sz.width) != w ||
+                static_cast<int>(sz.height) != h)
+                rt_->Resize(D2D1::SizeU(w, h));
+            return;
+        }
+        if (!d2d_factory_ || !hwnd_ || w <= 0 || h <= 0)
+            return;
+        D2D1_RENDER_TARGET_PROPERTIES rtp = D2D1::RenderTargetProperties();
+        D2D1_HWND_RENDER_TARGET_PROPERTIES htp =
+            D2D1::HwndRenderTargetProperties(hwnd_, D2D1::SizeU(w, h));
+        d2d_factory_->CreateHwndRenderTarget(&rtp, &htp,
+                                              rt_.GetAddressOf());
+    }
+
+    void on_paint()
+    {
+        RECT client{};
+        GetClientRect(hwnd_, &client);
+        int w = client.right - client.left;
+        int h = client.bottom - client.top;
+        ensure_render_target(w, h);
+        if (!rt_ || !text_svc_)
+            return;
+
+        const tk::Color bg = theme_ ? theme_->palette.compose_card_bg
+                                     : tk::Color{255, 255, 255, 255};
+
+        rt_->BeginDraw();
+        rt_->Clear(D2D1::ColorF(bg.r / 255.f, bg.g / 255.f, bg.b / 255.f));
+
+        // TxDrawD2D expects LPCRECTL; RECTL and RECT are layout-identical.
+        RECTL bounds{client.left, client.top, client.right, client.bottom};
+        text_svc_->TxDrawD2D(rt_.Get(), &bounds, nullptr, TXTVIEW_ACTIVE);
+
+        // Placeholder: drawn when the control is empty and not focused.
+        if (!placeholder_.empty() && is_text_empty() && GetFocus() != hwnd_)
+        {
+            using Microsoft::WRL::ComPtr;
+            ComPtr<ID2D1SolidColorBrush> brush;
+            rt_->CreateSolidColorBrush(
+                D2D1::ColorF(0.5f, 0.5f, 0.5f, 0.8f),
+                brush.GetAddressOf());
+            if (brush && placeholder_fmt_)
+            {
+                D2D1_RECT_F r = D2D1::RectF(
+                    static_cast<float>(client.left) + 8.f,
+                    static_cast<float>(client.top) + 4.f,
+                    static_cast<float>(client.right) - 8.f,
+                    static_cast<float>(client.bottom) - 4.f);
+                rt_->DrawText(placeholder_.c_str(),
+                              static_cast<UINT32>(placeholder_.size()),
+                              placeholder_fmt_.Get(), r, brush.Get());
+            }
+        }
+
+        HRESULT hr = rt_->EndDraw();
+        if (hr == D2DERR_RECREATE_TARGET)
+        {
+            rt_.Reset();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        }
+    }
+
+    void on_size(int w, int h)
+    {
+        if (rt_ && w > 0 && h > 0)
+            rt_->Resize(D2D1::SizeU(w, h));
+        if (text_svc_)
+            text_svc_->OnTxPropertyBitsChange(TXTBIT_CLIENTRECTCHANGE,
+                                               TXTBIT_CLIENTRECTCHANGE);
+    }
+
+    // ── Host WndProc ──────────────────────────────────────────────────────
+
+    static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
+                                     LPARAM lParam)
+    {
+        Win32RichEditArea* self = reinterpret_cast<Win32RichEditArea*>(
+            GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+        switch (msg)
+        {
+        case WM_NCCREATE:
+        {
+            auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA,
+                              reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+            return TRUE;
+        }
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_NCPAINT:
+            return 0;
+        case WM_PAINT:
+        {
+            PAINTSTRUCT ps;
+            BeginPaint(hwnd, &ps);
+            if (self)
+                self->on_paint();
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        case WM_SIZE:
+            if (self)
+                self->on_size(LOWORD(lParam), HIWORD(lParam));
+            return 0;
+        case WM_GETDLGCODE:
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                return r | DLGC_WANTALLKEYS;
+            }
+            return DLGC_WANTALLKEYS;
+
+        case WM_KEYDOWN:
+        {
+            if (!self)
+                break;
+            // 1. Popup navigation (highest priority).
+            if (self->popup_nav_)
+            {
+                NativeTextArea::NavKey nk{};
+                bool is_nav = true;
+                switch (wParam)
+                {
+                case VK_UP:
+                    nk = NativeTextArea::NavKey::Up;
+                    break;
+                case VK_DOWN:
+                    nk = NativeTextArea::NavKey::Down;
+                    break;
+                case VK_ESCAPE:
+                    nk = NativeTextArea::NavKey::Escape;
+                    break;
+                case VK_TAB:
+                    nk = (GetKeyState(VK_SHIFT) & 0x8000)
+                             ? NativeTextArea::NavKey::ShiftTab
+                             : NativeTextArea::NavKey::Tab;
+                    break;
+                default:
+                    is_nav = false;
+                    break;
+                }
+                // Copy to guard against re-entrancy: Tab → replace_range →
+                // on_changed_ → set_on_popup_nav(nullptr) zeros the closure.
+                auto nav = self->popup_nav_;
+                if (is_nav && nav && nav(nk))
+                    return 0;
+            }
+            // 2. Up in an empty composer → edit last own message.
+            if (wParam == VK_UP && self->on_edit_last_ &&
+                self->is_text_empty())
+            {
+                if (self->on_edit_last_())
+                    return 0;
+            }
+            // 3. Enter without Shift → submit.
+            if (wParam == VK_RETURN && !(GetKeyState(VK_SHIFT) & 0x8000))
+            {
+                if (self->on_submit_)
+                    self->on_submit_();
+                // Drain the queued WM_CHAR('\r') so it doesn't land in the
+                // cleared field after the callback resets the text.
+                MSG cr{};
+                PeekMessage(&cr, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE);
+                return 0;
+            }
+            // Fall through to text services.
+            if (self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                return r;
+            }
+            break;
+        }
+
+        case WM_CHAR:
+            // Swallow Tab while a popup nav hook is live (TranslateMessage
+            // queues WM_CHAR before WM_KEYDOWN returns, so we eat it here to
+            // prevent a literal tab from being inserted and closing the popup).
+            if (self && self->popup_nav_ && wParam == VK_TAB)
+                return 0;
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                return r;
+            }
+            break;
+
+        case WM_PASTE:
+            // Image paste: intercept before the default text paste path.
+            if (self && self->on_image_paste_ && self->wic_ &&
+                (IsClipboardFormatAvailable(CF_DIBV5) ||
+                 IsClipboardFormatAvailable(CF_DIB)))
+            {
+                std::vector<std::uint8_t> bytes;
+                if (clipboard_image_to_png(self->wic_, hwnd, bytes))
+                {
+                    self->on_image_paste_(std::move(bytes), "image/png");
+                    return 0;
+                }
+            }
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                return r;
+            }
+            break;
+
+        case WM_SETFOCUS:
+        case WM_KILLFOCUS:
+            if (self)
+            {
+                if (!self->placeholder_.empty())
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                if (self->text_svc_)
+                {
+                    LRESULT r = 0;
+                    self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                }
+            }
+            return 0;
+
+        case WM_TIMER:
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+            }
+            return 0;
+
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_LBUTTONDBLCLK:
+        case WM_MOUSEMOVE:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP:
+        case WM_MOUSEWHEEL:
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                return r;
+            }
+            break;
+
+        case WM_IME_SETCONTEXT:
+        case WM_IME_STARTCOMPOSITION:
+        case WM_IME_ENDCOMPOSITION:
+        case WM_IME_COMPOSITION:
+        case WM_IME_NOTIFY:
+        case WM_IME_CHAR:
+            if (self && self->text_svc_)
+            {
+                LRESULT r = 0;
+                self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                return r;
+            }
+            break;
+
+        case WM_DESTROY:
+            return 0;
+
+        default:
+            break;
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    // ── Members ───────────────────────────────────────────────────────────
+
+    HWND parent_ = nullptr;
+    HWND hwnd_   = nullptr; // host HWND (class "tk_re_host")
+    int  id_     = 0;
+    bool suppress_changed_ = false;
+    bool visible_          = true;
+    float last_height_     = 0.f;
+    Rect  last_rect_       = {-1.f, -1.f, -1.f, -1.f};
+
+    IWICImagingFactory* wic_         = nullptr; // borrowed; lifetime ≥ this
+    ID2D1Factory1*      d2d_factory_ = nullptr; // borrowed; lifetime ≥ this
+    const Theme*        theme_       = nullptr; // borrowed; lifetime ≥ this
+
+    std::wstring placeholder_; // UTF-16 cue banner drawn in on_paint()
+
+    Microsoft::WRL::ComPtr<ITextServices2>        text_svc_;
+    Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> rt_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat>     placeholder_fmt_;
+
+    CHARFORMAT2W char_fmt_{};
+    PARAFORMAT2  para_fmt_{};
+
+    std::function<void(const std::string&)>     on_changed_;
+    std::function<void()>                       on_submit_;
+    std::function<void(float)>                  on_height_changed_;
+    ImagePasteHandler                           on_image_paste_;
+    std::function<bool(NativeTextArea::NavKey)> popup_nav_;
+    std::function<bool()>                       on_edit_last_;
+
+    struct MentionEntry
+    {
+        std::string visual, user_id, display_name;
+        bool is_room;
+    };
+    std::vector<MentionEntry> mentions_;
+};
+
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can
 // call it without a separate header (mirrors the qt6 / gtk / macos pattern).
 std::unique_ptr<tk::AudioPlayer>
@@ -1215,8 +2307,9 @@ public:
     std::unique_ptr<NativeTextArea> make_text_area() override
     {
         int id = next_ctrl_id_++;
-        auto area = std::make_unique<Win32NativeTextArea>(
-            hwnd_, id, d2d::factories(backend_singleton()).wic);
+        auto fac = d2d::factories(backend_singleton());
+        auto area = std::make_unique<Win32RichEditArea>(
+            hwnd_, id, fac.wic, fac.d2d, fac.dwrite, theme_);
         areas_by_id_.emplace(id, area.get());
         return area;
     }
@@ -1456,7 +2549,7 @@ public:
         auto it = fields_by_id_.find(id);
         return it == fields_by_id_.end() ? nullptr : it->second;
     }
-    Win32NativeTextArea* area_by_id(int id)
+    Win32TextAreaBase* area_by_id(int id)
     {
         auto it = areas_by_id_.find(id);
         return it == areas_by_id_.end() ? nullptr : it->second;
@@ -1745,7 +2838,7 @@ private:
 
     int next_ctrl_id_ = 0x4000;
     std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
-    std::unordered_map<int, Win32NativeTextArea*> areas_by_id_;
+    std::unordered_map<int, Win32TextAreaBase*> areas_by_id_;
 
 public:
     void set_on_file_drop(FileDropHandler cb)

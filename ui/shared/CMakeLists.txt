@@ -242,6 +242,7 @@ if(TESSERACT_UI STREQUAL "win32")
         ole32
         comctl32         # SetWindowSubclass, EM_SETCUEBANNER, etc.
         user32
+        imm32            # ImmGetContext/ImmReleaseContext — Win32RichEditArea IME support
         mf               # Media Foundation: IMFMediaEngine (audio_win32.cpp)
         mfplat
         mfuuid
