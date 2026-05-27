@@ -43,7 +43,7 @@ TEST_CASE("find_existing_dm: returns matching direct room id",
           "!dm-bob:example.org");
 }
 
-TEST_CASE("find_existing_dm: no DM with that user → empty",
+TEST_CASE("find_existing_dm: no DM with that user -> empty",
           "[shell][find_existing_dm]")
 {
     std::vector<RoomInfo> rooms = {
@@ -76,7 +76,7 @@ TEST_CASE("find_existing_dm: non-direct room with same counterpart is skipped",
     CHECK(ShellBase::find_existing_dm(rooms, "@alice:example.org").empty());
 }
 
-TEST_CASE("find_existing_dm: empty room list → empty",
+TEST_CASE("find_existing_dm: empty room list -> empty",
           "[shell][find_existing_dm]")
 {
     CHECK(ShellBase::find_existing_dm({}, "@alice:example.org").empty());

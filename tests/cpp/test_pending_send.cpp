@@ -97,7 +97,7 @@ TEST_CASE("make_row_data maps empty pending_state to PendingState::None",
 //  update_message: Sending → None fires on_just_sent only for own messages
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("update_message fires on_just_sent on Sending→None for own message, "
+TEST_CASE("update_message fires on_just_sent on Sending->None for own message, "
           "not for non-own",
           "[ui][pending]")
 {

@@ -22,7 +22,7 @@ RoomInfo room_with(std::uint64_t notification, std::uint64_t highlight)
 }
 } // namespace
 
-TEST_CASE("compute_tray_unread: empty map → no unread, no highlight",
+TEST_CASE("compute_tray_unread: empty map -> no unread, no highlight",
           "[shell][tray_unread]")
 {
     auto [u, h] = ShellBase::compute_tray_unread({});
@@ -30,7 +30,7 @@ TEST_CASE("compute_tray_unread: empty map → no unread, no highlight",
     CHECK_FALSE(h);
 }
 
-TEST_CASE("compute_tray_unread: all zero-count rooms → no indicator",
+TEST_CASE("compute_tray_unread: all zero-count rooms -> no indicator",
           "[shell][tray_unread]")
 {
     PerAccount by_account;
