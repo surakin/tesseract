@@ -20,11 +20,45 @@ const char* strip_prefix(const std::string& s, const char* prefix)
 
 }  // namespace
 
+const std::vector<SlashCommandDescriptor>& available_commands()
+{
+    static const std::vector<SlashCommandDescriptor> kCommands = {
+        {"me",    "<action>", "Send an action message"},
+        {"shrug", "",         "Append \xC2\xAF\\_(ツ)_/\xC2\xAF"},
+    };
+    return kCommands;
+}
+
 Result dispatch_compose_send(Client& client,
                              const std::string& room_id,
                              const std::string& body,
                              const std::string& formatted_body)
 {
+    // `/shrug` (no args) — append the shrug emoticon to whatever the user
+    // typed in front of the slash. With no leading text it sends just the
+    // emoticon. Sent as plain text via the normal send_message path so it
+    // threads / replies correctly.
+    {
+        const char* suffix = nullptr;
+        if (body == "/shrug")
+        {
+            suffix = "";
+        }
+        else if (const char* s = strip_prefix(body, "/shrug "))
+        {
+            suffix = s;
+        }
+        if (suffix)
+        {
+            std::string text = "\xC2\xAF\\_(\xE3\x83\x84)_/\xC2\xAF";
+            if (*suffix != '\0')
+            {
+                text = std::string(suffix) + " " + text;
+            }
+            return client.send_message(room_id, text, "");
+        }
+    }
+
     // `/me <action>` → m.emote. Match is case-sensitive and requires a space
     // after `me` (matching Element / other clients); typing `/menu` is
     // therefore sent as plain text.
