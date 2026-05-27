@@ -3,6 +3,7 @@
 #include "views/BrandView.h"
 #include "SettingsWidget.h"
 #include "LinuxScreenLockGtk.h"
+#include "app/SlashCommands.h"
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
@@ -817,10 +818,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             {
                 return;
             }
-            auto res = msg.formatted_body.empty()
-                           ? client_->send_message(current_room_id_, msg.body)
-                           : client_->send_message(current_room_id_, msg.body,
-                                                   msg.formatted_body);
+            auto res = tesseract::dispatch_compose_send(
+                *client_, current_room_id_, msg.body, msg.formatted_body);
             if (res)
             {
                 if (room_text_area_)

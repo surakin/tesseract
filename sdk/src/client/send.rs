@@ -408,6 +408,57 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Send an `m.emote` (the `/me` slash command). Same code path as
+    /// `send_message` — including derive_mentions, live-timeline routing, and
+    /// fallback to `Room::send` when the room is not subscribed — but the
+    /// `RoomMessageEventContent` carries an `m.emote` msgtype instead of
+    /// `m.text`. Callers strip the `/me ` prefix before invoking this.
+    #[cfg(not(test))]
+    pub fn send_emote(&mut self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
+        use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let (mentions, html) = derive_mentions(formatted_body);
+        let mut content = if html.is_empty() {
+            RoomMessageEventContent::emote_plain(body)
+        } else {
+            RoomMessageEventContent::emote_html(body, &html)
+        };
+        content.mentions = mentions;
+        {
+            let maybe_tl = {
+                let guard = self.timelines.read().unwrap();
+                guard.get(&room_id).map(|h| h.timeline.clone())
+            };
+            if let Some(timeline) = maybe_tl {
+                return match self
+                    .rt
+                    .block_on(async move { timeline.send(content.into()).await })
+                {
+                    Ok(_) => ok(""),
+                    Err(e) => err(e.to_string()),
+                };
+            }
+        }
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        match self.rt.block_on(async move { room.send(content).await }) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_emote(&mut self, _room_id: &str, _body: &str, _formatted_body: &str) -> OpResult {
+        err("not logged in")
+    }
+
     #[cfg(not(test))]
     pub fn retry_send(&mut self, room_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {

@@ -875,6 +875,17 @@ pub mod ffi {
             formatted_body: &str,
         ) -> OpResult;
 
+        /// Send an `m.emote` message (the `/me` slash command). Same arguments
+        /// and semantics as `send_message` but the event carries an `m.emote`
+        /// msgtype. Callers are expected to have already stripped the `/me `
+        /// prefix from `body` / `formatted_body`.
+        fn send_emote(
+            self: &mut ClientFfi,
+            room_id: &str,
+            body: &str,
+            formatted_body: &str,
+        ) -> OpResult;
+
         /// Re-enable the send queue for `room_id` after a recoverable failure.
         /// The SDK automatically retries all pending sends.
         fn retry_send(self: &mut ClientFfi, room_id: &str) -> OpResult;

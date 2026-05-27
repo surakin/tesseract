@@ -6,6 +6,7 @@
 #include "StickerPicker.h"
 #include "JoinRoomDialog.h"
 #include "LinuxScreenLockQt.h"
+#include "app/SlashCommands.h"
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
@@ -656,10 +657,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 return;
             }
-            auto res = msg.formatted_body.empty()
-                           ? client_->send_message(current_room_id_, msg.body)
-                           : client_->send_message(current_room_id_, msg.body,
-                                                   msg.formatted_body);
+            auto res = tesseract::dispatch_compose_send(
+                *client_, current_room_id_, msg.body, msg.formatted_body);
             if (res)
             {
                 if (roomTextArea_)

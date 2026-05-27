@@ -313,6 +313,13 @@ Result Client::send_message(const std::string& room_id, const std::string& body,
         room_id, body, derive_formatted(body, formatted_body)));
 }
 
+Result Client::send_emote(const std::string& room_id, const std::string& body,
+                          const std::string& formatted_body)
+{
+    return from_ffi(impl_->ffi->send_emote(
+        room_id, body, derive_formatted(body, formatted_body)));
+}
+
 Result Client::retry_send(const std::string& room_id)
 {
     return from_ffi(impl_->ffi->retry_send(room_id));

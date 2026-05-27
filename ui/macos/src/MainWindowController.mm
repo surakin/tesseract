@@ -15,6 +15,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
+#include "app/SlashCommands.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
 #include "tk/host.h"
@@ -1966,13 +1967,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            auto res =
-                msg.formatted_body.empty()
-                    ? s->_shell->client_->send_message(
-                          s->_shell->current_room_id_, msg.body)
-                    : s->_shell->client_->send_message(
-                          s->_shell->current_room_id_, msg.body,
-                          msg.formatted_body);
+            auto res = tesseract::dispatch_compose_send(
+                *s->_shell->client_, s->_shell->current_room_id_,
+                msg.body, msg.formatted_body);
             if (res)
             {
                 if (s->_roomTextArea)

@@ -18,6 +18,8 @@ set(_tk_sources
     app/SettingsController.cpp
     app/PresenceTracker.h
     app/PresenceTracker.cpp
+    app/SlashCommands.h
+    app/SlashCommands.cpp
     tk/audio.h
     tk/audio_capture.h
     tk/video.h

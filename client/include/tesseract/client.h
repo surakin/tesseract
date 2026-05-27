@@ -303,6 +303,13 @@ public:
     Result send_message(const std::string& room_id, const std::string& body,
                         const std::string& formatted_body = "");
 
+    /// Send an `m.emote` message (the `/me` slash command). Same arguments
+    /// and semantics as `send_message` but the event carries an `m.emote`
+    /// msgtype. Callers are expected to have already stripped the `/me `
+    /// prefix from `body` / `formatted_body`.
+    Result send_emote(const std::string& room_id, const std::string& body,
+                      const std::string& formatted_body = "");
+
     /// Re-enable the send queue for `room_id` after a recoverable failure.
     Result retry_send(const std::string& room_id);
 

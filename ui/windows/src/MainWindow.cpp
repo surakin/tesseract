@@ -8,6 +8,7 @@
 #include "TextRenderer.h"
 #include "Theme.h"
 #include "resource.h"
+#include "app/SlashCommands.h"
 
 #include <thread>
 
@@ -1402,10 +1403,8 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
-            auto res = msg.formatted_body.empty()
-                           ? client_->send_message(current_room_id_, msg.body)
-                           : client_->send_message(current_room_id_, msg.body,
-                                                   msg.formatted_body);
+            auto res = tesseract::dispatch_compose_send(
+                *client_, current_room_id_, msg.body, msg.formatted_body);
             if (res)
             {
                 if (room_text_area_)

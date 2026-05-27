@@ -1,5 +1,6 @@
 #include "app/RoomWindowBase.h"
 #include "app/ShellBase.h"
+#include "app/SlashCommands.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
 #include "views/text_util.h"
@@ -449,7 +450,7 @@ void RoomWindowBase::send_message_(const std::string& body)
     {
         return;
     }
-    shell_->client_->send_message(room_id_, body);
+    tesseract::dispatch_compose_send(*shell_->client_, room_id_, body, "");
 }
 
 tesseract::Client* RoomWindowBase::shell_client_() const
@@ -464,14 +465,8 @@ void RoomWindowBase::send_message_(const std::string& body,
     {
         return;
     }
-    if (formatted_body.empty())
-    {
-        shell_->client_->send_message(room_id_, body);
-    }
-    else
-    {
-        shell_->client_->send_message(room_id_, body, formatted_body);
-    }
+    tesseract::dispatch_compose_send(
+        *shell_->client_, room_id_, body, formatted_body);
 }
 
 void RoomWindowBase::send_reply_(const std::string& reply_event_id,
