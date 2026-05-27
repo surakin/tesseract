@@ -7,7 +7,7 @@
 - [x] Room list: last-message preview + last-activity sort
 - [ ] Room list: unread count badge
 - [ ] Room list: DM rooms show the other user's avatar
-- [ ] ComposeBar: `/` slash-command hint popup
+- [x] ComposeBar: `/` slash-command hint popup
 - [x] ComposeBar: send typing indicator to the room (`m.typing`)
 - [x] ComposeBar: placeholder label for GTK4 + macOS NativeTextArea (GtkTextView / NSTextView have no built-in placeholder)
 
