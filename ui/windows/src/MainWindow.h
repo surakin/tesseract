@@ -37,6 +37,8 @@ using std::min;
 #include "views/ShortcodePopup.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
+#include "views/SlashCommandEngine.h"
+#include "views/SlashCommandPopup.h"
 
 #include "views/AccountPicker.h"
 #include "views/SettingsView.h"
@@ -340,6 +342,22 @@ private:
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     std::unique_ptr<tk::NativeTextField> recovery_key_field_;
+
+    // ── Slash-command popup ───────────────────────────────────────────────
+    tesseract::views::SlashCommandEngine slash_engine_;
+
+    HWND                                  slash_popup_hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface>   slash_popup_surface_;
+    tesseract::views::SlashCommandPopup*  slash_popup_widget_ = nullptr;
+
+    void show_slash_popup_(
+        const std::vector<tesseract::views::SlashCommandSuggestion>& items,
+        tk::Rect cursor_rect);
+    void hide_slash_popup_();
+    bool slash_popup_visible_() const
+    {
+        return slash_popup_hwnd_ && IsWindowVisible(slash_popup_hwnd_);
+    }
 
     // ── Shortcode popup ───────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;

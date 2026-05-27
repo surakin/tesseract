@@ -30,6 +30,8 @@
 #include "views/ShortcodePopup.h"
 #include "views/MentionEngine.h"
 #include "views/MentionPopup.h"
+#include "views/SlashCommandEngine.h"
+#include "views/SlashCommandPopup.h"
 
 #include <atomic>
 #include <filesystem>
@@ -379,6 +381,22 @@ private:
     // ~60 Hz and calls anim_cache_.advance(); a true return triggers repaint.
     QTimer* tk_anim_timer_ = nullptr;
     QTimer* presence_tick_timer_ = nullptr;
+
+    // ── Slash-command popup ──────────────────────────────────────────────────
+    tesseract::views::SlashCommandEngine  slash_engine_;
+
+    QWidget*                              slash_popup_frame_   = nullptr;
+    std::unique_ptr<tk::qt6::Surface>     slash_popup_surface_ = nullptr;
+    tesseract::views::SlashCommandPopup*  slash_popup_widget_  = nullptr;
+
+    void show_slash_popup_(
+        const std::vector<tesseract::views::SlashCommandSuggestion>& items,
+        tk::Rect cursor_local);
+    void hide_slash_popup_();
+    bool slash_popup_visible_() const
+    {
+        return slash_popup_frame_ && slash_popup_frame_->isVisible();
+    }
 
     // ── Shortcode popup ──────────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;

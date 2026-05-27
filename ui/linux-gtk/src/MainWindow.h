@@ -29,6 +29,8 @@
 #include "views/ShortcodePopup.h"
 #include "views/MentionEngine.h"
 #include "views/MentionPopup.h"
+#include "views/SlashCommandEngine.h"
+#include "views/SlashCommandPopup.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -285,6 +287,22 @@ private:
     bool shortcode_popup_visible_() const
     {
         return shortcode_popover_ && gtk_widget_get_visible(shortcode_popover_);
+    }
+
+    // ── Slash-command popup ───────────────────────────────────────────────
+    tesseract::views::SlashCommandEngine slash_engine_;
+
+    GtkWidget* slash_popover_ = nullptr;
+    std::unique_ptr<tk::gtk4::Surface> slash_popup_surface_;
+    tesseract::views::SlashCommandPopup* slash_popup_widget_ = nullptr;
+
+    void show_slash_popup_(
+        const std::vector<tesseract::views::SlashCommandSuggestion>& items,
+        tk::Rect cursor_rect);
+    void hide_slash_popup_();
+    bool slash_popup_visible_() const
+    {
+        return slash_popover_ && gtk_widget_get_visible(slash_popover_);
     }
 
     // ── @mention popup ────────────────────────────────────────────────────

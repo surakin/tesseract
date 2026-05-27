@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-26**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-27**.
 
 > **Matrix threads UI.**
 > A new "threads" button in `RoomHeader` (immediately left of the calendar
@@ -137,7 +137,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 150 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 551 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 560 |
 
 ## Platforms
 

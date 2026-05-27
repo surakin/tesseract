@@ -431,6 +431,10 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     {
         sticker_picker_surface_->set_theme(current_theme_);
     }
+    if (slash_popup_surface_)
+    {
+        slash_popup_surface_->set_theme(current_theme_);
+    }
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(current_theme_);
@@ -2064,8 +2068,100 @@ void MainWindow::on_create(HWND hwnd)
                     room_view_->set_current_text(s);
                 }
 
-                // ── Shortcode detection ─────────────────────────────────────────
+                // ── Slash-command popup ─────────────────────────────────────────
                 int cursor = room_text_area_->cursor_byte_pos();
+
+                {
+                    auto m = slash_engine_.find_prefix(s, cursor);
+                    if (m.has_value())
+                    {
+                        auto items = slash_engine_.lookup(m->prefix);
+                        if (items.empty())
+                        {
+                            hide_slash_popup_();
+                        }
+                        else
+                        {
+                            // Only hide other popovers if they are actually
+                            // visible — these hide functions reset
+                            // set_on_popup_nav(nullptr), and calling them
+                            // unconditionally on every text-change tick kills
+                            // the slash popup's nav handler.
+                            if (shortcode_popup_visible_())
+                                hide_shortcode_popup_();
+                            if (mention_popup_visible_())
+                                hide_mention_popup_();
+                            show_slash_popup_(items,
+                                              room_text_area_->cursor_rect());
+                            // Reinstall the nav handler unconditionally on
+                            // every tick: hide_*_popup_ calls above (when they
+                            // did fire) wipe it, and installing
+                            // unconditionally avoids the "first keystroke
+                            // kills nav" bug.
+                            room_text_area_->set_on_popup_nav(
+                                [this](tk::NativeTextArea::NavKey nk) -> bool
+                                {
+                                    if (!slash_popup_visible_())
+                                    {
+                                        return false;
+                                    }
+                                    int cur =
+                                        slash_popup_widget_->selected_index();
+                                    int n = slash_popup_widget_->visible_rows();
+                                    if (n <= 0)
+                                    {
+                                        return true;
+                                    }
+                                    int next = cur;
+                                    switch (nk)
+                                    {
+                                    case tk::NativeTextArea::NavKey::Up:
+                                        next = std::max(0, cur - 1);
+                                        break;
+                                    case tk::NativeTextArea::NavKey::Down:
+                                        next = std::min(n - 1, cur + 1);
+                                        break;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                    {
+                                        int sel =
+                                            slash_popup_widget_->selected_index();
+                                        if (sel >= 0 &&
+                                            sel < slash_popup_widget_
+                                                      ->visible_rows() &&
+                                            slash_popup_widget_->on_accepted)
+                                        {
+                                            slash_popup_widget_->on_accepted(
+                                                slash_popup_widget_
+                                                    ->suggestion_at(sel));
+                                        }
+                                        else
+                                        {
+                                            hide_slash_popup_();
+                                        }
+                                        return true;
+                                    }
+                                    case tk::NativeTextArea::NavKey::ShiftTab:
+                                        return false;
+                                    case tk::NativeTextArea::NavKey::Escape:
+                                        hide_slash_popup_();
+                                        return true;
+                                    }
+                                    slash_popup_widget_->set_selected_index(
+                                        next);
+                                    slash_popup_surface_->host()
+                                        .request_repaint();
+                                    return true;
+                                });
+                        }
+                        return;
+                    }
+                    if (slash_popup_visible_())
+                    {
+                        hide_slash_popup_();
+                    }
+                }
+
+                // ── Shortcode detection ─────────────────────────────────────────
 
                 auto complete = shortcode_engine_.find_complete(s, cursor);
                 if (complete)
@@ -2175,13 +2271,26 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     return;
                 }
+                hide_slash_popup_();
                 hide_shortcode_popup_();
                 hide_mention_popup_();
-                // ── End shortcode detection ─────────────────────────────────────
+                // ── End shortcode / slash detection ────────────────────────────
             });
         room_text_area_->set_on_submit(
             [this]
             {
+                if (slash_popup_visible_())
+                {
+                    int sel = slash_popup_widget_->selected_index();
+                    if (sel >= 0 && sel < slash_popup_widget_->visible_rows() &&
+                        slash_popup_widget_->on_accepted)
+                    {
+                        slash_popup_widget_->on_accepted(
+                            slash_popup_widget_->suggestion_at(sel));
+                        return;
+                    }
+                    hide_slash_popup_();
+                }
                 if (mention_controller_ && mention_controller_->on_submit())
                 {
                     return;
@@ -3602,6 +3711,7 @@ void MainWindow::on_room_selected(const std::string& room_id)
         }
     }
 
+    hide_slash_popup_();
     hide_shortcode_popup_();
     handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id &&
@@ -5796,6 +5906,105 @@ void MainWindow::toggle_emoji_picker()
     if (emoji_picker_search_field_)
     {
         emoji_picker_search_field_->set_focused(true);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Slash-command popup — WS_POPUP HWND hosting a tk::win32::Surface that
+// paints the shared tesseract::views::SlashCommandPopup suggestion list.
+// ---------------------------------------------------------------------------
+
+void MainWindow::show_slash_popup_(
+    const std::vector<tesseract::views::SlashCommandSuggestion>& items,
+    tk::Rect cursor_local)
+{
+    int w = int(tesseract::views::SlashCommandPopup::kWidth);
+    int rows = std::min((int)items.size(),
+                        int(tesseract::views::SlashCommandPopup::kMaxRows));
+    int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
+
+    HWND parent = main_app_surface_->hwnd();
+    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
+    ClientToScreen(parent, &pt);
+
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(mon, &mi);
+
+    int x = pt.x;
+    int y_above = pt.y - h - 4;
+    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
+    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
+    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+
+    if (!slash_popup_hwnd_)
+    {
+        slash_popup_hwnd_ = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, x, y, w,
+            h, nullptr, nullptr, hInst_, nullptr);
+        slash_popup_surface_ = std::make_unique<tk::win32::Surface>(
+            hInst_, slash_popup_hwnd_, main_app_surface_->theme());
+        auto pw = std::make_unique<tesseract::views::SlashCommandPopup>();
+        slash_popup_widget_ = pw.get();
+        slash_popup_surface_->set_root(std::move(pw));
+        slash_popup_widget_->on_accepted =
+            [this](tesseract::views::SlashCommandSuggestion s)
+        {
+            hide_slash_popup_();
+            if (!room_text_area_) return;
+            if (!client_ || current_room_id_.empty())
+            {
+                return;
+            }
+            if (s.args_hint.empty())
+            {
+                // No args — send immediately.
+                std::string body = "/" + s.name;
+                (void)tesseract::dispatch_compose_send(
+                    *client_, current_room_id_, body, std::string{});
+                room_text_area_->set_text("");
+                room_view_->set_current_text({});
+            }
+            else
+            {
+                // Needs args — autocomplete to `/name ` and leave the
+                // composer open for the user to type arguments.
+                std::string body = "/" + s.name + " ";
+                room_text_area_->set_text(body);
+            }
+        };
+        slash_popup_widget_->on_dismissed = [this]
+        {
+            hide_slash_popup_();
+        };
+    }
+
+    slash_popup_widget_->set_suggestions(items);
+    slash_popup_widget_->set_selected_index(0);
+    SetWindowPos(slash_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    // The Surface is a WS_CHILD created at a placeholder size; the STATIC
+    // popup parent never forwards WM_SIZE, so stretch the child to fill the
+    // popup every show (row count changes the height). Without this the
+    // surface stays tiny and clicks on suggestion rows never reach it.
+    if (HWND s = slash_popup_surface_->hwnd())
+    {
+        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    slash_popup_surface_->relayout();
+}
+
+void MainWindow::hide_slash_popup_()
+{
+    if (slash_popup_hwnd_)
+    {
+        ShowWindow(slash_popup_hwnd_, SW_HIDE);
+    }
+    if (room_text_area_)
+    {
+        room_text_area_->set_on_popup_nav(nullptr);
     }
 }
 

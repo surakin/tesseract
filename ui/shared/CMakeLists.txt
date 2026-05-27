@@ -88,6 +88,10 @@ set(_tk_sources
     views/VideoViewerOverlay.cpp
     views/ShortcodeEngine.h
     views/ShortcodeEngine.cpp
+    views/SlashCommandEngine.h
+    views/SlashCommandEngine.cpp
+    views/SlashCommandPopup.h
+    views/SlashCommandPopup.cpp
     views/ShortcodePopup.h
     views/ShortcodePopup.cpp
     views/MentionEngine.h
