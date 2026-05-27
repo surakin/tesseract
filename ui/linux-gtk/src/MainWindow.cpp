@@ -2232,6 +2232,10 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     {
         settings_widget_->set_theme(t);
     }
+    if (slash_popup_surface_)
+    {
+        slash_popup_surface_->set_theme(t);
+    }
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(t);
