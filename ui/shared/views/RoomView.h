@@ -22,6 +22,7 @@
 #include "ComposeBar.h"
 #include "ConfirmDialog.h"
 #include "MessageListView.h"
+#include "PinnedBanner.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
 #include "ThreadListView.h"
@@ -145,6 +146,23 @@ public:
     {
         return thread_list_view_;
     }
+    PinnedBanner* pinned_banner() const
+    {
+        return pinned_banner_;
+    }
+
+    // Drive the pinned-events banner + the per-message Pin/Unpin button
+    // state. set_pinned() lazily creates the banner widget the first time a
+    // non-empty pin list arrives; the banner shrinks to zero-height when
+    // empty so the message list reclaims the row. set_can_pin() gates the
+    // hover Pin/Unpin button in the message list based on the user's PL.
+    void set_pinned(std::vector<tesseract::PinnedEvent> pins);
+    void set_can_pin(bool can_pin);
+
+    // Forwarded by RoomView → shell. Fired when the user clicks the hover
+    // Pin / Unpin button on a message row in the main timeline.
+    std::function<void(const std::string& event_id)> on_pin_requested;
+    std::function<void(const std::string& event_id)> on_unpin_requested;
 
     // Fixed width of the floating right-side thread overlay (panel paints
     // on top of the message list rather than reshaping it). Clamped to
@@ -367,6 +385,12 @@ private:
     // child list (add_child); we keep a borrowed pointer for access.
     ThreadView*     thread_view_      = nullptr;
     ThreadListView* thread_list_view_ = nullptr;
+    // Lazily created the first time set_pinned() is called with a non-empty
+    // list. Owned by the tk child list (add_child); we keep a borrowed
+    // pointer for access. Stays in the child list (with set_visible(false))
+    // after the room's pins drop back to empty so subsequent set_pinned()
+    // calls don't re-add it.
+    PinnedBanner*   pinned_banner_    = nullptr;
     // Click/hover blocker over message_list_, visible only while the
     // thread panel is open. See the nested class doc above.
     MessageBlocker* message_blocker_ = nullptr;

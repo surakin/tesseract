@@ -1317,6 +1317,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             on_threads_button_clicked();
         };
+        room_view_->on_pin_requested =
+            [this](const std::string& ev) { on_pin_requested(ev); };
+        room_view_->on_unpin_requested =
+            [this](const std::string& ev) { on_unpin_requested(ev); };
         room_view_->on_thread_open_requested =
             [this](const std::string& root)
         {
@@ -2052,6 +2056,18 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 if (settings_widget_)
                     settings_widget_->set_cache_sizes(local, sdk);
             });
+        };
+        settings_widget_->on_local_avatar_changed =
+            [this](std::string new_mxc)
+        {
+            my_avatar_url_ = new_mxc;
+            if (active_account_index_ >= 0 &&
+                active_account_index_ <
+                    static_cast<int>(accounts_.size()))
+            {
+                accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+            }
+            populate_user_strip();
         };
     }
 
@@ -3947,6 +3963,12 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         shortcode_popup_visible_() && shortcode_popup_surface_)
                     {
                         shortcode_popup_surface_->relayout();
+                    }
+                    if (is_avatar && account_picker_surface_ &&
+                        account_picker_popover_ &&
+                        gtk_widget_get_visible(account_picker_popover_))
+                    {
+                        account_picker_surface_->relayout();
                     }
                 });
         });
@@ -6099,6 +6121,10 @@ void MainWindow::rebuild_account_picker()
         e.avatar_url = sess->avatar_url;
         e.active = (sess->user_id == my_user_id_);
         entries.push_back(std::move(e));
+        if (!sess->avatar_url.empty())
+        {
+            ensure_user_avatar_(sess->avatar_url);
+        }
     }
     account_picker_->set_entries(std::move(entries));
     if (account_picker_surface_)

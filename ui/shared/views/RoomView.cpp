@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <unordered_set>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -414,6 +416,17 @@ void RoomView::wire_internal_callbacks()
             on_thread_open_requested(root_event_id);
         }
     };
+    // Pin / Unpin hover-button forwarding. The message list raises one of
+    // these when the user clicks the per-row 📌 affordance; the shell wires
+    // the request to Client::pin_event / Client::unpin_event.
+    message_list_->on_pin_requested = [this](const std::string& event_id)
+    {
+        if (on_pin_requested) on_pin_requested(event_id);
+    };
+    message_list_->on_unpin_requested = [this](const std::string& event_id)
+    {
+        if (on_unpin_requested) on_unpin_requested(event_id);
+    };
     header_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
     {
         if (on_show_tooltip)
@@ -744,6 +757,10 @@ void RoomView::clear_room()
     {
         compose_bar_->set_enabled(false);
     }
+    // Drop any pinned-events state from the previous room so it can't bleed
+    // into the next set_room() before refresh_pinned_for_current_room_ runs
+    // (e.g. account switch → onRoomSelected fast-path skips tab_select_room).
+    set_pinned({});
 }
 
 void RoomView::set_messages(std::vector<MessageRowData> msgs, bool room_switch)
@@ -989,6 +1006,59 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     if (repaint_requester_) repaint_requester_();
 }
 
+// ── Pinned events ─────────────────────────────────────────────────────────
+
+void RoomView::set_pinned(std::vector<tesseract::PinnedEvent> pins)
+{
+    // Always update MessageListView's id-set first so the hover Pin/Unpin
+    // button reflects the correct state even before the banner exists.
+    std::unordered_set<std::string> ids;
+    ids.reserve(pins.size());
+    for (const auto& p : pins) ids.insert(p.event_id);
+    if (message_list_) message_list_->set_pinned_event_ids(std::move(ids));
+
+    // No banner needed and none ever created → cheap exit.
+    if (pins.empty() && !pinned_banner_) return;
+
+    // Lazily create the banner the first time a non-empty pin set arrives.
+    // Mirrors the thread_view_ / thread_list_view_ pattern in
+    // set_thread_panel(): add_child once, toggle visibility thereafter.
+    if (!pinned_banner_)
+    {
+        auto banner = std::make_unique<PinnedBanner>();
+        pinned_banner_ = add_child(std::move(banner));
+        pinned_banner_->on_jump_to = [this](const std::string& event_id)
+        {
+            if (!message_list_) return;
+            message_list_->set_highlighted_event(event_id);
+            // If the pinned event is already loaded, just scroll. Otherwise
+            // route through on_scroll_to_original so the shell rebuilds the
+            // timeline focused on the target via subscribe_room_at — same
+            // path the reply-quote click uses for off-window events.
+            if (message_list_->scroll_to_event_id(event_id)) return;
+            if (on_scroll_to_original) on_scroll_to_original(event_id);
+        };
+    }
+
+    const bool was_visible = pinned_banner_->visible();
+    const bool now_visible = !pins.empty();
+    pinned_banner_->set_pins(std::move(pins));
+    pinned_banner_->set_visible(now_visible);
+
+    // Trigger a relayout if the banner appeared or disappeared — the
+    // message_list_ rect depends on whether the banner consumes the row.
+    if (was_visible != now_visible)
+    {
+        if (on_layout_changed) on_layout_changed();
+    }
+    if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::set_can_pin(bool can_pin)
+{
+    if (message_list_) message_list_->set_can_pin(can_pin);
+}
+
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size RoomView::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -1024,7 +1094,22 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // and intercepts pointer events first (children dispatch in reverse),
     // so the message list keeps its natural width — text doesn't reflow
     // when the panel toggles.
-    const float msg_h = std::max(0.0f, compose_top - header_bottom);
+    //
+    // The pinned-events banner (when visible) consumes a kBannerH-tall
+    // strip at the top of the message-list area. The banner spans the
+    // full bounds.w just like the message list does, so when the thread
+    // panel opens it floats on top of both header + banner + list.
+    float list_top = header_bottom;
+    const bool banner_visible =
+        pinned_banner_ && pinned_banner_->visible() &&
+        !pinned_banner_->pins().empty();
+    if (banner_visible)
+    {
+        const float bh = PinnedBanner::kBannerH;
+        pinned_banner_->arrange(ctx, {bounds.x, list_top, bounds.w, bh});
+        list_top += bh;
+    }
+    const float msg_h = std::max(0.0f, compose_top - list_top);
 
     if (header_)
     {
@@ -1033,13 +1118,13 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (message_list_)
     {
-        message_list_->arrange(ctx, {bounds.x, header_bottom, bounds.w, msg_h});
+        message_list_->arrange(ctx, {bounds.x, list_top, bounds.w, msg_h});
     }
 
     if (message_blocker_)
     {
         message_blocker_->arrange(ctx,
-                                  {bounds.x, header_bottom, bounds.w, msg_h});
+                                  {bounds.x, list_top, bounds.w, msg_h});
     }
 
     if (compose_bar_)
@@ -1050,11 +1135,13 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     // Right-anchored floating panel. Fixed `kThreadPanelWidth`, clamped to
     // the room bounds so narrow windows still get a sensible overlay (it
-    // just covers the message list entirely). Only one of {list, view} is
-    // visible at a time.
+    // just covers the message list — and the pinned banner, when visible —
+    // entirely). Only one of {list, view} is visible at a time. Always
+    // anchored from header_bottom (not list_top) so it covers the banner
+    // strip too, keeping it hidden while the thread panel is up.
     const float panel_w = std::min(kThreadPanelWidth, bounds.w);
     const float panel_x = bounds.x + bounds.w - panel_w;
-    const float panel_h = msg_h;
+    const float panel_h = std::max(0.0f, compose_top - header_bottom);
     if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)
     {
         thread_list_view_->arrange(
@@ -1090,6 +1177,11 @@ void RoomView::paint(tk::PaintCtx& ctx)
     if (header_)
     {
         header_->paint(ctx);
+    }
+    if (pinned_banner_ && pinned_banner_->visible() &&
+        !pinned_banner_->pins().empty())
+    {
+        pinned_banner_->paint(ctx);
     }
     if (message_list_)
     {

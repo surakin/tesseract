@@ -559,6 +559,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             on_threads_button_clicked();
         };
+        mainApp_->room_view()->on_pin_requested =
+            [this](const std::string& ev) { on_pin_requested(ev); };
+        mainApp_->room_view()->on_unpin_requested =
+            [this](const std::string& ev) { on_unpin_requested(ev); };
         mainApp_->room_view()->on_thread_open_requested =
             [this](const std::string& root)
         {
@@ -3033,6 +3037,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             mention_popup_surface_->update();
         }
+        if (accountPickerPopover_ && accountPickerPopover_->isVisible() &&
+            accountPickerSurface_)
+        {
+            accountPickerSurface_->update();
+        }
         return;
     }
 
@@ -3903,6 +3912,20 @@ void MainWindow::openSettings()
                     });
                 });
 
+        connect(settingsWidget_, &SettingsWidget::localAvatarChanged, this,
+                [this](const QString& new_mxc)
+                {
+                    my_avatar_url_ = new_mxc.toStdString();
+                    if (active_account_index_ >= 0 &&
+                        active_account_index_ <
+                            static_cast<int>(accounts_.size()))
+                    {
+                        accounts_[active_account_index_]->avatar_url =
+                            my_avatar_url_;
+                    }
+                    populateUserStrip();
+                });
+
         // server_info_ may have already arrived before this lazy widget was
         // created — apply it now so capability gating is correct on first open.
         settingsWidget_->set_server_info(server_info_);
@@ -4556,6 +4579,10 @@ void MainWindow::rebuildAccountPicker()
             a.avatar_url,
             static_cast<int>(i) == active_account_index_,
         });
+        if (!a.avatar_url.empty())
+        {
+            ensure_user_avatar_(a.avatar_url);
+        }
     }
     accountPicker_->set_entries(std::move(entries));
 }

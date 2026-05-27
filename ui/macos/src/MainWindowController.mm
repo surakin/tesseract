@@ -446,6 +446,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onComposeSend;
 - (void)_relayoutShortcodePopupIfVisible;
 - (void)_relayoutSlashPopupIfVisible;
+- (void)_relayoutAccountPickerIfVisible;
 @end
 
 namespace
@@ -629,6 +630,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     else if (kind == MediaKind::UserAvatar)
     {
         [c _relayoutChatSurface];
+        [c _relayoutAccountPickerIfVisible];
     }
 }
 
@@ -2465,6 +2467,24 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 s->_shell->on_threads_button_clicked();
             }
         };
+        _mainApp->room_view()->on_pin_requested =
+            [weakSelf](const std::string& ev)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_pin_requested(ev);
+            }
+        };
+        _mainApp->room_view()->on_unpin_requested =
+            [weakSelf](const std::string& ev)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_unpin_requested(ev);
+            }
+        };
         _mainApp->room_view()->on_thread_open_requested =
             [weakSelf](const std::string& root)
         {
@@ -3757,6 +3777,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 }
 
+- (void)_relayoutAccountPickerIfVisible
+{
+    if (_accountPickerPopover && _accountPickerPopover.isShown &&
+        _accountPickerSurface)
+    {
+        _accountPickerSurface->relayout();
+    }
+}
+
 - (void)showShortcodePopupWithSuggestions:
             (const std::vector<tesseract::views::ShortcodeSuggestion>&)
                 suggestions
@@ -4625,6 +4654,26 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = ws;
             if (s && s->_shell->settings_controller_)
                 s->_shell->settings_controller_->remove_avatar();
+        };
+        // Override the shared SettingsView's on_avatar_changed (which only
+        // updates the in-settings AccountSection chip) so the sidebar
+        // UserInfo strip also refreshes after a self-avatar change.
+        _shell->settings_controller_->on_avatar_changed =
+            [ws](std::string mxc)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            s->_shell->my_avatar_url_ = mxc;
+            if (s->_shell->active_account_index_ >= 0 &&
+                s->_shell->active_account_index_ <
+                    static_cast<int>(s->_shell->accounts_.size()))
+            {
+                s->_shell->accounts_[s->_shell->active_account_index_]
+                    ->avatar_url = s->_shell->my_avatar_url_;
+            }
+            s->_settingsView->set_avatar_url(mxc);
+            if (s->_settingsSurface) s->_settingsSurface->relayout();
+            [s _populateUserStrip];
         };
     }
 }

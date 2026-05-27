@@ -55,6 +55,12 @@ public:
     std::function<void(bool)> on_send_presence_changed;
     std::function<void(bool)> on_group_inactive_changed;
     std::function<void(int)>  on_inactive_period_changed;
+    // Fired after the user changes their own avatar via Settings. The
+    // string is the new mxc URL (or empty for removal). MainWindow uses
+    // this to update ShellBase::my_avatar_url_ and repaint the sidebar
+    // UserInfo strip — the shared SettingsView only updates its own
+    // AccountSection chip.
+    std::function<void(std::string)> on_local_avatar_changed;
 
     void set_group_inactive_pref(bool enabled);
     void set_inactive_period_pref(int days);

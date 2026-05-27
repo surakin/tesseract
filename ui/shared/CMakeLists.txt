@@ -58,6 +58,8 @@ set(_tk_sources
     views/RoomListView.cpp
     views/MessageListView.h
     views/MessageListView.cpp
+    views/PinnedBanner.h
+    views/PinnedBanner.cpp
     views/html_spans.h
     views/html_spans.cpp
     views/EmojiPicker.h

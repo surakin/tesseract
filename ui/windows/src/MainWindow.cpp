@@ -1791,6 +1791,10 @@ void MainWindow::on_create(HWND hwnd)
         {
             on_threads_button_clicked();
         };
+        room_view_->on_pin_requested =
+            [this](const std::string& ev) { on_pin_requested(ev); };
+        room_view_->on_unpin_requested =
+            [this](const std::string& ev) { on_unpin_requested(ev); };
         room_view_->on_thread_open_requested =
             [this](const std::string& root)
         {
@@ -3164,6 +3168,18 @@ void MainWindow::start_login()
         if (!ok) settings_view_->set_name_error(std::move(error));
         settings_surface_->relayout();
     };
+    settings_controller_->on_avatar_changed = [this](std::string mxc)
+    {
+        my_avatar_url_ = mxc;
+        if (active_account_index_ >= 0 &&
+            active_account_index_ < static_cast<int>(accounts_.size()))
+        {
+            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+        }
+        settings_view_->set_avatar_url(mxc);
+        settings_surface_->relayout();
+        populate_user_strip();
+    };
 }
 
 void MainWindow::on_login_succeeded()
@@ -3362,6 +3378,18 @@ void MainWindow::on_login_succeeded()
         settings_view_->set_name_busy(false);
         if (!ok) settings_view_->set_name_error(std::move(error));
         settings_surface_->relayout();
+    };
+    settings_controller_->on_avatar_changed = [this](std::string mxc)
+    {
+        my_avatar_url_ = mxc;
+        if (active_account_index_ >= 0 &&
+            active_account_index_ < static_cast<int>(accounts_.size()))
+        {
+            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+        }
+        settings_view_->set_avatar_url(mxc);
+        settings_surface_->relayout();
+        populate_user_strip();
     };
 }
 
@@ -4549,6 +4577,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             tk_avatars_.emplace(cache_key, std::move(img));
         }
+        if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
+            account_picker_surface_)
+        {
+            account_picker_surface_->relayout();
+        }
         break;
     case MediaKind::MediaImage:
         try_load_animation(cache_key, bytes);
@@ -5642,6 +5675,10 @@ void MainWindow::rebuild_account_picker()
     {
         entries.push_back({s->user_id, s->display_name, s->avatar_url,
                            s->user_id == my_user_id_});
+        if (!s->avatar_url.empty())
+        {
+            ensure_user_avatar_(s->avatar_url);
+        }
     }
     if (account_picker_)
     {

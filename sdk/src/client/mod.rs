@@ -15,6 +15,7 @@ mod backfill;
 mod image_packs;
 mod media;
 mod notifications;
+mod pins;
 mod recovery;
 mod room_list;
 mod send;
@@ -1363,6 +1364,106 @@ pub(super) async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi
     None
 }
 
+/// Resolve a single pinned event id against the local event cache (cheap;
+/// no network round-trip) and produce the `PinnedEvent` snapshot rendered by
+/// the banner UI. Falls back to `(unavailable)` when the id can't be
+/// resolved from cache — click-to-jump still works for events visible in
+/// loaded history.
+#[cfg(not(test))]
+async fn resolve_pinned_event(
+    room: &Room,
+    event_id: &matrix_sdk::ruma::OwnedEventId,
+) -> crate::ffi::PinnedEvent {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
+
+    let mut out = crate::ffi::PinnedEvent {
+        event_id: event_id.to_string(),
+        sender_name: String::new(),
+        body_preview: String::new(),
+        timestamp: 0,
+    };
+
+    // Try cache → disk → network. `load_or_fetch_event` is the only
+    // matrix-sdk API that loads from the SQLite store and falls back to
+    // /event/{id} when neither cache nor store has the event. The earlier
+    // `find_event`-only path was cache-only, which produced "(unavailable)"
+    // for every pin not in the live timeline window — i.e. almost all of
+    // them. Once fetched, the event lands in the cache, so subsequent
+    // build_room_infos ticks for the same pin are zero-cost.
+    let ev = match room.load_or_fetch_event(event_id, None).await {
+        Ok(ev) => ev,
+        Err(_) => {
+            out.body_preview = "(unavailable)".to_owned();
+            return out;
+        }
+    };
+
+    // Body / kind preview — mirrors `msglike_snippet` in timeline_convert.rs.
+    let Ok(any) = ev.raw().deserialize() else {
+        out.body_preview = "(unavailable)".to_owned();
+        return out;
+    };
+
+    let (sender, ts_ms, body) = match any {
+        AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(m)) => {
+            let Some(orig) = m.as_original() else {
+                out.body_preview = "(deleted)".to_owned();
+                return out;
+            };
+            let body = match &orig.content.msgtype {
+                MessageType::Text(t) => first_line(&t.body),
+                MessageType::Notice(n) => first_line(&n.body),
+                MessageType::Emote(e) => first_line(&e.body),
+                MessageType::Image(_) => "(image)".to_owned(),
+                MessageType::File(_) => "(file)".to_owned(),
+                MessageType::Audio(a) => {
+                    if a.voice.is_some() {
+                        "(voice)".to_owned()
+                    } else {
+                        "(audio)".to_owned()
+                    }
+                }
+                MessageType::Video(_) => "(video)".to_owned(),
+                _ => "(message)".to_owned(),
+            };
+            (
+                Some(orig.sender.clone()),
+                u64::from(orig.origin_server_ts.0),
+                body,
+            )
+        }
+        AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::Sticker(s)) => {
+            let Some(orig) = s.as_original() else {
+                out.body_preview = "(deleted)".to_owned();
+                return out;
+            };
+            (
+                Some(orig.sender.clone()),
+                u64::from(orig.origin_server_ts.0),
+                "(sticker)".to_owned(),
+            )
+        }
+        _ => {
+            out.body_preview = "(message)".to_owned();
+            return out;
+        }
+    };
+
+    out.timestamp = ts_ms;
+    out.body_preview = body;
+    if let Some(uid) = sender {
+        out.sender_name = match room.get_member_no_sync(&uid).await {
+            Ok(Some(m)) => m
+                .display_name()
+                .map(str::to_owned)
+                .unwrap_or_else(|| uid.localpart().to_string()),
+            _ => uid.localpart().to_string(),
+        };
+    }
+    out
+}
+
 /// Build a single `RoomInfo` snapshot from a `Room`. Returns `None` for
 /// tombstoned rooms (filtered out of the UI list). Called both during the
 /// initial `joined_rooms()` walk in `build_room_infos` and per-room from the
@@ -1482,6 +1583,33 @@ pub(super) async fn build_room_info(
         String::new()
     };
     let dm_counterpart_user_id = dm_other.map(|m| m.user_id).unwrap_or_default();
+
+    // m.room.pinned_events: resolve each id against the local event cache so
+    // the banner UI can render sender + body snippet without a separate
+    // fetch round-trip. Sorted newest-first for the banner. Pinned event
+    // counts are typically <10 per room so serial resolution is fine.
+    let pinned_events: Vec<crate::ffi::PinnedEvent> = {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::room::pinned_events::RoomPinnedEventsEventContent;
+        use matrix_sdk::ruma::events::SyncStateEvent;
+        let pinned_ids: Vec<matrix_sdk::ruma::OwnedEventId> = match room
+            .get_state_event_static::<RoomPinnedEventsEventContent>()
+            .await
+        {
+            Ok(Some(raw)) => match raw.deserialize() {
+                Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(o))) => o.content.pinned,
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        let mut resolved: Vec<crate::ffi::PinnedEvent> = Vec::with_capacity(pinned_ids.len());
+        for id in &pinned_ids {
+            resolved.push(resolve_pinned_event(room, id).await);
+        }
+        resolved.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        resolved
+    };
+
     Some(crate::ffi::RoomInfo {
         id: room.room_id().to_string(),
         name,
@@ -1503,6 +1631,7 @@ pub(super) async fn build_room_info(
         is_favorite,
         is_encrypted,
         history_visibility,
+        pinned_events,
     })
 }
 
