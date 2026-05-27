@@ -263,11 +263,8 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
         flow.client.device_id(),
         hostname::get().ok().and_then(|h| h.into_string().ok()),
     ) {
-        use ruma::api::client::device::update_device::v3;
         let display_name = build_device_display_name().unwrap_or_else(|| "Tesseract".to_owned());
-        let mut req = v3::Request::new(device_id.to_owned());
-        req.display_name = Some(display_name.clone());
-        if let Err(e) = flow.client.send(req).await {
+        if let Err(e) = flow.client.rename_device(device_id, &display_name).await {
             tracing::warn!("rename_device({display_name:?}) failed: {e}");
         }
     }

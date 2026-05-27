@@ -2049,7 +2049,9 @@ mod tests {
 
     #[test]
     fn thread_relation_message_shape() {
-        let val = build_thread_message_content("body", "", "$root:server", "");
+        let root: matrix_sdk::ruma::OwnedEventId = "$root:server".parse().unwrap();
+        let content = build_thread_message_content("body", "", root, None);
+        let val = serde_json::to_value(&content).unwrap();
         assert_eq!(val["msgtype"], "m.text");
         assert_eq!(val["body"], "body");
         assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
@@ -2061,14 +2063,18 @@ mod tests {
 
     #[test]
     fn thread_relation_reply_shape() {
-        let val = build_thread_message_content("body", "", "$root:server", "$reply:server");
+        let root: matrix_sdk::ruma::OwnedEventId = "$root:server".parse().unwrap();
+        let reply: matrix_sdk::ruma::OwnedEventId = "$reply:server".parse().unwrap();
+        let content = build_thread_message_content("body", "", root, Some(reply));
+        let val = serde_json::to_value(&content).unwrap();
         assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
         assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
         assert_eq!(
             val["m.relates_to"]["m.in_reply_to"]["event_id"],
             "$reply:server"
         );
-        // A real in-thread reply is not a fallback.
+        // A real in-thread reply is not a fallback (ruma serializes the
+        // default `false` as omission).
         assert!(val["m.relates_to"]["is_falling_back"].is_null());
     }
 

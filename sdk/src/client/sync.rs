@@ -269,10 +269,20 @@ impl ClientFfi {
             });
         }
 
-        // Build SyncService.
+        // Build SyncService. `with_offline_mode` lets matrix-sdk-ui handle
+        // transient transport failures itself: instead of failing into
+        // State::Error, the supervisor moves to State::Offline and polls
+        // `/_matrix/client/versions` in the background until the server is
+        // reachable, then transitions back to State::Running and restarts the
+        // sync child tasks — no manual stop/start cycle or exponential
+        // backoff needed on our side.
         let sync_service = match self
             .rt
-            .block_on(SyncService::builder(client.clone()).build())
+            .block_on(
+                SyncService::builder(client.clone())
+                    .with_offline_mode()
+                    .build(),
+            )
         {
             Ok(s) => Arc::new(s),
             Err(e) => {
@@ -848,7 +858,14 @@ impl ClientFfi {
             ));
         }
 
-        // Start SyncService and monitor state.
+        // Start SyncService and observe state. Transient transport failures
+        // are handled by the supervisor itself (Running → Offline → Running
+        // via the `/_matrix/client/versions` poller, enabled by
+        // `with_offline_mode` above), so the monitor's only job is to surface
+        // a single "we're offline" notification per outage to the UI and let
+        // the supervisor recover on its own. State::Error from the supervisor
+        // is now terminal — it only fires when the offline poller's own
+        // `/versions` request returned a non-recoverable error.
         let svc_clone = Arc::clone(&sync_service);
         let h_state = Arc::clone(&handler);
         let mut stop_rx_sv = stop_rx.clone();
@@ -858,48 +875,43 @@ impl ClientFfi {
 
             use matrix_sdk_ui::sync_service::State as SyncServiceState;
             let mut state_stream = svc_clone.state();
-            let mut consecutive_errors: u32 = 0;
+            // Edge-trigger the notification: only fire on the Running→Offline
+            // transition, not on every poll inside the offline loop.
+            let mut notified_offline = false;
 
             loop {
                 tokio::select! {
                     _ = stop_rx_sv.changed() => {
                         // Authoritative SyncService::stop() is owned by
-                        // stop_sync(); just exit the monitor here so the
+                        // stop_sync(); just exit the observer here so the
                         // service is not stopped twice concurrently.
                         if *stop_rx_sv.borrow() { break; }
                     }
                     Some(state) = state_stream.next() => {
                         match state {
                             SyncServiceState::Running => {
-                                consecutive_errors = 0;
+                                notified_offline = false;
                             }
-                            SyncServiceState::Error(_) => {
-                                let _ = svc_clone.stop().await;
-                                consecutive_errors += 1;
-                                // Keep retrying indefinitely — a transient
-                                // outage (tunnel, sleep, server restart) must
-                                // not permanently kill sync for the session.
-                                // Re-notify the UI every 5 failures so a long
-                                // outage isn't silent without spamming.
-                                if consecutive_errors % 5 == 0 {
+                            SyncServiceState::Offline => {
+                                if !notified_offline {
+                                    notified_offline = true;
                                     if let Ok(guard) = h_state.lock() {
                                         guard.on_error(
-                                            "sync_reconnect",
-                                            "Sync is failing repeatedly; retrying…",
+                                            "sync_offline",
+                                            "Lost contact with server; retrying…",
                                             false,
                                         );
                                     }
                                 }
-                                // Exponential backoff capped at 40s.
-                                let delay = std::time::Duration::from_secs(
-                                    5 * (1u64 << consecutive_errors.saturating_sub(1).min(3)));
-                                tokio::select! {
-                                    _ = tokio::time::sleep(delay) => {}
-                                    _ = stop_rx_sv.changed() => {}
+                            }
+                            SyncServiceState::Error(e) => {
+                                if let Ok(guard) = h_state.lock() {
+                                    guard.on_error(
+                                        "sync_error",
+                                        &e.to_string(),
+                                        false,
+                                    );
                                 }
-                                if *stop_rx_sv.borrow() { break; }
-                                svc_clone.start().await;
-                                state_stream = svc_clone.state();
                             }
                             _ => {}
                         }

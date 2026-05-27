@@ -281,42 +281,37 @@ fn finish(
     Some(m)
 }
 
-/// Build an `m.room.message` content object carrying an `m.thread` relation.
-/// `thread_root` is the thread root event id. When `in_reply_to` is non-empty
-/// the relation also carries an `m.in_reply_to` (a reply to a specific message
-/// within the thread); otherwise it is a plain thread message.
+/// Build an `m.room.message` content carrying an `m.thread` relation, used by
+/// the `send_thread_inner` fallback when no thread Timeline is subscribed
+/// (the subscribed path goes through `Timeline::send` / `Timeline::send_reply`,
+/// which apply the relation themselves). When `in_reply_to` is `Some` the
+/// relation is a true threaded reply (`is_falling_back: false`); otherwise it
+/// is a plain thread message with the recommended `m.in_reply_to → thread_root`
+/// fallback for clients that don't yet implement MSC3440
+/// (`is_falling_back: true`).
 pub(crate) fn build_thread_message_content(
     body: &str,
     formatted_body: &str,
-    thread_root: &str,
-    in_reply_to: &str,
-) -> serde_json::Value {
+    thread_root: matrix_sdk::ruma::OwnedEventId,
+    in_reply_to: Option<matrix_sdk::ruma::OwnedEventId>,
+) -> matrix_sdk::ruma::events::room::message::RoomMessageEventContent {
+    use matrix_sdk::ruma::events::relation::Thread;
+    use matrix_sdk::ruma::events::room::message::{Relation, RoomMessageEventContent};
+
     let (mentions, html) = derive_mentions(formatted_body);
-    let mut content = serde_json::json!({
-        "msgtype": "m.text",
-        "body": body,
-    });
-    if !html.is_empty() {
-        content["format"] = serde_json::json!("org.matrix.custom.html");
-        content["formatted_body"] = serde_json::json!(html);
-    }
-    if let Some(m) = mentions {
-        if let Ok(v) = serde_json::to_value(&m) {
-            content["m.mentions"] = v;
-        }
-    }
-    let mut relates = serde_json::json!({
-        "rel_type": "m.thread",
-        "event_id": thread_root,
-    });
-    if in_reply_to.is_empty() {
-        relates["m.in_reply_to"] = serde_json::json!({ "event_id": thread_root });
-        relates["is_falling_back"] = serde_json::json!(true);
+    let mut msg = if html.is_empty() {
+        RoomMessageEventContent::text_plain(body)
     } else {
-        relates["m.in_reply_to"] = serde_json::json!({ "event_id": in_reply_to });
-    }
-    content["m.relates_to"] = relates;
-    content
+        RoomMessageEventContent::text_html(body, &html)
+    };
+    msg.mentions = mentions;
+
+    let thread = match in_reply_to {
+        Some(reply_id) => Thread::reply(thread_root, reply_id),
+        None => Thread::plain(thread_root.clone(), thread_root),
+    };
+    msg.relates_to = Some(Relation::Thread(thread));
+    msg
 }
 
 // ---------------------------------------------------------------------------
@@ -627,16 +622,23 @@ impl ClientFfi {
                 Err(e) => err(e.to_string()),
             };
         }
-        // Fallback: no active thread timeline subscription — send raw with
-        // the thread relation encoded directly in the event JSON.
+        // Fallback: no active thread timeline subscription — build the typed
+        // RoomMessageEventContent with an m.thread relation and use
+        // `Room::send` so matrix-sdk handles the type tag and the local-echo
+        // queue. The hand-rolled JSON path used to live here; `Relation::Thread`
+        // matches the same wire shape.
         let Some(room) = client.get_room(&room_id) else {
             return err("room not found");
         };
-        let content =
-            build_thread_message_content(body, formatted_body, thread_root, in_reply_to);
+        let reply_owned: Option<matrix_sdk::ruma::OwnedEventId> = if in_reply_to.is_empty() {
+            None
+        } else {
+            in_reply_to.parse().ok()
+        };
+        let content = build_thread_message_content(body, formatted_body, root, reply_owned);
         match self
             .rt
-            .block_on(async move { room.send_raw("m.room.message", content).await })
+            .block_on(async move { room.send(content).await })
         {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),

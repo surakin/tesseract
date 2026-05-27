@@ -11,9 +11,9 @@ use matrix_sdk::{
     ruma::{
         api::client::push::{PusherIds, PusherInit, PusherKind},
         events::AnySyncTimelineEvent,
-        push::{HttpPusherData, PushConditionRoomCtx, PushFormat, Ruleset},
+        push::{HttpPusherData, PushFormat},
         serde::Raw,
-        OwnedRoomId, UInt,
+        OwnedRoomId,
     },
     Client, Room,
 };
@@ -62,64 +62,27 @@ pub(super) fn build_push_rule_json(
 /// envelope) and returns `(should_notify, is_mention)`.
 /// Returns `(false, false)` on any error — callers must not rely on errors being
 /// propagated.
+///
+/// Delegates to `Room::push_context()` so we inherit matrix-sdk's full
+/// `PushConditionRoomCtx` build (including power levels and thread
+/// subscriptions). The previous hand-rolled implementation explicitly skipped
+/// power-level data, which broke `sender_notification_permission` conditions.
 #[cfg(not(test))]
 pub(super) async fn evaluate_push_rules(
-    client: &Client,
+    _client: &Client,
     room: &Room,
     source_json: &str,
 ) -> (bool, bool) {
-    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
-    use serde_json::Value;
-
-    // Read push rules from the local account-data cache (no network).
-    let push_rules_et = GlobalAccountDataEventType::from("m.push_rules");
-    let Some(raw) = client
-        .account()
-        .account_data_raw(push_rules_et)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return (false, false);
-    };
-    let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
-        return (false, false);
-    };
-    let global = content.get("global").cloned().unwrap_or_default();
-    let Ok(ruleset) = serde_json::from_value::<Ruleset>(global) else {
-        return (false, false);
-    };
-
-    // Build push-condition context (no power-level data available without an
-    // extra network round-trip — this skips sender_notification_permission
-    // conditions but correctly handles member_count, contains_user_name, and
-    // event_match rules such as mentions and keywords).
-    let Some(uid) = client.user_id().map(|u| u.to_owned()) else {
-        return (false, false);
-    };
-    let display_name = client
-        .account()
-        .get_display_name()
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let member_count = room.joined_members_count();
-    let ctx = PushConditionRoomCtx::new(
-        room.room_id().to_owned(),
-        UInt::try_from(member_count).unwrap_or(UInt::MAX),
-        uid,
-        display_name,
-    );
-
-    // Wrap source_json (synthetic event envelope) as Raw<AnySyncTimelineEvent>.
     let Ok(raw_value) = serde_json::from_str::<Box<serde_json::value::RawValue>>(source_json)
     else {
         return (false, false);
     };
     let raw_event = Raw::<AnySyncTimelineEvent>::from_json(raw_value);
 
-    let actions = ruleset.get_actions(&raw_event, &ctx).await;
+    let Ok(Some(ctx)) = room.push_context().await else {
+        return (false, false);
+    };
+    let actions = ctx.for_event(&raw_event).await;
     let should_notify = actions.iter().any(|a| a.should_notify());
     let is_mention = should_notify && actions.iter().any(|a| a.is_highlight());
     (should_notify, is_mention)

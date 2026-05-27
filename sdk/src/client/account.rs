@@ -308,16 +308,11 @@ impl ClientFfi {
             Ok(m) => m,
             Err(_) => return err(format!("invalid mime type: {mime_type}")),
         };
-        let client2 = client.clone();
-        let upload = self.rt.block_on(async move {
-            client.media().upload(&mime, data, None).await
-        });
-        let mxc_uri = match upload {
-            Ok(r) => r.content_uri,
-            Err(e) => return err(format!("upload avatar: {e}")),
-        };
-        match self.rt.block_on(client2.account().set_avatar_url(Some(&mxc_uri))) {
-            Ok(_) => ok(mxc_uri.to_string()),
+        match self
+            .rt
+            .block_on(async move { client.account().upload_avatar(&mime, data).await })
+        {
+            Ok(mxc) => ok(mxc.to_string()),
             Err(e) => err(e.to_string()),
         }
     }
@@ -402,16 +397,13 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn set_device_display_name(&mut self, device_id: &str, name: &str) -> OpResult {
-        use matrix_sdk::ruma::api::client::device::update_device::v3;
         use matrix_sdk::ruma::OwnedDeviceId;
         let Some(client) = self.client.clone() else { return err("not logged in"); };
         let owned: OwnedDeviceId = device_id.into();
         let trimmed = name.to_owned();
-        let result = self.rt.block_on(async move {
-            let mut req = v3::Request::new(owned);
-            req.display_name = Some(trimmed);
-            client.send(req).await
-        });
+        let result = self
+            .rt
+            .block_on(async move { client.rename_device(&owned, &trimmed).await });
         match result {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
