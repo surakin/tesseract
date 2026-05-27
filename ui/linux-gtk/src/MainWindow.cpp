@@ -574,70 +574,77 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                         }
                         else
                         {
-                            hide_shortcode_popup_();
-                            hide_mention_popup_();
-                            bool was_visible = slash_popup_visible_();
+                            // Only hide other popovers if they are actually
+                            // visible — these hide functions reset
+                            // set_on_popup_nav(nullptr), and calling them
+                            // unconditionally on every text-change tick kills
+                            // the slash popup's nav handler.
+                            if (shortcode_popup_visible_()) hide_shortcode_popup_();
+                            if (mention_popup_visible_())   hide_mention_popup_();
                             show_slash_popup_(items,
                                              room_text_area_->cursor_rect());
-                            if (!was_visible)
-                            {
-                                room_text_area_->set_on_popup_nav(
-                                    [this](tk::NativeTextArea::NavKey nk) -> bool
+                            // Reinstall the nav handler unconditionally on every
+                            // tick: hide_*_popup_ calls above (when they did
+                            // fire) wipe it, and even when they didn't,
+                            // installing unconditionally matches what
+                            // handle_mention_on_changed_ does and avoids the
+                            // "first keystroke kills nav" bug.
+                            room_text_area_->set_on_popup_nav(
+                                [this](tk::NativeTextArea::NavKey nk) -> bool
+                                {
+                                    if (!slash_popup_visible_())
                                     {
-                                        if (!slash_popup_visible_())
-                                        {
-                                            return false;
-                                        }
-                                        int cur =
-                                            slash_popup_widget_->selected_index();
-                                        int n =
-                                            slash_popup_widget_->visible_rows();
-                                        if (n <= 0)
-                                        {
-                                            return true;
-                                        }
-                                        int next = cur;
-                                        switch (nk)
-                                        {
-                                        case tk::NativeTextArea::NavKey::Up:
-                                            next = std::max(0, cur - 1);
-                                            break;
-                                        case tk::NativeTextArea::NavKey::Down:
-                                            next = std::min(n - 1, cur + 1);
-                                            break;
-                                        case tk::NativeTextArea::NavKey::Tab:
-                                        {
-                                            int sel =
-                                                slash_popup_widget_
-                                                    ->selected_index();
-                                            if (sel >= 0 &&
-                                                sel < slash_popup_widget_
-                                                          ->visible_rows() &&
-                                                slash_popup_widget_->on_accepted)
-                                            {
-                                                slash_popup_widget_->on_accepted(
-                                                    slash_popup_widget_
-                                                        ->suggestion_at(sel));
-                                            }
-                                            else
-                                            {
-                                                hide_slash_popup_();
-                                            }
-                                            return true;
-                                        }
-                                        case tk::NativeTextArea::NavKey::ShiftTab:
-                                            return false;
-                                        case tk::NativeTextArea::NavKey::Escape:
-                                            hide_slash_popup_();
-                                            return true;
-                                        }
-                                        slash_popup_widget_->set_selected_index(
-                                            next);
-                                        slash_popup_surface_->host()
-                                            .request_repaint();
+                                        return false;
+                                    }
+                                    int cur =
+                                        slash_popup_widget_->selected_index();
+                                    int n =
+                                        slash_popup_widget_->visible_rows();
+                                    if (n <= 0)
+                                    {
                                         return true;
-                                    });
-                            }
+                                    }
+                                    int next = cur;
+                                    switch (nk)
+                                    {
+                                    case tk::NativeTextArea::NavKey::Up:
+                                        next = std::max(0, cur - 1);
+                                        break;
+                                    case tk::NativeTextArea::NavKey::Down:
+                                        next = std::min(n - 1, cur + 1);
+                                        break;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                    {
+                                        int sel =
+                                            slash_popup_widget_
+                                                ->selected_index();
+                                        if (sel >= 0 &&
+                                            sel < slash_popup_widget_
+                                                      ->visible_rows() &&
+                                            slash_popup_widget_->on_accepted)
+                                        {
+                                            slash_popup_widget_->on_accepted(
+                                                slash_popup_widget_
+                                                    ->suggestion_at(sel));
+                                        }
+                                        else
+                                        {
+                                            hide_slash_popup_();
+                                        }
+                                        return true;
+                                    }
+                                    case tk::NativeTextArea::NavKey::ShiftTab:
+                                        return false;
+                                    case tk::NativeTextArea::NavKey::Escape:
+                                        hide_slash_popup_();
+                                        return true;
+                                    }
+                                    slash_popup_widget_->set_selected_index(
+                                        next);
+                                    slash_popup_surface_->host()
+                                        .request_repaint();
+                                    return true;
+                                });
                         }
                         return;
                     }
