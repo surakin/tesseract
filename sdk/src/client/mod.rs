@@ -1363,151 +1363,172 @@ pub(super) async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi
     None
 }
 
-pub(super) async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
-    let mut result = Vec::new();
-    for room in client.joined_rooms() {
-        if room.is_tombstoned() {
-            continue;
-        }
-        let name = room
-            .display_name()
-            .await
-            .map(|n| n.to_string())
-            .unwrap_or_else(|_| room.room_id().to_string());
-        let is_space = room.is_space();
-        // Prefer the client-side computed counts over the server-reported
-        // `unread_notification_counts()` because the latter is empty for
-        // encrypted rooms (the server can't apply push rules to ciphertext),
-        // which on E2EE-heavy accounts means every room reports 0 unreads.
-        // See matrix-sdk-base 0.17 docs on `Room::num_unread_notifications`.
-        let notification_count = room.num_unread_notifications();
-        let highlight_count    = room.num_unread_mentions();
-        let last_activity_ts = room
-            .latest_event_timestamp()
-            .map(|t| u64::from(t.0))
-            .unwrap_or(0);
-        let is_favorite = room
-            .tags()
+/// Build a single `RoomInfo` snapshot from a `Room`. Returns `None` for
+/// tombstoned rooms (filtered out of the UI list). Called both during the
+/// initial `joined_rooms()` walk in `build_room_infos` and per-room from the
+/// incremental room-info-update watcher in `sync.rs` so we don't pay the
+/// O(N) SQLite fan-out cost when only one room changed.
+#[cfg(not(test))]
+pub(super) async fn build_room_info(
+    client: &Client,
+    room: &Room,
+) -> Option<crate::ffi::RoomInfo> {
+    if room.is_tombstoned() {
+        return None;
+    }
+    let name = room
+        .display_name()
+        .await
+        .map(|n| n.to_string())
+        .unwrap_or_else(|_| room.room_id().to_string());
+    let is_space = room.is_space();
+    // Prefer the client-side computed counts over the server-reported
+    // `unread_notification_counts()` because the latter is empty for
+    // encrypted rooms (the server can't apply push rules to ciphertext),
+    // which on E2EE-heavy accounts means every room reports 0 unreads.
+    // See matrix-sdk-base 0.17 docs on `Room::num_unread_notifications`.
+    let notification_count = room.num_unread_notifications();
+    let highlight_count    = room.num_unread_mentions();
+    let last_activity_ts = room
+        .latest_event_timestamp()
+        .map(|t| u64::from(t.0))
+        .unwrap_or(0);
+    let is_favorite = room
+        .tags()
+        .await
+        .ok()
+        .flatten()
+        .map(|tags| tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite))
+        .unwrap_or(false);
+    // MSC3765: extract HTML body from the m.topic content block when present.
+    let topic_html = {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::{room::topic::RoomTopicEventContent, SyncStateEvent};
+        room.get_state_event_static::<RoomTopicEventContent>()
             .await
             .ok()
             .flatten()
-            .map(|tags| tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite))
-            .unwrap_or(false);
-        // MSC3765: extract HTML body from the m.topic content block when present.
-        let topic_html = {
-            use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-            use matrix_sdk::ruma::events::{room::topic::RoomTopicEventContent, SyncStateEvent};
-            room.get_state_event_static::<RoomTopicEventContent>()
-                .await
-                .ok()
-                .flatten()
-                .and_then(|raw| raw.deserialize().ok())
-                .and_then(|ev| {
-                    let SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) = ev else {
-                        return None;
-                    };
-                    o.content.topic_block.text.find_html().map(str::to_owned)
-                })
-                .unwrap_or_default()
-        };
+            .and_then(|raw| raw.deserialize().ok())
+            .and_then(|ev| {
+                let SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) = ev else {
+                    return None;
+                };
+                o.content.topic_block.text.find_html().map(str::to_owned)
+            })
+            .unwrap_or_default()
+    };
 
-        // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
-        // with an async version (same trick as mark_room_as_read, line 2148).
-        let lev = std::ops::Deref::deref(&room).latest_event();
-        let LatestPreview {
-            kind: last_message_kind,
-            text: last_message_body,
-            sticker_url: last_message_sticker_url,
-            thumbnail_url: last_message_thumbnail_url,
-        } = latest_event_preview(&lev);
-        let last_message_sender_name = if last_message_kind.is_empty() {
-            String::new()
-        } else {
-            match latest_event_sender(&lev) {
-                Some(sender) if client.user_id().is_some_and(|me| me != &*sender) => {
-                    match room.get_member_no_sync(&sender).await {
-                        Ok(Some(m)) => m
-                            .display_name()
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| sender.localpart().to_string()),
-                        _ => sender.localpart().to_string(),
-                    }
+    // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
+    // with an async version (same trick as mark_room_as_read, line 2148).
+    let lev = std::ops::Deref::deref(room).latest_event();
+    let LatestPreview {
+        kind: last_message_kind,
+        text: last_message_body,
+        sticker_url: last_message_sticker_url,
+        thumbnail_url: last_message_thumbnail_url,
+    } = latest_event_preview(&lev);
+    let last_message_sender_name = if last_message_kind.is_empty() {
+        String::new()
+    } else {
+        match latest_event_sender(&lev) {
+            Some(sender) if client.user_id().is_some_and(|me| me != &*sender) => {
+                match room.get_member_no_sync(&sender).await {
+                    Ok(Some(m)) => m
+                        .display_name()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| sender.localpart().to_string()),
+                    _ => sender.localpart().to_string(),
                 }
-                _ => String::new(),
             }
-        };
-        let is_encrypted = room.encryption_state().is_encrypted();
-        let history_visibility = {
-            use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
-            match room.history_visibility_or_default() {
-                HistoryVisibility::WorldReadable => "world_readable".to_string(),
-                HistoryVisibility::Shared => "shared".to_string(),
-                HistoryVisibility::Invited => "invited".to_string(),
-                HistoryVisibility::Joined => "joined".to_string(),
-                _ => "shared".to_string(),
-            }
-        };
-        let is_direct = room.is_direct().await.unwrap_or(false);
-        let avatar_url = room.avatar_url().map(|u| u.to_string()).unwrap_or_default();
-        // Fallback avatar when the room has no avatar of its own: the other
-        // participant's mxc. Bridge bots (functional members) are excluded
-        // so bridged 1:1s show the puppet's avatar, not the bot's.
-        //
-        // We deliberately do NOT gate on `is_direct` — many rooms users
-        // treat as DMs aren't actually marked in m.direct account data, but
-        // dm_other_user already protects against false positives by only
-        // returning Some when there is exactly one real counterpart.
-        // dm_other_user is called for all non-space rooms (cheap: in-memory path
-        // for m.direct rooms; early-out on member-count for group rooms).
-        // dm_avatar_url is only used as a fallback when the room has no avatar.
-        // dm_counterpart_user_id is needed for presence lookups regardless of avatar.
-        let dm_other = if !is_space {
-            match client.user_id() {
-                Some(me) => dm_other_user(&room, me).await,
-                None => None,
-            }
-        } else {
-            None
-        };
-        let dm_avatar_url = if avatar_url.is_empty() {
-            dm_other.as_ref().map(|m| m.avatar_url.clone()).unwrap_or_default()
-        } else {
-            String::new()
-        };
-        let dm_counterpart_user_id = dm_other.map(|m| m.user_id).unwrap_or_default();
-        result.push(crate::ffi::RoomInfo {
-            id: room.room_id().to_string(),
-            name,
-            topic: room.topic().unwrap_or_default(),
-            topic_html,
-            notification_count,
-            highlight_count,
-            is_direct,
-            avatar_url,
-            dm_avatar_url,
-            dm_counterpart_user_id,
-            last_message_body,
-            last_message_sender_name,
-            last_message_kind,
-            last_message_sticker_url,
-            last_message_thumbnail_url,
-            last_activity_ts,
-            is_space,
-            is_favorite,
-            is_encrypted,
-            history_visibility,
-        });
-    }
-    // Activity sort: unread rooms first, then by newest last-event timestamp.
-    // Per-shell space partitioning runs after this and preserves the order
-    // within each (non-space / space) bucket.
-    result.sort_by(|a, b| {
+            _ => String::new(),
+        }
+    };
+    let is_encrypted = room.encryption_state().is_encrypted();
+    let history_visibility = {
+        use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
+        match room.history_visibility_or_default() {
+            HistoryVisibility::WorldReadable => "world_readable".to_string(),
+            HistoryVisibility::Shared => "shared".to_string(),
+            HistoryVisibility::Invited => "invited".to_string(),
+            HistoryVisibility::Joined => "joined".to_string(),
+            _ => "shared".to_string(),
+        }
+    };
+    let is_direct = room.is_direct().await.unwrap_or(false);
+    let avatar_url = room.avatar_url().map(|u| u.to_string()).unwrap_or_default();
+    // Fallback avatar when the room has no avatar of its own: the other
+    // participant's mxc. Bridge bots (functional members) are excluded
+    // so bridged 1:1s show the puppet's avatar, not the bot's.
+    //
+    // We deliberately do NOT gate on `is_direct` — many rooms users
+    // treat as DMs aren't actually marked in m.direct account data, but
+    // dm_other_user already protects against false positives by only
+    // returning Some when there is exactly one real counterpart.
+    // dm_other_user is called for all non-space rooms (cheap: in-memory path
+    // for m.direct rooms; early-out on member-count for group rooms).
+    // dm_avatar_url is only used as a fallback when the room has no avatar.
+    // dm_counterpart_user_id is needed for presence lookups regardless of avatar.
+    let dm_other = if !is_space {
+        match client.user_id() {
+            Some(me) => dm_other_user(room, me).await,
+            None => None,
+        }
+    } else {
+        None
+    };
+    let dm_avatar_url = if avatar_url.is_empty() {
+        dm_other.as_ref().map(|m| m.avatar_url.clone()).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let dm_counterpart_user_id = dm_other.map(|m| m.user_id).unwrap_or_default();
+    Some(crate::ffi::RoomInfo {
+        id: room.room_id().to_string(),
+        name,
+        topic: room.topic().unwrap_or_default(),
+        topic_html,
+        notification_count,
+        highlight_count,
+        is_direct,
+        avatar_url,
+        dm_avatar_url,
+        dm_counterpart_user_id,
+        last_message_body,
+        last_message_sender_name,
+        last_message_kind,
+        last_message_sticker_url,
+        last_message_thumbnail_url,
+        last_activity_ts,
+        is_space,
+        is_favorite,
+        is_encrypted,
+        history_visibility,
+    })
+}
+
+/// Sort a room-list snapshot in the order the UI expects: unread rooms first,
+/// then by newest `last_activity_ts`. Per-shell space partitioning runs after
+/// and preserves the order within each (non-space / space) bucket.
+#[cfg(not(test))]
+pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
+    rooms.sort_by(|a, b| {
         let a_unread = a.notification_count > 0 || a.highlight_count > 0;
         let b_unread = b.notification_count > 0 || b.highlight_count > 0;
         b_unread
             .cmp(&a_unread)
             .then_with(|| b.last_activity_ts.cmp(&a.last_activity_ts))
     });
+}
+
+#[cfg(not(test))]
+pub(super) async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
+    let mut result = Vec::new();
+    for room in client.joined_rooms() {
+        if let Some(info) = build_room_info(client, &room).await {
+            result.push(info);
+        }
+    }
+    sort_room_infos(&mut result);
     result
 }
 

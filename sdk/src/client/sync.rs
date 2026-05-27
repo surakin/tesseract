@@ -294,7 +294,12 @@ impl ClientFfi {
         };
         self.sync_service = Some(Arc::clone(&sync_service));
 
-        // Room info watcher: re-emits the full room list on every notable room update.
+        // Room info watcher: maintains a per-room cache and re-emits the room
+        // list on every notable update. The notable_update_receiver carries the
+        // `room_id` of the room that actually changed; we use that to rebuild
+        // only that room's `RoomInfo` instead of walking `joined_rooms()` and
+        // fanning out into per-room SQLite queries on every read-receipt /
+        // latest-event burst.
         {
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
@@ -324,42 +329,67 @@ impl ClientFfi {
             let previews = Arc::clone(&self.backfill_previews);
             let dm_counterparts_w = Arc::clone(&self.dm_counterparts);
 
-            // Helper: refresh the cached DM-counterpart set from a freshly
-            // built room list. Called after every build_room_infos so the
-            // presence polling task never has to walk joined_rooms itself.
+            // Refresh the cached DM-counterpart set from the cache values. The
+            // presence polling task reads this snapshot directly so it never
+            // has to walk joined_rooms itself.
             fn refresh_dm_counterparts(
-                cache: &std::sync::RwLock<std::collections::HashSet<String>>,
-                rooms: &[crate::ffi::RoomInfo],
+                cache_w: &std::sync::RwLock<std::collections::HashSet<String>>,
+                cache: &std::collections::HashMap<OwnedRoomId, crate::ffi::RoomInfo>,
             ) {
-                let new_set: std::collections::HashSet<String> = rooms
-                    .iter()
+                let new_set: std::collections::HashSet<String> = cache
+                    .values()
                     .map(|r| r.dm_counterpart_user_id.clone())
                     .filter(|s| !s.is_empty())
                     .collect();
-                if let Ok(mut g) = cache.write() {
+                if let Ok(mut g) = cache_w.write() {
                     *g = new_set;
                 }
             }
 
+            // Snapshot helper: clone the cache values into a Vec, apply
+            // backfill previews, sort, and push to the UI thread.
+            fn emit_snapshot(
+                cache: &std::collections::HashMap<OwnedRoomId, crate::ffi::RoomInfo>,
+                previews: &Mutex<
+                    std::collections::HashMap<String, crate::client::backfill::BackfillPreview>,
+                >,
+                h: &Arc<Mutex<SendHandler>>,
+            ) {
+                let mut snapshot: Vec<crate::ffi::RoomInfo> = cache.values().cloned().collect();
+                apply_backfill_previews(&mut snapshot, previews);
+                super::sort_room_infos(&mut snapshot);
+                if let Ok(guard) = h.lock() {
+                    guard.on_rooms_updated(&snapshot);
+                }
+            }
+
             self.spawn_tracked(async move {
-                // Initial snapshot. `room_info_notable_update_receiver`
+                use matrix_sdk::RoomState;
+
+                // Initial cache fill. `room_info_notable_update_receiver`
                 // only fires on *notable* room transitions (display-name,
                 // member changes, encryption state, …). After
                 // `restore_session()` the matrix-sdk has already
                 // repopulated `joined_rooms()` from the SQLite cache, but
                 // no notable update is emitted until the server actually
                 // sends one — so on a quiet restored session the UI
-                // would sit forever on an empty room list. Push the
-                // cached set once before entering the recv loop. On a
-                // fresh login `joined_rooms()` is empty here and we
-                // emit an empty list, which is then overwritten by the
-                // first sync's notable update.
-                let mut rooms = build_room_infos(&client_clone).await;
-                apply_backfill_previews(&mut rooms, &previews);
-                refresh_dm_counterparts(&dm_counterparts_w, &rooms);
-                if let Ok(guard) = h.lock() {
-                    guard.on_rooms_updated(&rooms);
+                // would sit forever on an empty room list. Walk the
+                // cached set once into our per-room cache before entering
+                // the recv loop. On a fresh login `joined_rooms()` is
+                // empty here and we emit an empty list, which is then
+                // overwritten as the first sync's notable updates arrive.
+                let mut cache: std::collections::HashMap<
+                    OwnedRoomId,
+                    crate::ffi::RoomInfo,
+                > = std::collections::HashMap::new();
+                for room in client_clone.joined_rooms() {
+                    if let Some(info) = super::build_room_info(&client_clone, &room).await {
+                        cache.insert(room.room_id().to_owned(), info);
+                    }
                 }
+                refresh_dm_counterparts(&dm_counterparts_w, &cache);
+                emit_snapshot(&cache, &previews, &h);
+
                 let invites = build_invite_infos(&client_clone).await;
                 if let Ok(guard) = h.lock() {
                     guard.on_invites_updated(&invites);
@@ -397,44 +427,91 @@ impl ClientFfi {
                         }
                         result = notable_rx.recv() => {
                             use tokio::sync::broadcast::error::{RecvError, TryRecvError};
-                            // Accumulate reasons across a short debounce
-                            // window. matrix-sdk emits 5-30 notable updates
-                            // per second during read-receipt / latest-event
-                            // bursts; on low-power machines each previously
-                            // triggered a full build_room_infos sweep that
-                            // fanned out into many state-store queries
-                            // (visible as `chunk_large_query_over` in perf
-                            // profiles). Collapsing the burst into one
-                            // rebuild eliminates the fan-out without
-                            // changing what the UI ultimately sees.
+                            // Accumulate reasons + the set of changed room
+                            // IDs across a short debounce window. matrix-sdk
+                            // emits 5-30 notable updates per second during
+                            // read-receipt / latest-event bursts; we coalesce
+                            // them into one apply pass so the UI sees one
+                            // emit per burst, not 30. The set is a HashSet
+                            // so the same room mentioned multiple times in
+                            // the window only triggers one rebuild.
                             let mut combined = RoomInfoNotableUpdateReasons::empty();
+                            let mut changed: std::collections::HashSet<OwnedRoomId> =
+                                std::collections::HashSet::new();
+                            let mut full_resync = false;
                             match result {
-                                Ok(update)              => { combined |= update.reasons; }
+                                Ok(update) => {
+                                    combined |= update.reasons;
+                                    changed.insert(update.room_id);
+                                }
                                 Err(RecvError::Lagged(_)) => {
                                     // Missed updates — assume the worst so
                                     // we rebuild everything that might
                                     // have changed.
                                     combined = RoomInfoNotableUpdateReasons::all();
+                                    full_resync = true;
                                 }
                                 Err(RecvError::Closed) => break,
                             }
                             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                             loop {
                                 match notable_rx.try_recv() {
-                                    Ok(u) => { combined |= u.reasons; }
-                                    Err(TryRecvError::Empty)     => break,
-                                    Err(TryRecvError::Closed)    => break,
+                                    Ok(u) => {
+                                        combined |= u.reasons;
+                                        changed.insert(u.room_id);
+                                    }
+                                    Err(TryRecvError::Empty)  => break,
+                                    Err(TryRecvError::Closed) => break,
                                     Err(TryRecvError::Lagged(_)) => {
                                         combined = RoomInfoNotableUpdateReasons::all();
+                                        full_resync = true;
                                     }
                                 }
                             }
-                            let mut rooms = build_room_infos(&client_clone).await;
-                            apply_backfill_previews(&mut rooms, &previews);
-                            refresh_dm_counterparts(&dm_counterparts_w, &rooms);
-                            if let Ok(guard) = h.lock() {
-                                guard.on_rooms_updated(&rooms);
+                            if full_resync {
+                                // Recover from a missed-update overflow by
+                                // re-walking joined_rooms(). Replaces the
+                                // cache wholesale so rooms that left while
+                                // we lagged are dropped.
+                                changed.clear();
+                                for room in client_clone.joined_rooms() {
+                                    changed.insert(room.room_id().to_owned());
+                                }
+                                let stale: Vec<OwnedRoomId> = cache
+                                    .keys()
+                                    .filter(|rid| !changed.contains(*rid))
+                                    .cloned()
+                                    .collect();
+                                for rid in stale {
+                                    cache.remove(&rid);
+                                }
                             }
+                            // Apply: per-room rebuild. Rooms whose membership
+                            // moved out of `Joined` (left/kicked/tombstoned)
+                            // are dropped from the cache, so the next emit
+                            // omits them.
+                            for room_id in &changed {
+                                let room = client_clone.get_room(room_id);
+                                let still_joined = room
+                                    .as_ref()
+                                    .map(|r| r.state() == RoomState::Joined)
+                                    .unwrap_or(false);
+                                if let (Some(room), true) = (room, still_joined) {
+                                    if let Some(info) =
+                                        super::build_room_info(&client_clone, &room).await
+                                    {
+                                        cache.insert(room_id.clone(), info);
+                                    } else {
+                                        // Tombstoned — exclude from the UI.
+                                        cache.remove(room_id);
+                                    }
+                                } else {
+                                    cache.remove(room_id);
+                                }
+                            }
+                            refresh_dm_counterparts(&dm_counterparts_w, &cache);
+                            emit_snapshot(&cache, &previews, &h);
+
                             let invites = build_invite_infos(&client_clone).await;
                             if let Ok(guard) = h.lock() {
                                 guard.on_invites_updated(&invites);

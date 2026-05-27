@@ -1462,3 +1462,35 @@ pub mod ffi {
         fn logout(self: &mut ClientFfi) -> OpResult;
     }
 }
+
+// cxx-bridge shared structs cannot use `#[derive(Clone)]`, but the sync
+// watcher in `client::sync` needs to clone `RoomInfo` out of a cache when
+// emitting the room-list snapshot to the UI. All fields are `String` / `bool`
+// / `u64` — the field-by-field copy below has the same semantics as a derived
+// `Clone`.
+impl Clone for ffi::RoomInfo {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            topic: self.topic.clone(),
+            topic_html: self.topic_html.clone(),
+            notification_count: self.notification_count,
+            highlight_count: self.highlight_count,
+            is_direct: self.is_direct,
+            avatar_url: self.avatar_url.clone(),
+            dm_avatar_url: self.dm_avatar_url.clone(),
+            dm_counterpart_user_id: self.dm_counterpart_user_id.clone(),
+            last_message_body: self.last_message_body.clone(),
+            last_message_sender_name: self.last_message_sender_name.clone(),
+            last_message_kind: self.last_message_kind.clone(),
+            last_message_sticker_url: self.last_message_sticker_url.clone(),
+            last_message_thumbnail_url: self.last_message_thumbnail_url.clone(),
+            last_activity_ts: self.last_activity_ts,
+            is_space: self.is_space,
+            is_favorite: self.is_favorite,
+            is_encrypted: self.is_encrypted,
+            history_visibility: self.history_visibility.clone(),
+        }
+    }
+}
