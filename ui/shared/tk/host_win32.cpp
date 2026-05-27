@@ -5,6 +5,7 @@
 #include <tesseract/settings.h>
 
 #include <commctrl.h>
+#include <richedit.h>  // MSFTEDIT_CLASS, RichEdit ES_* flags
 #include <windowsx.h> // GET_X_LPARAM / GET_Y_LPARAM
 #include <wincodec.h>
 #include <objidl.h>
@@ -509,8 +510,15 @@ public:
                         IWICImagingFactory* wic = nullptr)
         : parent_(parent), id_(ctrl_id), wic_(wic)
     {
+        // MSFTEDIT.DLL must be loaded before RICHEDIT50W windows are created.
+        // Load it once per process; RICHEDIT50W uses DirectWrite for rendering
+        // (unlike the legacy EDIT control which uses GDI) so colour emoji and
+        // other OpenType colour glyphs render correctly in the compose bar.
+        static const HMODULE s_msftedit = LoadLibraryW(L"MSFTEDIT.DLL");
+        (void)s_msftedit;
+
         hwnd_ =
-            CreateWindowExW(0, L"EDIT", L"",
+            CreateWindowExW(0, MSFTEDIT_CLASS, L"",
                             WS_CHILD | WS_VISIBLE | ES_MULTILINE |
                                 ES_AUTOVSCROLL | ES_LEFT | ES_WANTRETURN,
                             0, 0, 200, 40, parent_,
@@ -599,13 +607,14 @@ public:
     }
     void set_placeholder(std::string text) override
     {
-        if (!hwnd_)
+        // RichEdit (RICHEDIT50W) does not support EM_SETCUEBANNER.  Store the
+        // placeholder text and draw it manually in WM_PAINT when the control
+        // is empty and unfocused (see subclass_proc below).
+        placeholder_ = utf8_to_wide(text);
+        if (hwnd_)
         {
-            return;
+            InvalidateRect(hwnd_, nullptr, FALSE);
         }
-        std::wstring w = utf8_to_wide(text);
-        SendMessageW(hwnd_, EM_SETCUEBANNER, TRUE,
-                     reinterpret_cast<LPARAM>(w.c_str()));
     }
     void set_focused(bool focused) override
     {
@@ -738,28 +747,41 @@ public:
         GetTextMetricsW(hdc, &tm);
         ReleaseDC(hwnd_, hdc);
 
-        // EM_POSFROMCHAR returns -1 when the index is one past the last
-        // character — exactly where the caret sits while typing ":gri".
-        // Untreated, LOWORD/HIWORD(-1) = 65535, which flings the popup to
-        // the screen corner instead of anchoring it to the compose bar.
-        // Coordinates may also be negative when the control is scrolled,
-        // so the words must be read as signed.
-        int cx = 0, cy = 0;
-        LRESULT pos = SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start, 0);
-        if (pos != -1)
+        // RichEdit (RICHEDIT50W) uses a different EM_POSFROMCHAR signature from
+        // the legacy EDIT control:
+        //   EDIT:     SendMessage(hwnd, EM_POSFROMCHAR, charIndex, 0)
+        //             → MAKELONG(x, y), or -1 on failure
+        //   RichEdit: SendMessage(hwnd, EM_POSFROMCHAR, (WPARAM)POINTL*, charIndex)
+        //             → 0 on success, -1 on failure; coordinates written into POINTL
+        // Helper lambda wraps the RichEdit form.
+        auto pos_from_char = [&](DWORD idx, int& out_x, int& out_y) -> bool
         {
-            cx = static_cast<short>(LOWORD(pos));
-            cy = static_cast<short>(HIWORD(pos));
+            POINTL pt{};
+            LRESULT r = SendMessageW(hwnd_, EM_POSFROMCHAR,
+                                     reinterpret_cast<WPARAM>(&pt),
+                                     static_cast<LPARAM>(idx));
+            if (r == -1)
+            {
+                return false;
+            }
+            out_x = static_cast<int>(pt.x);
+            out_y = static_cast<int>(pt.y);
+            return true;
+        };
+
+        int cx = 0, cy = 0;
+        if (pos_from_char(sel_start, cx, cy))
+        {
+            // got valid coordinates
         }
         else if (sel_start > 0)
         {
             // Anchor to the previous glyph and step right by its advance.
-            LRESULT prev =
-                SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start - 1, 0);
-            if (prev != -1)
+            int px = 0, py = 0;
+            if (pos_from_char(sel_start - 1, px, py))
             {
-                cx = static_cast<short>(LOWORD(prev)) + tm.tmAveCharWidth;
-                cy = static_cast<short>(HIWORD(prev));
+                cx = px + tm.tmAveCharWidth;
+                cy = py;
             }
             else
             {
@@ -839,10 +861,11 @@ public:
         return bytes;
     }
 
-    // The Win32 EDIT control cannot render a styled inline chip, so a mention
-    // is inserted as plain "@DisplayName" text and tracked in a registry; the
-    // outgoing message is reconstructed in mention_draft(). (A true chip needs
-    // an EDIT→RichEdit migration.)
+    // RichEdit supports per-run character formatting (EM_SETCHARFORMAT), but a
+    // styled inline chip would require significant additional work.  For now a
+    // mention is inserted as plain "@DisplayName" text and tracked in a
+    // registry; mention_draft() reconstructs the outgoing segments by matching
+    // these against the current text.
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override
     {
@@ -927,6 +950,45 @@ private:
         if (msg == WM_NCPAINT)
         {
             return 0;
+        }
+        // Draw the placeholder text (cue banner) when the control is empty
+        // and unfocused.  RichEdit does not support EM_SETCUEBANNER, so we
+        // render it manually after the control's own WM_PAINT.
+        if (msg == WM_PAINT)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            if (!self->placeholder_.empty() &&
+                GetWindowTextLengthW(hwnd) == 0 &&
+                GetFocus() != hwnd)
+            {
+                HDC hdc = GetDC(hwnd);
+                HFONT font = reinterpret_cast<HFONT>(
+                    SendMessageW(hwnd, WM_GETFONT, 0, 0));
+                HGDIOBJ old_font = font ? SelectObject(hdc, font) : nullptr;
+                RECT fr{};
+                SendMessageW(hwnd, EM_GETRECT, 0,
+                             reinterpret_cast<LPARAM>(&fr));
+                SetTextColor(hdc, GetSysColor(COLOR_GRAYTEXT));
+                SetBkMode(hdc, TRANSPARENT);
+                DrawTextW(hdc, self->placeholder_.c_str(), -1, &fr,
+                          DT_LEFT | DT_TOP | DT_NOPREFIX | DT_WORDBREAK);
+                if (old_font)
+                {
+                    SelectObject(hdc, old_font);
+                }
+                ReleaseDC(hwnd, hdc);
+            }
+            return r;
+        }
+        // Repaint when focus arrives/leaves so the placeholder appears and
+        // disappears at the correct moment.
+        if (msg == WM_SETFOCUS || msg == WM_KILLFOCUS)
+        {
+            if (!self->placeholder_.empty())
+            {
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return DefSubclassProc(hwnd, msg, wParam, lParam);
         }
         if (msg == WM_KEYDOWN && self->popup_nav_)
         {
@@ -1040,6 +1102,9 @@ private:
     float last_height_ = 0.f;
     Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
     IWICImagingFactory* wic_ = nullptr;
+    // Placeholder (cue-banner) text stored as UTF-16 for DrawTextW.  Rendered
+    // manually in WM_PAINT because RichEdit does not support EM_SETCUEBANNER.
+    std::wstring placeholder_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
