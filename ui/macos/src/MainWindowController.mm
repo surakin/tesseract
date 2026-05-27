@@ -2840,7 +2840,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                  cursorRect:c->_roomTextArea
                                                                 ->cursor_rect()];
                             // Install nav handler unconditionally on every matching tick.
-                            _roomTextArea->set_on_popup_nav(
+                            c->_roomTextArea->set_on_popup_nav(
                                 [weakSelf](
                                     tk::NativeTextArea::NavKey nk) -> bool
                                 {
