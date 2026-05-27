@@ -28,6 +28,7 @@ struct ID2D1Factory1;
 struct ID2D1RenderTarget;
 struct IDWriteFactory2;
 struct IDWriteFontFallback;
+struct IDWriteFontFace;
 struct IWICImagingFactory;
 
 namespace tk::d2d
@@ -109,10 +110,13 @@ std::unique_ptr<Canvas> make_canvas(Backend&, ID2D1RenderTarget*);
 // render target (e.g. tests using CreateWicBitmapRenderTarget).
 struct Factories
 {
-    ID2D1Factory1* d2d;
-    IDWriteFactory2* dwrite;
+    ID2D1Factory1*    d2d;
+    IDWriteFactory2*  dwrite;
     IWICImagingFactory* wic;
     IDWriteFontFallback* font_fallback;
+    // Noto Color Emoji IDWriteFontFace for IProvideFontInfo injection.
+    // Null when the embedded font resource is absent or loading failed.
+    IDWriteFontFace*  noto_emoji_face;
 };
 Factories factories(Backend&);
 

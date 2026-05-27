@@ -333,6 +333,73 @@ static constexpr GUID kIID_ITextServices2 = {
     0x11ce,
     {0xa8, 0x9d, 0x00, 0xaa, 0x00, 0x6c, 0xad, 0xc5}};
 
+// IProvideFontInfo — undocumented MSFTEDIT host interface for injecting custom
+// IDWriteFontFace pointers per text run.  Documented in:
+// https://learn.microsoft.com/en-us/archive/blogs/murrays/richedit-8-feature-additions
+// GUID confirmed by QI logging against MSFTEDIT.DLL 10.0.26100.
+static constexpr GUID kIID_IProvideFontInfo = {
+    0x7502135b,
+    0x17c1,
+    0x4a25,
+    {0xbd, 0xc9, 0x55, 0xe6, 0xbc, 0xb8, 0x59, 0x8a}};
+
+// IProvideFontInfo COM interface — vtable layout must match MSFTEDIT exactly.
+// Inherits IUnknown; 4 additional methods in the order the blog documents.
+struct __declspec(novtable) IProvideFontInfo : IUnknown
+{
+    // Return the default font family name for the control.
+    virtual BSTR STDMETHODCALLTYPE GetDefaultFont() = 0;
+
+    // Return a font face ID for the text run starting at pText[0..cch-1].
+    // On entry, fontFaceIdCurrent is the face ID already in use (0 = none).
+    // On exit, set runCount = number of UTF-16 code units in the homogeneous
+    // run (all using the same returned face ID).
+    virtual DWORD STDMETHODCALLTYPE GetRunFontFaceId(
+        const wchar_t*      pCurrentFontFamilyName,
+        DWRITE_FONT_WEIGHT  weight,
+        DWRITE_FONT_STRETCH stretch,
+        DWRITE_FONT_STYLE   style,
+        LCID                lcid,
+        const wchar_t*      pText,
+        UINT                cch,
+        DWORD               fontFaceIdCurrent,
+        UINT&               runCount) = 0;
+
+    // Return the IDWriteFontFace* for the given ID (caller should Release).
+    // Return nullptr to use the control's default font.
+    virtual IDWriteFontFace* STDMETHODCALLTYPE GetFontFace(DWORD fontFaceId) = 0;
+
+    // Return a font family name suitable for RTF serialisation.
+    virtual BSTR STDMETHODCALLTYPE GetSerializableFontName(DWORD fontFaceId) = 0;
+};
+
+// ── Emoji codepoint classifier ─────────────────────────────────────────────
+// Used by Win32RichEditArea::GetRunFontFaceId to detect emoji text runs and
+// route them to the Noto Color Emoji IDWriteFontFace via IProvideFontInfo.
+static bool is_emoji_codepoint(char32_t cp)
+{
+    // All supplementary-plane emoji blocks (U+1F000 and above).
+    if (cp >= 0x1F000u) return true;
+    // Miscellaneous Symbols (☀ ☁ ☂ ♠ ♣ …)
+    if (cp >= 0x2600u && cp <= 0x26FFu) return true;
+    // Dingbats (✂ ✈ ✉ …)
+    if (cp >= 0x2700u && cp <= 0x27BFu) return true;
+    // Miscellaneous Symbols and Arrows (⬅ ⬆ ⬇ ⬛ ⬜ ⭐ …)
+    if (cp >= 0x2B00u && cp <= 0x2BFFu) return true;
+    // Enclosed Alphanumerics (🅰 🅱 🅾 🅿 …)
+    if (cp >= 0x24C2u && cp <= 0x24C2u) return true;
+    // © and ®
+    if (cp == 0x00A9u || cp == 0x00AEu) return true;
+    // ™ and ℹ
+    if (cp == 0x2122u || cp == 0x2139u) return true;
+    return false;
+}
+
+// Face ID constants used by Win32RichEditArea::IProvideFontInfo implementation.
+// 0 = let RichEdit choose the face (return fontFaceIdCurrent unchanged).
+// 1 = Noto Color Emoji (GetFontFace returns noto_face_).
+static constexpr DWORD kNotoFaceId = 1u;
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1209,14 +1276,15 @@ private:
 
 class Win32RichEditArea : public NativeTextArea,
                           public Win32TextAreaBase,
-                          public ITextHost2
+                          public ITextHost2,
+                          public IProvideFontInfo
 {
 public:
     Win32RichEditArea(HWND parent, int ctrl_id, IWICImagingFactory* wic,
                       ID2D1Factory1* d2d_factory, IDWriteFactory2* dwrite,
-                      const Theme* theme)
+                      const Theme* theme, IDWriteFontFace* noto_face)
         : parent_(parent), id_(ctrl_id), wic_(wic),
-          d2d_factory_(d2d_factory), theme_(theme)
+          d2d_factory_(d2d_factory), theme_(theme), noto_face_(noto_face)
     {
         // Register the host window class once per process.
         static bool s_cls = []() -> bool
@@ -1334,6 +1402,11 @@ public:
             IsEqualGUID(riid, kIID_ITextHost2))
         {
             *ppv = static_cast<ITextHost2*>(this);
+            return S_OK;
+        }
+        if (IsEqualGUID(riid, kIID_IProvideFontInfo))
+        {
+            *ppv = static_cast<IProvideFontInfo*>(this);
             return S_OK;
         }
         *ppv = nullptr;
@@ -1604,6 +1677,103 @@ public:
         GetClientRect(hwnd_, &r);
         *plHorzExtent = r.right - r.left;
         return S_OK;
+    }
+
+    // ── IProvideFontInfo ──────────────────────────────────────────────────
+    //
+    // MSFTEDIT QIs our ITextHost2 for IProvideFontInfo to let the host inject
+    // custom IDWriteFontFace pointers per text run.  We use this to route emoji
+    // runs to our embedded Noto Color Emoji face so the compose bar matches the
+    // rest of the application (canvas_d2d uses the same face via its fallback).
+
+    BSTR STDMETHODCALLTYPE GetDefaultFont() override
+    {
+        return SysAllocString(L"Segoe UI Variable Text");
+    }
+
+    DWORD STDMETHODCALLTYPE GetRunFontFaceId(
+        const wchar_t* /*pCurrentFontFamilyName*/,
+        DWRITE_FONT_WEIGHT  /*weight*/,
+        DWRITE_FONT_STRETCH /*stretch*/,
+        DWRITE_FONT_STYLE   /*style*/,
+        LCID                /*lcid*/,
+        const wchar_t*      pText,
+        UINT                cch,
+        DWORD               fontFaceIdCurrent,
+        UINT&               runCount) override
+    {
+        if (!pText || cch == 0)
+        {
+            runCount = cch;
+            return fontFaceIdCurrent;
+        }
+
+        // Decode the first Unicode codepoint (handle UTF-16 surrogate pairs).
+        char32_t first_cp;
+        UINT first_size;
+        if (cch >= 2 &&
+            pText[0] >= 0xD800 && pText[0] <= 0xDBFF &&
+            pText[1] >= 0xDC00 && pText[1] <= 0xDFFF)
+        {
+            first_cp = 0x10000u +
+                       (static_cast<char32_t>(pText[0] - 0xD800u) << 10) +
+                       (pText[1] - 0xDC00u);
+            first_size = 2;
+        }
+        else
+        {
+            first_cp   = pText[0];
+            first_size = 1;
+        }
+
+        const bool first_emoji = is_emoji_codepoint(first_cp);
+
+        // Extend the run while characters share the same emoji/non-emoji class.
+        UINT pos = first_size;
+        while (pos < cch)
+        {
+            char32_t cp;
+            UINT     sz;
+            if (pos + 1 < cch &&
+                pText[pos] >= 0xD800 && pText[pos] <= 0xDBFF &&
+                pText[pos + 1] >= 0xDC00 && pText[pos + 1] <= 0xDFFF)
+            {
+                cp = 0x10000u +
+                     (static_cast<char32_t>(pText[pos] - 0xD800u) << 10) +
+                     (pText[pos + 1] - 0xDC00u);
+                sz = 2;
+            }
+            else
+            {
+                cp = pText[pos];
+                sz = 1;
+            }
+            if (is_emoji_codepoint(cp) != first_emoji) break;
+            pos += sz;
+        }
+        runCount = pos;
+
+        if (first_emoji && noto_face_)
+            return kNotoFaceId;
+        return fontFaceIdCurrent; // no override — keep whatever RichEdit chose
+    }
+
+    IDWriteFontFace* STDMETHODCALLTYPE GetFontFace(DWORD fontFaceId) override
+    {
+        if (fontFaceId == kNotoFaceId && noto_face_)
+        {
+            // Caller takes ownership of one reference.
+            noto_face_->AddRef();
+            return noto_face_;
+        }
+        return nullptr; // nullptr → use the control's default font
+    }
+
+    BSTR STDMETHODCALLTYPE GetSerializableFontName(DWORD fontFaceId) override
+    {
+        if (fontFaceId == kNotoFaceId)
+            return SysAllocString(L"Noto Color Emoji");
+        return SysAllocString(L"Segoe UI Variable Text");
     }
 
     // ── Win32TextAreaBase ─────────────────────────────────────────────────
@@ -2192,6 +2362,7 @@ private:
     IWICImagingFactory* wic_         = nullptr; // borrowed; lifetime ≥ this
     ID2D1Factory1*      d2d_factory_ = nullptr; // borrowed; lifetime ≥ this
     const Theme*        theme_       = nullptr; // borrowed; lifetime ≥ this
+    IDWriteFontFace*    noto_face_   = nullptr; // borrowed; Noto Color Emoji face (may be null)
 
     std::wstring placeholder_; // UTF-16 cue banner drawn in on_paint()
 
@@ -2309,7 +2480,8 @@ public:
         int id = next_ctrl_id_++;
         auto fac = d2d::factories(backend_singleton());
         auto area = std::make_unique<Win32RichEditArea>(
-            hwnd_, id, fac.wic, fac.d2d, fac.dwrite, theme_);
+            hwnd_, id, fac.wic, fac.d2d, fac.dwrite, theme_,
+            fac.noto_emoji_face);
         areas_by_id_.emplace(id, area.get());
         return area;
     }
