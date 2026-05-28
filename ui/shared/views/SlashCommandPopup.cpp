@@ -163,4 +163,16 @@ void SlashCommandPopup::on_pointer_leave()
     hovered_index_ = -1;
 }
 
+bool SlashCommandPopup::on_wheel(tk::Point /*local*/, float /*dx*/, float dy)
+{
+    if (dy == 0.0f || visible_rows() == 0)
+        return false;
+    int delta = dy > 0.0f ? 1 : -1;
+    int next  = std::clamp(selected_index_ + delta, 0, visible_rows() - 1);
+    if (next == selected_index_)
+        return false;
+    selected_index_ = next;
+    return true;
+}
+
 } // namespace tesseract::views

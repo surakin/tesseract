@@ -46,6 +46,7 @@ public:
     void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
+    bool on_wheel(tk::Point local, float dx, float dy) override;
 
 private:
     ImageProvider image_provider_;
