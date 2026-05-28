@@ -49,6 +49,7 @@ struct MessageRowData
         DaySeparator,
         ReadMarker,
         TimelineStart,
+        PinnedEvent,   // m.room.pinned_events state-event row
         Location,
     };
 
