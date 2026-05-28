@@ -6007,8 +6007,11 @@ void MainWindow::show_slash_popup_(
                         int(tesseract::views::SlashCommandPopup::kMaxRows));
     int h = dip_to_phys(rows * tesseract::views::SlashCommandPopup::kRowHeight);
 
+    // cursor_local is already in physical pixels: Win32RichEditArea::cursor_rect
+    // uses MapWindowPoints which operates in the physical pixel space of the
+    // parent (main_app_surface_) HWND. Do NOT apply dip_to_phys to it.
     HWND parent = main_app_surface_->hwnd();
-    POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
+    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
     ClientToScreen(parent, &pt);
 
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
@@ -6019,7 +6022,7 @@ void MainWindow::show_slash_popup_(
     const int gap = dip_to_phys(4.f);
     int x = pt.x;
     int y_above = pt.y - h - gap;
-    int y_below = pt.y + dip_to_phys(cursor_local.h) + gap;
+    int y_below = pt.y + LONG(cursor_local.h) + gap;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
@@ -6111,7 +6114,7 @@ void MainWindow::show_shortcode_popup_(
     int h = dip_to_phys(rows * tesseract::views::ShortcodePopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
-    POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
+    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
     ClientToScreen(parent, &pt);
 
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
@@ -6122,7 +6125,7 @@ void MainWindow::show_shortcode_popup_(
     const int gap = dip_to_phys(4.f);
     int x = pt.x;
     int y_above = pt.y - h - gap;
-    int y_below = pt.y + dip_to_phys(cursor_local.h) + gap;
+    int y_below = pt.y + LONG(cursor_local.h) + gap;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
@@ -6192,7 +6195,7 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     int h = dip_to_phys(rows * tesseract::views::MentionPopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
-    POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
+    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
     ClientToScreen(parent, &pt);
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{};
@@ -6201,7 +6204,7 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     const int gap = dip_to_phys(4.f);
     int x = pt.x;
     int y_above = pt.y - h - gap;
-    int y_below = pt.y + dip_to_phys(cursor_local.h) + gap;
+    int y_below = pt.y + LONG(cursor_local.h) + gap;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
