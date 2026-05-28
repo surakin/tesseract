@@ -1464,26 +1464,25 @@ public:
 
     void TxInvalidateRect(LPCRECT prc, BOOL fMode) override
     {
-        // Suppress re-invalidation during TxDrawD2D to prevent a paint storm:
-        // MSFTEDIT may call TxInvalidateRect inside TxDrawD2D, which would
-        // post a new WM_PAINT, which would call TxDrawD2D again, ad infinitum.
+        // Suppress re-invalidation during TxDrawD2D: MSFTEDIT calls this on
+        // every render in D2D mode (smooth caret/cursor updates). Forwarding
+        // it as another InvalidateRect would queue a new WM_PAINT before the
+        // current one completes, creating a continuous WM_PAINT loop that
+        // starves WM_TIMER (WM_PAINT has higher priority in GetMessage).
+        // MSFTEDIT's own TxSetTimer fires TxViewChange outside of paint and
+        // correctly drives the repaint cadence from there.
         if (!in_paint_)
             InvalidateRect(hwnd_, prc, fMode);
-        else
-            needs_repaint_ = true;
+        // else: suppressed; MSFTEDIT's external timer will trigger the next repaint.
     }
     void TxViewChange(BOOL fUpdate) override
     {
         // Use async InvalidateRect instead of synchronous UpdateWindow.
         // UpdateWindow sends WM_PAINT synchronously and causes reentrancy when
         // called during TxDrawD2D (MSFTEDIT calls TxViewChange mid-draw).
-        if (fUpdate)
-        {
-            if (!in_paint_)
-                InvalidateRect(hwnd_, nullptr, FALSE);
-            else
-                needs_repaint_ = true;
-        }
+        // Suppress when in_paint_ for the same reason as TxInvalidateRect above.
+        if (fUpdate && !in_paint_)
+            InvalidateRect(hwnd_, nullptr, FALSE);
     }
 
     // MSFTEDIT in D2D mode may call these when the cursor position changes
@@ -2386,13 +2385,6 @@ private:
             InvalidateRect(hwnd_, nullptr, FALSE);
         }
 
-        // If MSFTEDIT requested a repaint during TxDrawD2D (suppressed by
-        // in_paint_ guard), post it now as an async invalidate.
-        if (needs_repaint_)
-        {
-            needs_repaint_ = false;
-            InvalidateRect(hwnd_, nullptr, FALSE);
-        }
     }
 
     void on_size(int w, int h)
@@ -2801,9 +2793,8 @@ private:
     UINT      blink_ms_    = 530;  // GetCaretBlinkTime() result; INFINITE = no blink
     UINT32 drag_anchor_    = 0;    // text position where LButton was pressed
     // Paint-storm guard: set true while inside TxDrawD2D so TxInvalidateRect /
-    // TxViewChange don't synchronously re-enter on_paint().
+    // TxViewChange don't re-enter on_paint() or queue a follow-up WM_PAINT.
     bool in_paint_       = false;
-    bool needs_repaint_  = false;
 
     IWICImagingFactory* wic_         = nullptr; // borrowed; lifetime ≥ this
     ID2D1Device*        d2d_device_  = nullptr; // borrowed; lifetime ≥ this
