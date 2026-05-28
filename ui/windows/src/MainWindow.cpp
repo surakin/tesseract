@@ -1068,20 +1068,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_TIMER:
-        if (wParam >= kDelayedPostTimerBase)
-        {
-            // One-shot delayed post (see post_to_ui_after_): fire the stored
-            // closure once and discard it.
-            KillTimer(hwnd, wParam);
-            auto it = self->delayed_posts_.find(wParam);
-            if (it != self->delayed_posts_.end())
-            {
-                std::function<void()> fn = std::move(it->second);
-                self->delayed_posts_.erase(it);
-                fn();
-            }
-            return 0;
-        }
         if (wParam == kAnimTimerId)
         {
             self->on_anim_tick();
@@ -4563,20 +4549,13 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
 
 void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
 {
-    if (!hwnd_)
-    {
-        return; // window already gone; drop the closure
-    }
-    const UINT_PTR id = next_delayed_post_id_++;
-    if (next_delayed_post_id_ == 0) // wrapped: never reuse the base sentinel
-    {
-        next_delayed_post_id_ = kDelayedPostTimerBase;
-    }
-    delayed_posts_.emplace(id, std::move(fn));
-    if (!SetTimer(hwnd_, id, static_cast<UINT>(ms), nullptr))
-    {
-        delayed_posts_.erase(id);
-    }
+    // Delegate to Host::post_delayed: a detached thread sleeps `ms` ms then
+    // marshals the closure back via PostMessageW to the surface HWND.
+    // SetTimer on hwnd_ was tried but WM_TIMER never arrived reliably at
+    // MainWindow::wnd_proc (same failure as the original kSearchDebounceTimer=3
+    // approach fixed in e09105d).
+    if (main_app_surface_)
+        main_app_surface_->host().post_delayed(ms, std::move(fn));
 }
 
 void MainWindow::on_media_bytes_ready_(const std::string& cache_key,

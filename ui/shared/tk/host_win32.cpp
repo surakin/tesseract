@@ -2569,6 +2569,11 @@ private:
                 // repaint so the self-drawn caret follows immediately.
                 if (!self->in_paint_)
                     InvalidateRect(hwnd, nullptr, FALSE);
+                // Backspace and Delete modify text; notify explicitly in case
+                // TxNotify(EN_CHANGE) does not fire in D2D mode.
+                if ((wParam == VK_BACK || wParam == VK_DELETE) &&
+                    !self->suppress_changed_)
+                    self->notify_changed();
                 return r;
             }
             break;
@@ -2584,6 +2589,12 @@ private:
             {
                 LRESULT r = 0;
                 self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                // Belt-and-suspenders: TxNotify(EN_CHANGE) may not fire
+                // synchronously in D2D mode, so call notify_changed()
+                // explicitly.  notify_changed() is idempotent if TxNotify
+                // already fired it.
+                if (!self->suppress_changed_)
+                    self->notify_changed();
                 return r;
             }
             break;
@@ -2605,6 +2616,8 @@ private:
             {
                 LRESULT r = 0;
                 self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
+                if (!self->suppress_changed_)
+                    self->notify_changed();
                 return r;
             }
             break;
