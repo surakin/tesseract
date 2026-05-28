@@ -99,10 +99,12 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
 const std::vector<SlashCommandDescriptor>& available_commands()
 {
     static const std::vector<SlashCommandDescriptor> kCommands = {
-        {"me",      "<action>",          "Send an action message"},
-        {"shrug",   "",                  "Append \xC2\xAF\\_(ツ)_/\xC2\xAF"},
-        {"slap",    "<target>",          "Slap someone with a large trout"},
-        {"spoiler", "[(reason)] <text>", "Send a hidden spoiler message"},
+        {"me",           "<action>",          "Send an action message"},
+        {"shrug",        "",                  "Append \xC2\xAF\\_(ツ)_/\xC2\xAF"},
+        {"slap",         "<target>",          "Slap someone with a large trout"},
+        {"spoiler",      "[(reason)] <text>", "Send a hidden spoiler message"},
+        {"myroomnick",   "<name>",            "Set your display name in this room"},
+        {"myroomavatar", "[mxc_uri]",         "Set your avatar in this room"},
     };
     return kCommands;
 }
@@ -198,6 +200,17 @@ Result dispatch_compose_send(Client& client,
         }
         return client.send_message(room_id, msg->body, msg->formatted_body);
     }
+
+    // `/myroomnick <name>` — set room-specific display name.
+    if (const char* name = strip_prefix(body, "/myroomnick "))
+        return client.set_room_display_name(room_id, name);
+
+    // `/myroomavatar <mxc_uri>` — set room-specific avatar to an explicit mxc.
+    // The no-argument form (`/myroomavatar` alone) is intercepted by the caller
+    // before this function is reached and opens a file picker instead.
+    if (const char* mxc = strip_prefix(body, "/myroomavatar "))
+        return client.set_room_avatar(room_id, mxc);
+
     return client.send_message(room_id, body, formatted_body);
 }
 

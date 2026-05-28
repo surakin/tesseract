@@ -49,6 +49,11 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args);
 //   - `/shrug` (with optional trailing text) → `Client::send_message`
 //     with the text suffixed by `¯\_(ツ)_/¯`. With no trailing text it
 //     sends just the emoticon.
+//   - `/myroomnick <name>` → `Client::set_room_display_name`.
+//   - `/myroomavatar <mxc_uri>` → `Client::set_room_avatar` with an
+//     explicit mxc:// URI. The no-argument form `/myroomavatar` is NOT
+//     handled here — callers must intercept it before calling this function
+//     and open a platform file picker instead.
 //
 // Slash commands not recognized here (e.g. `/foo`) fall through to
 // `send_message` and are transmitted verbatim — the homeserver will display

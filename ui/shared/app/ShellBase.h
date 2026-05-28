@@ -533,6 +533,17 @@ protected:
     virtual DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
                                        int max_w, int max_h) = 0;
 
+    // Open a platform image file picker (png/jpg/gif/webp filter) and deliver
+    // (bytes, mime) to `cb` on the UI thread. Empty bytes signal cancellation.
+    // Called from pick_and_set_room_avatar_ and SettingsController.
+    virtual void pick_image_file_(
+        std::function<void(std::vector<uint8_t>, std::string)> cb) = 0;
+
+    // Open a file picker, upload the selected image as raw media, and set it
+    // as the current user's avatar in `room_id`. No-op if not logged in.
+    // Call from the UI thread (e.g. when /myroomavatar is sent with no args).
+    void pick_and_set_room_avatar_(const std::string& room_id);
+
     // Monotonic clock in ms from the SAME epoch the shell's animation
     // timer / anim_cache_.advance() uses (Qt: QDateTime msecs; GTK:
     // g_get_monotonic_time/1000; macOS: NSDate*1000; Win32: GetTickCount64).

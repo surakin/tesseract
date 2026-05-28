@@ -902,6 +902,13 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             {
                 return;
             }
+            if (body == "/myroomavatar")
+            {
+                pick_and_set_room_avatar_(current_room_id_);
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->clear_compose_text();
+                return;
+            }
             // Build from the composer's mention draft so inline pills become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
@@ -2477,70 +2484,7 @@ void MainWindow::do_login()
                 client_,
                 [this](auto fn) { post_to_ui_(std::move(fn)); },
                 [this](auto fn) { run_async_(std::move(fn)); },
-                [this](auto cb)
-                {
-                    GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-                        "Select avatar image", GTK_WINDOW(window_),
-                        GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
-                    GtkFileFilter* filt = gtk_file_filter_new();
-                    gtk_file_filter_set_name(filt, "Images");
-                    gtk_file_filter_add_mime_type(filt, "image/png");
-                    gtk_file_filter_add_mime_type(filt, "image/jpeg");
-                    gtk_file_filter_add_mime_type(filt, "image/gif");
-                    gtk_file_filter_add_mime_type(filt, "image/webp");
-                    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), filt);
-                    g_object_unref(filt);
-
-                    struct AvatarOpenCtx {
-                        std::function<void(std::vector<uint8_t>, std::string)> callback;
-                        MainWindow* self;
-                    };
-                    auto* ctx_ptr = new AvatarOpenCtx{std::move(cb), this};
-
-                    g_signal_connect(
-                        dlg, "response",
-                        G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
-                        {
-                            auto* c = static_cast<AvatarOpenCtx*>(data);
-                            if (resp == GTK_RESPONSE_ACCEPT)
-                            {
-                                GFile* file =
-                                    gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
-                                gsize len = 0;
-                                char* raw = nullptr;
-                                GError* err = nullptr;
-                                g_file_load_contents(file, nullptr, &raw, &len,
-                                                     nullptr, &err);
-                                if (!err && raw && len > 0)
-                                {
-                                    std::vector<uint8_t> bytes(raw, raw + len);
-                                    g_free(raw);
-                                    char* path = g_file_get_path(file);
-                                    std::string mime = "image/jpeg";
-                                    if (path)
-                                    {
-                                        std::string p(path);
-                                        if (p.ends_with(".png"))       mime = "image/png";
-                                        else if (p.ends_with(".gif"))  mime = "image/gif";
-                                        else if (p.ends_with(".webp")) mime = "image/webp";
-                                        g_free(path);
-                                    }
-                                    auto callback = std::move(c->callback);
-                                    c->self->post_to_ui_(
-                                        [callback = std::move(callback),
-                                         bytes = std::move(bytes), mime]() mutable
-                                        { callback(std::move(bytes), mime); });
-                                }
-                                if (err) g_error_free(err);
-                                g_object_unref(file);
-                            }
-                            delete c;
-                            gtk_native_dialog_destroy(d);
-                        }),
-                        ctx_ptr);
-
-                    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
-                });
+                [this](auto cb) { pick_image_file_(std::move(cb)); });
             wire_key_dialog_callbacks_();
             if (active_account_index_ >= 0 &&
                 active_account_index_ < static_cast<int>(accounts_.size()))
@@ -3997,6 +3941,70 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     }
                 });
         });
+}
+
+void MainWindow::pick_image_file_(
+    std::function<void(std::vector<uint8_t>, std::string)> cb)
+{
+    GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+        "Select image", GTK_WINDOW(window_),
+        GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+    GtkFileFilter* filt = gtk_file_filter_new();
+    gtk_file_filter_set_name(filt, "Images");
+    gtk_file_filter_add_mime_type(filt, "image/png");
+    gtk_file_filter_add_mime_type(filt, "image/jpeg");
+    gtk_file_filter_add_mime_type(filt, "image/gif");
+    gtk_file_filter_add_mime_type(filt, "image/webp");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), filt);
+    g_object_unref(filt);
+
+    struct Ctx {
+        std::function<void(std::vector<uint8_t>, std::string)> cb;
+        MainWindow* self;
+    };
+    auto* ctx = new Ctx{std::move(cb), this};
+
+    g_signal_connect(
+        dlg, "response",
+        G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+        {
+            auto* c = static_cast<Ctx*>(data);
+            if (resp == GTK_RESPONSE_ACCEPT)
+            {
+                GFile* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                gsize len = 0;
+                char* raw = nullptr;
+                GError* err = nullptr;
+                g_file_load_contents(file, nullptr, &raw, &len, nullptr, &err);
+                if (!err && raw && len > 0)
+                {
+                    std::vector<uint8_t> bytes(raw, raw + len);
+                    g_free(raw);
+                    char* path = g_file_get_path(file);
+                    std::string mime = "image/jpeg";
+                    if (path)
+                    {
+                        std::string p(path);
+                        if (p.ends_with(".png"))       mime = "image/png";
+                        else if (p.ends_with(".gif"))  mime = "image/gif";
+                        else if (p.ends_with(".webp")) mime = "image/webp";
+                        g_free(path);
+                    }
+                    auto callback = std::move(c->cb);
+                    c->self->post_to_ui_(
+                        [callback = std::move(callback),
+                         bytes = std::move(bytes), mime]() mutable
+                        { callback(std::move(bytes), mime); });
+                }
+                if (err) g_error_free(err);
+                g_object_unref(file);
+            }
+            delete c;
+            gtk_native_dialog_destroy(d);
+        }),
+        ctx);
+
+    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
 }
 
 MainWindow::DecodedImage

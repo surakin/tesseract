@@ -553,6 +553,13 @@ Result Client::upload_avatar(const std::vector<uint8_t>& bytes,
     return from_ffi(impl_->ffi->upload_avatar(slice, mime_type));
 }
 
+Result Client::upload_media(const std::vector<uint8_t>& bytes,
+                             const std::string& mime_type)
+{
+    auto slice = rust::Slice<const uint8_t>{bytes.data(), bytes.size()};
+    return from_ffi(impl_->ffi->upload_media(slice, mime_type));
+}
+
 Result Client::remove_avatar()
 {
     return from_ffi(impl_->ffi->remove_avatar());
@@ -998,6 +1005,18 @@ std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
 Result Client::set_room_topic(const std::string& room_id, const std::string& topic)
 {
     return from_ffi(impl_->ffi->set_room_topic(room_id, topic));
+}
+
+Result Client::set_room_display_name(const std::string& room_id,
+                                      const std::string& name)
+{
+    return from_ffi(impl_->ffi->set_room_display_name(room_id, name));
+}
+
+Result Client::set_room_avatar(const std::string& room_id,
+                               const std::string& mxc_uri)
+{
+    return from_ffi(impl_->ffi->set_room_avatar(room_id, mxc_uri));
 }
 
 Result Client::pin_event(const std::string& room_id, const std::string& event_id)

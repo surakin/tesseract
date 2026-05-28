@@ -55,6 +55,18 @@ pub(super) async fn read_recent_emoji_entries(
     Vec::new()
 }
 
+/// Raw media upload — bytes → mxc:// URI. Does not mutate any user profile.
+/// Called by `upload_avatar` (upload + set global avatar) and by the
+/// `upload_media` FFI (bare upload for room-member avatar, etc.).
+#[cfg(not(test))]
+pub(super) async fn upload_bytes(
+    client: &Client,
+    bytes: Vec<u8>,
+    mime: &mime::Mime,
+) -> matrix_sdk::Result<matrix_sdk::ruma::OwnedMxcUri> {
+    Ok(client.media().upload(mime, bytes, None).await?.content_uri)
+}
+
 /// Read the raw JSON content of the `im.gnomos.tesseract` account-data event
 /// from the SDK's local sync cache. Returns `"{}"` when missing or on error.
 #[cfg(not(test))]
@@ -308,16 +320,35 @@ impl ClientFfi {
             Ok(m) => m,
             Err(_) => return err(format!("invalid mime type: {mime_type}")),
         };
-        match self
-            .rt
-            .block_on(async move { client.account().upload_avatar(&mime, data).await })
-        {
-            Ok(mxc) => ok(mxc.to_string()),
-            Err(e) => err(e.to_string()),
+        match self.rt.block_on(async {
+            let mxc = upload_bytes(&client, data, &mime).await?;
+            client.account().set_avatar_url(Some(&mxc)).await?;
+            Ok::<_, matrix_sdk::Error>(mxc.to_string())
+        }) {
+            Ok(mxc) => ok(mxc),
+            Err(e)  => err(e.to_string()),
         }
     }
     #[cfg(test)]
     pub fn upload_avatar(&mut self, _bytes: &[u8], _mime_type: &str) -> OpResult { err("not logged in") }
+
+    /// Upload bytes to the media server; returns the mxc:// URI in OpResult.message.
+    /// Does NOT change the user's global profile avatar.
+    #[cfg(not(test))]
+    pub fn upload_media(&mut self, bytes: &[u8], mime_type: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in"); };
+        let data = bytes.to_vec();
+        let mime: mime::Mime = match mime_type.parse() {
+            Ok(m) => m,
+            Err(_) => return err(format!("invalid mime type: {mime_type}")),
+        };
+        match self.rt.block_on(upload_bytes(&client, data, &mime)) {
+            Ok(mxc) => ok(mxc.to_string()),
+            Err(e)  => err(e.to_string()),
+        }
+    }
+    #[cfg(test)]
+    pub fn upload_media(&mut self, _bytes: &[u8], _mime_type: &str) -> OpResult { err("not logged in") }
 
     #[cfg(not(test))]
     pub fn remove_avatar(&mut self) -> OpResult {

@@ -363,4 +363,84 @@ impl ClientFfi {
     pub fn set_room_topic(&mut self, _room_id: &str, _topic: &str) -> OpResult {
         err("not logged in")
     }
+
+    /// Set the current user's display name in a specific room (m.room.member
+    /// state event). Preserves all other existing member event fields. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_display_name(&mut self, room_id: &str, name: &str) -> OpResult {
+        use matrix_sdk::ruma::events::room::member::{MembershipState, RoomMemberEventContent};
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let Some(user_id) = client.user_id() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+
+        let mut content = match self.rt.block_on(room.get_member(&user_id)) {
+            Ok(Some(m)) => match m.event().as_sync() {
+                Some(e) => e.as_original().map(|o| o.content.clone()),
+                None => None,
+            }
+            .unwrap_or_else(|| RoomMemberEventContent::new(MembershipState::Join)),
+            _ => RoomMemberEventContent::new(MembershipState::Join),
+        };
+
+        content.displayname = if name.is_empty() { None } else { Some(name.to_owned()) };
+
+        match self.rt.block_on(room.send_state_event_for_key(&*user_id, content)) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_display_name(&mut self, _room_id: &str, _name: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Set the current user's avatar in a specific room (m.room.member state
+    /// event). Preserves all other existing member event fields. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_avatar(&mut self, room_id: &str, mxc_uri: &str) -> OpResult {
+        use matrix_sdk::ruma::{
+            events::room::member::{MembershipState, RoomMemberEventContent},
+            OwnedMxcUri,
+        };
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let Some(user_id) = client.user_id() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+
+        let mxc: OwnedMxcUri = match mxc_uri.try_into() {
+            Ok(u)  => u,
+            Err(_) => return err("invalid mxc URI"),
+        };
+
+        let mut content = match self.rt.block_on(room.get_member(&user_id)) {
+            Ok(Some(m)) => match m.event().as_sync() {
+                Some(e) => e.as_original().map(|o| o.content.clone()),
+                None => None,
+            }
+            .unwrap_or_else(|| RoomMemberEventContent::new(MembershipState::Join)),
+            _ => RoomMemberEventContent::new(MembershipState::Join),
+        };
+
+        content.avatar_url = Some(mxc);
+
+        match self.rt.block_on(room.send_state_event_for_key(&*user_id, content)) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_avatar(&mut self, _room_id: &str, _mxc_uri: &str) -> OpResult {
+        err("not logged in")
+    }
 }

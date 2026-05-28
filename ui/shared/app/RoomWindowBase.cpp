@@ -457,6 +457,11 @@ void RoomWindowBase::send_message_(const std::string& body)
     {
         return;
     }
+    if (body == "/myroomavatar")
+    {
+        shell_->pick_and_set_room_avatar_(room_id_);
+        return;
+    }
     tesseract::dispatch_compose_send(*shell_->client_, room_id_, body, "");
 }
 

@@ -554,6 +554,12 @@ public:
     Result upload_avatar(const std::vector<uint8_t>& bytes,
                          const std::string& mime_type);
 
+    /// Upload bytes to the media server and return the mxc:// URI in
+    /// Result.message. Does NOT change the user's global profile avatar.
+    /// Blocks the calling thread — call from a worker thread.
+    Result upload_media(const std::vector<uint8_t>& bytes,
+                        const std::string& mime_type);
+
     /// Remove the current user's avatar from the homeserver.
     /// Blocks the calling thread — call from a worker thread.
     Result remove_avatar();
@@ -713,6 +719,16 @@ public:
     /// Send an m.room.topic state event to update the room topic.
     /// Blocks the calling thread — call from a worker thread.
     Result set_room_topic(const std::string& room_id, const std::string& topic);
+
+    /// Set the current user's display name in a specific room
+    /// (m.room.member state event). Blocks the calling thread — call from a worker thread.
+    Result set_room_display_name(const std::string& room_id,
+                                  const std::string& name);
+
+    /// Set the current user's avatar in a specific room
+    /// (m.room.member state event). Blocks the calling thread — call from a worker thread.
+    Result set_room_avatar(const std::string& room_id,
+                           const std::string& mxc_uri);
 
     /// Append event_id to the room's m.room.pinned_events state event.
     /// Idempotent (returns ok when already pinned). Server enforces PL —

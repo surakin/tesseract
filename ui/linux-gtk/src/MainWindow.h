@@ -211,6 +211,8 @@ private:
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
+    void pick_image_file_(
+        std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;

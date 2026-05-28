@@ -1333,8 +1333,28 @@ pub mod ffi {
         /// (PNG/JPEG/etc.); `mime_type` specifies the image format. Blocks — worker thread.
         fn upload_avatar(self: &mut ClientFfi, bytes: &[u8], mime_type: &str) -> OpResult;
 
+        /// Upload bytes to the media server; returns the mxc:// URI in OpResult.message.
+        /// Does NOT change the user's global profile avatar. Blocks — worker thread.
+        fn upload_media(self: &mut ClientFfi, bytes: &[u8], mime_type: &str) -> OpResult;
+
         /// Remove the current user's avatar. Blocks — worker thread.
         fn remove_avatar(self: &mut ClientFfi) -> OpResult;
+
+        /// Set the current user's display name in a specific room
+        /// (m.room.member state event). Blocks — worker thread.
+        fn set_room_display_name(
+            self: &mut ClientFfi,
+            room_id: &str,
+            name: &str,
+        ) -> OpResult;
+
+        /// Set the current user's avatar in a specific room
+        /// (m.room.member state event). Blocks — worker thread.
+        fn set_room_avatar(
+            self: &mut ClientFfi,
+            room_id: &str,
+            mxc_uri: &str,
+        ) -> OpResult;
 
         // ----- Devices / sessions -----
 

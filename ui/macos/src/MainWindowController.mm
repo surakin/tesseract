@@ -199,6 +199,8 @@ public:
     using ShellBase::DebounceSlot;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
+    void pick_image_file_(
+        std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     using ShellBase::emoji_fetches_in_flight_;
     using ShellBase::ensure_media_image_;
     using ShellBase::ensure_picker_image_;
@@ -868,6 +870,44 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
     {
         [c _relayoutChatSurface];
     }
+}
+
+void MacShell::pick_image_file_(
+    std::function<void(std::vector<uint8_t>, std::string)> cb)
+{
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
+    panel.allowedContentTypes = @[ UTTypeImage ];
+#else
+    panel.allowedFileTypes = @[ @"public.image" ];
+#endif
+    panel.canChooseFiles         = YES;
+    panel.allowsMultipleSelection = NO;
+    [panel beginWithCompletionHandler:^(NSModalResponse result) {
+        if (result != NSModalResponseOK)
+            return;
+        NSURL* url = panel.URLs.firstObject;
+        if (!url)
+            return;
+        NSData* data = [NSData dataWithContentsOfURL:url];
+        if (!data || data.length == 0)
+            return;
+        std::vector<uint8_t> bytes(
+            static_cast<const uint8_t*>(data.bytes),
+            static_cast<const uint8_t*>(data.bytes) + data.length);
+        std::string mime = "image/jpeg";
+        NSString* ext = url.pathExtension.lowercaseString;
+        if ([ext isEqualToString:@"png"])
+            mime = "image/png";
+        else if ([ext isEqualToString:@"gif"])
+            mime = "image/gif";
+        else if ([ext isEqualToString:@"webp"])
+            mime = "image/webp";
+        dispatch_async(dispatch_get_main_queue(), ^{
+            auto callback = std::move(cb);
+            callback(std::move(bytes), mime);
+        });
+    }];
 }
 
 // Pure decode — no cache mutation. Safe OFF the main queue: CGImageSource
@@ -1986,6 +2026,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = weakSelf;
             if (!s || s->_shell->current_room_id_.empty())
             {
+                return;
+            }
+            if (body == "/myroomavatar")
+            {
+                s->_shell->pick_and_set_room_avatar_(s->_shell->current_room_id_);
+                if (s->_roomTextArea) s->_roomTextArea->set_text("");
+                if (s->_roomView)    s->_roomView->set_current_text({});
                 return;
             }
             // Build from the composer's mention draft so inline pills become
@@ -4501,45 +4548,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
             },
             [ws](auto cb) {
                 MainWindowController* s = ws;
-                if (!s)
-                    return;
-                NSOpenPanel* panel = [NSOpenPanel openPanel];
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
-                panel.allowedContentTypes = @[ UTTypeImage ];
-#else
-                panel.allowedFileTypes = @[ @"public.image" ];
-#endif
-                panel.canChooseFiles = YES;
-                panel.allowsMultipleSelection = NO;
-                __weak MainWindowController* ws2 = s;
-                [panel beginWithCompletionHandler:^(NSModalResponse result) {
-                    if (result != NSModalResponseOK)
-                        return;
-                    NSURL* url = panel.URLs.firstObject;
-                    if (!url)
-                        return;
-                    NSData* data = [NSData dataWithContentsOfURL:url];
-                    if (!data || data.length == 0)
-                        return;
-                    std::vector<uint8_t> bytes(
-                        static_cast<const uint8_t*>(data.bytes),
-                        static_cast<const uint8_t*>(data.bytes) + data.length);
-                    std::string mime = "image/jpeg";
-                    NSString* ext = url.pathExtension.lowercaseString;
-                    if ([ext isEqualToString:@"png"])
-                        mime = "image/png";
-                    else if ([ext isEqualToString:@"gif"])
-                        mime = "image/gif";
-                    else if ([ext isEqualToString:@"webp"])
-                        mime = "image/webp";
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        MainWindowController* s2 = ws2;
-                        if (!s2)
-                            return;
-                        auto callback = std::move(cb);
-                        callback(std::move(bytes), mime);
-                    });
-                }];
+                if (s)
+                    s->_shell->pick_image_file_(std::move(cb));
             });
 
     // Key export/import dialog hooks.

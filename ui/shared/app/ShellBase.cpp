@@ -2921,4 +2921,30 @@ void ShellBase::after_active_room_changed_()
     refresh_pinned_for_current_room_();
 }
 
+void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+
+    pick_image_file_(
+        [this, c, room_id](std::vector<uint8_t> bytes, std::string mime) mutable
+        {
+            if (bytes.empty())
+                return; // cancelled
+            if (c != client_)
+                return; // logged out between pick and callback
+            run_async_(
+                [this, c, room_id,
+                 bytes = std::move(bytes),
+                 mime  = std::move(mime)]() mutable
+                {
+                    auto upload = c->upload_media(bytes, mime);
+                    if (!upload.ok)
+                        return;
+                    c->set_room_avatar(room_id, upload.message);
+                });
+        });
+}
+
 } // namespace tesseract

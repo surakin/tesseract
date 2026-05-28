@@ -1384,6 +1384,13 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
+            if (body == "/myroomavatar")
+            {
+                pick_and_set_room_avatar_(current_room_id_);
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->set_current_text({});
+                return;
+            }
             // Build from the composer's mention draft so mentions become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
@@ -3120,41 +3127,7 @@ void MainWindow::start_login()
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
         [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb)
-        {
-            wchar_t buf[MAX_PATH]{};
-            OPENFILENAMEW ofn{};
-            ofn.lStructSize = sizeof(ofn);
-            ofn.hwndOwner   = hwnd_;
-            ofn.lpstrFile   = buf;
-            ofn.nMaxFile    = MAX_PATH;
-            ofn.lpstrFilter = L"Images\0*.png;*.jpg;*.jpeg;*.gif;*.webp\0\0";
-            ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-            if (!GetOpenFileNameW(&ofn))
-                return;
-
-            HANDLE hf = CreateFileW(buf, GENERIC_READ, FILE_SHARE_READ, nullptr,
-                                    OPEN_EXISTING, 0, nullptr);
-            if (hf == INVALID_HANDLE_VALUE)
-                return;
-
-            LARGE_INTEGER sz{};
-            GetFileSizeEx(hf, &sz);
-            std::vector<uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
-            DWORD read_bytes = 0;
-            ReadFile(hf, bytes.data(), static_cast<DWORD>(bytes.size()),
-                     &read_bytes, nullptr);
-            CloseHandle(hf);
-
-            std::wstring wp(buf);
-            std::string mime = "image/jpeg";
-            if (wp.ends_with(L".png"))       mime = "image/png";
-            else if (wp.ends_with(L".gif"))  mime = "image/gif";
-            else if (wp.ends_with(L".webp")) mime = "image/webp";
-
-            post_to_ui_([cb = std::move(cb), bytes = std::move(bytes),
-                         mime]() mutable { cb(std::move(bytes), mime); });
-        });
+        [this](auto cb) { pick_image_file_(std::move(cb)); });
     wire_key_dialog_callbacks_();
 
     if (settings_view_)
@@ -3334,41 +3307,7 @@ void MainWindow::on_login_succeeded()
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
         [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb)
-        {
-            wchar_t buf[MAX_PATH]{};
-            OPENFILENAMEW ofn{};
-            ofn.lStructSize = sizeof(ofn);
-            ofn.hwndOwner   = hwnd_;
-            ofn.lpstrFile   = buf;
-            ofn.nMaxFile    = MAX_PATH;
-            ofn.lpstrFilter = L"Images\0*.png;*.jpg;*.jpeg;*.gif;*.webp\0\0";
-            ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-            if (!GetOpenFileNameW(&ofn))
-                return;
-
-            HANDLE hf = CreateFileW(buf, GENERIC_READ, FILE_SHARE_READ, nullptr,
-                                    OPEN_EXISTING, 0, nullptr);
-            if (hf == INVALID_HANDLE_VALUE)
-                return;
-
-            LARGE_INTEGER sz{};
-            GetFileSizeEx(hf, &sz);
-            std::vector<uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
-            DWORD read_bytes = 0;
-            ReadFile(hf, bytes.data(), static_cast<DWORD>(bytes.size()),
-                     &read_bytes, nullptr);
-            CloseHandle(hf);
-
-            std::wstring wp(buf);
-            std::string mime = "image/jpeg";
-            if (wp.ends_with(L".png"))       mime = "image/png";
-            else if (wp.ends_with(L".gif"))  mime = "image/gif";
-            else if (wp.ends_with(L".webp")) mime = "image/webp";
-
-            post_to_ui_([cb = std::move(cb), bytes = std::move(bytes),
-                         mime]() mutable { cb(std::move(bytes), mime); });
-        });
+        [this](auto cb) { pick_image_file_(std::move(cb)); });
     wire_key_dialog_callbacks_();
 
     if (settings_view_)
@@ -4667,6 +4606,45 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     {
         InvalidateRect(invalidate_hwnd, nullptr, FALSE);
     }
+}
+
+void MainWindow::pick_image_file_(
+    std::function<void(std::vector<uint8_t>, std::string)> cb)
+{
+    wchar_t buf[MAX_PATH]{};
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = hwnd_;
+    ofn.lpstrFile   = buf;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrFilter = L"Images\0*.png;*.jpg;*.jpeg;*.gif;*.webp\0\0";
+    ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (!GetOpenFileNameW(&ofn))
+        return;
+
+    HANDLE hf = CreateFileW(buf, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                            OPEN_EXISTING, 0, nullptr);
+    if (hf == INVALID_HANDLE_VALUE)
+        return;
+
+    LARGE_INTEGER sz{};
+    GetFileSizeEx(hf, &sz);
+    std::vector<uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
+    DWORD read_bytes = 0;
+    ReadFile(hf, bytes.data(), static_cast<DWORD>(bytes.size()),
+             &read_bytes, nullptr);
+    CloseHandle(hf);
+
+    std::wstring wp(buf);
+    std::string mime = "image/jpeg";
+    if (wp.ends_with(L".png"))       mime = "image/png";
+    else if (wp.ends_with(L".gif"))  mime = "image/gif";
+    else if (wp.ends_with(L".webp")) mime = "image/webp";
+
+    post_to_ui_([cb = std::move(cb), bytes = std::move(bytes), mime]() mutable
+    {
+        cb(std::move(bytes), mime);
+    });
 }
 
 MainWindow::DecodedImage

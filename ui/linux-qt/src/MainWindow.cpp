@@ -651,6 +651,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 return;
             }
+            if (body == "/myroomavatar")
+            {
+                pick_and_set_room_avatar_(current_room_id_);
+                mainApp_->room_view()->clear_compose_text();
+                if (roomTextArea_) roomTextArea_->set_text("");
+                return;
+            }
             // Build the message from the composer's mention draft so inline
             // pills become matrix.to links + m.mentions. Falls back to the
             // passed-in body when the native area has no draft.
@@ -2349,28 +2356,7 @@ void MainWindow::doLogin()
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
         [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb)
-        {
-            const QString path = QFileDialog::getOpenFileName(
-                this, tr("Select avatar image"), {},
-                tr("Images (*.png *.jpg *.jpeg *.gif *.webp)"));
-            if (path.isEmpty()) return;
-            QFile f(path);
-            if (!f.open(QIODevice::ReadOnly)) return;
-            QByteArray data = f.readAll();
-            const std::string mime =
-                path.endsWith(".png",  Qt::CaseInsensitive) ? "image/png"  :
-                path.endsWith(".gif",  Qt::CaseInsensitive) ? "image/gif"  :
-                path.endsWith(".webp", Qt::CaseInsensitive) ? "image/webp" :
-                "image/jpeg";
-            std::vector<uint8_t> bytes(data.begin(), data.end());
-            post_to_ui_([cb = std::move(cb),
-                         bytes = std::move(bytes),
-                         mime]() mutable
-            {
-                cb(std::move(bytes), mime);
-            });
-        });
+        [this](auto cb) { pick_image_file_(std::move(cb)); });
     settings_controller_->set_up_connector(active_up_connector);
     if (settingsWidget_)
         settingsWidget_->set_controller(settings_controller_.get(),
@@ -2580,28 +2566,7 @@ void MainWindow::onLoginSucceeded()
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
         [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb)
-        {
-            const QString path = QFileDialog::getOpenFileName(
-                this, tr("Select avatar image"), {},
-                tr("Images (*.png *.jpg *.jpeg *.gif *.webp)"));
-            if (path.isEmpty()) return;
-            QFile f(path);
-            if (!f.open(QIODevice::ReadOnly)) return;
-            QByteArray data = f.readAll();
-            const std::string mime =
-                path.endsWith(".png",  Qt::CaseInsensitive) ? "image/png"  :
-                path.endsWith(".gif",  Qt::CaseInsensitive) ? "image/gif"  :
-                path.endsWith(".webp", Qt::CaseInsensitive) ? "image/webp" :
-                "image/jpeg";
-            std::vector<uint8_t> bytes(data.begin(), data.end());
-            post_to_ui_([cb = std::move(cb),
-                         bytes = std::move(bytes),
-                         mime]() mutable
-            {
-                cb(std::move(bytes), mime);
-            });
-        });
+        [this](auto cb) { pick_image_file_(std::move(cb)); });
     settings_controller_->set_up_connector(new_account_up_connector);
     if (settingsWidget_)
         settingsWidget_->set_controller(settings_controller_.get(),
@@ -3151,6 +3116,30 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         shortcode_popup_surface_->update();
     }
     return;
+}
+
+void MainWindow::pick_image_file_(
+    std::function<void(std::vector<uint8_t>, std::string)> cb)
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Select image"), {},
+        tr("Images (*.png *.jpg *.jpeg *.gif *.webp)"));
+    if (path.isEmpty())
+        return;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return;
+    QByteArray data = f.readAll();
+    const std::string mime =
+        path.endsWith(".png",  Qt::CaseInsensitive) ? "image/png"  :
+        path.endsWith(".gif",  Qt::CaseInsensitive) ? "image/gif"  :
+        path.endsWith(".webp", Qt::CaseInsensitive) ? "image/webp" :
+        "image/jpeg";
+    std::vector<uint8_t> bytes(data.begin(), data.end());
+    post_to_ui_([cb = std::move(cb), bytes = std::move(bytes), mime]() mutable
+    {
+        cb(std::move(bytes), mime);
+    });
 }
 
 MainWindow::DecodedImage

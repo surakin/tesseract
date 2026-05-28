@@ -811,11 +811,9 @@ impl ClientFfi {
             let size = bytes.len();
             let bytes_owned = bytes.to_vec();
             return match self.rt.block_on(async move {
-                let uploaded = client
-                    .media()
-                    .upload(&mime_owned, bytes_owned, None)
-                    .await?;
-                let mxc_uri = uploaded.content_uri.to_string();
+                let mxc_uri = super::account::upload_bytes(&client, bytes_owned, &mime_owned)
+                    .await?
+                    .to_string();
                 let content = build_animated_image_content(
                     &mxc_uri,
                     &filename,
