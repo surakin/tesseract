@@ -1006,10 +1006,13 @@ public:
                                           kReceiptStride;
                     right_edge -= cluster_w + chip_gap();
                 }
+                right_edge -= pill_r;
                 tk::Rect pill{right_edge - pill_w, pill_y, pill_w, pill_h};
+                tk::Rect pill_visual{pill.x - pill_r, pill.y,
+                                     pill.w + 2.0f * pill_r, pill.h};
 
                 ctx.canvas.fill_rounded_rect(
-                    pill, pill_r, ctx.theme.palette.subtle_hover);
+                    pill_visual, pill_r, ctx.theme.palette.subtle_hover);
 
                 // Pointer in world-coords for per-cell hover detection.
                 // The reply/edit/delete/pin/thread cells use press_*_btn_
@@ -1029,21 +1032,8 @@ public:
 
                     if (rect_contains(cell_rect, world_ptr))
                     {
-                        // Inset the hover fill on outer cells so it doesn't
-                        // bleed past the pill's rounded corners.
-                        tk::Rect hov = cell_rect;
-                        const float corner_inset = pill_r * 0.5f;
-                        if (i == 0)
-                        {
-                            hov.x += corner_inset;
-                            hov.w -= corner_inset;
-                        }
-                        if (i + 1 == cells.size())
-                        {
-                            hov.w -= corner_inset;
-                        }
                         ctx.canvas.fill_rect(
-                            hov, ctx.theme.palette.subtle_pressed);
+                            cell_rect, ctx.theme.palette.subtle_pressed);
                     }
 
                     if (cells[i].glyph)
@@ -1081,7 +1071,7 @@ public:
                 }
 
                 ctx.canvas.stroke_rounded_rect(
-                    pill, pill_r, ctx.theme.palette.border, 1.0f);
+                    pill_visual, pill_r, ctx.theme.palette.border, 1.0f);
             }
         }
 
