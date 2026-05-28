@@ -274,6 +274,9 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     case tesseract::EventType::TimelineStart:
         row.kind = Kind::TimelineStart;
         break;
+    case tesseract::EventType::PinnedEvent:
+        row.kind = Kind::PinnedEvent;
+        break;
     }
 
     // Extract the first URL from text messages for preview card display.
@@ -396,6 +399,7 @@ constexpr float kThreadChipRadius = 6.0f;
 constexpr float kDaySepH = 28.0f;
 constexpr float kReadMarkerH = 20.0f;
 constexpr float kTimelineStartH = 20.0f;
+constexpr float kPinnedEventH   = 24.0f;  // m.room.pinned_events state row
 constexpr float kTypingRowH = 20.0f;
 
 // Max time the message list is held invisible after a room switch while
@@ -773,6 +777,10 @@ public:
         {
             return kTimelineStartH;
         }
+        if (m.kind == Kind::PinnedEvent)
+        {
+            return kPinnedEventH;
+        }
         bool cont = is_cont(index);
         float body_w = std::max(0.0f, body_text_max_width(width) -
                                           receipt_reserve_width(m));
@@ -833,6 +841,11 @@ public:
         if (m.kind == Kind::TimelineStart)
         {
             paint_timeline_start(ctx, bounds);
+            return;
+        }
+        if (m.kind == Kind::PinnedEvent)
+        {
+            paint_pinned_event(m, ctx, bounds);
             return;
         }
 
@@ -1723,6 +1736,48 @@ private:
         tk::Size sz = lo->measure();
         float cx = bounds.x + bounds.w * 0.5f;
         float cy = bounds.y + kTimelineStartH * 0.5f;
+        ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
+                             ctx.theme.palette.text_muted);
+    }
+
+    void paint_pinned_event(const MessageRowData& m, tk::PaintCtx& ctx,
+                            tk::Rect bounds) const
+    {
+        // "{sender_name} {body}" e.g. "Alice pinned a message"
+        std::string label = m.sender_name.empty()
+            ? m.body
+            : m.sender_name + " " + m.body;
+        if (label.empty())
+        {
+            return;
+        }
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        auto lo = ctx.factory.build_text(label, st);
+        if (!lo)
+        {
+            return;
+        }
+        tk::Size sz = lo->measure();
+        constexpr float kLabelPadX = 8.0f;
+        float cx = bounds.x + bounds.w * 0.5f;
+        float cy = bounds.y + kPinnedEventH * 0.5f;
+        float label_l = cx - sz.w * 0.5f - kLabelPadX;
+        float label_r = cx + sz.w * 0.5f + kLabelPadX;
+        float line_y = std::round(cy);
+        if (label_l > bounds.x + kPadX)
+        {
+            ctx.canvas.fill_rect(
+                {bounds.x + kPadX, line_y, label_l - bounds.x - kPadX, 1.0f},
+                ctx.theme.palette.border);
+        }
+        if (label_r < bounds.x + bounds.w - kPadX)
+        {
+            ctx.canvas.fill_rect(
+                {label_r, line_y, bounds.x + bounds.w - kPadX - label_r, 1.0f},
+                ctx.theme.palette.border);
+        }
         ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
                              ctx.theme.palette.text_muted);
     }
