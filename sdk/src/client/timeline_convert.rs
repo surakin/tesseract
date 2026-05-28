@@ -187,6 +187,7 @@ pub(crate) fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
 /// change. `new_pinned` and `old_pinned` are the new and previous event-ID
 /// lists respectively (as any `AsRef<str>` slice — `&[&str]` or
 /// `&[OwnedEventId]` both work).
+#[allow(dead_code)]
 pub(crate) fn pinned_events_action(
     new_pinned: &[impl AsRef<str>],
     old_pinned: &[impl AsRef<str>],
@@ -1324,10 +1325,14 @@ mod pinned_action_tests {
     }
 
     #[test]
-    fn clear_all() {
-        // "cleared" fires only when new list is empty AND old list was non-empty with >=3 items:
+    fn clear_all_three() {
+        // "cleared" fires only when new list is empty AND old list had >=3 items.
         assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b","$c"]), "cleared all pinned messages");
-        // Only 2 removed => "unpinned 2 messages"
+    }
+
+    #[test]
+    fn unpin_two_below_threshold() {
+        // Only 2 removed => threshold not met, so "unpinned N messages" fires instead.
         assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b"]), "unpinned 2 messages");
     }
 
@@ -1338,6 +1343,8 @@ mod pinned_action_tests {
 
     #[test]
     fn no_change() {
+        // Callers should filter out no-op state events (old == new) before calling.
+        // The fallthrough branch returns this, but a real caller won't reach it.
         assert_eq!(pinned_events_action(&["$a"], &["$a"]), "changed the pinned messages");
     }
 }
