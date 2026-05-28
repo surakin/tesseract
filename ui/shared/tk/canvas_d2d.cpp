@@ -183,6 +183,7 @@ struct Backend::Impl
     ComPtr<IWICImagingFactory> wic;
     ComPtr<IDWriteFontFallback> font_fallback;
     ComPtr<IDWriteFontFileLoader> mem_font_loader; // keeps Twemoji alive
+    ComPtr<IDWriteFontFace> noto_emoji_face;        // Noto Color Emoji IDWriteFontFace
     bool com_initialised_here = false;
 
     ComPtr<ID3D11Device> d3d;
@@ -246,7 +247,8 @@ struct Backend::Impl
 static ComPtr<IDWriteFontFallback>
 build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
                      ComPtr<IDWriteFontFallback> system_fallback,
-                     ComPtr<IDWriteFontFileLoader>& mem_loader_out)
+                     ComPtr<IDWriteFontFileLoader>& mem_loader_out,
+                     ComPtr<IDWriteFontFace>& face_out)
 {
     // 1. Read font bytes from the embedded RCDATA resource.
     HMODULE hmod = GetModuleHandleW(nullptr);
@@ -339,6 +341,24 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
                                                         &emoji_coll)))
     {
         return nullptr;
+    }
+
+    // Extract an IDWriteFontFace so the windowless RichEdit host can supply it
+    // via IProvideFontInfo::GetFontFace to route emoji text runs to Noto Color
+    // Emoji instead of the system Segoe UI Emoji.  Non-fatal: if this fails,
+    // face_out is left null and the fallback still works for canvas rendering.
+    {
+        ComPtr<IDWriteFontFamily> emoji_family;
+        if (SUCCEEDED(emoji_coll->GetFontFamily(0, &emoji_family)))
+        {
+            ComPtr<IDWriteFont> emoji_font;
+            if (SUCCEEDED(emoji_family->GetFirstMatchingFont(
+                    DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STRETCH_NORMAL,
+                    DWRITE_FONT_STYLE_NORMAL, &emoji_font)))
+            {
+                emoji_font->CreateFontFace(&face_out);
+            }
+        }
     }
 
     // 5. Build a fallback: all emoji blocks → Noto Color Emoji, everything else → system.
@@ -505,7 +525,8 @@ Backend::Backend() : impl_(std::make_unique<Impl>())
     check(hr, "DWriteCreateFactory");
     impl_->dwrite->GetSystemFontFallback(impl_->font_fallback.GetAddressOf());
     if (auto emoji = build_emoji_fallback(
-            impl_->dwrite, impl_->font_fallback, impl_->mem_font_loader))
+            impl_->dwrite, impl_->font_fallback, impl_->mem_font_loader,
+            impl_->noto_emoji_face))
     {
         impl_->font_fallback = std::move(emoji);
     }
@@ -522,6 +543,8 @@ Backend::~Backend()
 {
     impl_->text_formats.clear();
     impl_->wic.Reset();
+    // Release the Noto font face before unregistering the loader that backs it.
+    impl_->noto_emoji_face.Reset();
     if (impl_->mem_font_loader)
     {
         impl_->dwrite->UnregisterFontFileLoader(impl_->mem_font_loader.Get());
@@ -1832,7 +1855,8 @@ Factories factories(Backend& b)
 {
     Backend::Impl& impl = b.impl();
     return Factories{impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get(),
-                     impl.font_fallback.Get()};
+                     impl.font_fallback.Get(), impl.noto_emoji_face.Get(),
+                     impl.d2d_dev.Get(), impl.d3d.Get()};
 }
 
 // ─────────────────────────────────────────────────────────────────────────

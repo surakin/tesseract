@@ -401,6 +401,12 @@ public:
     // The host should call `Client::redact_event(room_id, event_id, "")`.
     std::function<void(const std::string& event_id)> on_delete_requested;
 
+    // Pin / Unpin affordance — fires when the user clicks the pin button on
+    // the hover-action row. Which callback fires is decided at click time
+    // based on whether `event_id` is in `pinned_event_ids_`.
+    std::function<void(const std::string& event_id)> on_pin_requested;
+    std::function<void(const std::string& event_id)> on_unpin_requested;
+
     // Fired when a local echo transitions Sending → None (message confirmed).
     std::function<void(const std::string& event_id)> on_just_sent;
 
@@ -527,10 +533,12 @@ public:
             receipt_discs;     // one per visible read-receipt disc
         tk::Rect add_button{}; // 0-area when not painted
         bool add_visible = false;
+        tk::Rect react_button{};  // 0-area when not painted
         tk::Rect reply_button{};  // 0-area when not painted
         tk::Rect thread_button{}; // 0-area when not painted
         tk::Rect edit_button{};   // 0-area when not painted
         tk::Rect delete_button{}; // 0-area when not painted
+        tk::Rect pin_button{};    // 0-area when not painted
         tk::Rect retry_button{};  // 0-area when not painted
         tk::Rect abort_button{};  // 0-area when not painted
         tk::Rect row_bounds{};
@@ -614,6 +622,22 @@ public:
         return highlighted_event_id_;
     }
 
+    /// Replace the cached set of pinned event ids for this room.
+    /// MessageListView consults the set when drawing the hover-action row
+    /// to pick Pin vs Unpin and the corresponding callback. Cleared on
+    /// set_messages(.., room_switch=true).
+    void set_pinned_event_ids(std::unordered_set<std::string> ids);
+    const std::unordered_set<std::string>& pinned_event_ids() const
+    {
+        return pinned_event_ids_;
+    }
+
+    /// Toggle visibility of the Pin/Unpin button in the hover-action row.
+    /// When false, the button is hidden entirely (not greyed out). Driven
+    /// by ShellBase from Client::can_pin_in_room. Cleared on room switch.
+    void set_can_pin(bool can_pin);
+    bool can_pin() const { return can_pin_; }
+
     // Per-chip geometry recorded by the most recent paint pass. Each entry
     // is the world-coords hit rect of a thread-preview chip and the
     // root event id its click should fire. Public for tests.
@@ -638,6 +662,12 @@ private:
     // Thread overlay state (see set_dimmed / set_highlighted_event).
     bool dimmed_ = false;
     std::string highlighted_event_id_;
+
+    // Pinned-events state (see set_pinned_event_ids / set_can_pin). The
+    // set determines whether the hover-action row shows Pin or Unpin for
+    // a given row; `can_pin_` hides the button entirely when false.
+    std::unordered_set<std::string> pinned_event_ids_;
+    bool can_pin_ = false;
     // Per-paint chip hit rects (world coords). Cleared at the top of each
     // paint pass; populated when paint_row draws a thread-root chip.
     mutable std::vector<ChipHit> chip_hit_rects_;
@@ -721,6 +751,10 @@ private:
     std::string press_sender_display_name_;
     std::string press_sender_avatar_url_;
 
+    // React button press state (action-pill cell that opens the emoji picker).
+    bool press_react_btn_ = false;
+    std::string press_react_event_id_;
+
     // Reply button press state. Tracks a clean down-up on the hover reply btn.
     bool press_reply_btn_ = false;
     std::string press_reply_event_id_;
@@ -736,6 +770,11 @@ private:
     // Thread button press state.
     bool press_thread_btn_ = false;
     std::string press_thread_event_id_;
+
+    // Pin / Unpin button press state. The pin-vs-unpin decision happens at
+    // release time based on whether press_pin_event_id_ is in pinned_event_ids_.
+    bool press_pin_btn_ = false;
+    std::string press_pin_event_id_;
 
     // Retry / abort pending-send button press state (own failed messages).
     bool press_retry_btn_ = false;

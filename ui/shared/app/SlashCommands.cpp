@@ -25,6 +25,7 @@ const std::vector<SlashCommandDescriptor>& available_commands()
     static const std::vector<SlashCommandDescriptor> kCommands = {
         {"me",    "<action>", "Send an action message"},
         {"shrug", "",         "Append \xC2\xAF\\_(ツ)_/\xC2\xAF"},
+        {"slap",  "<target>", "Slap someone with a large trout"},
     };
     return kCommands;
 }
@@ -84,6 +85,27 @@ Result dispatch_compose_send(Client& client,
             return Result{true, ""};
         }
         return client.send_emote(room_id, emote_body, emote_formatted);
+    }
+
+    // `/slap <target>` → m.emote, the classic IRC trout slap. Match is
+    // case-sensitive and requires a space after `slap` (so `/slapfoo` is sent
+    // as plain text).
+    if (const char* target = strip_prefix(body, "/slap "))
+    {
+        std::string name = target;
+        const auto first = name.find_first_not_of(" \t");
+        if (first == std::string::npos)
+        {
+            // Whitespace-only target — no-op that still clears the composer,
+            // matching how an empty `/me ` behaves.
+            return Result{true, ""};
+        }
+        const auto last = name.find_last_not_of(" \t");
+        name = name.substr(first, last - first + 1);
+
+        std::string emote_body =
+            "slaps " + name + " around a bit with a large trout";
+        return client.send_emote(room_id, emote_body, "");
     }
     return client.send_message(room_id, body, formatted_body);
 }

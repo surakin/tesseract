@@ -52,6 +52,12 @@ signals:
     void presenceChanged(bool enabled);
     void roomListGroupingChanged();
     void clearCachesRequested();
+    // Fired after the user changes their own avatar via Settings. The
+    // string is the new mxc URL (or empty for removal). MainWindow uses
+    // this to update ShellBase::my_avatar_url_ and repaint the sidebar
+    // UserInfo strip — the shared SettingsView only updates its own
+    // AccountSection chip.
+    void localAvatarChanged(QString new_mxc);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;

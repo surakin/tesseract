@@ -459,7 +459,6 @@ private:
     // are inherited from tesseract::ShellBase.
 
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
-    static constexpr UINT_PTR kSearchDebounceTimer = 3;
     static constexpr UINT_PTR kScrollDebounceTimerId = 4;
     static constexpr UINT_PTR kVerifDoneTimerId = 5;
     static constexpr UINT_PTR kMarkReadTimerId = 6;
@@ -477,6 +476,7 @@ private:
     void apply_theme_ui_(const tk::Theme& t) override;
     tk::ThemeMode os_color_scheme_() const override;
     void post_to_ui_(std::function<void()> fn) override;
+    void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
     void on_rooms_updated_() override;

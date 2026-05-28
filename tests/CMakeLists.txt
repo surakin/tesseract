@@ -61,6 +61,8 @@ add_executable(tesseract_tests
     cpp/test_find_existing_dm.cpp
     cpp/test_shell_thread_transition.cpp
     cpp/test_shell_thread_panel.cpp
+    cpp/test_message_list_pinning.cpp
+    cpp/test_tk_pinned_banner.cpp
     cpp/test_tk_message_list_threads.cpp
     cpp/test_tk_thread_list_view.cpp
     cpp/test_tk_thread_view.cpp

@@ -96,9 +96,19 @@ inline tesseract::ThreadInfo from_ffi(const tesseract_ffi::ThreadInfo& t)
     return out;
 }
 
+inline PinnedEvent from_ffi(const tesseract_ffi::PinnedEvent& p)
+{
+    return PinnedEvent{
+        std::string(p.event_id),
+        std::string(p.sender_name),
+        std::string(p.body_preview),
+        p.timestamp,
+    };
+}
+
 inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
 {
-    return {
+    RoomInfo out{
         .id = std::string(r.id),
         .name = std::string(r.name),
         .topic = std::string(r.topic),
@@ -120,6 +130,12 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .is_encrypted = r.is_encrypted,
         .history_visibility = std::string(r.history_visibility),
     };
+    out.pinned_events.reserve(r.pinned_events.size());
+    for (const auto& p : r.pinned_events)
+    {
+        out.pinned_events.push_back(from_ffi(p));
+    }
+    return out;
 }
 
 inline InviteInfo from_ffi(const tesseract_ffi::InviteInfo& i)

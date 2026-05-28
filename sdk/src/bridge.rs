@@ -84,6 +84,25 @@ pub mod ffi {
         is_encrypted: bool,
         /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
         history_visibility: String,
+        /// Snapshot of `m.room.pinned_events` resolved against the local event
+        /// cache (sender + body snippet + timestamp). Sorted newest-first so
+        /// the pinned-events banner can render without a separate fetch.
+        /// `body_preview` is `(image)` / `(file)` / etc. for non-text events
+        /// and `(unavailable)` when the id cannot be resolved.
+        pinned_events: Vec<PinnedEvent>,
+    }
+
+    /// One entry from `m.room.pinned_events` resolved for the banner UI.
+    /// `event_id` is the canonical Matrix event id; the rest is best-effort
+    /// metadata pulled from the local event cache. `body_preview` falls back
+    /// to `(unavailable)` when the id cannot be resolved without a network
+    /// round-trip — in that case `sender_name` is empty and `timestamp` is 0,
+    /// but click-to-jump still works for events present in loaded history.
+    struct PinnedEvent {
+        event_id: String,
+        sender_name: String,
+        body_preview: String,
+        timestamp: u64,
     }
 
     /// Lightweight descriptor for a pending room invitation, returned by
@@ -1288,6 +1307,19 @@ pub mod ffi {
         /// Send an m.room.topic state event. Blocks — worker thread.
         fn set_room_topic(self: &mut ClientFfi, room_id: &str, topic: &str) -> OpResult;
 
+        /// Append `event_id` to this room's `m.room.pinned_events` state
+        /// event. No-op (returns ok) if already pinned. Blocks — worker thread.
+        fn pin_event(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+
+        /// Remove `event_id` from this room's `m.room.pinned_events` state
+        /// event. No-op (returns ok) if not pinned. Blocks — worker thread.
+        fn unpin_event(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+
+        /// True iff the current user has permission to send
+        /// `m.room.pinned_events` state events in this room. Reads cached
+        /// power levels — no network round-trip. False on any uncertainty.
+        fn can_pin_in_room(self: &ClientFfi, room_id: &str) -> bool;
+
         /// Add user_id to m.ignored_user_list account data. Blocks — worker thread.
         fn ignore_user(self: &mut ClientFfi, user_id: &str) -> OpResult;
 
@@ -1502,6 +1534,20 @@ impl Clone for ffi::RoomInfo {
             is_favorite: self.is_favorite,
             is_encrypted: self.is_encrypted,
             history_visibility: self.history_visibility.clone(),
+            pinned_events: self.pinned_events.clone(),
+        }
+    }
+}
+
+// PinnedEvent is held inside `RoomInfo.pinned_events: Vec<PinnedEvent>`, so
+// it must implement Clone for the RoomInfo Clone impl above to compile.
+impl Clone for ffi::PinnedEvent {
+    fn clone(&self) -> Self {
+        Self {
+            event_id: self.event_id.clone(),
+            sender_name: self.sender_name.clone(),
+            body_preview: self.body_preview.clone(),
+            timestamp: self.timestamp,
         }
     }
 }

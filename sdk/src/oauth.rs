@@ -52,11 +52,10 @@ text-align:center;padding:4em'><h1>Sign-in failed.</h1>\
 const CLIENT_URI: &str = "https://github.com/surakin/tesseract";
 
 fn build_device_display_name() -> Option<String> {
-    const PLATFORM: &str = env!("TESSERACT_UI_PLATFORM");
     hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
-        .map(|host| format!("Tesseract on {host} ({PLATFORM})"))
+        .map(|host| format!("Tesseract on {host}"))
 }
 
 /// User-Agent string for every HTTP request matrix-sdk makes — both the

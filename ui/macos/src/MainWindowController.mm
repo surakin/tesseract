@@ -97,6 +97,7 @@ public:
 
 public:
     void post_to_ui_(std::function<void()> fn) override;
+    void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
     void on_invites_updated_() override;
@@ -186,6 +187,7 @@ public:
     using ShellBase::begin_focused_subscription_;
     using ShellBase::build_rows_;
     using ShellBase::cached_emoticons_;
+    using ShellBase::cancel_debounce_;
     using ShellBase::clear_all_caches_;
     using ShellBase::clear_focused_state_;
     using ShellBase::client_;
@@ -193,6 +195,8 @@ public:
     using ShellBase::compute_cache_sizes_;
     using ShellBase::current_room_id_;
     using ShellBase::current_thread_root_;
+    using ShellBase::debounce_;
+    using ShellBase::DebounceSlot;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
     using ShellBase::emoji_fetches_in_flight_;
@@ -446,6 +450,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onComposeSend;
 - (void)_relayoutShortcodePopupIfVisible;
 - (void)_relayoutSlashPopupIfVisible;
+- (void)_relayoutAccountPickerIfVisible;
 @end
 
 namespace
@@ -460,6 +465,17 @@ void MacShell::post_to_ui_(std::function<void()> fn)
         (*heap)();
         delete heap;
     });
+}
+
+void MacShell::post_to_ui_after_(int ms, std::function<void()> fn)
+{
+    auto* heap = new std::function<void()>(std::move(fn));
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)ms * NSEC_PER_MSEC),
+        dispatch_get_main_queue(), ^{
+            (*heap)();
+            delete heap;
+        });
 }
 
 void MacShell::request_relayout_()
@@ -629,6 +645,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     else if (kind == MediaKind::UserAvatar)
     {
         [c _relayoutChatSurface];
+        [c _relayoutAccountPickerIfVisible];
     }
 }
 
@@ -2465,6 +2482,24 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 s->_shell->on_threads_button_clicked();
             }
         };
+        _mainApp->room_view()->on_pin_requested =
+            [weakSelf](const std::string& ev)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_pin_requested(ev);
+            }
+        };
+        _mainApp->room_view()->on_unpin_requested =
+            [weakSelf](const std::string& ev)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_unpin_requested(ev);
+            }
+        };
         _mainApp->room_view()->on_thread_open_requested =
             [weakSelf](const std::string& root)
         {
@@ -3170,15 +3205,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     return;
                 }
                 s->_pendingSearchText = q;
-                [NSObject
-                    cancelPreviousPerformRequestsWithTarget:s
-                                                   selector:
-                                                       @selector(
-                                                           _applySearchFilter)
-                                                     object:nil];
-                [s performSelector:@selector(_applySearchFilter)
-                        withObject:nil
-                        afterDelay:0.5];
+                s->_shell->debounce_(
+                    MacShell::DebounceSlot::RoomSearch,
+                    tesseract::views::RoomListView::kSearchDebounceMs,
+                    [s] { [s _applySearchFilter]; });
             });
 
         _recoveryKeyField = _mainAppSurface->host().make_text_field();
@@ -3754,6 +3784,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if ([self shortcodePopupVisible] && _shortcodePopupSurface)
     {
         _shortcodePopupSurface->relayout();
+    }
+}
+
+- (void)_relayoutAccountPickerIfVisible
+{
+    if (_accountPickerPopover && _accountPickerPopover.isShown &&
+        _accountPickerSurface)
+    {
+        _accountPickerSurface->relayout();
     }
 }
 
@@ -4625,6 +4664,26 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = ws;
             if (s && s->_shell->settings_controller_)
                 s->_shell->settings_controller_->remove_avatar();
+        };
+        // Override the shared SettingsView's on_avatar_changed (which only
+        // updates the in-settings AccountSection chip) so the sidebar
+        // UserInfo strip also refreshes after a self-avatar change.
+        _shell->settings_controller_->on_avatar_changed =
+            [ws](std::string mxc)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            s->_shell->my_avatar_url_ = mxc;
+            if (s->_shell->active_account_index_ >= 0 &&
+                s->_shell->active_account_index_ <
+                    static_cast<int>(s->_shell->accounts_.size()))
+            {
+                s->_shell->accounts_[s->_shell->active_account_index_]
+                    ->avatar_url = s->_shell->my_avatar_url_;
+            }
+            s->_settingsView->set_avatar_url(mxc);
+            if (s->_settingsSurface) s->_settingsSurface->relayout();
+            [s _populateUserStrip];
         };
     }
 }

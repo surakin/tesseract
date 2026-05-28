@@ -714,6 +714,21 @@ public:
     /// Blocks the calling thread — call from a worker thread.
     Result set_room_topic(const std::string& room_id, const std::string& topic);
 
+    /// Append event_id to the room's m.room.pinned_events state event.
+    /// Idempotent (returns ok when already pinned). Server enforces PL —
+    /// failure surfaces as Result{ ok=false, message="<server error>" }.
+    /// Blocks the calling thread — call from a worker thread.
+    Result pin_event(const std::string& room_id, const std::string& event_id);
+
+    /// Remove event_id from m.room.pinned_events. Idempotent.
+    /// Blocks the calling thread — call from a worker thread.
+    Result unpin_event(const std::string& room_id, const std::string& event_id);
+
+    /// True iff the current user's PL meets the requirement for sending
+    /// m.room.pinned_events in this room. Cached read — no network.
+    /// Returns false on any uncertainty.
+    bool can_pin_in_room(const std::string& room_id);
+
     /// Returns "default" | "all" | "mentions" | "off" from the local push-rule
     /// cache. Blocks the calling thread — call from a worker thread.
     std::string get_room_notification_mode(std::string room_id) const;

@@ -199,6 +199,7 @@ private:
     void apply_theme_ui_(const tk::Theme& t) override;
     tk::ThemeMode os_color_scheme_() const override;
     void post_to_ui_(std::function<void()> fn) override;
+    void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
     void on_rooms_updated_() override;
@@ -377,7 +378,6 @@ private:
     guint tk_anim_tick_id_ = 0;
     guint presence_tick_id_ = 0;
 
-    guint search_debounce_id_ = 0;
     guint scroll_debounce_id_ = 0;
     std::string search_pending_text_;
 

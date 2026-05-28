@@ -14,6 +14,7 @@ namespace
 struct TestShell : ShellBase
 {
     void post_to_ui_(std::function<void()> fn) override { fn(); }
+    void post_to_ui_after_(int, std::function<void()> fn) override { fn(); }
     void request_relayout_() override {}
     void request_repaint_() override {}
     void on_rooms_updated_() override {}

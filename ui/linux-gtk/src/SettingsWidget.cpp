@@ -199,6 +199,15 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
         surface_->relayout();
     };
 
+    // Overwrite on_avatar_changed so the sidebar UserInfo strip can refresh.
+    // The shared SettingsView lambda only updates the AccountSection chip.
+    ctrl->on_avatar_changed = [this](std::string mxc)
+    {
+        settings_view_->set_avatar_url(mxc);
+        surface_->relayout();
+        if (on_local_avatar_changed) on_local_avatar_changed(std::move(mxc));
+    };
+
     surface_->relayout();
 }
 

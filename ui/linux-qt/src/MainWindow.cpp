@@ -198,6 +198,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         }
         mainApp_->room_list_view()->on_search_clear = [this]
         {
+            cancel_debounce_(DebounceSlot::RoomSearch);
             if (roomSearchField_)
             {
                 roomSearchField_->set_text("");
@@ -559,6 +560,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             on_threads_button_clicked();
         };
+        mainApp_->room_view()->on_pin_requested =
+            [this](const std::string& ev) { on_pin_requested(ev); };
+        mainApp_->room_view()->on_unpin_requested =
+            [this](const std::string& ev) { on_unpin_requested(ev); };
         mainApp_->room_view()->on_thread_open_requested =
             [this](const std::string& root)
         {
@@ -1462,11 +1467,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         [this](const std::string& s)
         {
             roomSearchPendingText_ = s;
-            if (mainApp_)
-            {
-                mainApp_->room_list_view()->set_search_text(s);
-            }
-            refreshRoomList();
+            debounce_(DebounceSlot::RoomSearch,
+                      tesseract::views::RoomListView::kSearchDebounceMs,
+                      [this]
+                      {
+                          if (mainApp_)
+                          {
+                              mainApp_->room_list_view()->set_search_text(
+                                  roomSearchPendingText_);
+                          }
+                          refreshRoomList();
+                      });
         });
 
     recoveryKeyField_ = mainAppSurface_->host().make_text_field();
@@ -2923,6 +2934,11 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
     QMetaObject::invokeMethod(this, std::move(fn), Qt::QueuedConnection);
 }
 
+void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
+{
+    QTimer::singleShot(ms, this, std::move(fn));
+}
+
 void MainWindow::request_relayout_()
 {
     if (mainAppSurface_)
@@ -3032,6 +3048,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (mention_popup_visible_() && mention_popup_surface_)
         {
             mention_popup_surface_->update();
+        }
+        if (accountPickerPopover_ && accountPickerPopover_->isVisible() &&
+            accountPickerSurface_)
+        {
+            accountPickerSurface_->update();
         }
         return;
     }
@@ -3903,6 +3924,20 @@ void MainWindow::openSettings()
                     });
                 });
 
+        connect(settingsWidget_, &SettingsWidget::localAvatarChanged, this,
+                [this](const QString& new_mxc)
+                {
+                    my_avatar_url_ = new_mxc.toStdString();
+                    if (active_account_index_ >= 0 &&
+                        active_account_index_ <
+                            static_cast<int>(accounts_.size()))
+                    {
+                        accounts_[active_account_index_]->avatar_url =
+                            my_avatar_url_;
+                    }
+                    populateUserStrip();
+                });
+
         // server_info_ may have already arrived before this lazy widget was
         // created — apply it now so capability gating is correct on first open.
         settingsWidget_->set_server_info(server_info_);
@@ -4556,6 +4591,10 @@ void MainWindow::rebuildAccountPicker()
             a.avatar_url,
             static_cast<int>(i) == active_account_index_,
         });
+        if (!a.avatar_url.empty())
+        {
+            ensure_user_avatar_(a.avatar_url);
+        }
     }
     accountPicker_->set_entries(std::move(entries));
 }

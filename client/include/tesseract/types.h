@@ -349,6 +349,19 @@ struct ThreadInfo
     uint64_t num_replies = 0;
 };
 
+/// One entry from `m.room.pinned_events` resolved against the local event
+/// cache for the pinned-events banner. `body_preview` falls back to
+/// `(unavailable)` when the id cannot be resolved without a network
+/// round-trip — in that case `sender_name` is empty and `timestamp` is 0,
+/// but click-to-jump still works for events present in loaded history.
+struct PinnedEvent
+{
+    std::string event_id;
+    std::string sender_name;
+    std::string body_preview;
+    std::uint64_t timestamp = 0;
+};
+
 struct RoomInfo
 {
     std::string id;
@@ -391,6 +404,10 @@ struct RoomInfo
     bool is_encrypted = false;
     /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
     std::string history_visibility;
+    /// Snapshot of `m.room.pinned_events` resolved against the local event
+    /// cache (sender + body snippet + timestamp), sorted newest-first so the
+    /// pinned-events banner can render without a separate fetch.
+    std::vector<PinnedEvent> pinned_events;
 
     /// Effective avatar mxc to render for this room: the room's own avatar
     /// when set, otherwise the DM-counterpart fallback. May be empty (caller

@@ -1068,17 +1068,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_TIMER:
-        if (wParam == kSearchDebounceTimer)
-        {
-            KillTimer(hwnd, kSearchDebounceTimer);
-            if (self->room_list_view_)
-            {
-                self->room_list_view_->set_search_text(
-                    self->pending_search_text_);
-            }
-            self->refresh_room_list();
-            return 0;
-        }
         if (wParam == kAnimTimerId)
         {
             self->on_anim_tick();
@@ -1337,7 +1326,7 @@ void MainWindow::on_create(HWND hwnd)
         };
         room_list_view_->on_search_clear = [this]
         {
-            KillTimer(hwnd_, kSearchDebounceTimer);
+            cancel_debounce_(DebounceSlot::RoomSearch);
             pending_search_text_.clear();
             if (room_search_field_)
             {
@@ -1802,6 +1791,10 @@ void MainWindow::on_create(HWND hwnd)
         {
             on_threads_button_clicked();
         };
+        room_view_->on_pin_requested =
+            [this](const std::string& ev) { on_pin_requested(ev); };
+        room_view_->on_unpin_requested =
+            [this](const std::string& ev) { on_unpin_requested(ev); };
         room_view_->on_thread_open_requested =
             [this](const std::string& root)
         {
@@ -2053,8 +2046,17 @@ void MainWindow::on_create(HWND hwnd)
             [this](const std::string& q)
             {
                 pending_search_text_ = q;
-                KillTimer(hwnd_, kSearchDebounceTimer);
-                SetTimer(hwnd_, kSearchDebounceTimer, 500, nullptr);
+                debounce_(DebounceSlot::RoomSearch,
+                          tesseract::views::RoomListView::kSearchDebounceMs,
+                          [this]
+                          {
+                              if (room_list_view_)
+                              {
+                                  room_list_view_->set_search_text(
+                                      pending_search_text_);
+                              }
+                              refresh_room_list();
+                          });
             });
 
         room_text_area_ = main_app_surface_->host().make_text_area();
@@ -3167,6 +3169,18 @@ void MainWindow::start_login()
         if (!ok) settings_view_->set_name_error(std::move(error));
         settings_surface_->relayout();
     };
+    settings_controller_->on_avatar_changed = [this](std::string mxc)
+    {
+        my_avatar_url_ = mxc;
+        if (active_account_index_ >= 0 &&
+            active_account_index_ < static_cast<int>(accounts_.size()))
+        {
+            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+        }
+        settings_view_->set_avatar_url(mxc);
+        settings_surface_->relayout();
+        populate_user_strip();
+    };
 }
 
 void MainWindow::on_login_succeeded()
@@ -3365,6 +3379,18 @@ void MainWindow::on_login_succeeded()
         settings_view_->set_name_busy(false);
         if (!ok) settings_view_->set_name_error(std::move(error));
         settings_surface_->relayout();
+    };
+    settings_controller_->on_avatar_changed = [this](std::string mxc)
+    {
+        my_avatar_url_ = mxc;
+        if (active_account_index_ >= 0 &&
+            active_account_index_ < static_cast<int>(accounts_.size()))
+        {
+            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+        }
+        settings_view_->set_avatar_url(mxc);
+        settings_surface_->relayout();
+        populate_user_strip();
     };
 }
 
@@ -4521,6 +4547,17 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
     }
 }
 
+void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
+{
+    // Delegate to Host::post_delayed: a detached thread sleeps `ms` ms then
+    // marshals the closure back via PostMessageW to the surface HWND.
+    // SetTimer on hwnd_ was tried but WM_TIMER never arrived reliably at
+    // MainWindow::wnd_proc (same failure as the original kSearchDebounceTimer=3
+    // approach fixed in e09105d).
+    if (main_app_surface_)
+        main_app_surface_->host().post_delayed(ms, std::move(fn));
+}
+
 void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                        MediaKind kind,
                                        std::vector<uint8_t> bytes)
@@ -4551,6 +4588,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
             tk_avatars_.emplace(cache_key, std::move(img));
+        }
+        if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
+            account_picker_surface_)
+        {
+            account_picker_surface_->relayout();
         }
         break;
     case MediaKind::MediaImage:
@@ -5645,6 +5687,10 @@ void MainWindow::rebuild_account_picker()
     {
         entries.push_back({s->user_id, s->display_name, s->avatar_url,
                            s->user_id == my_user_id_});
+        if (!s->avatar_url.empty())
+        {
+            ensure_user_avatar_(s->avatar_url);
+        }
     }
     if (account_picker_)
     {
