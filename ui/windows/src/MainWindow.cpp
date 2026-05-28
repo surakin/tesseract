@@ -2971,7 +2971,7 @@ void MainWindow::on_destroy()
 
 void MainWindow::on_size(int w, int h)
 {
-    constexpr int STATUS_H = 24;
+    const int STATUS_H = dip_to_phys(24.f);
 
     if (hStatus_)
     {
