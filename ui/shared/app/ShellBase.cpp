@@ -2724,6 +2724,13 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
                   : (t.new_state == ThreadPanel::List)    ? S::List
                                                           : S::Open;
         room_view_->set_thread_panel(vs, t.new_root);
+
+        // set_thread_panel lazily creates thread_list_view_ on the first List
+        // transition — wire its on_near_bottom immediately after so pagination
+        // kicks in when the user scrolls to the bottom.
+        if (auto* tlv = room_view_->thread_list_view())
+            tlv->on_near_bottom = [this] { paginate_threads_(); };
+
         request_relayout_();
     }
 
@@ -2902,10 +2909,32 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
     }
 }
 
+void ShellBase::paginate_threads_()
+{
+    if (!client_ || current_room_id_.empty() || threads_reached_start_)
+        return;
+    auto* c       = client_;
+    auto  room_id = current_room_id_;
+    run_async_([this, c, room_id]
+    {
+        auto r = c->paginate_room_threads(room_id);
+        if (r.reached_start)
+        {
+            post_to_ui_([this, c]
+            {
+                if (c == client_)
+                    threads_reached_start_ = true;
+            });
+        }
+    });
+}
+
 void ShellBase::after_active_room_changed_()
 {
     if (!client_ || current_room_id_.empty())
         return;
+    // Each new room starts with an unknown thread history — allow pagination.
+    threads_reached_start_ = false;
     // Keep an always-on background subscription on the active room so the
     // threads button reflects whether the room contains threads — long before
     // the user opens the panel. subscribe_room_threads is idempotent (aborts

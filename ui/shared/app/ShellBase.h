@@ -259,6 +259,9 @@ protected:
     ThreadPanel thread_panel_      = ThreadPanel::Closed;
     ThreadPanel thread_panel_prev_ = ThreadPanel::Closed;
     std::string current_thread_root_;
+    // Set to true once paginate_room_threads() signals reached_start so we
+    // stop firing redundant paginations. Cleared on every room switch.
+    bool threads_reached_start_ = false;
     bool compose_typing_active_ = false;
     bool typing_bar_visible_ = false;
 
@@ -626,6 +629,11 @@ protected:
     virtual void apply_thread_message_remove_(
         const std::string& thread_root, std::size_t index);
     virtual void apply_threads_list_(std::vector<ThreadInfo> threads);
+
+    // Call paginate_room_threads() on the background thread for the active room.
+    // Guards on threads_reached_start_ to stop once the server reports no more
+    // pages. Wired as ThreadListView::on_near_bottom in apply_thread_transition_.
+    void paginate_threads_();
 
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshaling. Default
