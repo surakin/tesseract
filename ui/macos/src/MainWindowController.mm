@@ -237,6 +237,7 @@ public:
     using ShellBase::per_account_invites_;
     using ShellBase::current_invite_room_id_;
     using ShellBase::current_invite_inviter_id_;
+    using ShellBase::pick_and_set_room_avatar_;
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
     using ShellBase::notify_tray_unread_;
@@ -4911,20 +4912,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     _shell->handle_verification_state_ui_(!session->unverified);
     [self _maybeShowRecoveryBanner];
-
-    if (!_shell->pending_restore_room_.empty())
-    {
-        for (const auto& r : _shell->rooms_)
-        {
-            if (r.id == _shell->pending_restore_room_ && !r.is_space)
-            {
-                std::string target = std::move(_shell->pending_restore_room_);
-                _shell->pending_restore_room_.clear();
-                [self onRoomSelected:target];
-                break;
-            }
-        }
-    }
 
     if (!_tray)
     {
