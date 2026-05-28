@@ -4941,9 +4941,12 @@ void MainWindow::show_slash_popup_(
             else
             {
                 // Needs args — autocomplete to `/name ` and leave the
-                // composer open for the user to type arguments.
+                // composer open for the user to type arguments. Use
+                // replace_range (not set_text) so the caret lands after the
+                // trailing space and the shared composer state stays in sync.
                 std::string body = "/" + s.name + " ";
-                roomTextArea_->set_text(body);
+                roomTextArea_->replace_range(
+                    0, static_cast<int>(roomTextArea_->text().size()), body);
             }
         };
         slash_popup_widget_->on_dismissed = [this]

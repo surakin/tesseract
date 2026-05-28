@@ -4010,8 +4010,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
             }
             else
             {
+                // Use replace_range (not set_text) so the caret lands after
+                // the trailing space and shared composer state stays in sync.
                 std::string body = "/" + s.name + " ";
-                c->_roomTextArea->set_text(body);
+                c->_roomTextArea->replace_range(
+                    0, static_cast<int>(c->_roomTextArea->text().size()), body);
             }
         };
         _slashPopupWidget->on_dismissed = [weakSelf]
