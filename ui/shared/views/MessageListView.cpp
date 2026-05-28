@@ -1954,6 +1954,7 @@ private:
         case MessageRowData::Kind::DaySeparator:
         case MessageRowData::Kind::ReadMarker:
         case MessageRowData::Kind::TimelineStart:
+        case MessageRowData::Kind::PinnedEvent:
             return 0.0f;
         }
         return quote_h;
@@ -2267,6 +2268,7 @@ private:
         case MessageRowData::Kind::DaySeparator:
         case MessageRowData::Kind::ReadMarker:
         case MessageRowData::Kind::TimelineStart:
+        case MessageRowData::Kind::PinnedEvent:
             break;
         }
         return y;
