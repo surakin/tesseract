@@ -250,7 +250,9 @@ protected:
     // (refresh in place, no blank). Updated by each shell's
     // handle_timeline_reset_ui_.
     std::string view_displayed_room_id_;
-    std::string pending_restore_room_;
+    /// Rooms to restore on next on_rooms_updated_: [0] is the active tab,
+    /// [1..N] are background tabs. Cleared once fully consumed.
+    std::vector<std::string> pending_restore_rooms_;
     std::vector<std::string> space_stack_;
 
     // ── Thread panel state ────────────────────────────────────────────────────
@@ -1156,6 +1158,13 @@ protected:
     // the live room-selection path.  Must be called before subscribe_room() so
     // that the subsequent handle_timeline_reset_ui_() sees is_focused == false.
     void clear_focused_state_(const std::string& room_id);
+
+    // Restore a saved tab session: populates tabs_ from room_ids (filtered to
+    // those present in rooms_ and not spaces), sets the active tab to
+    // active_room_id, then fires on_tab_state_changed_ui_() once.
+    // Returns true when at least one tab was found and the session was applied.
+    bool try_restore_tab_session_(const std::vector<std::string>& room_ids,
+                                  const std::string& active_room_id);
 
     // MSC3030: paginate forward in a focused timeline; switches to live when done.
     void request_forward_history_(const std::string& room_id);

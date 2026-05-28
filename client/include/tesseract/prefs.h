@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 namespace tesseract
 {
@@ -8,8 +9,10 @@ namespace tesseract
 /// Matrix global account-data event so they follow the user across devices.
 struct PrefsData
 {
-    std::string
-        last_room; ///< Room ID to reopen on next launch. Empty when none.
+    std::string last_room; ///< Active tab room ID. Empty when none.
+    /// All open tab room IDs in visual order; includes last_room.
+    /// Empty on first launch or when migrating from old prefs.
+    std::vector<std::string> open_rooms;
 };
 
 /// Parse / serialize helpers for the `im.gnomos.tesseract` JSON content object.

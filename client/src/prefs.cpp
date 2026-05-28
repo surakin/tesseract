@@ -1,54 +1,39 @@
 #include "tesseract/prefs.h"
-#include "json_util.h"
+
+#include <nlohmann/json.hpp>
 
 #include <string>
+#include <vector>
 
 namespace tesseract
 {
 namespace Prefs
 {
 
-// Minimal extractor for a single string value by key from a flat JSON object.
-// Handles {"last_room":"!id:host"} — room IDs never contain '"' or '\'.
-static std::string extract_string(const std::string& json,
-                                  const std::string& key)
-{
-    std::string needle = "\"" + key + "\"";
-    auto pos = json.find(needle);
-    if (pos == std::string::npos)
-    {
-        return {};
-    }
-    pos += needle.size();
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
-    {
-        ++pos;
-    }
-    if (pos >= json.size() || json[pos] != '"')
-    {
-        return {};
-    }
-    ++pos;
-    auto end = json.find('"', pos);
-    if (end == std::string::npos)
-    {
-        return {};
-    }
-    return json.substr(pos, end - pos);
-}
-
-PrefsData parse(const std::string& json)
+PrefsData parse(const std::string& json_str)
 {
     PrefsData p;
-    p.last_room = extract_string(json, "last_room");
+    try
+    {
+        auto j    = nlohmann::json::parse(json_str);
+        p.last_room  = j.value("last_room", std::string{});
+        p.open_rooms = j.value("open_rooms", std::vector<std::string>{});
+    }
+    catch (...)
+    {
+    }
+    // Backward compat: old prefs have last_room but no open_rooms array.
+    if (p.open_rooms.empty() && !p.last_room.empty())
+        p.open_rooms.push_back(p.last_room);
     return p;
 }
 
-
 std::string serialize(const PrefsData& p)
 {
-    return "{\"last_room\":\"" + json_escape(p.last_room) + "\"}";
+    nlohmann::json j;
+    j["last_room"]  = p.last_room;
+    j["open_rooms"] = p.open_rooms;
+    return j.dump();
 }
 
 } // namespace Prefs

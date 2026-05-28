@@ -3050,8 +3050,11 @@ void MainWindow::start_login()
         sess->user_id = sess->client->get_user_id();
         sess->display_name = sess->client->get_display_name();
         sess->avatar_url = sess->client->get_avatar_url();
-        sess->last_room =
-            tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
+        {
+            auto prefs = tesseract::Prefs::parse(sess->client->load_prefs_json());
+            sess->last_room  = prefs.last_room;
+            sess->open_rooms = prefs.open_rooms;
+        }
 
         auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
         bridge->set_user_id(sess->user_id);
@@ -3299,8 +3302,11 @@ void MainWindow::on_login_succeeded()
     sess->user_id = sess->client->get_user_id();
     sess->display_name = sess->client->get_display_name();
     sess->avatar_url = sess->client->get_avatar_url();
-    sess->last_room =
-        tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
+    {
+        auto prefs = tesseract::Prefs::parse(sess->client->load_prefs_json());
+        sess->last_room  = prefs.last_room;
+        sess->open_rooms = prefs.open_rooms;
+    }
 
     auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
     bridge->set_user_id(sess->user_id);
@@ -3782,6 +3788,11 @@ void MainWindow::on_room_selected(const std::string& room_id)
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
         prefs.last_room = current_room_id_;
+        prefs.open_rooms.clear();
+        for (const auto& t : tabs_)
+            prefs.open_rooms.push_back(t.room_id);
+        if (prefs.open_rooms.empty())
+            prefs.open_rooms.push_back(current_room_id_);
         client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (room_view_)
@@ -4031,18 +4042,11 @@ void MainWindow::on_rooms_updated_()
             }
         }
     }
-    else if (!pending_restore_room_.empty())
+    else if (!pending_restore_rooms_.empty())
     {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == pending_restore_room_ && !r.is_space)
-            {
-                std::string target = std::move(pending_restore_room_);
-                pending_restore_room_.clear();
-                on_room_selected(target);
-                break;
-            }
-        }
+        if (try_restore_tab_session_(pending_restore_rooms_,
+                                     pending_restore_rooms_[0]))
+            pending_restore_rooms_.clear();
     }
 
     update_secondary_room_infos_();
@@ -5371,12 +5375,25 @@ void MainWindow::switch_active_account(int new_idx)
     my_user_id_ = sess->user_id;
     my_display_name_ = sess->display_name;
     my_avatar_url_ = sess->avatar_url;
-    pending_restore_room_ = sess->last_room;
+    pending_restore_rooms_ = sess->open_rooms.empty()
+        ? (sess->last_room.empty() ? std::vector<std::string>{}
+                                   : std::vector<std::string>{sess->last_room})
+        : sess->open_rooms;
+    if (!sess->last_room.empty() && !pending_restore_rooms_.empty() &&
+        pending_restore_rooms_[0] != sess->last_room)
+    {
+        auto it = std::find(pending_restore_rooms_.begin(),
+                            pending_restore_rooms_.end(), sess->last_room);
+        if (it != pending_restore_rooms_.end())
+            std::rotate(pending_restore_rooms_.begin(), it, it + 1);
+    }
 
     if (settings_controller_)
         settings_controller_->set_client(client_);
 
     current_room_id_.clear();
+    tabs_.clear();
+    active_tab_idx_ = 0;
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();

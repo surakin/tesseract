@@ -2259,9 +2259,11 @@ void MainWindow::doLogin()
         }
         session->display_name = session->client->get_display_name();
         session->avatar_url = session->client->get_avatar_url();
-        session->last_room =
-            tesseract::Prefs::parse(session->client->load_prefs_json())
-                .last_room;
+        {
+            auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
+            session->last_room  = prefs.last_room;
+            session->open_rooms = prefs.open_rooms;
+        }
 
         auto bridge = std::make_unique<EventBridge>(this, this);
         bridge->set_user_id(uid);
@@ -2517,8 +2519,11 @@ void MainWindow::onLoginSucceeded()
     }
     session->display_name = session->client->get_display_name();
     session->avatar_url = session->client->get_avatar_url();
-    session->last_room =
-        tesseract::Prefs::parse(session->client->load_prefs_json()).last_room;
+    {
+        auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
+        session->last_room  = prefs.last_room;
+        session->open_rooms = prefs.open_rooms;
+    }
 
     auto bridge = std::make_unique<EventBridge>(this, this);
     bridge->set_user_id(user_id);
@@ -2738,6 +2743,11 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
         prefs.last_room = current_room_id_;
+        prefs.open_rooms.clear();
+        for (const auto& t : tabs_)
+            prefs.open_rooms.push_back(t.room_id);
+        if (prefs.open_rooms.empty())
+            prefs.open_rooms.push_back(current_room_id_);
         client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (mainApp_)
@@ -2990,18 +3000,11 @@ void MainWindow::on_rooms_updated_()
             }
         }
     }
-    else if (!pending_restore_room_.empty())
+    else if (!pending_restore_rooms_.empty())
     {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == pending_restore_room_ && !r.is_space)
-            {
-                std::string target = std::move(pending_restore_room_);
-                pending_restore_room_.clear();
-                onRoomSelected(target);
-                break;
-            }
-        }
+        if (try_restore_tab_session_(pending_restore_rooms_,
+                                     pending_restore_rooms_[0]))
+            pending_restore_rooms_.clear();
     }
 
     update_secondary_room_infos_();
@@ -4373,6 +4376,8 @@ void MainWindow::switchActiveAccount(int new_idx)
         client_->unsubscribe_room(current_room_id_);
     }
     current_room_id_.clear();
+    tabs_.clear();
+    active_tab_idx_ = 0;
     // Per-account, room-id-keyed state must not bleed into the next account
     // (a room id present in both accounts would otherwise inherit stale
     // pagination / space-drill / reply-fetch state).
@@ -4392,7 +4397,19 @@ void MainWindow::switchActiveAccount(int new_idx)
     my_user_id_ = s.user_id;
     my_display_name_ = s.display_name;
     my_avatar_url_ = s.avatar_url;
-    pending_restore_room_ = s.last_room;
+    pending_restore_rooms_ = s.open_rooms.empty()
+        ? (s.last_room.empty() ? std::vector<std::string>{}
+                               : std::vector<std::string>{s.last_room})
+        : s.open_rooms;
+    // Rotate last_room to [0] so it opens as the active tab.
+    if (!s.last_room.empty() && !pending_restore_rooms_.empty() &&
+        pending_restore_rooms_[0] != s.last_room)
+    {
+        auto it = std::find(pending_restore_rooms_.begin(),
+                            pending_restore_rooms_.end(), s.last_room);
+        if (it != pending_restore_rooms_.end())
+            std::rotate(pending_restore_rooms_.begin(), it, it + 1);
+    }
 
     if (settings_controller_)
     {
@@ -4422,20 +4439,13 @@ void MainWindow::switchActiveAccount(int new_idx)
     {
         rooms_ = it->second;
         refreshRoomList();
-        // Rooms are already in cache — try to restore the last open room
+        // Rooms are already in cache — try to restore the tab session
         // immediately. on_rooms_updated_ handles the async case (no cache).
-        if (!pending_restore_room_.empty())
+        if (!pending_restore_rooms_.empty())
         {
-            for (const auto& r : rooms_)
-            {
-                if (r.id == pending_restore_room_ && !r.is_space)
-                {
-                    std::string target = std::move(pending_restore_room_);
-                    pending_restore_room_.clear();
-                    onRoomSelected(target);
-                    break;
-                }
-            }
+            if (try_restore_tab_session_(pending_restore_rooms_,
+                                         pending_restore_rooms_[0]))
+                pending_restore_rooms_.clear();
         }
     }
     else

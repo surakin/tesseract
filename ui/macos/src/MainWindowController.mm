@@ -229,7 +229,8 @@ public:
     using ShellBase::pending_login_client_;
     using ShellBase::pending_login_is_add_account_;
     using ShellBase::pending_login_temp_dir_;
-    using ShellBase::pending_restore_room_;
+    using ShellBase::pending_restore_rooms_;
+    using ShellBase::try_restore_tab_session_;
     using ShellBase::per_account_rooms_;
     using ShellBase::per_account_invites_;
     using ShellBase::current_invite_room_id_;
@@ -518,19 +519,12 @@ void MacShell::on_rooms_updated_()
             }
         }
     }
-    else if (!pending_restore_room_.empty() &&
+    else if (!pending_restore_rooms_.empty() &&
              last_room_list_state_ == tesseract::RoomListState::Running)
     {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == pending_restore_room_ && !r.is_space)
-            {
-                std::string target = std::move(pending_restore_room_);
-                pending_restore_room_.clear();
-                [c onRoomSelected:target];
-                break;
-            }
-        }
+        if (try_restore_tab_session_(pending_restore_rooms_,
+                                     pending_restore_rooms_[0]))
+            pending_restore_rooms_.clear();
     }
 
     update_secondary_room_infos_();
@@ -4437,9 +4431,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         session->user_id = session->client->get_user_id();
         session->display_name = session->client->get_display_name();
         session->avatar_url = session->client->get_avatar_url();
-        session->last_room =
-            tesseract::Prefs::parse(session->client->load_prefs_json())
-                .last_room;
+        {
+            auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
+            session->last_room  = prefs.last_room;
+            session->open_rooms = prefs.open_rooms;
+        }
         session->sync_started = true;
         session->client->start_sync(session->bridge.get());
 
@@ -4769,8 +4765,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     session->user_id = newUserId;
     session->display_name = session->client->get_display_name();
     session->avatar_url = session->client->get_avatar_url();
-    session->last_room =
-        tesseract::Prefs::parse(session->client->load_prefs_json()).last_room;
+    {
+        auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
+        session->last_room  = prefs.last_room;
+        session->open_rooms = prefs.open_rooms;
+    }
     session->sync_started = true;
     session->client->start_sync(session->bridge.get());
 
@@ -4826,13 +4825,27 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _shell->my_user_id_ = session->user_id;
     _shell->my_display_name_ = session->display_name;
     _shell->my_avatar_url_ = session->avatar_url;
-    _shell->pending_restore_room_ = session->last_room;
+    _shell->pending_restore_rooms_ = session->open_rooms.empty()
+        ? (session->last_room.empty() ? std::vector<std::string>{}
+                                      : std::vector<std::string>{session->last_room})
+        : session->open_rooms;
+    if (!session->last_room.empty() && !_shell->pending_restore_rooms_.empty() &&
+        _shell->pending_restore_rooms_[0] != session->last_room)
+    {
+        auto it = std::find(_shell->pending_restore_rooms_.begin(),
+                            _shell->pending_restore_rooms_.end(),
+                            session->last_room);
+        if (it != _shell->pending_restore_rooms_.end())
+            std::rotate(_shell->pending_restore_rooms_.begin(), it, it + 1);
+    }
 
     auto idxData = tesseract::SessionStore::load_index();
     idxData.active_user_id = _shell->my_user_id_;
     tesseract::SessionStore::save_index(idxData);
 
     _shell->current_room_id_.clear();
+    _shell->tabs_.clear();
+    _shell->active_tab_idx_ = 0;
     _shell->space_stack_.clear();
 
     auto it = _shell->per_account_rooms_.find(_shell->my_user_id_);
@@ -5843,18 +5856,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // imbl promote_front data race in matrix-sdk-ui).
     if (_shell->last_room_list_state_ == RLS::Running &&
         _shell->current_room_id_.empty() &&
-        !_shell->pending_restore_room_.empty())
+        !_shell->pending_restore_rooms_.empty())
     {
-        for (const auto& r : _shell->rooms_)
-        {
-            if (r.id == _shell->pending_restore_room_ && !r.is_space)
-            {
-                std::string target = std::move(_shell->pending_restore_room_);
-                _shell->pending_restore_room_.clear();
-                [self onRoomSelected:target];
-                break;
-            }
-        }
+        if (_shell->try_restore_tab_session_(_shell->pending_restore_rooms_,
+                                              _shell->pending_restore_rooms_[0]))
+            _shell->pending_restore_rooms_.clear();
     }
 }
 
@@ -6176,6 +6182,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         auto prefs =
             tesseract::Prefs::parse(_shell->client_->load_prefs_json());
         prefs.last_room = roomId;
+        prefs.open_rooms.clear();
+        for (const auto& t : _shell->tabs_)
+            prefs.open_rooms.push_back(t.room_id);
+        if (prefs.open_rooms.empty())
+            prefs.open_rooms.push_back(roomId);
         _shell->client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (_roomView)

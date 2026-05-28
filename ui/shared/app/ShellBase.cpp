@@ -1597,17 +1597,25 @@ static std::string format_typing_text(const std::vector<std::string>& names)
 void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
                                                  std::string json)
 {
-    // Only the active account's prefs set the pending restore room.
+    // Only the active account's prefs set the pending restore rooms.
     if (active_account_index_ < 0 ||
         accounts_[active_account_index_]->user_id != user_id)
     {
         return;
     }
     auto prefs = tesseract::Prefs::parse(json);
-    if (!prefs.last_room.empty() && pending_restore_room_.empty() &&
+    if (!prefs.open_rooms.empty() && pending_restore_rooms_.empty() &&
         current_room_id_.empty())
     {
-        pending_restore_room_ = prefs.last_room;
+        pending_restore_rooms_ = prefs.open_rooms;
+        // Ensure last_room (active tab) is at [0].
+        if (!prefs.last_room.empty() && pending_restore_rooms_[0] != prefs.last_room)
+        {
+            auto it = std::find(pending_restore_rooms_.begin(),
+                                pending_restore_rooms_.end(), prefs.last_room);
+            if (it != pending_restore_rooms_.end())
+                std::rotate(pending_restore_rooms_.begin(), it, it + 1);
+        }
     }
 }
 
@@ -2359,6 +2367,50 @@ void ShellBase::tab_close(const std::string& room_id)
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     after_active_room_changed_();
     on_tab_state_changed_ui_();
+}
+
+bool ShellBase::try_restore_tab_session_(
+    const std::vector<std::string>& room_ids,
+    const std::string&              active_room_id)
+{
+    std::vector<TabState> new_tabs;
+    for (const auto& id : room_ids)
+    {
+        for (const auto& r : rooms_)
+        {
+            if (r.id == id && !r.is_space)
+            {
+                new_tabs.push_back({id, 0.f, {}});
+                break;
+            }
+        }
+    }
+    if (new_tabs.empty())
+        return false;
+
+    tabs_          = std::move(new_tabs);
+    active_tab_idx_ = 0;
+    if (!active_room_id.empty())
+    {
+        for (size_t i = 0; i < tabs_.size(); ++i)
+        {
+            if (tabs_[i].room_id == active_room_id)
+            {
+                active_tab_idx_ = i;
+                break;
+            }
+        }
+    }
+    {
+        auto _tt = compute_thread_transition_(thread_panel_, thread_panel_prev_,
+                                              current_thread_root_,
+                                              ThreadTrigger::RoomSwitch, {});
+        apply_thread_transition_(_tt);
+    }
+    current_room_id_ = tabs_[active_tab_idx_].room_id;
+    after_active_room_changed_();
+    on_tab_state_changed_ui_();
+    return true;
 }
 
 void ShellBase::wire_voice_capture_(

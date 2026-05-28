@@ -47,3 +47,47 @@ TEST_CASE("Prefs serialize empty last_room produces valid JSON")
     auto p2 = parse(json);
     CHECK(p2.last_room.empty());
 }
+
+TEST_CASE("Prefs parse open_rooms array")
+{
+    auto p = parse(R"({"last_room":"!a:h","open_rooms":["!a:h","!b:h","!c:h"]})");
+    CHECK(p.last_room == "!a:h");
+    REQUIRE(p.open_rooms.size() == 3);
+    CHECK(p.open_rooms[0] == "!a:h");
+    CHECK(p.open_rooms[1] == "!b:h");
+    CHECK(p.open_rooms[2] == "!c:h");
+}
+
+TEST_CASE("Prefs backward compat: last_room only populates open_rooms")
+{
+    auto p = parse(R"({"last_room":"!r:host"})");
+    CHECK(p.last_room == "!r:host");
+    REQUIRE(p.open_rooms.size() == 1);
+    CHECK(p.open_rooms[0] == "!r:host");
+}
+
+TEST_CASE("Prefs serialize open_rooms round-trips")
+{
+    PrefsData p;
+    p.last_room  = "!a:h";
+    p.open_rooms = {"!a:h", "!b:h", "!c:h"};
+    auto json = serialize(p);
+    auto p2   = parse(json);
+    CHECK(p2.last_room == "!a:h");
+    REQUIRE(p2.open_rooms.size() == 3);
+    CHECK(p2.open_rooms[0] == "!a:h");
+    CHECK(p2.open_rooms[1] == "!b:h");
+    CHECK(p2.open_rooms[2] == "!c:h");
+}
+
+TEST_CASE("Prefs serialize single tab produces open_rooms of size 1")
+{
+    PrefsData p;
+    p.last_room  = "!only:host";
+    p.open_rooms = {"!only:host"};
+    auto json = serialize(p);
+    auto p2   = parse(json);
+    CHECK(p2.last_room == "!only:host");
+    REQUIRE(p2.open_rooms.size() == 1);
+    CHECK(p2.open_rooms[0] == "!only:host");
+}

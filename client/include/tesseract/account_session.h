@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tesseract
 {
@@ -56,6 +57,10 @@ struct AccountSession
     /// Room ID the user last had focused for this account, restored from the
     /// `im.gnomos.tesseract` account-data event on session restore.
     std::string last_room;
+
+    /// All open tab room IDs in visual order at last save, restored from the
+    /// `im.gnomos.tesseract` account-data event. Includes last_room.
+    std::vector<std::string> open_rooms;
 
     /// True once `client->start_sync(bridge.get())` has been called for this
     /// session — guards against double-starts and lets the destructor know to
