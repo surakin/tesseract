@@ -94,6 +94,26 @@ public:
     // Call once per shell after main_app_ and room_view_ are set.
     void setup_dm_callbacks();
 
+    // ── Debounce ──────────────────────────────────────────────────────────────
+    // Independent debounce channels. Each slot tracks its own generation so
+    // concurrent debounced actions don't cancel one another.
+    enum class DebounceSlot
+    {
+        RoomSearch,
+    };
+
+    // Run fn() on the UI thread `ms` after the most recent call on `slot`,
+    // dropping any earlier still-pending call on the same slot. Built on the
+    // platform's post_to_ui_after_; the generation guard means the primitive
+    // needs no cancel handle — superseded fires simply no-op. fn() always runs
+    // on the UI thread.
+    void debounce_(DebounceSlot slot, int ms, std::function<void()> fn);
+
+    // Drop any pending debounce on `slot` without scheduling a replacement.
+    // Use when an action (e.g. clearing the search box) must take effect now
+    // and a queued debounce would otherwise clobber it.
+    void cancel_debounce_(DebounceSlot slot);
+
     // ── Thread panel state machine ────────────────────────────────────────────
     enum class ThreadPanel
     {
@@ -153,6 +173,11 @@ public:
     void on_unpin_requested(const std::string& event_id);
 
 protected:
+    // Per-slot debounce generation counters (see debounce_). Keyed by
+    // static_cast<int>(DebounceSlot); a fire is honoured only if its captured
+    // generation still matches the slot's current value.
+    std::unordered_map<int, std::uint64_t> debounce_gen_;
+
     // Push the current room's pinned_events + can_pin bit to room_view_,
     // looking up the RoomInfo in the rooms_ cache. Called from push_rooms_
     // (per sync tick) and after_active_room_changed_ (per room switch). When
@@ -418,6 +443,13 @@ protected:
     // Post fn() onto the UI thread.
     // GTK4: g_idle_add   Qt6: QueuedConnection   Win32: PostMessage   macOS: dispatch_async
     virtual void post_to_ui_(std::function<void()> fn) = 0;
+
+    // Post fn() onto the UI thread after `ms` milliseconds (one-shot). Used by
+    // debounce_(); shells should not need to call it directly.
+    // Qt6: QTimer::singleShot   GTK4: g_timeout_add
+    // Win32: SetTimer + a timer-id→closure map drained on WM_TIMER
+    // macOS: dispatch_after(dispatch_get_main_queue())
+    virtual void post_to_ui_after_(int ms, std::function<void()> fn) = 0;
 
     // Repaint the main app surface. request_relayout_ also re-runs measure +
     // arrange first (use after a change that affects layout — new/changed rows,

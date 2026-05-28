@@ -18,5 +18,9 @@ TEST_CASE("available_commands lists me and shrug", "[slash]")
     const auto* shrug = by_name("shrug");
     REQUIRE(shrug != nullptr);
     REQUIRE(shrug->args_hint.empty()); // /shrug takes no args
+
+    const auto* slap = by_name("slap");
+    REQUIRE(slap != nullptr);
+    REQUIRE(slap->args_hint == "<target>");
 }
 

@@ -1061,6 +1061,55 @@ TEST_CASE("MessageListView + button click fires on_add_reaction_requested",
     CHECK(got_event == "$evt");
 }
 
+TEST_CASE("MessageListView action-pill react button fires "
+          "on_add_reaction_requested",
+          "[tk][view][messagelist][reactions]")
+{
+    Stage st;
+    MessageListView view;
+    // A plain text row with no reactions: the react affordance must still
+    // be present, on the top-right action pill.
+    MessageRowData m{};
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$plain";
+    m.sender_name = "Alice";
+    m.body = "no reactions here";
+    view.set_messages({m});
+    paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
+
+    std::string got_event;
+    view.on_add_reaction_requested =
+        [&](const std::string& ev, tk::Rect /*anchor*/) { got_event = ev; };
+
+    auto react = view.hovered_row_geom().react_button;
+    REQUIRE(react.w > 0);
+    tk::Point in_react{
+        react.x + react.w * 0.5f - view.bounds().x,
+        react.y + react.h * 0.5f - view.bounds().y,
+    };
+    view.on_pointer_move(in_react);
+    REQUIRE(view.on_pointer_down(in_react));
+    view.on_pointer_up(in_react, true);
+
+    CHECK(got_event == "$plain");
+}
+
+TEST_CASE("MessageListView action-pill omits react button on redacted rows",
+          "[tk][view][messagelist][reactions]")
+{
+    Stage st;
+    MessageListView view;
+    MessageRowData m{};
+    m.kind = MessageRowData::Kind::Redacted;
+    m.event_id = "$gone";
+    m.sender_name = "Alice";
+    m.body = "(deleted)";
+    view.set_messages({m});
+    paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
+
+    CHECK(view.hovered_row_geom().react_button.w == 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Scroll-anchor + near-top trigger (back-pagination plumbing)
 // ─────────────────────────────────────────────────────────────────────────

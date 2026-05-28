@@ -533,6 +533,7 @@ public:
             receipt_discs;     // one per visible read-receipt disc
         tk::Rect add_button{}; // 0-area when not painted
         bool add_visible = false;
+        tk::Rect react_button{};  // 0-area when not painted
         tk::Rect reply_button{};  // 0-area when not painted
         tk::Rect thread_button{}; // 0-area when not painted
         tk::Rect edit_button{};   // 0-area when not painted
@@ -726,21 +727,6 @@ private:
     // can write into it from a const-ish paint pass.
     mutable RowChipGeom hovered_row_geom_;
 
-    // Floating +react overlay for hovered rows that have no reactions yet.
-    // Adapter::paint_row records the planned pill here without painting it;
-    // MessageListView::paint then paints it AFTER all rows so it can overdraw
-    // the row below. State is kept on the view (not in RowChipGeom) because
-    // the pointer slipping into the next row's natural bounds invalidates
-    // hovered_row_geom_ — the overlay must remain hittable across that.
-    struct PendingAddOverlay
-    {
-        bool active = false;
-        std::size_t row_index = 0;
-        std::string event_id;
-        tk::Rect pill{};
-    };
-    mutable PendingAddOverlay add_overlay_;
-
     // Per-frame inline-sticker geometry, keyed by event_id. Populated by
     // `Adapter::paint_row` when it paints a Kind::Sticker row; consumed by
     // `sticker_hit_at` on demand. Cleared at the top of each paint pass so
@@ -764,6 +750,10 @@ private:
     std::string press_sender_user_id_;
     std::string press_sender_display_name_;
     std::string press_sender_avatar_url_;
+
+    // React button press state (action-pill cell that opens the emoji picker).
+    bool press_react_btn_ = false;
+    std::string press_react_event_id_;
 
     // Reply button press state. Tracks a clean down-up on the hover reply btn.
     bool press_reply_btn_ = false;

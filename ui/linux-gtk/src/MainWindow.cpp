@@ -485,11 +485,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         };
         room_list_view_->on_search_clear = [this]
         {
-            if (search_debounce_id_)
-            {
-                g_source_remove(search_debounce_id_);
-                search_debounce_id_ = 0;
-            }
+            cancel_debounce_(DebounceSlot::RoomSearch);
             search_pending_text_.clear();
             if (room_search_field_)
             {
@@ -1833,26 +1829,17 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             [this](const std::string& q)
             {
                 search_pending_text_ = q;
-                if (search_debounce_id_)
-                {
-                    g_source_remove(search_debounce_id_);
-                    search_debounce_id_ = 0;
-                }
-                search_debounce_id_ = g_timeout_add(
-                    500,
-                    [](gpointer ud) -> gboolean
-                    {
-                        auto* self = static_cast<MainWindow*>(ud);
-                        self->search_debounce_id_ = 0;
-                        if (self->room_list_view_)
-                        {
-                            self->room_list_view_->set_search_text(
-                                self->search_pending_text_);
-                        }
-                        self->refresh_room_list();
-                        return G_SOURCE_REMOVE;
-                    },
-                    this);
+                debounce_(DebounceSlot::RoomSearch,
+                          tesseract::views::RoomListView::kSearchDebounceMs,
+                          [this]
+                          {
+                              if (room_list_view_)
+                              {
+                                  room_list_view_->set_search_text(
+                                      search_pending_text_);
+                              }
+                              refresh_room_list();
+                          });
             });
 
         // Recovery key field overlay.
@@ -2304,11 +2291,6 @@ MainWindow::~MainWindow()
     {
         g_object_unref(theme_css_provider_);
         theme_css_provider_ = nullptr;
-    }
-    if (search_debounce_id_)
-    {
-        g_source_remove(search_debounce_id_);
-        search_debounce_id_ = 0;
     }
     if (scroll_debounce_id_)
     {
@@ -3838,6 +3820,25 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
     };
     auto* d = new Data{std::move(fn)};
     g_idle_add(
+        [](gpointer p) -> gboolean
+        {
+            auto* data = static_cast<Data*>(p);
+            data->fn();
+            delete data;
+            return G_SOURCE_REMOVE;
+        },
+        d);
+}
+
+void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
+{
+    struct Data
+    {
+        std::function<void()> fn;
+    };
+    auto* d = new Data{std::move(fn)};
+    g_timeout_add(
+        static_cast<guint>(ms),
         [](gpointer p) -> gboolean
         {
             auto* data = static_cast<Data*>(p);

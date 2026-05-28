@@ -127,6 +127,12 @@ pub(super) fn filter_for_channel(
 pub(super) async fn handle_timeline_diff(
     diff: VectorDiff<Arc<TimelineItem>>,
     visible: &mut Vec<bool>,
+    // Event id per slot, parallel to `visible`. Empty string for slots whose
+    // converted event has no event id (e.g. virtual day-dividers / read
+    // markers, local echoes whose id hasn't been assigned yet) or for slots
+    // that are not visible. Used by `refresh_receipts` to verify shadow
+    // alignment with matrix-sdk-ui's current `items()` before re-emitting.
+    visible_ids: &mut Vec<String>,
     handler: &Arc<Mutex<SendHandler>>,
     room_id: &str,
     room: &Room,
@@ -146,11 +152,13 @@ pub(super) async fn handle_timeline_diff(
                 if let Some(ev) = ev {
                     let idx = visible_len(visible);
                     visible.push(true);
+                    visible_ids.push(ev.event_id.clone());
                     if let Ok(g) = handler.lock() {
                         emit_inserted(&g, channel, room_id, idx, &ev);
                     }
                 } else {
                     visible.push(false);
+                    visible_ids.push(String::new());
                 }
             }
         }
@@ -162,11 +170,13 @@ pub(super) async fn handle_timeline_diff(
             if let Some(ev) = ev {
                 let idx = visible_len(visible);
                 visible.push(true);
+                visible_ids.push(ev.event_id.clone());
                 if let Ok(g) = handler.lock() {
                     emit_inserted(&g, channel, room_id, idx, &ev);
                 }
             } else {
                 visible.push(false);
+                visible_ids.push(String::new());
             }
         }
         VectorDiff::PushFront { value } => {
@@ -176,11 +186,13 @@ pub(super) async fn handle_timeline_diff(
             );
             if let Some(ev) = ev {
                 visible.insert(0, true);
+                visible_ids.insert(0, ev.event_id.clone());
                 if let Ok(g) = handler.lock() {
                     emit_inserted(&g, channel, room_id, 0, &ev);
                 }
             } else {
                 visible.insert(0, false);
+                visible_ids.insert(0, String::new());
             }
         }
         VectorDiff::Insert { index, value } => {
@@ -195,11 +207,13 @@ pub(super) async fn handle_timeline_diff(
             if let Some(ev) = ev {
                 let v_idx = visible_index_of(visible, index);
                 visible.insert(index, true);
+                visible_ids.insert(index, ev.event_id.clone());
                 if let Ok(g) = handler.lock() {
                     emit_inserted(&g, channel, room_id, v_idx, &ev);
                 }
             } else {
                 visible.insert(index, false);
+                visible_ids.insert(index, String::new());
             }
         }
         VectorDiff::Set { index, value } => {
@@ -227,6 +241,9 @@ pub(super) async fn handle_timeline_diff(
             match (was_visible, new_ev) {
                 (true, Some(ev)) => {
                     let v_idx = visible_index_of(visible, index);
+                    if let Some(slot) = visible_ids.get_mut(index) {
+                        *slot = ev.event_id.clone();
+                    }
                     if let Ok(g) = handler.lock() {
                         emit_updated(&g, channel, room_id, v_idx, &ev);
                     }
@@ -236,6 +253,9 @@ pub(super) async fn handle_timeline_diff(
                     if let Some(slot) = visible.get_mut(index) {
                         *slot = true;
                     }
+                    if let Some(slot) = visible_ids.get_mut(index) {
+                        *slot = ev.event_id.clone();
+                    }
                     if let Ok(g) = handler.lock() {
                         emit_inserted(&g, channel, room_id, v_idx, &ev);
                     }
@@ -244,6 +264,9 @@ pub(super) async fn handle_timeline_diff(
                     let v_idx = visible_index_of(visible, index);
                     if let Some(slot) = visible.get_mut(index) {
                         *slot = false;
+                    }
+                    if let Some(slot) = visible_ids.get_mut(index) {
+                        *slot = String::new();
                     }
                     if let Ok(g) = handler.lock() {
                         emit_removed(&g, channel, room_id, v_idx);
@@ -257,11 +280,17 @@ pub(super) async fn handle_timeline_diff(
             if was_visible {
                 let v_idx = visible_index_of(visible, index);
                 visible.remove(index);
+                if index < visible_ids.len() {
+                    visible_ids.remove(index);
+                }
                 if let Ok(g) = handler.lock() {
                     emit_removed(&g, channel, room_id, v_idx);
                 }
             } else if index < visible.len() {
                 visible.remove(index);
+                if index < visible_ids.len() {
+                    visible_ids.remove(index);
+                }
             }
         }
         VectorDiff::Truncate { length } => {
@@ -271,6 +300,7 @@ pub(super) async fn handle_timeline_diff(
                 let raw = visible.len() - 1;
                 let was = visible[raw];
                 visible.pop();
+                visible_ids.pop();
                 if was {
                     let v_idx = visible_len(visible);
                     if let Ok(g) = handler.lock() {
@@ -281,6 +311,7 @@ pub(super) async fn handle_timeline_diff(
         }
         VectorDiff::PopBack => {
             if let Some(was) = visible.pop() {
+                visible_ids.pop();
                 if was {
                     let v_idx = visible_len(visible);
                     if let Ok(g) = handler.lock() {
@@ -292,6 +323,9 @@ pub(super) async fn handle_timeline_diff(
         VectorDiff::PopFront => {
             if !visible.is_empty() {
                 let was = visible.remove(0);
+                if !visible_ids.is_empty() {
+                    visible_ids.remove(0);
+                }
                 if was {
                     if let Ok(g) = handler.lock() {
                         emit_removed(&g, channel, room_id, 0);
@@ -301,6 +335,7 @@ pub(super) async fn handle_timeline_diff(
         }
         VectorDiff::Clear => {
             visible.clear();
+            visible_ids.clear();
             if let Ok(g) = handler.lock() {
                 let empty: Vec<TimelineEvent> = Vec::new();
                 emit_reset(&g, channel, room_id, &empty);
@@ -311,20 +346,93 @@ pub(super) async fn handle_timeline_diff(
             // snapshot in one pass before the single `emit_reset`
             // call so the UI rebuilds in one shot.
             visible.clear();
+            visible_ids.clear();
             visible.reserve(values.len());
+            visible_ids.reserve(values.len());
             let mut snapshot: Vec<TimelineEvent> = Vec::new();
             for item in &values {
                 let ev = filter_for_channel(
                     timeline_item_to_ffi(item, room_id, room, me).await,
                     channel,
                 );
-                visible.push(ev.is_some());
                 if let Some(ev) = ev {
+                    visible.push(true);
+                    visible_ids.push(ev.event_id.clone());
                     snapshot.push(ev);
+                } else {
+                    visible.push(false);
+                    visible_ids.push(String::new());
                 }
             }
             if let Ok(g) = handler.lock() {
                 emit_reset(&g, channel, room_id, &snapshot);
+            }
+        }
+    }
+}
+
+// Re-emit `on_message_updated` for every visible event that carries a
+// non-empty read-receipt list, using the streaming task's authoritative
+// `visible` / `visible_ids` shadow to translate matrix-sdk-ui slot indices
+// into the C++ row positions that the UI is currently rendering.
+//
+// Runs inline in the streaming task (not a separate spawn), so it cannot
+// race a diff being applied to the C++ row vector — `tokio::select!` only
+// runs one branch at a time. The shadow can still lag matrix-sdk-ui's
+// internal vector when `tl.items().await` returns a snapshot newer than
+// the most recently consumed `VectorDiff` (matrix-sdk-ui keeps producing
+// diffs while we work); we detect any such drift by comparing event ids
+// position-by-position and bail out on the first mismatch. The pending
+// diffs in `stream` will deliver the necessary updates as they get
+// processed, including the receipt details we skipped here.
+#[cfg(not(test))]
+async fn refresh_receipts(
+    tl: &Arc<matrix_sdk_ui::Timeline>,
+    visible: &[bool],
+    visible_ids: &[String],
+    handler: &Arc<Mutex<SendHandler>>,
+    room_id: &str,
+    room: &Room,
+    me: Option<&UserId>,
+    channel: &TimelineChannel,
+    cancelled: &AtomicBool,
+) {
+    let items = tl.items().await;
+
+    for (slot_idx, item) in items.iter().enumerate() {
+        if cancelled.load(Ordering::Acquire) { return; }
+        // matrix-sdk-ui's snapshot has more slots than our shadow — the
+        // streaming task is behind on inserts. Let it catch up.
+        if slot_idx >= visible.len() {
+            return;
+        }
+
+        let ev = filter_for_channel(
+            timeline_item_to_ffi(item, room_id, room, me).await,
+            channel,
+        );
+        let was_visible_in_shadow = visible[slot_idx];
+        let is_visible_now = ev.is_some();
+        if was_visible_in_shadow != is_visible_now {
+            // Visibility transition pending in the diff stream; bail out and
+            // let the streaming task apply it.
+            return;
+        }
+        let Some(ev) = ev else { continue; };
+
+        // Shadow vs. items() event-id mismatch at the same slot means
+        // matrix-sdk-ui has shifted items via Insert/Remove that the
+        // streaming task hasn't yet processed. Stop emitting — any further
+        // emit would land at the wrong C++ row.
+        let shadow_id = &visible_ids[slot_idx];
+        if !shadow_id.is_empty() && shadow_id != &ev.event_id {
+            return;
+        }
+
+        if !ev.read_receipts.is_empty() {
+            let v_idx = visible_index_of(visible, slot_idx);
+            if let Ok(g) = handler.lock() {
+                emit_updated(&g, channel, room_id, v_idx, &ev);
             }
         }
     }
@@ -360,17 +468,17 @@ impl ClientFfi {
         let me = client.user_id().map(|u| u.to_owned());
         let client_ref = client.clone();
         let ch = channel;
+        let cancelled_stream = cancelled;
 
-        // Cancellation flag clones — one per task.
-        let cancelled_stream  = Arc::clone(&cancelled);
-        let cancelled_members = cancelled;
-
-        // Extra clones for the receipt-refresh pass after fetch_members (below).
-        let h_for_receipts    = Arc::clone(handler);
-        let rid_for_receipts  = rid.clone();
-        let room_for_receipts = room_clone.clone();
-        let me_for_receipts   = me.clone();
-        let ch_for_receipts   = ch.clone();
+        // One-shot signal from the fetch_members task to the streaming task
+        // saying "member sync is done, run the receipt-refresh pass". Routing
+        // the refresh through the streaming task instead of running it on a
+        // separate task is what prevents the duplicate-in-later-row bug:
+        // `tokio::select!` only runs one branch at a time, so the refresh
+        // computes its emit indices against the same `visible`/`visible_ids`
+        // shadow that the diff loop maintains — they can't drift apart.
+        let (members_done_tx, members_done_rx) =
+            tokio::sync::mpsc::channel::<()>(1);
 
         let abort = rt
             .spawn(async move {
@@ -383,15 +491,20 @@ impl ClientFfi {
                 // read-markers, timeline-start). State events and membership
                 // changes remain `false` so they are silently filtered.
                 let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
+                let mut visible_ids: Vec<String> = Vec::with_capacity(initial_items.len());
                 let mut snapshot: Vec<TimelineEvent> = Vec::new();
                 for item in initial_items.iter() {
                     let ev = filter_for_channel(
                         timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await,
                         &ch,
                     );
-                    visible.push(ev.is_some());
                     if let Some(ev) = ev {
+                        visible.push(true);
+                        visible_ids.push(ev.event_id.clone());
                         snapshot.push(ev);
+                    } else {
+                        visible.push(false);
+                        visible_ids.push(String::new());
                     }
                 }
                 if !cancelled_stream.load(Ordering::Acquire) {
@@ -401,77 +514,87 @@ impl ClientFfi {
                 }
                 drop(snapshot);
 
-                while let Some(diffs) = stream.next().await {
+                // Holds the receipt-refresh receiver until it has fired once;
+                // we then take it to None so the select! branch resolves to
+                // `pending()` forever, avoiding a busy-loop on the closed
+                // channel.
+                let mut members_done_rx: Option<tokio::sync::mpsc::Receiver<()>> =
+                    Some(members_done_rx);
+
+                loop {
                     if cancelled_stream.load(Ordering::Acquire) { break; }
-                    for diff in diffs {
-                        handle_timeline_diff(
-                            diff,
-                            &mut visible,
-                            &h,
-                            &rid,
-                            &room_clone,
-                            me.as_deref(),
-                            &client_ref,
-                            &ch,
-                            &cancelled_stream,
-                        )
-                        .await;
+                    tokio::select! {
+                        // `biased`: drain diffs first so the shadow stays in
+                        // step with C++ before any refresh can run.
+                        biased;
+                        maybe_diffs = stream.next() => {
+                            let Some(diffs) = maybe_diffs else { break; };
+                            for diff in diffs {
+                                handle_timeline_diff(
+                                    diff,
+                                    &mut visible,
+                                    &mut visible_ids,
+                                    &h,
+                                    &rid,
+                                    &room_clone,
+                                    me.as_deref(),
+                                    &client_ref,
+                                    &ch,
+                                    &cancelled_stream,
+                                )
+                                .await;
+                            }
+                        }
+                        sig = async {
+                            match members_done_rx.as_mut() {
+                                Some(rx) => rx.recv().await,
+                                None => std::future::pending::<Option<()>>().await,
+                            }
+                        } => {
+                            // Receipt refresh is one-shot — drop the receiver
+                            // so subsequent select! iterations stay parked on
+                            // the `pending()` arm.
+                            members_done_rx = None;
+                            if sig.is_some() {
+                                refresh_receipts(
+                                    &tl,
+                                    &visible,
+                                    &visible_ids,
+                                    &h,
+                                    &rid,
+                                    &room_clone,
+                                    me.as_deref(),
+                                    &ch,
+                                    &cancelled_stream,
+                                )
+                                .await;
+                            }
+                        }
                     }
                 }
             })
             .abort_handle();
 
-        // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not
-        // sync member info on its own — `EventTimelineItem::sender_profile()`
-        // stays at `TimelineDetails::Pending` for any user whose
-        // membership state wasn't included in the initial sync's room
-        // delta, so their messages render with an empty name + avatar.
-        // `fetch_members()` runs `sync_members()` then patches every
-        // affected timeline item in place, which the streaming task
-        // above picks up as `VectorDiff::Set` and re-emits to C++. We
-        // spawn it separately so the initial items aren't blocked
-        // behind a multi-second member sync on big rooms.
+        // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not sync
+        // member info on its own — `EventTimelineItem::sender_profile()`
+        // stays at `TimelineDetails::Pending` for any user whose membership
+        // state wasn't included in the initial sync's room delta, so their
+        // messages render with an empty name + avatar. `fetch_members()`
+        // runs `sync_members()` then patches every affected timeline item
+        // in place, which the streaming task above picks up as
+        // `VectorDiff::Set` and re-emits to C++. That covers items whose
+        // *sender* profile was pending; items whose sender was already
+        // resolved but whose read-receipt list referenced users with
+        // missing profiles are handled by the receipt-refresh pass that
+        // runs inside the streaming task after this signal.
+        //
+        // We spawn `fetch_members` separately so the initial timeline isn't
+        // blocked behind a multi-second member sync on big rooms.
         let tl_for_members = Arc::clone(timeline);
         let fetch_abort = rt
             .spawn(async move {
                 tl_for_members.fetch_members().await;
-
-                // `fetch_members()` causes matrix-sdk-ui to emit VectorDiff::Set
-                // only for items whose *sender* profile was pending. Items whose
-                // sender was already resolved are not re-emitted, even when their
-                // read-receipt entries reference users whose profiles were missing
-                // at receipt-arrival time (get_member_no_sync returned None →
-                // fallback to user_id / empty avatar_url). Re-emit every visible
-                // item that carries receipts so the C++ chips pick up the
-                // now-available display names and avatar URLs.
-                let items = tl_for_members.items().await;
-                let mut visible_idx: u64 = 0;
-                for item in items.iter() {
-                    let ev = timeline_item_to_ffi(
-                        item,
-                        &rid_for_receipts,
-                        &room_for_receipts,
-                        me_for_receipts.as_deref(),
-                    )
-                    .await;
-                    let ev = filter_for_channel(ev, &ch_for_receipts);
-                    if let Some(ev) = ev {
-                        if !ev.read_receipts.is_empty()
-                            && !cancelled_members.load(Ordering::Acquire)
-                        {
-                            if let Ok(g) = h_for_receipts.lock() {
-                                emit_updated(
-                                    &g,
-                                    &ch_for_receipts,
-                                    &rid_for_receipts,
-                                    visible_idx,
-                                    &ev,
-                                );
-                            }
-                        }
-                        visible_idx += 1;
-                    }
-                }
+                let _ = members_done_tx.send(()).await;
             })
             .abort_handle();
 

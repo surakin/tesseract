@@ -847,6 +847,7 @@ public:
             owner_.hovered_row_geom_.receipt_discs.clear();
             owner_.hovered_row_geom_.add_button = tk::Rect{};
             owner_.hovered_row_geom_.add_visible = false;
+            owner_.hovered_row_geom_.react_button = tk::Rect{};
             owner_.hovered_row_geom_.reply_button = tk::Rect{};
             owner_.hovered_row_geom_.edit_button = tk::Rect{};
             owner_.hovered_row_geom_.delete_button = tk::Rect{};
@@ -919,13 +920,12 @@ public:
         float eff_chip_r = eff_chip_h * 0.5f;
 
         // ── Action pill (top-right, all hovered rows) ───────────────────────
-        // One compact pill of square cells — reply / thread / edit / delete /
-        // pin — anchored to the top-right of the row whether or not reactions
-        // exist. Each enabled action is a w==h cell separated by a 1px
-        // divider; the whole strip uses one rounded background and one outer
-        // stroke. The +react chip is not part of this pill; it lives at the
-        // end of the reactions strip when reactions exist, and as a deferred
-        // bottom-left overlay otherwise (see below).
+        // One compact pill of square cells — react / reply / thread / edit /
+        // delete / pin — anchored to the top-right of the row. Each enabled
+        // action is a w==h cell separated by a 1px divider; the whole strip
+        // uses one rounded background and one outer stroke. The trailing +
+        // chip at the end of the reactions strip (painted below) is a
+        // secondary entry point to the same reaction picker.
         if (hovered)
         {
             static_cache_.ensure(ctx.factory);
@@ -933,14 +933,21 @@ public:
             // Cell list in display order. Conditions match the original
             // per-button gates (own/text for edit, own/non-redacted for
             // delete, can_pin_ for pin, thread visibility + MSC3440 for
-            // thread). reply is unconditional.
+            // thread). react is the leftmost cell on any row that can accept
+            // reactions; reply is unconditional.
             struct ActionCell
             {
                 const tk::TextLayout* glyph;
                 tk::Rect* geom_out;
             };
             std::vector<ActionCell> cells;
-            cells.reserve(5);
+            cells.reserve(6);
+            if (m.kind != MessageRowData::Kind::Redacted &&
+                m.kind != MessageRowData::Kind::Utd)
+            {
+                cells.push_back({static_cache_.react.get(),
+                                 &owner_.hovered_row_geom_.react_button});
+            }
             cells.push_back({static_cache_.reply.get(),
                              &owner_.hovered_row_geom_.reply_button});
             const bool can_thread =
@@ -999,10 +1006,13 @@ public:
                                           kReceiptStride;
                     right_edge -= cluster_w + chip_gap();
                 }
+                right_edge -= pill_r;
                 tk::Rect pill{right_edge - pill_w, pill_y, pill_w, pill_h};
+                tk::Rect pill_visual{pill.x - pill_r, pill.y,
+                                     pill.w + 2.0f * pill_r, pill.h};
 
                 ctx.canvas.fill_rounded_rect(
-                    pill, pill_r, ctx.theme.palette.subtle_hover);
+                    pill_visual, pill_r, ctx.theme.palette.subtle_hover);
 
                 // Pointer in world-coords for per-cell hover detection.
                 // The reply/edit/delete/pin/thread cells use press_*_btn_
@@ -1022,21 +1032,8 @@ public:
 
                     if (rect_contains(cell_rect, world_ptr))
                     {
-                        // Inset the hover fill on outer cells so it doesn't
-                        // bleed past the pill's rounded corners.
-                        tk::Rect hov = cell_rect;
-                        const float corner_inset = pill_r * 0.5f;
-                        if (i == 0)
-                        {
-                            hov.x += corner_inset;
-                            hov.w -= corner_inset;
-                        }
-                        if (i + 1 == cells.size())
-                        {
-                            hov.w -= corner_inset;
-                        }
                         ctx.canvas.fill_rect(
-                            hov, ctx.theme.palette.subtle_pressed);
+                            cell_rect, ctx.theme.palette.subtle_pressed);
                     }
 
                     if (cells[i].glyph)
@@ -1074,32 +1071,8 @@ public:
                 }
 
                 ctx.canvas.stroke_rounded_rect(
-                    pill, pill_r, ctx.theme.palette.border, 1.0f);
+                    pill_visual, pill_r, ctx.theme.palette.border, 1.0f);
             }
-        }
-
-        // ── Floating +react overlay (deferred paint) ────────────────────────
-        // When the row is hovered and has no reactions yet (and isn't a UTD
-        // row, where reacting is meaningless), record a + pill anchored to
-        // the body column's left edge at the row's bottom — half-overlapping
-        // the row below. The actual paint happens in MessageListView::paint
-        // after every row is drawn, so the next row's body cannot occlude
-        // the overlay.
-        if (hovered && m.reactions.empty() &&
-            m.kind != MessageRowData::Kind::Utd &&
-            m.kind != MessageRowData::Kind::Redacted)
-        {
-            const float pill_h = chip_h();
-            const float pill_w = pill_h + 8.0f;
-            // Anchor vertically so the chip's centre sits on the row's
-            // bottom edge: the top half overlaps the body, the bottom half
-            // extends into the next row.
-            const float pill_y =
-                bounds.y + bounds.h - pill_h * 0.5f;
-            owner_.add_overlay_.active = true;
-            owner_.add_overlay_.row_index = index;
-            owner_.add_overlay_.event_id = m.event_id;
-            owner_.add_overlay_.pill = {col_x, pill_y, pill_w, pill_h};
         }
 
         // Disc centre Y for receipts. Receipts always overlay the row — they
@@ -3502,6 +3475,7 @@ private:
     struct StaticLayouts
     {
         std::unique_ptr<tk::TextLayout> plus;
+        std::unique_ptr<tk::TextLayout> react;
         std::unique_ptr<tk::TextLayout> reply;
         std::unique_ptr<tk::TextLayout> thread_btn;
         std::unique_ptr<tk::TextLayout> edit;
@@ -3518,6 +3492,7 @@ private:
             tk::TextStyle st{};
             st.role = tk::FontRole::Title;
             plus       = f.build_text("+", st);
+            react      = f.build_text("\xF0\x9F\x99\x82", st); // 🙂
             reply      = f.build_text("\xE2\x86\xA9", st);     // ↩
             thread_btn = f.build_text("\xF0\x9F\x92\xAC", st); // 💬
             edit       = f.build_text("\xE2\x9C\x8F", st);     // ✏
@@ -3533,6 +3508,7 @@ private:
         void clear()
         {
             plus.reset();
+            react.reset();
             reply.reset();
             thread_btn.reset();
             edit.reset();
@@ -4911,18 +4887,6 @@ bool MessageListView::on_pointer_move(tk::Point local)
     }
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);
-    // Floating +react overlay: lives outside the hovered row's natural
-    // bounds, so chip_hit_at's row_bounds gate rejects it once the pointer
-    // slips into the next row. Test the overlay rect directly here.
-    if (t == HoverTarget::None && add_overlay_.active)
-    {
-        tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        if (rect_contains(add_overlay_.pill, world))
-        {
-            t = HoverTarget::AddButton;
-            chip_idx = -1;
-        }
-    }
     if (t != hover_target_ || chip_idx != hover_chip_idx_)
     {
         hover_target_ = t;
@@ -5315,6 +5279,23 @@ bool MessageListView::on_pointer_down(tk::Point local)
         }
     }
 
+    // React button hit-test — leftmost cell of the action pill. Checked
+    // before reaction chips so the pill cell wins over an underlying chip.
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        const tk::Rect& rkb = hovered_row_geom_.react_button;
+        if (rkb.w > 0 && rect_contains(rkb, world))
+        {
+            std::size_t row = hovered_row_geom_.row_index;
+            if (row < messages_.size())
+            {
+                press_react_btn_ = true;
+                press_react_event_id_ = messages_[row].event_id;
+                return true;
+            }
+        }
+    }
+
     // Reply button hit-test — check before reaction chips so it has priority.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
@@ -5571,22 +5552,6 @@ bool MessageListView::on_pointer_down(tk::Point local)
 
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);
-    // Floating +react overlay press — mirrors the overlay branch in
-    // on_pointer_move. The overlay rect can extend below the hovered row's
-    // natural bounds, so chip_hit_at rejects it; honour it explicitly here
-    // and pull the event_id from the overlay's own record (the row that
-    // hovered_row_geom_ points at may not be the overlay's owning row).
-    if (t == HoverTarget::None && add_overlay_.active)
-    {
-        tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        if (rect_contains(add_overlay_.pill, world))
-        {
-            press_target_ = HoverTarget::AddButton;
-            press_chip_idx_ = -1;
-            press_event_id_ = add_overlay_.event_id;
-            return true;
-        }
-    }
     if (t == HoverTarget::None)
     {
         // Spoiler reveal + text-selection anchor: capture click on the row
@@ -5842,6 +5807,26 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             {
                 handle_voice_play_click(row);
                 return;
+            }
+        }
+        return;
+    }
+    if (press_react_btn_)
+    {
+        bool fire = inside_self && !press_react_event_id_.empty();
+        std::string ev = std::move(press_react_event_id_);
+        press_react_btn_ = false;
+        press_react_event_id_.clear();
+        if (fire)
+        {
+            tk::Point world{local.x + bounds().x, local.y + bounds().y};
+            const tk::Rect& rkb = hovered_row_geom_.react_button;
+            if (rkb.w > 0 && rect_contains(rkb, world))
+            {
+                if (on_add_reaction_requested)
+                {
+                    on_add_reaction_requested(ev, rkb);
+                }
             }
         }
         return;
@@ -6216,30 +6201,17 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     }
     else if (t == HoverTarget::AddButton)
     {
-        // Two acceptable release positions: (a) inside the in-strip + chip
-        // (reactions present), or (b) inside the floating overlay (no
-        // reactions). Either re-confirms the click.
-        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        // Re-confirm the release lands on the in-strip + chip before firing.
         int now_idx = -1;
         HoverTarget now_t =
             chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
-        tk::Rect anchor;
-        if (now_t == HoverTarget::AddButton)
-        {
-            anchor = hovered_row_geom_.add_button;
-        }
-        else if (add_overlay_.active &&
-                 rect_contains(add_overlay_.pill, world))
-        {
-            anchor = add_overlay_.pill;
-        }
-        else
+        if (now_t != HoverTarget::AddButton)
         {
             return;
         }
         if (on_add_reaction_requested)
         {
-            on_add_reaction_requested(ev, anchor);
+            on_add_reaction_requested(ev, hovered_row_geom_.add_button);
         }
     }
 }
@@ -6295,10 +6267,6 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     quote_block_geom_.clear();
     preview_card_geom_.clear();
     chip_hit_rects_.clear();
-    // Adapter::paint_row writes into add_overlay_ when a hovered no-reactions
-    // row wants the floating +react chip. Reset before each paint pass; the
-    // deferred-overlay block below picks up whatever paint_row left.
-    add_overlay_.active = false;
 
     // Room-switch gate: hold the list invisible until the rows that will
     // be visible have their height-affecting content loaded + measured, so
@@ -6325,41 +6293,6 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     }
 
     tk::ListView::paint(ctx);
-
-    // Floating +react overlay (deferred). Painted AFTER every row so it can
-    // overdraw the row below — the chip sits half over the hovered row and
-    // half over its successor, and we want the successor's body painted
-    // first so the chip wins on overlap. Recording lives in
-    // Adapter::paint_row; we just consume it here.
-    if (add_overlay_.active)
-    {
-        const tk::Rect& pill = add_overlay_.pill;
-        const bool add_hov = hover_target_ == HoverTarget::AddButton;
-        const tk::Color bg = add_hov ? ctx.theme.palette.subtle_pressed
-                                     : ctx.theme.palette.subtle_hover;
-        const tk::Color border = add_hov ? ctx.theme.palette.accent
-                                         : ctx.theme.palette.border;
-        const float r = pill.h * 0.5f;
-        ctx.canvas.fill_rounded_rect(pill, r, bg);
-        ctx.canvas.stroke_rounded_rect(pill, r, border,
-                                       add_hov ? 1.5f : 1.0f);
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        auto glyph = ctx.factory.build_text("+", st);
-        if (glyph)
-        {
-            tk::Size sz = glyph->measure();
-            float gx = pill.x + (pill.w - sz.w) * 0.5f;
-            float gy = pill.y + (pill.h - glyph->ascent()) * 0.5f;
-            ctx.canvas.draw_text(*glyph, {gx, gy},
-                                 ctx.theme.palette.text_secondary);
-        }
-        // Keep hovered_row_geom_ in sync so the existing on_pointer_up path
-        // (which reads hovered_row_geom_.add_button as the popup anchor)
-        // works without special-casing.
-        hovered_row_geom_.add_button = pill;
-        hovered_row_geom_.add_visible = true;
-    }
 
     // Focused-thread dim. Painted above rows / below scroll-pill + hover
     // tooltips. When highlighted_event_id_ is set we punch the matching row

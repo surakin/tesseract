@@ -206,6 +206,7 @@ private:
     tk::ThemeMode os_color_scheme_() const override;
 
     void post_to_ui_(std::function<void()> fn) override;
+    void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
     void on_rooms_updated_() override;

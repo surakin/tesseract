@@ -1068,6 +1068,20 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_TIMER:
+        if (wParam >= kDelayedPostTimerBase)
+        {
+            // One-shot delayed post (see post_to_ui_after_): fire the stored
+            // closure once and discard it.
+            KillTimer(hwnd, wParam);
+            auto it = self->delayed_posts_.find(wParam);
+            if (it != self->delayed_posts_.end())
+            {
+                std::function<void()> fn = std::move(it->second);
+                self->delayed_posts_.erase(it);
+                fn();
+            }
+            return 0;
+        }
         if (wParam == kAnimTimerId)
         {
             self->on_anim_tick();
@@ -1326,7 +1340,7 @@ void MainWindow::on_create(HWND hwnd)
         };
         room_list_view_->on_search_clear = [this]
         {
-            ++search_generation_; // cancel any pending debounce callback
+            cancel_debounce_(DebounceSlot::RoomSearch);
             pending_search_text_.clear();
             if (room_search_field_)
             {
@@ -2046,16 +2060,17 @@ void MainWindow::on_create(HWND hwnd)
             [this](const std::string& q)
             {
                 pending_search_text_ = q;
-                const uint64_t gen = ++search_generation_;
-                main_app_surface_->host().post_delayed(500,
-                    [this, gen]
-                    {
-                        if (gen != search_generation_)
-                            return;
-                        if (room_list_view_)
-                            room_list_view_->set_search_text(pending_search_text_);
-                        refresh_room_list();
-                    });
+                debounce_(DebounceSlot::RoomSearch,
+                          tesseract::views::RoomListView::kSearchDebounceMs,
+                          [this]
+                          {
+                              if (room_list_view_)
+                              {
+                                  room_list_view_->set_search_text(
+                                      pending_search_text_);
+                              }
+                              refresh_room_list();
+                          });
             });
 
         room_text_area_ = main_app_surface_->host().make_text_area();
@@ -4543,6 +4558,24 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
                       reinterpret_cast<LPARAM>(p)))
     {
         delete p; // window already gone; drop the closure
+    }
+}
+
+void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
+{
+    if (!hwnd_)
+    {
+        return; // window already gone; drop the closure
+    }
+    const UINT_PTR id = next_delayed_post_id_++;
+    if (next_delayed_post_id_ == 0) // wrapped: never reuse the base sentinel
+    {
+        next_delayed_post_id_ = kDelayedPostTimerBase;
+    }
+    delayed_posts_.emplace(id, std::move(fn));
+    if (!SetTimer(hwnd_, id, static_cast<UINT>(ms), nullptr))
+    {
+        delayed_posts_.erase(id);
     }
 }
 

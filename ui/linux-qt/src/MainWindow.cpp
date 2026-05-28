@@ -198,6 +198,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         }
         mainApp_->room_list_view()->on_search_clear = [this]
         {
+            cancel_debounce_(DebounceSlot::RoomSearch);
             if (roomSearchField_)
             {
                 roomSearchField_->set_text("");
@@ -1466,11 +1467,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         [this](const std::string& s)
         {
             roomSearchPendingText_ = s;
-            if (mainApp_)
-            {
-                mainApp_->room_list_view()->set_search_text(s);
-            }
-            refreshRoomList();
+            debounce_(DebounceSlot::RoomSearch,
+                      tesseract::views::RoomListView::kSearchDebounceMs,
+                      [this]
+                      {
+                          if (mainApp_)
+                          {
+                              mainApp_->room_list_view()->set_search_text(
+                                  roomSearchPendingText_);
+                          }
+                          refreshRoomList();
+                      });
         });
 
     recoveryKeyField_ = mainAppSurface_->host().make_text_field();
@@ -2925,6 +2932,11 @@ void MainWindow::clearMessages()
 void MainWindow::post_to_ui_(std::function<void()> fn)
 {
     QMetaObject::invokeMethod(this, std::move(fn), Qt::QueuedConnection);
+}
+
+void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
+{
+    QTimer::singleShot(ms, this, std::move(fn));
 }
 
 void MainWindow::request_relayout_()
