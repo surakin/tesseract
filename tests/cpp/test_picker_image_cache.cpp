@@ -70,6 +70,10 @@ struct TestShell : ShellBase
     void navigate_to_room_(const std::string&) override
     {
     }
+    void pick_image_file_(
+        std::function<void(std::vector<uint8_t>, std::string)>) override
+    {
+    }
 
     int anim_tick_starts = 0;
     int repaints = 0;

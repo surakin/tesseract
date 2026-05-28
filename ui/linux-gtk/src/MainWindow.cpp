@@ -1229,11 +1229,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             double sx = 0, sy = 0;
             if (surf)
                 gdk_surface_get_device_position(surf, ptr, &sx, &sy, nullptr);
-            double wx = 0, wy = 0;
-            gtk_widget_translate_coordinates(
-                GTK_WIDGET(gtk_widget_get_native(w)), w,
-                sx, sy, &wx, &wy);
-            GdkRectangle r{static_cast<int>(wx), static_cast<int>(wy), 1, 1};
+            graphene_point_t pt_in{static_cast<float>(sx), static_cast<float>(sy)};
+            graphene_point_t pt_out{};
+            if (!gtk_widget_compute_point(
+                    GTK_WIDGET(gtk_widget_get_native(w)), w, &pt_in, &pt_out))
+                pt_out = {};
+            GdkRectangle r{static_cast<int>(pt_out.x), static_cast<int>(pt_out.y), 1, 1};
             gtk_popover_set_pointing_to(GTK_POPOVER(copy_ctx_menu_), &r);
             gtk_popover_popup(GTK_POPOVER(copy_ctx_menu_));
         };
@@ -1494,26 +1495,26 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             [this](std::string source_url, std::string filename_hint)
         {
             std::string suggested = filename_hint.empty() ? "image" : filename_hint;
-            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-                "Save image",
-                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
-                GTK_FILE_CHOOSER_ACTION_SAVE, "Save", "Cancel");
-            gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg), suggested.c_str());
+            GtkFileDialog* dlg = gtk_file_dialog_new();
+            gtk_file_dialog_set_title(dlg, "Save image");
+            gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
             struct ImgSaveCtx
             {
                 MainWindow* self;
                 std::string source_url;
             };
             auto* ctx = new ImgSaveCtx{this, std::move(source_url)};
-            g_signal_connect(
-                dlg, "response",
-                G_CALLBACK(+[](GtkNativeDialog* d, gint response, gpointer p)
+            gtk_file_dialog_save(dlg,
+                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
+                nullptr,
+                +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
                 {
                     auto* c = static_cast<ImgSaveCtx*>(p);
-                    if (response == GTK_RESPONSE_ACCEPT)
+                    GError* err = nullptr;
+                    GFile* gf = gtk_file_dialog_save_finish(
+                        GTK_FILE_DIALOG(dialog_obj), res, &err);
+                    if (gf)
                     {
-                        GFile* gf =
-                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
                         char* cpath = g_file_get_path(gf);
                         std::string dest(cpath);
                         g_free(cpath);
@@ -1549,11 +1550,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                     wc);
                             });
                     }
+                    if (err) g_error_free(err);
                     delete c;
-                    gtk_native_dialog_destroy(d);
-                }),
+                },
                 ctx);
-            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+            g_object_unref(dlg);
         };
 
         room_view_->on_video_clicked =
@@ -1602,36 +1603,35 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             auto slash = mime_type.find('/');
             if (slash != std::string::npos)
                 ext = "." + mime_type.substr(slash + 1);
-            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-                "Save video",
-                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
-                GTK_FILE_CHOOSER_ACTION_SAVE, "Save", "Cancel");
-            gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
-                                              ("video" + ext).c_str());
+            GtkFileDialog* dlg = gtk_file_dialog_new();
+            gtk_file_dialog_set_title(dlg, "Save video");
+            gtk_file_dialog_set_initial_name(dlg, ("video" + ext).c_str());
             struct VidSaveCtx
             {
                 MainWindow* self;
                 std::string source_json;
             };
             auto* ctx = new VidSaveCtx{this, std::move(source_json)};
-            g_signal_connect(
-                dlg, "response",
-                G_CALLBACK(+[](GtkNativeDialog* d, gint response, gpointer p)
+            gtk_file_dialog_save(dlg,
+                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
+                nullptr,
+                +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
                 {
                     auto* c = static_cast<VidSaveCtx*>(p);
-                    if (response == GTK_RESPONSE_ACCEPT)
+                    GError* err = nullptr;
+                    GFile* gf = gtk_file_dialog_save_finish(
+                        GTK_FILE_DIALOG(dialog_obj), res, &err);
+                    if (gf)
                     {
-                        GFile* gf =
-                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
                         char* cpath = g_file_get_path(gf);
                         std::string dest(cpath);
                         g_free(cpath);
                         g_object_unref(gf);
-                        std::string src = std::move(c->source_json);
+                        std::string json_src = std::move(c->source_json);
                         c->self->run_async_(
-                            [self = c->self, src = std::move(src), dest]()
+                            [self = c->self, json_src = std::move(json_src), dest]()
                             {
-                                auto bytes = self->client_->fetch_source_bytes(src);
+                                auto bytes = self->client_->fetch_source_bytes(json_src);
                                 struct WriteCtx
                                 {
                                     std::string dest;
@@ -1658,11 +1658,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                     wc);
                             });
                     }
+                    if (err) g_error_free(err);
                     delete c;
-                    gtk_native_dialog_destroy(d);
-                }),
+                },
                 ctx);
-            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+            g_object_unref(dlg);
         };
 
         room_view_->on_file_clicked =
@@ -1670,27 +1670,26 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             std::string suggested =
                 hit.file_name.empty() ? "download" : hit.file_name;
-            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-                "Save file",
-                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
-                GTK_FILE_CHOOSER_ACTION_SAVE, "Save", "Cancel");
-            gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
-                                              suggested.c_str());
+            GtkFileDialog* dlg = gtk_file_dialog_new();
+            gtk_file_dialog_set_title(dlg, "Save file");
+            gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
             struct FileSaveCtx
             {
                 MainWindow* self;
                 std::string fetch_tok;
             };
             auto* ctx = new FileSaveCtx{this, hit.source ? hit.source->fetch_token() : std::string{}};
-            g_signal_connect(
-                dlg, "response",
-                G_CALLBACK(+[](GtkNativeDialog* d, gint response, gpointer p)
+            gtk_file_dialog_save(dlg,
+                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
+                nullptr,
+                +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
                 {
                     auto* c = static_cast<FileSaveCtx*>(p);
-                    if (response == GTK_RESPONSE_ACCEPT)
+                    GError* err = nullptr;
+                    GFile* gf = gtk_file_dialog_save_finish(
+                        GTK_FILE_DIALOG(dialog_obj), res, &err);
+                    if (gf)
                     {
-                        GFile* gf =
-                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
                         char* cpath = g_file_get_path(gf);
                         std::string dest(cpath);
                         g_free(cpath);
@@ -1726,11 +1725,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                     wc);
                             });
                     }
+                    if (err) g_error_free(err);
                     delete c;
-                    gtk_native_dialog_destroy(d);
-                }),
+                },
                 ctx);
-            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+            g_object_unref(dlg);
         };
 
         room_view_->set_video_player_factory(
@@ -2650,17 +2649,19 @@ void MainWindow::on_login_succeeded()
         [this](auto fn) { run_async_(std::move(fn)); },
         [this](auto cb)
         {
-            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-                "Select avatar image", GTK_WINDOW(window_),
-                GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+            GtkFileDialog* dlg = gtk_file_dialog_new();
+            gtk_file_dialog_set_title(dlg, "Select avatar image");
             GtkFileFilter* filt = gtk_file_filter_new();
             gtk_file_filter_set_name(filt, "Images");
             gtk_file_filter_add_mime_type(filt, "image/png");
             gtk_file_filter_add_mime_type(filt, "image/jpeg");
             gtk_file_filter_add_mime_type(filt, "image/gif");
             gtk_file_filter_add_mime_type(filt, "image/webp");
-            gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), filt);
+            GListStore* flist = g_list_store_new(GTK_TYPE_FILE_FILTER);
+            g_list_store_append(flist, filt);
             g_object_unref(filt);
+            gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(flist));
+            g_object_unref(flist);
 
             struct AvatarOpenCtx {
                 std::function<void(std::vector<uint8_t>, std::string)> callback;
@@ -2668,21 +2669,21 @@ void MainWindow::on_login_succeeded()
             };
             auto* ctx_ptr = new AvatarOpenCtx{std::move(cb), this};
 
-            g_signal_connect(
-                dlg, "response",
-                G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+            gtk_file_dialog_open(dlg, GTK_WINDOW(window_), nullptr,
+                +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
                 {
                     auto* c = static_cast<AvatarOpenCtx*>(data);
-                    if (resp == GTK_RESPONSE_ACCEPT)
+                    GError* err = nullptr;
+                    GFile* file = gtk_file_dialog_open_finish(
+                        GTK_FILE_DIALOG(dialog_obj), res, &err);
+                    if (file)
                     {
-                        GFile* file =
-                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
                         gsize len = 0;
                         char* raw = nullptr;
-                        GError* err = nullptr;
+                        GError* load_err = nullptr;
                         g_file_load_contents(file, nullptr, &raw, &len,
-                                             nullptr, &err);
-                        if (!err && raw && len > 0)
+                                             nullptr, &load_err);
+                        if (!load_err && raw && len > 0)
                         {
                             std::vector<uint8_t> bytes(raw, raw + len);
                             g_free(raw);
@@ -2702,15 +2703,14 @@ void MainWindow::on_login_succeeded()
                                  bytes = std::move(bytes), mime]() mutable
                                 { callback(std::move(bytes), mime); });
                         }
-                        if (err) g_error_free(err);
+                        if (load_err) g_error_free(load_err);
                         g_object_unref(file);
                     }
+                    if (err) g_error_free(err);
                     delete c;
-                    gtk_native_dialog_destroy(d);
-                }),
+                },
                 ctx_ptr);
-
-            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+            g_object_unref(dlg);
         });
     wire_key_dialog_callbacks_();
     if (active_account_index_ >= 0 &&
@@ -2737,9 +2737,8 @@ void MainWindow::wire_key_dialog_callbacks_()
         GtkWidget* dlg = gtk_dialog_new_with_buttons(
             title.c_str(), GTK_WINDOW(window_), GTK_DIALOG_MODAL,
             "_Cancel", GTK_RESPONSE_CANCEL, "_OK", GTK_RESPONSE_OK, nullptr);
-        G_GNUC_END_IGNORE_DEPRECATIONS
-
         GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dlg));
+        G_GNUC_END_IGNORE_DEPRECATIONS
         GtkWidget* entry = gtk_entry_new();
         gtk_entry_set_visibility(GTK_ENTRY(entry), FALSE);
         gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Passphrase");
@@ -2748,7 +2747,7 @@ void MainWindow::wire_key_dialog_callbacks_()
         gtk_widget_set_margin_top(entry, 8);
         gtk_widget_set_margin_bottom(entry, 8);
         gtk_box_append(GTK_BOX(content), entry);
-        gtk_widget_show(dlg);
+        gtk_window_present(GTK_WINDOW(dlg));
 
         struct PassphraseCtx {
             std::function<void(std::string)> cb;
@@ -2776,59 +2775,58 @@ void MainWindow::wire_key_dialog_callbacks_()
     settings_controller_->show_save_file_dialog =
         [this](std::string suggested_name, std::function<void(std::string)> cb)
     {
-        GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-            "Save room keys", GTK_WINDOW(window_),
-            GTK_FILE_CHOOSER_ACTION_SAVE, "_Save", "_Cancel");
-        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
-                                          suggested_name.c_str());
+        GtkFileDialog* dlg = gtk_file_dialog_new();
+        gtk_file_dialog_set_title(dlg, "Save room keys");
+        gtk_file_dialog_set_initial_name(dlg, suggested_name.c_str());
 
         struct SaveCtx { std::function<void(std::string)> cb; };
         auto* ctx = new SaveCtx{std::move(cb)};
-        g_signal_connect(
-            dlg, "response",
-            G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+        gtk_file_dialog_save(dlg, GTK_WINDOW(window_), nullptr,
+            +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
             {
                 auto* c = static_cast<SaveCtx*>(data);
-                if (resp == GTK_RESPONSE_ACCEPT)
+                GError* err = nullptr;
+                GFile* file = gtk_file_dialog_save_finish(
+                    GTK_FILE_DIALOG(dialog_obj), res, &err);
+                if (file)
                 {
-                    GFile* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
                     char* path = g_file_get_path(file);
                     if (path) { c->cb(std::string(path)); g_free(path); }
                     g_object_unref(file);
                 }
+                if (err) g_error_free(err);
                 delete c;
-                gtk_native_dialog_destroy(d);
-            }),
+            },
             ctx);
-        gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+        g_object_unref(dlg);
     };
 
     settings_controller_->show_open_file_dialog =
         [this](std::function<void(std::string)> cb)
     {
-        GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-            "Open room keys", GTK_WINDOW(window_),
-            GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+        GtkFileDialog* dlg = gtk_file_dialog_new();
+        gtk_file_dialog_set_title(dlg, "Open room keys");
 
         struct OpenCtx { std::function<void(std::string)> cb; };
         auto* ctx = new OpenCtx{std::move(cb)};
-        g_signal_connect(
-            dlg, "response",
-            G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+        gtk_file_dialog_open(dlg, GTK_WINDOW(window_), nullptr,
+            +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
             {
                 auto* c = static_cast<OpenCtx*>(data);
-                if (resp == GTK_RESPONSE_ACCEPT)
+                GError* err = nullptr;
+                GFile* file = gtk_file_dialog_open_finish(
+                    GTK_FILE_DIALOG(dialog_obj), res, &err);
+                if (file)
                 {
-                    GFile* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
                     char* path = g_file_get_path(file);
                     if (path) { c->cb(std::string(path)); g_free(path); }
                     g_object_unref(file);
                 }
+                if (err) g_error_free(err);
                 delete c;
-                gtk_native_dialog_destroy(d);
-            }),
+            },
             ctx);
-        gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+        g_object_unref(dlg);
     };
 
     settings_controller_->on_export_keys_result =
@@ -2844,7 +2842,7 @@ void MainWindow::wire_key_dialog_callbacks_()
                          G_CALLBACK(+[](GtkDialog* d, int, gpointer)
                          { gtk_window_destroy(GTK_WINDOW(d)); }),
                          nullptr);
-        gtk_widget_show(dlg);
+        gtk_window_present(GTK_WINDOW(dlg));
     };
 
     settings_controller_->on_import_keys_result =
@@ -2860,7 +2858,7 @@ void MainWindow::wire_key_dialog_callbacks_()
                          G_CALLBACK(+[](GtkDialog* d, int, gpointer)
                          { gtk_window_destroy(GTK_WINDOW(d)); }),
                          nullptr);
-        gtk_widget_show(dlg);
+        gtk_window_present(GTK_WINDOW(dlg));
     };
 }
 
@@ -3946,17 +3944,19 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 void MainWindow::pick_image_file_(
     std::function<void(std::vector<uint8_t>, std::string)> cb)
 {
-    GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
-        "Select image", GTK_WINDOW(window_),
-        GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+    GtkFileDialog* dlg = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dlg, "Select image");
     GtkFileFilter* filt = gtk_file_filter_new();
     gtk_file_filter_set_name(filt, "Images");
     gtk_file_filter_add_mime_type(filt, "image/png");
     gtk_file_filter_add_mime_type(filt, "image/jpeg");
     gtk_file_filter_add_mime_type(filt, "image/gif");
     gtk_file_filter_add_mime_type(filt, "image/webp");
-    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), filt);
+    GListStore* flist = g_list_store_new(GTK_TYPE_FILE_FILTER);
+    g_list_store_append(flist, filt);
     g_object_unref(filt);
+    gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(flist));
+    g_object_unref(flist);
 
     struct Ctx {
         std::function<void(std::vector<uint8_t>, std::string)> cb;
@@ -3964,19 +3964,20 @@ void MainWindow::pick_image_file_(
     };
     auto* ctx = new Ctx{std::move(cb), this};
 
-    g_signal_connect(
-        dlg, "response",
-        G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+    gtk_file_dialog_open(dlg, GTK_WINDOW(window_), nullptr,
+        +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
         {
             auto* c = static_cast<Ctx*>(data);
-            if (resp == GTK_RESPONSE_ACCEPT)
+            GError* err = nullptr;
+            GFile* file = gtk_file_dialog_open_finish(
+                GTK_FILE_DIALOG(dialog_obj), res, &err);
+            if (file)
             {
-                GFile* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
                 gsize len = 0;
                 char* raw = nullptr;
-                GError* err = nullptr;
-                g_file_load_contents(file, nullptr, &raw, &len, nullptr, &err);
-                if (!err && raw && len > 0)
+                GError* load_err = nullptr;
+                g_file_load_contents(file, nullptr, &raw, &len, nullptr, &load_err);
+                if (!load_err && raw && len > 0)
                 {
                     std::vector<uint8_t> bytes(raw, raw + len);
                     g_free(raw);
@@ -3996,15 +3997,14 @@ void MainWindow::pick_image_file_(
                          bytes = std::move(bytes), mime]() mutable
                         { callback(std::move(bytes), mime); });
                 }
-                if (err) g_error_free(err);
+                if (load_err) g_error_free(load_err);
                 g_object_unref(file);
             }
+            if (err) g_error_free(err);
             delete c;
-            gtk_native_dialog_destroy(d);
-        }),
+        },
         ctx);
-
-    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+    g_object_unref(dlg);
 }
 
 MainWindow::DecodedImage
@@ -4086,6 +4086,7 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
                 GInputStream* stream = g_memory_input_stream_new_from_data(
                     bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
                 GError* gerr = nullptr;
+                G_GNUC_BEGIN_IGNORE_DEPRECATIONS
                 GdkPixbufAnimation* anim =
                     gdk_pixbuf_animation_new_from_stream(stream, nullptr, &gerr);
                 g_object_unref(stream);
@@ -4094,6 +4095,7 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
                     info.is_animated = !gdk_pixbuf_animation_is_static_image(anim);
                     g_object_unref(anim);
                 }
+                G_GNUC_END_IGNORE_DEPRECATIONS
                 if (gerr)
                     g_error_free(gerr);
             }
@@ -4504,20 +4506,28 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
     {
         return;
     }
-    GdkPixbuf* pb =
-        gdk_pixbuf_new_from_data(rgba.data(), GDK_COLORSPACE_RGB, TRUE, 8, w, h,
-                                 w * 4, nullptr, nullptr);
-    if (!pb)
-    {
-        return;
-    }
     cairo_surface_t* surf =
         cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-    cairo_t* cr = cairo_create(surf);
-    gdk_cairo_set_source_pixbuf(cr, pb, 0, 0);
-    cairo_paint(cr);
-    cairo_destroy(cr);
-    g_object_unref(pb);
+    if (!surf)
+        return;
+    cairo_surface_flush(surf);
+    uint8_t* dst = cairo_image_surface_get_data(surf);
+    int stride = cairo_image_surface_get_stride(surf);
+    const uint8_t* src_px = rgba.data();
+    for (int y = 0; y < h; ++y)
+    {
+        auto* row = reinterpret_cast<uint32_t*>(dst + y * stride);
+        const uint8_t* s = src_px + y * w * 4;
+        for (int x = 0; x < w; ++x, s += 4)
+        {
+            uint32_t a = s[3], r = s[0], g = s[1], b = s[2];
+            r = (r * a + 127u) / 255u;
+            g = (g * a + 127u) / 255u;
+            b = (b * a + 127u) / 255u;
+            row[x] = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+    cairo_surface_mark_dirty(surf);
     tk_images_.emplace(key, tk::cairo_pango::make_image(surf));
     cairo_surface_destroy(surf);
     if (main_app_surface_)
