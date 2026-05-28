@@ -305,8 +305,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainApp_->verif_banner()->on_use_recovery_key = [this]
         {
             mainApp_->show_verif_banner(false);
+            recovery_key_chosen_ = true;
+            if (!recovery_banner_dismissed_ && mainApp_)
+            {
+                mainApp_->recovery_banner()->set_state(
+                    tesseract::views::RecoveryBanner::State::Form);
+                mainApp_->recovery_banner()->set_current_key("");
+                if (recoveryKeyField_)
+                {
+                    recoveryKeyField_->set_text("");
+                    recoveryKeyField_->set_enabled(true);
+                }
+                mainApp_->show_recovery_banner(true);
+            }
             mainAppSurface_->relayout();
-            maybeShowRecoveryBanner();
         };
 
         // ---- Image + video viewers ----
@@ -3730,6 +3742,7 @@ void MainWindow::onRecoverFinished(bool ok, QString error)
 void MainWindow::onDismissRecoveryBanner()
 {
     recovery_banner_dismissed_ = true;
+    recovery_key_chosen_ = false;
     if (mainApp_)
     {
         mainApp_->show_recovery_banner(false);
@@ -4121,6 +4134,7 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
             mainApp_->show_recovery_banner(false);
             mainAppSurface_->relayout();
         }
+        recovery_key_chosen_ = false;
     }
 
     last_backup_state_ = progress.state;
@@ -4362,6 +4376,7 @@ void MainWindow::switchActiveAccount(int new_idx)
     reply_details_requested_.clear();
     clearMessages();
 
+    const int old_idx = active_account_index_;
     reset_server_info_();
     active_account_index_ = new_idx;
     auto& s = *accounts_[new_idx];
@@ -4446,7 +4461,25 @@ void MainWindow::switchActiveAccount(int new_idx)
     }
     tesseract::SessionStore::save_index(idx);
 
+    // Save banner state for the outgoing account, then load for the incoming.
+    if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
+    {
+        accounts_[old_idx]->recovery_banner_dismissed     = recovery_banner_dismissed_;
+        accounts_[old_idx]->recovery_key_chosen           = recovery_key_chosen_;
+        accounts_[old_idx]->verification_banner_dismissed = verification_banner_dismissed_;
+    }
+    if (mainApp_)
+    {
+        mainApp_->show_recovery_banner(false);
+        mainApp_->show_verif_banner(false);
+        mainAppSurface_->relayout();
+    }
+    recovery_banner_dismissed_     = s.recovery_banner_dismissed;
+    recovery_key_chosen_           = s.recovery_key_chosen;
+    verification_banner_dismissed_ = s.verification_banner_dismissed;
+
     rebuildAccountPicker();
+    handle_verification_state_ui_(!s.unverified);
     maybeShowRecoveryBanner();
 }
 
@@ -4533,6 +4566,8 @@ void MainWindow::logoutActiveAccount()
         mainAppSurface_->relayout();
     }
     recovery_banner_dismissed_ = false;
+    recovery_key_chosen_ = false;
+    verification_banner_dismissed_ = false;
 
     if (accounts_.empty())
     {
@@ -4710,6 +4745,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
             if (rs == tesseract::views::RecoveryBanner::State::Form ||
                 rs == tesseract::views::RecoveryBanner::State::Failed)
             {
+                if (recovery_key_chosen_)
+                {
+                    return;
+                }
                 mainApp_->show_recovery_banner(false);
             }
             else

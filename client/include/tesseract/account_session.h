@@ -61,6 +61,24 @@ struct AccountSession
     /// session — guards against double-starts and lets the destructor know to
     /// call `stop_sync` for clean shutdown.
     bool sync_started = false;
+
+    /// UI state: true after the user dismisses the recovery banner for this
+    /// account. Persists across account switches within the same app session.
+    bool recovery_banner_dismissed = false;
+
+    /// UI state: true when the user explicitly clicked "Use recovery key" for
+    /// this account and the RecoveryBanner is awaiting key entry.
+    bool recovery_key_chosen = false;
+
+    /// UI state: true when the last on_verification_state_changed callback
+    /// reported is_verified=false for this account. Saved by EventHandlerBase
+    /// on every state change (including the initial snapshot) so that
+    /// switch_active_account can restore the correct banner state.
+    bool unverified = false;
+
+    /// UI state: true after the user dismisses the verification banner for this
+    /// account. Persists across account switches within the same app session.
+    bool verification_banner_dismissed = false;
 };
 
 } // namespace tesseract

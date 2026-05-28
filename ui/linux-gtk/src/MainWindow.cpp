@@ -186,6 +186,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
             if (rs == tesseract::views::RecoveryBanner::State::Form ||
                 rs == tesseract::views::RecoveryBanner::State::Failed)
             {
+                if (recovery_key_chosen_)
+                {
+                    return;
+                }
                 main_app_->show_recovery_banner(false);
             }
             else
@@ -1817,8 +1821,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         verif_shared_->on_use_recovery_key = [this]
         {
             main_app_->show_verif_banner(false);
+            recovery_key_chosen_ = true;
+            if (!recovery_banner_dismissed_ && main_app_ && recovery_shared_)
+            {
+                recovery_shared_->set_state(
+                    tesseract::views::RecoveryBanner::State::Form);
+                recovery_shared_->set_current_key("");
+                if (recovery_key_field_)
+                {
+                    recovery_key_field_->set_text("");
+                    recovery_key_field_->set_enabled(true);
+                }
+                main_app_->show_recovery_banner(true);
+            }
             main_app_surface_->relayout();
-            maybe_show_recovery_banner();
         };
 
         // Room search field overlay.
@@ -4630,6 +4646,7 @@ void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     self->recovery_banner_dismissed_ = true;
+    self->recovery_key_chosen_ = false;
     if (self->main_app_)
     {
         self->main_app_->show_recovery_banner(false);
@@ -4781,6 +4798,7 @@ void MainWindow::push_backup_progress(tesseract::BackupProgress progress)
     {
         main_app_->show_recovery_banner(false);
         main_app_surface_->relayout();
+        recovery_key_chosen_ = false;
     }
 
     last_backup_state_ = progress.state;
@@ -5880,6 +5898,7 @@ void MainWindow::switch_active_account(int new_idx)
     reply_details_requested_.clear();
     clear_messages();
 
+    const int old_idx = active_account_index_;
     reset_server_info_();
     active_account_index_ = new_idx;
     auto& sess = *accounts_[new_idx];
@@ -5940,7 +5959,29 @@ void MainWindow::switch_active_account(int new_idx)
     index.active_user_id = my_user_id_;
     tesseract::SessionStore::save_index(index);
 
+    // Save banner state for the outgoing account, then load for the incoming.
+    if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
+    {
+        accounts_[old_idx]->recovery_banner_dismissed     = recovery_banner_dismissed_;
+        accounts_[old_idx]->recovery_key_chosen           = recovery_key_chosen_;
+        accounts_[old_idx]->verification_banner_dismissed = verification_banner_dismissed_;
+    }
+    if (main_app_)
+    {
+        main_app_->show_recovery_banner(false);
+        main_app_->show_verif_banner(false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    recovery_banner_dismissed_     = sess.recovery_banner_dismissed;
+    recovery_key_chosen_           = sess.recovery_key_chosen;
+    verification_banner_dismissed_ = sess.verification_banner_dismissed;
+
     rebuild_account_picker();
+    handle_verification_state_ui_(!sess.unverified);
+    maybe_show_recovery_banner();
 }
 
 void MainWindow::begin_add_account()
@@ -6027,6 +6068,8 @@ void MainWindow::logout_active_account()
         }
     }
     recovery_banner_dismissed_ = false;
+    recovery_key_chosen_ = false;
+    verification_banner_dismissed_ = false;
 
     gtk_label_set_text(
         GTK_LABEL(status_bar_),

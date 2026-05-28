@@ -46,6 +46,9 @@ impl ClientFfi {
     /// runs asynchronously; observe `on_backup_progress` for progress.
     #[cfg(not(test))]
     pub fn recover(&mut self, key_or_passphrase: &str) -> OpResult {
+        use matrix_sdk::encryption::{
+            recovery::RecoveryError, secret_storage::SecretStorageError,
+        };
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -58,6 +61,10 @@ impl ClientFfi {
             .block_on(async move { client.encryption().recovery().recover(&key).await })
         {
             Ok(()) => ok(""),
+            Err(RecoveryError::SecretStorage(SecretStorageError::MissingKeyInfo { .. })) => err(
+                "No recovery key is configured for this account. \
+                 Please verify this device using another signed-in device instead.",
+            ),
             Err(e) => err(e.to_string()),
         }
     }

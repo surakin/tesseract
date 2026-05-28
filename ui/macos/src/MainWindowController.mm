@@ -241,6 +241,7 @@ public:
     using ShellBase::notify_window_active_;
     using ShellBase::push_rooms_;
     using ShellBase::recovery_banner_dismissed_;
+    using ShellBase::recovery_key_chosen_;
     using ShellBase::reply_details_requested_;
     using ShellBase::request_forward_history_;
     using ShellBase::return_to_live_;
@@ -1796,8 +1797,20 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 return;
             }
             s->_mainApp->show_verif_banner(false);
+            s->_shell->recovery_key_chosen_ = true;
+            if (!s->_shell->recovery_banner_dismissed_ && s->_recoveryShared)
+            {
+                s->_recoveryShared->set_state(
+                    tesseract::views::RecoveryBanner::State::Form);
+                s->_recoveryShared->set_current_key("");
+                if (s->_recoveryKeyField)
+                {
+                    s->_recoveryKeyField->set_text("");
+                    s->_recoveryKeyField->set_enabled(true);
+                }
+                s->_mainApp->show_recovery_banner(true);
+            }
             s->_mainAppSurface->relayout();
-            [s _maybeShowRecoveryBanner];
         };
 
         // Image + video viewers — providers / repaint / on_close.
@@ -4791,6 +4804,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_switchActiveAccount:(int)idx
 {
+    const int old_idx = _shell->active_account_index_;
     _shell->reset_server_info_();
     _shell->active_account_index_ = idx;
     auto* session = _shell->accounts_[idx].get();
@@ -4842,6 +4856,28 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _loginView.hidden = YES;
 
     [self _populateUserStrip];
+
+    // Save banner state for the outgoing account, then load for the incoming.
+    if (old_idx >= 0 && old_idx < static_cast<int>(_shell->accounts_.size()))
+    {
+        _shell->accounts_[old_idx]->recovery_banner_dismissed =
+            _shell->recovery_banner_dismissed_;
+        _shell->accounts_[old_idx]->recovery_key_chosen =
+            _shell->recovery_key_chosen_;
+        _shell->accounts_[old_idx]->verification_banner_dismissed =
+            _shell->verification_banner_dismissed_;
+    }
+    if (_mainApp)
+    {
+        _mainApp->show_recovery_banner(false);
+        _mainApp->show_verif_banner(false);
+        _mainAppSurface->relayout();
+    }
+    _shell->recovery_banner_dismissed_     = session->recovery_banner_dismissed;
+    _shell->recovery_key_chosen_           = session->recovery_key_chosen;
+    _shell->verification_banner_dismissed_ = session->verification_banner_dismissed;
+
+    _shell->handle_verification_state_ui_(!session->unverified);
     [self _maybeShowRecoveryBanner];
 
     if (!_shell->pending_restore_room_.empty())
@@ -5613,6 +5649,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 if (rs == tesseract::views::RecoveryBanner::State::Form ||
                     rs == tesseract::views::RecoveryBanner::State::Failed)
                 {
+                    if (_shell->recovery_key_chosen_)
+                    {
+                        return;
+                    }
                     _mainApp->show_recovery_banner(false);
                 }
                 else
@@ -5723,6 +5763,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             _mainAppSurface->relayout();
         }
+        _shell->recovery_key_chosen_ = false;
     }
 }
 
@@ -5947,6 +5988,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)_onRecoveryDismiss
 {
     _shell->recovery_banner_dismissed_ = true;
+    _shell->recovery_key_chosen_ = false;
     if (_mainApp)
     {
         _mainApp->show_recovery_banner(false);

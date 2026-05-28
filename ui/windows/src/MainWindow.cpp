@@ -576,6 +576,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
                 if (rs == tesseract::views::RecoveryBanner::State::Form ||
                     rs == tesseract::views::RecoveryBanner::State::Failed)
                 {
+                    if (recovery_key_chosen_)
+                    {
+                        return;
+                    }
                     main_app_->show_recovery_banner(false);
                     recovery_banner_visible_ = false;
                 }
@@ -2481,7 +2485,20 @@ void MainWindow::on_create(HWND hwnd)
         {
             main_app_->show_verif_banner(false);
             verif_banner_visible_ = false;
-            maybe_show_recovery_banner();
+            recovery_key_chosen_ = true;
+            if (!recovery_banner_dismissed_ && main_app_ && recovery_shared_)
+            {
+                recovery_shared_->set_state(
+                    tesseract::views::RecoveryBanner::State::Form);
+                recovery_shared_->set_current_key("");
+                if (recovery_key_field_)
+                {
+                    recovery_key_field_->set_text("");
+                    recovery_key_field_->set_enabled(true);
+                }
+                main_app_->show_recovery_banner(true);
+                recovery_banner_visible_ = true;
+            }
             if (main_app_surface_)
             {
                 main_app_surface_->relayout();
@@ -5184,6 +5201,7 @@ void MainWindow::on_recover_done(bool ok, std::wstring msg)
 void MainWindow::on_recovery_dismiss_clicked()
 {
     recovery_banner_dismissed_ = true;
+    recovery_key_chosen_ = false;
     if (main_app_)
     {
         main_app_->show_recovery_banner(false);
@@ -5219,6 +5237,7 @@ void MainWindow::on_backup_progress(tesseract::BackupProgress* progress)
             main_app_->show_recovery_banner(false);
         }
         recovery_banner_visible_ = false;
+        recovery_key_chosen_ = false;
         if (main_app_surface_)
         {
             main_app_surface_->relayout();
@@ -5333,6 +5352,7 @@ void MainWindow::switch_active_account(int new_idx)
     {
         return;
     }
+    const int old_idx = active_account_index_;
     reset_server_info_();
     active_account_index_ = new_idx;
     auto& sess = accounts_[new_idx];
@@ -5387,8 +5407,17 @@ void MainWindow::switch_active_account(int new_idx)
         room_view_->set_messages({});
     }
 
+    // Save banner state for the outgoing account, then load for the incoming.
+    if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
+    {
+        accounts_[old_idx]->recovery_banner_dismissed      = recovery_banner_dismissed_;
+        accounts_[old_idx]->recovery_key_chosen            = recovery_key_chosen_;
+        accounts_[old_idx]->verification_banner_dismissed  = verification_banner_dismissed_;
+    }
     recovery_banner_visible_ = false;
-    recovery_banner_dismissed_ = false;
+    recovery_banner_dismissed_     = sess->recovery_banner_dismissed;
+    recovery_key_chosen_           = sess->recovery_key_chosen;
+    verification_banner_dismissed_ = sess->verification_banner_dismissed;
     if (main_app_)
     {
         main_app_->show_recovery_banner(false);
@@ -5414,6 +5443,7 @@ void MainWindow::switch_active_account(int new_idx)
     show_main_content();
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Connected"));
+    handle_verification_state_ui_(!sess->unverified);
     maybe_show_recovery_banner();
 
     if (!tray_)
@@ -5562,6 +5592,8 @@ void MainWindow::logout_active_account()
     }
     recovery_banner_visible_ = false;
     recovery_banner_dismissed_ = false;
+    recovery_key_chosen_ = false;
+    verification_banner_dismissed_ = false;
     verif_banner_visible_ = false;
     if (main_app_surface_)
     {

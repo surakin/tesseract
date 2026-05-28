@@ -313,9 +313,25 @@ void EventHandlerBase::on_verification_cancelled(const std::string& flow_id,
 void EventHandlerBase::on_verification_state_changed(bool is_verified)
 {
     shell_->post_to_ui_(
-        [shell = shell_, v = is_verified]()
+        [shell = shell_, uid = user_id_, v = is_verified]()
         {
-            shell->handle_verification_state_ui_(v);
+            // Always persist the state so switch_active_account can restore it.
+            for (auto& a : shell->accounts_)
+            {
+                if (a->user_id == uid)
+                {
+                    a->unverified = !v;
+                    break;
+                }
+            }
+            // Only touch the live UI when this is the active account.
+            if (shell->active_account_index_ >= 0 &&
+                shell->active_account_index_ <
+                    static_cast<int>(shell->accounts_.size()) &&
+                shell->accounts_[shell->active_account_index_]->user_id == uid)
+            {
+                shell->handle_verification_state_ui_(v);
+            }
         });
 }
 
