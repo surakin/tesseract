@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-27**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-28**.
 
 > **Matrix threads UI.**
 > A new "threads" button in `RoomHeader` (immediately left of the calendar
@@ -137,7 +137,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 150 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 560 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 578 |
 
 ## Platforms
 
@@ -256,6 +256,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - Send button gates on trimmed non-empty content.
 - Clipboard image paste; file drag-drop; pending-image / pending-file preview chip with clear button.
 - Reply-mode banner (`kReplyBandH = 44 px`) with sender + body snippet and "×" cancel; edit-mode banner (`kEditBandH = 44 px`) with "×" cancel; both modes mutually exclusive.
+- **Slash commands** — `SlashCommandEngine`/`SlashCommandPopup` autocomplete (typing `/` opens the popup); `dispatch_compose_send` routes recognised commands: `/me` + `/slap` → `m.emote`, `/shrug` appends `¯\_(ツ)_/¯`, `/spoiler [(reason)] <text>` → `m.text` with a `data-mx-spoiler` span (MSC2010; content rendered through inline markdown). Unknown `/foo` is sent verbatim.
 
 ## Internationalisation
 

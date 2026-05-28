@@ -3,6 +3,7 @@
 
 #include <string>
 
+using tesseract::markdown_inline_to_html;
 using tesseract::markdown_to_html;
 
 namespace
@@ -25,6 +26,20 @@ TEST_CASE("markdown: body is always the unchanged input")
     auto r = markdown_to_html("**bold** and _em_");
     CHECK(r.body == "**bold** and _em_");
     CHECK_FALSE(r.formatted_body.empty());
+}
+
+TEST_CASE("markdown_inline: escapes plain text with no markers")
+{
+    // Unlike markdown_to_html, the inline form never returns "" and always
+    // escapes — so it's safe to embed (e.g. in a spoiler span).
+    CHECK(markdown_inline_to_html("a < b & c") == "a &lt; b &amp; c");
+}
+
+TEST_CASE("markdown_inline: renders inline emphasis without block wrapper")
+{
+    auto html = markdown_inline_to_html("*x*");
+    CHECK(html == "<em>x</em>");
+    CHECK_FALSE(contains(html, "<p>"));
 }
 
 TEST_CASE("markdown: a lone marker with no pair is not formatting")

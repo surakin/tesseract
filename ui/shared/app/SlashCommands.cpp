@@ -1,6 +1,7 @@
 #include "SlashCommands.h"
 
 #include <tesseract/client.h>
+#include <tesseract/markdown.h>
 
 namespace tesseract
 {
@@ -18,14 +19,90 @@ const char* strip_prefix(const std::string& s, const char* prefix)
     return s.c_str() + n;
 }
 
+// Escape a value for embedding inside a double-quoted HTML attribute.
+std::string attr_escape(std::string_view s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s)
+    {
+        switch (c)
+        {
+        case '&': out += "&amp;"; break;
+        case '<': out += "&lt;"; break;
+        case '"': out += "&quot;"; break;
+        default:  out += c; break;
+        }
+    }
+    return out;
+}
+
 }  // namespace
+
+std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
+{
+    // Trim leading whitespace.
+    std::size_t i = 0;
+    while (i < args.size() && (args[i] == ' ' || args[i] == '\t')) ++i;
+    args.remove_prefix(i);
+
+    // Optional leading "(reason)" — only when the parens are balanced.
+    std::string reason;
+    bool has_reason = false;
+    if (!args.empty() && args.front() == '(')
+    {
+        const auto close = args.find(')');
+        if (close != std::string_view::npos)
+        {
+            std::string_view r = args.substr(1, close - 1);
+            // Trim the reason.
+            std::size_t rs = 0, re = r.size();
+            while (rs < re && (r[rs] == ' ' || r[rs] == '\t')) ++rs;
+            while (re > rs && (r[re - 1] == ' ' || r[re - 1] == '\t')) --re;
+            reason.assign(r.substr(rs, re - rs));
+            has_reason = true;
+            args.remove_prefix(close + 1);
+            // Trim whitespace between ")" and the content.
+            std::size_t j = 0;
+            while (j < args.size() && (args[j] == ' ' || args[j] == '\t')) ++j;
+            args.remove_prefix(j);
+        }
+    }
+
+    // Trim trailing whitespace from the content.
+    std::size_t end = args.size();
+    while (end > 0 && (args[end - 1] == ' ' || args[end - 1] == '\t')) --end;
+    args = args.substr(0, end);
+
+    if (args.empty())
+    {
+        return std::nullopt;
+    }
+
+    SpoilerMessage msg;
+    const std::string inner = markdown_inline_to_html(args);
+    if (has_reason)
+    {
+        msg.body = "(Spoiler: " + reason + ") " + std::string(args);
+        msg.formatted_body =
+            "<span data-mx-spoiler=\"" + attr_escape(reason) + "\">" + inner +
+            "</span>";
+    }
+    else
+    {
+        msg.body = "(Spoiler) " + std::string(args);
+        msg.formatted_body = "<span data-mx-spoiler>" + inner + "</span>";
+    }
+    return msg;
+}
 
 const std::vector<SlashCommandDescriptor>& available_commands()
 {
     static const std::vector<SlashCommandDescriptor> kCommands = {
-        {"me",    "<action>", "Send an action message"},
-        {"shrug", "",         "Append \xC2\xAF\\_(ツ)_/\xC2\xAF"},
-        {"slap",  "<target>", "Slap someone with a large trout"},
+        {"me",      "<action>",          "Send an action message"},
+        {"shrug",   "",                  "Append \xC2\xAF\\_(ツ)_/\xC2\xAF"},
+        {"slap",    "<target>",          "Slap someone with a large trout"},
+        {"spoiler", "[(reason)] <text>", "Send a hidden spoiler message"},
     };
     return kCommands;
 }
@@ -106,6 +183,20 @@ Result dispatch_compose_send(Client& client,
         std::string emote_body =
             "slaps " + name + " around a bit with a large trout";
         return client.send_emote(room_id, emote_body, "");
+    }
+
+    // `/spoiler [(reason)] <text>` → m.text with a `data-mx-spoiler` span
+    // (MSC2010). Match is case-sensitive and requires a space after `spoiler`.
+    if (const char* args = strip_prefix(body, "/spoiler "))
+    {
+        auto msg = build_spoiler_message(args);
+        if (!msg)
+        {
+            // Whitespace-only content — no-op that still clears the composer,
+            // matching how an empty `/me ` behaves.
+            return Result{true, ""};
+        }
+        return client.send_message(room_id, msg->body, msg->formatted_body);
     }
     return client.send_message(room_id, body, formatted_body);
 }

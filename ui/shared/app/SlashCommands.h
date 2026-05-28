@@ -1,6 +1,8 @@
 #pragma once
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <tesseract/client.h>
@@ -20,6 +22,20 @@ struct SlashCommandDescriptor
 // Returns the canonical command list. Stable order — the popup uses this
 // vector's order when nothing has been typed yet. Lifetime: static.
 const std::vector<SlashCommandDescriptor>& available_commands();
+
+// The plain + HTML pair produced by `/spoiler`.
+struct SpoilerMessage
+{
+    std::string body;            // plain-text fallback, prefixed "(Spoiler…)"
+    std::string formatted_body;  // <span data-mx-spoiler[="reason"]>…</span>
+};
+
+// Build a spoiler message from the text following the `/spoiler ` prefix. A
+// leading `(reason)` (balanced parens) sets the spoiler reason; everything
+// after it is the hidden content, rendered through inline markdown. Returns
+// std::nullopt when the content is whitespace-only so the caller can no-op
+// (clearing the composer) like an empty `/me `. Exposed for unit testing.
+std::optional<SpoilerMessage> build_spoiler_message(std::string_view args);
 
 // Dispatch a composer send to the SDK. If `body` matches a recognized slash
 // command, routes to the corresponding `Client` method; otherwise it is sent

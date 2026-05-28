@@ -20,4 +20,11 @@ struct MarkdownResult
 /// derive `formatted_body` for every shell + secondary window uniformly.
 MarkdownResult markdown_to_html(std::string_view text);
 
+/// Convert a single inline run of markdown to HTML (no block-level wrapping).
+/// Always HTML-escapes `& < >`, even when no markdown markers are present — so
+/// the result is safe to embed inside another element (e.g. a spoiler span),
+/// unlike `markdown_to_html` which returns "" for marker-free text and wraps
+/// output in block elements (`<p>`, `<blockquote>`, …).
+std::string markdown_inline_to_html(std::string_view text);
+
 } // namespace tesseract

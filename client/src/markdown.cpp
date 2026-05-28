@@ -511,4 +511,11 @@ MarkdownResult markdown_to_html(std::string_view text)
     return {body, html};
 }
 
+std::string markdown_inline_to_html(std::string_view text)
+{
+    std::string out;
+    parse_inline(text, out);
+    return out;
+}
+
 } // namespace tesseract
