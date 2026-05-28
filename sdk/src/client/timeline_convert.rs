@@ -187,7 +187,6 @@ pub(crate) fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
 /// change. `new_pinned` and `old_pinned` are the new and previous event-ID
 /// lists respectively (as any `AsRef<str>` slice — `&[&str]` or
 /// `&[OwnedEventId]` both work).
-#[allow(dead_code)]
 pub(crate) fn pinned_events_action(
     new_pinned: &[impl AsRef<str>],
     old_pinned: &[impl AsRef<str>],
@@ -373,6 +372,75 @@ pub(super) async fn timeline_item_to_ffi(
             });
         }
     };
+
+    // m.room.pinned_events state events: surface as a labelled timeline row.
+    // All other state events (membership, room name, etc.) remain filtered.
+    if let TimelineItemContent::OtherState(state) = event_item.content() {
+        use matrix_sdk::ruma::events::StateEventContentChange;
+        use matrix_sdk_ui::timeline::AnyOtherStateEventContentChange;
+        if let AnyOtherStateEventContentChange::RoomPinnedEvents(full) = state.content() {
+            if let StateEventContentChange::Original { content, prev_content } = full {
+                let new_ids: Vec<_> = content.pinned.iter()
+                    .map(|id| id.to_string()).collect();
+                let old_ids: Vec<_> = prev_content.as_ref()
+                    .and_then(|pc| pc.pinned.as_ref())
+                    .map(|ids| ids.iter().map(|id| id.to_string()).collect())
+                    .unwrap_or_default();
+                let body = pinned_events_action(&new_ids, &old_ids);
+                let (sender_name, sender_avatar_url) =
+                    if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+                        (
+                            p.display_name.clone().unwrap_or_default(),
+                            p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                        )
+                    } else {
+                        (String::new(), String::new())
+                    };
+                return Some(TimelineEvent {
+                    room_id: room_id.to_owned(),
+                    msg_type: "m.room.pinned_events".to_owned(),
+                    event_id: event_item.event_id()
+                        .map(|id| id.to_string()).unwrap_or_default(),
+                    sender: event_item.sender().to_string(),
+                    sender_name,
+                    sender_avatar_url,
+                    body,
+                    timestamp: event_item.timestamp().get().into(),
+                    source_url: String::new(),
+                    source_encrypted_json: String::new(),
+                    width: 0, height: 0,
+                    file_url: String::new(), file_encrypted_json: String::new(),
+                    file_name: String::new(), file_size: 0,
+                    image_filename: String::new(),
+                    audio_url: String::new(), audio_encrypted_json: String::new(),
+                    audio_duration_ms: 0, audio_waveform: Vec::new(),
+                    audio_mime: String::new(),
+                    video_thumbnail_url: String::new(),
+                    video_thumbnail_encrypted_json: String::new(),
+                    image_thumbnail_url: String::new(),
+                    image_thumbnail_encrypted_json: String::new(),
+                    video_duration_ms: 0, video_mime: String::new(),
+                    video_autoplay: false, video_loop: false, video_no_audio: false,
+                    video_hide_controls: false, video_gif: false,
+                    reactions: Vec::new(), read_receipts: Vec::new(),
+                    in_reply_to_id: String::new(), in_reply_to_sender_name: String::new(),
+                    in_reply_to_body: String::new(), in_reply_to_image_url: String::new(),
+                    in_reply_to_image_encrypted_json: String::new(),
+                    is_edited: false, formatted_body: String::new(),
+                    blurhash: String::new(), sticker_info_json: String::new(),
+                    image_animated: false,
+                    pending_state: String::new(), pending_error: String::new(),
+                    pending_recoverable: false, pending_txn_id: String::new(),
+                    location_lat: 0.0, location_lon: 0.0, location_description: String::new(),
+                    thread_root_id: String::new(), is_thread_root: false,
+                    thread_reply_count: 0,
+                    thread_latest_sender_name: String::new(),
+                    thread_latest_body: String::new(), thread_latest_ts: 0,
+                });
+            }
+        }
+        return None; // all other state events remain filtered
+    }
 
     // Compute pending fields once for all non-virtual event paths.
     let (pending_state, pending_error, pending_recoverable, pending_txn_id) =
