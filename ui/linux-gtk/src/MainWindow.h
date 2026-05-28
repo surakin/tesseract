@@ -374,6 +374,7 @@ private:
     tesseract::views::AccountPicker* account_picker_ = nullptr;
 
     GtkCssProvider* theme_css_provider_ = nullptr;
+    gulong prefer_dark_notify_id_ = 0;
 
     std::unique_ptr<GtkSniTrayIcon> tray_;
 

@@ -2157,7 +2157,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
     apply_current_theme_();
 
     // Re-apply when the OS dark-mode setting changes (System mode only).
-    g_signal_connect(
+    // Store the handler ID so apply_theme_ui_ can block it while writing
+    // the same property, preventing a notify → apply → notify feedback loop.
+    prefer_dark_notify_id_ = g_signal_connect(
         gtk_settings_get_default(), "notify::gtk-application-prefer-dark-theme",
         G_CALLBACK(+[](GObject*, GParamSpec*, gpointer data)
                    {
@@ -2288,10 +2290,16 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     apply_theme_to_secondary_windows_(t);
 
     // Tell GTK itself about the dark preference so native chrome follows.
+    // Block the notify handler while writing to prevent a feedback loop:
+    // our own g_object_set would re-trigger apply_current_theme_ indefinitely.
     bool dark = (t.mode == tk::ThemeMode::Dark);
+    if (prefer_dark_notify_id_)
+        g_signal_handler_block(gtk_settings_get_default(), prefer_dark_notify_id_);
     g_object_set(gtk_settings_get_default(),
                  "gtk-application-prefer-dark-theme", dark ? TRUE : FALSE,
                  nullptr);
+    if (prefer_dark_notify_id_)
+        g_signal_handler_unblock(gtk_settings_get_default(), prefer_dark_notify_id_);
 
     // Rebuild dynamic CSS rules. The compose-area rule is static but lives
     // here because load_from_string replaces all prior content in the provider.
