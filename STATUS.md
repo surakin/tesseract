@@ -1,6 +1,24 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-28**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-29**.
+
+> **Tab session restore.**
+> The full set of open room tabs is now persisted across restarts. On every
+> room navigation the `im.gnomos.tesseract` Matrix account-data event is
+> updated with an `open_rooms` array (all tab room IDs in visual order) and
+> `last_room` (the active tab). On startup each shell reads these fields from
+> `PrefsData` into `AccountSession::open_rooms` / `last_room`; on account
+> switch `pending_restore_rooms_` (a vector replacing the previous single
+> `pending_restore_room_` string) is populated from that snapshot. A new
+> `ShellBase::try_restore_tab_session_()` helper pre-populates `tabs_` from
+> the saved list and fires `on_tab_state_changed_ui_()` exactly once, so the
+> full tab bar is reconstructed in a single pass with no inter-tab flickering.
+> Backward-compatible: old prefs with only `last_room` auto-populate
+> `open_rooms = {last_room}` on parse. The prefs serializer was migrated from
+> hand-rolled JSON to `nlohmann/json` (the same library `settings.cpp` uses).
+> 4 new unit tests; wired in all four shells (Qt6, GTK4, Win32, macOS).
+
+<!-- -->
 
 > **Matrix threads UI.**
 > A new "threads" button in `RoomHeader` (immediately left of the calendar
@@ -137,7 +155,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 150 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 578 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 582 |
 
 ## Platforms
 
@@ -154,7 +172,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 - **OAuth 2.0 (RFC 8252) loopback flow** — two-phase `begin_oauth` / `await_oauth` API, ephemeral loopback HTTP server, mDNS-safe redirect URI.
 - **Secure token storage** — per-platform `SecretStore` backend: Windows Credential Manager (`CredWriteW`/`CredReadW`), macOS Keychain (`SecItemAdd`/`SecItemCopyMatching`), Linux `libsecret` (probed at build time; plaintext stub fallback when absent). `SessionStore` migrates transparently from the legacy plaintext `session.json` on first load, writing a `{"v":2}` sentinel on success so subsequent starts bypass the migration path.
-- **Session restore on startup** — `SessionStore` persists the full `PersistedSession` JSON on every token refresh and reloads it at launch.
+- **Session restore on startup** — `SessionStore` persists the full `PersistedSession` JSON on every token refresh and reloads it at launch. All open room tabs and the active account are also restored: the `im.gnomos.tesseract` account-data event carries an `open_rooms` array so the full tab workspace survives a restart.
 - **XDG data/config split** — account data (per-account `accounts/<uid>/` tree with `session.json` + the matrix-sdk SQLite store, plus the `accounts.json` index) lives under `data_dir()`: `~/.local/share/tesseract/` on Linux, `%APPDATA%/Tesseract/` on Windows, `~/Library/Application Support/Tesseract/` on macOS. Only `app_settings.json` stays in `config_dir()` (`~/.config/tesseract/` on Linux); `data_dir()` equals `config_dir()` on Windows/macOS. `migrate_legacy_layout()` runs on startup and handles both the pre-multi-account single-account layout and a multi-account `accounts/` tree left under `config_dir()` by older builds (Linux), moving each into `data_dir()` crash-safely.
 - **`logout`** — wipes Rust session, C++ wrapper state, and the SQLite store; surfaces back through the FFI.
 - **Soft logout** — `SessionChange::UnknownToken` threaded through `on_error` with a `soft_logout` flag so the UI can retry restore without clearing the store.

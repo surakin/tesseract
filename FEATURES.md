@@ -11,7 +11,7 @@ version) are noted where relevant.
 - OS-native secure credential storage on every platform
 - Single-instance behavior (launching again restores the running window)
 - System tray with minimize-to-tray (default), unread dot, and mention-state color
-- Session restore (last open room reopened on launch)
+- Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
 
 ## Messaging

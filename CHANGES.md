@@ -5,6 +5,17 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(session): restore all open room tabs across restarts — the `im.gnomos.tesseract`
+  account-data event now carries an `open_rooms` JSON array (all tab room IDs in visual
+  order) alongside the existing `last_room` active-tab field. On every room navigation
+  the full tab list is serialised and written to the homeserver; on startup each shell
+  reads `PrefsData::open_rooms` into `AccountSession` and passes it to a new
+  `ShellBase::try_restore_tab_session_()` helper that pre-populates `tabs_` and fires
+  `on_tab_state_changed_ui_()` once, reconstructing the full tab bar in a single pass
+  with no inter-tab flickering. Account switching clears `tabs_` to prevent the previous
+  account's tabs bleeding through. Backward-compatible: old prefs with only `last_room`
+  auto-populate `open_rooms = {last_room}` on parse. The prefs serializer was migrated
+  from hand-rolled JSON to `nlohmann/json`. 4 new unit tests; wired on all four shells.
 - feat(compose): `/` in the composer opens a filtered slash-command popup —
   arrow keys / Tab accept, Escape dismisses. Initial command set:
   `/me <action>` (m.emote) and `/shrug` (text macro). Wired in all four
