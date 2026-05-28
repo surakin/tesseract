@@ -2,6 +2,60 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-05-29**.
 
+> **Pinned events.**
+> A `PinnedBanner` widget above the message list cycles through
+> `m.room.pinned_events` with left/right chevrons and a counter; clicking
+> the body text jumps to the pinned message (in-window scroll when loaded,
+> `subscribe_room_at` otherwise). A Pin / Unpin entry appears in the hover
+> action pill, gated by the current user's power level (`can_pin_in_room`
+> reads `m.room.power_levels`). Architecture: `sdk/src/client/pins.rs`
+> exposes `pin_event` / `unpin_event` (state-event read-modify-write) and
+> `can_pin_in_room`; `RoomInfo` carries a resolved `Vec<PinnedEvent>` fetched
+> via `Room::load_or_fetch_event` (cache → SQLite → `/event/{id}`). Pin
+> changes flow through the existing `on_rooms_updated` path — no new FFI
+> callback. `MessageListView` gains `set_can_pin` + `set_pinned_event_ids`;
+> all four shells wire `on_pin_requested` / `on_unpin_requested` callbacks.
+> 11 new tests.
+
+<!-- -->
+
+> **Hover action pill.**
+> The per-message hover affordances are consolidated into a single rounded
+> pill of square cells (reply / thread / react / edit / redact / pin)
+> anchored to the top-right of every row, with one shared outline and 1 px
+> dividers. The hovered cell gets a subtle pressed fill. The `+react` chip
+> moves onto the pill for rows with no existing reactions and stays at the
+> end of the reactions strip when reactions are present; redacted and
+> unable-to-decrypt rows suppress it.
+
+<!-- -->
+
+> **Win32 windowless RichEdit compose bar.**
+> The compose bar on Win32 is now driven by a windowless `ITextServices2`
+> control (loaded from `MSFTEDIT.DLL` via `GetProcAddress`) rendered
+> directly into the surface's `ID2D1HwndRenderTarget` via `TxDrawD2D`.
+> The implementation covers `ITextHost2` (~51 pure virtuals); colour emoji
+> render correctly via DirectWrite COLR/CPAL tables (`TO_DEFAULTCOLOREMOJI`
+> + `TO_DISPLAYFONTCOLOR` typography options). All prior `NativeTextArea`
+> behaviour is preserved: `replace_range`, @-mention pills, clipboard image
+> paste, slash-popup navigation, Up-to-edit-last, IME. A companion change
+> implements `IProvideFontInfo` to route emoji codepoints to Noto Color Emoji
+> in all message rows on Win32.
+
+<!-- -->
+
+> **Win32 full HiDPI fix.**
+> With `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2`, Win32 APIs return
+> physical pixels while D2D draws in DIPs. A systematic coordinate-space
+> fix in `host_win32.cpp` converts mouse coords to DIPs before widget
+> dispatch, scales logical DIP bounds → physical px in `set_rect()`,
+> returns logical px from `natural_height()`, and converts all popup /
+> picker `SetWindowPos` calls through DIP-to-physical helpers. Status-bar
+> height is derived from the logical font height × DPI scale. Emoji and
+> sticker pickers, and the Win32RichEditArea, now also honour dark mode.
+
+<!-- -->
+
 > **Tab session restore.**
 > The full set of open room tabs is now persisted across restarts. On every
 > room navigation the `im.gnomos.tesseract` Matrix account-data event is

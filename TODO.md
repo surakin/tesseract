@@ -2,14 +2,17 @@
 
 ## Step 5 — UI polish (in progress)
 - [ ] Message bubbles / cards (visual polish pass on MessageListView rows)
-- [ ] Threaded reply panel (slide-in sidebar, Telegram-style — layout TBD)
+- [x] Threaded reply panel — threads UI with thread-list panel + thread view + ComposeBar
 - [x] Emoji reactions (reaction bar per row; `send_reaction` / `redact_reaction` FFI; `Vec<(emoji, count, reacted_by_me)>` in TimelineEvent)
 - [x] Room list: last-message preview + last-activity sort
 - [ ] Room list: unread count badge
 - [ ] Room list: DM rooms show the other user's avatar
-- [x] ComposeBar: `/` slash-command hint popup
+- [x] ComposeBar: `/` slash-command hint popup (`/me`, `/shrug`, `/slap`, `/spoiler`)
 - [x] ComposeBar: send typing indicator to the room (`m.typing`)
 - [x] ComposeBar: placeholder label for GTK4 + macOS NativeTextArea (GtkTextView / NSTextView have no built-in placeholder)
+- [x] Hover action pill (reply / thread / react / edit / redact / pin consolidated into a single top-right pill)
+- [x] Pinned messages — banner, pin/unpin action, power-level gating, all four shells
+- [x] Session restore — all open room tabs + active account restored on restart
 
 ## Step 8 — MSC2545 stickers/emoticons, remaining
 - [ ] Inline emoticons in HTML bodies (`<img data-mx-emoticon>`) — Qt6, GTK4, macOS, Win32

@@ -5,7 +5,98 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(pins): cross-platform Matrix pinned events — a `PinnedBanner` widget sits above
+  the message list and cycles through `m.room.pinned_events`; clicking the banner body
+  jumps to the pinned message (in-window scroll when loaded, `subscribe_room_at` fallback
+  otherwise). A Pin / Unpin action appears in the hover action pill, gated by the user's
+  power level (`can_pin_in_room` checks `m.room.power_levels`). Architecture: new
+  `sdk/src/client/pins.rs` with `pin_event` / `unpin_event` (state-event read-modify-write)
+  + `can_pin_in_room`; `RoomInfo` carries a `pinned_events: Vec<PinnedEvent>` resolved via
+  `Room::load_or_fetch_event` (cache → SQLite → `/event/{id}` fallback); pin changes flow
+  through the existing `on_rooms_updated` path, so no new FFI callback is needed.
+  `MessageListView` gains `set_can_pin` + `set_pinned_event_ids`; all four shells
+  (Qt6, GTK4, Win32, macOS) wire two new `RoomView` callbacks. 11 new tests.
+- feat(messagelist): hover action pill — collapse the per-button hover strip into a single
+  rounded pill of square cells (reply / thread / react / edit / redact / pin) anchored to
+  the top-right of each row. Cells share one outer outline separated by 1 px dividers;
+  the hovered cell gets a subtle pressed fill. The `+react` chip moves onto the pill for
+  rows with no reactions and stays at the end of the reactions strip when reactions exist.
+  Redacted and unable-to-decrypt rows suppress the react entry.
+- feat(win32): windowless RichEdit compose bar — replaces the windowed RICHEDIT50W child
+  HWND with a windowless `ITextServices2`-driven control using Direct2D / DirectWrite
+  rendering. Implements `ITextHost2` (~51 pure virtuals); `TxDrawD2D` paints directly into
+  the surface's render target so colour emoji (COLR/CPAL via DirectWrite) appear correctly
+  in the compose bar. All existing NativeTextArea behaviour preserved (replace_range,
+  @-mention pills, clipboard image paste, slash-popup nav, Up-to-edit-last, IME).
+- feat(win32): route emoji to Noto Color Emoji via `IProvideFontInfo` — implements the
+  `IProvideFontInfo` interface on `Win32RichEditArea` and the main `Win32Canvas` text
+  layouts, directing the DirectWrite font fallback chain to use Noto Color Emoji for
+  emoji codepoints in all message rows (as already done for Qt6 / GTK4 / macOS).
 - feat(session): restore all open room tabs across restarts — the `im.gnomos.tesseract`
+  account-data event now carries an `open_rooms` JSON array (all tab room IDs in visual
+  order) alongside the existing `last_room` active-tab field. On every room navigation
+  the full tab list is serialised and written to the homeserver; on startup each shell
+  reads `PrefsData::open_rooms` into `AccountSession` and passes it to a new
+  `ShellBase::try_restore_tab_session_()` helper that pre-populates `tabs_` and fires
+  `on_tab_state_changed_ui_()` once, reconstructing the full tab bar in a single pass
+  with no inter-tab flickering. Account switching clears `tabs_` to prevent the previous
+  account's tabs bleeding through. Backward-compatible: old prefs with only `last_room`
+  auto-populate `open_rooms = {last_room}` on parse. The prefs serializer was migrated
+  from hand-rolled JSON to `nlohmann/json`. 4 new unit tests; wired on all four shells.
+- feat(compose): add `/spoiler [(reason)] <text>` slash command (MSC2010) — sends an
+  `m.text` event with the spoiler content wrapped in a `data-mx-spoiler` span; the
+  plain-text body is prefixed with `(Spoiler)` / `(Spoiler: reason)`. A new
+  `markdown_inline_to_html` helper produces the HTML body without block wrapping.
+- feat(compose): add `/slap <target>` slash command — classic IRC trout-slap; dispatched
+  as an `m.emote` reading "slaps \<target\> around a bit with a large trout".
+- fix(win32): full HiDPI fix — `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2` means all
+  Win32 APIs return physical pixels while D2D draws in DIPs; mixed coordinate spaces
+  broke layout, input dispatch, native controls, popups, and pickers at any scaling above
+  100%. Root cause fixed at the `host_win32` boundary: mouse coords now converted to DIPs
+  before dispatch; `set_rect()` scales logical bounds → physical px for `SetWindowPos`;
+  `natural_height()` returns logical px; all popup and picker `SetWindowPos` calls use
+  DIP-to-physical helpers.
+- fix(win32): honour dark mode in emoji/sticker pickers and Win32RichEditArea — the
+  picker popup HWNDs and the windowless RichEdit now respond to the app's theme setting
+  and switch between light and dark background / text colours correctly.
+- fix(win32): scale status bar height with screen DPI — the status bar HWND height is now
+  derived from the logical font height multiplied by the DPI scale factor instead of a
+  hardcoded pixel value.
+- fix(win32): drop `needs_repaint_` flag — the flag caused `WM_PAINT` to fire
+  continuously, starving the animation timer and pegging CPU at idle. Replaced by the
+  standard `InvalidateRect` / `ValidateRect` cycle.
+- fix(win32): intercept Ctrl+V image paste before `TxSendMessage` — the windowed EDIT
+  control was consuming `WM_PASTE` before the app's clipboard-image handler ran.
+- fix: per-account recovery/verification banner state — `recovery_banner_dismissed`,
+  `recovery_key_chosen`, `verification_banner_dismissed`, and `unverified` are now stored
+  in `AccountSession` and saved/restored by every shell's `switch_active_account`, so
+  dismissing a banner on one account no longer silences it on another. `EventHandlerBase`
+  guards `handle_verification_state_ui_` to only fire for the active account while always
+  persisting state. `recover()` returns a human-readable error on
+  `SecretStorageError::MissingKeyInfo`.
+- fix: account picker positioned at top of window on macOS + verification state access —
+  the account picker popover was anchored at the wrong point; now correctly opens at the
+  top of the sidebar. Also exposes `unverified_` / `verification_banner_dismissed_` via
+  `using` declarations in `MacShell`.
+- fix: clicking the compose bar card focuses the text input — a click anywhere on the
+  compose bar's surrounding card area now forwards focus to the `NativeTextArea`.
+- fix(account-picker): prefetch all account avatars on open and repaint on arrival —
+  previously only the active account's avatar was loaded; inactive account rows showed
+  blank discs until hovered.
+- fix(oauth): drop UI platform suffix from device display name — device names registered
+  during OAuth no longer include a platform tag, matching the behaviour of Element and
+  other clients.
+- fix(timeline): serialize receipt-refresh into the streaming task — the read-receipt
+  refresh was racing the timeline streaming task; routing it through the same `select!`
+  loop prevents the data race.
+- fix(roomview): clear pinned banner state in `clear_room()` — the banner's pinned-events
+  list was not reset on room deselect, leaving stale pin data visible briefly on the
+  next room open.
+- fix(settings): refresh sidebar strip after self-avatar change — changing the account
+  avatar in profile settings now immediately updates the avatar shown in the sidebar
+  identity strip.
+- fix: place caret at end of compose field after accepting a slash command from the popup.
+- feat(compose): `/` in the composer opens a filtered slash-command popup —
   account-data event now carries an `open_rooms` JSON array (all tab room IDs in visual
   order) alongside the existing `last_room` active-tab field. On every room navigation
   the full tab list is serialised and written to the homeserver; on startup each shell
