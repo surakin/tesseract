@@ -18,6 +18,11 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 
 ## Screenshots
 
+| Linux (GTK4 / Qt6) | Windows | macOS |
+|---|---|---|
+| ![Linux](screenshots/brand_new_account_qt6.png) | ![Windows](screenshots/brand_new_account_windows.png) | ![macOS](screenshots/brand_new_account_macos.png) |
+
+
 ## Features
 
 ### Messaging
