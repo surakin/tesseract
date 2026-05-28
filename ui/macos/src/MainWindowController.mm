@@ -101,6 +101,7 @@ public:
     void request_relayout_() override;
     void request_repaint_() override;
     void on_invites_updated_() override;
+    void handle_verification_state_ui_(bool is_verified) override;
 
 protected:
     void on_rooms_updated_() override;
@@ -148,7 +149,6 @@ protected:
     void handle_verification_done_ui_(std::string flow_id) override;
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
-    void handle_verification_state_ui_(bool is_verified) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -5165,10 +5165,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _accountPickerSurface->relayout();
 
     // Anchor the popover above the bottom-left of the main app surface (user strip area).
+    // TKSurfaceView has isFlipped=YES so y=0 is the top; the strip sits at viewH-stripH.
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     CGFloat stripH = static_cast<CGFloat>(tesseract::visual::kUserStripHeight);
+    CGFloat viewH  = mainAppView.bounds.size.height;
     NSRect stripRect = NSMakeRect(
-        0, 0, static_cast<CGFloat>(tesseract::visual::kSidebarWidth), stripH);
+        0, viewH - stripH,
+        static_cast<CGFloat>(tesseract::visual::kSidebarWidth), stripH);
     [_accountPickerPopover showRelativeToRect:stripRect
                                        ofView:mainAppView
                                 preferredEdge:NSRectEdgeMaxY];
