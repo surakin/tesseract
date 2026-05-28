@@ -2559,6 +2559,28 @@ private:
                 PeekMessage(&cr, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE);
                 return 0;
             }
+            // 4. Ctrl+V or Shift+Ins with an image on the clipboard →
+            //    intercept BEFORE TxSendMessage.  Windowless RichEdit handles
+            //    Ctrl+V internally via OLE and never sends WM_PASTE to the
+            //    host HWND, so the WM_PASTE handler below cannot catch it.
+            {
+                const bool is_ctrl_v =
+                    wParam == 'V' && (GetKeyState(VK_CONTROL) & 0x8000);
+                const bool is_shift_ins =
+                    wParam == VK_INSERT && (GetKeyState(VK_SHIFT) & 0x8000);
+                if ((is_ctrl_v || is_shift_ins) &&
+                    self->on_image_paste_ && self->wic_ &&
+                    (IsClipboardFormatAvailable(CF_DIBV5) ||
+                     IsClipboardFormatAvailable(CF_DIB)))
+                {
+                    std::vector<std::uint8_t> bytes;
+                    if (clipboard_image_to_png(self->wic_, hwnd, bytes))
+                    {
+                        self->on_image_paste_(std::move(bytes), "image/png");
+                        return 0;
+                    }
+                }
+            }
             // Fall through to text services.
             if (self->text_svc_)
             {
