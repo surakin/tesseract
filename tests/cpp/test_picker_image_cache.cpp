@@ -31,6 +31,10 @@ struct TestShell : ShellBase
     {
         fn();
     }
+    void post_to_ui_after_(int /*ms*/, std::function<void()> fn) override
+    {
+        fn();
+    }
     void request_relayout_() override
     {
     }

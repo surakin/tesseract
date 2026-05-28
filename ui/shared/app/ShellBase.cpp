@@ -22,6 +22,28 @@
 namespace tesseract
 {
 
+void ShellBase::debounce_(DebounceSlot slot, int ms, std::function<void()> fn)
+{
+    const int key = static_cast<int>(slot);
+    const std::uint64_t gen = ++debounce_gen_[key];
+    post_to_ui_after_(ms,
+                      [this, key, gen, fn = std::move(fn)]()
+                      {
+                          // Honour only the most recent schedule on this slot;
+                          // earlier pending fires were superseded.
+                          auto it = debounce_gen_.find(key);
+                          if (it != debounce_gen_.end() && it->second == gen)
+                          {
+                              fn();
+                          }
+                      });
+}
+
+void ShellBase::cancel_debounce_(DebounceSlot slot)
+{
+    ++debounce_gen_[static_cast<int>(slot)];
+}
+
 void ShellBase::run_async_(std::function<void()> fn)
 {
     if (shutting_down_.load(std::memory_order_acquire))

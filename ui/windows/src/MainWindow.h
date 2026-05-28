@@ -459,7 +459,6 @@ private:
     // are inherited from tesseract::ShellBase.
 
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
-    static constexpr UINT_PTR kSearchDebounceTimer = 3;
     static constexpr UINT_PTR kScrollDebounceTimerId = 4;
     static constexpr UINT_PTR kVerifDoneTimerId = 5;
     static constexpr UINT_PTR kMarkReadTimerId = 6;
@@ -469,6 +468,14 @@ private:
     bool anim_timer_running_ = false;
     std::string pending_search_text_;
 
+    // post_to_ui_after_ backing store. SetTimer carries no payload, so each
+    // delayed post gets a unique id (allocated from kDelayedPostTimerBase up)
+    // mapping to its closure; WM_TIMER drains the entry. Ids stay well above
+    // the fixed timer ids above.
+    static constexpr UINT_PTR kDelayedPostTimerBase = 0x10000u;
+    UINT_PTR next_delayed_post_id_ = kDelayedPostTimerBase;
+    std::unordered_map<UINT_PTR, std::function<void()>> delayed_posts_;
+
     // ShellBase virtual hooks (Win32 implementations).
     void navigate_to_room_(const std::string& room_id) override
     {
@@ -477,6 +484,7 @@ private:
     void apply_theme_ui_(const tk::Theme& t) override;
     tk::ThemeMode os_color_scheme_() const override;
     void post_to_ui_(std::function<void()> fn) override;
+    void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
     void on_rooms_updated_() override;

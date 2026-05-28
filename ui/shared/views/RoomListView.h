@@ -79,6 +79,11 @@ public:
     tk::Rect search_field_rect() const;
     bool search_field_visible() const;
 
+    // Debounce delay every shell should wait after the last keystroke
+    // before pushing the typed query into set_search_text(). Kept here so
+    // all four platform shells share one source of truth.
+    static constexpr int kSearchDebounceMs = 250;
+
     // Host pipes its NativeTextField's text changes back into the view.
     void set_search_text(std::string q);
     const std::string& search_text() const
