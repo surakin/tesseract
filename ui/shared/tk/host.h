@@ -66,6 +66,10 @@ public:
     virtual void set_on_focus_changed(std::function<void(bool)>)
     {
     }
+
+    // Reduce internal padding so the field fits inside a compact inline row
+    // (e.g. the account settings display-name row). Default no-op.
+    virtual void set_compact(bool) {}
 };
 
 // Multi-line variant. Auto-grows up to a host-clamped envelope so the

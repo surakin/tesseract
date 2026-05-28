@@ -155,6 +155,32 @@ public:
     {
         on_submit_ = std::move(cb);
     }
+    void set_compact(bool compact) override
+    {
+        if (!entry_)
+            return;
+        // Register the compact CSS class once for the whole display.
+        static bool css_installed = false;
+        if (compact && !css_installed)
+        {
+            css_installed = true;
+            GtkCssProvider* css = gtk_css_provider_new();
+            gtk_css_provider_load_from_string(css,
+                "entry.tesseract-compact {"
+                "  min-height: 0;"
+                "  padding-top: 4px;"
+                "  padding-bottom: 4px;"
+                "}");
+            gtk_style_context_add_provider_for_display(
+                gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
+                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            g_object_unref(css);
+        }
+        if (compact)
+            gtk_widget_add_css_class(entry_, "tesseract-compact");
+        else
+            gtk_widget_remove_css_class(entry_, "tesseract-compact");
+    }
 
 private:
     static void on_changed_cb(GtkEditable*, gpointer p)
@@ -442,7 +468,12 @@ public:
                                   : nullptr;
         if (toplevel)
         {
-            gtk_widget_translate_coordinates(view_, toplevel, wx, wy, &ox, &oy);
+            graphene_point_t pt_in{static_cast<float>(wx), static_cast<float>(wy)};
+            graphene_point_t pt_out{};
+            if (!gtk_widget_compute_point(view_, toplevel, &pt_in, &pt_out))
+                pt_out = {};
+            ox = pt_out.x;
+            oy = pt_out.y;
         }
         return {float(ox), float(oy), float(rect.width), float(rect.height)};
     }
@@ -1524,7 +1555,9 @@ void leave_cb(GtkEventControllerMotion*, gpointer p)
 gboolean scroll_cb(GtkEventControllerScroll*, double dx, double dy, gpointer p)
 {
     Host* host = static_cast<Host*>(p);
-    host->on_wheel(host->last_pointer_x(), host->last_pointer_y(), dx, dy);
+    // GTK DISCRETE scroll reports 1.0 per notch; scale to px like Qt/Win32 (90 px/notch).
+    host->on_wheel(host->last_pointer_x(), host->last_pointer_y(),
+                   dx * 90.0, dy * 90.0);
     return TRUE;
 }
 

@@ -28,6 +28,7 @@ PangoFontDescription* desc_for(FontRole role)
 {
     const auto& s = tesseract::Settings::instance();
     PangoFontDescription* d = pango_font_description_new();
+    pango_font_description_set_family(d, "Sans");
     int pt;
     PangoWeight w;
     switch (role)
@@ -712,21 +713,19 @@ public:
             bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
 
         GError* err = nullptr;
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         GdkPixbufAnimation* anim =
             gdk_pixbuf_animation_new_from_stream(stream, nullptr, &err);
         g_object_unref(stream);
+        bool is_static = anim && gdk_pixbuf_animation_is_static_image(anim);
+        G_GNUC_END_IGNORE_DEPRECATIONS
 
-        if (!anim || err)
+        if (!anim || err || is_static)
         {
             if (err)
                 g_error_free(err);
             if (anim)
                 g_object_unref(anim);
-            return nullptr;
-        }
-        if (gdk_pixbuf_animation_is_static_image(anim))
-        {
-            g_object_unref(anim);
             return nullptr;
         }
 

@@ -170,6 +170,7 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
 
     // Create (or recreate) the NativeTextField for name editing.
     name_field_ = surface_->host().make_text_field();
+    name_field_->set_compact(true);
     name_field_->set_text(current_display_name);
     name_field_->set_placeholder("Display name");
     name_field_->set_visible(false);
