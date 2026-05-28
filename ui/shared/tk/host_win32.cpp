@@ -424,6 +424,7 @@ public:
     virtual void notify_changed() = 0;
     virtual int  ctrl_id() const = 0;
     virtual HWND hwnd()    const = 0;
+    virtual void on_theme_changed(const Theme& /*t*/) {}
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1618,6 +1619,21 @@ public:
         *pstyle = TXTBACK_TRANSPARENT;
         return S_OK;
     }
+
+    void on_theme_changed(const Theme& t) override
+    {
+        theme_ = &t;
+        if (text_svc_)
+        {
+            // Force ITextServices2 to discard cached TxGetSysColor values
+            // (text colour, selection highlight, etc.) and re-read them.
+            LRESULT lr = 0;
+            text_svc_->TxSendMessage(WM_SYSCOLORCHANGE, 0, 0, &lr);
+        }
+        if (hwnd_)
+            InvalidateRect(hwnd_, nullptr, TRUE);
+    }
+
     HRESULT TxGetMaxLength(DWORD* plength) override
     {
         *plength = INFINITE;
@@ -3215,6 +3231,13 @@ public:
     void set_theme(const Theme& t)
     {
         theme_ = &t;
+        for (auto& [id, area] : areas_by_id_)
+            area->on_theme_changed(t);
+        // Invalidate the host HWND and all native-control child HWNDs so
+        // WM_CTLCOLOREDIT / WM_PAINT fire with the new palette.
+        if (hwnd_)
+            RedrawWindow(hwnd_, nullptr, nullptr,
+                         RDW_INVALIDATE | RDW_ALLCHILDREN);
     }
     CanvasFactory& factory()
     {

@@ -5856,7 +5856,7 @@ void MainWindow::ensure_emoji_picker_created()
     }
 
     emoji_picker_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hEmojiPicker_, tk::Theme::light());
+        hInst_, hEmojiPicker_, current_theme_);
 
     auto shared = std::make_unique<tesseract::views::EmojiPicker>();
     emoji_picker_shared_ = shared.get();
@@ -6497,7 +6497,7 @@ void MainWindow::ensure_sticker_picker_created()
     }
 
     sticker_picker_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hStickerPicker_, tk::Theme::light());
+        hInst_, hStickerPicker_, current_theme_);
 
     auto shared = std::make_unique<tesseract::views::StickerPicker>();
     sticker_picker_shared_ = shared.get();
