@@ -1609,6 +1609,11 @@ void MainWindow::on_create(HWND hwnd)
                 room_text_area_->set_focused(true);
             }
         };
+        room_view_->on_focus_input = [this]
+        {
+            if (room_text_area_)
+                room_text_area_->set_focused(true);
+        };
         room_view_->on_delete_requested = [this](const std::string& event_id)
         {
             if (current_room_id_.empty())

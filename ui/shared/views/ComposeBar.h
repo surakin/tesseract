@@ -261,6 +261,10 @@ public:
                        std::uint64_t duration_ms, std::string reply_event_id)>
         on_send_audio;
 
+    /// Fires when the user clicks anywhere in the compose card that isn't a
+    /// button. The shell should focus the native text area overlay.
+    std::function<void()> on_focus_input;
+
     /// Fires when the emoji button is clicked. The rect is the button's
     /// bounding box in surface-local (world) coordinates, for precise
     /// picker anchoring.

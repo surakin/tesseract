@@ -1143,6 +1143,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 room_text_area_->set_focused(true);
             }
         };
+        room_view_->on_focus_input = [this]
+        {
+            if (room_text_area_)
+                room_text_area_->set_focused(true);
+        };
         room_view_->on_edit_prefill = [this](const std::string& body)
         {
             if (room_text_area_)

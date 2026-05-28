@@ -2618,6 +2618,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 s->_roomTextArea->set_focused(true);
             }
         };
+        _mainApp->room_view()->on_focus_input = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s && s->_roomTextArea)
+                s->_roomTextArea->set_focused(true);
+        };
         _mainApp->room_view()->on_fetch_room_members =
             [weakSelf](std::string room_id)
         {

@@ -900,6 +900,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 roomTextArea_->set_focused(true);
             }
         };
+        mainApp_->room_view()->on_focus_input = [this]
+        {
+            if (roomTextArea_)
+                roomTextArea_->set_focused(true);
+        };
         mainApp_->room_view()->on_emoji = [this](tk::Rect btn)
         {
             if (!emojiPicker_)

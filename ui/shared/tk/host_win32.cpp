@@ -2700,6 +2700,9 @@ private:
         case WM_LBUTTONDOWN:
             if (self && self->text_svc_)
             {
+                // Explicitly acquire keyboard focus. Standard EDIT controls do
+                // this themselves; our custom host HWND must do it too.
+                SetFocus(hwnd);
                 LRESULT r = 0;
                 self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
                 // MSFTEDIT's D2D/windowless hit test is broken — it always

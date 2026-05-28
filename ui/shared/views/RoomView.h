@@ -336,6 +336,10 @@ public:
     // Fired when reply mode is entered so the shell can focus the textarea.
     std::function<void()> on_reply_focus;
 
+    // Fired when the user clicks in the compose card area (not a button).
+    // Shell should focus the native text area overlay.
+    std::function<void()> on_focus_input;
+
     // ── tk::Widget overrides ─────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

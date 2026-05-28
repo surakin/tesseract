@@ -1416,6 +1416,11 @@ bool ComposeBar::on_pointer_down(tk::Point local)
             return true;
         }
     }
+    // Clicks that reach here did not hit any button (child widgets claim button
+    // presses before on_pointer_down is reached). Focus the native text area so
+    // clicking anywhere in the compose card works as the user expects.
+    if (!recording_ && on_focus_input)
+        on_focus_input();
     return tk::Widget::on_pointer_down(local);
 }
 

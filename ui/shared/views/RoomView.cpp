@@ -340,6 +340,11 @@ void RoomView::wire_internal_callbacks()
         if (on_hide_tooltip)
             on_hide_tooltip();
     };
+    compose_bar_->on_focus_input = [this]
+    {
+        if (on_focus_input)
+            on_focus_input();
+    };
     compose_bar_->on_edit_cancelled = [this]
     {
         if (on_edit_cancelled)

@@ -215,6 +215,13 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             ta->set_focused(true);
         }
     };
+    rv->on_focus_input = [this]
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_focused(true);
+        }
+    };
     rv->on_delete_requested = [this](const std::string& event_id)
     {
         delete_event_(event_id);
