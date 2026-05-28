@@ -2029,7 +2029,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            if (body == "/myroomavatar")
+            if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
             {
                 s->_shell->pick_and_set_room_avatar_(s->_shell->current_room_id_);
                 if (s->_roomTextArea) s->_roomTextArea->set_text("");

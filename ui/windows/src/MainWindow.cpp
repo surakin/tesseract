@@ -1384,7 +1384,7 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
-            if (body == "/myroomavatar")
+            if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
             {
                 pick_and_set_room_avatar_(current_room_id_);
                 if (room_text_area_) room_text_area_->set_text("");

@@ -457,7 +457,7 @@ void RoomWindowBase::send_message_(const std::string& body)
     {
         return;
     }
-    if (body == "/myroomavatar")
+    if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
     {
         shell_->pick_and_set_room_avatar_(room_id_);
         return;
@@ -474,8 +474,11 @@ void RoomWindowBase::send_message_(const std::string& body,
                                    const std::string& formatted_body)
 {
     if (room_id_.empty() || !shell_->client_)
-    {
         return;
+    if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
+    {
+        shell_->pick_and_set_room_avatar_(room_id_);
+        return; // on_send caller clears the compose bar after we return
     }
     tesseract::dispatch_compose_send(
         *shell_->client_, room_id_, body, formatted_body);

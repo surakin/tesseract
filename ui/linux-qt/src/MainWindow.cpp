@@ -651,7 +651,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 return;
             }
-            if (body == "/myroomavatar")
+            if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
             {
                 pick_and_set_room_avatar_(current_room_id_);
                 mainApp_->room_view()->clear_compose_text();

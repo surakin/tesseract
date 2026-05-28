@@ -23,6 +23,12 @@ struct SlashCommandDescriptor
 // vector's order when nothing has been typed yet. Lifetime: static.
 const std::vector<SlashCommandDescriptor>& available_commands();
 
+// Returns true when `body` is the slash command `cmd` with no non-whitespace
+// argument: "/cmd", "/cmd ", and "/cmd  " all return true; "/cmdfoo" returns
+// false (different command). Shells use this to intercept commands that open a
+// native dialog before dispatching to dispatch_compose_send.
+bool is_slash_command_no_arg(const std::string& body, const char* cmd);
+
 // The plain + HTML pair produced by `/spoiler`.
 struct SpoilerMessage
 {

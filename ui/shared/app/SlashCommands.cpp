@@ -39,6 +39,19 @@ std::string attr_escape(std::string_view s)
 
 }  // namespace
 
+bool is_slash_command_no_arg(const std::string& body, const char* cmd)
+{
+    const std::size_t cmd_len    = std::char_traits<char>::length(cmd);
+    const std::size_t prefix_len = cmd_len + 1; // +1 for '/'
+    if (body.size() < prefix_len || body[0] != '/')
+        return false;
+    if (body.compare(1, cmd_len, cmd) != 0)
+        return false;
+    // Everything after the command name must be absent or whitespace-only.
+    return body.size() == prefix_len ||
+           body.find_first_not_of(" \t", prefix_len) == std::string::npos;
+}
+
 std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
 {
     // Trim leading whitespace.
@@ -206,10 +219,22 @@ Result dispatch_compose_send(Client& client,
         return client.set_room_display_name(room_id, name);
 
     // `/myroomavatar <mxc_uri>` — set room-specific avatar to an explicit mxc.
-    // The no-argument form (`/myroomavatar` alone) is intercepted by the caller
-    // before this function is reached and opens a file picker instead.
-    if (const char* mxc = strip_prefix(body, "/myroomavatar "))
-        return client.set_room_avatar(room_id, mxc);
+    // The no-argument form is intercepted by callers before this function is
+    // reached; if it arrives here anyway (e.g. empty suffix from the popup),
+    // return an error rather than calling set_room_avatar with an empty URI.
+    if (const char* sfx = strip_prefix(body, "/myroomavatar"))
+    {
+        // sfx must start with whitespace or be end-of-string so that
+        // "/myroomavatarabc" is not misidentified as this command.
+        if (*sfx == '\0' || *sfx == ' ' || *sfx == '\t')
+        {
+            while (*sfx == ' ' || *sfx == '\t') ++sfx; // skip separator
+            if (*sfx == '\0')
+                return Result{false, "no mxc_uri provided; use /myroomavatar "
+                                     "alone to open the image picker"};
+            return client.set_room_avatar(room_id, sfx);
+        }
+    }
 
     return client.send_message(room_id, body, formatted_body);
 }
