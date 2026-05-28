@@ -1205,10 +1205,15 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         const float max_h = waveform_strip_rect_.h * 0.8f;
         constexpr float kBarW = 3.0f;
         constexpr float kBarGap = 2.0f;
+        std::uint16_t wf_peak = 0;
+        for (std::uint16_t v : waveform_samples_) wf_peak = std::max(wf_peak, v);
+        const float wf_norm =
+            wf_peak > 0 ? 1.0f / static_cast<float>(wf_peak) : 0.0f;
+
         float x = waveform_strip_rect_.x;
         for (std::uint16_t amp : waveform_samples_)
         {
-            float h = std::max(2.0f, (amp / 1000.0f) * max_h);
+            float h = std::max(2.0f, static_cast<float>(amp) * wf_norm * max_h);
             ctx.canvas.fill_rect({x, center_y - h / 2.0f, kBarW, h},
                                  ctx.theme.palette.accent);
             x += kBarW + kBarGap;
