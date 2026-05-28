@@ -27,6 +27,7 @@ enum class EventType
     Location,
     Utd,    // appended (not slotted near Redacted) so existing enum-int
             // pinned tests stay valid
+    PinnedEvent, // m.room.pinned_events state-event timeline row
 };
 
 /// User presence state. Wire encoding (matches sdk/src/bridge.rs on_presence_changed):
@@ -327,6 +328,17 @@ struct TimelineStartEvent : public Event
     TimelineStartEvent()
     {
         type = EventType::TimelineStart;
+    }
+};
+
+/// m.room.pinned_events state event surfaced as a timeline row.
+/// `sender_name` and `body` (the action: "pinned a message" etc.) come from
+/// the base `Event` fields; no additional payload is needed.
+struct PinnedStateEvent : public Event
+{
+    PinnedStateEvent()
+    {
+        type = EventType::PinnedEvent;
     }
 };
 
