@@ -439,7 +439,8 @@ pub(super) async fn timeline_item_to_ffi(
                 });
             }
         }
-        return None; // all other state events remain filtered
+        // StateEventContentChange::Redacted: no content to diff — silently drop.
+        return None; // all other state events (and redacted pins) remain filtered
     }
 
     // Compute pending fields once for all non-virtual event paths.
