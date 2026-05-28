@@ -659,7 +659,7 @@ public:
         {
             auto k = owner_.messages_[j].kind;
             if (k != Kind::DaySeparator && k != Kind::ReadMarker &&
-                k != Kind::TimelineStart)
+                k != Kind::TimelineStart && k != Kind::PinnedEvent)
             {
                 return true;
             }
@@ -679,7 +679,8 @@ public:
             const Kind k = owner_.messages_[j].kind;
             if (k == Kind::DaySeparator)
                 return false;
-            if (k != Kind::ReadMarker && k != Kind::TimelineStart)
+            if (k != Kind::ReadMarker && k != Kind::TimelineStart &&
+                k != Kind::PinnedEvent)
                 return true;
         }
         return false;
@@ -703,7 +704,7 @@ public:
         // Virtual rows are never continuations; nor is the row after one.
         using Kind = MessageRowData::Kind;
         if (curr.kind == Kind::DaySeparator || curr.kind == Kind::ReadMarker ||
-            curr.kind == Kind::TimelineStart)
+            curr.kind == Kind::TimelineStart || curr.kind == Kind::PinnedEvent)
         {
             return false;
         }
@@ -729,7 +730,7 @@ public:
         }
         const auto& prev = owner_.messages_[prev_idx];
         if (prev.kind == Kind::DaySeparator || prev.kind == Kind::ReadMarker ||
-            prev.kind == Kind::TimelineStart)
+            prev.kind == Kind::TimelineStart || prev.kind == Kind::PinnedEvent)
         {
             return false;
         }
@@ -1754,6 +1755,8 @@ private:
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds.w - kPadX * 2);
         auto lo = ctx.factory.build_text(label, st);
         if (!lo)
         {
@@ -3977,7 +3980,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     // update_message() clears this flag when it delivers the updated marker.
     using Kind = MessageRowData::Kind;
     if (msg.kind != Kind::ReadMarker && msg.kind != Kind::DaySeparator &&
-        msg.kind != Kind::TimelineStart)
+        msg.kind != Kind::TimelineStart && msg.kind != Kind::PinnedEvent)
     {
         suppress_read_marker_ = true;
     }
@@ -5573,7 +5576,8 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 using Kind = MessageRowData::Kind;
                 const bool is_virtual = m.kind == Kind::DaySeparator ||
                                         m.kind == Kind::ReadMarker ||
-                                        m.kind == Kind::TimelineStart;
+                                        m.kind == Kind::TimelineStart ||
+                                        m.kind == Kind::PinnedEvent;
                 if (!is_virtual && !adapter_->is_cont(ri) && !m.sender.empty())
                 {
                     const tk::Rect rb = row_world_rect(ri_int);
