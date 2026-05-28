@@ -6002,10 +6002,10 @@ void MainWindow::show_slash_popup_(
     const std::vector<tesseract::views::SlashCommandSuggestion>& items,
     tk::Rect cursor_local)
 {
-    int w = int(tesseract::views::SlashCommandPopup::kWidth);
+    int w = dip_to_phys(tesseract::views::SlashCommandPopup::kWidth);
     int rows = std::min((int)items.size(),
                         int(tesseract::views::SlashCommandPopup::kMaxRows));
-    int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
+    int h = dip_to_phys(rows * tesseract::views::SlashCommandPopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
     POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
@@ -6016,9 +6016,10 @@ void MainWindow::show_slash_popup_(
     mi.cbSize = sizeof(mi);
     GetMonitorInfo(mon, &mi);
 
+    const int gap = dip_to_phys(4.f);
     int x = pt.x;
-    int y_above = pt.y - h - 4;
-    int y_below = pt.y + dip_to_phys(cursor_local.h) + 4;
+    int y_above = pt.y - h - gap;
+    int y_below = pt.y + dip_to_phys(cursor_local.h) + gap;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
@@ -6104,10 +6105,10 @@ void MainWindow::show_shortcode_popup_(
     const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
     tk::Rect cursor_local)
 {
-    int w = int(tesseract::views::ShortcodePopup::kWidth);
+    int w = dip_to_phys(tesseract::views::ShortcodePopup::kWidth);
     int rows = std::min((int)suggestions.size(),
                         int(tesseract::views::ShortcodePopup::kMaxRows));
-    int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
+    int h = dip_to_phys(rows * tesseract::views::ShortcodePopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
     POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
@@ -6118,9 +6119,10 @@ void MainWindow::show_shortcode_popup_(
     mi.cbSize = sizeof(mi);
     GetMonitorInfo(mon, &mi);
 
+    const int gap = dip_to_phys(4.f);
     int x = pt.x;
-    int y_above = pt.y - h - 4;
-    int y_below = pt.y + dip_to_phys(cursor_local.h) + 4;
+    int y_above = pt.y - h - gap;
+    int y_below = pt.y + dip_to_phys(cursor_local.h) + gap;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
@@ -6186,8 +6188,8 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     {
         return;
     }
-    int w = int(tesseract::views::MentionPopup::kWidth);
-    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
+    int w = dip_to_phys(tesseract::views::MentionPopup::kWidth);
+    int h = dip_to_phys(rows * tesseract::views::MentionPopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
     POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
@@ -6196,9 +6198,10 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     MONITORINFO mi{};
     mi.cbSize = sizeof(mi);
     GetMonitorInfo(mon, &mi);
+    const int gap = dip_to_phys(4.f);
     int x = pt.x;
-    int y_above = pt.y - h - 4;
-    int y_below = pt.y + dip_to_phys(cursor_local.h) + 4;
+    int y_above = pt.y - h - gap;
+    int y_below = pt.y + dip_to_phys(cursor_local.h) + gap;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
