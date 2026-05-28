@@ -416,6 +416,17 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
 {
     switch (msg)
     {
+    case WM_DPICHANGED:
+    {
+        win32::text::on_dpi_changed(LOWORD(wParam));
+        theme::on_dpi_changed();
+        const RECT* rc = reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd, nullptr, rc->left, rc->top,
+                     rc->right - rc->left, rc->bottom - rc->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED && surface_)
         {

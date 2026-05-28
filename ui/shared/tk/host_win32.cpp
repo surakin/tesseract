@@ -491,14 +491,15 @@ public:
             return;
         }
         last_rect_ = r;
-        int x = static_cast<int>(std::floor(r.x));
-        int w = static_cast<int>(std::round(r.w));
+        const float s = dip_scale();
+        int x  = static_cast<int>(std::floor(r.x * s));
+        int w  = static_cast<int>(std::round(r.w * s));
+        int rh = static_cast<int>(std::round(r.h * s));
         // Single-line EDIT controls draw text top-aligned within their HWND.
-        // Size the HWND to the measured line height and centre it vertically
-        // within the rect the caller allocated so text appears centred.
-        int h = (line_h_ > 0) ? line_h_ : static_cast<int>(std::round(r.h));
-        int y = static_cast<int>(std::floor(r.y)) +
-                (static_cast<int>(std::round(r.h)) - h) / 2;
+        // Size the HWND to the measured line height (physical px) and centre
+        // it vertically within the physical rect so text appears centred.
+        int h = (line_h_ > 0) ? line_h_ : rh;
+        int y = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
         SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
     }
     void set_text(std::string text) override
@@ -626,6 +627,12 @@ private:
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
+    float dip_scale() const
+    {
+        const float dpi = static_cast<float>(GetDpiForWindow(parent_));
+        return dpi > 0.f ? dpi / 96.f : 1.f;
+    }
+
     HWND parent_ = nullptr;
     HWND hwnd_ = nullptr;
     int id_ = 0;
@@ -706,12 +713,15 @@ public:
         // HWND. Size the HWND to the content's natural height and centre
         // it within the rect (matching Win32NativeTextField); when content
         // overflows the rect, fill it so the control scrolls instead.
-        int rh = static_cast<int>(std::round(r.h));
-        int nh = static_cast<int>(natural_height());
-        int h = (nh > 0 && nh < rh) ? nh : rh;
-        int y = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
-        SetWindowPos(hwnd_, nullptr, static_cast<int>(std::floor(r.x)), y,
-                     static_cast<int>(std::round(r.w)), h,
+        // r is in logical pixels; SetWindowPos needs physical pixels.
+        const float s = dip_scale();
+        int rh = static_cast<int>(std::round(r.h * s));
+        int nh = static_cast<int>(std::round(natural_height() * s));
+        int h  = (nh > 0 && nh < rh) ? nh : rh;
+        int y  = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
+        SetWindowPos(hwnd_, nullptr,
+                     static_cast<int>(std::floor(r.x * s)), y,
+                     static_cast<int>(std::round(r.w * s)), h,
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
     void set_text(std::string text) override
@@ -846,7 +856,8 @@ public:
             SelectObject(hdc, old);
         }
         ReleaseDC(hwnd_, hdc);
-        return static_cast<float>(total_h + 8); // 4px top + bottom pad
+        // total_h is in physical pixels; return logical (DIP) pixels.
+        return static_cast<float>(total_h + 8) / dip_scale();
     }
     void set_on_changed(std::function<void(const std::string&)> cb) override
     {
@@ -1232,6 +1243,12 @@ private:
         int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset,
                                        nullptr, 0);
         return wlen < 0 ? 0 : wlen;
+    }
+
+    float dip_scale() const
+    {
+        const float dpi = static_cast<float>(GetDpiForWindow(parent_));
+        return dpi > 0.f ? dpi / 96.f : 1.f;
     }
 
     HWND parent_ = nullptr;
@@ -1857,13 +1874,15 @@ public:
         // text height and centre it vertically inside `r` so the parent
         // D2D surface can draw the card border in the space above and below.
         // If content overflows the envelope, fill the full height instead.
-        const int rh  = static_cast<int>(std::round(r.h));
-        const int nh  = static_cast<int>(natural_height());
-        const int h   = (nh > 0 && nh < rh) ? nh : rh;
-        const int y   = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
+        // r is in logical pixels; SetWindowPos needs physical pixels.
+        const float s  = dip_scale();
+        const int rh   = static_cast<int>(std::round(r.h * s));
+        const int nh   = static_cast<int>(std::round(natural_height() * s));
+        const int h    = (nh > 0 && nh < rh) ? nh : rh;
+        const int y    = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
         SetWindowPos(hwnd_, nullptr,
-                     static_cast<int>(std::floor(r.x)), y,
-                     static_cast<int>(std::round(r.w)), h,
+                     static_cast<int>(std::floor(r.x * s)), y,
+                     static_cast<int>(std::round(r.w * s)), h,
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
@@ -1975,7 +1994,8 @@ public:
         // Guard: TxGetNaturalSize returns 0 before the first layout pass.
         if (px_h < min_line)
             px_h = min_line;
-        return px_h + 8.f;
+        // Return logical (DIP) pixels; set_rect() scales back up for SetWindowPos.
+        return (px_h + 8.f) / dip_scale();
     }
 
     void set_on_changed(std::function<void(const std::string&)> cb) override
@@ -2777,6 +2797,12 @@ private:
 
     // ── Members ───────────────────────────────────────────────────────────
 
+    float dip_scale() const
+    {
+        const float dpi = static_cast<float>(GetDpiForWindow(parent_));
+        return dpi > 0.f ? dpi / 96.f : 1.f;
+    }
+
     HWND parent_ = nullptr;
     HWND hwnd_   = nullptr; // host HWND (class "tk_re_host")
     int  id_     = 0;
@@ -3208,8 +3234,9 @@ public:
         RECT rc;
         GetClientRect(hwnd_, &rc);
         LayoutCtx ctx{*factory_, *theme_};
-        Rect bounds{0, 0, static_cast<float>(rc.right - rc.left),
-                    static_cast<float>(rc.bottom - rc.top)};
+        Rect bounds{0, 0,
+                    phys_to_dip(static_cast<float>(rc.right - rc.left)),
+                    phys_to_dip(static_cast<float>(rc.bottom - rc.top))};
         root_->measure(ctx, {bounds.w, bounds.h});
         root_->arrange(ctx, bounds);
         if (on_layout_)
@@ -3301,7 +3328,8 @@ public:
             return;
         }
         SetCapture(hwnd_);
-        Point local{static_cast<float>(x), static_cast<float>(y)};
+        Point local{phys_to_dip(static_cast<float>(x)),
+                    phys_to_dip(static_cast<float>(y))};
         pressed_widget_ = root_->dispatch_pointer_down(local);
         if (pressed_widget_)
         {
@@ -3319,7 +3347,8 @@ public:
         {
             return;
         }
-        Point world{static_cast<float>(x), static_cast<float>(y)};
+        Point world{phys_to_dip(static_cast<float>(x)),
+                    phys_to_dip(static_cast<float>(y))};
         Point ws = pressed_widget_->world_to_local(world);
         bool inside =
             (ws.x >= 0 && ws.y >= 0 && ws.x < pressed_widget_->bounds().w &&
@@ -3335,7 +3364,8 @@ public:
         {
             return;
         }
-        Point local{static_cast<float>(x), static_cast<float>(y)};
+        Point local{phys_to_dip(static_cast<float>(x)),
+                    phys_to_dip(static_cast<float>(y))};
         if (pressed_widget_)
         {
             Point ws = pressed_widget_->world_to_local(local);
@@ -3409,7 +3439,9 @@ public:
         // so invert. One notch (120) maps to ~3 toolkit pixels per step.
         float dy = static_cast<float>(-delta_steps) * (3.0f / 120.0f) * 30.0f;
         if (root_->dispatch_wheel(
-                {static_cast<float>(pt.x), static_cast<float>(pt.y)}, 0, dy))
+                {phys_to_dip(static_cast<float>(pt.x)),
+                 phys_to_dip(static_cast<float>(pt.y))},
+                0, dy))
         {
             request_repaint();
             on_pointer_move(pt.x, pt.y);
@@ -3457,6 +3489,17 @@ private:
     std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
     std::unordered_map<int, Win32TextAreaBase*> areas_by_id_;
 
+    float dpi_scale() const
+    {
+        const float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
+        return dpi > 0.f ? dpi / 96.f : 1.f;
+    }
+    float phys_to_dip(float px) const { return px / dpi_scale(); }
+    int dip_to_phys(float dip) const
+    {
+        return static_cast<int>(std::round(dip * dpi_scale()));
+    }
+
 public:
     void set_on_file_drop(FileDropHandler cb)
     {
@@ -3481,7 +3524,8 @@ public:
     }
     void fire_right_click(int x, int y)
     {
-        tk::Point pt{static_cast<float>(x), static_cast<float>(y)};
+        tk::Point pt{phys_to_dip(static_cast<float>(x)),
+                     phys_to_dip(static_cast<float>(y))};
         if (root_)
             root_->dispatch_right_click(pt);
         if (on_right_click_)

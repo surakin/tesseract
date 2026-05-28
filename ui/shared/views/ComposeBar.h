@@ -394,7 +394,9 @@ private:
     tk::Button* send_btn_ = nullptr;    // borrowed
     tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
     // Cached SVG icons for the emoji, sticker, and mic buttons — rasterized
-    // lazily on first paint via tk::rasterize_svg().
+    // lazily on first paint via tk::rasterize_svg() at icon_scale_ DPI scale.
+    // Invalidated when the canvas scale factor changes (e.g. monitor move).
+    float icon_scale_ = 0.f;
     std::unique_ptr<tk::Image> emoji_icon_;
     std::unique_ptr<tk::Image> sticker_icon_;
     std::unique_ptr<tk::Image> mic_icon_;

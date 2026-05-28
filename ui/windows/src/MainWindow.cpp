@@ -1220,6 +1220,9 @@ bool MainWindow::create(int nCmdShow)
     {
         return false;
     }
+    // Scale the bootstrap size to logical dimensions at the current display DPI.
+    SetWindowPos(hwnd_, nullptr, 0, 0, dip_to_phys(1024.f), dip_to_phys(768.f),
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(hwnd_, nCmdShow);
     UpdateWindow(hwnd_);
     return true;
@@ -1304,7 +1307,7 @@ void MainWindow::on_create(HWND hwnd)
         };
         main_app_->user_info()->on_secondary = [this](tk::Point p)
         {
-            POINT sp{static_cast<LONG>(p.x), static_cast<LONG>(p.y)};
+            POINT sp{dip_to_phys(p.x), dip_to_phys(p.y)};
             if (main_app_surface_ && main_app_surface_->hwnd())
             {
                 ClientToScreen(main_app_surface_->hwnd(), &sp);
@@ -1728,8 +1731,8 @@ void MainWindow::on_create(HWND hwnd)
             ti.uId = 1;
             ti.lpszText = topic_tooltip_text_.data();
             SendMessageW(hTopicTooltip_, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
-            POINT pt{static_cast<LONG>(anchor.x),
-                     static_cast<LONG>(anchor.y + anchor.h)};
+            POINT pt{dip_to_phys(anchor.x),
+                     dip_to_phys(anchor.y + anchor.h)};
             ClientToScreen(main_app_surface_->hwnd(), &pt);
             SendMessageW(
                 hTopicTooltip_, TTM_TRACKPOSITION, 0,
@@ -1977,7 +1980,7 @@ void MainWindow::on_create(HWND hwnd)
                             1,
                             already_saved ? L"Already in Saved Stickers"
                                           : L"Add to Saved Stickers");
-                POINT sp{static_cast<LONG>(p.x), static_cast<LONG>(p.y)};
+                POINT sp{dip_to_phys(p.x), dip_to_phys(p.y)};
                 ClientToScreen(main_app_surface_->hwnd(), &sp);
                 int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                                          sp.x, sp.y, 0, hwnd_, nullptr);
@@ -5845,7 +5848,8 @@ void MainWindow::ensure_emoji_picker_created()
 
     hEmojiPicker_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kEmojiPickerClass, L"", WS_POPUP, 0,
-        0, kEmojiPickW, kEmojiPickH, hwnd_, nullptr, hInst_, nullptr);
+        0, dip_to_phys(kEmojiPickW), dip_to_phys(kEmojiPickH), hwnd_, nullptr,
+        hInst_, nullptr);
     if (!hEmojiPicker_)
     {
         return;
@@ -5872,8 +5876,8 @@ void MainWindow::ensure_emoji_picker_created()
 
     if (HWND s = emoji_picker_surface_->hwnd())
     {
-        SetWindowPos(s, nullptr, 0, 0, kEmojiPickW, kEmojiPickH,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(s, nullptr, 0, 0, dip_to_phys(kEmojiPickW),
+                     dip_to_phys(kEmojiPickH), SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     emoji_picker_search_field_ =
@@ -5947,8 +5951,10 @@ void MainWindow::toggle_emoji_picker()
     {
         GetWindowRect(hwnd_, &btn_rc);
     }
+    const int pickerW = dip_to_phys(kEmojiPickW);
+    const int pickerH = dip_to_phys(kEmojiPickH);
     int x = btn_rc.left + 8;
-    int y = btn_rc.top - kEmojiPickH - 4;
+    int y = btn_rc.top - pickerH - 4;
 
     HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{};
@@ -5965,7 +5971,7 @@ void MainWindow::toggle_emoji_picker()
         }
     }
 
-    SetWindowPos(hEmojiPicker_, HWND_TOPMOST, x, y, kEmojiPickW, kEmojiPickH,
+    SetWindowPos(hEmojiPicker_, HWND_TOPMOST, x, y, pickerW, pickerH,
                  SWP_NOACTIVATE);
 
     if (emoji_picker_shared_)
@@ -6007,7 +6013,7 @@ void MainWindow::show_slash_popup_(
     int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
-    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
+    POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
     ClientToScreen(parent, &pt);
 
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
@@ -6017,7 +6023,7 @@ void MainWindow::show_slash_popup_(
 
     int x = pt.x;
     int y_above = pt.y - h - 4;
-    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y_below = pt.y + dip_to_phys(cursor_local.h) + 4;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
@@ -6106,7 +6112,7 @@ void MainWindow::show_shortcode_popup_(
     int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
-    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
+    POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
     ClientToScreen(parent, &pt);
 
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
@@ -6116,7 +6122,7 @@ void MainWindow::show_shortcode_popup_(
 
     int x = pt.x;
     int y_above = pt.y - h - 4;
-    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y_below = pt.y + dip_to_phys(cursor_local.h) + 4;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
@@ -6186,7 +6192,7 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
 
     HWND parent = main_app_surface_->hwnd();
-    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
+    POINT pt{dip_to_phys(cursor_local.x), dip_to_phys(cursor_local.y)};
     ClientToScreen(parent, &pt);
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{};
@@ -6194,7 +6200,7 @@ void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
     GetMonitorInfo(mon, &mi);
     int x = pt.x;
     int y_above = pt.y - h - 4;
-    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y_below = pt.y + dip_to_phys(cursor_local.h) + 4;
     int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
@@ -6239,15 +6245,17 @@ void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect)
     }
 
     // Map the local rect into screen coordinates.
-    POINT pt{static_cast<LONG>(local_rect.x), static_cast<LONG>(local_rect.y)};
+    POINT pt{dip_to_phys(local_rect.x), dip_to_phys(local_rect.y)};
     ClientToScreen(parent_hwnd, &pt);
-    LONG rectW = static_cast<LONG>(local_rect.w);
-    LONG rectH = static_cast<LONG>(local_rect.h);
+    LONG rectW = dip_to_phys(local_rect.w);
+    LONG rectH = dip_to_phys(local_rect.h);
 
     // Prefer above, centered on the rect; fall back to below if the
     // monitor doesn't have room. Clamp to the work area horizontally.
-    int x = pt.x + rectW / 2 - kEmojiPickW / 2;
-    int y = pt.y - kEmojiPickH - 4;
+    const int pickerW = dip_to_phys(kEmojiPickW);
+    const int pickerH = dip_to_phys(kEmojiPickH);
+    int x = pt.x + rectW / 2 - pickerW / 2;
+    int y = pt.y - pickerH - 4;
     POINT ptCenter{pt.x + rectW / 2, pt.y + rectH / 2};
     HMONITOR mon = MonitorFromPoint(ptCenter, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{};
@@ -6258,22 +6266,22 @@ void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect)
         {
             y = pt.y + rectH + 4;
         }
-        if (x + kEmojiPickW > mi.rcWork.right)
+        if (x + pickerW > mi.rcWork.right)
         {
-            x = mi.rcWork.right - kEmojiPickW - 4;
+            x = mi.rcWork.right - pickerW - 4;
         }
         if (x < mi.rcWork.left)
         {
             x = mi.rcWork.left + 4;
         }
-        if (y + kEmojiPickH > mi.rcWork.bottom)
+        if (y + pickerH > mi.rcWork.bottom)
         {
-            y = mi.rcWork.bottom - kEmojiPickH - 4;
+            y = mi.rcWork.bottom - pickerH - 4;
         }
     }
     (void)rectW;
 
-    SetWindowPos(hEmojiPicker_, HWND_TOPMOST, x, y, kEmojiPickW, kEmojiPickH,
+    SetWindowPos(hEmojiPicker_, HWND_TOPMOST, x, y, pickerW, pickerH,
                  SWP_NOACTIVATE);
 
     if (emoji_picker_shared_)
@@ -6308,15 +6316,17 @@ void MainWindow::popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect)
         return;
     }
 
-    POINT pt{static_cast<LONG>(local_rect.x), static_cast<LONG>(local_rect.y)};
+    POINT pt{dip_to_phys(local_rect.x), dip_to_phys(local_rect.y)};
     ClientToScreen(parent_hwnd, &pt);
-    LONG rectW = static_cast<LONG>(local_rect.w);
-    LONG rectH = static_cast<LONG>(local_rect.h);
+    LONG rectW = dip_to_phys(local_rect.w);
+    LONG rectH = dip_to_phys(local_rect.h);
 
     // Prefer above, centered on the rect; fall back to below if the
     // monitor doesn't have room. Clamp to the work area horizontally.
-    int x = pt.x + rectW / 2 - kStickerPickW / 2;
-    int y = pt.y - kStickerPickH - 4;
+    const int pickerW = dip_to_phys(kStickerPickW);
+    const int pickerH = dip_to_phys(kStickerPickH);
+    int x = pt.x + rectW / 2 - pickerW / 2;
+    int y = pt.y - pickerH - 4;
     POINT ptCenter{pt.x + rectW / 2, pt.y + rectH / 2};
     HMONITOR mon = MonitorFromPoint(ptCenter, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{};
@@ -6327,17 +6337,17 @@ void MainWindow::popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect)
         {
             y = pt.y + rectH + 4;
         }
-        if (x + kStickerPickW > mi.rcWork.right)
+        if (x + pickerW > mi.rcWork.right)
         {
-            x = mi.rcWork.right - kStickerPickW - 4;
+            x = mi.rcWork.right - pickerW - 4;
         }
         if (x < mi.rcWork.left)
         {
             x = mi.rcWork.left + 4;
         }
-        if (y + kStickerPickH > mi.rcWork.bottom)
+        if (y + pickerH > mi.rcWork.bottom)
         {
-            y = mi.rcWork.bottom - kStickerPickH - 4;
+            y = mi.rcWork.bottom - pickerH - 4;
         }
     }
     (void)rectW;
@@ -6355,8 +6365,8 @@ void MainWindow::popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect)
         sticker_picker_shared_->set_search_query("");
     }
 
-    SetWindowPos(hStickerPicker_, HWND_TOPMOST, x, y, kStickerPickW,
-                 kStickerPickH, SWP_NOACTIVATE);
+    SetWindowPos(hStickerPicker_, HWND_TOPMOST, x, y, pickerW,
+                 pickerH, SWP_NOACTIVATE);
     ShowWindow(hStickerPicker_, SW_SHOWNOACTIVATE);
     if (sticker_picker_surface_)
     {
@@ -6479,7 +6489,8 @@ void MainWindow::ensure_sticker_picker_created()
 
     hStickerPicker_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kStickerPickerClass, L"", WS_POPUP, 0,
-        0, kStickerPickW, kStickerPickH, hwnd_, nullptr, hInst_, nullptr);
+        0, dip_to_phys(kStickerPickW), dip_to_phys(kStickerPickH), hwnd_,
+        nullptr, hInst_, nullptr);
     if (!hStickerPicker_)
     {
         return;
@@ -6528,8 +6539,8 @@ void MainWindow::ensure_sticker_picker_created()
 
     if (HWND s = sticker_picker_surface_->hwnd())
     {
-        SetWindowPos(s, nullptr, 0, 0, kStickerPickW, kStickerPickH,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(s, nullptr, 0, 0, dip_to_phys(kStickerPickW),
+                     dip_to_phys(kStickerPickH), SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     sticker_picker_search_field_ =
@@ -6586,8 +6597,10 @@ void MainWindow::toggle_sticker_picker()
     {
         GetWindowRect(hwnd_, &btn_rc);
     }
-    int x = btn_rc.right - kStickerPickW - 8;
-    int y = btn_rc.top - kStickerPickH - 4;
+    const int pickerW = dip_to_phys(kStickerPickW);
+    const int pickerH = dip_to_phys(kStickerPickH);
+    int x = btn_rc.right - pickerW - 8;
+    int y = btn_rc.top - pickerH - 4;
 
     HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{};
@@ -6598,22 +6611,22 @@ void MainWindow::toggle_sticker_picker()
         {
             x = mi.rcWork.left + 4;
         }
-        if (x + kStickerPickW > mi.rcWork.right)
+        if (x + pickerW > mi.rcWork.right)
         {
-            x = mi.rcWork.right - kStickerPickW - 4;
+            x = mi.rcWork.right - pickerW - 4;
         }
         if (y < mi.rcWork.top)
         {
             y = btn_rc.bottom + 4;
         }
-        if (y + kStickerPickH > mi.rcWork.bottom)
+        if (y + pickerH > mi.rcWork.bottom)
         {
-            y = mi.rcWork.bottom - kStickerPickH - 4;
+            y = mi.rcWork.bottom - pickerH - 4;
         }
     }
 
-    SetWindowPos(hStickerPicker_, HWND_TOPMOST, x, y, kStickerPickW,
-                 kStickerPickH, SWP_NOACTIVATE);
+    SetWindowPos(hStickerPicker_, HWND_TOPMOST, x, y, pickerW,
+                 pickerH, SWP_NOACTIVATE);
 
     if (sticker_picker_shared_)
     {

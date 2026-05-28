@@ -1281,8 +1281,20 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     }
 
     // Paint SVG icons centred inside Icon-variant buttons.
-    // Icons are rasterized lazily on first paint and cached as tk::Image.
-    constexpr int kIconPx = 24; // fits inside the 40×40 button with 8 px margin
+    // Icons are rasterized at physical-pixel resolution so they stay crisp on
+    // HiDPI displays.  Cache is invalidated whenever the canvas scale changes
+    // (e.g. window moved to a different-DPI monitor).
+    constexpr int kIconPx = 24; // logical size: fits inside 40×40 btn w/ 8 px margin
+    const float icon_scale = ctx.canvas.scale_factor();
+    const int icon_phys_px = static_cast<int>(std::round(kIconPx * icon_scale));
+    if (icon_scale != icon_scale_)
+    {
+        icon_scale_ = icon_scale;
+        emoji_icon_.reset();
+        sticker_icon_.reset();
+        mic_icon_.reset();
+        mic_stop_icon_.reset();
+    }
     auto paint_icon = [&](tk::Rect rect,
                           std::unique_ptr<tk::Image>& cache,
                           std::span<const std::uint8_t> svg_bytes)
@@ -1290,7 +1302,7 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         if (rect.empty())
             return;
         if (!cache)
-            cache = tk::rasterize_svg(ctx.factory, svg_bytes, kIconPx);
+            cache = tk::rasterize_svg(ctx.factory, svg_bytes, icon_phys_px);
         if (!cache)
             return;
         float x = rect.x + (rect.w - kIconPx) * 0.5f;

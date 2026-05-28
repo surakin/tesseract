@@ -312,6 +312,16 @@ private:
     static constexpr int kMsgRowPad = tesseract::visual::kMsgRowVerticalPad;
     static constexpr int kMsgMaxWidth = 520; // matches Qt
 
+    float dip_scale() const
+    {
+        const float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
+        return dpi > 0.f ? dpi / 96.f : 1.f;
+    }
+    LONG dip_to_phys(float dip) const
+    {
+        return static_cast<LONG>(std::round(dip * dip_scale()));
+    }
+
     HINSTANCE hInst_;
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> branding_surface_;
