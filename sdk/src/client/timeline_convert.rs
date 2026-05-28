@@ -183,6 +183,36 @@ pub(crate) fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
     Some((lat, lon))
 }
 
+/// Compute the human-readable action for a m.room.pinned_events state-event
+/// change. `new_pinned` and `old_pinned` are the new and previous event-ID
+/// lists respectively (as any `AsRef<str>` slice — `&[&str]` or
+/// `&[OwnedEventId]` both work).
+pub(crate) fn pinned_events_action(
+    new_pinned: &[impl AsRef<str>],
+    old_pinned: &[impl AsRef<str>],
+) -> String {
+    use std::collections::HashSet;
+    let new_set: HashSet<&str> = new_pinned.iter().map(|id| id.as_ref()).collect();
+    let old_set: HashSet<&str> = old_pinned.iter().map(|id| id.as_ref()).collect();
+    let added = new_set.difference(&old_set).count();
+    let removed = old_set.difference(&new_set).count();
+    // "cleared" when >=3 items disappear all at once; smaller bulk removals
+    // are reported as "unpinned N messages" so the message stays concise.
+    if new_set.is_empty() && old_set.len() >= 3 {
+        "cleared all pinned messages".to_owned()
+    } else if added == 1 && removed == 0 {
+        "pinned a message".to_owned()
+    } else if added == 0 && removed == 1 {
+        "unpinned a message".to_owned()
+    } else if added > 1 && removed == 0 {
+        format!("pinned {} messages", added)
+    } else if added == 0 && removed > 1 {
+        format!("unpinned {} messages", removed)
+    } else {
+        "changed the pinned messages".to_owned()
+    }
+}
+
 /// Shared so the in-reply-to quote block and the thread latest-event preview
 /// emit identical snippet text.
 #[cfg(not(test))]
@@ -1267,4 +1297,47 @@ pub(super) async fn timeline_item_to_ffi(
         thread_latest_body,
         thread_latest_ts,
     })
+}
+
+#[cfg(test)]
+mod pinned_action_tests {
+    use super::pinned_events_action;
+
+    #[test]
+    fn pin_one() {
+        assert_eq!(pinned_events_action(&["$a"], &[] as &[&str]), "pinned a message");
+    }
+
+    #[test]
+    fn unpin_one() {
+        assert_eq!(pinned_events_action(&[] as &[&str], &["$a"]), "unpinned a message");
+    }
+
+    #[test]
+    fn pin_many() {
+        assert_eq!(pinned_events_action(&["$a","$b","$c"], &[] as &[&str]), "pinned 3 messages");
+    }
+
+    #[test]
+    fn unpin_many() {
+        assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b"]), "unpinned 2 messages");
+    }
+
+    #[test]
+    fn clear_all() {
+        // "cleared" fires only when new list is empty AND old list was non-empty with >=3 items:
+        assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b","$c"]), "cleared all pinned messages");
+        // Only 2 removed => "unpinned 2 messages"
+        assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b"]), "unpinned 2 messages");
+    }
+
+    #[test]
+    fn mixed_change() {
+        assert_eq!(pinned_events_action(&["$b"], &["$a"]), "changed the pinned messages");
+    }
+
+    #[test]
+    fn no_change() {
+        assert_eq!(pinned_events_action(&["$a"], &["$a"]), "changed the pinned messages");
+    }
 }
