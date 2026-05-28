@@ -386,6 +386,13 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "m.room.pinned_events")
+    {
+        auto ev = std::make_unique<PinnedStateEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
     // Fallback for unhandled message types
     auto ev = std::make_unique<UnhandledEvent>(msg_type);
     assign_base(*ev, e);
