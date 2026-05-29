@@ -749,12 +749,6 @@ private:
     // If row.owned_image is set, returns it to PixmapCache via image_returner_
     // and clears both fields. No-op when image_returner_ is not wired.
     void return_owned_image_(MessageRowData& row);
-
-    // For Kind::Image/Sticker rows that have no owned_image yet, attempts to
-    // check the image out of PixmapCache via image_taker_. No-op when the row
-    // already has an image, the key is absent, or the image is not yet cached
-    // (notify_image_ready handles that case when decoding completes).
-    void try_checkout_image_(MessageRowData& m);
     std::string pending_scroll_event_id_;
 
     // Per-frame chip geometry for the hovered row. Mutable so paint_row
