@@ -6,6 +6,7 @@
 #include <Security/Security.h>
 
 #include <mutex>
+#include <optional>
 
 namespace
 {
@@ -36,10 +37,17 @@ CFOwned<CFStringRef> cf_string(const std::string& s)
 // most one access dialog regardless of how many accounts are logged in.
 // Old per-user items (kSecAttrAccount = MXID) are kept as a migration fallback
 // and removed the first time their owner calls save().
-static constexpr std::string_view kService    = "lan.westeros.tesseract";
-static constexpr std::string_view kConsAcct   = "_sessions"; // fixed sentinel account key
+static constexpr std::string_view kConsAcct = "_sessions"; // fixed sentinel; MXIDs start with '@'
 
+// g_lock serialises access to g_map and the Keychain operations below.
 static std::mutex g_lock;
+
+// Process-lifetime mirror of the consolidated Keychain item.
+// nullopt = not yet populated from Keychain (populated lazily on first load or save).
+// Once set, save() and remove() update it directly without calling
+// SecItemCopyMatching, avoiding unexpected Keychain prompts during token
+// refreshes that happen at runtime.
+static std::optional<nlohmann::json> g_map;
 
 // ---------------------------------------------------------------------------
 // Raw Keychain helpers (parameterised on account key)
@@ -136,30 +144,37 @@ void keychain_remove(const std::string& account_key)
 }
 
 // ---------------------------------------------------------------------------
-// Consolidated-item helpers (must be called with g_lock held)
+// g_map helpers (g_lock must be held by the caller)
 // ---------------------------------------------------------------------------
 
-std::optional<nlohmann::json> load_consolidated_map()
+// Ensures g_map is populated. Calls SecItemCopyMatching at most once per
+// process lifetime (on the first load() or save() that needs it). All
+// subsequent operations use the in-memory cache, so token-refresh saves never
+// trigger Keychain prompts at runtime.
+void ensure_map_loaded()
 {
-    auto blob = keychain_load(std::string(kConsAcct));
-    if (!blob)
-        return std::nullopt;
-    try
+    if (g_map.has_value())
+        return;
+
+    if (auto blob = keychain_load(std::string(kConsAcct)))
     {
-        auto j = nlohmann::json::parse(*blob);
-        if (!j.is_object())
-            return std::nullopt;
-        return j;
+        try
+        {
+            auto j = nlohmann::json::parse(*blob);
+            if (j.is_object())
+            {
+                g_map = std::move(j);
+                return;
+            }
+        }
+        catch (const nlohmann::json::exception&) {}
     }
-    catch (const nlohmann::json::exception&)
-    {
-        return std::nullopt;
-    }
+    g_map = nlohmann::json::object(); // consolidated item absent or unreadable
 }
 
-bool save_consolidated_map(const nlohmann::json& map)
+bool flush_map()
 {
-    return keychain_save(std::string(kConsAcct), map.dump());
+    return keychain_save(std::string(kConsAcct), g_map->dump());
 }
 
 } // namespace
@@ -167,37 +182,40 @@ bool save_consolidated_map(const nlohmann::json& map)
 namespace tesseract
 {
 
-// load() tries the consolidated item first; if the user is absent there it
-// falls back to the old per-user item so sessions created before this change
-// continue to work until they are saved again (which migrates them).
+// load() populates g_map from the Keychain on the first call (one
+// SecItemCopyMatching), then serves subsequent callers from the cache.
+// If the user is not in the consolidated item, falls back to the old
+// per-user format so sessions survive the first post-upgrade launch.
 std::optional<std::string> SecretStore::load(const std::string& user_id)
 {
     std::lock_guard<std::mutex> lock(g_lock);
 
-    if (auto map = load_consolidated_map())
-    {
-        auto it = map->find(user_id);
-        if (it != map->end() && it->is_string())
-            return it->get<std::string>();
-    }
+    ensure_map_loaded();
 
-    // Migration fallback: old per-user item.
+    auto it = g_map->find(user_id);
+    if (it != g_map->end() && it->is_string())
+        return it->get<std::string>();
+
+    // Migration fallback: old per-user item (one extra SecItemCopyMatching
+    // per old-format account, only until save() migrates it).
     return keychain_load(user_id);
 }
 
-// save() always writes to the consolidated item. If an old per-user item
-// exists for this account it is deleted, completing the one-shot migration.
+// save() updates the in-memory map and flushes to the Keychain with
+// SecItemUpdate/SecItemAdd — never SecItemCopyMatching — so token-refresh
+// calls that arrive at runtime cannot trigger Keychain access dialogs.
 bool SecretStore::save(const std::string& user_id, const std::string& json)
 {
     std::lock_guard<std::mutex> lock(g_lock);
 
-    nlohmann::json map = nlohmann::json::object();
-    if (auto m = load_consolidated_map())
-        map = std::move(*m);
+    // Defensive: if save() somehow races ahead of the first load() (not
+    // expected in normal startup flow), read once rather than clobber other
+    // users' sessions with an empty map.
+    ensure_map_loaded();
 
-    map[user_id] = json;
+    (*g_map)[user_id] = json;
 
-    if (!save_consolidated_map(map))
+    if (!flush_map())
         return false;
 
     keychain_remove(user_id); // remove old per-user item if present
@@ -208,11 +226,10 @@ void SecretStore::remove(const std::string& user_id)
 {
     std::lock_guard<std::mutex> lock(g_lock);
 
-    if (auto map = load_consolidated_map())
-    {
-        map->erase(user_id);
-        save_consolidated_map(*map);
-    }
+    ensure_map_loaded();
+
+    g_map->erase(user_id);
+    flush_map();
 
     keychain_remove(user_id); // remove old per-user item if present
 }
