@@ -247,6 +247,128 @@ impl ClientFfi {
         })
     }
 
+    /// Like `fetch_avatar_bytes` but requests a server-scaled thumbnail
+    /// (`size`×`size`) instead of the original. Avatars render at ≤80 px, so
+    /// the full upload is wasteful. Static (non-animated) thumbnail.
+    pub fn fetch_avatar_thumbnail_bytes(&self, room_id: &str, size: u32) -> Vec<u8> {
+        use matrix_sdk::media::{MediaFormat, MediaThumbnailSettings};
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return Vec::new(),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return Vec::new();
+        };
+        let settings = MediaThumbnailSettings::new(size.into(), size.into());
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            tokio::select! {
+                result = room.avatar(MediaFormat::Thumbnail(settings)) =>
+                    result.ok().flatten().unwrap_or_default(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
+    }
+
+    /// Like `fetch_media_bytes` but requests a server-scaled thumbnail
+    /// (`w`×`h`). `animated` requests an animated thumbnail (MSC2705) for
+    /// sources that may move; servers without support return a static frame.
+    pub fn fetch_media_thumbnail_bytes(
+        &self,
+        mxc_url: &str,
+        w: u32,
+        h: u32,
+        animated: bool,
+    ) -> Vec<u8> {
+        use matrix_sdk::media::{
+            MediaFormat, MediaRequestParameters, MediaThumbnailSettings,
+        };
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        let uri = OwnedMxcUri::from(mxc_url);
+        if !uri.is_valid() {
+            return Vec::new();
+        }
+        let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
+        settings.animated = animated;
+        let request = MediaRequestParameters {
+            source: MediaSource::Plain(uri.into()),
+            format: MediaFormat::Thumbnail(settings),
+        };
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            let media = client.media();
+            tokio::select! {
+                result = media.get_media_content(&request, true) =>
+                    cap_media_bytes(result.unwrap_or_default()),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
+    }
+
+    /// Like `fetch_source_bytes` but requests a server-scaled thumbnail
+    /// (`w`×`h`) for plain `mxc://` sources. Encrypted sources (serialized
+    /// JSON) cannot be thumbnailed server-side, so they fall back to the full
+    /// `File` — their embedded thumbnail mxc is already small.
+    pub fn fetch_source_thumbnail_bytes(
+        &self,
+        source: &str,
+        w: u32,
+        h: u32,
+        animated: bool,
+    ) -> Vec<u8> {
+        use matrix_sdk::media::{
+            MediaFormat, MediaRequestParameters, MediaThumbnailSettings,
+        };
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        if source.is_empty() {
+            return Vec::new();
+        }
+
+        let (media_source, format) = if source.starts_with("mxc://") {
+            let uri = OwnedMxcUri::from(source);
+            if !uri.is_valid() {
+                return Vec::new();
+            }
+            let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
+            settings.animated = animated;
+            (
+                MediaSource::Plain(uri.into()),
+                MediaFormat::Thumbnail(settings),
+            )
+        } else {
+            match serde_json::from_str::<MediaSource>(source) {
+                Ok(s) => (s, MediaFormat::File),
+                Err(_) => return Vec::new(),
+            }
+        };
+
+        let request = MediaRequestParameters {
+            source: media_source,
+            format,
+        };
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            let media = client.media();
+            tokio::select! {
+                result = media.get_media_content(&request, true) =>
+                    cap_media_bytes(result.unwrap_or_default()),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
+    }
+
     pub fn fetch_url_bytes(&self, url: &str) -> Vec<u8> {
         if url.is_empty() {
             return Vec::new();

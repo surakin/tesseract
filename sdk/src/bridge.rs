@@ -1272,6 +1272,35 @@ pub mod ffi {
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
         fn fetch_source_bytes(self: &ClientFfi, source_json: &str) -> Vec<u8>;
 
+        /// Like `fetch_avatar_bytes` but requests a `size`×`size` server-scaled
+        /// thumbnail instead of the original upload.
+        fn fetch_avatar_thumbnail_bytes(
+            self: &ClientFfi,
+            room_id: &str,
+            size: u32,
+        ) -> Vec<u8>;
+
+        /// Like `fetch_media_bytes` but requests a `w`×`h` server-scaled
+        /// thumbnail. `animated` requests an animated thumbnail where supported.
+        fn fetch_media_thumbnail_bytes(
+            self: &ClientFfi,
+            mxc_url: &str,
+            w: u32,
+            h: u32,
+            animated: bool,
+        ) -> Vec<u8>;
+
+        /// Like `fetch_source_bytes` but requests a `w`×`h` server-scaled
+        /// thumbnail for plain mxc sources. Encrypted sources fall back to the
+        /// full file (servers cannot thumbnail encrypted blobs).
+        fn fetch_source_thumbnail_bytes(
+            self: &ClientFfi,
+            source_json: &str,
+            w: u32,
+            h: u32,
+            animated: bool,
+        ) -> Vec<u8>;
+
         /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
         /// Returns the response body on success, or an empty Vec on any error.
         /// Sets User-Agent to "Tesseract/0.1 (Matrix client)" per OSM tile policy.

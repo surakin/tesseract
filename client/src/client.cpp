@@ -723,6 +723,27 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
+std::vector<uint8_t>
+Client::fetch_avatar_thumbnail_bytes(const std::string& room_id, uint32_t size)
+{
+    auto v = impl_->ffi->fetch_avatar_thumbnail_bytes(room_id, size);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
+std::vector<uint8_t> Client::fetch_media_thumbnail_bytes(
+    const std::string& mxc_url, uint32_t w, uint32_t h, bool animated)
+{
+    auto v = impl_->ffi->fetch_media_thumbnail_bytes(mxc_url, w, h, animated);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
+std::vector<uint8_t> Client::fetch_source_thumbnail_bytes(
+    const std::string& source, uint32_t w, uint32_t h, bool animated)
+{
+    auto v = impl_->ffi->fetch_source_thumbnail_bytes(source, w, h, animated);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
 std::vector<uint8_t> Client::fetch_url_bytes(const std::string& url)
 {
     auto v = impl_->ffi->fetch_url_bytes(url);

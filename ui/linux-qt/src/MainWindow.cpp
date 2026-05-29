@@ -368,7 +368,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 }
                 // Avatars live in a separate cache — let the viewer find
                 // them so clicking a profile avatar shows the cached image.
-                return avatar_cache_.peek(url);
+                return thumbnail_cache_.peek(url);
             });
 
         // ---- Room view ----
@@ -390,7 +390,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     if (m.avatar_url.empty())
                         return nullptr;
                     ensure_user_avatar_(m.avatar_url);
-                    return avatar_cache_.peek(m.avatar_url);
+                    return thumbnail_cache_.peek(m.avatar_url);
                 }
                 return nullptr;
             });
@@ -2925,7 +2925,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     if (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar)
     {
-        if (avatar_cache_.contains(cache_key))
+        if (thumbnail_cache_.contains(cache_key))
         {
             return;
         }
@@ -2937,7 +2937,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         QImage scaled = img.scaled(kAvatarCacheSize, kAvatarCacheSize, Qt::KeepAspectRatio,
                                    Qt::SmoothTransformation);
-        avatar_cache_.store(cache_key, tk::qt6::make_image(std::move(scaled)));
+        thumbnail_cache_.store(cache_key, tk::qt6::make_image(std::move(scaled)));
         if (mainAppSurface_)
         {
             mainAppSurface_->update();
@@ -2979,10 +2979,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
 
-    // MediaImage — decode (same path as pickers) then store. Decode stays
-    // on the UI thread here (unchanged behaviour); pickers decode on a
-    // worker via ensure_picker_image_.
-    if (image_cache_.contains(cache_key) || anim_cache_.has(cache_key))
+    // MediaImage / MediaThumbnail — decode (same path as pickers) then store.
+    // MediaThumbnail (inline preview) lands in thumbnail_cache_; MediaImage
+    // (full-size) in image_cache_. Decode stays on the UI thread here
+    // (unchanged behaviour); pickers decode on a worker via ensure_picker_image_.
+    const bool is_thumb = (kind == MediaKind::MediaThumbnail);
+    tk::PixmapCache& still_cache = is_thumb ? thumbnail_cache_ : image_cache_;
+    if (still_cache.contains(cache_key) || anim_cache_.has(cache_key))
     {
         mediaImageSizes_.erase(cache_key);
         return;
@@ -3008,7 +3011,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     }
     else if (d.still)
     {
-        image_cache_.store(cache_key, std::move(d.still));
+        still_cache.store(cache_key, std::move(d.still));
     }
     else
     {
@@ -3870,7 +3873,7 @@ void MainWindow::openSettings()
     settingsWidget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return avatar_cache_.peek(mxc); },
+        { return thumbnail_cache_.peek(mxc); },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
 
@@ -4144,7 +4147,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = avatar_cache_.peek(av_mxc);
+                    avatar = thumbnail_cache_.peek(av_mxc);
                 }
                 break;
             }

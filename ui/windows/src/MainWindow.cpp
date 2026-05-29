@@ -4540,14 +4540,14 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     case MediaKind::RoomAvatar:
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            avatar_cache_.store(cache_key, std::move(img));
+            thumbnail_cache_.store(cache_key, std::move(img));
         }
         main_app_surface_->relayout();
         break;
     case MediaKind::UserAvatar:
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            avatar_cache_.store(cache_key, std::move(img));
+            thumbnail_cache_.store(cache_key, std::move(img));
         }
         if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
             account_picker_surface_)
@@ -4566,6 +4566,27 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             else
             {
                 media_disk_cache_.evict(cache_key);
+            }
+        }
+        if (room_view_)
+        {
+            room_view_->notify_image_ready(cache_key);
+        }
+        main_app_surface_->relayout();
+        if (shortcode_popup_visible_() && shortcode_popup_surface_)
+        {
+            shortcode_popup_surface_->relayout();
+        }
+        break;
+    case MediaKind::MediaThumbnail:
+        // Inline preview: animated thumbnails go to anim_cache_, still ones to
+        // thumbnail_cache_ (kept separate from full-size image_cache_).
+        try_load_animation(cache_key, bytes);
+        if (!anim_cache_.has(cache_key))
+        {
+            if (auto img = main_app_surface_->factory().decode_image(bytes))
+            {
+                thumbnail_cache_.store(cache_key, std::move(img));
             }
         }
         if (room_view_)
@@ -6905,7 +6926,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = avatar_cache_.peek(av_mxc);
+                    avatar = thumbnail_cache_.peek(av_mxc);
                 }
                 break;
             }

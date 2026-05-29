@@ -115,39 +115,56 @@ void ShellBase::run_async_mut_(std::function<void()> fn)
 
 void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 {
-    // Must be called on the UI thread — accesses tk_avatars_ and
+    // Must be called on the UI thread — accesses thumbnail_cache_ and
     // media_fetches_in_flight_ without synchronization.
     const bool use_room_endpoint = !r.avatar_url.empty();
     const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
-    if (mxc.empty() || avatar_cache_.contains(mxc))
+    if (mxc.empty())
     {
         return;
     }
-    if (!media_fetches_in_flight_.insert(mxc).second)
+    // When the user opts into prefetching full media, warm image_cache_ with
+    // the full-size avatar so opening it in the viewer is instant. Idempotent.
+    if (tesseract::Settings::instance().prefetch_full_media)
+    {
+        ensure_media_image_(mxc, 0, 0);
+    }
+    if (thumbnail_cache_.contains(mxc))
+    {
+        return;
+    }
+    // Thumbnail and full-size fetches of the same mxc must not collide on the
+    // disk cache or in the in-flight set — namespace the thumbnail keys.
+    const std::string tkey =
+        thumb_key(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
+    if (!media_fetches_in_flight_.insert(tkey).second)
     {
         return;
     }
     const std::string room_id = r.id;
     run_async_(
-        [this, room_id, mxc, use_room_endpoint]()
+        [this, room_id, mxc, tkey, use_room_endpoint]()
         {
-            auto bytes = media_disk_cache_.load(mxc);
+            auto bytes = media_disk_cache_.load(tkey);
             if (bytes.empty())
             {
                 // DM fallback avatars are user mxcs, not room avatars, so
                 // route them through the generic media endpoint.
                 bytes = use_room_endpoint
-                            ? client_->fetch_avatar_bytes(room_id)
-                            : client_->fetch_media_bytes(mxc);
+                            ? client_->fetch_avatar_thumbnail_bytes(
+                                  room_id, visual::kAvatarCacheSize)
+                            : client_->fetch_media_thumbnail_bytes(
+                                  mxc, visual::kAvatarCacheSize,
+                                  visual::kAvatarCacheSize, false);
                 if (!bytes.empty())
                 {
-                    media_disk_cache_.store(mxc, bytes);
+                    media_disk_cache_.store(tkey, bytes);
                 }
             }
             post_to_ui_(
-                [this, mxc, bytes = std::move(bytes)]() mutable
+                [this, mxc, tkey, bytes = std::move(bytes)]() mutable
                 {
-                    media_fetches_in_flight_.erase(mxc);
+                    media_fetches_in_flight_.erase(tkey);
                     on_media_bytes_ready_(mxc, MediaKind::RoomAvatar,
                                           std::move(bytes));
                 });
@@ -156,30 +173,42 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 
 void ShellBase::ensure_user_avatar_(const std::string& mxc)
 {
-    if (mxc.empty() || avatar_cache_.contains(mxc))
+    if (mxc.empty())
     {
         return;
     }
-    if (!media_fetches_in_flight_.insert(mxc).second)
+    if (tesseract::Settings::instance().prefetch_full_media)
+    {
+        ensure_media_image_(mxc, 0, 0);
+    }
+    if (thumbnail_cache_.contains(mxc))
+    {
+        return;
+    }
+    const std::string tkey =
+        thumb_key(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
+    if (!media_fetches_in_flight_.insert(tkey).second)
     {
         return;
     }
     run_async_(
-        [this, mxc]()
+        [this, mxc, tkey]()
         {
-            auto bytes = media_disk_cache_.load(mxc);
+            auto bytes = media_disk_cache_.load(tkey);
             if (bytes.empty())
             {
-                bytes = client_->fetch_media_bytes(mxc);
+                bytes = client_->fetch_media_thumbnail_bytes(
+                    mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize,
+                    false);
                 if (!bytes.empty())
                 {
-                    media_disk_cache_.store(mxc, bytes);
+                    media_disk_cache_.store(tkey, bytes);
                 }
             }
             post_to_ui_(
-                [this, mxc, bytes = std::move(bytes)]() mutable
+                [this, mxc, tkey, bytes = std::move(bytes)]() mutable
                 {
-                    media_fetches_in_flight_.erase(mxc);
+                    media_fetches_in_flight_.erase(tkey);
                     on_media_bytes_ready_(mxc, MediaKind::UserAvatar,
                                           std::move(bytes));
                 });
@@ -219,6 +248,43 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
         });
 }
 
+void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
+                                        bool animated)
+{
+    if (url.empty() || image_cache_.contains(url) ||
+        thumbnail_cache_.contains(url) || anim_cache_.has(url))
+    {
+        return;
+    }
+    const std::string tkey = thumb_key(url, w, h);
+    if (!media_fetches_in_flight_.insert(tkey).second)
+    {
+        return;
+    }
+    run_async_(
+        [this, url, tkey, w, h, animated]()
+        {
+            auto bytes = media_disk_cache_.load(tkey);
+            if (bytes.empty())
+            {
+                bytes = client_->fetch_source_thumbnail_bytes(
+                    url, static_cast<uint32_t>(w), static_cast<uint32_t>(h),
+                    animated);
+                if (!bytes.empty())
+                {
+                    media_disk_cache_.store(tkey, bytes);
+                }
+            }
+            post_to_ui_(
+                [this, url, tkey, bytes = std::move(bytes)]() mutable
+                {
+                    media_fetches_in_flight_.erase(tkey);
+                    on_media_bytes_ready_(url, MediaKind::MediaThumbnail,
+                                          std::move(bytes));
+                });
+        });
+}
+
 const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
 {
     if (const auto* f = anim_cache_.current_frame(mxc))
@@ -241,7 +307,13 @@ const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc)
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    return image_cache_.peek(mxc);
+    // Prefer the full-size image (viewer / prefetch_full_media) when present,
+    // otherwise fall back to the inline thumbnail.
+    if (const auto* img = image_cache_.peek(mxc))
+    {
+        return img;
+    }
+    return thumbnail_cache_.peek(mxc);
 }
 
 void ShellBase::set_room_notification_mode_(const std::string& room_id,
@@ -257,7 +329,7 @@ void ShellBase::set_room_notification_mode_(const std::string& room_id,
 void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 {
     auto avatar_lookup = [this](const std::string& mxc) -> const tk::Image*
-    { return avatar_cache_.peek(mxc); };
+    { return thumbnail_cache_.peek(mxc); };
 
     app->set_avatar_provider(avatar_lookup);
     app->room_list_view()->set_avatar_provider(avatar_lookup);
@@ -343,15 +415,16 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_list_view()->set_presence_provider(presence_lookup);
     app->room_view()->room_info_panel()->set_presence_provider(presence_lookup);
 
-    // Avatar click in UserProfilePanel → open the image viewer with the
-    // (already-cached) avatar. The viewer's image_provider (wired in
-    // wire_main_app_viewers_) falls back to tk_avatars_, so passing the mxc
-    // URL is enough; no per-shell full-res fetch needed.
+    // Avatar click in UserProfilePanel → open the image viewer. The list only
+    // holds an ≤80px thumbnail, so kick a full-size fetch into image_cache_;
+    // the viewer's image_provider returns the thumbnail instantly and swaps to
+    // full-res when it arrives.
     app->room_view()->on_avatar_clicked =
-        [app](std::string url, std::string name)
+        [this, app](std::string url, std::string name)
     {
         if (url.empty() || !app->image_viewer())
             return;
+        ensure_media_image_(url, 0, 0);
         app->image_viewer()->open(url, url, name, 0, 0);
         app->show_image_viewer(true);
         // Trigger the shell-wired relayout so the surface repaints with the
@@ -419,14 +492,12 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
                                        std::function<void()> on_image_close,
                                        std::function<void()> on_video_close)
 {
+    // shell_sticker_no_fetch_ already falls through anim_cache_ → image_cache_
+    // (full-size) → thumbnail_cache_, so the viewer shows the full image once
+    // the avatar/image click has fetched it and the thumbnail until then.
     auto image_lookup = [this](const std::string& mxc) -> const tk::Image*
     {
-        if (const tk::Image* img = shell_sticker_no_fetch_(mxc))
-            return img;
-        // Avatars live in a separate cache from media/stickers; let the
-        // viewer find them so clicking an avatar in UserProfilePanel /
-        // RoomInfoPanel can show whatever resolution is already cached.
-        return avatar_cache_.peek(mxc);
+        return shell_sticker_no_fetch_(mxc);
     };
 
     auto* iv = app->image_viewer();
@@ -700,9 +771,10 @@ void ShellBase::ensure_row_media_(const Event& ev)
         const auto& img = static_cast<const ImageEvent&>(ev);
         if (img.thumbnail)
         {
-            ensure_media_image_(img.thumbnail->fetch_token(),
-                                visual::kMaxInlineImageWidth,
-                                visual::kMaxInlineImageHeight);
+            // animated=true so capable servers keep animated GIFs moving.
+            ensure_media_thumbnail_(img.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, true);
         }
         if (!img.thumbnail || tesseract::Settings::instance().prefetch_full_media)
         {
@@ -792,9 +864,9 @@ void ShellBase::ensure_row_media_(const Event& ev)
         const auto& vid = static_cast<const VideoEvent&>(ev);
         if (vid.thumbnail)
         {
-            ensure_media_image_(vid.thumbnail->fetch_token(),
-                                visual::kMaxInlineImageWidth,
-                                visual::kMaxInlineImageHeight);
+            ensure_media_thumbnail_(vid.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, false);
         }
         if (!vid.thumbnail && vid.source &&
             video_thumb_in_flight_.insert(ev.event_id).second)
@@ -1754,7 +1826,7 @@ void ShellBase::on_url_preview_ready_(const std::string& url,
 
     if (!preview.image_mxc.empty())
     {
-        ensure_media_image_(preview.image_mxc, 64, 64);
+        ensure_media_thumbnail_(preview.image_mxc, 64, 64, false);
     }
 
     // Invalidate cached row heights so the preview card is included in the
@@ -2147,7 +2219,7 @@ void ShellBase::notify_presence_tick_()
     // unreferenced entries and trim over-budget. Runs even when presence
     // tracking is off, so it must precede the tracker guard.
     image_cache_.sweep();
-    avatar_cache_.sweep();
+    thumbnail_cache_.sweep();
     anim_cache_.sweep();
 
     if (presence_tracker_)
@@ -2657,7 +2729,7 @@ void ShellBase::compute_cache_sizes_(
         {
             const uint64_t memory =
                 static_cast<uint64_t>(image_cache_.current_bytes()) +
-                avatar_cache_.current_bytes() + anim_cache_.current_bytes();
+                thumbnail_cache_.current_bytes() + anim_cache_.current_bytes();
             cb(local, sdk, memory);
         });
     });
@@ -2685,7 +2757,7 @@ void ShellBase::clear_all_caches_(
         // fresh sync).
         post_to_ui_([this]
         {
-            avatar_cache_.clear();
+            thumbnail_cache_.clear();
             image_cache_.clear();
             anim_cache_ = tk::AnimImageCache{};
             tesseract::init_waveform_cache(

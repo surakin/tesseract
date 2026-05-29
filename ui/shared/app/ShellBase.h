@@ -273,11 +273,15 @@ protected:
     // room switch / scroll-off, then get reclaimed; widgets pin what they
     // display by holding the ImageRef from acquire() (see PixmapCache).
     //
-    // Avatars are tiny and are NOT pinned by any widget (they are protected
-    // while painted by peek() refreshing their TTL). A long TTL keeps them
-    // resident across idle periods so returning to a static window does not
-    // flash blank avatars; the byte budget still bounds total memory.
-    tk::PixmapCache avatar_cache_{16u * 1024u * 1024u, std::chrono::minutes{30}};
+    // Holds server-scaled thumbnails: avatars (≤80px) and inline static media
+    // previews (image/video/url-preview). Separate from image_cache_ so small
+    // thumbnails kept resident for scrolling are never evicted by a large
+    // full-size image, and vice versa. Thumbnails are NOT pinned by any widget
+    // (they are protected while painted by peek() refreshing their TTL). A long
+    // TTL keeps them resident across idle periods so returning to a static
+    // window does not flash blank avatars; the byte budget still bounds memory.
+    tk::PixmapCache thumbnail_cache_{48u * 1024u * 1024u,
+                                     std::chrono::minutes{30}};
     tk::PixmapCache image_cache_{64u * 1024u * 1024u};
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
@@ -402,10 +406,11 @@ protected:
     // ── Media kind tag ────────────────────────────────────────────────────────
     enum class MediaKind : std::uint8_t
     {
-        RoomAvatar, // → tk_avatars_, triggers room-list repaint
-        UserAvatar, // → tk_avatars_, triggers message-list repaint
-        MediaImage, // → anim_cache_ or tk_images_, triggers message-list repaint
-        Tile, // → tk_images_["tile:z/x/y"], triggers full message-list repaint
+        RoomAvatar, // → thumbnail_cache_, triggers room-list repaint
+        UserAvatar, // → thumbnail_cache_, triggers message-list repaint
+        MediaImage, // → anim_cache_ or image_cache_ (full-size)
+        MediaThumbnail, // → anim_cache_ or thumbnail_cache_ (inline preview)
+        Tile, // → image_cache_["tile:z/x/y"], triggers full message-list repaint
     };
 
     // Result of a worker-thread decode. Exactly one of `still` /
@@ -981,6 +986,21 @@ protected:
     void ensure_user_avatar_(const std::string& mxc);
     void ensure_media_image_(const std::string& url, int max_w, int max_h);
 
+    // Fetch a server-scaled thumbnail (w×h) for an inline media preview into
+    // thumbnail_cache_ (or anim_cache_ if it decodes animated). Mirrors
+    // ensure_media_image_ but uses the /thumbnail endpoint; the in-flight and
+    // media_disk_cache_ keys are size-namespaced via thumb_key() so a thumbnail
+    // and a full-size fetch of the same mxc never collide. `animated` requests
+    // an animated thumbnail where the server supports it (MSC2705).
+    void ensure_media_thumbnail_(const std::string& url, int w, int h,
+                                 bool animated);
+
+    // Size-namespaced cache key for thumbnail fetches (disk + in-flight set).
+    static std::string thumb_key(const std::string& key, int w, int h)
+    {
+        return "t" + std::to_string(w) + "x" + std::to_string(h) + ":" + key;
+    }
+
     // Prefetch avatars for every entry in invites_ (inviter avatar for DMs,
     // room avatar for group invites) so the room-list invite rows render them.
     void ensure_invite_avatars_();
@@ -1006,7 +1026,7 @@ protected:
     make_avatar_image_provider_()
     {
         return [this](const std::string& mxc) -> const tk::Image*
-        { return avatar_cache_.peek(mxc); };
+        { return thumbnail_cache_.peek(mxc); };
     }
 
     // Static-image lookup: image_cache_ only (used by the shortcode popup).

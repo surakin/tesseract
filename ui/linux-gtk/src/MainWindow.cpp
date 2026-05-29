@@ -3813,11 +3813,17 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     }
     const bool is_avatar =
         (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar);
+    // Avatars and inline thumbnails share thumbnail_cache_; full-size media
+    // and tiles use image_cache_. Inline media (full or thumbnail) may animate.
+    const bool uses_thumb_cache =
+        is_avatar || kind == MediaKind::MediaThumbnail;
+    const bool try_anim = (kind == MediaKind::MediaImage ||
+                           kind == MediaKind::MediaThumbnail);
 
     // Already decoded? Cheap early-out on the UI thread.
-    if (is_avatar ? avatar_cache_.contains(cache_key)
-                  : (image_cache_.contains(cache_key) ||
-                     anim_cache_.has(cache_key)))
+    if (anim_cache_.has(cache_key) ||
+        (uses_thumb_cache ? thumbnail_cache_.contains(cache_key)
+                          : image_cache_.contains(cache_key)))
     {
         return;
     }
@@ -3829,19 +3835,22 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // decode_image_to_cairo_surface are thread-safe; we hand the resulting
     // cairo surfaces (raw pointers) back to the UI thread to wrap + store.
     run_async_(
-        [this, cache_key, kind, is_avatar, bytes = std::move(bytes)]()
+        [this, cache_key, kind, is_avatar, uses_thumb_cache, try_anim,
+         bytes = std::move(bytes)]()
         {
-            if (kind == MediaKind::MediaImage)
+            if (try_anim)
             {
                 if (auto anim = decode_animation(bytes))
                 {
                     post_to_ui_(
-                        [this, cache_key,
+                        [this, cache_key, uses_thumb_cache,
                          frames_raw = std::move(anim->frames),
                          delays = std::move(anim->delays_ms)]() mutable
                         {
-                            if (image_cache_.contains(cache_key) ||
-                                anim_cache_.has(cache_key))
+                            if (anim_cache_.has(cache_key) ||
+                                (uses_thumb_cache
+                                     ? thumbnail_cache_.contains(cache_key)
+                                     : image_cache_.contains(cache_key)))
                             {
                                 for (cairo_surface_t* s : frames_raw)
                                     cairo_surface_destroy(s);
@@ -3881,12 +3890,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 return;
             }
             post_to_ui_(
-                [this, cache_key, kind, is_avatar, surface]()
+                [this, cache_key, kind, is_avatar, uses_thumb_cache, surface]()
                 {
                     const bool present =
-                        is_avatar ? avatar_cache_.contains(cache_key)
-                                  : (image_cache_.contains(cache_key) ||
-                                     anim_cache_.has(cache_key));
+                        anim_cache_.has(cache_key) ||
+                        (uses_thumb_cache
+                             ? thumbnail_cache_.contains(cache_key)
+                             : image_cache_.contains(cache_key));
                     if (present)
                     {
                         cairo_surface_destroy(surface);
@@ -3894,9 +3904,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     }
                     auto img = tk::cairo_pango::make_image(surface);
                     cairo_surface_destroy(surface);
-                    if (is_avatar)
+                    if (uses_thumb_cache)
                     {
-                        avatar_cache_.store(cache_key, std::move(img));
+                        thumbnail_cache_.store(cache_key, std::move(img));
+                        if (kind == MediaKind::MediaThumbnail && room_view_)
+                        {
+                            room_view_->notify_image_ready(cache_key);
+                        }
                     }
                     else
                     {
@@ -4916,7 +4930,7 @@ void MainWindow::populate_user_strip()
     ui->set_avatar_url(my_avatar_url_);
     ui->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
-        { return avatar_cache_.peek(mxc); });
+        { return thumbnail_cache_.peek(mxc); });
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
@@ -4969,7 +4983,7 @@ void MainWindow::open_settings_()
     settings_widget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return avatar_cache_.peek(mxc); },
+        { return thumbnail_cache_.peek(mxc); },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
     settings_widget_->set_group_inactive_pref(
@@ -6466,7 +6480,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = avatar_cache_.peek(av_mxc);
+                    avatar = thumbnail_cache_.peek(av_mxc);
                 }
                 break;
             }

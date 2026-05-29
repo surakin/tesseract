@@ -663,6 +663,23 @@ public:
     /// the leading `mxc://` prefix. Returns an empty vector on any failure.
     std::vector<uint8_t> fetch_source_bytes(const std::string& source);
 
+    /// Like fetch_avatar_bytes but requests a size×size server-scaled
+    /// thumbnail instead of the full upload.
+    std::vector<uint8_t> fetch_avatar_thumbnail_bytes(const std::string& room_id,
+                                                      uint32_t size);
+
+    /// Like fetch_media_bytes but requests a w×h server-scaled thumbnail.
+    /// `animated` requests an animated thumbnail where the server supports it.
+    std::vector<uint8_t> fetch_media_thumbnail_bytes(const std::string& mxc_url,
+                                                     uint32_t w, uint32_t h,
+                                                     bool animated);
+
+    /// Like fetch_source_bytes but requests a w×h server-scaled thumbnail for
+    /// plain mxc sources. Encrypted sources fall back to the full file.
+    std::vector<uint8_t> fetch_source_thumbnail_bytes(const std::string& source,
+                                                      uint32_t w, uint32_t h,
+                                                      bool animated);
+
     /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
     /// Returns an empty vector on any error. Blocks the calling thread.
     std::vector<uint8_t> fetch_url_bytes(const std::string& url);

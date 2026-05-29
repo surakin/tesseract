@@ -272,7 +272,7 @@ public:
     using ShellBase::ThreadPanel;
     using ShellBase::thread_panel_;
     using ShellBase::tick_anim_;
-    using ShellBase::avatar_cache_;
+    using ShellBase::thumbnail_cache_;
     using ShellBase::image_cache_;
     using ShellBase::url_preview_data_;
     using ShellBase::verification_banner_dismissed_;
@@ -449,7 +449,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_ensureEmojiImageAsync:(std::string)url;
 - (void)_applyTheme:(const tk::Theme&)t;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
-                   forKey:(const std::string&)key;
+                   forKey:(const std::string&)key
+                thumbnail:(BOOL)thumb;
 - (void)_onSpaceBack;
 - (void)_onComposeSend;
 - (void)_relayoutShortcodePopupIfVisible;
@@ -573,7 +574,14 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     }
     if (kind == MediaKind::MediaImage)
     {
-        [c _decodeMediaBytes:bytes forKey:key];
+        [c _decodeMediaBytes:bytes forKey:key thumbnail:NO];
+        [c _relayoutChatSurface];
+        [c _relayoutShortcodePopupIfVisible];
+        return;
+    }
+    if (kind == MediaKind::MediaThumbnail)
+    {
+        [c _decodeMediaBytes:bytes forKey:key thumbnail:YES];
         [c _relayoutChatSurface];
         [c _relayoutShortcodePopupIfVisible];
         return;
@@ -611,7 +619,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         [c _relayoutChatSurface];
         return;
     }
-    if (bytes.empty() || avatar_cache_.contains(key))
+    if (bytes.empty() || thumbnail_cache_.contains(key))
     {
         return;
     }
@@ -633,7 +641,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         return;
     }
-    avatar_cache_.store(key, tk::cg::make_image(img));
+    thumbnail_cache_.store(key, tk::cg::make_image(img));
     CGImageRelease(img);
     if (kind == MediaKind::RoomAvatar)
     {
@@ -1344,7 +1352,7 @@ void MacShell::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = avatar_cache_.peek(av_mxc);
+                    avatar = thumbnail_cache_.peek(av_mxc);
                 }
                 break;
             }
@@ -4999,7 +5007,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return nullptr;
             }
-            return s->_shell->avatar_cache_.peek(mxc);
+            return s->_shell->thumbnail_cache_.peek(mxc);
         });
     _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
     _settingsView->set_notifications_enabled(
@@ -5120,7 +5128,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return nullptr;
                 }
-                return s->_shell->avatar_cache_.peek(mxc);
+                return s->_shell->thumbnail_cache_.peek(mxc);
             });
         _accountPickerSurface->set_root(std::move(picker));
 
@@ -6381,8 +6389,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
+                thumbnail:(BOOL)thumb
 {
-    if (bytes.empty() || _shell->image_cache_.contains(key) ||
+    // Inline thumbnails land in thumbnail_cache_; full-size media in
+    // image_cache_. Animated frames always go to anim_cache_.
+    tk::PixmapCache& still_cache =
+        thumb ? _shell->thumbnail_cache_ : _shell->image_cache_;
+    if (bytes.empty() || still_cache.contains(key) ||
         _shell->anim_cache_.has(key))
     {
         return;
@@ -6398,7 +6411,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     else if (d.still)
     {
-        _shell->image_cache_.store(key, std::move(d.still));
+        still_cache.store(key, std::move(d.still));
     }
 }
 

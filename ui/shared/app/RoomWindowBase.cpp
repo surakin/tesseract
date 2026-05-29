@@ -606,7 +606,7 @@ void RoomWindowBase::abort_send_(const std::string& txn_id)
 
 const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
 {
-    return shell_->avatar_cache_.peek(mxc);
+    return shell_->thumbnail_cache_.peek(mxc);
 }
 
 const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
@@ -616,7 +616,12 @@ const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
         shell_->start_anim_tick_(); // visible animated frame → keep timer alive
         return f;
     }
-    return shell_->image_cache_.peek(mxc);
+    // Full-size first (viewer / prefetch), else the inline thumbnail.
+    if (auto* img = shell_->image_cache_.peek(mxc))
+    {
+        return img;
+    }
+    return shell_->thumbnail_cache_.peek(mxc);
 }
 
 const views::UrlPreviewData*
