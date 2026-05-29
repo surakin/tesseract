@@ -15,6 +15,7 @@ struct FakeImage : tk::Image
 {
     int width() const override { return 1; }
     int height() const override { return 1; }
+    std::size_t memory_bytes() const noexcept override { return 0; }
 };
 
 std::vector<std::unique_ptr<tk::Image>> frames(int n)
