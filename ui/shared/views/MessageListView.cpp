@@ -3723,6 +3723,8 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     for (auto& row : messages_)
         return_owned_image_(row);
     messages_ = std::move(msgs);
+    for (auto& row : messages_)
+        try_checkout_image_(row);
     pending_scroll_event_id_.clear();
     if (room_switch)
     {
@@ -3995,6 +3997,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
             start_inline_video(msg);
         }
         messages_.push_back(std::move(msg));
+        try_checkout_image_(messages_.back());
         invalidate_data();
         if (at_bottom)
         {
@@ -4018,6 +4021,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
         [&]
         {
             messages_.insert(messages_.begin() + index, std::move(msg));
+            try_checkout_image_(messages_[index]);
             invalidate_data();
         });
 }
@@ -4085,8 +4089,32 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         }
     }
 
-    return_owned_image_(messages_[index]);
+    // If the display image key is unchanged (typical for reaction/receipt/edit
+    // updates), carry owned_image forward directly instead of returning it to
+    // the cache and immediately re-checking it out — which would make it
+    // vulnerable to eviction in the window between the two operations.
+    {
+        const auto* old_look = messages_[index].thumbnail
+                                   ? messages_[index].thumbnail.get()
+                                   : messages_[index].source.get();
+        const std::string old_key =
+            old_look ? old_look->fetch_token() : std::string{};
+        const auto* new_look =
+            msg.thumbnail ? msg.thumbnail.get() : msg.source.get();
+        const std::string new_key =
+            new_look ? new_look->fetch_token() : std::string{};
+        if (!old_key.empty() && old_key == new_key)
+        {
+            msg.owned_image     = std::move(messages_[index].owned_image);
+            msg.owned_image_key = std::move(messages_[index].owned_image_key);
+            messages_[index].owned_image_key.clear(); // suppress return
+        }
+    }
+    return_owned_image_(messages_[index]); // no-op when key was cleared above
     messages_[index] = std::move(msg);
+    // If ownership wasn't carried forward (key changed or first-time update),
+    // try to checkout from cache in case the image was already decoded.
+    try_checkout_image_(messages_[index]);
     invalidate_data();
 }
 
@@ -4232,6 +4260,24 @@ void MessageListView::return_owned_image_(MessageRowData& row)
         image_returner_(row.owned_image_key, std::move(row.owned_image));
     row.owned_image.reset();
     row.owned_image_key.clear();
+}
+
+void MessageListView::try_checkout_image_(MessageRowData& m)
+{
+    if (!image_taker_)
+        return;
+    if (m.kind != MessageRowData::Kind::Image &&
+        m.kind != MessageRowData::Kind::Sticker)
+        return;
+    if (m.owned_image)
+        return;
+    const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+    const std::string key = look ? look->fetch_token() : std::string{};
+    if (key.empty())
+        return;
+    m.owned_image = image_taker_(key); // nullptr when not yet decoded
+    if (m.owned_image)
+        m.owned_image_key = key;
 }
 
 void MessageListView::set_preview_provider(PreviewProvider p)
