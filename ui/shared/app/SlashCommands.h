@@ -29,6 +29,12 @@ const std::vector<SlashCommandDescriptor>& available_commands();
 // native dialog before dispatching to dispatch_compose_send.
 bool is_slash_command_no_arg(const std::string& body, const char* cmd);
 
+// If `body` starts with "/<cmd> " and has at least one non-whitespace
+// character following, returns the trimmed argument string. Returns nullopt
+// when the command prefix doesn't match or the argument is blank.
+std::optional<std::string> parse_slash_arg(const std::string& body,
+                                            const char* cmd);
+
 // The plain + HTML pair produced by `/spoiler`.
 struct SpoilerMessage
 {

@@ -712,6 +712,9 @@ public:
     /// Leave a room. Blocks the calling thread — call from a worker thread.
     Result leave_room(const std::string& room_id);
 
+    /// Invite user_id to room_id. Blocks the calling thread — call from a worker thread.
+    Result invite_user(const std::string& room_id, const std::string& user_id);
+
     /// Fetch the joined member list for a room.
     /// Blocks the calling thread — call from a worker thread.
     std::vector<RoomMember> get_room_members(const std::string& room_id);

@@ -53,10 +53,10 @@ TEST_CASE("lookup ranks exact then prefix matches", "[slash][engine]")
 TEST_CASE("lookup returns full list for empty prefix", "[slash][engine]")
 {
     SlashCommandEngine e;
-    auto results = e.lookup("", 8);
-    // Exact: today the registry holds /me, /shrug, /slap, /spoiler,
-    // /myroomnick and /myroomavatar. Update here whenever a command is added.
-    REQUIRE(results.size() == 6);
+    auto results = e.lookup("", 12);
+    // Exact: /me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar,
+    // /join, /leave, /invite. Update here whenever a command is added.
+    REQUIRE(results.size() == 9);
 }
 
 TEST_CASE("lookup returns empty for non-matching prefix", "[slash][engine]")

@@ -307,6 +307,27 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Invite a user to a room. Blocks the calling thread — call from a worker thread.
+    #[cfg(not(test))]
+    pub fn invite_user(&mut self, room_id: &str, user_id: &str) -> OpResult {
+        use matrix_sdk::ruma::UserId;
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let uid = try_op!(UserId::parse(user_id).map_err(|e| err(e.to_string())));
+        match self.rt.block_on(room.invite_user_by_id(&uid)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn invite_user(&mut self, _room_id: &str, _user_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn get_room_members(&mut self, room_id: &str) -> Vec<crate::ffi::RoomMember> {

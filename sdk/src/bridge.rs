@@ -1301,6 +1301,9 @@ pub mod ffi {
         /// Leave a room. Blocks the calling thread — call from a worker thread.
         fn leave_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
 
+        /// Invite a user to a room. Blocks the calling thread — call from a worker thread.
+        fn invite_user(self: &mut ClientFfi, room_id: &str, user_id: &str) -> OpResult;
+
         /// Fetch the joined member list for a room. Blocks — worker thread.
         fn get_room_members(self: &mut ClientFfi, room_id: &str) -> Vec<RoomMember>;
 

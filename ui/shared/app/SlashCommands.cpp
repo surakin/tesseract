@@ -52,6 +52,24 @@ bool is_slash_command_no_arg(const std::string& body, const char* cmd)
            body.find_first_not_of(" \t", prefix_len) == std::string::npos;
 }
 
+std::optional<std::string> parse_slash_arg(const std::string& body,
+                                            const char* cmd)
+{
+    // Build the required prefix: "/<cmd> "
+    std::string prefix = std::string("/") + cmd + " ";
+    if (body.size() <= prefix.size())
+        return std::nullopt;
+    if (body.compare(0, prefix.size(), prefix) != 0)
+        return std::nullopt;
+    std::string_view arg(body.c_str() + prefix.size(),
+                         body.size() - prefix.size());
+    const auto start = arg.find_first_not_of(" \t");
+    if (start == std::string_view::npos)
+        return std::nullopt;
+    const auto end = arg.find_last_not_of(" \t");
+    return std::string(arg.substr(start, end - start + 1));
+}
+
 std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
 {
     // Trim leading whitespace.
@@ -118,6 +136,9 @@ const std::vector<SlashCommandDescriptor>& available_commands()
         {"spoiler",      "[(reason)] <text>", "Send a hidden spoiler message"},
         {"myroomnick",   "<name>",            "Set your display name in this room"},
         {"myroomavatar", "[mxc_uri]",         "Set your avatar in this room"},
+        {"join",         "<#room:server>",    "Join a room by alias or ID"},
+        {"leave",        "",                  "Leave the current room"},
+        {"invite",       "<@user:server>",    "Invite a user to the current room"},
     };
     return kCommands;
 }

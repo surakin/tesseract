@@ -462,6 +462,21 @@ void RoomWindowBase::send_message_(const std::string& body)
         shell_->pick_and_set_room_avatar_(room_id_);
         return;
     }
+    if (tesseract::is_slash_command_no_arg(body, "leave"))
+    {
+        shell_->leave_room_command_(room_id_);
+        return;
+    }
+    if (auto target = tesseract::parse_slash_arg(body, "join"))
+    {
+        shell_->join_room_command_(*target);
+        return;
+    }
+    if (auto user = tesseract::parse_slash_arg(body, "invite"))
+    {
+        shell_->invite_user_command_(room_id_, *user);
+        return;
+    }
     tesseract::dispatch_compose_send(*shell_->client_, room_id_, body, "");
 }
 
@@ -479,6 +494,21 @@ void RoomWindowBase::send_message_(const std::string& body,
     {
         shell_->pick_and_set_room_avatar_(room_id_);
         return; // on_send caller clears the compose bar after we return
+    }
+    if (tesseract::is_slash_command_no_arg(body, "leave"))
+    {
+        shell_->leave_room_command_(room_id_);
+        return;
+    }
+    if (auto target = tesseract::parse_slash_arg(body, "join"))
+    {
+        shell_->join_room_command_(*target);
+        return;
+    }
+    if (auto user = tesseract::parse_slash_arg(body, "invite"))
+    {
+        shell_->invite_user_command_(room_id_, *user);
+        return;
     }
     tesseract::dispatch_compose_send(
         *shell_->client_, room_id_, body, formatted_body);

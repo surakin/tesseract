@@ -1111,6 +1111,14 @@ protected:
     void block_invite_async_(const std::string& room_id,
                              const std::string& inviter_id);
 
+    // Slash-command async handlers — called from RoomWindowBase::send_message_
+    // after the command prefix is identified. Each uses run_async_ so the
+    // blocking SDK call doesn't touch the UI thread.
+    void leave_room_command_(const std::string& room_id);
+    void join_room_command_(const std::string& room_id_or_alias);
+    void invite_user_command_(const std::string& room_id,
+                              const std::string& user_id);
+
     // Recompute the aggregate from per_account_rooms_ and fire
     // on_tray_unread_changed_ only when the value differs from the last call.
     // Called from push_rooms_ and mark_room_read_.

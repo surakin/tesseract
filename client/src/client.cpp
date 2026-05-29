@@ -989,6 +989,11 @@ Result Client::leave_room(const std::string& room_id)
     return from_ffi(impl_->ffi->leave_room(room_id));
 }
 
+Result Client::invite_user(const std::string& room_id, const std::string& user_id)
+{
+    return from_ffi(impl_->ffi->invite_user(room_id, user_id));
+}
+
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
 {
     auto raw = impl_->ffi->get_room_members(room_id);

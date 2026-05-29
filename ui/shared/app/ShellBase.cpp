@@ -1087,6 +1087,67 @@ void ShellBase::block_invite_async_(const std::string& room_id,
         });
 }
 
+void ShellBase::leave_room_command_(const std::string& room_id)
+{
+    if (room_id.empty() || !client_)
+        return;
+    auto* c = client_;
+    run_async_(
+        [this, c, room_id]
+        {
+            auto r = c->leave_room(room_id);
+            if (!r.ok)
+                return;
+            post_to_ui_(
+                [this, c, room_id]
+                {
+                    if (c != client_)
+                        return;
+                    if (tabs_.size() > 1)
+                    {
+                        tab_close(room_id);
+                    }
+                    else
+                    {
+                        current_room_id_.clear();
+                        if (room_view_)
+                            room_view_->clear_room();
+                        request_relayout_();
+                    }
+                });
+        });
+}
+
+void ShellBase::join_room_command_(const std::string& room_id_or_alias)
+{
+    if (room_id_or_alias.empty() || !client_)
+        return;
+    auto* c = client_;
+    run_async_(
+        [this, c, room_id_or_alias]
+        {
+            auto joined_id = c->join_room(room_id_or_alias);
+            if (joined_id.empty())
+                return;
+            post_to_ui_(
+                [this, c, joined_id]
+                {
+                    if (c != client_)
+                        return;
+                    tab_navigate_room(joined_id);
+                });
+        });
+}
+
+void ShellBase::invite_user_command_(const std::string& room_id,
+                                     const std::string& user_id)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    auto* c = client_;
+    run_async_([c, room_id, user_id] { c->invite_user(room_id, user_id); });
+}
+
 void ShellBase::update_space_children_cache_()
 {
     if (!client_)
