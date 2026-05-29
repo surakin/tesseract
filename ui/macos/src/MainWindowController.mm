@@ -272,8 +272,8 @@ public:
     using ShellBase::ThreadPanel;
     using ShellBase::thread_panel_;
     using ShellBase::tick_anim_;
-    using ShellBase::tk_avatars_;
-    using ShellBase::tk_images_;
+    using ShellBase::avatar_cache_;
+    using ShellBase::image_cache_;
     using ShellBase::url_preview_data_;
     using ShellBase::verification_banner_dismissed_;
     using ShellBase::video_thumb_in_flight_;
@@ -580,7 +580,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     }
     if (kind == MediaKind::Tile)
     {
-        if (tk_images_.count(key))
+        if (image_cache_.contains(key))
         {
             return;
         }
@@ -602,7 +602,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         {
             return;
         }
-        tk_images_.emplace(key, tk::cg::make_image(img));
+        image_cache_.store(key, tk::cg::make_image(img));
         CGImageRelease(img);
         if (room_view_)
         {
@@ -611,7 +611,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         [c _relayoutChatSurface];
         return;
     }
-    if (bytes.empty() || tk_avatars_.count(key))
+    if (bytes.empty() || avatar_cache_.contains(key))
     {
         return;
     }
@@ -633,7 +633,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         return;
     }
-    tk_avatars_.emplace(key, tk::cg::make_image(img));
+    avatar_cache_.store(key, tk::cg::make_image(img));
     CGImageRelease(img);
     if (kind == MediaKind::RoomAvatar)
     {
@@ -698,11 +698,11 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             post_to_ui_(
                 [this, key, img_holder]() mutable
                 {
-                    if (tk_images_.count(key))
+                    if (image_cache_.contains(key))
                     {
                         return;
                     }
-                    tk_images_.emplace(key, std::move(*img_holder));
+                    image_cache_.store(key, std::move(*img_holder));
                     MainWindowController* c2 = ctrl_;
                     if (c2)
                     {
@@ -845,7 +845,7 @@ void MacShell::extract_media_info_(std::uint32_t pending_gen,
 void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
                                  std::vector<uint8_t> rgba)
 {
-    if (tk_images_.count(key))
+    if (image_cache_.contains(key))
     {
         return;
     }
@@ -863,7 +863,7 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
     {
         return;
     }
-    tk_images_.emplace(key, tk::cg::make_image(img));
+    image_cache_.store(key, tk::cg::make_image(img));
     CGImageRelease(img);
     MainWindowController* c = ctrl_;
     if (c)
@@ -1344,11 +1344,7 @@ void MacShell::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    auto it = tk_avatars_.find(av_mxc);
-                    if (it != tk_avatars_.end())
-                    {
-                        avatar = it->second.get();
-                    }
+                    avatar = avatar_cache_.peek(av_mxc);
                 }
                 break;
             }
@@ -3549,11 +3545,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             MainWindowController* s = ws;
             if (!s || !s->_shell) return;
-            s->_shell->clear_all_caches_([ws](uint64_t local, uint64_t sdk)
+            s->_shell->clear_all_caches_(
+                [ws](uint64_t local, uint64_t sdk, uint64_t memory)
             {
                 MainWindowController* s2 = ws;
                 if (s2 && s2->_settingsView)
-                    s2->_settingsView->set_cache_sizes(local, sdk);
+                    s2->_settingsView->set_cache_sizes(local, sdk, memory);
             });
         };
         _settingsSurface->set_root(std::move(view));
@@ -3747,9 +3744,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  return f;
                              }
                              {
-                                 auto it = s->_shell->tk_images_.find(cache_key);
-                                 if (it != s->_shell->tk_images_.end())
-                                     return it->second.get();
+                                 if (const auto* img =
+                                         s->_shell->image_cache_.peek(cache_key))
+                                     return img;
                              }
                              [s _ensureEmojiImageAsync:cache_key];
                              return nullptr;
@@ -3910,8 +3907,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return nullptr;
                 }
-                auto it = c->_shell->tk_images_.find(url);
-                return it == c->_shell->tk_images_.end() ? nullptr : it->second.get();
+                return c->_shell->image_cache_.peek(url);
             });
 
         NSView* popupView =
@@ -4208,9 +4204,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  return f;
                              }
                              {
-                                 auto it = s->_shell->tk_images_.find(cache_key);
-                                 if (it != s->_shell->tk_images_.end())
-                                     return it->second.get();
+                                 if (const auto* img =
+                                         s->_shell->image_cache_.peek(cache_key))
+                                     return img;
                              }
                              [s _ensureEmojiImageAsync:cache_key];
                              return nullptr;
@@ -5003,9 +4999,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return nullptr;
             }
-            auto it = s->_shell->tk_avatars_.find(mxc);
-            return it == s->_shell->tk_avatars_.end() ? nullptr
-                                                      : it->second.get();
+            return s->_shell->avatar_cache_.peek(mxc);
         });
     _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
     _settingsView->set_notifications_enabled(
@@ -5024,11 +5018,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
         tesseract::Settings::instance().send_presence);
     _settingsSurface->relayout();
 
-    _shell->compute_cache_sizes_([ws](uint64_t local, uint64_t sdk)
+    _shell->compute_cache_sizes_(
+        [ws](uint64_t local, uint64_t sdk, uint64_t memory)
     {
         MainWindowController* s = ws;
         if (s && s->_settingsView)
-            s->_settingsView->set_cache_sizes(local, sdk);
+            s->_settingsView->set_cache_sizes(local, sdk, memory);
     });
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
@@ -5125,9 +5120,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return nullptr;
                 }
-                auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr
-                                                          : it->second.get();
+                return s->_shell->avatar_cache_.peek(mxc);
             });
         _accountPickerSurface->set_root(std::move(picker));
 
@@ -6389,7 +6382,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
 {
-    if (bytes.empty() || _shell->tk_images_.count(key) ||
+    if (bytes.empty() || _shell->image_cache_.contains(key) ||
         _shell->anim_cache_.has(key))
     {
         return;
@@ -6405,7 +6398,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     else if (d.still)
     {
-        _shell->tk_images_.emplace(key, std::move(d.still));
+        _shell->image_cache_.store(key, std::move(d.still));
     }
 }
 
@@ -6488,9 +6481,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  return f;
                              }
                              {
-                                 auto it = s->_shell->tk_images_.find(cache_key);
-                                 if (it != s->_shell->tk_images_.end())
-                                     return it->second.get();
+                                 if (const auto* img =
+                                         s->_shell->image_cache_.peek(cache_key))
+                                     return img;
                              }
                              [s _ensureStickerImageAsync:cache_key];
                              return nullptr;
@@ -6552,9 +6545,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  return f;
                              }
                              {
-                                 auto it = s->_shell->tk_images_.find(cache_key);
-                                 if (it != s->_shell->tk_images_.end())
-                                     return it->second.get();
+                                 if (const auto* img =
+                                         s->_shell->image_cache_.peek(cache_key))
+                                     return img;
                              }
                              [s _ensureStickerImageAsync:cache_key];
                              return nullptr;

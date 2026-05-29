@@ -51,6 +51,7 @@ add_executable(tesseract_tests
     cpp/test_mentions.cpp
     cpp/test_picker_image_cache.cpp
     cpp/test_anim_image_cache.cpp
+    cpp/test_pixmap_cache.cpp
     cpp/test_session_store_migration.cpp
     cpp/test_server_info.cpp
     cpp/test_tk_account_section.cpp

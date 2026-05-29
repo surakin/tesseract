@@ -14,6 +14,7 @@
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
 #include "tk/media_disk_cache.h"
+#include "tk/pixmap_cache.h"
 #include "tk/theme.h"
 #include "app/RoomWindowBase.h"
 #include "views/MessageListView.h"
@@ -268,8 +269,16 @@ protected:
     bool typing_bar_visible_ = false;
 
     // ── Image caches ──────────────────────────────────────────────────────────
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
+    // Bounded, TTL'd image caches. Images stay warm for the TTL window after a
+    // room switch / scroll-off, then get reclaimed; widgets pin what they
+    // display by holding the ImageRef from acquire() (see PixmapCache).
+    //
+    // Avatars are tiny and are NOT pinned by any widget (they are protected
+    // while painted by peek() refreshing their TTL). A long TTL keeps them
+    // resident across idle periods so returning to a static window does not
+    // flash blank avatars; the byte budget still bounds total memory.
+    tk::PixmapCache avatar_cache_{16u * 1024u * 1024u, std::chrono::minutes{30}};
+    tk::PixmapCache image_cache_{64u * 1024u * 1024u};
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     bool media_disk_cache_pruned_ = false;
@@ -997,21 +1006,15 @@ protected:
     make_avatar_image_provider_()
     {
         return [this](const std::string& mxc) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc);
-            return it == tk_avatars_.end() ? nullptr : it->second.get();
-        };
+        { return avatar_cache_.peek(mxc); };
     }
 
-    // Static-image lookup: tk_images_ only (used by the shortcode popup).
+    // Static-image lookup: image_cache_ only (used by the shortcode popup).
     std::function<const tk::Image*(const std::string&)>
     make_static_image_provider_()
     {
         return [this](const std::string& url) -> const tk::Image*
-        {
-            auto it = tk_images_.find(url);
-            return it == tk_images_.end() ? nullptr : it->second.get();
-        };
+        { return image_cache_.peek(url); };
     }
 
     // Emoji / sticker picker lookup: animated frame → static → kick an async
@@ -1028,10 +1031,9 @@ protected:
                 start_anim_tick_();
                 return f;
             }
-            auto it = tk_images_.find(cache_key);
-            if (it != tk_images_.end())
+            if (const auto* img = image_cache_.peek(cache_key))
             {
-                return it->second.get();
+                return img;
             }
             ensure_picker_image_(cache_key, is_sticker);
             return nullptr;
@@ -1156,16 +1158,20 @@ protected:
     std::string find_existing_dm_(const std::string& user_id) const;
 
     // Async: compute cache directory sizes on a worker thread, then invoke
-    // callback(local_bytes, sdk_bytes) on the UI thread. No-op when not signed in.
+    // callback(local_bytes, sdk_bytes, memory_bytes) on the UI thread, where
+    // memory_bytes is the live in-memory image-cache total (read on the UI
+    // thread). No-op when not signed in.
     void compute_cache_sizes_(
-        std::function<void(uint64_t local, uint64_t sdk)> callback);
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory)>
+            callback);
 
     // Async: delete all on-disk caches best-effort (media files, waveform DB,
     // SDK event store), clear in-memory image maps, reinit the waveform store,
     // restart the SDK so it opens fresh SQLite stores, then call
     // recompute_callback with fresh sizes. No-op when not signed in.
     void clear_all_caches_(
-        std::function<void(uint64_t local, uint64_t sdk)> recompute_callback);
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory)>
+            recompute_callback);
 
     // Stop sync, rebuild the matrix-sdk Client against the on-disk session JSON
     // (which reopens fresh SQLite stores), then restart sync. Must be called on

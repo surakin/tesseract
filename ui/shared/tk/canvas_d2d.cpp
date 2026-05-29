@@ -582,6 +582,41 @@ public:
         return height_;
     }
 
+    std::size_t memory_bytes() const override
+    {
+        std::size_t bytes = 0;
+        bool counted = false;
+        if (source_)
+        {
+            WICRect rc{0, 0, width_, height_};
+            ComPtr<IWICBitmapLock> lock;
+            if (SUCCEEDED(source_->Lock(&rc, WICBitmapLockRead,
+                                        lock.GetAddressOf())))
+            {
+                UINT stride = 0;
+                if (SUCCEEDED(lock->GetStride(&stride)))
+                {
+                    bytes += static_cast<std::size_t>(stride) *
+                             static_cast<std::size_t>(height_);
+                    counted = true;
+                }
+            }
+        }
+        if (!counted)
+        {
+            bytes += static_cast<std::size_t>(width_) *
+                     static_cast<std::size_t>(height_) * 4u;
+        }
+        // Count the per-render-target GPU copy too, when one is materialized.
+        if (bitmap_)
+        {
+            const D2D1_SIZE_U px = bitmap_->GetPixelSize();
+            bytes += static_cast<std::size_t>(px.width) *
+                     static_cast<std::size_t>(px.height) * 4u;
+        }
+        return bytes;
+    }
+
     // ID2D1Bitmap is bound to a particular ID2D1RenderTarget. We keep the
     // decoded pixels as the source of truth (in an in-memory IWICBitmap)
     // and lazily construct the D2D bitmap for the render target that

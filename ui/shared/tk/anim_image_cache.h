@@ -30,6 +30,11 @@ namespace tk
 class AnimImageCache
 {
 public:
+    // `max_bytes` caps total decoded-frame memory; `ttl_ms` is how long an
+    // entry survives after it was last painted before sweep() may reclaim it.
+    explicit AnimImageCache(std::size_t max_bytes = 64u * 1024u * 1024u,
+                            std::int64_t ttl_ms = 30000);
+
     // Add or replace an animated entry. `now_ms` is used to set the initial
     // frame-advance deadline to `now_ms + delays_ms[0]`. The entry starts out
     // visible so the timer keeps running until its first paint.
@@ -58,6 +63,20 @@ public:
     // running; once it returns false the timer can stop.
     bool any_visible() const;
 
+    // Reclaim memory: drop entries not painted within the TTL window, then —
+    // if still over budget — evict the least-recently-seen off-screen entries
+    // oldest-first until under budget. Currently-visible entries are kept.
+    void sweep();
+
+    std::size_t current_bytes() const
+    {
+        return current_bytes_;
+    }
+    std::size_t max_bytes() const
+    {
+        return max_bytes_;
+    }
+
     // Test seam: override the visibility clock (milliseconds). Defaults to a
     // steady_clock source in production.
     void set_clock_for_testing(std::function<std::int64_t()> clock)
@@ -83,10 +102,14 @@ private:
         // Visibility-clock timestamp of the last current_frame() call.
         mutable std::int64_t last_seen_ms =
             std::numeric_limits<std::int64_t>::min();
+        std::size_t bytes = 0;
     };
 
     std::unordered_map<std::string, Entry> entries_;
     std::function<std::int64_t()> clock_;
+    std::size_t max_bytes_;
+    std::size_t current_bytes_ = 0;
+    std::int64_t ttl_ms_;
 };
 
 } // namespace tk

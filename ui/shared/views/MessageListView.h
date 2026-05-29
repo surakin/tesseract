@@ -81,6 +81,14 @@ struct MessageRowData
     // JSON-serialised ImageInfo from the sticker event (empty for Kind::Image).
     std::string sticker_info_json;
 
+    // Whole-room pinning: the ImageRef this row currently displays (image /
+    // sticker / video-thumbnail / URL-preview image). Holding it keeps the
+    // image un-evictable from the shell's image cache while the row stays
+    // materialized; `owned_image_key` is the cache key it was acquired for.
+    // Both are populated lazily and are NOT produced by make_row_data().
+    tk::ImageRef owned_image;
+    std::string owned_image_key;
+
     // File card
     tesseract::MediaSourceRef file_source; // file attachment
     std::string file_name;
@@ -187,6 +195,11 @@ class MessageListView : public tk::ListView
 public:
     using ImageProvider =
         std::function<const tk::Image*(const std::string& mxc_or_url)>;
+    // Returns a pinning handle to the cached image for `mxc_or_url`, or null
+    // when it is not (yet) decoded. Rows hold the handle so the image they
+    // display is not evicted while the room is open.
+    using ImageAcquirer =
+        std::function<tk::ImageRef(const std::string& mxc_or_url)>;
     using PreviewProvider =
         std::function<const UrlPreviewData*(const std::string& url)>;
     // Resolves the bare shortcode (no surrounding colons) for an mxc://
@@ -255,6 +268,11 @@ public:
 
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
+
+    // Pinning handle source for whole-room image retention. When set, rows
+    // acquire and hold the ImageRef for the image/sticker/video-thumbnail/
+    // URL-preview they display, so it survives cache eviction while open.
+    void set_image_acquirer(ImageAcquirer a);
 
     // Wire the mxc → shortcode lookup used by the MSC4027 reaction tooltip.
     void set_shortcode_provider(ShortcodeProvider p);
@@ -699,6 +717,16 @@ private:
 
     // Has every height-affecting dependency of row `m` already resolved?
     bool gate_dep_satisfied_(const MessageRowData& m) const;
+
+    // Whole-room pinning: derive `m`'s display key (image/sticker/video-thumb
+    // source token, or URL-preview image_mxc) and, when `m` does not yet hold
+    // a matching ImageRef, acquire and store one via `image_acquirer_`. A null
+    // result (image not yet decoded) is fine — paint falls back to the
+    // provider. No-op for kinds without a pinnable image or when no acquirer
+    // is wired.
+    void try_acquire_image_(MessageRowData& m);
+    // Display key used both for pinning and for the gate dependency check.
+    std::string row_image_key_(const MessageRowData& m) const;
     // First-paint scan: fill the gate's `pending` set from the visible band.
     void collect_gate_deps_();
     // Clear the gate + re-pin scroll (bottom, or focus row) so the first
@@ -719,6 +747,7 @@ private:
     std::string typing_text_;
     ImageProvider avatar_provider_;
     ImageProvider image_provider_;
+    ImageAcquirer image_acquirer_;
     MentionAvatarProvider mention_avatar_provider_;
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;

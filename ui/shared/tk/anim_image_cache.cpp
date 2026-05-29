@@ -1,9 +1,16 @@
 #include "anim_image_cache.h"
 
+#include <algorithm>
 #include <chrono>
+#include <vector>
 
 namespace tk
 {
+
+AnimImageCache::AnimImageCache(std::size_t max_bytes, std::int64_t ttl_ms)
+    : max_bytes_(max_bytes), ttl_ms_(ttl_ms)
+{
+}
 
 std::int64_t AnimImageCache::vis_now_() const
 {
@@ -33,6 +40,16 @@ void AnimImageCache::store(const std::string& key,
     // Treat a freshly stored entry as visible so the timer keeps running until
     // the first paint refreshes (or fails to refresh) this stamp.
     entry.last_seen_ms = vis_now_();
+    for (const auto& f : entry.frames)
+    {
+        entry.bytes += f ? f->memory_bytes() : 0;
+    }
+
+    if (auto it = entries_.find(key); it != entries_.end())
+    {
+        current_bytes_ -= it->second.bytes;
+    }
+    current_bytes_ += entry.bytes;
     entries_.insert_or_assign(key, std::move(entry));
 }
 
@@ -104,6 +121,54 @@ bool AnimImageCache::any_visible() const
         }
     }
     return false;
+}
+
+void AnimImageCache::sweep()
+{
+    const std::int64_t vis_now = vis_now_();
+
+    // 1) Drop entries not painted within the TTL window.
+    for (auto it = entries_.begin(); it != entries_.end();)
+    {
+        if (vis_now - it->second.last_seen_ms > ttl_ms_)
+        {
+            current_bytes_ -= it->second.bytes;
+            it = entries_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    if (current_bytes_ <= max_bytes_)
+    {
+        return;
+    }
+
+    // 2) Still over budget: evict least-recently-seen off-screen entries
+    //    oldest-first until under budget. Visible entries are kept.
+    std::vector<std::unordered_map<std::string, Entry>::iterator> evictable;
+    for (auto it = entries_.begin(); it != entries_.end(); ++it)
+    {
+        if (vis_now - it->second.last_seen_ms > kVisibilityGraceMs)
+        {
+            evictable.push_back(it);
+        }
+    }
+    std::sort(evictable.begin(), evictable.end(),
+              [](const auto& a, const auto& b)
+              { return a->second.last_seen_ms < b->second.last_seen_ms; });
+
+    for (auto it : evictable)
+    {
+        if (current_bytes_ <= max_bytes_)
+        {
+            break;
+        }
+        current_bytes_ -= it->second.bytes;
+        entries_.erase(it);
+    }
 }
 
 } // namespace tk

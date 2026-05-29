@@ -254,10 +254,12 @@ void SettingsView::set_current_device_id(std::string id)
         devices_->set_current_device_id(std::move(id));
 }
 
-void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes)
+void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
+                                   uint64_t memory_bytes)
 {
     if (about_)
     {
+        about_->set_memory_cache_size(memory_bytes);
         about_->set_local_cache_size(local_bytes);
         about_->set_sdk_store_size(sdk_bytes);
     }

@@ -334,6 +334,15 @@ public:
     {
         return height_;
     }
+    std::size_t memory_bytes() const override
+    {
+        if (!img_)
+        {
+            return 0;
+        }
+        return static_cast<std::size_t>(CGImageGetBytesPerRow(img_)) *
+               static_cast<std::size_t>(CGImageGetHeight(img_));
+    }
     CGImageRef image() const
     {
         return img_;

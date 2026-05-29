@@ -172,7 +172,17 @@ public:
     virtual ~Image() = default;
     virtual int width() const = 0;
     virtual int height() const = 0;
+    // Approximate resident size of the decoded pixels (and any cached
+    // backend-scaled/GPU copies), in bytes. Each backend reports its true
+    // allocation via its native API so the image cache's byte budget tracks
+    // real memory rather than a w*h*4 guess.
+    virtual std::size_t memory_bytes() const = 0;
 };
+
+// Shared handle to a decoded image. The image cache hands these out so many
+// widgets can pin the same image; eviction only reclaims an image once the
+// cache holds the sole reference (use_count() == 1).
+using ImageRef = std::shared_ptr<Image>;
 
 // Animated image: holds pre-decoded, pre-scaled frames with per-frame delays.
 // current_frame() advances internally using steady_clock — call it every
@@ -215,6 +225,14 @@ public:
     int width() const { return frames_[0]->width(); }
     int height() const { return frames_[0]->height(); }
     int frame_count() const { return static_cast<int>(frames_.size()); }
+
+    std::size_t memory_bytes() const
+    {
+        std::size_t total = 0;
+        for (const auto& f : frames_)
+            total += f->memory_bytes();
+        return total;
+    }
 
 private:
     std::vector<std::unique_ptr<Image>> frames_;

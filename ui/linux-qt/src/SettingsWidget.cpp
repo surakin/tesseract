@@ -126,10 +126,11 @@ void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)
         settings_view_->set_server_info(info);
 }
 
-void SettingsWidget::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes)
+void SettingsWidget::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
+                                     uint64_t memory_bytes)
 {
     if (settings_view_)
-        settings_view_->set_cache_sizes(local_bytes, sdk_bytes);
+        settings_view_->set_cache_sizes(local_bytes, sdk_bytes, memory_bytes);
 }
 
 void SettingsWidget::set_theme(const tk::Theme& t)

@@ -167,7 +167,8 @@ public:
 
     // Update the About section's storage size labels.
     // Call on the UI thread after ShellBase::compute_cache_sizes_() posts its result.
-    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes);
+    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
+                         uint64_t memory_bytes);
 
     // ----- tk::Widget overrides ---------------------------------------------
 

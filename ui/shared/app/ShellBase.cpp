@@ -119,7 +119,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     // media_fetches_in_flight_ without synchronization.
     const bool use_room_endpoint = !r.avatar_url.empty();
     const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
-    if (mxc.empty() || tk_avatars_.count(mxc))
+    if (mxc.empty() || avatar_cache_.contains(mxc))
     {
         return;
     }
@@ -156,7 +156,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 
 void ShellBase::ensure_user_avatar_(const std::string& mxc)
 {
-    if (mxc.empty() || tk_avatars_.count(mxc))
+    if (mxc.empty() || avatar_cache_.contains(mxc))
     {
         return;
     }
@@ -189,7 +189,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
 void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                     int /*max_h*/)
 {
-    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
+    if (url.empty() || image_cache_.contains(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -226,10 +226,9 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    auto it = tk_images_.find(mxc);
-    if (it != tk_images_.end())
+    if (const auto* img = image_cache_.peek(mxc))
     {
-        return it->second.get();
+        return img;
     }
     ensure_media_image_(mxc, 64, 64);
     return nullptr;
@@ -242,8 +241,7 @@ const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc)
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    auto it = tk_images_.find(mxc);
-    return it == tk_images_.end() ? nullptr : it->second.get();
+    return image_cache_.peek(mxc);
 }
 
 void ShellBase::set_room_notification_mode_(const std::string& room_id,
@@ -259,10 +257,7 @@ void ShellBase::set_room_notification_mode_(const std::string& room_id,
 void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 {
     auto avatar_lookup = [this](const std::string& mxc) -> const tk::Image*
-    {
-        auto it = tk_avatars_.find(mxc);
-        return it == tk_avatars_.end() ? nullptr : it->second.get();
-    };
+    { return avatar_cache_.peek(mxc); };
 
     app->set_avatar_provider(avatar_lookup);
     app->room_list_view()->set_avatar_provider(avatar_lookup);
@@ -315,6 +310,13 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             return shell_sticker_no_fetch_(mxc);
         });
+    // Whole-room pinning: message rows hold an ImageRef from the cache so the
+    // images they display are never evicted while the room is open.
+    app->room_view()->set_image_acquirer(
+        [this](const std::string& mxc) -> tk::ImageRef
+        {
+            return image_cache_.acquire(mxc);
+        });
     app->room_view()->set_preview_provider(
         [this](const std::string& url) -> const views::UrlPreviewData*
         {
@@ -324,7 +326,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 return nullptr;
             }
             if (!it->second.image_mxc.empty() &&
-                !tk_images_.count(it->second.image_mxc) &&
+                !image_cache_.contains(it->second.image_mxc) &&
                 !anim_cache_.has(it->second.image_mxc))
             {
                 ensure_media_image_(it->second.image_mxc, 64, 64);
@@ -424,8 +426,7 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
         // Avatars live in a separate cache from media/stickers; let the
         // viewer find them so clicking an avatar in UserProfilePanel /
         // RoomInfoPanel can show whatever resolution is already cached.
-        auto it = tk_avatars_.find(mxc);
-        return it == tk_avatars_.end() ? nullptr : it->second.get();
+        return avatar_cache_.peek(mxc);
     };
 
     auto* iv = app->image_viewer();
@@ -458,7 +459,7 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
 
 void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
 {
-    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
+    if (url.empty() || image_cache_.contains(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -517,7 +518,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 {
     (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
         .erase(url);
-    if (tk_images_.count(url) || anim_cache_.has(url))
+    if (image_cache_.contains(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -529,7 +530,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
     }
     else if (d.still)
     {
-        tk_images_.emplace(std::move(url), std::move(d.still));
+        image_cache_.store(url, std::move(d.still));
     }
     else
     {
@@ -541,7 +542,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 void ShellBase::ensure_tile_async(int z, int x, int y)
 {
     const std::string key = tesseract::views::tile_cache_key({z, x, y});
-    if (tk_images_.count(key) || tile_fetch_failed_.count(key))
+    if (image_cache_.contains(key) || tile_fetch_failed_.count(key))
     {
         return;
     }
@@ -646,7 +647,7 @@ void ShellBase::ensure_blurhash_image_(const std::string& event_id,
                                        int media_h)
 {
     const std::string key = "blurhash::" + event_id;
-    if (tk_images_.count(key) || !blurhash_attempted_.insert(key).second)
+    if (image_cache_.contains(key) || !blurhash_attempted_.insert(key).second)
     {
         return;
     }
@@ -2141,6 +2142,14 @@ void ShellBase::notify_window_active_(bool active)
 
 void ShellBase::notify_presence_tick_()
 {
+    // Piggyback the 30 s presence tick (fired by every shell) to reclaim
+    // images that scrolled off / rooms switched away from: drop expired,
+    // unreferenced entries and trim over-budget. Runs even when presence
+    // tracking is off, so it must precede the tracker guard.
+    image_cache_.sweep();
+    avatar_cache_.sweep();
+    anim_cache_.sweep();
+
     if (presence_tracker_)
     {
         presence_tracker_->notify_tick();
@@ -2615,7 +2624,7 @@ void ShellBase::wire_voice_capture_(
 }
 
 void ShellBase::compute_cache_sizes_(
-    std::function<void(uint64_t, uint64_t)> callback)
+    std::function<void(uint64_t, uint64_t, uint64_t)> callback)
 {
     if (my_user_id_.empty() || !callback)
         return;
@@ -2642,12 +2651,20 @@ void ShellBase::compute_cache_sizes_(
                 sdk += de.file_size(ec);
         }
 
-        post_to_ui_([cb, local, sdk] { cb(local, sdk); });
+        // Read the in-memory image-cache total on the UI thread (the caches
+        // live there); deliver all three sizes together.
+        post_to_ui_([this, cb, local, sdk]
+        {
+            const uint64_t memory =
+                static_cast<uint64_t>(image_cache_.current_bytes()) +
+                avatar_cache_.current_bytes() + anim_cache_.current_bytes();
+            cb(local, sdk, memory);
+        });
     });
 }
 
 void ShellBase::clear_all_caches_(
-    std::function<void(uint64_t, uint64_t)> recompute_callback)
+    std::function<void(uint64_t, uint64_t, uint64_t)> recompute_callback)
 {
     if (my_user_id_.empty())
         return;
@@ -2668,9 +2685,9 @@ void ShellBase::clear_all_caches_(
         // fresh sync).
         post_to_ui_([this]
         {
-            tk_avatars_.clear();
-            tk_images_.clear();
-            anim_cache_ = {};
+            avatar_cache_.clear();
+            image_cache_.clear();
+            anim_cache_ = tk::AnimImageCache{};
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());
             restart_sdk_();

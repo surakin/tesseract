@@ -80,6 +80,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             return shell_image_(mxc);
         });
+    rv->set_image_acquirer(
+        [this](const std::string& mxc) -> tk::ImageRef
+        {
+            return shell_->image_cache_.acquire(mxc);
+        });
     rv->set_shortcode_provider(
         [this](const std::string& mxc) -> std::string
         {
@@ -601,8 +606,7 @@ void RoomWindowBase::abort_send_(const std::string& txn_id)
 
 const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
 {
-    auto it = shell_->tk_avatars_.find(mxc);
-    return it == shell_->tk_avatars_.end() ? nullptr : it->second.get();
+    return shell_->avatar_cache_.peek(mxc);
 }
 
 const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
@@ -612,8 +616,7 @@ const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
         shell_->start_anim_tick_(); // visible animated frame → keep timer alive
         return f;
     }
-    auto it = shell_->tk_images_.find(mxc);
-    return it == shell_->tk_images_.end() ? nullptr : it->second.get();
+    return shell_->image_cache_.peek(mxc);
 }
 
 const views::UrlPreviewData*

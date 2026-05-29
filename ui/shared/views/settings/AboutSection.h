@@ -21,6 +21,7 @@ public:
 
     // Update displayed size values. Call on the UI thread after the shell's
     // async size-computation callback fires.
+    void set_memory_cache_size(uint64_t bytes);
     void set_local_cache_size(uint64_t bytes);
     void set_sdk_store_size(uint64_t bytes);
 
@@ -30,8 +31,9 @@ public:
 
 private:
     class CacheSizeRow;
-    CacheSizeRow* local_row_ = nullptr; // borrowed
-    CacheSizeRow* sdk_row_   = nullptr; // borrowed
+    CacheSizeRow* memory_row_ = nullptr; // borrowed
+    CacheSizeRow* local_row_  = nullptr; // borrowed
+    CacheSizeRow* sdk_row_    = nullptr; // borrowed
 };
 
 } // namespace tesseract::views

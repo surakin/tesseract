@@ -168,6 +168,17 @@ public:
         return height_;
     }
 
+    std::size_t memory_bytes() const override
+    {
+        if (!surface_)
+        {
+            return 0;
+        }
+        const int stride = cairo_image_surface_get_stride(surface_);
+        return static_cast<std::size_t>(stride) *
+               static_cast<std::size_t>(height_);
+    }
+
     cairo_surface_t* surface() const
     {
         return surface_;

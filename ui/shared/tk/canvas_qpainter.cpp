@@ -153,6 +153,15 @@ public:
     {
         return image_.height();
     }
+    std::size_t memory_bytes() const override
+    {
+        std::size_t bytes = static_cast<std::size_t>(image_.sizeInBytes());
+        for (const auto& e : cache_)
+        {
+            bytes += static_cast<std::size_t>(e.img.sizeInBytes());
+        }
+        return bytes;
+    }
     const QImage& image() const
     {
         return image_;

@@ -135,8 +135,9 @@ AboutSection::AboutSection()
     // Wrap the Storage group in an HBox so it uses its natural width and
     // sits at the bottom-left rather than stretching to fill the page.
     auto sg = std::make_unique<SettingsGroup>("Storage");
-    local_row_ = sg->add_widget(std::make_unique<CacheSizeRow>("Local cache"));
-    sdk_row_   = sg->add_widget(std::make_unique<CacheSizeRow>("SDK store"));
+    memory_row_ = sg->add_widget(std::make_unique<CacheSizeRow>("In-memory cache"));
+    local_row_  = sg->add_widget(std::make_unique<CacheSizeRow>("Local cache"));
+    sdk_row_    = sg->add_widget(std::make_unique<CacheSizeRow>("SDK store"));
     sg->add_widget(std::make_unique<tk::Button>(
         "Clear all caches",
         [this] { if (on_clear_caches) on_clear_caches(); },
@@ -145,6 +146,11 @@ AboutSection::AboutSection()
     auto hbox = std::make_unique<tk::HBox>();
     hbox->add_child(std::move(sg));
     add_widget(std::move(hbox));
+}
+
+void AboutSection::set_memory_cache_size(uint64_t bytes)
+{
+    memory_row_->set_value(format_bytes(bytes));
 }
 
 void AboutSection::set_local_cache_size(uint64_t bytes)

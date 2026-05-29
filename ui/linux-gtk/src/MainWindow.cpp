@@ -2065,10 +2065,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         };
         settings_widget_->on_clear_caches = [this]
         {
-            clear_all_caches_([this](uint64_t local, uint64_t sdk)
+            clear_all_caches_(
+                [this](uint64_t local, uint64_t sdk, uint64_t memory)
             {
                 if (settings_widget_)
-                    settings_widget_->set_cache_sizes(local, sdk);
+                    settings_widget_->set_cache_sizes(local, sdk, memory);
             });
         };
         settings_widget_->on_local_avatar_changed =
@@ -3814,8 +3815,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar);
 
     // Already decoded? Cheap early-out on the UI thread.
-    if (is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                  : (tk_images_.get(cache_key) ||
+    if (is_avatar ? avatar_cache_.contains(cache_key)
+                  : (image_cache_.contains(cache_key) ||
                      anim_cache_.has(cache_key)))
     {
         return;
@@ -3839,7 +3840,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                          frames_raw = std::move(anim->frames),
                          delays = std::move(anim->delays_ms)]() mutable
                         {
-                            if (tk_images_.get(cache_key) ||
+                            if (image_cache_.contains(cache_key) ||
                                 anim_cache_.has(cache_key))
                             {
                                 for (cairo_surface_t* s : frames_raw)
@@ -3883,8 +3884,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 [this, cache_key, kind, is_avatar, surface]()
                 {
                     const bool present =
-                        is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                                  : (tk_images_.get(cache_key) ||
+                        is_avatar ? avatar_cache_.contains(cache_key)
+                                  : (image_cache_.contains(cache_key) ||
                                      anim_cache_.has(cache_key));
                     if (present)
                     {
@@ -3895,11 +3896,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     cairo_surface_destroy(surface);
                     if (is_avatar)
                     {
-                        tk_avatars_.emplace(cache_key, std::move(img));
+                        avatar_cache_.store(cache_key, std::move(img));
                     }
                     else
                     {
-                        tk_images_.store(cache_key, std::move(img));
+                        image_cache_.store(cache_key, std::move(img));
                         if (kind == MediaKind::Tile && room_view_)
                         {
                             room_view_->message_list()->invalidate_data();
@@ -4445,7 +4446,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
-                    if (!c->self->tk_images_.get(c->key))
+                    if (!c->self->image_cache_.contains(c->key))
                     {
                         // Create an owned cairo surface and blit the BGRA pixels in.
                         cairo_surface_t* surf = cairo_image_surface_create(
@@ -4466,7 +4467,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                                     static_cast<std::size_t>(src_stride));
                             }
                             cairo_surface_mark_dirty(surf);
-                            c->self->tk_images_.store(
+                            c->self->image_cache_.store(
                                 c->key, tk::cairo_pango::make_image(surf));
                             cairo_surface_destroy(surf);
                             if (c->self->main_app_surface_)
@@ -4489,7 +4490,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (tk_images_.get(key))
+    if (image_cache_.contains(key))
     {
         return;
     }
@@ -4515,7 +4516,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
         }
     }
     cairo_surface_mark_dirty(surf);
-    tk_images_.store(key, tk::cairo_pango::make_image(surf));
+    image_cache_.store(key, tk::cairo_pango::make_image(surf));
     cairo_surface_destroy(surf);
     if (main_app_surface_)
     {
@@ -4915,10 +4916,7 @@ void MainWindow::populate_user_strip()
     ui->set_avatar_url(my_avatar_url_);
     ui->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc);
-            return it == tk_avatars_.end() ? nullptr : it->second.get();
-        });
+        { return avatar_cache_.peek(mxc); });
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
@@ -4971,10 +4969,7 @@ void MainWindow::open_settings_()
     settings_widget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc);
-            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
-        },
+        { return avatar_cache_.peek(mxc); },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
     settings_widget_->set_group_inactive_pref(
@@ -4986,10 +4981,10 @@ void MainWindow::open_settings_()
                                          my_display_name_);
 
     // Refresh storage sizes each time settings opens.
-    compute_cache_sizes_([this](uint64_t local, uint64_t sdk)
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory)
     {
         if (settings_widget_)
-            settings_widget_->set_cache_sizes(local, sdk);
+            settings_widget_->set_cache_sizes(local, sdk, memory);
     });
 
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
@@ -6471,11 +6466,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    auto it = tk_avatars_.find(av_mxc);
-                    if (it != tk_avatars_.end())
-                    {
-                        avatar = it->second.get();
-                    }
+                    avatar = avatar_cache_.peek(av_mxc);
                 }
                 break;
             }

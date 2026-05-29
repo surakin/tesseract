@@ -3726,6 +3726,13 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     sel_is_dragging_ = false;
     press_sel_ = false;
     messages_ = std::move(msgs);
+    // Whole-room pinning: hold an ImageRef for every row that displays a
+    // cached image so it survives eviction while this room is open. Rows whose
+    // image is not yet decoded acquire null here and re-pin on notify_*_ready.
+    for (auto& m : messages_)
+    {
+        try_acquire_image_(m);
+    }
     pending_scroll_event_id_.clear();
     if (room_switch)
     {
@@ -3995,6 +4002,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
             start_inline_video(msg);
         }
         messages_.push_back(std::move(msg));
+        try_acquire_image_(messages_.back());
         invalidate_data();
         if (at_bottom)
         {
@@ -4018,6 +4026,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
         [&]
         {
             messages_.insert(messages_.begin() + index, std::move(msg));
+            try_acquire_image_(messages_[index]);
             invalidate_data();
         });
 }
@@ -4085,7 +4094,18 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         }
     }
 
+    // Preserve the pinned image across the update when the displayed key is
+    // unchanged (reaction / receipt / edit on an image row), avoiding a
+    // release-then-reacquire gap. Otherwise the row re-pins below.
+    const std::string old_key = messages_[index].owned_image_key;
+    if (messages_[index].owned_image && !old_key.empty() &&
+        row_image_key_(msg) == old_key)
+    {
+        msg.owned_image = std::move(messages_[index].owned_image);
+        msg.owned_image_key = old_key;
+    }
     messages_[index] = std::move(msg);
+    try_acquire_image_(messages_[index]);
     invalidate_data();
 }
 
@@ -4214,6 +4234,59 @@ void MessageListView::set_image_provider(ImageProvider p)
     image_provider_ = std::move(p);
 }
 
+void MessageListView::set_image_acquirer(ImageAcquirer a)
+{
+    image_acquirer_ = std::move(a);
+}
+
+std::string MessageListView::row_image_key_(const MessageRowData& m) const
+{
+    using Kind = MessageRowData::Kind;
+    switch (m.kind)
+    {
+    case Kind::Image:
+    case Kind::Sticker:
+    case Kind::Video:
+    {
+        const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+        return look ? look->fetch_token() : std::string{};
+    }
+    default:
+        break;
+    }
+    // URL-preview image (text / notice rows carry it via the preview cache).
+    if (!m.first_url.empty() && preview_provider_)
+    {
+        if (const auto* p = preview_provider_(m.first_url))
+        {
+            return p->image_mxc;
+        }
+    }
+    return std::string{};
+}
+
+void MessageListView::try_acquire_image_(MessageRowData& m)
+{
+    if (!image_acquirer_)
+    {
+        return;
+    }
+    const std::string key = row_image_key_(m);
+    if (key.empty())
+    {
+        // Nothing pinnable (e.g. a preview without an image, or a text row).
+        m.owned_image.reset();
+        m.owned_image_key.clear();
+        return;
+    }
+    if (m.owned_image && m.owned_image_key == key)
+    {
+        return; // already holding the right image
+    }
+    m.owned_image = image_acquirer_(key); // null when not yet decoded — fine
+    m.owned_image_key = key;
+}
+
 void MessageListView::set_preview_provider(PreviewProvider p)
 {
     preview_provider_ = std::move(p);
@@ -4227,6 +4300,9 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
     {
         if (messages_[i].first_url == url)
         {
+            // Preview data (hence image_mxc) is now known; pin the image if it
+            // is already cached. Otherwise notify_image_ready re-pins on decode.
+            try_acquire_image_(messages_[i]);
             if (first > 0 && static_cast<int>(i) < first)
             {
                 preserve_top_through(
@@ -4249,32 +4325,45 @@ void MessageListView::notify_image_ready(const std::string& url)
 {
     on_gate_notify_(url);
     auto [first, last] = visible_range();
+    bool matched = false;
+    bool above = false;
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
         // Match either the full-res token or the thumbnail token.
         // ShellBase pre-fetches whichever is present (thumbnail wins), so an
         // Image/Sticker row whose only cached representation is the thumbnail
         // would otherwise never remeasure when bytes arrive.
-        const auto& m = messages_[i];
+        auto& m = messages_[i];
         const bool src_match = m.source && m.source->fetch_token() == url;
         const bool thumb_match = m.thumbnail && m.thumbnail->fetch_token() == url;
         const bool fsrc_match = m.file_source && m.file_source->fetch_token() == url;
-        if (src_match || thumb_match || fsrc_match)
+        // Preview-image rows carry their image under a key the media-source
+        // match above does not see; check it only when nothing else matched.
+        const bool preview_match =
+            !src_match && !thumb_match && !fsrc_match && !m.first_url.empty() &&
+            !url.empty() && row_image_key_(m) == url;
+        if (src_match || thumb_match || fsrc_match || preview_match)
         {
+            // Newly decoded → re-pin this row now that the image exists.
+            try_acquire_image_(m);
+            matched = true;
             if (first > 0 && static_cast<int>(i) < first)
             {
-                preserve_top_through(
-                    [&]
-                    {
-                        invalidate_data();
-                    });
+                above = true;
             }
-            else
-            {
-                invalidate_data();
-            }
-            return;
         }
+    }
+    if (!matched)
+    {
+        return;
+    }
+    if (above)
+    {
+        preserve_top_through([&] { invalidate_data(); });
+    }
+    else
+    {
+        invalidate_data();
     }
 }
 

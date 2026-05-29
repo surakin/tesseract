@@ -2897,10 +2897,11 @@ void MainWindow::on_create(HWND hwnd)
         settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
         settings_view_->on_clear_caches = [this]
         {
-            clear_all_caches_([this](uint64_t local, uint64_t sdk)
+            clear_all_caches_([this](uint64_t local, uint64_t sdk,
+                                     uint64_t memory)
             {
                 if (settings_view_)
-                    settings_view_->set_cache_sizes(local, sdk);
+                    settings_view_->set_cache_sizes(local, sdk, memory);
             });
         };
         settings_surface_->set_root(std::move(view));
@@ -3390,10 +3391,10 @@ void MainWindow::open_settings_()
         settings_surface_->relayout();
     }
 
-    compute_cache_sizes_([this](uint64_t local, uint64_t sdk)
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory)
     {
         if (settings_view_)
-            settings_view_->set_cache_sizes(local, sdk);
+            settings_view_->set_cache_sizes(local, sdk, memory);
     });
 
     settings_visible_ = true;
@@ -4427,7 +4428,7 @@ void MainWindow::try_load_animation(const std::string& url,
     anim_cache_.store(url, std::move(imgs), std::move(delays),
                       static_cast<std::int64_t>(GetTickCount64()));
     // Drop any static-cache leftover from a prior probe.
-    tk_images_.erase(url);
+    image_cache_.evict(url);
 
     if (!anim_timer_running_ && hwnd_)
     {
@@ -4539,14 +4540,14 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     case MediaKind::RoomAvatar:
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            tk_avatars_.emplace(cache_key, std::move(img));
+            avatar_cache_.store(cache_key, std::move(img));
         }
         main_app_surface_->relayout();
         break;
     case MediaKind::UserAvatar:
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            tk_avatars_.emplace(cache_key, std::move(img));
+            avatar_cache_.store(cache_key, std::move(img));
         }
         if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
             account_picker_surface_)
@@ -4560,7 +4561,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             if (auto img = main_app_surface_->factory().decode_image(bytes))
             {
-                tk_images_.emplace(cache_key, std::move(img));
+                image_cache_.store(cache_key, std::move(img));
             }
             else
             {
@@ -4578,13 +4579,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         break;
     case MediaKind::Tile:
-        if (tk_images_.count(cache_key))
+        if (image_cache_.contains(cache_key))
         {
             return;
         }
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            tk_images_.emplace(cache_key, std::move(img));
+            image_cache_.store(cache_key, std::move(img));
             if (room_view_)
             {
                 room_view_->message_list()->invalidate_data();
@@ -4968,7 +4969,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (tk_images_.count(key) || !main_app_surface_)
+    if (image_cache_.contains(key) || !main_app_surface_)
     {
         return;
     }
@@ -4978,7 +4979,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
     {
         return;
     }
-    tk_images_.emplace(key, std::move(img));
+    image_cache_.store(key, std::move(img));
     if (HWND ms = main_app_surface_->hwnd())
     {
         InvalidateRect(ms, nullptr, FALSE);
@@ -6904,11 +6905,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    auto it = tk_avatars_.find(av_mxc);
-                    if (it != tk_avatars_.end())
-                    {
-                        avatar = it->second.get();
-                    }
+                    avatar = avatar_cache_.peek(av_mxc);
                 }
                 break;
             }

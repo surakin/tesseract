@@ -39,7 +39,8 @@ public:
     void set_server_info(const tesseract::ServerInfo& info);
 
     /// Update the Storage size labels in the About section.
-    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes);
+    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
+                         uint64_t memory_bytes);
 
     void set_controller(tesseract::SettingsController* ctrl,
                         const std::string& current_display_name);

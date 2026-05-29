@@ -362,14 +362,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     start_anim_tick_();
                     return f;
                 }
-                if (auto it = tk_images_.find(url); it != tk_images_.end())
+                if (const auto* img = image_cache_.peek(url))
                 {
-                    return it->second.get();
+                    return img;
                 }
                 // Avatars live in a separate cache — let the viewer find
                 // them so clicking a profile avatar shows the cached image.
-                auto av = tk_avatars_.find(url);
-                return av == tk_avatars_.end() ? nullptr : av->second.get();
+                return avatar_cache_.peek(url);
             });
 
         // ---- Room view ----
@@ -391,9 +390,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     if (m.avatar_url.empty())
                         return nullptr;
                     ensure_user_avatar_(m.avatar_url);
-                    auto it = tk_avatars_.find(m.avatar_url);
-                    return it == tk_avatars_.end() ? nullptr
-                                                   : it->second.get();
+                    return avatar_cache_.peek(m.avatar_url);
                 }
                 return nullptr;
             });
@@ -2928,7 +2925,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     if (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar)
     {
-        if (tk_avatars_.count(cache_key))
+        if (avatar_cache_.contains(cache_key))
         {
             return;
         }
@@ -2940,7 +2937,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         QImage scaled = img.scaled(kAvatarCacheSize, kAvatarCacheSize, Qt::KeepAspectRatio,
                                    Qt::SmoothTransformation);
-        tk_avatars_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
+        avatar_cache_.store(cache_key, tk::qt6::make_image(std::move(scaled)));
         if (mainAppSurface_)
         {
             mainAppSurface_->update();
@@ -2959,7 +2956,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     if (kind == MediaKind::Tile)
     {
-        if (tk_images_.count(cache_key))
+        if (image_cache_.contains(cache_key))
         {
             return;
         }
@@ -2969,7 +2966,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             return;
         }
-        tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(img)));
+        image_cache_.store(cache_key, tk::qt6::make_image(std::move(img)));
         if (mainApp_)
         {
             mainApp_->room_view()->message_list()->invalidate_data();
@@ -2985,7 +2982,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // MediaImage — decode (same path as pickers) then store. Decode stays
     // on the UI thread here (unchanged behaviour); pickers decode on a
     // worker via ensure_picker_image_.
-    if (tk_images_.count(cache_key) || anim_cache_.has(cache_key))
+    if (image_cache_.contains(cache_key) || anim_cache_.has(cache_key))
     {
         mediaImageSizes_.erase(cache_key);
         return;
@@ -3011,7 +3008,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     }
     else if (d.still)
     {
-        tk_images_.emplace(cache_key, std::move(d.still));
+        image_cache_.store(cache_key, std::move(d.still));
     }
     else
     {
@@ -3279,7 +3276,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [this, eid, bytes = std::move(bytes)]() mutable
                 {
                     const std::string key = "thumb::" + eid;
-                    if (tk_images_.count(key))
+                    if (image_cache_.contains(key))
                     {
                         return;
                     }
@@ -3302,7 +3299,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                             }
                             player->stop();
                             player->deleteLater();
-                            if (tk_images_.count(key))
+                            if (image_cache_.contains(key))
                             {
                                 return;
                             }
@@ -3365,13 +3362,13 @@ void MainWindow::repaint_anim_frame_()
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (tk_images_.count(key))
+    if (image_cache_.contains(key))
     {
         return;
     }
     QImage img(w, h, QImage::Format_RGBA8888);
     std::memcpy(img.bits(), rgba.data(), rgba.size());
-    tk_images_.emplace(key, tk::qt6::make_image(std::move(img)));
+    image_cache_.store(key, tk::qt6::make_image(std::move(img)));
     if (mainAppSurface_)
     {
         mainAppSurface_->update();
@@ -3842,10 +3839,12 @@ void MainWindow::openSettings()
         connect(settingsWidget_, &SettingsWidget::clearCachesRequested, this,
                 [this]
                 {
-                    clear_all_caches_([this](uint64_t local, uint64_t sdk)
+                    clear_all_caches_(
+                        [this](uint64_t local, uint64_t sdk, uint64_t memory)
                     {
                         if (settingsWidget_)
-                            settingsWidget_->set_cache_sizes(local, sdk);
+                            settingsWidget_->set_cache_sizes(local, sdk,
+                                                             memory);
                     });
                 });
 
@@ -3871,10 +3870,7 @@ void MainWindow::openSettings()
     settingsWidget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc);
-            return it != tk_avatars_.end() ? it->second.get() : nullptr;
-        },
+        { return avatar_cache_.peek(mxc); },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
 
@@ -3883,10 +3879,10 @@ void MainWindow::openSettings()
                                         my_display_name_);
 
     // Refresh storage sizes each time settings opens.
-    compute_cache_sizes_([this](uint64_t local, uint64_t sdk)
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory)
     {
         if (settingsWidget_)
-            settingsWidget_->set_cache_sizes(local, sdk);
+            settingsWidget_->set_cache_sizes(local, sdk, memory);
     });
 
     contentStack_->setCurrentWidget(settingsWidget_);
@@ -4148,11 +4144,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    auto it = tk_avatars_.find(av_mxc);
-                    if (it != tk_avatars_.end())
-                    {
-                        avatar = it->second.get();
-                    }
+                    avatar = avatar_cache_.peek(av_mxc);
                 }
                 break;
             }
