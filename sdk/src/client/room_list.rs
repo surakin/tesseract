@@ -182,7 +182,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn get_room_summary(&mut self, room_id_or_alias: &str) -> String {
+    pub fn get_room_summary(&self, room_id_or_alias: &str) -> String {
         use matrix_sdk::ruma::api::client::room::get_summary::v1::Request;
         use matrix_sdk::ruma::room::{JoinRuleSummary, RoomType};
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
@@ -330,7 +330,7 @@ impl ClientFfi {
 
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn get_room_members(&mut self, room_id: &str) -> Vec<crate::ffi::RoomMember> {
+    pub fn get_room_members(&self, room_id: &str) -> Vec<crate::ffi::RoomMember> {
         let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return Vec::new();
@@ -359,7 +359,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn get_room_members(&mut self, _room_id: &str) -> Vec<crate::ffi::RoomMember> {
+    pub fn get_room_members(&self, _room_id: &str) -> Vec<crate::ffi::RoomMember> {
         Vec::new()
     }
 

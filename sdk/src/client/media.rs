@@ -153,7 +153,7 @@ pub(super) async fn emit_notification(
 
 #[cfg(not(test))]
 impl ClientFfi {
-    pub fn fetch_avatar_bytes(&mut self, room_id: &str) -> Vec<u8> {
+    pub fn fetch_avatar_bytes(&self, room_id: &str) -> Vec<u8> {
         use matrix_sdk::media::MediaFormat;
         let Some(client) = self.client.clone() else {
             return Vec::new();
@@ -175,7 +175,7 @@ impl ClientFfi {
         })
     }
 
-    pub fn fetch_media_bytes(&mut self, mxc_url: &str) -> Vec<u8> {
+    pub fn fetch_media_bytes(&self, mxc_url: &str) -> Vec<u8> {
         use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
@@ -207,7 +207,7 @@ impl ClientFfi {
     /// and JSON payloads are deserialised as a full `MediaSource` so the SDK
     /// can decrypt encrypted attachments (MSC2545 stickers, encrypted images,
     /// etc.). Returns an empty Vec on any failure.
-    pub fn fetch_source_bytes(&mut self, source: &str) -> Vec<u8> {
+    pub fn fetch_source_bytes(&self, source: &str) -> Vec<u8> {
         use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
@@ -247,7 +247,7 @@ impl ClientFfi {
         })
     }
 
-    pub fn fetch_url_bytes(&mut self, url: &str) -> Vec<u8> {
+    pub fn fetch_url_bytes(&self, url: &str) -> Vec<u8> {
         if url.is_empty() {
             return Vec::new();
         }
@@ -307,7 +307,7 @@ impl ClientFfi {
     // -----------------------------------------------------------------------
 
     #[allow(deprecated)]
-    pub fn get_url_preview(&mut self, url: &str) -> String {
+    pub fn get_url_preview(&self, url: &str) -> String {
         use ruma::api::client::media::get_media_preview::v3::Request;
 
         let Some(client) = self.client.clone() else {
@@ -352,9 +352,9 @@ impl ClientFfi {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn fetch_avatar_bytes(&mut self, _room_id: &str) -> Vec<u8> { Vec::new() }
-    pub fn fetch_media_bytes(&mut self, _mxc_url: &str) -> Vec<u8> { Vec::new() }
-    pub fn fetch_source_bytes(&mut self, _source: &str) -> Vec<u8> { Vec::new() }
-    pub fn fetch_url_bytes(&mut self, _url: &str) -> Vec<u8> { Vec::new() }
-    pub fn get_url_preview(&mut self, _url: &str) -> String { String::new() }
+    pub fn fetch_avatar_bytes(&self, _room_id: &str) -> Vec<u8> { Vec::new() }
+    pub fn fetch_media_bytes(&self, _mxc_url: &str) -> Vec<u8> { Vec::new() }
+    pub fn fetch_source_bytes(&self, _source: &str) -> Vec<u8> { Vec::new() }
+    pub fn fetch_url_bytes(&self, _url: &str) -> Vec<u8> { Vec::new() }
+    pub fn get_url_preview(&self, _url: &str) -> String { String::new() }
 }

@@ -443,7 +443,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             [this](const std::string& src,
                    std::function<void(std::vector<std::uint8_t>)> on_ready)
             {
-                runOnPool_(
+                run_async_(
                     [this, src, on_ready = std::move(on_ready)]() mutable
                     {
                         auto bytes = client_->fetch_source_bytes(src);
@@ -558,7 +558,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             }
             std::string room = current_room_id_;
             begin_focused_subscription_(room, event_id);
-            runOnPool_(
+            run_async_(
                 [this, room, event_id]
                 {
                     client_->subscribe_room_at(room, event_id);
@@ -983,7 +983,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (path.isEmpty())
                 return;
             std::string dest = path.toStdString();
-            runOnPool_(
+            run_async_(
                 [this, source_url = std::move(source_url), dest]()
                 {
                     auto bytes = client_->fetch_source_bytes(source_url);
@@ -1013,7 +1013,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();
             std::string src = src_tok;
-            runOnPool_(
+            run_async_(
                 [this, src = std::move(src)]() mutable
                 {
                     auto bytes = client_->fetch_source_bytes(src);
@@ -1042,7 +1042,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 return;
             std::string url  = hit.source ? hit.source->fetch_token() : std::string{};
             std::string dest = path.toStdString();
-            runOnPool_(
+            run_async_(
                 [this, url, dest]()
                 {
                     auto bytes = client_->fetch_source_bytes(url);
@@ -1065,7 +1065,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (!client_)
                 return;
             auto* c = client_;
-            runOnPool_(
+            run_async_(
                 [this, c, room_id]()
                 {
                     auto members = c->get_room_members(room_id);
@@ -1093,7 +1093,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (!client_)
                 return;
             auto* c = client_;
-            runOnPool_(
+            run_async_(
                 [this, c, room_id, topic]()
                 {
                     auto res = c->set_room_topic(room_id, topic);
@@ -1118,7 +1118,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (!client_)
                 return;
             auto* c = client_;
-            runOnPool_(
+            run_async_(
                 [this, c, room_id]()
                 {
                     auto res = c->leave_room(room_id);
@@ -1148,7 +1148,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (!client_)
                 return;
             auto* c = client_;
-            runOnPool_(
+            run_async_(
                 [c, user_id]()
                 {
                     c->ignore_user(user_id);
@@ -1168,7 +1168,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (path.isEmpty())
                 return;
             std::string dest = path.toStdString();
-            runOnPool_(
+            run_async_(
                 [this, source_json = std::move(source_json), dest]()
                 {
                     auto bytes = client_->fetch_source_bytes(source_json);
@@ -1815,37 +1815,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow()
 {
-    // Drain ALL background workers before tearing the clients down.
-    //
-    // Two independent worker systems must both be drained:
-    //
-    //  1. mediaPool_ (QThreadPool) — used by runOnPool_() for pagination.
-    //     Guarded by shuttingDown_; drained by mediaPool_.waitForDone(-1).
-    //
-    //  2. ShellBase detached std::threads — used by run_async_() for avatar /
-    //     media fetches (ensure_room_avatar_, ensure_user_avatar_,
-    //     ensure_media_image_), SettingsController, LoginView's
-    //     homeserver-discovery debounce, and LinuxUpConnectorQt's distributor
-    //     scan. Guarded by shutting_down_ (ShellBase); tracked by
-    //     workers_in_flight_ / workers_cv_. (Historically the LoginView and
-    //     UpConnector workers ran on their own untracked threads; this is
-    //     the defect class that produced both the ~StickerPicker abort
-    //     ace5261 fixed in SettingsController and the ~MessageListView
-    //     unlink_chunk abort that motivated extending the drain here.)
-    //
-    // JoinRoomDialog's QThreadPool::globalInstance() tasks are deliberately
-    // not drained here — the dialog is modal and tears its workers down on
-    // close before this destructor runs.
-    //
-    // Both flags must be flipped first so no new work is enqueued after the
-    // clear/drain calls.  stop_sync() is called early to cancel the Rust sync
-    // loop; it does NOT cancel individual fetch_*() HTTP requests (those block
-    // on tokio block_on(), which only unblocks when rt.drop() kills the I/O
-    // driver inside ~Client()).  ~ClientFfi calls stop_sync() a second time as
-    // a no-op safety net (handler.take() returns None on repeated calls).
-    shuttingDown_.store(true, std::memory_order_release);
-    shutting_down_.store(true, std::memory_order_release);
-    mediaPool_.clear();
+    // Drain all background workers before tearing the clients down.
+    // The ShellBase WorkerPool destructor joins its threads after the
+    // destructor body completes (member-destruction order ensures pool_ is
+    // destroyed before accounts_). Stop sync early so ongoing Rust tasks
+    // can wind down; HTTP requests in block_on() only unblock when the
+    // tokio runtime is dropped inside ~Client().
     for (auto& a : accounts_)
     {
         if (a && a->client)
@@ -1857,21 +1832,6 @@ MainWindow::~MainWindow()
     {
         pending_login_client_->stop_sync();
     }
-    // Drain ShellBase detached std::threads (avatar / media fetches).
-    // First pass: give threads already past the shutting_down_ check a chance
-    // to finish on their own (stop_sync() above cancels the sync loop, but
-    // does NOT cancel individual fetch_*() HTTP requests).
-    {
-        std::unique_lock<std::mutex> lk(workers_mu_);
-        workers_cv_.wait_for(lk, std::chrono::seconds(5),
-                             [this]
-                             {
-                                 return workers_in_flight_ == 0;
-                             });
-    }
-    // Drain Qt pool workers (pagination).  Unbounded: shutting_down_ is true
-    // so no new runnables can be queued, and clear() removed pending ones.
-    mediaPool_.waitForDone(-1);
 
     client_ = nullptr;
     event_handler_ = nullptr;
@@ -1883,33 +1843,13 @@ MainWindow::~MainWindow()
     delete loginView_;
     loginView_ = nullptr;
 
-    // Second pass: explicitly destroy all accounts and the pending-login
-    // client HERE, while workers_mu_ / workers_cv_ are still alive (destructor
-    // body, before ShellBase's member-destructor pass).
-    //
-    // Why this matters: in ShellBase, workers_mu_ is declared after accounts_,
-    // so C++'s reverse-order member destruction destroys workers_mu_ BEFORE
-    // accounts_.  If the 5-second wait above timed out (a thread was blocked
-    // in a slow HTTP fetch that stop_sync() didn't cancel), the thread is still
-    // alive when member destruction runs.  Each ~Client() calls rt.drop() which
-    // shuts the tokio I/O driver; the blocked block_on() then unblocks and the
-    // thread tries to acquire workers_mu_ — but the mutex is already destroyed
-    // → heap corruption.
-    //
-    // By clearing accounts_ here, rt.drop() fires while workers_mu_ is still
-    // alive.  The second wait below gives those threads time to lock workers_mu_,
-    // decrement workers_in_flight_, and exit before the member-destructor pass
-    // runs.  After the second wait, workers_mu_ can be safely destroyed.
+    // Explicitly destroy accounts here (destructor body) so pool_ — declared
+    // later in ShellBase than accounts_ — is destroyed first in the
+    // member-destructor pass.  pool_'s destructor joins its 8 threads before
+    // accounts_ (and thus ~Client() / rt.drop()) runs, eliminating the
+    // use-after-free hazard the old unbounded-thread design had.
     pending_login_client_.reset();
     accounts_.clear();
-    {
-        std::unique_lock<std::mutex> lk(workers_mu_);
-        workers_cv_.wait_for(lk, std::chrono::seconds(5),
-                             [this]
-                             {
-                                 return workers_in_flight_ == 0;
-                             });
-    }
 }
 
 #ifdef HAVE_XDG_ACTIVATION
@@ -2070,24 +2010,6 @@ void MainWindow::activateOnStartup()
     QTimer::singleShot(0, this, [this, token]() { activateWindowWithToken_(token); });
 }
 
-void MainWindow::runOnPool_(std::function<void()> fn)
-{
-    if (shuttingDown_.load(std::memory_order_acquire))
-    {
-        return;
-    }
-    auto* runner = QRunnable::create(
-        [this, fn = std::move(fn)]() mutable
-        {
-            if (shuttingDown_.load(std::memory_order_acquire))
-            {
-                return;
-            }
-            fn();
-        });
-    mediaPool_.start(runner);
-}
-
 void MainWindow::ensureViewerFullres_(const std::string& url)
 {
     if (url.empty() || viewerFullresCache_.count(url) || anim_cache_.has(url))
@@ -2098,7 +2020,7 @@ void MainWindow::ensureViewerFullres_(const std::string& url)
     {
         return;
     }
-    runOnPool_(
+    run_async_(
         [this, url]()
         {
             auto bytes = client_->fetch_source_bytes(url);
@@ -2762,7 +2684,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
             return;
         state.in_flight = true;
     }
-    runOnPool_(
+    run_async_(
         [this, c, sub_room, visible_ids = std::move(visible_ids)]
         {
             auto res = c->subscribe_room(sub_room);
@@ -2821,7 +2743,7 @@ void MainWindow::requestMoreHistory(const std::string& room_id)
         state.in_flight = false;
         return;
     }
-    runOnPool_(
+    run_async_(
         [this, c, room_id]
         {
             auto res = c->paginate_back_with_status(room_id, kPaginationBatch);
@@ -2863,7 +2785,7 @@ void MainWindow::openJumpToDateDialog()
         QDateTime(date, QTime(0, 0, 0), QTimeZone::utc()).toMSecsSinceEpoch());
 
     const std::string room_id = current_room_id_;
-    runOnPool_(
+    run_async_(
         [this, room_id, ts_ms]
         {
             auto res = client_->timestamp_to_event(room_id, ts_ms, "f");
@@ -2887,7 +2809,7 @@ void MainWindow::openJumpToDateDialog()
                 [this, room_id, event_id]
                 {
                     begin_focused_subscription_(room_id, event_id);
-                    runOnPool_(
+                    run_async_(
                         [this, room_id, event_id]
                         {
                             client_->subscribe_room_at(room_id, event_id);
@@ -3349,7 +3271,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                                            const std::string& video_url)
 {
     const std::string src = video_url;
-    runOnPool_(
+    run_async_(
         [this, eid = event_id, src]()
         {
             auto bytes = client_->fetch_source_bytes(src);
@@ -3704,7 +3626,7 @@ void MainWindow::onRecoveryVerifyClicked()
         recoveryKeyField_->set_enabled(false);
     }
 
-    runOnPool_(
+    run_async_(
         [this, k = key]()
         {
             auto res = client_->recover(k);

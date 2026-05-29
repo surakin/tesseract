@@ -33,7 +33,6 @@
 #include "views/SlashCommandEngine.h"
 #include "views/SlashCommandPopup.h"
 
-#include <atomic>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -43,7 +42,6 @@
 #include <vector>
 
 #include <QLocalServer>
-#include <QThreadPool>
 
 class EmojiPicker;
 class StickerPicker;
@@ -254,11 +252,6 @@ private:
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
 
-    /// Run `fn` on `mediaPool_`. No-ops when shutdown is in progress, and
-    /// the runnable itself rechecks the flag before invoking `fn` so a
-    /// worker that pulled from the queue just after the flag flipped
-    /// bails before crossing the FFI boundary into `client_`.
-    void runOnPool_(std::function<void()> fn);
 
     /// Kick a full-resolution fetch for the image viewer (decoded at native
     /// pixels, not the scaled inline thumbnail size). Idempotent — no-op if
@@ -272,8 +265,6 @@ private:
     /// this, a worker mid-`client_.fetch_*` racing against `~ClientFfi`
     /// is a data race on `&mut self` in Rust that surfaces as a
     /// `panic_in_cleanup` abort through cxx's `prevent_unwind` guard.
-    std::atomic<bool> shuttingDown_{false};
-    QThreadPool mediaPool_;
     /// Pinned `(max_w, max_h)` for in-flight `MediaImage` fetches so the
     /// UI-thread decode can scale them. RoomAvatar / UserAvatar use the
     /// shell-wide constants and don't need pinning.

@@ -18,14 +18,15 @@
 #include "app/RoomWindowBase.h"
 #include "views/MessageListView.h"
 
-#include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -362,11 +363,28 @@ protected:
     // Ref-count of active subscriptions per room_id across all secondary windows.
     std::unordered_map<std::string, int> room_subscription_refs_;
 
-    // ── Worker threads ────────────────────────────────────────────────────────
-    std::atomic<bool> shutting_down_{false};
-    std::mutex workers_mu_;
-    std::condition_variable workers_cv_;
-    int workers_in_flight_ = 0;
+    // ── Worker thread pool ────────────────────────────────────────────────────
+    // Fixed-size producer-consumer pool shared by all run_async_() callers.
+    // 8 threads gives enough concurrency for parallel media fetches while
+    // bounding OS thread count (tokio handles actual I/O async internally).
+    struct WorkerPool
+    {
+        static constexpr int kThreads = 8;
+
+        WorkerPool();
+        ~WorkerPool();
+
+        // Enqueue fn for execution on the next free thread. If all threads
+        // are busy the task queues and runs when a thread becomes available.
+        void post(std::function<void()> fn);
+
+        std::deque<std::function<void()>> queue_;
+        std::mutex                        mu_;
+        std::condition_variable           cv_;
+        bool                              stop_ = false;
+        std::vector<std::thread>          threads_;
+    };
+    WorkerPool pool_;
 
     // ── Media kind tag ────────────────────────────────────────────────────────
     enum class MediaKind : std::uint8_t

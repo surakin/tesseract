@@ -1259,30 +1259,30 @@ pub mod ffi {
         /// (typically JPEG or PNG). Returns an empty Vec when no avatar is set
         /// or the download fails. The SDK media cache is consulted first so
         /// subsequent calls are instant.
-        fn fetch_avatar_bytes(self: &mut ClientFfi, room_id: &str) -> Vec<u8>;
+        fn fetch_avatar_bytes(self: &ClientFfi, room_id: &str) -> Vec<u8>;
 
         /// Download arbitrary mxc:// media and return the raw bytes. Returns
         /// an empty Vec when the URL is invalid, media is unavailable, or the
         /// client is not logged in. The SDK media cache is consulted first so
         /// repeat calls for the same URL are instant.
-        fn fetch_media_bytes(self: &mut ClientFfi, mxc_url: &str) -> Vec<u8>;
+        fn fetch_media_bytes(self: &ClientFfi, mxc_url: &str) -> Vec<u8>;
 
         /// Download media from a JSON-serialised `MediaSource` (plain mxc:// or
         /// encrypted `EncryptedFile`). Returns raw bytes on success or an
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
-        fn fetch_source_bytes(self: &mut ClientFfi, source_json: &str) -> Vec<u8>;
+        fn fetch_source_bytes(self: &ClientFfi, source_json: &str) -> Vec<u8>;
 
         /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
         /// Returns the response body on success, or an empty Vec on any error.
         /// Sets User-Agent to "Tesseract/0.1 (Matrix client)" per OSM tile policy.
-        fn fetch_url_bytes(self: &mut ClientFfi, url: &str) -> Vec<u8>;
+        fn fetch_url_bytes(self: &ClientFfi, url: &str) -> Vec<u8>;
 
         /// Fetch OpenGraph preview metadata for an http(s) URL from the
         /// homeserver's `/_matrix/media/v3/preview_url` endpoint.
         /// Returns the raw JSON response body on success, or an empty String
         /// on any failure (not logged in, network error, rate-limit, no data).
         /// Blocks the calling thread — call only from a worker thread.
-        fn get_url_preview(self: &mut ClientFfi, url: &str) -> String;
+        fn get_url_preview(self: &ClientFfi, url: &str) -> String;
 
         // ----- MSC3266 room summary / join -----
 
@@ -1291,7 +1291,7 @@ pub mod ffi {
         /// not the client is a member. Accepts a room ID (`!id:server`) or
         /// alias (`#alias:server`). Returns a JSON object on success or an
         /// empty string on error. Blocks the calling thread.
-        fn get_room_summary(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
+        fn get_room_summary(self: &ClientFfi, room_id_or_alias: &str) -> String;
 
         /// Join a room by its ID or alias. Returns the canonical room ID
         /// (e.g. `!id:server`) on success, or an empty string on failure.
@@ -1305,7 +1305,7 @@ pub mod ffi {
         fn invite_user(self: &mut ClientFfi, room_id: &str, user_id: &str) -> OpResult;
 
         /// Fetch the joined member list for a room. Blocks — worker thread.
-        fn get_room_members(self: &mut ClientFfi, room_id: &str) -> Vec<RoomMember>;
+        fn get_room_members(self: &ClientFfi, room_id: &str) -> Vec<RoomMember>;
 
         /// Send an m.room.topic state event. Blocks — worker thread.
         fn set_room_topic(self: &mut ClientFfi, room_id: &str, topic: &str) -> OpResult;

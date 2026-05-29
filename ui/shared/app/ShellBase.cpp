@@ -44,30 +44,60 @@ void ShellBase::cancel_debounce_(DebounceSlot slot)
     ++debounce_gen_[static_cast<int>(slot)];
 }
 
+// ── WorkerPool ─────────────────────────────────────────────────────────────
+
+ShellBase::WorkerPool::WorkerPool()
+{
+    for (int i = 0; i < kThreads; ++i)
+    {
+        threads_.emplace_back(
+            [this]
+            {
+                for (;;)
+                {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lk(mu_);
+                        cv_.wait(lk, [this] { return stop_ || !queue_.empty(); });
+                        if (stop_ && queue_.empty())
+                            return;
+                        task = std::move(queue_.front());
+                        queue_.pop_front();
+                    }
+                    task();
+                }
+            });
+    }
+}
+
+ShellBase::WorkerPool::~WorkerPool()
+{
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        stop_ = true;
+        // Clear the pending queue so threads don't start new work after the
+        // stop flag is set — matching the previous shutting_down_ guard.
+        queue_.clear();
+    }
+    cv_.notify_all();
+    for (auto& t : threads_)
+        t.join();
+}
+
+void ShellBase::WorkerPool::post(std::function<void()> fn)
+{
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (stop_)
+            return;
+        queue_.push_back(std::move(fn));
+    }
+    cv_.notify_one();
+}
+
 void ShellBase::run_async_(std::function<void()> fn)
 {
-    if (shutting_down_.load(std::memory_order_acquire))
-    {
-        return;
-    }
-    {
-        std::lock_guard<std::mutex> lk(workers_mu_);
-        ++workers_in_flight_;
-    }
-    std::thread(
-        [this, fn = std::move(fn)]() mutable
-        {
-            if (!shutting_down_.load(std::memory_order_acquire))
-            {
-                fn();
-            }
-            std::lock_guard<std::mutex> lk(workers_mu_);
-            if (--workers_in_flight_ == 0)
-            {
-                workers_cv_.notify_all();
-            }
-        })
-        .detach();
+    pool_.post(std::move(fn));
 }
 
 void ShellBase::ensure_room_avatar_(const RoomInfo& r)
@@ -2140,8 +2170,8 @@ void ShellBase::start_presence_tracking_()
         [this](PresenceTracker::State s)
     {
         // Online ↔ Unavailable transitions: send the PUT through run_async_
-        // so app shutdown drains it (shutting_down_ + workers_in_flight_
-        // protect against accessing a destroyed Client during ~ShellBase).
+        // so app shutdown drains it (WorkerPool destructor joins threads
+        // before ~ShellBase completes, protecting Client lifetime).
         // We access client_ inside the worker — same pattern as
         // ensure_room_avatar_ — so it picks up the currently-active
         // account, which is what we want.
