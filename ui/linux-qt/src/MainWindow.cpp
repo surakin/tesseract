@@ -2959,7 +2959,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     if (kind == MediaKind::Tile)
     {
-        if (pixmap_cache_.get(cache_key))
+        if (pixmap_cache_.has(cache_key))
         {
             return;
         }
@@ -2985,7 +2985,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // MediaImage — decode (same path as pickers) then store. Decode stays
     // on the UI thread here (unchanged behaviour); pickers decode on a
     // worker via ensure_picker_image_.
-    if (pixmap_cache_.get(cache_key) || anim_cache_.has(cache_key))
+    if (pixmap_cache_.has(cache_key) || anim_cache_.has(cache_key))
     {
         mediaImageSizes_.erase(cache_key);
         return;
@@ -3279,7 +3279,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [this, eid, bytes = std::move(bytes)]() mutable
                 {
                     const std::string key = "thumb::" + eid;
-                    if (pixmap_cache_.get(key))
+                    if (pixmap_cache_.has(key))
                     {
                         return;
                     }
@@ -3302,7 +3302,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                             }
                             player->stop();
                             player->deleteLater();
-                            if (pixmap_cache_.get(key))
+                            if (pixmap_cache_.has(key))
                             {
                                 return;
                             }
@@ -3365,7 +3365,7 @@ void MainWindow::repaint_anim_frame_()
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (pixmap_cache_.get(key))
+    if (pixmap_cache_.has(key))
     {
         return;
     }

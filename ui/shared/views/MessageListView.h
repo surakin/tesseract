@@ -133,6 +133,15 @@ struct MessageRowData
     // MSC2448: xyz.amorgan.blurhash placeholder string; empty when absent.
     std::string blurhash;
 
+    // Shared ownership of the primary display image (Kind::Image / Kind::Sticker,
+    // static only). Multiple rows with the same mxc URL each hold their own
+    // shared_ptr to the same Image object via PixmapCache::take(). Set in
+    // notify_image_ready; returned to cache via image_returner_ when the row
+    // is removed (remove_message / set_messages / update_message).
+    // Key = (thumbnail ? thumbnail : source)->fetch_token().
+    std::shared_ptr<tk::Image> owned_image;
+    std::string                owned_image_key;
+
     // Optimistic send state (own messages only).
     enum class PendingState
     {
@@ -255,6 +264,18 @@ public:
 
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
+
+    // Check an image out of PixmapCache into the owning row. Called by
+    // notify_image_ready when a static Kind::Image / Kind::Sticker image
+    // finishes decoding. Multiple rows with the same URL each get their own
+    // shared_ptr to the same Image. Returns nullptr for animated images.
+    using ImageTaker = std::function<std::shared_ptr<tk::Image>(const std::string&)>;
+    void set_image_taker(ImageTaker f);
+
+    // Return a row's owned image to PixmapCache on row removal.
+    using ImageReturner =
+        std::function<void(const std::string&, std::shared_ptr<tk::Image>)>;
+    void set_image_returner(ImageReturner f);
 
     // Wire the mxc → shortcode lookup used by the MSC4027 reaction tooltip.
     void set_shortcode_provider(ShortcodeProvider p);
@@ -719,9 +740,15 @@ private:
     std::string typing_text_;
     ImageProvider avatar_provider_;
     ImageProvider image_provider_;
+    ImageTaker    image_taker_;
+    ImageReturner image_returner_;
     MentionAvatarProvider mention_avatar_provider_;
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
+
+    // If row.owned_image is set, returns it to PixmapCache via image_returner_
+    // and clears both fields. No-op when image_returner_ is not wired.
+    void return_owned_image_(MessageRowData& row);
     std::string pending_scroll_event_id_;
 
     // Per-frame chip geometry for the hovered row. Mutable so paint_row

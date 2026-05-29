@@ -1849,10 +1849,9 @@ private:
             float max_w = std::min(col_w, kImageMaxW);
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string img_key = look ? look->fetch_token() : std::string{};
-            const tk::Image* img =
-                (owner_.image_provider_ && !img_key.empty())
-                    ? owner_.image_provider_(img_key)
-                    : nullptr;
+            const tk::Image* img = m.owned_image.get();
+            if (!img && owner_.image_provider_ && !img_key.empty())
+                img = owner_.image_provider_(img_key);
             tk::Size sz =
                 (img && img->width() > 0 && img->height() > 0)
                     ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
@@ -1869,10 +1868,9 @@ private:
             float max_side = std::min(col_w, kStickerSize);
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string sticker_key = look ? look->fetch_token() : std::string{};
-            const tk::Image* sticker_img =
-                (owner_.image_provider_ && !sticker_key.empty())
-                    ? owner_.image_provider_(sticker_key)
-                    : nullptr;
+            const tk::Image* sticker_img = m.owned_image.get();
+            if (!sticker_img && owner_.image_provider_ && !sticker_key.empty())
+                sticker_img = owner_.image_provider_(sticker_key);
             tk::Size sz;
             if (sticker_img && sticker_img->width() > 0 &&
                 sticker_img->height() > 0)
@@ -2102,10 +2100,9 @@ private:
             float max_w = std::min(col_w, kImageMaxW);
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string img_key = look ? look->fetch_token() : std::string{};
-            const tk::Image* img =
-                (owner_.image_provider_ && !img_key.empty())
-                    ? owner_.image_provider_(img_key)
-                    : nullptr;
+            const tk::Image* img = m.owned_image.get();
+            if (!img && owner_.image_provider_ && !img_key.empty())
+                img = owner_.image_provider_(img_key);
             tk::Size sz =
                 (img && img->width() > 0 && img->height() > 0)
                     ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
@@ -2856,11 +2853,9 @@ private:
     {
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
         const std::string display_key = look ? look->fetch_token() : std::string{};
-        const tk::Image* img = nullptr;
-        if (owner_.image_provider_ && !display_key.empty())
-        {
+        const tk::Image* img = m.owned_image.get();
+        if (!img && owner_.image_provider_ && !display_key.empty())
             img = owner_.image_provider_(display_key);
-        }
         if (img)
         {
             ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
@@ -3725,6 +3720,8 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     sel_.reset();
     sel_is_dragging_ = false;
     press_sel_ = false;
+    for (auto& row : messages_)
+        return_owned_image_(row);
     messages_ = std::move(msgs);
     pending_scroll_event_id_.clear();
     if (room_switch)
@@ -3834,6 +3831,9 @@ bool MessageListView::gate_dep_satisfied_(const MessageRowData& m) const
     case K::Image:
     case K::Sticker:
     {
+        // Row already owns a checked-out image — use its dimensions directly.
+        if (m.owned_image)
+            return m.owned_image->width() > 0 && m.owned_image->height() > 0;
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
         const std::string wait_key = look ? look->fetch_token() : std::string{};
         if (wait_key.empty() || !image_provider_)
@@ -4085,6 +4085,7 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         }
     }
 
+    return_owned_image_(messages_[index]);
     messages_[index] = std::move(msg);
     invalidate_data();
 }
@@ -4109,6 +4110,7 @@ void MessageListView::remove_message(std::size_t index)
         return;
     }
     inline_players_.erase(messages_[index].event_id);
+    return_owned_image_(messages_[index]);
     adapter_->erase_layout_cache_at(index);
     preserve_top_through(
         [&]
@@ -4214,6 +4216,24 @@ void MessageListView::set_image_provider(ImageProvider p)
     image_provider_ = std::move(p);
 }
 
+void MessageListView::set_image_taker(ImageTaker f)
+{
+    image_taker_ = std::move(f);
+}
+
+void MessageListView::set_image_returner(ImageReturner f)
+{
+    image_returner_ = std::move(f);
+}
+
+void MessageListView::return_owned_image_(MessageRowData& row)
+{
+    if (row.owned_image && image_returner_ && !row.owned_image_key.empty())
+        image_returner_(row.owned_image_key, std::move(row.owned_image));
+    row.owned_image.reset();
+    row.owned_image_key.clear();
+}
+
 void MessageListView::set_preview_provider(PreviewProvider p)
 {
     preview_provider_ = std::move(p);
@@ -4248,6 +4268,29 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
 void MessageListView::notify_image_ready(const std::string& url)
 {
     on_gate_notify_(url);
+
+    // Check the image out of PixmapCache into every matching row.
+    // Only Kind::Image and Kind::Sticker static images are checked out;
+    // animated images stay in anim_cache_ and image_taker_ returns nullptr.
+    // Multiple rows may reference the same URL — each gets its own shared_ptr
+    // to the same Image via PixmapCache::take()'s weak_ptr rejoin logic.
+    if (image_taker_)
+    {
+        for (auto& m : messages_)
+        {
+            if (m.kind != MessageRowData::Kind::Image &&
+                m.kind != MessageRowData::Kind::Sticker)
+                continue;
+            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+            const std::string key = look ? look->fetch_token() : std::string{};
+            if (key != url || m.owned_image)
+                continue;
+            m.owned_image = image_taker_(url);
+            if (m.owned_image)
+                m.owned_image_key = url;
+        }
+    }
+
     auto [first, last] = visible_range();
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {

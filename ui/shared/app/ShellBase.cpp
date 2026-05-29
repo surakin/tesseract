@@ -189,7 +189,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
 void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                     int /*max_h*/)
 {
-    if (url.empty() || pixmap_cache_.get(url) || anim_cache_.has(url))
+    if (url.empty() || pixmap_cache_.has(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -454,7 +454,7 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
 
 void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
 {
-    if (url.empty() || pixmap_cache_.get(url) || anim_cache_.has(url))
+    if (url.empty() || pixmap_cache_.has(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -513,7 +513,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 {
     (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
         .erase(url);
-    if (pixmap_cache_.get(url) || anim_cache_.has(url))
+    if (pixmap_cache_.has(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -525,7 +525,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
     }
     else if (d.still)
     {
-        pixmap_cache_.store(url, std::move(d.still));
+        pixmap_cache_.store(url, std::shared_ptr<tk::Image>(std::move(d.still)));
     }
     else
     {
