@@ -73,7 +73,6 @@ void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
     threads_ = std::move(threads);
     invalidate_data();
     reset_near_bottom_latch();
-    scroll_to_top();
 }
 
 // ── tk::ListView / Widget overrides ──────────────────────────────────────────

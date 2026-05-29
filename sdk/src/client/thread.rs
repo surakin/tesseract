@@ -403,8 +403,15 @@ impl ClientFfi {
             };
         };
         let svc = std::sync::Arc::clone(&handle.service);
-        match self.rt.block_on(async move { svc.paginate().await }) {
-            Ok(()) => {
+        // Spawn on a runtime worker thread (8 MB stack) rather than polling
+        // the future directly on the calling thread, which may be a libdispatch
+        // thread with only 512 KB of stack. svc.paginate() converts a Vec<T>
+        // into an imbl vector via deep push_back/promote_front recursion that
+        // overflows the smaller stack (same class of crash as the timeline
+        // subscribe fix in 789eb2b).
+        let join = self.rt.spawn(async move { svc.paginate().await });
+        match self.rt.block_on(join) {
+            Ok(Ok(())) => {
                 use matrix_sdk_ui::timeline::ThreadListPaginationState;
                 let reached_start = matches!(
                     handle.service.pagination_state(),
@@ -417,9 +424,15 @@ impl ClientFfi {
                     reached_end: false,
                 }
             }
-            Err(e) => PaginateResult {
+            Ok(Err(e)) => PaginateResult {
                 ok: false,
                 message: e.to_string(),
+                reached_start: false,
+                reached_end: false,
+            },
+            Err(e) => PaginateResult {
+                ok: false,
+                message: format!("paginate task panicked: {e}"),
                 reached_start: false,
                 reached_end: false,
             },

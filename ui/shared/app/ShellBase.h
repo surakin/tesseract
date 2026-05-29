@@ -262,6 +262,7 @@ protected:
     // Set to true once paginate_room_threads() signals reached_start so we
     // stop firing redundant paginations. Cleared on every room switch.
     bool threads_reached_start_ = false;
+    bool threads_paginating_    = false; // in-flight guard for paginate_threads_()
     bool compose_typing_active_ = false;
     bool typing_bar_visible_ = false;
 

@@ -1900,6 +1900,12 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
     if (room_id != current_room_id_ || !client_)
         return;
     apply_threads_list_(client_->list_room_threads(room_id));
+    // on_near_bottom only fires on user scroll, so it can't bootstrap the
+    // initial fill when the first SDK page fits within the viewport. Drive
+    // pagination here instead: each completed page triggers this callback,
+    // which requests the next one — stopping when threads_reached_start_.
+    if (thread_panel_ == ThreadPanel::List)
+        paginate_threads_();
 }
 
 void ShellBase::handle_image_packs_updated_ui_()
@@ -2741,7 +2747,15 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
         try_scroll_to_room_event_(t.new_root);
 
     if (client_ && t.new_state == ThreadPanel::List)
+    {
         apply_threads_list_(client_->list_room_threads(current_room_id_));
+        if (auto* tlv = room_view_->thread_list_view())
+            tlv->scroll_to_top();
+        // The subscription's initial paginate may have completed before the
+        // panel opened, so on_threads_updated won't fire again — kick loading
+        // here to ensure all pages are fetched.
+        paginate_threads_();
+    }
 }
 
 void ShellBase::on_threads_button_clicked()
@@ -2911,21 +2925,23 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
 
 void ShellBase::paginate_threads_()
 {
-    if (!client_ || current_room_id_.empty() || threads_reached_start_)
+    if (!client_ || current_room_id_.empty() || threads_reached_start_ ||
+        threads_paginating_)
         return;
+    threads_paginating_ = true;
     auto* c       = client_;
     auto  room_id = current_room_id_;
     run_async_([this, c, room_id]
     {
         auto r = c->paginate_room_threads(room_id);
-        if (r.reached_start)
+        post_to_ui_([this, c, room = room_id, reached = r.reached_start]
         {
-            post_to_ui_([this, c]
-            {
-                if (c == client_)
-                    threads_reached_start_ = true;
-            });
-        }
+            if (c != client_ || room != current_room_id_)
+                return;
+            threads_paginating_ = false;
+            if (reached)
+                threads_reached_start_ = true;
+        });
     });
 }
 
@@ -2935,6 +2951,7 @@ void ShellBase::after_active_room_changed_()
         return;
     // Each new room starts with an unknown thread history — allow pagination.
     threads_reached_start_ = false;
+    threads_paginating_    = false;
     // Keep an always-on background subscription on the active room so the
     // threads button reflects whether the room contains threads — long before
     // the user opens the panel. subscribe_room_threads is idempotent (aborts
