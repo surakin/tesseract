@@ -1477,7 +1477,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         // Overrides the basic wiring in ShellBase::wire_main_app_widget_
         // (which only shows the cached thumbnail) so ensure_media_image_
         // fetches the original bytes and decodes them at native size into
-        // pixmap_cache_; the viewer's image_provider picks that up over the
+        // tk_images_; the viewer's image_provider picks that up over the
         // tk_avatars_ entry.
         room_view_->on_avatar_clicked =
             [this](std::string url, std::string name)
@@ -3815,7 +3815,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     // Already decoded? Cheap early-out on the UI thread.
     if (is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                  : (pixmap_cache_.get(cache_key) ||
+                  : (tk_images_.get(cache_key) ||
                      anim_cache_.has(cache_key)))
     {
         return;
@@ -3839,7 +3839,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                          frames_raw = std::move(anim->frames),
                          delays = std::move(anim->delays_ms)]() mutable
                         {
-                            if (pixmap_cache_.get(cache_key) ||
+                            if (tk_images_.get(cache_key) ||
                                 anim_cache_.has(cache_key))
                             {
                                 for (cairo_surface_t* s : frames_raw)
@@ -3884,7 +3884,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 {
                     const bool present =
                         is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                                  : (pixmap_cache_.get(cache_key) ||
+                                  : (tk_images_.get(cache_key) ||
                                      anim_cache_.has(cache_key));
                     if (present)
                     {
@@ -3899,7 +3899,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     }
                     else
                     {
-                        pixmap_cache_.store(cache_key, std::move(img));
+                        tk_images_.store(cache_key, std::move(img));
                         if (kind == MediaKind::Tile && room_view_)
                         {
                             room_view_->message_list()->invalidate_data();
@@ -4445,7 +4445,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
-                    if (!c->self->pixmap_cache_.get(c->key))
+                    if (!c->self->tk_images_.get(c->key))
                     {
                         // Create an owned cairo surface and blit the BGRA pixels in.
                         cairo_surface_t* surf = cairo_image_surface_create(
@@ -4466,7 +4466,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                                     static_cast<std::size_t>(src_stride));
                             }
                             cairo_surface_mark_dirty(surf);
-                            c->self->pixmap_cache_.store(
+                            c->self->tk_images_.store(
                                 c->key, tk::cairo_pango::make_image(surf));
                             cairo_surface_destroy(surf);
                             if (c->self->main_app_surface_)
@@ -4489,7 +4489,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (pixmap_cache_.get(key))
+    if (tk_images_.get(key))
     {
         return;
     }
@@ -4515,7 +4515,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
         }
     }
     cairo_surface_mark_dirty(surf);
-    pixmap_cache_.store(key, tk::cairo_pango::make_image(surf));
+    tk_images_.store(key, tk::cairo_pango::make_image(surf));
     cairo_surface_destroy(surf);
     if (main_app_surface_)
     {

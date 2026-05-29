@@ -273,7 +273,7 @@ public:
     using ShellBase::thread_panel_;
     using ShellBase::tick_anim_;
     using ShellBase::tk_avatars_;
-    using ShellBase::pixmap_cache_;
+    using ShellBase::tk_images_;
     using ShellBase::url_preview_data_;
     using ShellBase::verification_banner_dismissed_;
     using ShellBase::video_thumb_in_flight_;
@@ -580,7 +580,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     }
     if (kind == MediaKind::Tile)
     {
-        if (pixmap_cache_.get(key))
+        if (tk_images_.count(key))
         {
             return;
         }
@@ -602,7 +602,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         {
             return;
         }
-        pixmap_cache_.store(key, tk::cg::make_image(img));
+        tk_images_.emplace(key, tk::cg::make_image(img));
         CGImageRelease(img);
         if (room_view_)
         {
@@ -698,11 +698,11 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             post_to_ui_(
                 [this, key, img_holder]() mutable
                 {
-                    if (pixmap_cache_.get(key))
+                    if (tk_images_.count(key))
                     {
                         return;
                     }
-                    pixmap_cache_.store(key, std::move(*img_holder));
+                    tk_images_.emplace(key, std::move(*img_holder));
                     MainWindowController* c2 = ctrl_;
                     if (c2)
                     {
@@ -845,7 +845,7 @@ void MacShell::extract_media_info_(std::uint32_t pending_gen,
 void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
                                  std::vector<uint8_t> rgba)
 {
-    if (pixmap_cache_.get(key))
+    if (tk_images_.count(key))
     {
         return;
     }
@@ -863,7 +863,7 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
     {
         return;
     }
-    pixmap_cache_.store(key, tk::cg::make_image(img));
+    tk_images_.emplace(key, tk::cg::make_image(img));
     CGImageRelease(img);
     MainWindowController* c = ctrl_;
     if (c)
@@ -2300,7 +2300,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         // Avatar click → open the lightbox with the original avatar mxc.
         // Overrides the thumbnail-only wiring from
         // ShellBase::wire_main_app_widget_ so ensure_media_image_ fetches
-        // the native-resolution bytes into pixmap_cache_; the viewer's
+        // the native-resolution bytes into tk_images_; the viewer's
         // image_provider prefers that over the resized tk_avatars_ entry.
         _mainApp->room_view()->on_avatar_clicked =
             [weakSelf](std::string url, std::string name)
@@ -3746,9 +3746,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  [s _startAnimTickIfNeeded];
                                  return f;
                              }
-                             if (const auto* img = s->_shell->pixmap_cache_.get(cache_key))
                              {
-                                 return img;
+                                 auto it = s->_shell->tk_images_.find(cache_key);
+                                 if (it != s->_shell->tk_images_.end())
+                                     return it->second.get();
                              }
                              [s _ensureEmojiImageAsync:cache_key];
                              return nullptr;
@@ -3909,7 +3910,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return nullptr;
                 }
-                return c->_shell->pixmap_cache_.get(url);
+                auto it = c->_shell->tk_images_.find(url);
+                return it == c->_shell->tk_images_.end() ? nullptr : it->second.get();
             });
 
         NSView* popupView =
@@ -4205,9 +4207,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  [s _startAnimTickIfNeeded];
                                  return f;
                              }
-                             if (const auto* img = s->_shell->pixmap_cache_.get(cache_key))
                              {
-                                 return img;
+                                 auto it = s->_shell->tk_images_.find(cache_key);
+                                 if (it != s->_shell->tk_images_.end())
+                                     return it->second.get();
                              }
                              [s _ensureEmojiImageAsync:cache_key];
                              return nullptr;
@@ -6386,7 +6389,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
 {
-    if (bytes.empty() || _shell->pixmap_cache_.get(key) ||
+    if (bytes.empty() || _shell->tk_images_.count(key) ||
         _shell->anim_cache_.has(key))
     {
         return;
@@ -6402,7 +6405,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     else if (d.still)
     {
-        _shell->pixmap_cache_.store(key, std::move(d.still));
+        _shell->tk_images_.emplace(key, std::move(d.still));
     }
 }
 
@@ -6484,9 +6487,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  [s _startAnimTickIfNeeded];
                                  return f;
                              }
-                             if (const auto* img = s->_shell->pixmap_cache_.get(cache_key))
                              {
-                                 return img;
+                                 auto it = s->_shell->tk_images_.find(cache_key);
+                                 if (it != s->_shell->tk_images_.end())
+                                     return it->second.get();
                              }
                              [s _ensureStickerImageAsync:cache_key];
                              return nullptr;
@@ -6547,9 +6551,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                  [s _startAnimTickIfNeeded];
                                  return f;
                              }
-                             if (const auto* img = s->_shell->pixmap_cache_.get(cache_key))
                              {
-                                 return img;
+                                 auto it = s->_shell->tk_images_.find(cache_key);
+                                 if (it != s->_shell->tk_images_.end())
+                                     return it->second.get();
                              }
                              [s _ensureStickerImageAsync:cache_key];
                              return nullptr;

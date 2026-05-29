@@ -348,7 +348,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
         // Qt6-only residual: install a richer image_viewer provider that
         // also consults viewerFullresCache_ before falling back to the
-        // shared anim_cache_/pixmap_cache_ chain set by wire_main_app_viewers_.
+        // shared anim_cache_/tk_images_ chain set by wire_main_app_viewers_.
         mainApp_->image_viewer()->set_image_provider(
             [this](const std::string& url) -> const tk::Image*
             {
@@ -362,9 +362,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     start_anim_tick_();
                     return f;
                 }
-                if (const auto* img = pixmap_cache_.get(url))
+                if (auto it = tk_images_.find(url); it != tk_images_.end())
                 {
-                    return img;
+                    return it->second.get();
                 }
                 // Avatars live in a separate cache — let the viewer find
                 // them so clicking a profile avatar shows the cached image.
@@ -2959,7 +2959,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     if (kind == MediaKind::Tile)
     {
-        if (pixmap_cache_.get(cache_key))
+        if (tk_images_.count(cache_key))
         {
             return;
         }
@@ -2969,7 +2969,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             return;
         }
-        pixmap_cache_.store(cache_key, tk::qt6::make_image(std::move(img)));
+        tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(img)));
         if (mainApp_)
         {
             mainApp_->room_view()->message_list()->invalidate_data();
@@ -2985,7 +2985,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // MediaImage — decode (same path as pickers) then store. Decode stays
     // on the UI thread here (unchanged behaviour); pickers decode on a
     // worker via ensure_picker_image_.
-    if (pixmap_cache_.get(cache_key) || anim_cache_.has(cache_key))
+    if (tk_images_.count(cache_key) || anim_cache_.has(cache_key))
     {
         mediaImageSizes_.erase(cache_key);
         return;
@@ -3011,7 +3011,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     }
     else if (d.still)
     {
-        pixmap_cache_.store(cache_key, std::move(d.still));
+        tk_images_.emplace(cache_key, std::move(d.still));
     }
     else
     {
@@ -3279,7 +3279,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [this, eid, bytes = std::move(bytes)]() mutable
                 {
                     const std::string key = "thumb::" + eid;
-                    if (pixmap_cache_.get(key))
+                    if (tk_images_.count(key))
                     {
                         return;
                     }
@@ -3302,7 +3302,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                             }
                             player->stop();
                             player->deleteLater();
-                            if (pixmap_cache_.get(key))
+                            if (tk_images_.count(key))
                             {
                                 return;
                             }
@@ -3365,13 +3365,13 @@ void MainWindow::repaint_anim_frame_()
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (pixmap_cache_.get(key))
+    if (tk_images_.count(key))
     {
         return;
     }
     QImage img(w, h, QImage::Format_RGBA8888);
     std::memcpy(img.bits(), rgba.data(), rgba.size());
-    pixmap_cache_.store(key, tk::qt6::make_image(std::move(img)));
+    tk_images_.emplace(key, tk::qt6::make_image(std::move(img)));
     if (mainAppSurface_)
     {
         mainAppSurface_->update();
