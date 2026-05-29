@@ -184,7 +184,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
 void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                     int /*max_h*/)
 {
-    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
+    if (url.empty() || pixmap_cache_.get(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -221,11 +221,8 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    auto it = tk_images_.find(mxc);
-    if (it != tk_images_.end())
-    {
-        return it->second.get();
-    }
+    if (const auto* img = pixmap_cache_.get(mxc))
+        return img;
     ensure_media_image_(mxc, 64, 64);
     return nullptr;
 }
@@ -237,8 +234,7 @@ const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc)
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    auto it = tk_images_.find(mxc);
-    return it == tk_images_.end() ? nullptr : it->second.get();
+    return pixmap_cache_.get(mxc);
 }
 
 void ShellBase::set_room_notification_mode_(const std::string& room_id,
@@ -319,7 +315,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 return nullptr;
             }
             if (!it->second.image_mxc.empty() &&
-                !tk_images_.count(it->second.image_mxc) &&
+                !pixmap_cache_.get(it->second.image_mxc) &&
                 !anim_cache_.has(it->second.image_mxc))
             {
                 ensure_media_image_(it->second.image_mxc, 64, 64);
@@ -453,7 +449,7 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
 
 void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
 {
-    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
+    if (url.empty() || pixmap_cache_.get(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -488,7 +484,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
             }
             // Decode OFF the UI thread. Picker cells are bounded; reuse the
             // inline-image bound so picker bitmaps are reusable by the
-            // message list (same shared tk_images_ key = the mxc url).
+            // message list (same shared pixmap_cache_ key = the mxc url).
             // DecodedImage is move-only (holds unique_ptr<tk::Image>); wrap it
             // in a shared_ptr so the post_to_ui_ lambda is copy-constructible
             // (post_to_ui_ takes std::function, which requires that).
@@ -512,7 +508,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 {
     (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
         .erase(url);
-    if (tk_images_.count(url) || anim_cache_.has(url))
+    if (pixmap_cache_.get(url) || anim_cache_.has(url))
     {
         return;
     }
@@ -524,7 +520,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
     }
     else if (d.still)
     {
-        tk_images_.emplace(std::move(url), std::move(d.still));
+        pixmap_cache_.store(url, std::move(d.still));
     }
     else
     {
@@ -536,7 +532,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 void ShellBase::ensure_tile_async(int z, int x, int y)
 {
     const std::string key = tesseract::views::tile_cache_key({z, x, y});
-    if (tk_images_.count(key) || tile_fetch_failed_.count(key))
+    if (pixmap_cache_.get(key) || tile_fetch_failed_.count(key))
     {
         return;
     }
@@ -641,7 +637,7 @@ void ShellBase::ensure_blurhash_image_(const std::string& event_id,
                                        int media_h)
 {
     const std::string key = "blurhash::" + event_id;
-    if (tk_images_.count(key) || !blurhash_attempted_.insert(key).second)
+    if (pixmap_cache_.get(key) || !blurhash_attempted_.insert(key).second)
     {
         return;
     }
@@ -1806,6 +1802,7 @@ bool ShellBase::tick_anim_()
 void ShellBase::handle_timeline_reset_ui_(std::string room_id,
                                           EventList snapshot)
 {
+    pixmap_cache_.evict_expired();
     if (room_id == current_room_id_ && room_view_)
     {
         auto rows = build_rows_(snapshot);
@@ -2664,7 +2661,7 @@ void ShellBase::clear_all_caches_(
         post_to_ui_([this]
         {
             tk_avatars_.clear();
-            tk_images_.clear();
+            pixmap_cache_ = tk::PixmapCache{};
             anim_cache_ = {};
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());

@@ -571,6 +571,16 @@ public:
     D2DImage(ComPtr<IWICBitmap> source, int w, int h)
         : source_(std::move(source)), width_(w), height_(h)
     {
+        WICRect all{0, 0, w, h};
+        ComPtr<IWICBitmapLock> lk;
+        if (SUCCEEDED(source_->Lock(&all, WICBitmapLockRead, lk.GetAddressOf())))
+        {
+            lk->GetStride(&stride_);
+        }
+        else
+        {
+            stride_ = static_cast<UINT>(w) * 4; // PBGRA fallback
+        }
     }
 
     int width() const override
@@ -580,6 +590,10 @@ public:
     int height() const override
     {
         return height_;
+    }
+    std::size_t memory_bytes() const noexcept override
+    {
+        return static_cast<std::size_t>(stride_) * static_cast<std::size_t>(height_);
     }
 
     // ID2D1Bitmap is bound to a particular ID2D1RenderTarget. We keep the
@@ -618,8 +632,9 @@ private:
     // chain as the source would leave WIC dereferencing freed memory at
     // paint time, which is what crashed the Win32 build previously.
     ComPtr<IWICBitmap> source_;
-    int width_;
-    int height_;
+    int  width_;
+    int  height_;
+    UINT stride_ = 0;
     ComPtr<ID2D1Bitmap> bitmap_;
     ID2D1RenderTarget* rt_cached_ = nullptr;
 };

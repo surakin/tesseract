@@ -172,6 +172,10 @@ public:
     virtual ~Image() = default;
     virtual int width() const = 0;
     virtual int height() const = 0;
+    // Actual decoded memory footprint in bytes, as reported by the platform
+    // (e.g. stride * height for raster formats). Used by PixmapCache for
+    // accurate memory-budget accounting.
+    virtual std::size_t memory_bytes() const noexcept = 0;
 };
 
 // Animated image: holds pre-decoded, pre-scaled frames with per-frame delays.

@@ -109,7 +109,7 @@ public:
     // MediaKind is inherited from tesseract::ShellBase.
     // RoomAvatar → tk_avatars_, relayout main_app_surface_
     // UserAvatar → tk_avatars_, invalidate main_app_surface_
-    // MediaImage → anim_cache_/tk_images_[url], invalidate main_app_surface_
+    // MediaImage → anim_cache_/pixmap_cache_[url], invalidate main_app_surface_
 
     // ── EventHandlerBase UI-thread hook overrides (Win32) ────────────────────
     void handle_timeline_reset_ui_(
@@ -247,7 +247,7 @@ private:
     void on_recover_done(bool ok, std::wstring msg);
     void populate_user_strip();
     // Resolve any media bytes the row references and decode them into
-    // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
+    // tk::Images held in `tk_avatars_` / `pixmap_cache_`. Shared by every
     // positional-callback path (insert / update / reset).
     void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
@@ -449,11 +449,11 @@ private:
 
     ULONG_PTR gdiplus_token_ = 0;
 
-    // tk_avatars_, tk_images_, anim_cache_, voice_prefetched_,
+    // tk_avatars_, pixmap_cache_, anim_cache_, voice_prefetched_,
     // video_thumb_in_flight_, reply_details_requested_, media_fetches_in_flight_,
     // sticker_fetches_in_flight_ are inherited from tesseract::ShellBase.
 
-    /// Promote `url`'s entry in `tk_images_` to an animated cache if the
+    /// Promote `url`'s entry in `pixmap_cache_` to an animated cache if the
     /// bytes turn out to be multi-frame; otherwise leave the static entry
     /// in place. Idempotent + safe to call after either cache already has
     /// the URL. Starts the frame-tick timer when the first animated
