@@ -2,10 +2,11 @@
 
 // Full-window settings screen. Composes:
 //   • A fixed-height top bar with a "← Back" button.
-//   • A tk::SideTabView below it with three sections:
+//   • A tk::SideTabView below it with four sections:
 //       – Account (avatar, display name, Matrix ID)
 //       – Appearance (theme selection)
 //       – Notifications (enable/disable toggle)
+//       – Language (locale selection, takes effect after restart)
 //
 // The shell constructs SettingsView once, wires the public callbacks, and
 // shows/hides it by mounting/unmounting the widget's surface. Before
@@ -14,6 +15,7 @@
 
 #include "views/settings/AccountSection.h"
 #include "views/settings/AppearanceSection.h"
+#include "views/settings/LanguageSection.h"
 #include "views/settings/NotificationsSection.h"
 
 #include "tk/controls.h"
@@ -70,6 +72,9 @@ public:
     // Fired when the user toggles image/sticker notification previews.
     std::function<void(bool)> on_image_previews_changed;
 
+    // Fired when the user selects a different language (BCP47 code or "auto").
+    std::function<void(std::string)> on_language_changed;
+
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -86,6 +91,7 @@ private:
     AccountSection* account_ = nullptr;
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
+    LanguageSection* language_ = nullptr;
 };
 
 } // namespace tesseract::views

@@ -1,5 +1,6 @@
 #include "StickerPicker.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <tesseract/client.h>
@@ -49,7 +50,7 @@ StickerPicker::StickerPicker(QWidget* parent)
     surface_->set_root(std::move(shared_owner));
 
     search_field_ = surface_->host().make_text_field();
-    search_field_->set_placeholder("Search stickers");
+    search_field_->set_placeholder(tk::tr("Search stickers"));
     search_field_->set_on_changed(
         [this](const std::string& q)
         {

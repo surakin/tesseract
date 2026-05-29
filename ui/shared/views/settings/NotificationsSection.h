@@ -46,7 +46,7 @@ private:
     // 0 = notifications row, 1 = image-previews row, -1 = none.
     int row_at(tk::Point local) const;
     void paint_row(tk::PaintCtx& ctx, int row, float y, bool checked,
-                   const char* label, std::unique_ptr<tk::TextLayout>& cache);
+                   const std::string& label, std::unique_ptr<tk::TextLayout>& cache);
 
     bool checked_;          // row 1 — notifications_enabled
     bool previews_checked_; // row 2 — notification_image_previews

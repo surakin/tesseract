@@ -1,6 +1,7 @@
 #include "ComposeBar.h"
 
 #include "format.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -113,7 +114,7 @@ ComposeBar::ComposeBar()
     sticker->set_min_size({kButtonSide, kButtonSide});
     sticker_btn_ = add_child(std::move(sticker));
 
-    auto send = std::make_unique<tk::Button>("Send", std::function<void()>{},
+    auto send = std::make_unique<tk::Button>(tk::tr("Send"), std::function<void()>{},
                                              tk::Button::Variant::Primary);
     send->set_on_click(
         [this]
@@ -682,7 +683,7 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         tk::TextStyle label_style{};
         label_style.role = tk::FontRole::Small;
         auto label_layout =
-            ctx.factory.build_text("Editing message", label_style);
+            ctx.factory.build_text(tk::tr("Editing message"), label_style);
         if (label_layout)
         {
             ctx.canvas.draw_text(*label_layout,
@@ -728,7 +729,8 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         tk::TextStyle label_style{};
         label_style.role = tk::FontRole::Small;
         auto label_layout = ctx.factory.build_text(
-            "Replying to " + reply_sender_name_, label_style);
+            tk::trf(tk::tr("Replying to {0}"), {reply_sender_name_}),
+            label_style);
 
         tk::TextStyle body_style{};
         body_style.role = tk::FontRole::Small;

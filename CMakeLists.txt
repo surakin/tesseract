@@ -303,3 +303,8 @@ endif()
 if(WIN32 OR APPLE)
     include(${CMAKE_SOURCE_DIR}/cmake/Installers.cmake)
 endif()
+
+# ---------------------------------------------------------------------------
+# i18n: unified catalog build (xgettext → .pot; msgfmt .po → .mo)
+# ---------------------------------------------------------------------------
+include(${CMAKE_SOURCE_DIR}/cmake/I18n.cmake)

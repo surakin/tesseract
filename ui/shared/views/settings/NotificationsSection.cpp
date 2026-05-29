@@ -1,6 +1,7 @@
 #include "NotificationsSection.h"
 
 #include "tesseract/settings.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -100,7 +101,7 @@ void NotificationsSection::draw_checkmark(tk::Canvas& canvas, tk::Rect box,
 // ---------------------------------------------------------------------------
 
 void NotificationsSection::paint_row(tk::PaintCtx& ctx, int row, float y,
-                                     bool checked, const char* label,
+                                     bool checked, const std::string& label,
                                      std::unique_ptr<tk::TextLayout>& cache)
 {
     const auto& pal = ctx.theme.palette;
@@ -161,9 +162,9 @@ void NotificationsSection::paint_row(tk::PaintCtx& ctx, int row, float y,
 
 void NotificationsSection::paint(tk::PaintCtx& ctx)
 {
-    paint_row(ctx, 0, bounds_.y, checked_, kLabelNotif, label_layout_);
-    paint_row(ctx, 1, bounds_.y + kRowH, previews_checked_, kLabelPreviews,
-              previews_label_layout_);
+    paint_row(ctx, 0, bounds_.y, checked_, tk::tr(kLabelNotif), label_layout_);
+    paint_row(ctx, 1, bounds_.y + kRowH, previews_checked_,
+              tk::tr(kLabelPreviews), previews_label_layout_);
 }
 
 // ---------------------------------------------------------------------------

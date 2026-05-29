@@ -78,6 +78,12 @@ public:
     };
     ThemePreference theme_pref = ThemePreference::System;
 
+    // ── Language preference ──────────────────────────────────────────────
+    // "auto" → derive locale from the OS at startup (default).
+    // Any other value → explicit BCP47-style code, e.g. "en", "es".
+    // Changes take effect after restart.
+    std::string language = "auto";
+
     // ── Notifications ─────────────────────────────────────────────────
     // Whether to show desktop notifications for new messages (default: on).
     bool notifications_enabled = true;

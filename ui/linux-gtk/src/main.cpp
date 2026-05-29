@@ -4,9 +4,11 @@
 #include <string>
 #include <unistd.h>
 #include <linux/limits.h>
-#include <libintl.h>
 
 #include "MainWindow.h"
+#include "tk/i18n.h"
+#include <tesseract/paths.h>
+#include <tesseract/settings.h>
 
 static std::string locale_dir()
 {
@@ -24,13 +26,36 @@ static std::string locale_dir()
 int main(int argc, char** argv)
 {
     setlocale(LC_ALL, "");
+
+    // Load persisted settings before set_locale so the saved language
+    // preference is available when choosing the locale.
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    // Determine locale name: use saved preference if non-auto, else derive
+    // from the environment (setlocale already called above).
+    std::string lang = tesseract::Settings::instance().language;
+    if (lang == "auto" || lang.empty())
+    {
+        const char* lc_messages = setlocale(LC_MESSAGES, nullptr);
+        lang = (lc_messages && lc_messages[0] != 'C' && lc_messages[0] != '\0')
+                   ? lc_messages
+                   : "en";
+        // Strip encoding suffix if present (e.g. "es_MX.UTF-8" -> "es_MX")
+        auto dot = lang.find('.');
+        if (dot != std::string::npos)
+            lang.erase(dot);
+    }
+
     std::string ldir = locale_dir();
+    std::string i18n_dir;
     if (!ldir.empty())
     {
-        bindtextdomain("tesseract", ldir.c_str());
+        // ldir is <prefix>/share/locale; i18n dir is <prefix>/share/tesseract/i18n
+        std::filesystem::path p{ldir};
+        i18n_dir = (p.parent_path() / "tesseract" / "i18n").string();
     }
-    bind_textdomain_codeset("tesseract", "UTF-8");
-    textdomain("tesseract");
+    tk::set_locale(i18n_dir, lang);
+
     GtkApplication* app =
         gtk_application_new("org.tesseract.gtk", G_APPLICATION_DEFAULT_FLAGS);
 

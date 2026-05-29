@@ -3,6 +3,7 @@
 #include "map_tiles.h"
 #include "media_utils.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -461,7 +462,7 @@ std::string format_day_label(std::uint64_t timestamp_ms)
     if (sep_tm.tm_year == now_tm.tm_year && sep_tm.tm_mon == now_tm.tm_mon &&
         sep_tm.tm_mday == now_tm.tm_mday)
     {
-        return "Today";
+        return tk::tr("Today");
     }
     std::time_t yest_t = now_t - 86400;
     std::tm yest_tm{};
@@ -473,22 +474,23 @@ std::string format_day_label(std::uint64_t timestamp_ms)
     if (sep_tm.tm_year == yest_tm.tm_year && sep_tm.tm_mon == yest_tm.tm_mon &&
         sep_tm.tm_mday == yest_tm.tm_mday)
     {
-        return "Yesterday";
+        return tk::tr("Yesterday");
     }
     if (now_t > t && static_cast<std::uint64_t>(now_t - t) < 7u * 86400u)
     {
         constexpr const char* kDays[] = {"Sunday",    "Monday",   "Tuesday",
                                          "Wednesday", "Thursday", "Friday",
                                          "Saturday"};
-        return kDays[sep_tm.tm_wday];
+        return tk::tr(kDays[sep_tm.tm_wday]);
     }
     constexpr const char* kMonths[] = {
         "January", "February", "March",     "April",   "May",      "June",
         "July",    "August",   "September", "October", "November", "December"};
+    std::string month_str = tk::tr(kMonths[sep_tm.tm_mon]);
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%s %d, %d", kMonths[sep_tm.tm_mon],
+    std::snprintf(buf, sizeof(buf), "%s %d, %d", month_str.c_str(),
                   sep_tm.tm_mday, sep_tm.tm_year + 1900);
-    return buf;
+    return std::string(buf);
 }
 
 } // namespace
@@ -1208,7 +1210,7 @@ public:
                     if (m.pending_recoverable)
                     {
                         // "Retry" button
-                        auto btn_lo = ctx.factory.build_text("Retry", small_st);
+                        auto btn_lo = ctx.factory.build_text(tk::tr("Retry"), small_st);
                         if (btn_lo)
                         {
                             tk::Size bsz = btn_lo->measure();
@@ -1357,7 +1359,7 @@ private:
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
-        auto lo = ctx.factory.build_text("New messages", st);
+        auto lo = ctx.factory.build_text(tk::tr("New messages"), st);
         if (!lo)
         {
             return;
@@ -1390,7 +1392,7 @@ private:
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
-        auto lo = ctx.factory.build_text("Start of conversation", st);
+        auto lo = ctx.factory.build_text(tk::tr("Start of conversation"), st);
         if (!lo)
         {
             return;
@@ -1688,7 +1690,7 @@ private:
         }
         case MessageRowData::Kind::Redacted:
         {
-            float h = paint_wrapped_text("Message deleted", ctx, x, y, col_w,
+            float h = paint_wrapped_text(tk::tr("Message deleted"), ctx, x, y, col_w,
                                          ctx.theme.palette.text_muted);
             return y + h;
         }
@@ -2387,7 +2389,7 @@ private:
             tk::TextStyle st{};
             st.role = tk::FontRole::Small;
             st.max_width = map_rect.w;
-            auto lo = ctx.factory.build_text("Loading map\xe2\x80\xa6", st);
+            auto lo = ctx.factory.build_text(tk::tr("Loading map\xe2\x80\xa6"), st);
             if (lo)
             {
                 tk::Size sz = lo->measure();
@@ -4922,7 +4924,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     std::vector<std::string> lines;
     lines.reserve(r.senders.size() + 1);
     {
-        std::string header = "Reacted with ";
+        std::string header = tk::tr("Reacted with ");
         header += r.key;
         header += ":";
         lines.push_back(std::move(header));

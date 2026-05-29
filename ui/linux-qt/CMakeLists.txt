@@ -63,15 +63,5 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
 install(FILES "${CMAKE_SOURCE_DIR}/packaging/tesseract.desktop"
         DESTINATION share/applications)
 
-# i18n: extract translatable strings to a Qt .ts template (run manually).
-find_program(LUPDATE_EXECUTABLE lupdate lupdate-qt6 NAMES lupdate lupdate-qt6)
-if(LUPDATE_EXECUTABLE)
-    add_custom_target(i18n_extract_qt
-        COMMAND ${LUPDATE_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            -ts ${CMAKE_SOURCE_DIR}/i18n/qt/tesseract_LANG.ts
-            -no-obsolete
-        COMMENT "Extract Qt translation strings (rename tesseract_LANG.ts to your locale)"
-        VERBATIM
-    )
-endif()
+# i18n: use the root i18n-extract target (cmake/I18n.cmake) which scans all
+# source directories including this one. Run: cmake --build . --target i18n-extract

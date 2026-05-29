@@ -94,3 +94,6 @@ if(TESSERACT_MAC_CODESIGN_IDENTITY)
             \"\${CMAKE_INSTALL_PREFIX}/Tesseract.app\")
     " COMPONENT Application)
 endif()
+
+# Bundle .mo translation catalogs into Resources/i18n
+tesseract_bundle_mo_files(tesseract_macos)

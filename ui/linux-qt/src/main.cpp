@@ -1,12 +1,14 @@
 #include <QApplication>
 #include <QIcon>
-#include <QTranslator>
 #include <QLocale>
 #include <fcntl.h>
 #include <string>
 #include <sys/file.h>
 #include <unistd.h>
 #include "MainWindow.h"
+#include "tk/i18n.h"
+#include <tesseract/paths.h>
+#include <tesseract/settings.h>
 
 int main(int argc, char* argv[])
 {
@@ -25,11 +27,19 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     app.setApplicationName("Tesseract");
 
-    QTranslator translator;
-    if (translator.load(QLocale(), "tesseract", "_",
-                        app.applicationDirPath() + "/../share/translations"))
+    // Load persisted settings before set_locale so the saved language
+    // preference is available when choosing the locale.
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
     {
-        app.installTranslator(&translator);
+        std::string lang = tesseract::Settings::instance().language;
+        if (lang == "auto" || lang.empty())
+        {
+            lang = QLocale::system().name().toStdString();
+        }
+        tk::set_locale(
+            (app.applicationDirPath() + "/../share/tesseract/i18n").toStdString(),
+            lang);
     }
     app.setOrganizationName("tesseract");
     app.setWindowIcon(QIcon(":/icons/tesseract.svg"));

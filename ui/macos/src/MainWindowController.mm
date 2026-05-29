@@ -1,4 +1,5 @@
 #import "MainWindowController.h"
+#import "tk_locale.h"
 #import "LoginView.h"
 #import "EmojiPicker.h"
 #import "StickerPicker.h"
@@ -1369,27 +1370,25 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
+            const std::string& _name_ref = s->_shell->my_display_name_.empty()
+                ? s->_shell->my_user_id_
+                : s->_shell->my_display_name_;
             NSString* logoutTitle = [NSString
-                stringWithFormat:
-                    @"Log Out %@",
-                    s->_shell->my_display_name_.empty()
-                        ? [NSString stringWithUTF8String:s->_shell->my_user_id_
-                                                             .c_str()]
-                        : [NSString
-                              stringWithUTF8String:s->_shell->my_display_name_
-                                                       .c_str()]];
+                stringWithUTF8String:tk::trf(tk::tr("Log Out {0}"),
+                                             {_name_ref})
+                                         .c_str()];
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
-            [menu addItemWithTitle:@"Settings…"
+            [menu addItemWithTitle:TkTr("Settings\xe2\x80\xa6")
                             action:@selector(_openSettings)
                      keyEquivalent:@""];
-            [menu addItemWithTitle:@"Add Account…"
+            [menu addItemWithTitle:TkTr("Add Account\xe2\x80\xa6")
                             action:@selector(_beginAddAccount)
                      keyEquivalent:@""];
             [menu addItemWithTitle:logoutTitle
                             action:@selector(_logoutActiveAccount)
                      keyEquivalent:@""];
             [menu addItem:[NSMenuItem separatorItem]];
-            [menu addItemWithTitle:@"Quit"
+            [menu addItemWithTitle:TkTr("Quit")
                             action:@selector(terminate:)
                      keyEquivalent:@""];
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
@@ -3899,7 +3898,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             }
         }
         [self _logoutActiveAccount];
-        [_loginView setStatusMessage:@"Session expired; please log in again."];
+        [_loginView setStatusMessage:TkTr("Session expired; please log in again.")];
     }
 }
 

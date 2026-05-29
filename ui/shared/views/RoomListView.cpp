@@ -1,5 +1,6 @@
 #include "RoomListView.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include <tesseract/visual.h>
 
@@ -144,7 +145,7 @@ private:
                                          ? ctx.theme.palette.sidebar_selected
                                          : ctx.theme.palette.sidebar_hover);
 
-        const char* title = RoomListView::kSectionTitles[item.section];
+        std::string title = tk::tr(RoomListView::kSectionTitles[item.section]);
         bool collapsed = owner_.collapsed_[item.section];
 
         // Sum unread counts for the section (used for badge when collapsed).
@@ -293,7 +294,7 @@ private:
             {
                 const std::string& prefix =
                     room.last_message_sender_name.empty()
-                        ? "You"
+                        ? tk::tr("You")
                         : room.last_message_sender_name;
                 preview = prefix + ": " + preview;
             }

@@ -1,4 +1,5 @@
 #import "EmojiPicker.h"
+#import "tk_locale.h"
 
 #include "tk/host.h"
 #include "tk/host_macos.h"
@@ -54,7 +55,7 @@ static EmojiPickerPanel* g_emojiPanel = nil;
                                                 styleMask:mask
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
-        g_emojiPanel.title = @"Emoji";
+        g_emojiPanel.title = TkTr("Emoji");
         g_emojiPanel.floatingPanel = YES;
         g_emojiPanel.becomesKeyOnlyIfNeeded = NO;
         g_emojiPanel.hidesOnDeactivate = YES;

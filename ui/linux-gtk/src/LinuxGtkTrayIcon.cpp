@@ -9,6 +9,8 @@
 #include <gtk/gtk.h> // GTK3 (pulled in by app-indicator.h)
 #include <gio/gio.h>
 
+#include "tk/i18n.h"
+
 #include <cstdlib>
 #include <string>
 
@@ -121,12 +123,12 @@ LinuxGtkTrayIcon::LinuxGtkTrayIcon(std::function<void()> on_show,
     GtkWidget* menu = gtk_menu_new();
     menu_ = menu;
 
-    GtkWidget* show_item = gtk_menu_item_new_with_label("Show App");
+    GtkWidget* show_item = gtk_menu_item_new_with_label(tk::tr("Show App").c_str());
     g_signal_connect(show_item, "activate", G_CALLBACK(on_show_activate),
                      static_cast<gpointer>(&on_show_));
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), show_item);
 
-    GtkWidget* quit_item = gtk_menu_item_new_with_label("Quit");
+    GtkWidget* quit_item = gtk_menu_item_new_with_label(tk::tr("Quit").c_str());
     g_signal_connect(quit_item, "activate", G_CALLBACK(on_quit_activate),
                      static_cast<gpointer>(&on_quit_));
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);

@@ -2,6 +2,7 @@
 
 #include <chrono>
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 namespace gtk4
@@ -194,7 +195,7 @@ void LoginView::on_sign_in()
     std::string hs_raw = trim(hs_field_->text());
     if (hs_raw.empty())
     {
-        shared_->set_status("Please enter a homeserver.",
+        shared_->set_status(tk::tr("Please enter a homeserver."),
                             tk::Color::rgb(0xB00020));
         surface_->relayout();
         return;
@@ -256,7 +257,7 @@ void LoginView::on_begin_completed(bool ok, std::string err_or_url)
     join_worker();
     if (!ok)
     {
-        shared_->set_status("Sign-in failed: " + err_or_url,
+        shared_->set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {err_or_url}),
                             tk::Color::rgb(0xB00020));
         shared_->set_state(tesseract::views::LoginView::State::Form);
         hs_field_->set_enabled(true);
@@ -266,7 +267,7 @@ void LoginView::on_begin_completed(bool ok, std::string err_or_url)
 
     if (!tesseract::Client::open_in_browser(err_or_url))
     {
-        shared_->set_status("Open this URL in your browser:\n" + err_or_url);
+        shared_->set_status(tk::trf(tk::tr("Open this URL in your browser:\n{0}"), {err_or_url}));
         surface_->relayout();
     }
 
@@ -306,7 +307,8 @@ void LoginView::on_await_completed(bool ok, std::string err)
         }
         return;
     }
-    shared_->set_status("Sign-in failed: " + err, tk::Color::rgb(0xB00020));
+    shared_->set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {err}),
+                        tk::Color::rgb(0xB00020));
     shared_->set_state(tesseract::views::LoginView::State::Form);
     hs_field_->set_enabled(true);
     surface_->relayout();
@@ -319,7 +321,7 @@ void LoginView::on_cancel()
     {
         client_->cancel_oauth();
     }
-    shared_->set_status("Cancelling\xe2\x80\xa6");
+    shared_->set_status(tk::tr("Cancelling\xe2\x80\xa6"));
     surface_->relayout();
     join_worker();
     shared_->set_status("");
