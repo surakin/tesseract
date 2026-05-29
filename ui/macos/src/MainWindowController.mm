@@ -2511,13 +2511,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 return;
             }
             std::string room = s->_shell->current_room_id_;
-            s->_shell->begin_focused_subscription_(room, event_id);
+            std::string ev = event_id;
+            s->_shell->begin_focused_subscription_(room, ev);
             dispatch_async(
                 dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                     MainWindowController* s2 = weakSelf;
                     if (s2)
                     {
-                        s2->_shell->client_->subscribe_room_at(room, event_id);
+                        s2->_shell->client_->subscribe_room_at(room, ev);
                     }
                 });
         };
