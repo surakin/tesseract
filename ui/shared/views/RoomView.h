@@ -347,7 +347,23 @@ public:
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
 
+    // Pointer/hit-test routing. The overlay panels (RoomInfoPanel /
+    // UserProfilePanel) paint last (on top) but are created before the
+    // lazily-added pinned banner and thread panels, so the default
+    // child-vector dispatch order would let those underlying widgets steal
+    // clicks the panel covers. While a panel is open we route all input to
+    // it so it intercepts events first, matching its paint order.
+    tk::Widget* hit_test(tk::Point world) override;
+    tk::Widget* dispatch_pointer_down(tk::Point world) override;
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override;
+    tk::Widget* dispatch_right_click(tk::Point world) override;
+    bool        dispatch_wheel(tk::Point world, float dx, float dy) override;
+
 private:
+    // The open overlay panel that should receive input ahead of all other
+    // children, or nullptr when none is open.
+    tk::Widget* active_overlay_panel_() const;
+
     // Transparent overlay placed on top of the main MessageListView while the
     // thread panel is open. It eats hover events (so the timeline doesn't
     // surface hover affordances behind the focused thread) and treats any

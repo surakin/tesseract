@@ -184,13 +184,13 @@ public:
     // in root-surface coordinates (the space `bounds_` is stored in).
     // The widget-local Point handed to on_pointer_down is computed by
     // subtracting the claimer's own world origin.
-    Widget* dispatch_pointer_down(Point world);
+    virtual Widget* dispatch_pointer_down(Point world);
 
     // Analogue of dispatch_pointer_down for right-click. Walks the
     // widget tree depth-first; calls on_right_click on the deepest
     // widget under `world` that returns true. Returns the consuming
     // widget or nullptr.
-    Widget* dispatch_right_click(Point world);
+    virtual Widget* dispatch_right_click(Point world);
 
     // Walk into the deepest visible child under `world` and call
     // `on_pointer_move(local)` on it. Returns the deepest widget that
@@ -202,7 +202,7 @@ public:
     // Walk into the hit widget, then bubble up through parents until
     // someone consumes the wheel event. `world` is in root-surface
     // coordinates. Called by hosts on the root.
-    bool dispatch_wheel(Point world, float dx, float dy);
+    virtual bool dispatch_wheel(Point world, float dx, float dy);
 
     // Translate a point from root-surface coordinates into this widget's
     // local coordinate system. Since `bounds_` is stored in world coords

@@ -1225,4 +1225,58 @@ void RoomView::paint(tk::PaintCtx& ctx)
         user_profile_panel_->paint(ctx);
 }
 
+// ── Pointer/hit-test routing ────────────────────────────────────────────────
+//
+// The overlay panels are arranged at the full RoomView bounds and consume
+// backdrop clicks, so delegating to the open one both blocks pass-through to
+// the widgets it covers (pinned banner, thread panel) and still lets the
+// panel's own children (avatar, member rows, buttons) work. When no panel is
+// open we fall through to the base traversal, leaving normal dispatch intact.
+
+tk::Widget* RoomView::active_overlay_panel_() const
+{
+    // Mutually exclusive in practice (show_room_info / show_user_profile close
+    // each other); prefer the one painted last if both are somehow open.
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+        return user_profile_panel_;
+    if (room_info_panel_ && room_info_panel_->is_open())
+        return room_info_panel_;
+    return nullptr;
+}
+
+tk::Widget* RoomView::hit_test(tk::Point world)
+{
+    if (tk::Widget* o = active_overlay_panel_())
+        return o->hit_test(world);
+    return tk::Widget::hit_test(world);
+}
+
+tk::Widget* RoomView::dispatch_pointer_down(tk::Point world)
+{
+    if (tk::Widget* o = active_overlay_panel_())
+        return o->dispatch_pointer_down(world);
+    return tk::Widget::dispatch_pointer_down(world);
+}
+
+tk::Widget* RoomView::dispatch_pointer_move(tk::Point world, bool* dirty)
+{
+    if (tk::Widget* o = active_overlay_panel_())
+        return o->dispatch_pointer_move(world, dirty);
+    return tk::Widget::dispatch_pointer_move(world, dirty);
+}
+
+tk::Widget* RoomView::dispatch_right_click(tk::Point world)
+{
+    if (tk::Widget* o = active_overlay_panel_())
+        return o->dispatch_right_click(world);
+    return tk::Widget::dispatch_right_click(world);
+}
+
+bool RoomView::dispatch_wheel(tk::Point world, float dx, float dy)
+{
+    if (tk::Widget* o = active_overlay_panel_())
+        return o->dispatch_wheel(world, dx, dy);
+    return tk::Widget::dispatch_wheel(world, dx, dy);
+}
+
 } // namespace tesseract::views
