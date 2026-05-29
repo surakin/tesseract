@@ -119,6 +119,11 @@ public:
         progress_ = std::move(cb);
     }
 
+    void set_error(std::function<void()> cb)
+    {
+        error_ = std::move(cb);
+    }
+
     ULONG STDMETHODCALLTYPE AddRef() override
     {
         return ++ref_;
@@ -154,15 +159,30 @@ public:
             return S_OK;
         }
         auto alive = alive_;
-        auto cb = progress_;
-        post_(
-            [alive = std::move(alive), cb = std::move(cb)]()
-            {
-                if (*alive && cb)
+        if (event == MF_MEDIA_ENGINE_EVENT_ERROR)
+        {
+            auto cb = error_;
+            post_(
+                [alive = std::move(alive), cb = std::move(cb)]()
                 {
-                    cb();
-                }
-            });
+                    if (*alive && cb)
+                    {
+                        cb();
+                    }
+                });
+        }
+        else
+        {
+            auto cb = progress_;
+            post_(
+                [alive = std::move(alive), cb = std::move(cb)]()
+                {
+                    if (*alive && cb)
+                    {
+                        cb();
+                    }
+                });
+        }
         return S_OK;
     }
 
@@ -170,6 +190,7 @@ private:
     std::shared_ptr<std::atomic<bool>> alive_;
     PostFn post_;
     std::function<void()> progress_;
+    std::function<void()> error_;
     std::atomic<ULONG> ref_{1};
 };
 
@@ -380,6 +401,14 @@ private:
                     on_progress();
                 }
             });
+        notify_->set_error(
+            [this]()
+            {
+                if (on_error)
+                {
+                    on_error();
+                }
+            });
 
         Microsoft::WRL::ComPtr<IMFAttributes> attrs;
         if (FAILED(MFCreateAttributes(attrs.GetAddressOf(), 3)))
@@ -431,12 +460,27 @@ private:
         // Co-initialise for this thread (needed by IMFSourceReader).
         CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
+        auto fire_error = [this]()
+        {
+            auto alive = alive_;
+            auto err   = on_error;
+            post_(
+                [alive = std::move(alive), err = std::move(err)]()
+                {
+                    if (*alive && err)
+                    {
+                        err();
+                    }
+                });
+        };
+
         Microsoft::WRL::ComPtr<IStream> stream;
         stream.Attach(
             SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes_.data()),
                               static_cast<UINT>(bytes_.size())));
         if (!stream)
         {
+            fire_error();
             CoUninitialize();
             return;
         }
@@ -445,6 +489,7 @@ private:
         if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
                                                 mf_stream.GetAddressOf())))
         {
+            fire_error();
             CoUninitialize();
             return;
         }
@@ -460,6 +505,7 @@ private:
         if (FAILED(MFCreateSourceReaderFromByteStream(
                 mf_stream.Get(), attrs.Get(), reader.GetAddressOf())))
         {
+            fire_error();
             CoUninitialize();
             return;
         }
@@ -482,6 +528,7 @@ private:
                 static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
                 actual_type.GetAddressOf())))
         {
+            fire_error();
             CoUninitialize();
             return;
         }
@@ -490,6 +537,7 @@ private:
                            &frame_h);
         if (frame_w == 0 || frame_h == 0)
         {
+            fire_error();
             CoUninitialize();
             return;
         }
@@ -505,7 +553,12 @@ private:
                 static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
                 &stream_idx, &flags, &ts, sample.GetAddressOf());
 
-            if (FAILED(hr) || (flags & MF_SOURCE_READERF_ENDOFSTREAM))
+            if (FAILED(hr))
+            {
+                fire_error();
+                break;
+            }
+            if (flags & MF_SOURCE_READERF_ENDOFSTREAM)
             {
                 break;
             }

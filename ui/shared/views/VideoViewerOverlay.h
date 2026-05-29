@@ -107,6 +107,8 @@ private:
     tk::Rect close_btn_{};
     tk::Rect save_btn_{};
 
+    bool has_error_ = false;
+
     bool press_play_ = false;
     bool press_scrub_ = false;
     bool press_speed_ = false;

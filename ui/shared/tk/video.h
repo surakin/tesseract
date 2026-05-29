@@ -75,6 +75,11 @@ public:
     // Fired on the UI thread roughly every 60 ms while playing, plus once
     // on end-of-stream / error. Same contract as AudioPlayer::on_progress.
     std::function<void()> on_progress;
+
+    // Fired on the UI thread when the backend encounters a fatal decode or
+    // format error and no frames will be produced. After this fires,
+    // current_frame() stays nullptr.
+    std::function<void()> on_error;
 };
 
 } // namespace tk

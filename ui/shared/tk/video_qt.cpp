@@ -85,6 +85,15 @@ public:
                              }
                              fire_progress();
                          });
+        QObject::connect(
+            &player_, &QMediaPlayer::errorOccurred, &player_,
+            [this](QMediaPlayer::Error error, const QString&)
+            {
+                if (error != QMediaPlayer::NoError && on_error)
+                {
+                    on_error();
+                }
+            });
     }
 
     ~QtVideoPlayer() override

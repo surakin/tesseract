@@ -476,11 +476,18 @@ private:
                             gpointer user_data)
     {
         auto* self = static_cast<GtkVideoPlayer*>(user_data);
-        if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_EOS ||
-            GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR)
+        if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_EOS)
         {
             self->stop_timer();
             self->fire_progress();
+        }
+        else if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR)
+        {
+            self->stop_timer();
+            if (self->on_error)
+            {
+                self->on_error();
+            }
         }
         return G_SOURCE_CONTINUE;
     }

@@ -61,6 +61,7 @@ void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
     is_loading_    = true;
     loading_start_ = std::chrono::steady_clock::now();
     is_open_       = true;
+    has_error_     = false;
 
     if (video_player_)
     {
@@ -88,6 +89,7 @@ void VideoViewerOverlay::close()
 void VideoViewerOverlay::load_bytes(const std::uint8_t* data, std::size_t size)
 {
     is_loading_ = false;
+    has_error_  = false;
     if (!data || size == 0 || !video_player_)
     {
         return;
@@ -121,6 +123,14 @@ void VideoViewerOverlay::set_video_player(
     };
     video_player_->on_progress = [this]()
     {
+        if (request_repaint_)
+        {
+            request_repaint_();
+        }
+    };
+    video_player_->on_error = [this]()
+    {
+        has_error_ = true;
         if (request_repaint_)
         {
             request_repaint_();
@@ -231,6 +241,44 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         cv.fill_rounded_rect(video_rect_, 4.0f, ctx.theme.palette.chrome_bg);
         cv.stroke_rounded_rect(video_rect_, 4.0f, ctx.theme.palette.border,
                                1.0f);
+
+        if (has_error_)
+        {
+            const tk::Color col_primary   = tk::Color::rgba(255, 255, 255, 200);
+            const tk::Color col_secondary = tk::Color::rgba(255, 255, 255, 110);
+            const float     mid_y = video_rect_.y + video_rect_.h * 0.5f;
+
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::UiSemibold;
+            st.max_width = video_rect_.w - 32.0f;
+            auto lo      = ctx.factory.build_text("Unable to play video", st);
+            if (lo)
+            {
+                tk::Size sz = lo->measure();
+                cv.draw_text(
+                    *lo,
+                    {video_rect_.x + (video_rect_.w - sz.w) * 0.5f,
+                     mid_y - sz.h - 2.0f},
+                    col_primary);
+            }
+
+            tk::TextStyle sub{};
+            sub.role      = tk::FontRole::Timestamp;
+            sub.max_width = video_rect_.w - 32.0f;
+            // \xe2\xac\x87 = ⬇  (matches the save button glyph)
+            auto sub_lo = ctx.factory.build_text(
+                "Use \xe2\xac\x87 to download and play in an external player",
+                sub);
+            if (sub_lo)
+            {
+                tk::Size sz = sub_lo->measure();
+                cv.draw_text(
+                    *sub_lo,
+                    {video_rect_.x + (video_rect_.w - sz.w) * 0.5f,
+                     mid_y + 4.0f},
+                    col_secondary);
+            }
+        }
     }
 
     // Spinning-dots loading indicator while bytes are in flight
