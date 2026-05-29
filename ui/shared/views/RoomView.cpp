@@ -634,24 +634,6 @@ void RoomView::set_image_provider(MessageListView::ImageProvider p)
     }
 }
 
-void RoomView::set_image_taker(MessageListView::ImageTaker f)
-{
-    stored_image_taker_ = f;
-    if (thread_view_ && thread_view_->message_list())
-        thread_view_->message_list()->set_image_taker(f);
-    if (message_list_)
-        message_list_->set_image_taker(std::move(f));
-}
-
-void RoomView::set_image_returner(MessageListView::ImageReturner f)
-{
-    stored_image_returner_ = f;
-    if (thread_view_ && thread_view_->message_list())
-        thread_view_->message_list()->set_image_returner(f);
-    if (message_list_)
-        message_list_->set_image_returner(std::move(f));
-}
-
 void RoomView::set_shortcode_provider(MessageListView::ShortcodeProvider p)
 {
     if (message_list_)
@@ -988,10 +970,6 @@ void RoomView::set_thread_panel(ThreadPanelState state,
                 ml->set_avatar_provider(stored_avatar_provider_);
             if (stored_image_provider_)
                 ml->set_image_provider(stored_image_provider_);
-            if (stored_image_taker_)
-                ml->set_image_taker(stored_image_taker_);
-            if (stored_image_returner_)
-                ml->set_image_returner(stored_image_returner_);
             // Wire the same hover-action / media / reaction callbacks as the
             // main timeline so reply / edit / redact (and friends) work
             // inside the thread panel. Reply sends are routed through the

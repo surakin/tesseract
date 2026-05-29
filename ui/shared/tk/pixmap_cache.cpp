@@ -11,14 +11,10 @@ PixmapCache::PixmapCache(std::size_t max_bytes, std::chrono::seconds ttl)
 {
 }
 
-bool PixmapCache::store(const std::string& key, std::shared_ptr<Image> img)
+bool PixmapCache::store(const std::string& key, std::unique_ptr<Image> img)
 {
     if (!img)
         return false;
-
-    // Clear any checkout tracking for this key (image is being returned
-    // to the evictable pool by a row or freshly decoded by a shell).
-    checked_out_.erase(key);
 
     const std::size_t needed = img->memory_bytes();
 
@@ -58,47 +54,8 @@ const Image* PixmapCache::get(const std::string& key)
     return it->second.img.get();
 }
 
-bool PixmapCache::has(const std::string& key) const noexcept
-{
-    if (entries_.count(key))
-        return true;
-    auto it = checked_out_.find(key);
-    return it != checked_out_.end() && !it->second.expired();
-}
-
-std::shared_ptr<Image> PixmapCache::take(const std::string& key)
-{
-    // Already checked out into ≥1 row? Rejoin the same shared object.
-    if (auto it = checked_out_.find(key); it != checked_out_.end())
-    {
-        if (auto sp = it->second.lock())
-            return sp;
-        checked_out_.erase(it); // all rows dropped it — fall through to entries_
-    }
-
-    auto it = entries_.find(key);
-    if (it == entries_.end())
-        return nullptr;
-
-    // Honour TTL: don't hand out a stale image.
-    const auto age = std::chrono::steady_clock::now() - it->second.last_use;
-    if (age > ttl_)
-    {
-        current_bytes_ -= it->second.bytes;
-        entries_.erase(it);
-        return nullptr;
-    }
-
-    current_bytes_ -= it->second.bytes;
-    auto sp = std::move(it->second.img);
-    entries_.erase(it);
-    checked_out_.emplace(key, std::weak_ptr<Image>(sp));
-    return sp;
-}
-
 void PixmapCache::evict(const std::string& key)
 {
-    checked_out_.erase(key);
     if (auto it = entries_.find(key); it != entries_.end())
     {
         current_bytes_ -= it->second.bytes;
@@ -120,14 +77,6 @@ void PixmapCache::evict_expired()
         {
             ++it;
         }
-    }
-    // Also prune dead weak_ptrs from checked_out_.
-    for (auto it = checked_out_.begin(); it != checked_out_.end();)
-    {
-        if (it->second.expired())
-            it = checked_out_.erase(it);
-        else
-            ++it;
     }
 }
 

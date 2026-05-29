@@ -574,16 +574,13 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     if (kind == MediaKind::MediaImage)
     {
         [c _decodeMediaBytes:bytes forKey:key];
-        // Notify the room view so rows can check the image out of the cache.
-        if (room_view_ && pixmap_cache_.has(key))
-            room_view_->notify_image_ready(key);
         [c _relayoutChatSurface];
         [c _relayoutShortcodePopupIfVisible];
         return;
     }
     if (kind == MediaKind::Tile)
     {
-        if (pixmap_cache_.has(key))
+        if (pixmap_cache_.get(key))
         {
             return;
         }
@@ -701,7 +698,7 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             post_to_ui_(
                 [this, key, img_holder]() mutable
                 {
-                    if (pixmap_cache_.has(key))
+                    if (pixmap_cache_.get(key))
                     {
                         return;
                     }
@@ -848,7 +845,7 @@ void MacShell::extract_media_info_(std::uint32_t pending_gen,
 void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
                                  std::vector<uint8_t> rgba)
 {
-    if (pixmap_cache_.has(key))
+    if (pixmap_cache_.get(key))
     {
         return;
     }
@@ -6389,7 +6386,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key
 {
-    if (bytes.empty() || _shell->pixmap_cache_.has(key) ||
+    if (bytes.empty() || _shell->pixmap_cache_.get(key) ||
         _shell->anim_cache_.has(key))
     {
         return;

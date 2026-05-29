@@ -4578,7 +4578,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         break;
     case MediaKind::Tile:
-        if (pixmap_cache_.has(cache_key))
+        if (pixmap_cache_.get(cache_key))
         {
             return;
         }
@@ -4968,7 +4968,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (pixmap_cache_.has(key) || !main_app_surface_)
+    if (pixmap_cache_.get(key) || !main_app_surface_)
     {
         return;
     }

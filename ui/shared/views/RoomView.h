@@ -53,8 +53,6 @@ public:
 
     void set_avatar_provider(MessageListView::ImageProvider p);
     void set_image_provider(MessageListView::ImageProvider p);
-    void set_image_taker(MessageListView::ImageTaker f);
-    void set_image_returner(MessageListView::ImageReturner f);
     void set_shortcode_provider(MessageListView::ShortcodeProvider p);
     void set_preview_provider(MessageListView::PreviewProvider p);
     void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
@@ -387,8 +385,6 @@ private:
     // Stored so they can be forwarded to the lazily-created thread view.
     MessageListView::ImageProvider stored_avatar_provider_;
     MessageListView::ImageProvider stored_image_provider_;
-    MessageListView::ImageTaker    stored_image_taker_;
-    MessageListView::ImageReturner stored_image_returner_;
     // Lazily created when the thread panel first opens. Owned by the tk
     // child list (add_child); we keep a borrowed pointer for access.
     ThreadView*     thread_view_      = nullptr;

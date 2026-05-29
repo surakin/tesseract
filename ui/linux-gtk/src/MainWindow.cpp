@@ -3815,7 +3815,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     // Already decoded? Cheap early-out on the UI thread.
     if (is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                  : (pixmap_cache_.has(cache_key) ||
+                  : (pixmap_cache_.get(cache_key) ||
                      anim_cache_.has(cache_key)))
     {
         return;
@@ -3839,7 +3839,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                          frames_raw = std::move(anim->frames),
                          delays = std::move(anim->delays_ms)]() mutable
                         {
-                            if (pixmap_cache_.has(cache_key) ||
+                            if (pixmap_cache_.get(cache_key) ||
                                 anim_cache_.has(cache_key))
                             {
                                 for (cairo_surface_t* s : frames_raw)
@@ -3884,7 +3884,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 {
                     const bool present =
                         is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                                  : (pixmap_cache_.has(cache_key) ||
+                                  : (pixmap_cache_.get(cache_key) ||
                                      anim_cache_.has(cache_key));
                     if (present)
                     {
@@ -4445,7 +4445,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
-                    if (!c->self->pixmap_cache_.has(c->key))
+                    if (!c->self->pixmap_cache_.get(c->key))
                     {
                         // Create an owned cairo surface and blit the BGRA pixels in.
                         cairo_surface_t* surf = cairo_image_surface_create(
@@ -4489,7 +4489,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (pixmap_cache_.has(key))
+    if (pixmap_cache_.get(key))
     {
         return;
     }

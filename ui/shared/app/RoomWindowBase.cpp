@@ -80,16 +80,6 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             return shell_image_(mxc);
         });
-    rv->set_image_taker(
-        [this](const std::string& key) -> std::shared_ptr<tk::Image>
-        {
-            return shell_->pixmap_cache_.take(key);
-        });
-    rv->set_image_returner(
-        [this](const std::string& key, std::shared_ptr<tk::Image> img)
-        {
-            shell_->pixmap_cache_.store(key, std::move(img));
-        });
     rv->set_shortcode_provider(
         [this](const std::string& mxc) -> std::string
         {
