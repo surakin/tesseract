@@ -29,8 +29,6 @@ set(_tk_sources
     tk/theme.cpp
     tk/anim_image_cache.h
     tk/anim_image_cache.cpp
-    tk/pixmap_cache.h
-    tk/pixmap_cache.cpp
     tk/widget.h
     tk/widget.cpp
     tk/layout.h

@@ -144,7 +144,7 @@ protected:
     void save_source_to_file_(std::string source_json,
                                std::string dest_path);
 
-    // Trigger fetch of a full-res image into the shared pixmap_cache_.
+    // Trigger fetch of a full-res image into the shared tk_images_ cache.
     // Idempotent: no-op if already cached or in-flight.
     void ensure_viewer_image_(const std::string& url);
 

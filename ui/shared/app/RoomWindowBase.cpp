@@ -612,7 +612,8 @@ const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
         shell_->start_anim_tick_(); // visible animated frame → keep timer alive
         return f;
     }
-    return shell_->pixmap_cache_.get(mxc);
+    auto it = shell_->tk_images_.find(mxc);
+    return it == shell_->tk_images_.end() ? nullptr : it->second.get();
 }
 
 const views::UrlPreviewData*

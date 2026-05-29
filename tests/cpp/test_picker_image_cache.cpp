@@ -21,10 +21,6 @@ struct FakeImage : tk::Image
     {
         return 1;
     }
-    std::size_t memory_bytes() const noexcept override
-    {
-        return 4; // 1×1 RGBA
-    }
 };
 
 // Minimal concrete ShellBase. Implements every pure virtual; re-exposes
@@ -87,8 +83,8 @@ struct TestShell : ShellBase
     using ShellBase::anim_cache_;
     using ShellBase::DecodedImage;
     using ShellBase::emoji_fetches_in_flight_;
-    using ShellBase::pixmap_cache_;
     using ShellBase::sticker_fetches_in_flight_;
+    using ShellBase::tk_images_;
 };
 
 TestShell::DecodedImage make_still()
@@ -111,13 +107,13 @@ TestShell::DecodedImage make_anim(int n)
 
 } // namespace
 
-TEST_CASE("finalize routes a still image into pixmap_cache_", "[picker-cache]")
+TEST_CASE("finalize routes a still image into tk_images_", "[picker-cache]")
 {
     TestShell s;
     s.emoji_fetches_in_flight_.insert("mxc://e/1");
     s.finalize_picker_image_("mxc://e/1", /*is_sticker=*/false, make_still());
 
-    CHECK(s.pixmap_cache_.get("mxc://e/1") != nullptr);
+    CHECK(s.tk_images_.count("mxc://e/1") == 1);
     CHECK(s.anim_cache_.has("mxc://e/1") == false);
     CHECK(s.emoji_fetches_in_flight_.count("mxc://e/1") == 0);
     CHECK(s.repaints == 1);
@@ -131,7 +127,7 @@ TEST_CASE("finalize routes animated frames into anim_cache_", "[picker-cache]")
     s.finalize_picker_image_("mxc://s/1", /*is_sticker=*/true, make_anim(3));
 
     CHECK(s.anim_cache_.has("mxc://s/1") == true);
-    CHECK(s.pixmap_cache_.get("mxc://s/1") == nullptr);
+    CHECK(s.tk_images_.count("mxc://s/1") == 0);
     CHECK(s.sticker_fetches_in_flight_.count("mxc://s/1") == 0);
     CHECK(s.anim_tick_starts == 1);
     CHECK(s.repaints == 1);
@@ -141,13 +137,13 @@ TEST_CASE("finalize does not overwrite an existing cache entry",
           "[picker-cache]")
 {
     TestShell s;
-    s.pixmap_cache_.store("mxc://e/2", std::make_unique<FakeImage>());
-    const tk::Image* original = s.pixmap_cache_.get("mxc://e/2");
+    s.tk_images_.emplace("mxc://e/2", std::make_unique<FakeImage>());
+    const tk::Image* original = s.tk_images_.at("mxc://e/2").get();
     s.emoji_fetches_in_flight_.insert("mxc://e/2");
 
     s.finalize_picker_image_("mxc://e/2", false, make_still());
 
-    CHECK(s.pixmap_cache_.get("mxc://e/2") == original); // unchanged
+    CHECK(s.tk_images_.at("mxc://e/2").get() == original);     // unchanged
     CHECK(s.emoji_fetches_in_flight_.count("mxc://e/2") == 0); // still cleared
     CHECK(s.repaints == 0);
 }
@@ -160,7 +156,7 @@ TEST_CASE("finalize with an empty decode result caches nothing",
 
     s.finalize_picker_image_("mxc://e/3", false, TestShell::DecodedImage{});
 
-    CHECK(s.pixmap_cache_.get("mxc://e/3") == nullptr);
+    CHECK(s.tk_images_.count("mxc://e/3") == 0);
     CHECK(s.anim_cache_.has("mxc://e/3") == false);
     CHECK(s.emoji_fetches_in_flight_.count("mxc://e/3") == 0);
     CHECK(s.repaints == 0);

@@ -14,7 +14,6 @@
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
 #include "tk/media_disk_cache.h"
-#include "tk/pixmap_cache.h"
 #include "tk/theme.h"
 #include "app/RoomWindowBase.h"
 #include "views/MessageListView.h"
@@ -270,7 +269,7 @@ protected:
 
     // ── Image caches ──────────────────────────────────────────────────────────
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
-    tk::PixmapCache pixmap_cache_; // decoded media images; bounded + TTL-limited
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     bool media_disk_cache_pruned_ = false;
@@ -396,8 +395,8 @@ protected:
     {
         RoomAvatar, // → tk_avatars_, triggers room-list repaint
         UserAvatar, // → tk_avatars_, triggers message-list repaint
-        MediaImage, // → anim_cache_ or pixmap_cache_, triggers message-list repaint
-        Tile, // → pixmap_cache_["tile:z/x/y"], triggers full message-list repaint
+        MediaImage, // → anim_cache_ or tk_images_, triggers message-list repaint
+        Tile, // → tk_images_["tile:z/x/y"], triggers full message-list repaint
     };
 
     // Result of a worker-thread decode. Exactly one of `still` /
@@ -519,7 +518,7 @@ protected:
     }
 
     // Called on the UI thread when async media bytes arrive.
-    // Shell decodes the bytes, stores a tk::Image in tk_avatars_ or pixmap_cache_
+    // Shell decodes the bytes, stores a tk::Image in tk_avatars_ or tk_images_
     // (or calls anim_cache_.store), and triggers a repaint.
     virtual void on_media_bytes_ready_(const std::string& cache_key,
                                        MediaKind kind,
@@ -545,7 +544,7 @@ protected:
     // URL (the row's height is unaffected — it never gained a preview card).
     virtual void on_url_preview_failed_(const std::string& url);
 
-    // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in pixmap_cache_.
+    // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in tk_images_.
     // Default is a no-op; each platform shell overrides with native image creation.
     virtual void cache_rgba_image_(const std::string& /*key*/, int /*w*/,
                                    int /*h*/, std::vector<uint8_t> /*rgba*/)
@@ -977,7 +976,7 @@ protected:
     // room avatar for group invites) so the room-list invite rows render them.
     void ensure_invite_avatars_();
 
-    // Sticker / animated-media lookup: anim_cache_ → pixmap_cache_ fallback.
+    // Sticker / animated-media lookup: anim_cache_ → tk_images_ fallback.
     // shell_sticker_ kicks an ensure_media_image_(mxc, 64, 64) fetch on miss
     // (used by RoomListView's sticker_provider, where the row hasn't yet
     // pre-warmed the cache). shell_sticker_no_fetch_ is the pure-lookup
@@ -1004,13 +1003,14 @@ protected:
         };
     }
 
-    // Static-image lookup: pixmap_cache_ only (used by the shortcode popup).
+    // Static-image lookup: tk_images_ only (used by the shortcode popup).
     std::function<const tk::Image*(const std::string&)>
     make_static_image_provider_()
     {
         return [this](const std::string& url) -> const tk::Image*
         {
-            return pixmap_cache_.get(url);
+            auto it = tk_images_.find(url);
+            return it == tk_images_.end() ? nullptr : it->second.get();
         };
     }
 
@@ -1028,9 +1028,10 @@ protected:
                 start_anim_tick_();
                 return f;
             }
-            if (const auto* img = pixmap_cache_.get(cache_key))
+            auto it = tk_images_.find(cache_key);
+            if (it != tk_images_.end())
             {
-                return img;
+                return it->second.get();
             }
             ensure_picker_image_(cache_key, is_sticker);
             return nullptr;
@@ -1038,7 +1039,7 @@ protected:
     }
 
     // Wire MainAppWidget-level + RoomListView/RoomView/UserInfo providers
-    // that read from tk_avatars_, pixmap_cache_, anim_cache_, and
+    // that read from tk_avatars_, tk_images_, anim_cache_, and
     // url_preview_data_. Each shell calls this once during construction after
     // creating its MainAppWidget. Does NOT touch image_viewer/video_viewer
     // (see wire_main_app_viewers_) nor non-provider callbacks
@@ -1059,7 +1060,7 @@ protected:
                                 std::function<void()> on_video_close = {});
 
     // Shared async picker-image path. Idempotent: no-op if already in
-    // pixmap_cache_ / anim_cache_ / in-flight. Dedups via
+    // tk_images_ / anim_cache_ / in-flight. Dedups via
     // emoji_fetches_in_flight_ (is_sticker == false) or
     // sticker_fetches_in_flight_ (true). Worker: media_disk_cache_ →
     // client_->fetch_source_bytes → media_disk_cache_.store →
@@ -1067,14 +1068,14 @@ protected:
     void ensure_picker_image_(const std::string& url, bool is_sticker);
 
     // UI-thread tail of ensure_picker_image_. Erases the in-flight key,
-    // routes `d` into anim_cache_ (animated) or pixmap_cache_ (still),
+    // routes `d` into anim_cache_ (animated) or tk_images_ (still),
     // calls start_anim_tick_() / repaint_pickers_(). Public-testable
     // logic (see test_picker_image_cache.cpp). Safe if `d.empty()`.
     void finalize_picker_image_(std::string url, bool is_sticker,
                                 DecodedImage d);
 
     /// Fetch an OSM tile (z/x/y) asynchronously. Idempotent — no-op if already
-    /// in pixmap_cache_, in-flight, or previously failed. On success: stores bytes
+    /// in tk_images_, in-flight, or previously failed. On success: stores bytes
     /// via on_media_bytes_ready_(key, MediaKind::Tile, bytes). On failure:
     /// inserts key into tile_fetch_failed_ to suppress retries this session.
     void ensure_tile_async(int z, int x, int y);

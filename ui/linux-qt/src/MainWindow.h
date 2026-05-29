@@ -186,7 +186,7 @@ private:
     void refreshRoomList();
     void onRoomSelected(const std::string& room_id);
     // Resolve any media bytes the row references and decode them into
-    // tk::Images held in `tk_avatars_` / `pixmap_cache_`. Shared by every
+    // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
     // positional-callback path (insert / update / reset). Overrides the
     // ShellBase hook to also record decode-size hints (mediaImageSizes_).
     void prep_row_media_(const tesseract::Event& ev) override;
@@ -271,8 +271,8 @@ private:
     std::unordered_map<std::string, std::pair<int, int>> mediaImageSizes_;
 
     /// Full-resolution images for the image viewer lightbox. Separate from
-    /// pixmap_cache_ which stores inline-scaled (320×200) thumbnails. Keyed by
-    /// the same source URL / MediaSource JSON as pixmap_cache_.
+    /// tk_images_ which stores inline-scaled (320×200) thumbnails. Keyed by
+    /// the same source URL / MediaSource JSON as tk_images_.
     std::unordered_map<std::string, std::unique_ptr<tk::Image>>
         viewerFullresCache_;
     std::unordered_set<std::string> viewerFullresInFlight_;
@@ -366,7 +366,7 @@ private:
 
     std::unique_ptr<LinuxQtTrayIcon> tray_;
     // rooms_, current_room_id_, pending_restore_room_, my_user_id_,
-    // my_display_name_, my_avatar_url_, tk_avatars_, pixmap_cache_,
+    // my_display_name_, my_avatar_url_, tk_avatars_, tk_images_,
     // voice_prefetched_, video_thumb_in_flight_, reply_details_requested_,
     // anim_cache_, space_stack_, pagination_, kPaginationBatch are all
     // inherited from ShellBase.
