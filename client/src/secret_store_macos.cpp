@@ -1,7 +1,11 @@
 #include "tesseract/secret_store.h"
 
+#include <nlohmann/json.hpp>
+
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
+
+#include <mutex>
 
 namespace
 {
@@ -28,14 +32,22 @@ CFOwned<CFStringRef> cf_string(const std::string& s)
         false));
 }
 
-} // namespace
+// All sessions are stored in a single Keychain item so that the OS shows at
+// most one access dialog regardless of how many accounts are logged in.
+// Old per-user items (kSecAttrAccount = MXID) are kept as a migration fallback
+// and removed the first time their owner calls save().
+static constexpr std::string_view kService    = "lan.westeros.tesseract";
+static constexpr std::string_view kConsAcct   = "_sessions"; // fixed sentinel account key
 
-namespace tesseract
-{
+static std::mutex g_lock;
 
-std::optional<std::string> SecretStore::load(const std::string& user_id)
+// ---------------------------------------------------------------------------
+// Raw Keychain helpers (parameterised on account key)
+// ---------------------------------------------------------------------------
+
+std::optional<std::string> keychain_load(const std::string& account_key)
 {
-    auto account = cf_string(user_id);
+    auto account = cf_string(account_key);
     const void* keys[] = {
         kSecClass, kSecAttrService, kSecAttrAccount,
         kSecReturnData, kSecMatchLimit};
@@ -61,13 +73,13 @@ std::optional<std::string> SecretStore::load(const std::string& user_id)
         static_cast<std::size_t>(CFDataGetLength(data)));
 }
 
-bool SecretStore::save(const std::string& user_id, const std::string& json)
+bool keychain_save(const std::string& account_key, const std::string& blob)
 {
-    auto account = cf_string(user_id);
+    auto account = cf_string(account_key);
     CFOwned<CFDataRef> value(CFDataCreate(
         nullptr,
-        reinterpret_cast<const UInt8*>(json.data()),
-        static_cast<CFIndex>(json.size())));
+        reinterpret_cast<const UInt8*>(blob.data()),
+        static_cast<CFIndex>(blob.size())));
 
     // Attempt update first; fall through to add if the item does not exist.
     {
@@ -108,9 +120,9 @@ bool SecretStore::save(const std::string& user_id, const std::string& json)
     return SecItemAdd(add, nullptr) == errSecSuccess;
 }
 
-void SecretStore::remove(const std::string& user_id)
+void keychain_remove(const std::string& account_key)
 {
-    auto account = cf_string(user_id);
+    auto account = cf_string(account_key);
     const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount};
     const void* vals[] = {
         kSecClassGenericPassword,
@@ -121,6 +133,88 @@ void SecretStore::remove(const std::string& user_id)
         &kCFTypeDictionaryKeyCallBacks,
         &kCFTypeDictionaryValueCallBacks));
     SecItemDelete(query);
+}
+
+// ---------------------------------------------------------------------------
+// Consolidated-item helpers (must be called with g_lock held)
+// ---------------------------------------------------------------------------
+
+std::optional<nlohmann::json> load_consolidated_map()
+{
+    auto blob = keychain_load(std::string(kConsAcct));
+    if (!blob)
+        return std::nullopt;
+    try
+    {
+        auto j = nlohmann::json::parse(*blob);
+        if (!j.is_object())
+            return std::nullopt;
+        return j;
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        return std::nullopt;
+    }
+}
+
+bool save_consolidated_map(const nlohmann::json& map)
+{
+    return keychain_save(std::string(kConsAcct), map.dump());
+}
+
+} // namespace
+
+namespace tesseract
+{
+
+// load() tries the consolidated item first; if the user is absent there it
+// falls back to the old per-user item so sessions created before this change
+// continue to work until they are saved again (which migrates them).
+std::optional<std::string> SecretStore::load(const std::string& user_id)
+{
+    std::lock_guard<std::mutex> lock(g_lock);
+
+    if (auto map = load_consolidated_map())
+    {
+        auto it = map->find(user_id);
+        if (it != map->end() && it->is_string())
+            return it->get<std::string>();
+    }
+
+    // Migration fallback: old per-user item.
+    return keychain_load(user_id);
+}
+
+// save() always writes to the consolidated item. If an old per-user item
+// exists for this account it is deleted, completing the one-shot migration.
+bool SecretStore::save(const std::string& user_id, const std::string& json)
+{
+    std::lock_guard<std::mutex> lock(g_lock);
+
+    nlohmann::json map = nlohmann::json::object();
+    if (auto m = load_consolidated_map())
+        map = std::move(*m);
+
+    map[user_id] = json;
+
+    if (!save_consolidated_map(map))
+        return false;
+
+    keychain_remove(user_id); // remove old per-user item if present
+    return true;
+}
+
+void SecretStore::remove(const std::string& user_id)
+{
+    std::lock_guard<std::mutex> lock(g_lock);
+
+    if (auto map = load_consolidated_map())
+    {
+        map->erase(user_id);
+        save_consolidated_map(*map);
+    }
+
+    keychain_remove(user_id); // remove old per-user item if present
 }
 
 } // namespace tesseract
