@@ -2587,7 +2587,7 @@ void MainWindow::on_create(HWND hwnd)
         // Avatar click → open the lightbox with the original avatar mxc.
         // Overrides the thumbnail-only wiring from
         // ShellBase::wire_main_app_widget_ so ensure_media_image_ fetches
-        // the native-resolution bytes into tk_images_; the viewer's
+        // the native-resolution bytes into pixmap_cache_; the viewer's
         // image_provider prefers that over the resized tk_avatars_ entry.
         room_view_->on_avatar_clicked =
             [this](std::string url, std::string name)
@@ -2944,22 +2944,20 @@ void MainWindow::on_destroy()
         KillTimer(hwnd_, kAnimTimerId);
         anim_timer_running_ = false;
     }
-    // Drain background workers BEFORE tearing any client down.  Each
-    // worker calls `client_->fetch_*` (which takes `&mut self` on the
-    // Rust side); racing one against `~ClientFfi` is a data race that
-    // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
-    pool_.drain();
+    // Signal Rust's cancellation channel first so any worker thread
+    // currently blocked inside a `block_on(tokio::select! { stop_rx })`
+    // FFI call returns immediately.  drain() can then join all threads
+    // without blocking.  The invariant "no worker is calling client_->*
+    // when the client is destroyed" is still satisfied because drain()
+    // runs before the client destructor.
     for (auto& s : accounts_)
     {
         if (s && s->client)
-        {
             s->client->stop_sync();
-        }
     }
     if (pending_login_client_)
-    {
         pending_login_client_->stop_sync();
-    }
+    pool_.drain();
 }
 
 // run_async_ is implemented in tesseract::ShellBase.
@@ -4428,7 +4426,7 @@ void MainWindow::try_load_animation(const std::string& url,
     anim_cache_.store(url, std::move(imgs), std::move(delays),
                       static_cast<std::int64_t>(GetTickCount64()));
     // Drop any static-cache leftover from a prior probe.
-    tk_images_.erase(url);
+    pixmap_cache_.evict(url);
 
     if (!anim_timer_running_ && hwnd_)
     {
@@ -4561,7 +4559,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             if (auto img = main_app_surface_->factory().decode_image(bytes))
             {
-                tk_images_.emplace(cache_key, std::move(img));
+                pixmap_cache_.store(cache_key, std::move(img));
             }
             else
             {
@@ -4579,13 +4577,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         break;
     case MediaKind::Tile:
-        if (tk_images_.count(cache_key))
+        if (pixmap_cache_.get(cache_key))
         {
             return;
         }
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            tk_images_.emplace(cache_key, std::move(img));
+            pixmap_cache_.store(cache_key, std::move(img));
             if (room_view_)
             {
                 room_view_->message_list()->invalidate_data();
@@ -4969,7 +4967,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (tk_images_.count(key) || !main_app_surface_)
+    if (pixmap_cache_.get(key) || !main_app_surface_)
     {
         return;
     }
@@ -4979,7 +4977,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
     {
         return;
     }
-    tk_images_.emplace(key, std::move(img));
+    pixmap_cache_.store(key, std::move(img));
     if (HWND ms = main_app_surface_->hwnd())
     {
         InvalidateRect(ms, nullptr, FALSE);
@@ -6453,7 +6451,7 @@ void MainWindow::pick_emoticon_at_cursor(const tesseract::ImagePackImage& img)
 // Sticker picker — WS_POPUP HWND hosting a tk::win32::Surface that paints
 // the shared tesseract::views::StickerPicker. Mirrors the emoji picker.
 // Selection routes through Client::send_sticker. The image_provider reuses
-// the per-window tk_images_ cache populated by ensure_media_image; cells
+// the per-window pixmap_cache_ cache populated by ensure_media_image; cells
 // for entries the cache hasn't seen yet render a placeholder shimmer.
 // ---------------------------------------------------------------------------
 

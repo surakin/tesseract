@@ -35,8 +35,11 @@ struct Client::Impl
 {
     rust::Box<tesseract_ffi::ClientFfi> ffi;
     // Serialises all calls that reach &mut ClientFfi across the cxx boundary.
-    // Read-only (&self) FFI methods (fetch_*, get_url_preview, get_room_summary,
-    // get_room_members) do not acquire this lock — they may run concurrently.
+    // Any method whose Rust signature is `&self` (not `&mut self`) does NOT
+    // acquire this lock and may run concurrently: fetch_*, get_url_preview,
+    // get_room_summary, get_room_members, space_children,
+    // get_room_notification_mode, can_pin_in_room, needs_recovery,
+    // backup_state, list_pack_images, list_devices, get_sas_emojis.
     mutable std::mutex ffi_mu;
 
     explicit Impl() : ffi(tesseract_ffi::client_create())
@@ -638,7 +641,6 @@ std::string Client::get_device_id() const
 
 std::vector<Client::Device> Client::list_devices() const
 {
-    MUT_FFI;
     auto ffi_devices = impl_->ffi->list_devices();
     std::vector<Device> out;
     out.reserve(ffi_devices.size());
@@ -1115,13 +1117,11 @@ Result Client::unpin_event(const std::string& room_id, const std::string& event_
 
 bool Client::can_pin_in_room(const std::string& room_id)
 {
-    MUT_FFI;
     return impl_->ffi->can_pin_in_room(room_id);
 }
 
 std::string Client::get_room_notification_mode(std::string room_id) const
 {
-    MUT_FFI;
     return std::string(impl_->ffi->get_room_notification_mode(room_id));
 }
 
@@ -1223,7 +1223,6 @@ std::vector<ImagePackImage>
 Client::list_pack_images(const std::string& pack_id,
                          PackUsageFilter filter) const
 {
-    MUT_FFI;
     return ffi_vec<ImagePackImage>(
         impl_->ffi->list_pack_images(pack_id, pack_usage_filter_to_str(filter)));
 }
@@ -1279,7 +1278,6 @@ Result Client::toggle_favorite_sticker(const std::string& image_url)
 std::vector<std::string>
 Client::space_children(const std::string& space_id) const
 {
-    MUT_FFI;
     auto raw = impl_->ffi->space_children(space_id);
     std::vector<std::string> result;
     result.reserve(raw.size());
@@ -1292,7 +1290,6 @@ Client::space_children(const std::string& space_id) const
 
 bool Client::needs_recovery() const
 {
-    MUT_FFI;
     return impl_->ffi->needs_recovery();
 }
 
@@ -1304,7 +1301,6 @@ Result Client::recover(const std::string& key_or_passphrase)
 
 BackupProgress Client::backup_state() const
 {
-    MUT_FFI;
     return from_ffi(impl_->ffi->backup_state());
 }
 
@@ -1367,7 +1363,6 @@ Result Client::cancel_verification(const std::string& flow_id)
 std::vector<VerificationEmoji>
 Client::get_sas_emojis(const std::string& flow_id) const
 {
-    MUT_FFI;
     auto ffi_vec = impl_->ffi->get_sas_emojis(flow_id);
     std::vector<VerificationEmoji> result;
     result.reserve(ffi_vec.size());

@@ -1477,7 +1477,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         // Overrides the basic wiring in ShellBase::wire_main_app_widget_
         // (which only shows the cached thumbnail) so ensure_media_image_
         // fetches the original bytes and decodes them at native size into
-        // tk_images_; the viewer's image_provider picks that up over the
+        // pixmap_cache_; the viewer's image_provider picks that up over the
         // tk_avatars_ entry.
         room_view_->on_avatar_clicked =
             [this](std::string url, std::string name)
@@ -2354,47 +2354,25 @@ MainWindow::~MainWindow()
         gtk_window_destroy(GTK_WINDOW(join_room_dialog_window_));
         join_room_dialog_window_ = nullptr;
     }
-    // Drain background workers BEFORE tearing the client down. Each
-    // worker calls `client_->fetch_*` (which takes `&mut self` on the
-    // Rust side); racing one against `~ClientFfi` is a data race that
-    // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
-    // Order: flip the flag → wait (bounded) for in-flight ones →
-    // only then stop_sync + destroy members.
-    shutting_down_.store(true, std::memory_order_release);
-    {
-        std::unique_lock<std::mutex> lk(workers_mu_);
-        workers_cv_.wait_for(lk, std::chrono::seconds(5),
-                             [this]
-                             {
-                                 return workers_in_flight_ == 0;
-                             });
-    }
-    // Stop sync on all accounts before any client is destroyed.
+    // Signal Rust's cancellation channel first so any worker thread
+    // currently blocked inside a `block_on(tokio::select! { stop_rx })`
+    // FFI call returns immediately.  drain() can then join all threads
+    // without blocking.  The invariant "no worker is calling client_->*
+    // when the client is destroyed" is still satisfied because drain()
+    // runs before the client destructor.
     for (auto& sess : accounts_)
     {
         if (sess->sync_started)
-        {
             sess->client->stop_sync();
-        }
     }
-    // login_view_ holds pending_login_client_* — cancel + join its worker
-    // before we destroy pending_login_client_ and the accounts vector.
+    if (pending_login_client_)
+        pending_login_client_->stop_sync();
+    pool_.drain();
+    // login_view_ holds pending_login_client_* — destroy it before
+    // pending_login_client_ and the accounts vector.
     login_view_.reset();
     pending_login_client_.reset();
-    // Second pass: explicitly destroy all accounts HERE, while workers_mu_ /
-    // workers_cv_ are still alive (destructor body, before ShellBase's
-    // member-destructor pass destroys workers_mu_ ahead of accounts_).
-    // Each ~Client() calls rt.drop() which kills the tokio I/O driver; any
-    // run_async_() thread still blocked in a block_on() will then unblock.
     accounts_.clear();
-    {
-        std::unique_lock<std::mutex> lk(workers_mu_);
-        workers_cv_.wait_for(lk, std::chrono::seconds(5),
-                             [this]
-                             {
-                                 return workers_in_flight_ == 0;
-                             });
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3836,7 +3814,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     // Already decoded? Cheap early-out on the UI thread.
     if (is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                  : (tk_images_.count(cache_key) != 0 ||
+                  : (pixmap_cache_.get(cache_key) ||
                      anim_cache_.has(cache_key)))
     {
         return;
@@ -3860,7 +3838,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                          frames_raw = std::move(anim->frames),
                          delays = std::move(anim->delays_ms)]() mutable
                         {
-                            if (tk_images_.count(cache_key) ||
+                            if (pixmap_cache_.get(cache_key) ||
                                 anim_cache_.has(cache_key))
                             {
                                 for (cairo_surface_t* s : frames_raw)
@@ -3905,7 +3883,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 {
                     const bool present =
                         is_avatar ? (tk_avatars_.count(cache_key) != 0)
-                                  : (tk_images_.count(cache_key) != 0 ||
+                                  : (pixmap_cache_.get(cache_key) ||
                                      anim_cache_.has(cache_key));
                     if (present)
                     {
@@ -3920,7 +3898,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     }
                     else
                     {
-                        tk_images_.emplace(cache_key, std::move(img));
+                        pixmap_cache_.store(cache_key, std::move(img));
                         if (kind == MediaKind::Tile && room_view_)
                         {
                             room_view_->message_list()->invalidate_data();
@@ -4466,7 +4444,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
-                    if (!c->self->tk_images_.count(c->key))
+                    if (!c->self->pixmap_cache_.get(c->key))
                     {
                         // Create an owned cairo surface and blit the BGRA pixels in.
                         cairo_surface_t* surf = cairo_image_surface_create(
@@ -4487,7 +4465,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                                     static_cast<std::size_t>(src_stride));
                             }
                             cairo_surface_mark_dirty(surf);
-                            c->self->tk_images_.emplace(
+                            c->self->pixmap_cache_.store(
                                 c->key, tk::cairo_pango::make_image(surf));
                             cairo_surface_destroy(surf);
                             if (c->self->main_app_surface_)
@@ -4510,7 +4488,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (tk_images_.count(key))
+    if (pixmap_cache_.get(key))
     {
         return;
     }
@@ -4536,7 +4514,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
         }
     }
     cairo_surface_mark_dirty(surf);
-    tk_images_.emplace(key, tk::cairo_pango::make_image(surf));
+    pixmap_cache_.store(key, tk::cairo_pango::make_image(surf));
     cairo_surface_destroy(surf);
     if (main_app_surface_)
     {
