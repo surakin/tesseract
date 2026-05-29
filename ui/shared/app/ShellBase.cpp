@@ -70,7 +70,7 @@ ShellBase::WorkerPool::WorkerPool()
     }
 }
 
-ShellBase::WorkerPool::~WorkerPool()
+void ShellBase::WorkerPool::drain()
 {
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -81,7 +81,15 @@ ShellBase::WorkerPool::~WorkerPool()
     }
     cv_.notify_all();
     for (auto& t : threads_)
-        t.join();
+    {
+        if (t.joinable())
+            t.join();
+    }
+}
+
+ShellBase::WorkerPool::~WorkerPool()
+{
+    drain();
 }
 
 void ShellBase::WorkerPool::post(std::function<void()> fn)

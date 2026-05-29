@@ -2948,15 +2948,7 @@ void MainWindow::on_destroy()
     // worker calls `client_->fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
     // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
-    shutting_down_.store(true, std::memory_order_release);
-    {
-        std::unique_lock<std::mutex> lk(workers_mu_);
-        workers_cv_.wait_for(lk, std::chrono::seconds(5),
-                             [this]
-                             {
-                                 return workers_in_flight_ == 0;
-                             });
-    }
+    pool_.drain();
     for (auto& s : accounts_)
     {
         if (s && s->client)

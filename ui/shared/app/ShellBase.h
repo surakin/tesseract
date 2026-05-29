@@ -378,6 +378,10 @@ protected:
         // are busy the task queues and runs when a thread becomes available.
         void post(std::function<void()> fn);
 
+        // Stop accepting new work, drop pending tasks, and join all threads.
+        // Safe to call multiple times (no-op after the first call).
+        void drain();
+
         std::deque<std::function<void()>> queue_;
         std::mutex                        mu_;
         std::condition_variable           cv_;

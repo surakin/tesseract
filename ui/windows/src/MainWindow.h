@@ -465,8 +465,7 @@ private:
     /// sticker picker when at least one frame changed.
     void on_anim_tick();
 
-    // run_async_, shutting_down_, workers_mu_, workers_cv_, workers_in_flight_
-    // are inherited from tesseract::ShellBase.
+    // run_async_, pool_ are inherited from tesseract::ShellBase.
 
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
     static constexpr UINT_PTR kScrollDebounceTimerId = 4;

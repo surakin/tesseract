@@ -256,7 +256,7 @@ public:
     using ShellBase::set_screen_lock_;
     using ShellBase::set_theme_preference_;
     using ShellBase::shortcode_for_mxc_;
-    using ShellBase::shutting_down_;
+    using ShellBase::pool_;
     using ShellBase::apply_space_child_counts_;
     using ShellBase::space_children_cache_;
     using ShellBase::space_stack_;
@@ -281,9 +281,6 @@ public:
     using ShellBase::wire_main_app_viewers_;
     using ShellBase::wire_main_app_widget_;
     using ShellBase::wire_voice_capture_;
-    using ShellBase::workers_cv_;
-    using ShellBase::workers_in_flight_;
-    using ShellBase::workers_mu_;
     using ShellBase::reset_server_info_;
     using ShellBase::server_info_;
 
@@ -3711,16 +3708,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // worker calls `client_.fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
     // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
-    _shell->shutting_down_.store(true, std::memory_order_release);
-    {
-        std::unique_lock<std::mutex> lk(_shell->workers_mu_);
-        _shell->workers_cv_.wait_for(
-            lk, std::chrono::seconds(5),
-            [self]
-            {
-                return self->_shell->workers_in_flight_ == 0;
-            });
-    }
+    _shell->pool_.drain();
     for (auto& acc : _shell->accounts_)
     {
         if (acc->sync_started)
