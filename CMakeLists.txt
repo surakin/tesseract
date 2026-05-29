@@ -346,3 +346,8 @@ endif()
 # Linux → DEB + RPM (Qt6 backend only; GTK4 uses the same rules).
 # ---------------------------------------------------------------------------
 include(${CMAKE_SOURCE_DIR}/cmake/Installers.cmake)
+
+# ---------------------------------------------------------------------------
+# i18n: unified catalog build (xgettext → .pot; msgfmt .po → .mo)
+# ---------------------------------------------------------------------------
+include(${CMAKE_SOURCE_DIR}/cmake/I18n.cmake)

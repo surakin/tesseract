@@ -1,6 +1,7 @@
 #include "VerificationBanner.h"
 
 #include "banner_style.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -33,7 +34,7 @@ VerificationBanner::VerificationBanner()
 
     // Primary action button (Verify / Accept / They Match / —)
     auto primary = std::make_unique<tk::Button>(
-        "Verify", std::function<void()>{}, tk::Button::Variant::Primary);
+        tk::tr("Verify"), std::function<void()>{}, tk::Button::Variant::Primary);
     primary->set_on_click(
         [this]
         {
@@ -66,7 +67,7 @@ VerificationBanner::VerificationBanner()
 
     // Secondary action button (Decline / Cancel / No Match)
     auto secondary = std::make_unique<tk::Button>(
-        "Decline", std::function<void()>{}, tk::Button::Variant::Subtle);
+        tk::tr("Decline"), std::function<void()>{}, tk::Button::Variant::Subtle);
     secondary->set_on_click(
         [this]
         {
@@ -112,7 +113,7 @@ VerificationBanner::VerificationBanner()
     dismiss_ = add_child(std::move(dismiss));
 
     // "Use recovery key" link — visible in Prompt state only
-    auto link = std::make_unique<tk::Button>("Use recovery key",
+    auto link = std::make_unique<tk::Button>(tk::tr("Use recovery key"),
                                              std::function<void()>{},
                                              tk::Button::Variant::Subtle);
     link->set_on_click(
@@ -165,21 +166,21 @@ std::string VerificationBanner::label_text() const
     switch (state_)
     {
     case State::Prompt:
-        return "Verify this device to confirm your identity.";
+        return tk::tr("Verify this device to confirm your identity.");
     case State::IncomingRequest:
-        return "Another device wants to verify. Accept to compare emoji.";
+        return tk::tr("Another device wants to verify. Accept to compare emoji.");
     case State::Waiting:
-        return "Waiting for the other device to accept…";
+        return tk::tr("Waiting for the other device to accept\xe2\x80\xa6");
     case State::ShowEmojis:
-        return "Do these emoji match what the other device shows?";
+        return tk::tr("Do these emoji match what the other device shows?");
     case State::Confirming:
-        return "Confirming…";
+        return tk::tr("Confirming\xe2\x80\xa6");
     case State::Done:
-        return "Device verified ✓";
+        return tk::tr("Device verified \xe2\x9c\x93");
     case State::Cancelled:
         return cancel_reason_.empty()
-                   ? std::string{"Verification cancelled."}
-                   : "Verification cancelled: " + cancel_reason_;
+                   ? tk::tr("Verification cancelled.")
+                   : tk::trf(tk::tr("Verification cancelled: {0}"), {cancel_reason_});
     }
     return {};
 }
@@ -202,24 +203,24 @@ void VerificationBanner::apply_state()
     {
     case State::Prompt:
         show_primary = true;
-        primary_text = "Verify";
+        primary_text = tk::tr("Verify");
         show_dismiss = true;
         break;
     case State::IncomingRequest:
         show_primary = true;
-        primary_text = "Accept";
+        primary_text = tk::tr("Accept");
         show_secondary = true;
-        secondary_text = "Decline";
+        secondary_text = tk::tr("Decline");
         break;
     case State::Waiting:
         show_secondary = true;
-        secondary_text = "Cancel";
+        secondary_text = tk::tr("Cancel");
         break;
     case State::ShowEmojis:
         show_primary = true;
-        primary_text = "They Match";
+        primary_text = tk::tr("They Match");
         show_secondary = true;
-        secondary_text = "No Match";
+        secondary_text = tk::tr("No Match");
         break;
     case State::Confirming:
     case State::Done:

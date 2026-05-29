@@ -1,0 +1,10 @@
+# Spanish translation for Tesseract
+# Copyright (C) 2024 Tesseract contributors
+msgid ""
+msgstr ""
+"Project-Id-Version: tesseract 0.1\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"

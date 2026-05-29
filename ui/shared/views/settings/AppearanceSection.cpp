@@ -3,6 +3,7 @@
 #include "SettingsGroup.h"
 
 #include "tesseract/settings.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
 
@@ -174,7 +175,7 @@ void AppearanceSection::ThemePicker::paint(tk::PaintCtx& ctx)
             st.valign = tk::TextVAlign::Top;
             st.trim = tk::TextTrim::None;
             st.max_width = -1.0f;
-            buttons_[i].layout = ctx.factory.build_text(btn.label, st);
+            buttons_[i].layout = ctx.factory.build_text(tk::tr(btn.label), st);
         }
 
         if (buttons_[i].layout)

@@ -48,6 +48,12 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     room_section_rooms_collapsed     = j.value("room_section_rooms_collapsed",     false);
     room_section_spaces_collapsed    = j.value("room_section_spaces_collapsed",    false);
     room_section_inactive_collapsed  = j.value("room_section_inactive_collapsed",  true);
+
+    auto lang = j.value("language", std::string{});
+    if (!lang.empty())
+    {
+        language = lang;
+    }
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const
@@ -80,6 +86,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
     std::ofstream f(path, std::ios::trunc);
     if (!f.is_open())
         return;
+    j["language"] = language;
     f << j.dump(4) << '\n';
 }
 

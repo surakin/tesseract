@@ -1,5 +1,7 @@
 #include "LoginView.h"
 
+#include "tk/i18n.h"
+
 #include <algorithm>
 #include <chrono>
 #include <thread>
@@ -36,15 +38,15 @@ void LoginView::rebuild_tree()
         .set_main(tk::Main::Start);
 
     auto title =
-        std::make_unique<tk::Label>("Sign in to Matrix", tk::FontRole::Title);
+        std::make_unique<tk::Label>(tk::tr("Sign in to Matrix"), tk::FontRole::Title);
     title->set_halign(tk::TextHAlign::Center);
 
     auto caption = std::make_unique<tk::Label>(
-        "We'll open your browser to complete sign-in.", tk::FontRole::Body);
+        tk::tr("We'll open your browser to complete sign-in."), tk::FontRole::Body);
     caption->set_halign(tk::TextHAlign::Center);
     caption->set_wrap(true);
 
-    auto hs_input_label = std::make_unique<tk::Label>("Homeserver or Matrix ID",
+    auto hs_input_label = std::make_unique<tk::Label>(tk::tr("Homeserver or Matrix ID"),
                                                       tk::FontRole::Small);
     hs_input_label->set_halign(tk::TextHAlign::Leading);
 
@@ -60,12 +62,12 @@ void LoginView::rebuild_tree()
     discovery->set_visible(false);
 
     auto sign_in = std::make_unique<tk::Button>(
-        "Sign in", std::function<void()>{}, tk::Button::Variant::Primary);
+        tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
     sign_in->set_min_size({0, kButtonHeight});
     sign_in->set_on_click([this] { sign_in_(); });
 
     auto cancel = std::make_unique<tk::Button>(
-        "Cancel", std::function<void()>{}, tk::Button::Variant::Subtle);
+        tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
     cancel->set_min_size({0, kButtonHeight});
     cancel->set_on_click([this] { cancel_(); });
     cancel->set_visible(false);
@@ -177,7 +179,7 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
         break;
     case DiscoveryState::Discovering:
         resolved_base_url_.clear();
-        discovery_lbl_->set_text("Checking\xe2\x80\xa6");
+        discovery_lbl_->set_text(tk::tr("Checking\xe2\x80\xa6"));
         discovery_lbl_->set_colour({});
         discovery_lbl_->set_visible(true);
         break;
@@ -188,8 +190,9 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
         break;
     case DiscoveryState::Failed:
         discovery_lbl_->set_text(
-            "\xe2\x9c\x97 " + (detail.empty() ? std::string("Could not reach this server")
-                                              : detail));
+            "\xe2\x9c\x97 " + (detail.empty()
+                                   ? tk::tr("Could not reach this server")
+                                   : detail));
         discovery_lbl_->set_colour(tk::Color::rgb(0xCC2200));
         discovery_lbl_->set_visible(true);
         break;

@@ -1,5 +1,6 @@
 #include "RoomListView.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -257,16 +258,16 @@ private:
         {
             const std::size_t n =
                 owner_.invites_ ? owner_.invites_->size() : 0u;
-            title_str = std::string("Invitations (") + std::to_string(n) + ")";
+            title_str = tk::trf(tk::tr("Invitations ({0})"), {std::to_string(n)});
         }
         else if (item.section == RoomListView::kSecInactive)
         {
             const std::size_t n = owner_.section_rooms_[kSecInactive].size();
-            title_str = std::string("Inactive (") + std::to_string(n) + ")";
+            title_str = tk::trf(tk::tr("Inactive ({0})"), {std::to_string(n)});
         }
         else
         {
-            title_str = RoomListView::kSectionTitles[item.section];
+            title_str = tk::tr(RoomListView::kSectionTitles[item.section]);
         }
         const std::string& title  = title_str;
         bool               collapsed = owner_.collapsed_[item.section];

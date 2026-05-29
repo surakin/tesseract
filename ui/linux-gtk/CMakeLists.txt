@@ -84,18 +84,5 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
 install(FILES "${CMAKE_SOURCE_DIR}/packaging/tesseract.desktop"
         DESTINATION share/applications)
 
-# i18n: extract translatable strings to a gettext .pot template (run manually).
-find_program(XGETTEXT_EXECUTABLE xgettext)
-if(XGETTEXT_EXECUTABLE)
-    add_custom_target(i18n_extract_gtk
-        COMMAND ${XGETTEXT_EXECUTABLE}
-            --keyword=_ --keyword=N_
-            --language=C++ --from-code=UTF-8
-            --package-name=tesseract
-            --output=${CMAKE_SOURCE_DIR}/i18n/gtk/tesseract.pot
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/MainWindow.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/LoginView.cpp
-        COMMENT "Extract GTK translation strings to i18n/gtk/tesseract.pot"
-        VERBATIM
-    )
-endif()
+# i18n: use the root i18n-extract target (cmake/I18n.cmake) which scans all
+# source directories including this one. Run: cmake --build . --target i18n-extract

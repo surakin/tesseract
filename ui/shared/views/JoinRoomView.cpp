@@ -1,5 +1,6 @@
 #include "JoinRoomView.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -50,29 +51,29 @@ std::string join_rule_label(const std::string& rule)
 {
     if (rule == "public")
     {
-        return "Public";
+        return tk::tr("Public");
     }
     if (rule == "knock")
     {
-        return "Knock";
+        return tk::tr("Knock");
     }
     if (rule == "restricted")
     {
-        return "Restricted";
+        return tk::tr("Restricted");
     }
     if (rule == "knock_restricted")
     {
-        return "Knock+Restricted";
+        return tk::tr("Knock+Restricted");
     }
     if (rule == "invite")
     {
-        return "Invite only";
+        return tk::tr("Invite only");
     }
     if (rule == "private")
     {
-        return "Private";
+        return tk::tr("Private");
     }
-    return "Unknown";
+    return tk::tr("Unknown");
 }
 
 } // namespace
@@ -80,7 +81,7 @@ std::string join_rule_label(const std::string& rule)
 JoinRoomView::JoinRoomView()
 {
     auto lookup = std::make_unique<tk::Button>(
-        "Look up", std::function<void()>{}, tk::Button::Variant::Primary);
+        tk::tr("Look up"), std::function<void()>{}, tk::Button::Variant::Primary);
     lookup->set_on_click(
         [this]
         {
@@ -91,7 +92,7 @@ JoinRoomView::JoinRoomView()
         });
     lookup_btn_ = add_child(std::move(lookup));
 
-    auto join = std::make_unique<tk::Button>("Join", std::function<void()>{},
+    auto join = std::make_unique<tk::Button>(tk::tr("Join"), std::function<void()>{},
                                              tk::Button::Variant::Primary);
     join->set_on_click(
         [this]
@@ -109,7 +110,7 @@ JoinRoomView::JoinRoomView()
     join_btn_ = add_child(std::move(join));
 
     auto cancel = std::make_unique<tk::Button>(
-        "Cancel", std::function<void()>{}, tk::Button::Variant::Subtle);
+        tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
     cancel->set_on_click(
         [this]
         {
@@ -187,12 +188,12 @@ void JoinRoomView::apply_state()
         status_lbl_->set_visible(show_status);
         if (state_ == State::Loading)
         {
-            status_lbl_->set_text("Looking up room…");
+            status_lbl_->set_text(tk::tr("Looking up room\xe2\x80\xa6"));
             status_lbl_->set_colour({}); // reset to default
         }
         else if (state_ == State::Error)
         {
-            status_lbl_->set_text(error_msg_.empty() ? "Room not found."
+            status_lbl_->set_text(error_msg_.empty() ? tk::tr("Room not found.")
                                                      : error_msg_);
             status_lbl_->set_colour(tk::Color::rgb(0xCC2200));
         }
@@ -299,7 +300,7 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
         ts.role = tk::FontRole::Title;
         ts.halign = tk::TextHAlign::Leading;
         ts.trim = tk::TextTrim::Ellipsis;
-        auto lo = ctx.factory.build_text("Join a Room", ts);
+        auto lo = ctx.factory.build_text(tk::tr("Join a Room"), ts);
         if (lo)
         {
             ctx.canvas.draw_text(*lo, {x, y}, pal.text_primary);
@@ -402,8 +403,10 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
 
         // Member count + encryption indicator.
         {
-            std::string detail =
-                std::to_string(preview_.num_joined_members) + " members";
+            std::string detail = tk::trf(
+                tk::trn("{0} member", "{0} members",
+                        static_cast<long>(preview_.num_joined_members)),
+                {std::to_string(preview_.num_joined_members)});
             if (!preview_.encryption.empty())
             {
                 detail += "  \xF0\x9F\x94\x92"; // UTF-8 🔒

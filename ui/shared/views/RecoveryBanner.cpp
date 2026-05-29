@@ -1,6 +1,7 @@
 #include "RecoveryBanner.h"
 
 #include "banner_style.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -26,7 +27,7 @@ RecoveryBanner::RecoveryBanner()
     label_ = add_child(std::move(label));
 
     auto verify = std::make_unique<tk::Button>(
-        "Verify", std::function<void()>{}, tk::Button::Variant::Primary);
+        tk::tr("Verify"), std::function<void()>{}, tk::Button::Variant::Primary);
     verify->set_on_click(
         [this]
         {
@@ -101,17 +102,18 @@ std::string RecoveryBanner::label_text() const
     switch (state_)
     {
     case State::Form:
-        return "Verify this device:";
+        return tk::tr("Verify this device:");
     case State::Verifying:
-        return "Verifying…";
+        return tk::tr("Verifying\xe2\x80\xa6");
     case State::Importing:
         return imported_keys_ > 0
-                   ? "Importing keys from backup… " +
-                         std::to_string(imported_keys_) + " imported."
-                   : "Downloading historical keys…";
+                   ? tk::trf(tk::tr("Importing keys from backup\xe2\x80\xa6 {0} imported."),
+                             {std::to_string(imported_keys_)})
+                   : tk::tr("Downloading historical keys\xe2\x80\xa6");
     case State::Failed:
-        return failure_msg_.empty() ? std::string{"Recovery failed."}
-                                    : "Recovery failed: " + failure_msg_;
+        return failure_msg_.empty()
+                   ? tk::tr("Recovery failed.")
+                   : tk::trf(tk::tr("Recovery failed: {0}"), {failure_msg_});
     }
     return {};
 }

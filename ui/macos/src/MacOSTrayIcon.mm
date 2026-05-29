@@ -1,4 +1,5 @@
 #import "MacOSTrayIcon.h"
+#import "tk_locale.h"
 #import <AppKit/AppKit.h>
 
 #include <utility>
@@ -89,12 +90,12 @@ MacOSTrayIcon::MacOSTrayIcon(std::function<void()> on_show,
     item.button.toolTip = @"Tesseract";
 
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
-    NSMenuItem* showItem = [menu addItemWithTitle:@"Show/Hide App"
+    NSMenuItem* showItem = [menu addItemWithTitle:TkTr("Show App")
                                            action:@selector(showApp:)
                                     keyEquivalent:@""];
     showItem.target = b;
     [menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem* quitItem = [menu addItemWithTitle:@"Quit"
+    NSMenuItem* quitItem = [menu addItemWithTitle:TkTr("Quit")
                                            action:@selector(quitApp:)
                                     keyEquivalent:@""];
     quitItem.target = b;

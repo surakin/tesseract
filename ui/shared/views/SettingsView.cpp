@@ -1,5 +1,8 @@
 #include "SettingsView.h"
 
+#include "views/settings/LanguageSection.h"
+
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -16,7 +19,7 @@ namespace tesseract::views
 SettingsView::SettingsView()
 {
     // Back button — placed left-aligned inside the bar by arrange().
-    auto back = std::make_unique<tk::Button>("← Back", std::function<void()>{},
+    auto back = std::make_unique<tk::Button>(tk::tr("← Back"), std::function<void()>{},
                                              tk::Button::Variant::Subtle);
     back->set_on_click(
         [this]
@@ -121,17 +124,29 @@ SettingsView::SettingsView()
     auto about = std::make_unique<AboutSection>();
     about_ = about.get();
 
+    // Language section.
+    auto language = std::make_unique<LanguageSection>();
+    language->on_language_changed = [this](std::string code)
+    {
+        if (on_language_changed)
+        {
+            on_language_changed(std::move(code));
+        }
+    };
+    language_ = language.get();
+
     // SideTabView — owns the section widgets. "Sessions" sits next to
     // "Account" since both relate to the signed-in user's identity.
     auto tabs = std::make_unique<tk::SideTabView>();
-    tabs->add_tab("Account", std::move(account));
-    tabs->add_tab("Sessions", std::move(devices));
-    tabs->add_tab("Appearance", std::move(appearance));
-    tabs->add_tab("Notifications", std::move(notifications));
-    tabs->add_tab("Media", std::move(media));
-    tabs->add_tab("Privacy", std::move(privacy));
-    tabs->add_tab("Server", std::move(server));
-    tabs->add_bottom_tab("About", std::move(about));
+    tabs->add_tab(tk::tr("Account"), std::move(account));
+    tabs->add_tab(tk::tr("Sessions"), std::move(devices));
+    tabs->add_tab(tk::tr("Appearance"), std::move(appearance));
+    tabs->add_tab(tk::tr("Notifications"), std::move(notifications));
+    tabs->add_tab(tk::tr("Media"), std::move(media));
+    tabs->add_tab(tk::tr("Privacy"), std::move(privacy));
+    tabs->add_tab(tk::tr("Server"), std::move(server));
+    tabs->add_tab(tk::tr("Language"), std::move(language));
+    tabs->add_bottom_tab(tk::tr("About"), std::move(about));
     // First tab is auto-selected by SideTabView::add_tab.
     tabs->on_tab_selected = [this](int) { if (on_tab_changed) on_tab_changed(); };
     tabs_ = add_child(std::move(tabs));

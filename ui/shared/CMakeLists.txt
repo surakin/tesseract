@@ -27,6 +27,8 @@ set(_tk_sources
     tk/host.h
     tk/theme.h
     tk/theme.cpp
+    tk/i18n.h
+    tk/i18n.cpp
     tk/anim_image_cache.h
     tk/anim_image_cache.cpp
     tk/pixmap_cache.h
@@ -128,6 +130,8 @@ set(_tk_sources
     views/settings/AccountSection.cpp
     views/settings/AppearanceSection.h
     views/settings/AppearanceSection.cpp
+    views/settings/LanguageSection.h
+    views/settings/LanguageSection.cpp
     views/settings/NotificationsSection.h
     views/settings/NotificationsSection.cpp
     views/settings/MediaSection.h

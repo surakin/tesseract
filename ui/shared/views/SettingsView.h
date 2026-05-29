@@ -7,7 +7,8 @@
 //       – Appearance (theme selection + room-list grouping)
 //       – Notifications (enable/disable toggle)
 //       – Media (full-media prefetch toggle)
-//       – Server / Sessions / About
+//       – Privacy / Server / Sessions / About
+//       – Language (locale selection, takes effect after restart)
 //
 // The shell constructs SettingsView once, wires the public callbacks, and
 // shows/hides it by mounting/unmounting the widget's surface. Before
@@ -20,6 +21,7 @@
 #include "views/settings/AccountSection.h"
 #include "views/settings/AppearanceSection.h"
 #include "views/settings/DevicesSection.h"
+#include "views/settings/LanguageSection.h"
 #include "views/settings/MediaSection.h"
 #include "views/settings/NotificationsSection.h"
 #include "views/settings/PrivacySection.h"
@@ -182,6 +184,9 @@ public:
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
                          uint64_t memory_bytes);
 
+    // Fired when the user selects a different language (BCP47 code or "auto").
+    std::function<void(std::string)> on_language_changed;
+
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -198,12 +203,13 @@ private:
     AccountSection* account_ = nullptr;
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
-    MediaSection* media_ = nullptr;
+    MediaSection*    media_          = nullptr;
     PrivacySection*  privacy_        = nullptr;
-    ServerSection* server_section_ = nullptr;
+    ServerSection*   server_section_ = nullptr;
     DevicesSection*  devices_        = nullptr;
     AboutSection*    about_          = nullptr;
     ConfirmDialog*   confirm_dialog_ = nullptr;
+    LanguageSection* language_       = nullptr;
 
     std::function<void()> request_repaint_;
 };

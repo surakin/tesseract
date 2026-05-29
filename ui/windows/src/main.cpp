@@ -3,7 +3,11 @@
 #include <ShObjIdl_core.h>
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include <winrt/base.h>
+#include <filesystem>
 #include <stdexcept>
+#include "tk/i18n.h"
+#include <tesseract/paths.h>
+#include <tesseract/settings.h>
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     LPWSTR /*lpCmdLine*/, int nCmdShow)
@@ -89,6 +93,32 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     INITCOMMONCONTROLSEX icce{sizeof(icce),
                               ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&icce);
+
+    // i18n: initialise locale before any views are constructed.
+    // Load persisted settings first so the saved language preference is
+    // available when choosing the locale.
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    {
+        // .mo files live next to the exe in i18n/
+        wchar_t exe_path[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+        std::filesystem::path exe_dir = std::filesystem::path(exe_path).parent_path();
+        std::string i18n_dir = (exe_dir / "i18n").string();
+
+        std::string lang = tesseract::Settings::instance().language;
+        if (lang == "auto" || lang.empty())
+        {
+            wchar_t locale_name[LOCALE_NAME_MAX_LENGTH] = {};
+            GetUserDefaultLocaleName(locale_name, LOCALE_NAME_MAX_LENGTH);
+            // Convert to narrow string (locale names are ASCII-safe: "en-US", "es-MX", etc.)
+            char narrow[LOCALE_NAME_MAX_LENGTH] = {};
+            WideCharToMultiByte(CP_UTF8, 0, locale_name, -1, narrow, sizeof(narrow), nullptr, nullptr);
+            // Replace '-' with '_' to match gettext convention (en-US -> en_US)
+            for (char* p = narrow; *p; ++p) { if (*p == '-') *p = '_'; }
+            lang = narrow;
+        }
+        tk::set_locale(i18n_dir, lang);
+    }
 
     int exit_code = 1;
     if (win32::MainWindow::register_class(hInstance))

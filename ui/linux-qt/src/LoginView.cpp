@@ -4,6 +4,7 @@
 #include <QResizeEvent>
 #include <QUrl>
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 namespace qt6

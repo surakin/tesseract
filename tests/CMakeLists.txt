@@ -74,6 +74,7 @@ add_executable(tesseract_tests
     cpp/test_tk_room_view_thread_callbacks.cpp
     cpp/test_slash_commands.cpp
     cpp/test_slash_command_engine.cpp
+    cpp/test_i18n.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

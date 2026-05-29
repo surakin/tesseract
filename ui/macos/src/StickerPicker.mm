@@ -1,4 +1,5 @@
 #import "StickerPicker.h"
+#import "tk_locale.h"
 
 #include "tk/host.h"
 #include "tk/host_macos.h"
@@ -58,7 +59,7 @@ static StickerPickerPanel* g_stickerPanel = nil;
                       styleMask:mask
                         backing:NSBackingStoreBuffered
                           defer:NO];
-        g_stickerPanel.title = @"Stickers";
+        g_stickerPanel.title = TkTr("Stickers");
         g_stickerPanel.floatingPanel = YES;
         g_stickerPanel.becomesKeyOnlyIfNeeded = NO;
         g_stickerPanel.hidesOnDeactivate = YES;
