@@ -508,6 +508,27 @@ public:
     /// immediately; errors are silently swallowed.
     void save_prefs_json(const std::string& json);
 
+    // ------------------------------------------------------------------
+    // MSC4278 media-preview config ("m.media_preview_config" account-data)
+    // ------------------------------------------------------------------
+
+    /// Read the global MSC4278 media-preview config from the SDK's local
+    /// sync cache (stable → unstable precedence). Returns the MSC defaults
+    /// (previews on, invite avatars on) before the first sync or when not
+    /// logged in. No network roundtrip. Not const: drives the tokio runtime.
+    MediaPreviewConfig media_preview_config();
+
+    /// Read the open room's per-room `media_previews` override (if any) plus
+    /// its local join rule, used to evaluate `Mode::Private`. No network
+    /// roundtrip. Not const: drives the tokio runtime via `block_on`.
+    MediaPreviewOverride room_media_preview_override(const std::string& room_id);
+
+    /// Write the global MSC4278 config, dual-writing the stable and unstable
+    /// account-data types. Fire-and-forget — returns immediately; the echo
+    /// arrives on the next sync and triggers `on_media_preview_config_updated`.
+    void save_media_preview_config(MediaPreviewConfig::Mode media_previews,
+                                   bool invite_avatars);
+
     // Recent emoji ("io.element.recent_emoji" global account-data)
     // ------------------------------------------------------------------
 

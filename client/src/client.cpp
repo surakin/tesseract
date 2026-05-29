@@ -570,6 +570,38 @@ void Client::save_prefs_json(const std::string& json)
     impl_->ffi->save_prefs(json);
 }
 
+MediaPreviewConfig Client::media_preview_config()
+{
+    MUT_FFI;
+    auto raw = impl_->ffi->media_preview_config();
+    MediaPreviewConfig cfg;
+    cfg.media_previews =
+        static_cast<MediaPreviewConfig::Mode>(raw.media_previews);
+    cfg.invite_avatars = raw.invite_avatars;
+    return cfg;
+}
+
+MediaPreviewOverride
+Client::room_media_preview_override(const std::string& room_id)
+{
+    MUT_FFI;
+    auto raw = impl_->ffi->room_media_preview_override(room_id);
+    MediaPreviewOverride ov;
+    ov.has_media_previews = raw.has_media_previews;
+    ov.media_previews =
+        static_cast<MediaPreviewConfig::Mode>(raw.media_previews);
+    ov.join_rule = std::string(raw.join_rule);
+    return ov;
+}
+
+void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
+                                       bool invite_avatars)
+{
+    MUT_FFI;
+    impl_->ffi->set_media_preview_config(
+        static_cast<std::uint8_t>(media_previews), invite_avatars);
+}
+
 std::vector<std::string> Client::recent_emoji_top(std::uint32_t n)
 {
     MUT_FFI;

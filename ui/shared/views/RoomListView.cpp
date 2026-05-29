@@ -640,8 +640,10 @@ private:
                                  : inv.inviter_display_name)
                           : (inv.room_name.empty() ? inv.room_id : inv.room_name);
 
+        // MSC4278: suppress invite avatars when disabled → initials fallback.
         const tk::Image* avatar = nullptr;
-        if (owner_.avatar_provider_ && !av_mxc.empty())
+        if (owner_.avatar_provider_ && !av_mxc.empty() &&
+            tesseract::Settings::instance().invite_avatars)
         {
             avatar = owner_.avatar_provider_(av_mxc);
         }

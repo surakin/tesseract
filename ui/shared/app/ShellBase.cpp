@@ -382,6 +382,8 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             return shell_sticker_no_fetch_(mxc);
         });
+    // MSC4278: gate inline media behind the media-preview config + reveal set.
+    wire_media_preview_gating_(app->room_view()->message_list());
     // Whole-room pinning: message rows hold an ImageRef from the cache so the
     // images they display are never evicted while the room is open.
     app->room_view()->set_image_acquirer(
@@ -766,17 +768,27 @@ void ShellBase::ensure_row_media_(const Event& ev)
         ensure_user_avatar_(rr.avatar_url);
     }
 
+    // MSC4278: gate media (image/sticker/video thumbnails + URL previews)
+    // behind the media-preview config. A suppressed item is not fetched until
+    // the user reveals it individually. Sender avatars, reactions, voice/audio,
+    // and the BlurHash placeholder are not gated.
+    const std::string& gate_room =
+        ev.room_id.empty() ? current_room_id_ : ev.room_id;
+    const bool preview = should_auto_preview_(gate_room) ||
+                         revealed_events_.count(ev.event_id) != 0;
+
     if (ev.type == EventType::Image)
     {
         const auto& img = static_cast<const ImageEvent&>(ev);
-        if (img.thumbnail)
+        if (preview && img.thumbnail)
         {
             // animated=true so capable servers keep animated GIFs moving.
             ensure_media_thumbnail_(img.thumbnail->fetch_token(),
                                     visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, true);
         }
-        if (!img.thumbnail || tesseract::Settings::instance().prefetch_full_media)
+        if (preview &&
+            (!img.thumbnail || tesseract::Settings::instance().prefetch_full_media))
         {
             if (img.source)
                 ensure_media_image_(img.source->fetch_token(),
@@ -787,12 +799,13 @@ void ShellBase::ensure_row_media_(const Event& ev)
     else if (ev.type == EventType::Sticker)
     {
         const auto& s = static_cast<const StickerEvent&>(ev);
-        if (s.thumbnail)
+        if (preview && s.thumbnail)
         {
             ensure_media_image_(s.thumbnail->fetch_token(),
                                 visual::kStickerSize, visual::kStickerSize);
         }
-        if (!s.thumbnail || tesseract::Settings::instance().prefetch_full_media)
+        if (preview &&
+            (!s.thumbnail || tesseract::Settings::instance().prefetch_full_media))
         {
             if (s.source)
                 ensure_media_image_(s.source->fetch_token(),
@@ -862,13 +875,13 @@ void ShellBase::ensure_row_media_(const Event& ev)
     else if (ev.type == EventType::Video)
     {
         const auto& vid = static_cast<const VideoEvent&>(ev);
-        if (vid.thumbnail)
+        if (preview && vid.thumbnail)
         {
             ensure_media_thumbnail_(vid.thumbnail->fetch_token(),
                                     visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, false);
         }
-        if (!vid.thumbnail && vid.source &&
+        if (preview && !vid.thumbnail && vid.source &&
             video_thumb_in_flight_.insert(ev.event_id).second)
         {
             generate_video_thumbnail_(ev.event_id, vid.source->fetch_token());
@@ -913,7 +926,7 @@ void ShellBase::ensure_row_media_(const Event& ev)
         }
     }
 
-    if (ev.type == EventType::Text || ev.type == EventType::Unhandled)
+    if (preview && (ev.type == EventType::Text || ev.type == EventType::Unhandled))
     {
         std::string url;
         if (!ev.formatted_body.empty())
@@ -929,6 +942,247 @@ void ShellBase::ensure_row_media_(const Event& ev)
             ensure_url_preview_(url);
         }
     }
+}
+
+namespace
+{
+// Resolve a MediaPreviewConfig::Mode → the Settings mirror enum (identical
+// order, but kept explicit so the two stay decoupled).
+tesseract::Settings::MediaPreviews
+mode_to_settings_(tesseract::MediaPreviewConfig::Mode m)
+{
+    switch (m)
+    {
+    case tesseract::MediaPreviewConfig::Mode::Off:
+        return tesseract::Settings::MediaPreviews::Off;
+    case tesseract::MediaPreviewConfig::Mode::Private:
+        return tesseract::Settings::MediaPreviews::Private;
+    case tesseract::MediaPreviewConfig::Mode::On:
+    default:
+        return tesseract::Settings::MediaPreviews::On;
+    }
+}
+} // namespace
+
+bool ShellBase::should_auto_preview_(const std::string& room_id) const
+{
+    tesseract::Settings::MediaPreviews mode =
+        tesseract::Settings::instance().media_previews;
+    std::string join_rule;
+
+    auto it = room_preview_overrides_.find(room_id);
+    if (it != room_preview_overrides_.end())
+    {
+        join_rule = it->second.join_rule;
+        if (it->second.has_media_previews)
+        {
+            mode = mode_to_settings_(it->second.media_previews);
+        }
+    }
+
+    switch (mode)
+    {
+    case tesseract::Settings::MediaPreviews::On:
+        return true;
+    case tesseract::Settings::MediaPreviews::Off:
+        return false;
+    case tesseract::Settings::MediaPreviews::Private:
+        // Show only in non-public rooms. Unknown / empty join rule is treated
+        // as public (and therefore suppressed), per MSC4278.
+        return !join_rule.empty() && join_rule != "public";
+    }
+    return true;
+}
+
+bool ShellBase::media_preview_hidden_(const std::string& room_id,
+                                      const std::string& event_id) const
+{
+    if (revealed_events_.count(event_id) != 0)
+    {
+        return false;
+    }
+    return !should_auto_preview_(room_id);
+}
+
+void ShellBase::ensure_room_preview_override_(const std::string& room_id)
+{
+    if (!client_ || room_id.empty())
+    {
+        return;
+    }
+    if (room_preview_overrides_.count(room_id) != 0)
+    {
+        return;
+    }
+    if (!room_preview_override_in_flight_.insert(room_id).second)
+    {
+        return;
+    }
+    run_async_mut_(
+        [this, room_id]()
+        {
+            auto ov = client_->room_media_preview_override(room_id);
+            post_to_ui_(
+                [this, room_id, ov = std::move(ov)]() mutable
+                {
+                    room_preview_override_in_flight_.erase(room_id);
+                    room_preview_overrides_[room_id] = std::move(ov);
+                    // Now that the join rule + override are known, fetch any
+                    // media that turned out to be allowed in this room and
+                    // re-evaluate the placeholders.
+                    if (room_view_ && room_id == current_room_id_ &&
+                        should_auto_preview_(room_id))
+                    {
+                        if (auto* ml = room_view_->message_list())
+                        {
+                            for (const auto& row : ml->messages())
+                            {
+                                reveal_media_fetch_(row);
+                            }
+                        }
+                    }
+                    request_relayout_();
+                });
+        });
+}
+
+void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
+{
+    using K = views::MessageRowData::Kind;
+    if (row.kind == K::Image)
+    {
+        if (row.thumbnail)
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, true);
+        else if (row.source)
+            ensure_media_image_(row.source->fetch_token(),
+                                visual::kMaxInlineImageWidth,
+                                visual::kMaxInlineImageHeight);
+    }
+    else if (row.kind == K::Sticker)
+    {
+        if (row.thumbnail)
+            ensure_media_image_(row.thumbnail->fetch_token(),
+                                visual::kStickerSize, visual::kStickerSize);
+        else if (row.source)
+            ensure_media_image_(row.source->fetch_token(),
+                                visual::kStickerSize, visual::kStickerSize);
+    }
+    else if (row.kind == K::Video)
+    {
+        if (row.thumbnail)
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, false);
+        else if (row.source &&
+                 video_thumb_in_flight_.insert(row.event_id).second)
+            generate_video_thumbnail_(row.event_id, row.source->fetch_token());
+    }
+}
+
+void ShellBase::wire_media_preview_gating_(views::MessageListView* ml)
+{
+    if (!ml)
+    {
+        return;
+    }
+    ml->set_media_hidden_predicate(
+        [this](const std::string& event_id)
+        { return media_preview_hidden_(current_room_id_, event_id); });
+    ml->on_reveal_media = [this, ml](const std::string& event_id)
+    {
+        revealed_events_.insert(event_id);
+        for (const auto& row : ml->messages())
+        {
+            if (row.event_id == event_id)
+            {
+                reveal_media_fetch_(row);
+                break;
+            }
+        }
+        request_relayout_();
+    };
+}
+
+void ShellBase::apply_media_preview_config_(
+    tesseract::Settings::MediaPreviews mode, bool invite_avatars)
+{
+    auto& s = tesseract::Settings::instance();
+    s.media_previews = mode;
+    s.invite_avatars = invite_avatars;
+
+    if (client_)
+    {
+        tesseract::MediaPreviewConfig::Mode m =
+            tesseract::MediaPreviewConfig::Mode::On;
+        switch (mode)
+        {
+        case tesseract::Settings::MediaPreviews::Off:
+            m = tesseract::MediaPreviewConfig::Mode::Off;
+            break;
+        case tesseract::Settings::MediaPreviews::Private:
+            m = tesseract::MediaPreviewConfig::Mode::Private;
+            break;
+        case tesseract::Settings::MediaPreviews::On:
+            m = tesseract::MediaPreviewConfig::Mode::On;
+            break;
+        }
+        client_->save_media_preview_config(m, invite_avatars);
+    }
+
+    // Fetch media that just became allowed in the open room.
+    if (room_view_ && should_auto_preview_(current_room_id_))
+    {
+        if (auto* ml = room_view_->message_list())
+        {
+            for (const auto& row : ml->messages())
+            {
+                reveal_media_fetch_(row);
+            }
+        }
+    }
+    if (invite_avatars)
+    {
+        ensure_invite_avatars_();
+    }
+    request_relayout_();
+}
+
+void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
+                                                        std::string /*json*/)
+{
+    // Only the active account's config drives the UI.
+    if (active_account_index_ < 0 || !client_ ||
+        accounts_[active_account_index_]->user_id != user_id)
+    {
+        return;
+    }
+    auto cfg = client_->media_preview_config();
+    auto& s = tesseract::Settings::instance();
+    s.media_previews = mode_to_settings_(cfg.media_previews);
+    s.invite_avatars = cfg.invite_avatars;
+
+    // Refresh any open settings UI in the shell.
+    on_media_preview_config_applied_();
+
+    // Fetch media that just became allowed in the open room.
+    if (room_view_ && should_auto_preview_(current_room_id_))
+    {
+        if (auto* ml = room_view_->message_list())
+        {
+            for (const auto& row : ml->messages())
+            {
+                reveal_media_fetch_(row);
+            }
+        }
+    }
+    // Fetch invite avatars that just became allowed.
+    if (s.invite_avatars)
+    {
+        ensure_invite_avatars_();
+    }
+    request_relayout_();
 }
 
 std::vector<views::MessageRowData>
@@ -1085,6 +1339,11 @@ void ShellBase::push_invites_(std::string user_id, std::vector<InviteInfo> invit
 
 void ShellBase::ensure_invite_avatars_()
 {
+    // MSC4278: don't fetch invite avatars the UI won't show.
+    if (!tesseract::Settings::instance().invite_avatars)
+    {
+        return;
+    }
     for (const auto& inv : invites_)
     {
         const std::string& mxc =
@@ -2791,6 +3050,10 @@ void ShellBase::restart_sdk_()
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
+    // MSC4278 per-account gating state.
+    room_preview_overrides_.clear();
+    room_preview_override_in_flight_.clear();
+    revealed_events_.clear();
     on_tab_state_changed_ui_();
 
     client_->stop_sync();
@@ -3158,6 +3421,10 @@ void ShellBase::after_active_room_changed_()
     // Refresh the pinned-events banner immediately on room switch so the new
     // room's pin state appears without waiting for the next sync tick.
     refresh_pinned_for_current_room_();
+    // MSC4278: prefetch the room's media-preview override + join rule so the
+    // timeline gating (and Private-mode evaluation) is ready before the
+    // timeline reset builds rows.
+    ensure_room_preview_override_(current_room_id_);
 }
 
 void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)

@@ -314,6 +314,17 @@ protected:
     // DM creation in-flight guard. Keyed by target user_id.
     std::unordered_set<std::string> dm_in_flight_user_ids_;
 
+    // ── MSC4278 media-preview gating ──────────────────────────────────────────
+    // Per-room media_previews override + join_rule, keyed by room_id. Populated
+    // by ensure_room_preview_override_ (async) on room switch. Absent → use the
+    // global Settings value with an unknown (public-treated) join rule.
+    std::unordered_map<std::string, tesseract::MediaPreviewOverride>
+        room_preview_overrides_;
+    std::unordered_set<std::string> room_preview_override_in_flight_;
+    // Event IDs the user explicitly revealed (click-to-load), bypassing the
+    // preview gate for that one item. Cleared on logout / account switch.
+    std::unordered_set<std::string> revealed_events_;
+
     // ── URL preview cache ─────────────────────────────────────────────────────
     std::unordered_map<std::string, tesseract::Client::UrlPreview>
         url_previews_;
@@ -739,6 +750,16 @@ protected:
     // Concrete: only the active account's prefs set the pending restore room.
     virtual void handle_account_prefs_updated_ui_(std::string user_id,
                                                   std::string json);
+    // MSC4278: re-read the global media-preview config into the Settings
+    // mirror (active account only) and refresh gating + room list. Each shell
+    // overrides on_media_preview_config_applied_() to refresh its settings UI.
+    virtual void handle_media_preview_config_updated_ui_(std::string user_id,
+                                                         std::string json);
+    // Hook fired after the Settings mirror is updated from account-data, so a
+    // shell can sync any open settings picker. Default no-op.
+    virtual void on_media_preview_config_applied_()
+    {
+    }
     virtual void
     handle_notification_ui_(std::string /*user_id*/, std::string /*room_id*/,
                             std::string /*room_name*/, std::string /*sender*/,
@@ -1117,6 +1138,32 @@ protected:
 
     // Walk all media references in ev and call ensure_*_ for each.
     void ensure_row_media_(const Event& ev);
+
+    // ── MSC4278 media-preview gating helpers ──────────────────────────────────
+    // True when media in `room_id` should auto-load given the global + per-room
+    // config. Resolves Mode::Private against the cached room join_rule (an
+    // unknown / public join rule suppresses previews in Private mode).
+    bool should_auto_preview_(const std::string& room_id) const;
+    // True when `event_id` in `room_id` should be rendered as a click-to-load
+    // placeholder (preview suppressed AND not individually revealed).
+    bool media_preview_hidden_(const std::string& room_id,
+                               const std::string& event_id) const;
+    // Ensure the per-room override + join_rule for `room_id` is cached; kicks an
+    // async fetch on a cache miss. Call on room switch.
+    void ensure_room_preview_override_(const std::string& room_id);
+    // Kick the media fetch for one revealed row (mirrors ensure_row_media_'s
+    // image/sticker/video branch). Called from the message list's reveal click.
+    void reveal_media_fetch_(const views::MessageRowData& row);
+    // Wire the message list's MSC4278 hidden-media predicate + reveal callback.
+    // Each shell calls this once after creating room_view_ (and pop-out windows
+    // call it on their own list).
+    void wire_media_preview_gating_(views::MessageListView* ml);
+    // Apply a settings-UI change to the MSC4278 config: update the Settings
+    // mirror, write it back to account-data, fetch newly-allowed media, and
+    // repaint. Each shell wires SettingsView::on_media_previews_changed /
+    // on_invite_avatars_changed to this.
+    void apply_media_preview_config_(tesseract::Settings::MediaPreviews mode,
+                                     bool invite_avatars);
 
     // Build MessageRowData rows from an event snapshot: prep media, request
     // reply details, make_row_data. Used by every shell's timeline-reset and

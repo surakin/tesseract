@@ -2113,7 +2113,7 @@ private:
             tk::Rect r{x, y, sz.w, sz.h};
             paint_inline_media(m, ctx, r);
             // GIF badge for animated images (MSC4230).
-            if (m.image_animated)
+            if (m.image_animated && !owner_.media_is_hidden_(m))
             {
                 tk::TextStyle ts{};
                 ts.role = tk::FontRole::Timestamp;
@@ -2851,9 +2851,68 @@ private:
         }
     }
 
+    // MSC4278: draw a suppressed-media tile (blurhash if decoded, else a
+    // neutral box) with a centred "Load …" pill. The whole tile is the
+    // click target (handled via the existing image/video hit geometry, which
+    // fires on_reveal_media when the row is hidden).
+    void paint_hidden_media_placeholder(const MessageRowData& m,
+                                        tk::PaintCtx& ctx, tk::Rect dst) const
+    {
+        const tk::Image* bh_img = nullptr;
+        if (!m.blurhash.empty() && owner_.image_provider_)
+        {
+            bh_img = owner_.image_provider_("blurhash::" + m.event_id);
+        }
+        if (bh_img)
+        {
+            ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
+            ctx.canvas.draw_image(*bh_img, dst);
+            ctx.canvas.pop_clip();
+        }
+        else
+        {
+            ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
+            ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border,
+                                           1.0f);
+        }
+        // Dim scrim so the pill reads over any blurhash.
+        ctx.canvas.fill_rounded_rect(dst, 8.0f, tk::Color{0, 0, 0, 90});
+
+        const char* label = (m.kind == MessageRowData::Kind::Video)
+                                 ? "Load video"
+                                 : (m.kind == MessageRowData::Kind::Sticker)
+                                       ? "Load sticker"
+                                       : "Load image";
+        tk::TextStyle ts{};
+        ts.role = tk::FontRole::UiSemibold;
+        auto lo = ctx.factory.build_text(label, ts);
+        if (!lo)
+        {
+            return;
+        }
+        tk::Size lsz = lo->measure();
+        constexpr float kPadX = 12.0f, kPadY = 7.0f;
+        float pw = lsz.w + kPadX * 2.0f;
+        float ph = lsz.h + kPadY * 2.0f;
+        // Keep the pill inside the tile.
+        pw = std::min(pw, dst.w);
+        tk::Rect pill{dst.x + (dst.w - pw) * 0.5f, dst.y + (dst.h - ph) * 0.5f,
+                      pw, ph};
+        ctx.canvas.fill_rounded_rect(pill, ph * 0.5f, ctx.theme.palette.accent);
+        ctx.canvas.draw_text(*lo,
+                             {pill.x + (pw - lsz.w) * 0.5f,
+                              pill.y + (ph - lsz.h) * 0.5f},
+                             ctx.theme.palette.text_on_accent);
+    }
+
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,
                             tk::Rect dst) const
     {
+        if (owner_.media_is_hidden_(m))
+        {
+            paint_hidden_media_placeholder(m, ctx, dst);
+            return;
+        }
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
         const std::string display_key = look ? look->fetch_token() : std::string{};
         const tk::Image* img = nullptr;
@@ -3420,6 +3479,11 @@ private:
     void paint_video_card(const MessageRowData& m, tk::PaintCtx& ctx,
                           tk::Rect dst) const
     {
+        if (owner_.media_is_hidden_(m))
+        {
+            paint_hidden_media_placeholder(m, ctx, dst);
+            return;
+        }
         // Live inline player frame takes priority over the static thumbnail.
         const tk::Image* live_frame = nullptr;
         {
@@ -4234,6 +4298,23 @@ void MessageListView::set_image_provider(ImageProvider p)
     image_provider_ = std::move(p);
 }
 
+bool MessageListView::media_is_hidden_(const MessageRowData& m) const
+{
+    if (!media_hidden_ || m.event_id.empty())
+    {
+        return false;
+    }
+    switch (m.kind)
+    {
+    case MessageRowData::Kind::Image:
+    case MessageRowData::Kind::Sticker:
+    case MessageRowData::Kind::Video:
+        return media_hidden_(m.event_id);
+    default:
+        return false;
+    }
+}
+
 void MessageListView::set_image_acquirer(ImageAcquirer a)
 {
     image_acquirer_ = std::move(a);
@@ -4418,6 +4499,11 @@ void MessageListView::set_video_fetch_provider(VideoFetchProvider f)
 void MessageListView::start_inline_video(const MessageRowData& m)
 {
     if (!video_player_factory_ || !video_fetch_provider_)
+    {
+        return;
+    }
+    // MSC4278: don't auto-play a clip whose preview is suppressed.
+    if (media_is_hidden_(m))
     {
         return;
     }
@@ -6242,9 +6328,18 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
             auto it = video_geom_.find(eid);
             if (it != video_geom_.end() &&
-                rect_contains(it->second.world_rect, world) && on_video_clicked)
+                rect_contains(it->second.world_rect, world))
             {
-                on_video_clicked(it->second);
+                // MSC4278: reveal a suppressed video instead of opening it.
+                if (media_hidden_ && media_hidden_(eid))
+                {
+                    if (on_reveal_media)
+                        on_reveal_media(eid);
+                }
+                else if (on_video_clicked)
+                {
+                    on_video_clicked(it->second);
+                }
             }
         }
         return;
@@ -6261,9 +6356,19 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
             auto it = image_geom_.find(eid);
             if (it != image_geom_.end() &&
-                rect_contains(it->second.world_rect, world) && on_image_clicked)
+                rect_contains(it->second.world_rect, world))
             {
-                on_image_clicked(it->second);
+                // MSC4278: a click on a suppressed-media tile reveals it
+                // instead of opening the viewer.
+                if (media_hidden_ && media_hidden_(eid))
+                {
+                    if (on_reveal_media)
+                        on_reveal_media(eid);
+                }
+                else if (on_image_clicked)
+                {
+                    on_image_clicked(it->second);
+                }
             }
         }
         return;

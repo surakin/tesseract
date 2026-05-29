@@ -2,6 +2,8 @@
 
 #include "tk/theme.h"
 
+#include <tesseract/settings.h>
+
 #include <algorithm>
 #include <string>
 
@@ -192,7 +194,11 @@ void InviteCard::paint(tk::PaintCtx& ctx)
 
     const tk::Point av_centre{cx + kContentW * 0.5f, cy + av_d * 0.5f};
     const tk::Image* av_img = nullptr;
-    if (image_provider_ && !av_mxc.empty())
+    // MSC4278: when invite avatars are disabled, never resolve the avatar —
+    // fall through to the initials circle for both the room (group) and
+    // inviter (DM) avatar.
+    if (image_provider_ && !av_mxc.empty() &&
+        tesseract::Settings::instance().invite_avatars)
     {
         av_img = image_provider_(av_mxc);
     }

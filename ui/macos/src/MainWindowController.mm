@@ -214,6 +214,7 @@ public:
     using ShellBase::handle_compose_room_leaving_;
     using ShellBase::handle_compose_text_changed_;
     using ShellBase::handle_send_presence_toggle_;
+    using ShellBase::apply_media_preview_config_;
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
     using ShellBase::last_room_list_state_;
@@ -3545,6 +3546,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = ws;
             if (s) s->_shell->handle_send_presence_toggle_(enabled);
         };
+        _settingsView->on_media_previews_changed =
+            [ws](tesseract::Settings::MediaPreviews mode)
+        {
+            MainWindowController* s = ws;
+            if (s)
+                s->_shell->apply_media_preview_config_(
+                    mode, tesseract::Settings::instance().invite_avatars);
+        };
+        _settingsView->on_invite_avatars_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s)
+                s->_shell->apply_media_preview_config_(
+                    tesseract::Settings::instance().media_previews, enabled);
+        };
         _settingsView->on_tab_changed = [ws] {
             MainWindowController* s = ws;
             if (s) s->_settingsSurface->relayout();
@@ -5024,6 +5040,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
         tesseract::Settings::instance().inactive_room_threshold_days);
     _settingsView->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    _settingsView->set_media_previews_pref(
+        tesseract::Settings::instance().media_previews);
+    _settingsView->set_invite_avatars_pref(
+        tesseract::Settings::instance().invite_avatars);
     _settingsSurface->relayout();
 
     _shell->compute_cache_sizes_(

@@ -83,6 +83,64 @@ pub(super) async fn read_prefs_json(client: &Client) -> String {
         .unwrap_or_else(|| "{}".to_owned())
 }
 
+/// Read the MSC4278 global media-preview config from the local sync cache,
+/// with stable → unstable precedence. Returns the MSC defaults (previews on,
+/// invite avatars on) when no event exists or on any parse error.
+#[cfg(not(test))]
+pub(super) async fn read_media_preview_config(client: &Client) -> crate::media_preview::Config {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    use serde_json::Value;
+
+    async fn fetch(client: &Client, ty: &str) -> Option<Value> {
+        let et = GlobalAccountDataEventType::from(ty);
+        let raw = client.account().account_data_raw(et).await.ok().flatten()?;
+        serde_json::from_str::<Value>(raw.json().get()).ok()
+    }
+
+    if let Some(v) = fetch(client, crate::media_preview::TYPE_STABLE).await {
+        return crate::media_preview::parse_global(&v);
+    }
+    if let Some(v) = fetch(client, crate::media_preview::TYPE_UNSTABLE).await {
+        return crate::media_preview::parse_global(&v);
+    }
+    crate::media_preview::Config::default()
+}
+
+/// Map a joined room's local join rule to the MSC4278 wire string. Mirrors
+/// the mapping used for MSC3266 summaries in `room_list.rs`.
+#[cfg(not(test))]
+fn join_rule_str(room: &matrix_sdk::Room) -> String {
+    use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+    match room.join_rule() {
+        Some(JoinRule::Public) => "public",
+        Some(JoinRule::Invite) => "invite",
+        Some(JoinRule::Knock) => "knock",
+        Some(JoinRule::KnockRestricted(_)) => "knock_restricted",
+        Some(JoinRule::Restricted(_)) => "restricted",
+        Some(JoinRule::Private) => "private",
+        Some(_) => "unknown",
+        None => "",
+    }
+    .to_owned()
+}
+
+/// Raw JSON of whichever MSC4278 global event exists (stable preferred), or
+/// `"{}"` when none does. Used by the sync watcher to detect changes.
+#[cfg(not(test))]
+pub(super) async fn read_media_preview_config_json(client: &Client) -> String {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    for ty in [
+        crate::media_preview::TYPE_STABLE,
+        crate::media_preview::TYPE_UNSTABLE,
+    ] {
+        let et = GlobalAccountDataEventType::from(ty);
+        if let Some(raw) = client.account().account_data_raw(et).await.ok().flatten() {
+            return raw.json().get().to_owned();
+        }
+    }
+    "{}".to_owned()
+}
+
 // ---------------------------------------------------------------------------
 // FFI impl
 // ---------------------------------------------------------------------------
@@ -217,6 +275,147 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn save_prefs(&mut self, _json: &str) {}
+
+    // ----- MSC4278 media-preview config (m.media_preview_config) -----
+
+    /// Read the global MSC4278 media-preview config from the local sync
+    /// cache (stable → unstable precedence). No network roundtrip. Returns
+    /// the MSC defaults (previews on, invite avatars on) when not logged in
+    /// or before the first sync has populated the cache.
+    #[cfg(not(test))]
+    pub fn media_preview_config(&mut self) -> crate::ffi::MediaPreviewConfigFfi {
+        let Some(client) = self.client.clone() else {
+            return crate::ffi::MediaPreviewConfigFfi {
+                media_previews: crate::media_preview::MediaPreviews::On.to_u8(),
+                invite_avatars: true,
+            };
+        };
+        let cfg = self
+            .rt
+            .block_on(async move { read_media_preview_config(&client).await });
+        crate::ffi::MediaPreviewConfigFfi {
+            media_previews: cfg.media_previews.to_u8(),
+            invite_avatars: cfg.invite_avatars,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn media_preview_config(&mut self) -> crate::ffi::MediaPreviewConfigFfi {
+        crate::ffi::MediaPreviewConfigFfi {
+            media_previews: 2,
+            invite_avatars: true,
+        }
+    }
+
+    /// Read a room-level MSC4278 override. `has_media_previews` is true only
+    /// when the room's own `m.media_preview_config` account-data event sets
+    /// the `media_previews` field, in which case `media_previews` carries the
+    /// override; otherwise the caller falls back to the global value. No
+    /// network roundtrip — reads the local sync cache.
+    #[cfg(not(test))]
+    pub fn room_media_preview_override(
+        &mut self,
+        room_id: &str,
+    ) -> crate::ffi::MediaPreviewOverrideFfi {
+        fn none() -> crate::ffi::MediaPreviewOverrideFfi {
+            crate::ffi::MediaPreviewOverrideFfi {
+                has_media_previews: false,
+                media_previews: crate::media_preview::MediaPreviews::On.to_u8(),
+                join_rule: String::new(),
+            }
+        }
+        let Some(client) = self.client.clone() else {
+            return none();
+        };
+        let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
+            return none();
+        };
+        self.rt.block_on(async move {
+            use matrix_sdk::ruma::events::RoomAccountDataEventType;
+            use serde_json::Value;
+
+            let Some(room) = client.get_room(&rid) else {
+                return none();
+            };
+
+            let join_rule = join_rule_str(&room);
+
+            async fn fetch(room: &matrix_sdk::Room, ty: &str) -> Option<Value> {
+                let et = RoomAccountDataEventType::from(ty);
+                let raw = room.account_data(et).await.ok().flatten()?;
+                serde_json::from_str::<Value>(raw.json().get()).ok()
+            }
+
+            let v = match fetch(&room, crate::media_preview::TYPE_STABLE).await {
+                Some(v) => Some(v),
+                None => fetch(&room, crate::media_preview::TYPE_UNSTABLE).await,
+            };
+
+            let mp = v
+                .as_ref()
+                .and_then(crate::media_preview::parse_media_previews_field);
+            crate::ffi::MediaPreviewOverrideFfi {
+                has_media_previews: mp.is_some(),
+                media_previews: mp
+                    .unwrap_or(crate::media_preview::MediaPreviews::On)
+                    .to_u8(),
+                join_rule,
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn room_media_preview_override(
+        &mut self,
+        _room_id: &str,
+    ) -> crate::ffi::MediaPreviewOverrideFfi {
+        crate::ffi::MediaPreviewOverrideFfi {
+            has_media_previews: false,
+            media_previews: 2,
+            join_rule: String::new(),
+        }
+    }
+
+    /// Write the global MSC4278 config, dual-writing the stable and unstable
+    /// account-data types so other MSC4278 clients pick it up regardless of
+    /// which side has reached stable. Fire-and-forget against the homeserver;
+    /// the echo arrives on the next sync and triggers
+    /// `on_media_preview_config_updated`.
+    #[cfg(not(test))]
+    pub fn set_media_preview_config(&mut self, media_previews: u8, invite_avatars: bool) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let cfg = crate::media_preview::Config {
+            media_previews: crate::media_preview::MediaPreviews::from_u8(media_previews),
+            invite_avatars,
+        };
+        let ad_lock = Arc::clone(&self.account_data_lock);
+        self.rt.spawn(async move {
+            use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+            use matrix_sdk::ruma::serde::Raw;
+
+            let _ad_guard = ad_lock.lock().await;
+            let content = crate::media_preview::serialize(cfg);
+            let raw = match Raw::new(&content) {
+                Ok(r) => r.cast_unchecked(),
+                Err(_) => return,
+            };
+            for ty in [
+                crate::media_preview::TYPE_STABLE,
+                crate::media_preview::TYPE_UNSTABLE,
+            ] {
+                let ev_type = GlobalAccountDataEventType::from(ty);
+                let _ = client
+                    .account()
+                    .set_account_data_raw(ev_type, raw.clone())
+                    .await;
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn set_media_preview_config(&mut self, _media_previews: u8, _invite_avatars: bool) {}
 
     pub fn user_id(&self) -> String {
         self.client

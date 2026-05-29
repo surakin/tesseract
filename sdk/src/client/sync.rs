@@ -402,6 +402,13 @@ impl ClientFfi {
                     guard.on_account_prefs_updated(&prev_prefs);
                 }
 
+                // Initial MSC4278 media-preview config snapshot.
+                let mut prev_media_preview =
+                    account::read_media_preview_config_json(&client_clone).await;
+                if let Ok(guard) = h.lock() {
+                    guard.on_media_preview_config_updated(&prev_media_preview);
+                }
+
                 // Initial image-pack snapshot, same reasoning as for the
                 // room list: piggy-back on the same wakeup channel so
                 // both lists arrive together after every notable
@@ -603,6 +610,16 @@ impl ClientFfi {
                                     guard.on_account_prefs_updated(&cur_prefs);
                                 }
                                 prev_prefs = cur_prefs;
+                            }
+
+                            // MSC4278 media-preview config on the same tick.
+                            let cur_media_preview =
+                                account::read_media_preview_config_json(&client_clone).await;
+                            if cur_media_preview != prev_media_preview {
+                                if let Ok(guard) = h.lock() {
+                                    guard.on_media_preview_config_updated(&cur_media_preview);
+                                }
+                                prev_media_preview = cur_media_preview;
                             }
                         }
                     }

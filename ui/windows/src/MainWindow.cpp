@@ -2894,6 +2894,17 @@ void MainWindow::on_create(HWND hwnd)
         {
             handle_send_presence_toggle_(enabled);
         };
+        settings_view_->on_media_previews_changed =
+            [this](tesseract::Settings::MediaPreviews mode)
+        {
+            apply_media_preview_config_(
+                mode, tesseract::Settings::instance().invite_avatars);
+        };
+        settings_view_->on_invite_avatars_changed = [this](bool enabled)
+        {
+            apply_media_preview_config_(
+                tesseract::Settings::instance().media_previews, enabled);
+        };
         settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
         settings_view_->on_clear_caches = [this]
         {
@@ -3380,6 +3391,10 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().inactive_room_threshold_days);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    settings_view_->set_media_previews_pref(
+        tesseract::Settings::instance().media_previews);
+    settings_view_->set_invite_avatars_pref(
+        tesseract::Settings::instance().invite_avatars);
 
     if (settings_controller_ && settings_name_field_)
     {

@@ -41,6 +41,15 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit presenceChanged(enabled);
     };
+    settings_view_->on_media_previews_changed =
+        [this](tesseract::Settings::MediaPreviews mode)
+    {
+        emit mediaPreviewsChanged(mode);
+    };
+    settings_view_->on_invite_avatars_changed = [this](bool enabled)
+    {
+        emit inviteAvatarsChanged(enabled);
+    };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
     settings_view_->on_hide_content_changed = [](bool enabled)
@@ -113,6 +122,10 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().prefetch_full_media);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    settings_view_->set_media_previews_pref(
+        tesseract::Settings::instance().media_previews);
+    settings_view_->set_invite_avatars_pref(
+        tesseract::Settings::instance().invite_avatars);
     settings_view_->set_group_inactive_pref(
         tesseract::Settings::instance().group_inactive_rooms);
     settings_view_->set_inactive_period_pref(

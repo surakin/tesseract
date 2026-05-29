@@ -46,6 +46,17 @@ SettingsWidget::SettingsWidget()
         if (on_send_presence_changed)
             on_send_presence_changed(e);
     };
+    settings_view_->on_media_previews_changed =
+        [this](tesseract::Settings::MediaPreviews mode)
+    {
+        if (on_media_previews_changed)
+            on_media_previews_changed(mode);
+    };
+    settings_view_->on_invite_avatars_changed = [this](bool e)
+    {
+        if (on_invite_avatars_changed)
+            on_invite_avatars_changed(e);
+    };
     settings_view_->on_group_inactive_changed = [this](bool v)
     {
         if (on_group_inactive_changed)
@@ -141,6 +152,10 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().prefetch_full_media);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    settings_view_->set_media_previews_pref(
+        tesseract::Settings::instance().media_previews);
+    settings_view_->set_invite_avatars_pref(
+        tesseract::Settings::instance().invite_avatars);
     surface_->relayout();
 }
 

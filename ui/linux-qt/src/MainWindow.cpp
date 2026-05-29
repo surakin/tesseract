@@ -3830,6 +3830,18 @@ void MainWindow::openSettings()
                 {
                     handle_send_presence_toggle_(enabled);
                 });
+        connect(settingsWidget_, &SettingsWidget::mediaPreviewsChanged, this,
+                [this](tesseract::Settings::MediaPreviews mode)
+                {
+                    apply_media_preview_config_(
+                        mode, tesseract::Settings::instance().invite_avatars);
+                });
+        connect(settingsWidget_, &SettingsWidget::inviteAvatarsChanged, this,
+                [this](bool enabled)
+                {
+                    apply_media_preview_config_(
+                        tesseract::Settings::instance().media_previews, enabled);
+                });
         connect(settingsWidget_, &SettingsWidget::roomListGroupingChanged, this,
                 [this]
                 {

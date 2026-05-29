@@ -483,6 +483,37 @@ struct RoomSummary
     }
 };
 
+/// MSC4278 media-preview controls, stored in the global
+/// `m.media_preview_config` account-data event so they follow the user
+/// across devices and clients.
+struct MediaPreviewConfig
+{
+    /// Auto-load policy for media (images/videos/stickers/file thumbnails).
+    /// Mirrors the `u8` carried over the FFI: 0 = off, 1 = private, 2 = on.
+    enum class Mode : uint8_t
+    {
+        Off = 0,     ///< never auto-load media
+        Private = 1, ///< only in non-public rooms
+        On = 2,      ///< always (the MSC default)
+    };
+    Mode media_previews = Mode::On;
+    bool invite_avatars = true; ///< show room/inviter avatars on pending invites
+};
+
+/// Per-room MSC4278 context for the open room, returned by
+/// `Client::room_media_preview_override`.
+struct MediaPreviewOverride
+{
+    /// True when the room's own account-data overrides `media_previews`;
+    /// otherwise the caller falls back to the global value.
+    bool has_media_previews = false;
+    MediaPreviewConfig::Mode media_previews = MediaPreviewConfig::Mode::On;
+    /// The room's local join rule ("public", "invite", "knock", "restricted",
+    /// "knock_restricted", "private"), or "" when indeterminate. Used to
+    /// evaluate `Mode::Private`; empty / unknown is treated as public.
+    std::string join_rule;
+};
+
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed
 /// `state` field carried over the FFI in `BackupProgress` (see
 /// `sdk/src/bridge.rs`).

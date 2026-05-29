@@ -269,6 +269,21 @@ public:
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
 
+    // MSC4278: predicate deciding whether a row's media preview is suppressed
+    // (rendered as a click-to-load placeholder instead of the image). Set by
+    // the shell from the media-preview config + per-message reveal state.
+    // When unset, no media is ever hidden.
+    using MediaHiddenPredicate =
+        std::function<bool(const std::string& event_id)>;
+    void set_media_hidden_predicate(MediaHiddenPredicate p)
+    {
+        media_hidden_ = std::move(p);
+    }
+
+    // Fired when the user clicks a suppressed-media placeholder to load it.
+    // The shell records the reveal and kicks the media fetch.
+    std::function<void(const std::string& event_id)> on_reveal_media;
+
     // Pinning handle source for whole-room image retention. When set, rows
     // acquire and hold the ImageRef for the image/sticker/video-thumbnail/
     // URL-preview they display, so it survives cache eviction while open.
@@ -748,6 +763,13 @@ private:
     ImageProvider avatar_provider_;
     ImageProvider image_provider_;
     ImageAcquirer image_acquirer_;
+    MediaHiddenPredicate media_hidden_;
+
+    // True when row `m` is media whose preview is currently suppressed
+    // (media_hidden_ set and returns true for it). Consulted by the inline
+    // media / video paint paths and by the click handler to choose reveal
+    // over open-viewer.
+    bool media_is_hidden_(const MessageRowData& m) const;
     MentionAvatarProvider mention_avatar_provider_;
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;

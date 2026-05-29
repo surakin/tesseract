@@ -54,6 +54,9 @@ public:
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
     std::function<void(bool)> on_notifications_changed;
     std::function<void(bool)> on_send_presence_changed;
+    std::function<void(tesseract::Settings::MediaPreviews)>
+        on_media_previews_changed;
+    std::function<void(bool)> on_invite_avatars_changed;
     std::function<void(bool)> on_group_inactive_changed;
     std::function<void(int)>  on_inactive_period_changed;
     // Fired after the user changes their own avatar via Settings. The

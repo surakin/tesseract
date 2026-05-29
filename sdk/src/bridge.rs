@@ -470,6 +470,28 @@ pub mod ffi {
         session: String,
     }
 
+    /// MSC4278 global media-preview config. `media_previews` is a u8 because
+    /// cxx shared structs can't carry C++-side enums without boilerplate; the
+    /// C++ wrapper maps it to `MediaPreviewConfig::Mode`:
+    ///   0 = off, 1 = private (non-public rooms only), 2 = on.
+    struct MediaPreviewConfigFfi {
+        media_previews: u8,
+        invite_avatars: bool,
+    }
+
+    /// Per-room MSC4278 context for the current room. `has_media_previews`
+    /// is true only when the room's own account-data overrides the field;
+    /// when false the caller falls back to the global value and
+    /// `media_previews` is meaningless. `join_rule` is the room's local join
+    /// rule ("public", "invite", "knock", "restricted", "knock_restricted",
+    /// "private", or "" when indeterminate) — used to evaluate the `private`
+    /// preview mode. Empty / unknown should be treated as public.
+    struct MediaPreviewOverrideFfi {
+        has_media_previews: bool,
+        media_previews: u8,
+        join_rule: String,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -586,6 +608,11 @@ pub mod ffi {
         /// value). `json` is the raw event content, or `"{}"` when missing.
         /// The UI re-reads via `load_prefs` and applies any changed fields.
         fn on_account_prefs_updated(self: &EventHandlerBridge, json: &str);
+        /// Fired when the global MSC4278 `m.media_preview_config` account-data
+        /// event changes (first sync, local `set_media_preview_config`, or a
+        /// change from another device). `json` is the raw event content, or
+        /// `"{}"` when missing. The UI re-reads via `media_preview_config`.
+        fn on_media_preview_config_updated(self: &EventHandlerBridge, json: &str);
         /// Fired when a new message matches push rules and a notification
         /// should be shown. Only called for non-self messages, only for live
         /// PushBack (not pagination). `is_mention` is true when the push rules
@@ -1219,6 +1246,31 @@ pub mod ffi {
         /// returns immediately; errors are silently swallowed. The next sync
         /// deliver of the event will trigger `on_account_prefs_updated`.
         fn save_prefs(self: &mut ClientFfi, json: &str);
+
+        // ----- MSC4278 media-preview config (m.media_preview_config) -----
+
+        /// Read the global MSC4278 media-preview config from the local sync
+        /// cache (stable → unstable precedence). No network roundtrip;
+        /// returns the MSC defaults (previews on, invite avatars on) when not
+        /// logged in or before the first sync.
+        fn media_preview_config(self: &mut ClientFfi) -> MediaPreviewConfigFfi;
+
+        /// Read a room-level override of `media_previews` from that room's
+        /// account-data. `has_media_previews` is false when the room sets no
+        /// override (use the global value). No network roundtrip.
+        fn room_media_preview_override(
+            self: &mut ClientFfi,
+            room_id: &str,
+        ) -> MediaPreviewOverrideFfi;
+
+        /// Write the global MSC4278 config, dual-writing the stable and
+        /// unstable account-data types. Fire-and-forget; the echo arrives on
+        /// the next sync and triggers `on_media_preview_config_updated`.
+        fn set_media_preview_config(
+            self: &mut ClientFfi,
+            media_previews: u8,
+            invite_avatars: bool,
+        );
 
         // ----- Recent emoji (io.element.recent_emoji global account-data) -----
 

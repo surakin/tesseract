@@ -3,6 +3,7 @@
 mod client;
 mod highlight;
 mod image_packs;
+mod media_preview;
 mod oauth;
 mod recent_emoji;
 mod waveform;
@@ -221,6 +222,19 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct MediaPreviewConfigFfi {
+        pub media_previews: u8,
+        pub invite_avatars: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct MediaPreviewOverrideFfi {
+        pub has_media_previews: bool,
+        pub media_previews: u8,
+        pub join_rule: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct ThreadInfo {
         pub root_event_id: String,
         pub root_sender_name: String,
@@ -250,6 +264,7 @@ pub mod ffi {
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
+        pub fn on_media_preview_config_updated(&self, _json: &str) {}
         pub fn on_threads_updated(&self, _room_id: &str) {}
         pub fn on_notification(
             &self,

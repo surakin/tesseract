@@ -86,6 +86,17 @@ SettingsView::SettingsView()
             on_prefetch_changed(enabled);
         }
     };
+    media->on_media_previews_changed =
+        [this](tesseract::Settings::MediaPreviews mode)
+    {
+        if (on_media_previews_changed)
+            on_media_previews_changed(mode);
+    };
+    media->on_invite_avatars_changed = [this](bool enabled)
+    {
+        if (on_invite_avatars_changed)
+            on_invite_avatars_changed(enabled);
+    };
     media_ = media.get();
 
     // Privacy section.
@@ -227,6 +238,23 @@ void SettingsView::set_prefetch_enabled(bool enabled)
     if (media_)
     {
         media_->set_prefetch_checked(enabled);
+    }
+}
+
+void SettingsView::set_media_previews_pref(
+    tesseract::Settings::MediaPreviews mode)
+{
+    if (media_)
+    {
+        media_->set_media_previews(mode);
+    }
+}
+
+void SettingsView::set_invite_avatars_pref(bool enabled)
+{
+    if (media_)
+    {
+        media_->set_invite_avatars(enabled);
     }
 }
 

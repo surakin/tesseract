@@ -51,6 +51,8 @@ signals:
     void themeChanged(tesseract::Settings::ThemePreference pref);
     void notificationsChanged(bool enabled);
     void presenceChanged(bool enabled);
+    void mediaPreviewsChanged(tesseract::Settings::MediaPreviews mode);
+    void inviteAvatarsChanged(bool enabled);
     void roomListGroupingChanged();
     void clearCachesRequested();
     // Fired after the user changes their own avatar via Settings. The

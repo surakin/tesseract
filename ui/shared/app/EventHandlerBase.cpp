@@ -242,6 +242,16 @@ void EventHandlerBase::on_account_prefs_updated(const std::string& json)
         });
 }
 
+void EventHandlerBase::on_media_preview_config_updated(const std::string& json)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, uid = user_id_, j = json]() mutable
+        {
+            shell->handle_media_preview_config_updated_ui_(std::move(uid),
+                                                           std::move(j));
+        });
+}
+
 void EventHandlerBase::on_notification(const std::string& room_id,
                                        const std::string& room_name,
                                        const std::string& sender,

@@ -2049,6 +2049,17 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             handle_send_presence_toggle_(enabled);
         };
+        settings_widget_->on_media_previews_changed =
+            [this](tesseract::Settings::MediaPreviews mode)
+        {
+            apply_media_preview_config_(
+                mode, tesseract::Settings::instance().invite_avatars);
+        };
+        settings_widget_->on_invite_avatars_changed = [this](bool enabled)
+        {
+            apply_media_preview_config_(
+                tesseract::Settings::instance().media_previews, enabled);
+        };
         settings_widget_->on_group_inactive_changed = [this](bool enabled)
         {
             auto& s = tesseract::Settings::instance();

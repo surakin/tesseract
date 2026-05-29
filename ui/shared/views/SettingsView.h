@@ -80,6 +80,11 @@ public:
     // Silently initialise the prefetch checkbox from persisted settings.
     void set_prefetch_enabled(bool enabled);
 
+    // Silently initialise the MSC4278 media-preview controls (from the
+    // Settings mirror of the account-data config).
+    void set_media_previews_pref(tesseract::Settings::MediaPreviews mode);
+    void set_invite_avatars_pref(bool enabled);
+
     // ----- Privacy section --------------------------------------------------
 
     // Silently initialise the presence checkbox from persisted settings.
@@ -153,6 +158,13 @@ public:
 
     // Fired when the user toggles full-media pre-fetch.
     std::function<void(bool)> on_prefetch_changed;
+
+    // Fired when the user changes the MSC4278 media-preview mode.
+    std::function<void(tesseract::Settings::MediaPreviews)>
+        on_media_previews_changed;
+
+    // Fired when the user toggles the MSC4278 "Show avatars in invites" option.
+    std::function<void(bool)> on_invite_avatars_changed;
 
     // Fired when the user toggles the "Send and receive presence status" option.
     std::function<void(bool)> on_send_presence_changed;

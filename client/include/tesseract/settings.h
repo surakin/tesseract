@@ -100,6 +100,24 @@ public:
     // default), full media is fetched on demand when the viewer is opened.
     bool prefetch_full_media = false;
 
+    // ── MSC4278 media-preview controls ────────────────────────────────
+    // In-memory mirror of the active account's global `m.media_preview_config`
+    // account-data event. NOT persisted to app_settings.json — account_data is
+    // the source of truth; the shell populates these on first sync and on
+    // on_media_preview_config_updated, and writes changes back via the SDK.
+    // Read synchronously by the message-list and invite render paths.
+    //   media_previews: Off = never auto-load media; Private = only in
+    //     non-public rooms; On = always (the MSC default).
+    //   invite_avatars: show room/inviter avatars on pending invites.
+    enum class MediaPreviews
+    {
+        Off,
+        Private,
+        On
+    };
+    MediaPreviews media_previews = MediaPreviews::On;
+    bool          invite_avatars = true;
+
     // ── Room list ─────────────────────────────────────────────────────
     // Group rooms with no activity for `inactive_room_threshold_days` into a
     // separate "Inactive" room-list section (DMs + Rooms only). Default off.

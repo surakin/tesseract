@@ -143,6 +143,15 @@ public:
     {
     }
 
+    /// Fired once at startup and whenever the global MSC4278
+    /// `m.media_preview_config` account-data event changes (local write or a
+    /// change from another device). `json` is the raw event content object,
+    /// or `"{}"` when missing. UIs re-read `Client::media_preview_config()`
+    /// and update their media/invite-avatar gating.
+    virtual void on_media_preview_config_updated(const std::string& /*json*/)
+    {
+    }
+
     /// Fired when a new incoming message matches the user's push rules and
     /// should trigger a notification. Called on a background thread; marshal to
     /// the UI thread before showing a system notification. `is_mention` is true
