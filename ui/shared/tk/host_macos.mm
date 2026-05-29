@@ -1589,8 +1589,11 @@ void Host::on_draw(CGContextRef ctx)
     auto canvas = cg::make_canvas(ctx);
     canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
     anim_damage_.clear();
-    PaintCtx pc{*canvas, *factory_, *theme_, this};
+    pending_popup_ = nullptr;
+    PaintCtx pc{*canvas, *factory_, *theme_, this, this};
     root_->paint(pc);
+    popup_ = pending_popup_;
+    root_->paint_overlay(pc);
 
     if (drag_active_ && view_)
     {

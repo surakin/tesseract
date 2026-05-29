@@ -1,5 +1,7 @@
 #include "combobox.h"
 
+#include "host.h"
+
 #include <algorithm>
 
 namespace tk
@@ -171,11 +173,33 @@ void ComboBox::paint(PaintCtx& ctx)
         }
     }
 
-    // ── Dropdown (when expanded) ──────────────────────────────────────────────
+    // Register as the active popup so the host draws the dropdown after the
+    // full widget tree and routes pointer events to it with priority.
+    if (expanded_ && ctx.host)
+        ctx.host->register_popup(this);
+}
 
+void ComboBox::on_popup_dismiss()
+{
+    collapse();
+}
+
+// ── overlay paint (dropdown popup — rendered after all siblings) ──────────────
+
+void ComboBox::paint_overlay(PaintCtx& ctx)
+{
     if (!expanded_)
     {
         return;
+    }
+
+    const auto& pal = ctx.theme.palette;
+
+    // Ensure layout slots exist (paint() may not have run yet on first frame).
+    const int needed = 1 + static_cast<int>(options_.size());
+    if (static_cast<int>(layouts_.size()) < needed)
+    {
+        layouts_.resize(static_cast<std::size_t>(needed));
     }
 
     const float n      = static_cast<float>(options_.size());

@@ -15,6 +15,7 @@
 #include "audio_capture.h"
 #include "canvas.h"
 #include "video.h"
+#include "widget.h"
 
 #include <tesseract/mentions.h> // tesseract::MentionSeg
 
@@ -317,6 +318,21 @@ public:
 
     // Write `text` to the system clipboard as plain text.
     virtual void set_clipboard_text(std::string_view text) = 0;
+
+    // ── Popup management ─────────────────────────────────────────────────────
+    // A widget that wants to render and receive input above the entire widget
+    // tree (e.g. an open ComboBox dropdown) calls register_popup(this) during
+    // its paint(). The host draws the popup via paint_overlay() after the full
+    // tree paint, and routes pointer events to it with priority.
+
+    void register_popup(Widget* w) { pending_popup_ = w; }
+
+    // Returns the currently active popup (valid between paint frames).
+    Widget* popup() const { return popup_; }
+
+protected:
+    Widget* popup_         = nullptr;  // active popup (set after each paint)
+    Widget* pending_popup_ = nullptr;  // populated during the current paint
 
 private:
     std::function<void()> on_user_activity_;

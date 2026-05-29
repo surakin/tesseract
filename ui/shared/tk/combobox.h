@@ -35,6 +35,8 @@ public:
     Size     measure(LayoutCtx&, Size constraints) override;
     void     arrange(LayoutCtx&, Rect bounds) override;
     void     paint(PaintCtx&) override;
+    void     paint_overlay(PaintCtx&) override;
+    void     on_popup_dismiss() override;
     bool     contains_world(Point world) const override;
     bool     on_pointer_down(Point local) override;
     void     on_pointer_up(Point local, bool inside_self) override;

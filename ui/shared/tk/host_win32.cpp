@@ -3301,8 +3301,11 @@ public:
         canvas.clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         if (root_)
         {
-            PaintCtx ctx{canvas, *factory_, *theme_};
+            pending_popup_ = nullptr;
+            PaintCtx ctx{canvas, *factory_, *theme_, nullptr, this};
             root_->paint(ctx);
+            popup_ = pending_popup_;
+            root_->paint_overlay(ctx);
         }
         if (drag_active_)
         {

@@ -88,12 +88,16 @@ struct AnimDamageSink
     virtual void note_image(const std::string& key, Rect world) = 0;
 };
 
+// Forward declaration — avoids a circular include (host.h includes widget.h).
+class Host;
+
 struct PaintCtx
 {
     Canvas& canvas;
     CanvasFactory& factory;
     const Theme& theme;
     AnimDamageSink* anim_damage = nullptr;
+    Host*           host        = nullptr;
 };
 
 class Widget
@@ -112,6 +116,20 @@ public:
     // Paint into the canvas at this widget's bounds (in parent-local
     // coordinates — the parent has already translated the canvas).
     virtual void paint(PaintCtx&) = 0;
+
+    // Second paint pass, called by the host after the entire widget tree's
+    // paint() has finished. Default propagates to children so every
+    // container forwards the pass automatically. Override (without calling
+    // the base) to draw popup content that must render above all other widgets.
+    virtual void paint_overlay(PaintCtx& ctx)
+    {
+        for (auto& ch : children())
+            if (ch->visible()) ch->paint_overlay(ctx);
+    }
+
+    // Called by the host when a click lands outside an active popup widget.
+    // ComboBox overrides this to collapse the dropdown.
+    virtual void on_popup_dismiss() {}
 
     // Hit-test against this subtree. The input `Point` is in world (root-
     // surface) coordinates — the same space `bounds_` is stored in.

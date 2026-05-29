@@ -1276,8 +1276,11 @@ public:
         }
         auto canvas = tk::cairo_pango::make_canvas(cr);
         canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
-        PaintCtx ctx{*canvas, *factory_, *theme_};
+        pending_popup_ = nullptr;
+        PaintCtx ctx{*canvas, *factory_, *theme_, nullptr, this};
         root_->paint(ctx);
+        popup_ = pending_popup_;
+        root_->paint_overlay(ctx);
 
         if (drag_active_ && w > 0 && h > 0)
         {
