@@ -1316,7 +1316,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             }
             std::string room = current_room_id_;
             begin_focused_subscription_(room, event_id);
-            run_async_(
+            run_async_mut_(
                 [this, room, event_id]
                 {
                     client_->subscribe_room_at(room, event_id);
@@ -1413,7 +1413,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             if (!client_) return;
             auto* c = client_;
-            run_async_([c, room_id = std::move(room_id), t = std::move(t)]() mutable
+            run_async_mut_([c, room_id = std::move(room_id), t = std::move(t)]() mutable
             {
                 c->set_room_topic(room_id, t);
             });
@@ -1422,7 +1422,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             if (!client_) return;
             auto* c = client_;
-            run_async_([this, c, room_id = std::move(room_id)]() mutable
+            run_async_mut_([this, c, room_id = std::move(room_id)]() mutable
             {
                 auto res = c->leave_room(room_id);
                 post_to_ui_([this, room_id, ok = res.ok]() mutable
@@ -1443,7 +1443,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             if (!client_) return;
             auto* c = client_;
-            run_async_([c, user_id = std::move(user_id)]() mutable
+            run_async_mut_([c, user_id = std::move(user_id)]() mutable
             {
                 c->ignore_user(user_id);
             });
@@ -2368,6 +2368,7 @@ MainWindow::~MainWindow()
     if (pending_login_client_)
         pending_login_client_->stop_sync();
     pool_.drain();
+    mut_pool_.drain();
     // login_view_ holds pending_login_client_* — destroy it before
     // pending_login_client_ and the accounts vector.
     login_view_.reset();
@@ -2951,7 +2952,7 @@ void MainWindow::on_room_selected(const std::string& room_id)
             return;
         state.in_flight = true;
     }
-    run_async_(
+    run_async_mut_(
         [this, sub_room, visible_ids = std::move(visible_ids)]
         {
             auto res = client_->subscribe_room(sub_room);
@@ -3124,7 +3125,7 @@ void MainWindow::on_jump_dialog_ok_(GtkButton*, gpointer user_data)
 
     const uint64_t ts_ms = static_cast<uint64_t>(unix_s) * 1000ULL;
 
-    self->run_async_(
+    self->run_async_mut_(
         [self, room_id, ts_ms]
         {
             auto res = self->client_->timestamp_to_event(room_id, ts_ms, "f");
@@ -3157,7 +3158,7 @@ void MainWindow::on_jump_dialog_ok_(GtkButton*, gpointer user_data)
                     std::string eid = std::move(data->event_id);
                     delete data;
                     w->begin_focused_subscription_(rid, eid);
-                    w->run_async_(
+                    w->run_async_mut_(
                         [w, rid, eid]
                         {
                             w->client_->subscribe_room_at(rid, eid);
@@ -4609,7 +4610,7 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data)
         bool ok;
         std::string message;
     };
-    self->run_async_(
+    self->run_async_mut_(
         [self, key]()
         {
             auto res = self->client_->recover(key);
@@ -6340,7 +6341,7 @@ void MainWindow::build_join_room_dialog()
         }
         uint32_t gen = join_room_gen_;
         auto snap = client_;
-        run_async_(
+        run_async_mut_(
             [this, room_id_or_alias, gen, snap]
             {
                 std::string canonical_id = snap->join_room(room_id_or_alias);

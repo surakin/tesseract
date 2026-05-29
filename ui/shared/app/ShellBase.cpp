@@ -46,9 +46,9 @@ void ShellBase::cancel_debounce_(DebounceSlot slot)
 
 // ── WorkerPool ─────────────────────────────────────────────────────────────
 
-ShellBase::WorkerPool::WorkerPool()
+ShellBase::WorkerPool::WorkerPool(int threads)
 {
-    for (int i = 0; i < kThreads; ++i)
+    for (int i = 0; i < threads; ++i)
     {
         threads_.emplace_back(
             [this]
@@ -106,6 +106,11 @@ void ShellBase::WorkerPool::post(std::function<void()> fn)
 void ShellBase::run_async_(std::function<void()> fn)
 {
     pool_.post(std::move(fn));
+}
+
+void ShellBase::run_async_mut_(std::function<void()> fn)
+{
+    mut_pool_.post(std::move(fn));
 }
 
 void ShellBase::ensure_room_avatar_(const RoomInfo& r)
@@ -242,7 +247,7 @@ void ShellBase::set_room_notification_mode_(const std::string& room_id,
 {
     if (!client_) return;
     auto* c = client_;
-    run_async_([c, room_id, mode]() {
+    run_async_mut_([c, room_id, mode]() {
         c->set_room_notification_mode(room_id, mode);
     });
 }
@@ -1030,7 +1035,7 @@ void ShellBase::accept_invite_async_(const std::string& room_id)
         return;
     }
     auto* c = client_;
-    run_async_(
+    run_async_mut_(
         [this, c, room_id]()
         {
             auto res = c->accept_invite(room_id);
@@ -1068,7 +1073,7 @@ void ShellBase::decline_invite_async_(const std::string& room_id)
     on_invites_updated_();
 
     auto* c = client_;
-    run_async_(
+    run_async_mut_(
         [this, c, room_id]()
         {
             auto res = c->decline_invite(room_id);
@@ -1104,7 +1109,7 @@ void ShellBase::block_invite_async_(const std::string& room_id,
     on_invites_updated_();
 
     auto* c = client_;
-    run_async_(
+    run_async_mut_(
         [this, c, room_id, inviter_id]()
         {
             auto res = c->block_invite(room_id, inviter_id);
@@ -1126,7 +1131,7 @@ void ShellBase::leave_room_command_(const std::string& room_id)
     if (room_id.empty() || !client_)
         return;
     auto* c = client_;
-    run_async_(
+    run_async_mut_(
         [this, c, room_id]
         {
             auto r = c->leave_room(room_id);
@@ -1157,7 +1162,7 @@ void ShellBase::join_room_command_(const std::string& room_id_or_alias)
     if (room_id_or_alias.empty() || !client_)
         return;
     auto* c = client_;
-    run_async_(
+    run_async_mut_(
         [this, c, room_id_or_alias]
         {
             auto joined_id = c->join_room(room_id_or_alias);
@@ -1179,7 +1184,7 @@ void ShellBase::invite_user_command_(const std::string& room_id,
     if (room_id.empty() || user_id.empty() || !client_)
         return;
     auto* c = client_;
-    run_async_([c, room_id, user_id] { c->invite_user(room_id, user_id); });
+    run_async_mut_([c, room_id, user_id] { c->invite_user(room_id, user_id); });
 }
 
 void ShellBase::update_space_children_cache_()
@@ -1341,7 +1346,7 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
     }
 
     auto* c = client_;
-    run_async_([this, c, user_id]()
+    run_async_mut_([this, c, user_id]()
     {
         auto dm_id = c->get_or_create_dm(user_id);
         post_to_ui_([this, user_id, dm_id = std::move(dm_id)]() mutable
@@ -1411,7 +1416,7 @@ void ShellBase::try_scroll_to_room_event_(const std::string& event_id)
     // every intermediate event and can stall the main thread.
     const auto rid = current_room_id_;
     begin_focused_subscription_(rid, event_id);
-    run_async_([this, rid, event_id]()
+    run_async_mut_([this, rid, event_id]()
     {
         client_->subscribe_room_at(rid, event_id);
     });
@@ -1449,7 +1454,7 @@ void ShellBase::request_forward_history_(const std::string& room_id)
     }
     state.fwd_in_flight = true;
 
-    run_async_(
+    run_async_mut_(
         [this, room_id]()
         {
             auto res = client_->paginate_forward(room_id, kPaginationBatch);
@@ -1478,7 +1483,7 @@ void ShellBase::return_to_live_(const std::string& room_id)
     state.fwd_in_flight = false;
     state.in_flight = true;
 
-    run_async_(
+    run_async_mut_(
         [this, room_id]()
         {
             client_->subscribe_room(room_id);
@@ -1526,7 +1531,7 @@ void ShellBase::acquire_room_subscription_(const std::string& room_id)
     {
         return;
     }
-    run_async_(
+    run_async_mut_(
         [this, room_id]
         {
             if (client_)
@@ -1552,7 +1557,7 @@ void ShellBase::release_room_subscription_(const std::string& room_id)
     {
         return;
     }
-    run_async_(
+    run_async_mut_(
         [this, room_id]
         {
             if (client_)
@@ -1621,7 +1626,7 @@ void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
         return;
     }
     last = event_id;
-    run_async_(
+    run_async_mut_(
         [this, room_id, event_id]()
         {
             if (client_)
@@ -1661,7 +1666,7 @@ void ShellBase::mark_room_read_(const std::string& room_id)
     }
     on_rooms_updated_();
     notify_tray_unread_();
-    run_async_(
+    run_async_mut_(
         [this, room_id]()
         {
             if (client_)
@@ -2181,7 +2186,7 @@ void ShellBase::start_presence_tracking_()
         // ensure_room_avatar_ — so it picks up the currently-active
         // account, which is what we want.
         const auto target = to_client_presence(s);
-        run_async_(
+        run_async_mut_(
             [this, target]
             {
                 if (client_)
@@ -2559,7 +2564,7 @@ void ShellBase::wire_voice_capture_(
                 clear_text_fn();
 
                 // Encoding (Opus) and upload both block; run off the UI thread.
-                run_async_(
+                run_async_mut_(
                     [this, rid,
                      pcm      = std::move(pcm),
                      waveform  = std::move(waveform),
@@ -3027,7 +3032,7 @@ void ShellBase::paginate_threads_()
     threads_paginating_ = true;
     auto* c       = client_;
     auto  room_id = current_room_id_;
-    run_async_([this, c, room_id]
+    run_async_mut_([this, c, room_id]
     {
         auto r = c->paginate_room_threads(room_id);
         post_to_ui_([this, c, room = room_id, reached = r.reached_start]
@@ -3076,7 +3081,7 @@ void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
                 return; // cancelled
             if (c != client_)
                 return; // logged out between pick and callback
-            run_async_(
+            run_async_mut_(
                 [this, c, room_id,
                  bytes = std::move(bytes),
                  mime  = std::move(mime)]() mutable

@@ -1796,7 +1796,7 @@ void MainWindow::on_create(HWND hwnd)
             }
             std::string room = current_room_id_;
             begin_focused_subscription_(room, event_id);
-            run_async_(
+            run_async_mut_(
                 [this, room, event_id]
                 {
                     client_->subscribe_room_at(room, event_id);
@@ -1888,7 +1888,7 @@ void MainWindow::on_create(HWND hwnd)
         room_view_->on_save_topic = [this](std::string room_id, std::string topic)
         {
             auto* c = client_;
-            run_async_(
+            run_async_mut_(
                 [c, room_id = std::move(room_id), topic = std::move(topic)]()
                 {
                     c->set_room_topic(room_id, topic);
@@ -1898,7 +1898,7 @@ void MainWindow::on_create(HWND hwnd)
         {
             auto* c = client_;
             if (!c) return;
-            run_async_(
+            run_async_mut_(
                 [this, c, room_id = std::move(room_id)]() mutable
                 {
                     auto result = c->leave_room(room_id);
@@ -1921,7 +1921,7 @@ void MainWindow::on_create(HWND hwnd)
         room_view_->on_ignore_user = [this](std::string user_id)
         {
             auto* c = client_;
-            run_async_(
+            run_async_mut_(
                 [c, user_id = std::move(user_id)]()
                 {
                     c->ignore_user(user_id);
@@ -2958,6 +2958,7 @@ void MainWindow::on_destroy()
     if (pending_login_client_)
         pending_login_client_->stop_sync();
     pool_.drain();
+    mut_pool_.drain();
 }
 
 // run_async_ is implemented in tesseract::ShellBase.
@@ -3767,7 +3768,7 @@ void MainWindow::on_room_selected(const std::string& room_id)
     HWND hwnd = hwnd_;
     std::string sub_room = current_room_id_;
     tesseract::Client* cl = client_;
-    run_async_(
+    run_async_mut_(
         [this, sub_room, hwnd, cl, visible_ids = std::move(visible_ids)]
         {
             auto res = cl->subscribe_room(sub_room);
@@ -4033,7 +4034,7 @@ void MainWindow::on_tesseract_jump_done(JumpDonePayload* p)
     begin_focused_subscription_(p->room_id, p->event_id);
     const std::string room_id = p->room_id;
     const std::string event_id = p->event_id;
-    run_async_(
+    run_async_mut_(
         [this, room_id, event_id]
         {
             client_->subscribe_room_at(room_id, event_id);
@@ -4241,7 +4242,7 @@ void MainWindow::openJumpToDateDialog()
     const std::string room_id = current_room_id_;
     HWND main_hwnd = hwnd_;
     tesseract::Client* cl = client_;
-    run_async_(
+    run_async_mut_(
         [cl, room_id, ts_ms, main_hwnd]
         {
             auto res = cl->timestamp_to_event(room_id, ts_ms, "f");
@@ -5126,7 +5127,7 @@ void MainWindow::on_recovery_verify_clicked()
     recovery_in_flight_ = true;
 
     HWND target = hwnd_;
-    run_async_(
+    run_async_mut_(
         [this, target, key]()
         {
             auto res = client_->recover(key);
@@ -6755,7 +6756,7 @@ void MainWindow::ensure_join_room_created()
         }
         HWND target = hwnd_;
         uint32_t gen = join_room_gen_;
-        run_async_(
+        run_async_mut_(
             [this, room_id_or_alias, target, gen, snap = client_]
             {
                 auto* rid = new std::string(snap->join_room(room_id_or_alias));

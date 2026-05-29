@@ -2696,7 +2696,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (!s || !s->_shell->client_)
                 return;
             auto* c = s->_shell->client_;
-            s->_shell->run_async_(
+            s->_shell->run_async_mut_(
                 [c, room_id = std::move(room_id),
                  topic = std::move(topic)]() mutable
                 {
@@ -2710,7 +2710,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (!s || !s->_shell->client_)
                 return;
             auto* c = s->_shell->client_;
-            s->_shell->run_async_(
+            s->_shell->run_async_mut_(
                 [weakSelf, c, room_id = std::move(room_id)]() mutable
                 {
                     auto result = c->leave_room(room_id);
@@ -2744,7 +2744,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (!s || !s->_shell->client_)
                 return;
             auto* c = s->_shell->client_;
-            s->_shell->run_async_(
+            s->_shell->run_async_mut_(
                 [c, user_id = std::move(user_id)]() mutable
                 {
                     c->ignore_user(user_id);
@@ -3716,6 +3716,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             acc->client->stop_sync();
     }
     _shell->pool_.drain();
+    _shell->mut_pool_.drain();
 }
 
 - (void)showEmojiPicker:(id)sender
@@ -5943,7 +5944,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 
     __weak MainWindowController* weakSelf = self;
-    _shell->run_async_(
+    _shell->run_async_mut_(
         [weakSelf, key, clientPtr = _shell->client_]()
         {
             auto res = clientPtr->recover(key);

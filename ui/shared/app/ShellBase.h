@@ -364,19 +364,18 @@ protected:
     // Ref-count of active subscriptions per room_id across all secondary windows.
     std::unordered_map<std::string, int> room_subscription_refs_;
 
-    // ── Worker thread pool ────────────────────────────────────────────────────
-    // Fixed-size producer-consumer pool shared by all run_async_() callers.
-    // 8 threads gives enough concurrency for parallel media fetches while
-    // bounding OS thread count (tokio handles actual I/O async internally).
+    // ── Worker thread pools ───────────────────────────────────────────────────
+    // Two pools with different concurrency levels:
+    //   pool_     — 4 threads for &self FFI (fetch_*, decode, disk I/O).
+    //               These hold no C++ mutex; all four can run in parallel.
+    //   mut_pool_ — 1 thread for &mut FFI (subscribe_room, send_*, etc.).
+    //               Serialised by design so ffi_mu is never contended.
     struct WorkerPool
     {
-        static constexpr int kThreads = 8;
-
-        WorkerPool();
+        explicit WorkerPool(int threads);
         ~WorkerPool();
 
-        // Enqueue fn for execution on the next free thread. If all threads
-        // are busy the task queues and runs when a thread becomes available.
+        // Enqueue fn for execution on the next free thread.
         void post(std::function<void()> fn);
 
         // Stop accepting new work, drop pending tasks, and join all threads.
@@ -389,7 +388,8 @@ protected:
         bool                              stop_ = false;
         std::vector<std::thread>          threads_;
     };
-    WorkerPool pool_;
+    WorkerPool pool_{4};
+    WorkerPool mut_pool_{1};
 
     // ── Media kind tag ────────────────────────────────────────────────────────
     enum class MediaKind : std::uint8_t
@@ -957,9 +957,15 @@ protected:
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 
-    // Spawn a worker thread.  fn() runs off the UI thread and must not touch
-    // UI state directly — use post_to_ui_ to bounce results back.
+    // Enqueue fn() on the shared-read pool (pool_, 4 threads).
+    // Use for &self FFI calls and CPU/disk work that holds no ffi_mu lock.
     void run_async_(std::function<void()> fn);
+
+    // Enqueue fn() on the single-thread mutable pool (mut_pool_, 1 thread).
+    // Use for every &mut ClientFfi call (anything that takes MUT_FFI in
+    // client.cpp). The 1-thread pool serialises them naturally so ffi_mu
+    // is never waited on by more than one thread at a time.
+    void run_async_mut_(std::function<void()> fn);
 
     // Avatar / media prefetch — each method is idempotent (dedup via the
     // media_fetches_in_flight_ set + cache-presence check).

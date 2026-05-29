@@ -558,7 +558,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             }
             std::string room = current_room_id_;
             begin_focused_subscription_(room, event_id);
-            run_async_(
+            run_async_mut_(
                 [this, room, event_id]
                 {
                     client_->subscribe_room_at(room, event_id);
@@ -1093,7 +1093,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (!client_)
                 return;
             auto* c = client_;
-            run_async_(
+            run_async_mut_(
                 [this, c, room_id, topic]()
                 {
                     auto res = c->set_room_topic(room_id, topic);
@@ -1118,7 +1118,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (!client_)
                 return;
             auto* c = client_;
-            run_async_(
+            run_async_mut_(
                 [this, c, room_id]()
                 {
                     auto res = c->leave_room(room_id);
@@ -1148,7 +1148,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (!client_)
                 return;
             auto* c = client_;
-            run_async_(
+            run_async_mut_(
                 [c, user_id]()
                 {
                     c->ignore_user(user_id);
@@ -1829,6 +1829,7 @@ MainWindow::~MainWindow()
     if (pending_login_client_)
         pending_login_client_->stop_sync();
     pool_.drain();
+    mut_pool_.drain();
 
     client_ = nullptr;
     event_handler_ = nullptr;
@@ -2676,7 +2677,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
             return;
         state.in_flight = true;
     }
-    run_async_(
+    run_async_mut_(
         [this, c, sub_room, visible_ids = std::move(visible_ids)]
         {
             auto res = c->subscribe_room(sub_room);
@@ -2777,7 +2778,7 @@ void MainWindow::openJumpToDateDialog()
         QDateTime(date, QTime(0, 0, 0), QTimeZone::utc()).toMSecsSinceEpoch());
 
     const std::string room_id = current_room_id_;
-    run_async_(
+    run_async_mut_(
         [this, room_id, ts_ms]
         {
             auto res = client_->timestamp_to_event(room_id, ts_ms, "f");
@@ -2801,7 +2802,7 @@ void MainWindow::openJumpToDateDialog()
                 [this, room_id, event_id]
                 {
                     begin_focused_subscription_(room_id, event_id);
-                    run_async_(
+                    run_async_mut_(
                         [this, room_id, event_id]
                         {
                             client_->subscribe_room_at(room_id, event_id);
@@ -3618,7 +3619,7 @@ void MainWindow::onRecoveryVerifyClicked()
         recoveryKeyField_->set_enabled(false);
     }
 
-    run_async_(
+    run_async_mut_(
         [this, k = key]()
         {
             auto res = client_->recover(k);
