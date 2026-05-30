@@ -19,9 +19,16 @@ using PostFn = tk::AudioCapturePostFn;
 class AudioCaptureMacOS : public tk::AudioCapture
 {
 public:
-    explicit AudioCaptureMacOS(PostFn post) : post_(std::move(post)) {}
+    explicit AudioCaptureMacOS(PostFn post)
+        : post_(std::move(post)), alive_(std::make_shared<bool>(true))
+    {
+    }
 
-    ~AudioCaptureMacOS() override { cancel(); }
+    ~AudioCaptureMacOS() override
+    {
+        *alive_ = false;
+        cancel();
+    }
 
     void start() override
     {
@@ -41,18 +48,33 @@ public:
         // Request mic permission asynchronously. Blocking the main thread
         // here with a semaphore prevents the system permission sheet from
         // being presented (it also needs the run loop).
+        //
+        // Capture a weak_ptr sentinel rather than raw `this`: the permission
+        // dialog can take many seconds, and the object may be destroyed while
+        // it is pending. Checking alive before (and inside) the post_ lambda
+        // prevents a use-after-free if that happens.
+        std::weak_ptr<bool> walive = alive_;
         [AVCaptureDevice
             requestAccessForMediaType:AVMediaTypeAudio
                     completionHandler:^(BOOL auth) {
+                        auto alive = walive.lock();
+                        if (!alive || !*alive)
+                            return;
                         if (!auth)
                         {
-                            post_([this]() {
+                            post_([this, walive]() {
+                                auto alive2 = walive.lock();
+                                if (!alive2 || !*alive2)
+                                    return;
                                 recording_ = false;
                                 fire_error_();
                             });
                             return;
                         }
-                        post_([this]() {
+                        post_([this, walive]() {
+                            auto alive2 = walive.lock();
+                            if (!alive2 || !*alive2)
+                                return;
                             if (recording_)
                                 start_engine_();
                         });
@@ -189,6 +211,7 @@ private:
     }
 
     PostFn post_;
+    std::shared_ptr<bool> alive_;
     bool recording_ = false;
     AVAudioEngine* __strong engine_ = nil;
     std::chrono::steady_clock::time_point start_tp_;
