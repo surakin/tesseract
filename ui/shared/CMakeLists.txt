@@ -68,6 +68,8 @@ set(_tk_sources
     views/html_spans.cpp
     views/EmojiPicker.h
     views/EmojiPicker.cpp
+    views/EncryptionSetupOverlay.h
+    views/EncryptionSetupOverlay.cpp
     views/StickerPicker.h
     views/StickerPicker.cpp
     views/ThreadListView.h
