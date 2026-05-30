@@ -69,7 +69,19 @@ impl ClientFfi {
 
     pub fn homeserver_supports_registration(&mut self, homeserver: &str) -> bool {
         let hs = homeserver.to_owned();
-        self.rt.block_on(oauth::supports_registration(&hs))
+        let rt = &self.rt;
+        // Keep a tokio context in TLS for the whole call so the throwaway Client
+        // built inside `supports_registration` drops with a runtime handle
+        // available — matrix-sdk's store/crypto teardown calls Handle::current()
+        // in Drop. Same hazard guarded by oauth_await_callback / restore_session /
+        // ClientFfi::drop. catch_unwind then ensures no panic crosses the cxx
+        // `-> bool` boundary (which would abort, not raise a C++ exception); the
+        // probe is best-effort, so any panic degrades to `false`.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = rt.enter();
+            rt.block_on(oauth::supports_registration(&hs))
+        }))
+        .unwrap_or(false)
     }
 
     pub fn oauth_await_callback(&mut self) -> OpResult {
