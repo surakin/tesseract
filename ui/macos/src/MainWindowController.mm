@@ -607,7 +607,7 @@ void MacShell::show_encryption_setup_overlay_(
         });
     };
 
-    ov->on_recover = [this, c](std::string key) {
+    ov->on_recover = [this](std::string key) {
         auto* cl = client_;
         run_async_mut_([this, cl, key]() {
             auto res = cl->recover(key);

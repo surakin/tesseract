@@ -80,7 +80,9 @@ void EncryptionSetupOverlay::fire_primary_()
 
         case Step::ChooseMethod:
         {
-            std::string pass = passphrase_mode_ ? passphrase_input_ : "";
+            std::string pass = passphrase_mode_
+                ? (get_passphrase ? get_passphrase() : passphrase_input_)
+                : "";
             advance_step_(Step::Progress);
             if (on_enable_recovery)
                 on_enable_recovery(std::move(pass));
@@ -88,9 +90,9 @@ void EncryptionSetupOverlay::fire_primary_()
         }
 
         case Step::EnterKey:
-            if (key_input_.empty()) return;
             {
-                std::string key = key_input_;
+                std::string key = get_key_input ? get_key_input() : key_input_;
+                if (key.empty()) return;
                 advance_step_(Step::Progress);
                 if (on_recover)
                     on_recover(std::move(key));

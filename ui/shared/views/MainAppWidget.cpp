@@ -214,30 +214,24 @@ void MainAppWidget::show_encryption_setup(bool show)
 
 bool MainAppWidget::encryption_setup_passphrase_field_visible() const
 {
-    return encryption_setup_ && encryption_setup_->visible() &&
-           encryption_setup_->passphrase_field_visible &&
-           encryption_setup_->passphrase_field_visible();
+    return encryption_setup_ && encryption_setup_->passphrase_field_rect_visible();
 }
 
 tk::Rect MainAppWidget::encryption_setup_passphrase_field_rect() const
 {
-    if (!encryption_setup_ || !encryption_setup_->passphrase_field_rect)
-        return {};
-    return encryption_setup_->passphrase_field_rect();
+    if (!encryption_setup_) return {};
+    return encryption_setup_->passphrase_field_rect_value();
 }
 
 bool MainAppWidget::encryption_setup_key_field_visible() const
 {
-    return encryption_setup_ && encryption_setup_->visible() &&
-           encryption_setup_->key_field_visible &&
-           encryption_setup_->key_field_visible();
+    return encryption_setup_ && encryption_setup_->key_field_rect_visible();
 }
 
 tk::Rect MainAppWidget::encryption_setup_key_field_rect() const
 {
-    if (!encryption_setup_ || !encryption_setup_->key_field_rect)
-        return {};
-    return encryption_setup_->key_field_rect();
+    if (!encryption_setup_) return {};
+    return encryption_setup_->key_field_rect_value();
 }
 
 // ── Native overlay rect queries ────────────────────────────────────────────
