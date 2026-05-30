@@ -91,6 +91,10 @@ private:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
+    void handle_enable_recovery_progress_ui_(uint8_t step,
+                                             std::string recovery_key,
+                                             uint32_t backed_up,
+                                             uint32_t total) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -205,9 +209,8 @@ private:
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
-    // TODO(task10): implement — show EncryptionSetupOverlay on the main surface.
     void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode) override {};
+        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
@@ -368,6 +371,8 @@ private:
 
     tesseract::views::VerificationBanner* verif_shared_ = nullptr;
     std::unique_ptr<tk::NativeTextField> recovery_key_field_;
+    std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
+    std::unique_ptr<tk::NativeTextField> enc_key_field_;
 
     GtkWidget* user_popover_ = nullptr;
 
