@@ -23,6 +23,7 @@
 //   recovery_key_field_rect()   → NativeTextField position
 
 #include "ConfirmDialog.h"
+#include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
 #include "InviteCard.h"
 #include "RecoveryBanner.h"
@@ -84,6 +85,15 @@ public:
 
     void show_image_viewer(bool show);
     void show_video_viewer(bool show);
+    void show_encryption_setup(bool show);
+
+    EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
+
+    // Field-rect delegation — called from the shell's layout hook.
+    bool     encryption_setup_passphrase_field_visible() const;
+    tk::Rect encryption_setup_passphrase_field_rect()    const;
+    bool     encryption_setup_key_field_visible()        const;
+    tk::Rect encryption_setup_key_field_rect()           const;
 
     // ── Sub-view accessors ────────────────────────────────────────────────
 
@@ -195,6 +205,7 @@ private:
     // Full-surface lightbox overlays (painted last — highest z-order)
     ImageViewerOverlay* img_viewer_ = nullptr;
     VideoViewerOverlay* vid_viewer_ = nullptr;
+    EncryptionSetupOverlay* encryption_setup_ = nullptr;
 
     // Modal confirmation overlay — sits above everything else, including the
     // lightboxes, so destructive prompts are always reachable.

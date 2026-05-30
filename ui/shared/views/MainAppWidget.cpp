@@ -73,6 +73,10 @@ MainAppWidget::MainAppWidget()
     vid_viewer_ = add_child(std::move(vid));
     vid_viewer_->set_visible(false);
 
+    auto enc = std::make_unique<EncryptionSetupOverlay>(EncryptionSetupOverlay::Mode::Fresh);
+    encryption_setup_ = add_child(std::move(enc));
+    encryption_setup_->set_visible(false);
+
     // Modal confirmation overlay — added after the lightboxes so it paints
     // on top of *everything*. Visibility is gated by ConfirmDialog::open()
     // / close() so an idle dialog doesn't capture hit-tests.
@@ -200,14 +204,51 @@ void MainAppWidget::show_video_viewer(bool show)
     }
 }
 
+void MainAppWidget::show_encryption_setup(bool show)
+{
+    if (encryption_setup_)
+    {
+        encryption_setup_->set_visible(show);
+    }
+}
+
+bool MainAppWidget::encryption_setup_passphrase_field_visible() const
+{
+    return encryption_setup_ && encryption_setup_->visible() &&
+           encryption_setup_->passphrase_field_visible &&
+           encryption_setup_->passphrase_field_visible();
+}
+
+tk::Rect MainAppWidget::encryption_setup_passphrase_field_rect() const
+{
+    if (!encryption_setup_ || !encryption_setup_->passphrase_field_rect)
+        return {};
+    return encryption_setup_->passphrase_field_rect();
+}
+
+bool MainAppWidget::encryption_setup_key_field_visible() const
+{
+    return encryption_setup_ && encryption_setup_->visible() &&
+           encryption_setup_->key_field_visible &&
+           encryption_setup_->key_field_visible();
+}
+
+tk::Rect MainAppWidget::encryption_setup_key_field_rect() const
+{
+    if (!encryption_setup_ || !encryption_setup_->key_field_rect)
+        return {};
+    return encryption_setup_->key_field_rect();
+}
+
 // ── Native overlay rect queries ────────────────────────────────────────────
 
 bool MainAppWidget::any_modal_open_() const
 {
-    return (confirm_dialog_ && confirm_dialog_->is_open()) ||
-           (room_view_      && room_view_->is_overlay_open()) ||
-           (img_viewer_     && img_viewer_->is_open()) ||
-           (vid_viewer_     && vid_viewer_->is_open());
+    return (confirm_dialog_    && confirm_dialog_->is_open()) ||
+           (room_view_         && room_view_->is_overlay_open()) ||
+           (img_viewer_        && img_viewer_->is_open()) ||
+           (vid_viewer_        && vid_viewer_->is_open()) ||
+           (encryption_setup_  && encryption_setup_->visible());
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const
@@ -329,6 +370,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     img_viewer_->arrange(ctx, bounds);
     vid_viewer_->arrange(ctx, bounds);
+    if (encryption_setup_) encryption_setup_->arrange(ctx, bounds);
     if (confirm_dialog_) confirm_dialog_->arrange(ctx, bounds);
 }
 
@@ -432,6 +474,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     if (vid_viewer_ && vid_viewer_->visible())
     {
         vid_viewer_->paint(ctx);
+    }
+    if (encryption_setup_ && encryption_setup_->visible())
+    {
+        encryption_setup_->paint(ctx);
     }
     // Modal confirmation — drawn above the lightboxes so destructive prompts
     // are still reachable when the image/video viewer is up.
