@@ -2793,6 +2793,28 @@ void MainWindow::on_create(HWND hwnd)
                             main_app_->recovery_key_field_rect());
                     }
                 }
+
+                // Encryption setup passphrase field.
+                if (enc_passphrase_field_)
+                {
+                    bool vis = !hide &&
+                               main_app_->encryption_setup_passphrase_field_visible();
+                    enc_passphrase_field_->set_visible(vis);
+                    if (vis)
+                        enc_passphrase_field_->set_rect(
+                            main_app_->encryption_setup_passphrase_field_rect());
+                }
+
+                // Encryption setup key-display field.
+                if (enc_key_field_)
+                {
+                    bool vis = !hide &&
+                               main_app_->encryption_setup_key_field_visible();
+                    enc_key_field_->set_visible(vis);
+                    if (vis)
+                        enc_key_field_->set_rect(
+                            main_app_->encryption_setup_key_field_rect());
+                }
             });
     }
 
@@ -5134,6 +5156,10 @@ std::wstring widen_utf8(const std::string& s)
 
 void MainWindow::maybe_show_recovery_banner()
 {
+    if (encryption_setup_shown_)
+    {
+        return;
+    }
     if (!client_)
     {
         return;
@@ -7152,6 +7178,120 @@ std::wstring MainWindow::show_save_dialog_(const std::wstring& suggested,
     if (GetSaveFileNameW(&ofn))
         return buf;
     return {};
+}
+
+// ---------------------------------------------------------------------------
+// EncryptionSetupOverlay — Win32 wiring
+// ---------------------------------------------------------------------------
+
+void MainWindow::handle_enable_recovery_progress_ui_(uint8_t step,
+                                                      std::string recovery_key,
+                                                      uint32_t backed_up,
+                                                      uint32_t total)
+{
+    if (auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr)
+        ov->advance_progress(step, recovery_key, backed_up, total);
+}
+
+void MainWindow::show_encryption_setup_overlay_(
+    tesseract::views::EncryptionSetupOverlay::Mode mode)
+{
+    if (!main_app_)
+        return;
+    auto* ov = main_app_->encryption_setup();
+    if (!ov)
+        return;
+
+    // Drop any stale native text fields before re-creating them so old
+    // HWND child windows are destroyed before new ones are made.
+    enc_passphrase_field_.reset();
+    enc_key_field_.reset();
+
+    ov->reset(mode);
+
+    enc_passphrase_field_ = main_app_surface_->host().make_text_field();
+    enc_passphrase_field_->set_password(true);
+    enc_key_field_ = main_app_surface_->host().make_text_field();
+    enc_key_field_->set_password(false);
+
+    ov->get_passphrase = [this]() -> std::string {
+        return enc_passphrase_field_ ? enc_passphrase_field_->text() : "";
+    };
+    ov->get_key_input = [this]() -> std::string {
+        return enc_key_field_ ? enc_key_field_->text() : "";
+    };
+
+    ov->on_close = [this]() {
+        encryption_setup_dismissed_ = true;
+        if (main_app_)
+            main_app_->show_encryption_setup(false);
+        enc_passphrase_field_.reset();
+        enc_key_field_.reset();
+        if (main_app_surface_)
+            main_app_surface_->relayout();
+    };
+
+    ov->on_enable_recovery = [this](std::string passphrase) {
+        auto* c = client_;
+        run_async_mut_([this, c, passphrase]() {
+            c->enable_recovery(passphrase);
+            // Progress delivered via handle_enable_recovery_progress_ui_.
+        });
+    };
+
+    ov->on_recover = [this](std::string key) {
+        auto* c = client_;
+        run_async_mut_([this, c, key]() {
+            auto res = c->recover(key);
+            if (!res.ok)
+            {
+                post_to_ui_([this, msg = std::string(res.message)]() {
+                    if (auto* o =
+                            main_app_ ? main_app_->encryption_setup() : nullptr)
+                        o->advance_progress(5, msg, 0, 0);
+                });
+            }
+        });
+    };
+
+    ov->on_request_sas = [this]() {
+        encryption_setup_dismissed_ = true;
+        if (main_app_)
+            main_app_->show_encryption_setup(false);
+        enc_passphrase_field_.reset();
+        enc_key_field_.reset();
+        auto* c = client_;
+        run_async_mut_([c]() { c->request_self_verification(); });
+        if (main_app_surface_)
+            main_app_surface_->relayout();
+    };
+
+    ov->on_copy_to_clipboard = [hwnd = hwnd_](std::string text) {
+        if (!OpenClipboard(hwnd))
+            return;
+        EmptyClipboard();
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+        if (wlen <= 0)
+        {
+            CloseClipboard();
+            return;
+        }
+        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, static_cast<SIZE_T>(wlen) * sizeof(wchar_t));
+        if (!hg)
+        {
+            CloseClipboard();
+            return;
+        }
+        auto* p = static_cast<wchar_t*>(GlobalLock(hg));
+        MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, p, wlen);
+        GlobalUnlock(hg);
+        SetClipboardData(CF_UNICODETEXT, hg);
+        CloseClipboard();
+    };
+
+    main_app_->show_encryption_setup(true);
+    if (main_app_surface_)
+        main_app_surface_->relayout();
 }
 
 } // namespace win32

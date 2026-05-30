@@ -352,6 +352,8 @@ private:
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     std::unique_ptr<tk::NativeTextField> recovery_key_field_;
+    std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
+    std::unique_ptr<tk::NativeTextField> enc_key_field_;
 
     // ── Slash-command popup ───────────────────────────────────────────────
     tesseract::views::SlashCommandEngine slash_engine_;
@@ -493,9 +495,12 @@ private:
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
-    // TODO(task11): implement — show EncryptionSetupOverlay on the main surface.
     void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode) override {};
+        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void handle_enable_recovery_progress_ui_(uint8_t step,
+                                              std::string recovery_key,
+                                              uint32_t backed_up,
+                                              uint32_t total) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
 
