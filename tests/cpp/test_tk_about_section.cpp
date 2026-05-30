@@ -69,6 +69,40 @@ TEST_CASE("memory cache row shows tooltip on hover when stats are set",
     CHECK(shown.find("50")   != std::string::npos);
 }
 
+TEST_CASE("cache size row value cells are at the same x after layout",
+          "[about-section][layout]")
+{
+    Stage st;
+    AboutSection section;
+    st.run(section, {0, 0, 400, 600});
+
+    // Navigate: AboutSection (SettingsPage VBox)
+    //   → last child (outer HBox wrapping the Storage group)
+    //     → child 0 (SettingsGroup)
+    //       → children 0-2 (the three CacheSizeRows)
+    auto& page_ch = section.children();
+    REQUIRE(page_ch.size() >= 2);
+    auto* outer_hbox = page_ch.back().get();
+    REQUIRE(!outer_hbox->children().empty());
+    auto* sg = outer_hbox->children()[0].get();
+    REQUIRE(sg->children().size() >= 3);
+
+    // Each CacheSizeRow (after fix) must have exactly two children:
+    // index 0 = CacheNameCell, index 1 = CacheValueCell.
+    std::vector<float> value_xs;
+    for (int i = 0; i < 3; ++i)
+    {
+        auto& row = *sg->children()[i];
+        REQUIRE(row.children().size() == 2);
+        value_xs.push_back(row.children()[1]->bounds().x);
+    }
+
+    // All three value cells must start at the same x — that is, names form
+    // a fixed column and values are right-aligned into a consistent column.
+    CHECK(value_xs[0] == value_xs[1]);
+    CHECK(value_xs[1] == value_xs[2]);
+}
+
 TEST_CASE("sdk store row never triggers a tooltip",
           "[about-section][tooltip]")
 {

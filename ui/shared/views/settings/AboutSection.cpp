@@ -43,16 +43,6 @@ std::string format_bytes(uint64_t n)
     return buf;
 }
 
-} // namespace
-
-// ---------------------------------------------------------------------------
-// CacheSizeRow — read-only "Label / value" line with theme-resolved colours.
-// Same pattern as ServerSection::HomeserverRow.
-// ---------------------------------------------------------------------------
-
-namespace
-{
-
 std::string format_hit_miss(uint64_t hits, uint64_t misses)
 {
     const uint64_t total = hits + misses;
@@ -74,20 +64,176 @@ std::string format_hit_miss(uint64_t hits, uint64_t misses)
     return buf;
 }
 
+// ---------------------------------------------------------------------------
+// CacheNameCell — fixed-width left cell (kLabelW), text_secondary
+// ---------------------------------------------------------------------------
+
+class CacheNameCell : public tk::Widget
+{
+public:
+    explicit CacheNameCell(std::string label) : label_text_(std::move(label)) {}
+
+    std::function<void()> on_hover_enter;
+    std::function<void()> on_hover_leave;
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return {std::min(constraints.w, kLabelW), kRowH};
+    }
+
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
+    {
+        if (bounds.w != bounds_.w)
+            label_layout_.reset();
+        bounds_ = bounds;
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        if (!label_layout_)
+        {
+            tk::TextStyle ls;
+            ls.role      = tk::FontRole::Body;
+            ls.halign    = tk::TextHAlign::Leading;
+            ls.valign    = tk::TextVAlign::Top;
+            ls.trim      = tk::TextTrim::Ellipsis;
+            ls.max_width = bounds_.w;
+            label_layout_ = ctx.factory.build_text(label_text_, ls);
+        }
+        const float cy =
+            bounds_.y + (kRowH - label_layout_->measure().h) * 0.5f;
+        ctx.canvas.draw_text(*label_layout_, {bounds_.x, cy},
+                             ctx.theme.palette.text_secondary);
+    }
+
+    bool on_pointer_move(tk::Point) override
+    {
+        if (cell_hovered_)
+            return false;
+        cell_hovered_ = true;
+        if (on_hover_enter)
+            on_hover_enter();
+        return true;
+    }
+
+    void on_pointer_leave() override
+    {
+        if (!cell_hovered_)
+            return;
+        cell_hovered_ = false;
+        if (on_hover_leave)
+            on_hover_leave();
+    }
+
+private:
+    std::string label_text_;
+    std::unique_ptr<tk::TextLayout> label_layout_;
+    bool cell_hovered_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// CacheValueCell — fill-main right cell, trailing-aligned, text_muted
+// ---------------------------------------------------------------------------
+
+class CacheValueCell : public tk::Widget
+{
+public:
+    CacheValueCell() = default;
+
+    void set_text(std::string t)
+    {
+        value_text_ = std::move(t);
+        value_layout_.reset();
+    }
+
+    std::function<void()> on_hover_enter;
+    std::function<void()> on_hover_leave;
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size) override
+    {
+        // Zero natural width; fill_main=true gives this cell the leftover space.
+        return {0.0f, kRowH};
+    }
+
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
+    {
+        if (bounds.w != bounds_.w)
+            value_layout_.reset();
+        bounds_ = bounds;
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        if (!value_layout_)
+        {
+            tk::TextStyle vs;
+            vs.role      = tk::FontRole::Body;
+            vs.halign    = tk::TextHAlign::Trailing;
+            vs.valign    = tk::TextVAlign::Top;
+            vs.trim      = tk::TextTrim::Ellipsis;
+            vs.max_width = bounds_.w;
+            value_layout_ = ctx.factory.build_text(value_text_, vs);
+        }
+        const auto sz  = value_layout_->measure();
+        const float cy = bounds_.y + (kRowH - sz.h) * 0.5f;
+        ctx.canvas.draw_text(*value_layout_, {bounds_.x, cy},
+                             ctx.theme.palette.text_muted);
+    }
+
+    bool on_pointer_move(tk::Point) override
+    {
+        if (cell_hovered_)
+            return false;
+        cell_hovered_ = true;
+        if (on_hover_enter)
+            on_hover_enter();
+        return true;
+    }
+
+    void on_pointer_leave() override
+    {
+        if (!cell_hovered_)
+            return;
+        cell_hovered_ = false;
+        if (on_hover_leave)
+            on_hover_leave();
+    }
+
+private:
+    std::string value_text_{"—"};
+    std::unique_ptr<tk::TextLayout> value_layout_;
+    bool cell_hovered_ = false;
+};
+
 } // namespace
 
-class AboutSection::CacheSizeRow : public tk::Widget
+// ---------------------------------------------------------------------------
+// CacheSizeRow — HBox[ CacheNameCell | CacheValueCell(fill_main) ]
+// ---------------------------------------------------------------------------
+
+class AboutSection::CacheSizeRow : public tk::HBox
 {
 public:
     explicit CacheSizeRow(std::string label)
-        : label_text_(std::move(label))
     {
+        set_spacing(kLabelGap);
+
+        auto name = std::make_unique<CacheNameCell>(std::move(label));
+        auto val  = std::make_unique<CacheValueCell>();
+        val->set_layout_hints({.fill_main = true});
+
+        name->on_hover_enter = [this] { enter_hover_(); };
+        name->on_hover_leave = [this] { leave_hover_(); };
+        val->on_hover_enter  = [this] { enter_hover_(); };
+        val->on_hover_leave  = [this] { leave_hover_(); };
+
+        add_child(std::move(name));
+        value_cell_ = add_child(std::move(val));
     }
 
-    void set_value(std::string value)
+    void set_value(std::string v)
     {
-        value_text_ = std::move(value);
-        value_layout_.reset();
+        value_cell_->set_text(std::move(v));
     }
 
     void set_stats(uint64_t hits, uint64_t misses)
@@ -100,89 +246,42 @@ public:
     std::function<void(std::string, tk::Rect)> on_show_tooltip;
     std::function<void()>                      on_hide_tooltip;
 
+    // Override measure so the SettingsGroup reports kNaturalW as its natural
+    // cross-axis width. Without this, the HBox would measure to only
+    // kLabelW + kLabelGap (the value cell has zero natural width since
+    // fill_main children are excluded from FlexBox::measure's used_main),
+    // making the value column 0 px wide after arrange.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
         return {std::min(constraints.w, kNaturalW), kRowH};
     }
 
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
-    {
-        if (bounds.w != bounds_.w)
-        {
-            label_layout_.reset();
-            value_layout_.reset();
-        }
-        bounds_ = bounds;
-    }
-
-    void paint(tk::PaintCtx& ctx) override
-    {
-        const auto& pal = ctx.theme.palette;
-
-        if (!label_layout_)
-        {
-            tk::TextStyle ls;
-            ls.role      = tk::FontRole::Body;
-            ls.halign    = tk::TextHAlign::Leading;
-            ls.valign    = tk::TextVAlign::Top;
-            ls.trim      = tk::TextTrim::Ellipsis;
-            ls.max_width = kLabelW;
-            label_layout_ = ctx.factory.build_text(label_text_, ls);
-        }
-        if (!value_layout_)
-        {
-            const float value_w =
-                std::max(0.0f, bounds_.w - kLabelW - kLabelGap);
-            tk::TextStyle vs;
-            vs.role      = tk::FontRole::Body;
-            vs.halign    = tk::TextHAlign::Trailing;
-            vs.valign    = tk::TextVAlign::Top;
-            vs.trim      = tk::TextTrim::Ellipsis;
-            vs.max_width = value_w;
-            value_layout_ = ctx.factory.build_text(value_text_, vs);
-        }
-
-        const float cy = bounds_.y + (kRowH - label_layout_->measure().h) * 0.5f;
-        ctx.canvas.draw_text(*label_layout_, {bounds_.x, cy},
-                             pal.text_secondary);
-
-        const auto vsz = value_layout_->measure();
-        ctx.canvas.draw_text(*value_layout_,
-                             {bounds_.x + bounds_.w - vsz.w, cy},
-                             pal.text_muted);
-    }
-
-    bool on_pointer_move(tk::Point /*local*/) override
-    {
-        if (!has_stats_)
-            return false;
-        if (hovered_)
-            return false;
-        hovered_ = true;
-        if (on_show_tooltip)
-            on_show_tooltip(format_hit_miss(hits_, misses_), bounds_);
-        return true;
-    }
-
-    void on_pointer_leave() override
-    {
-        if (!hovered_)
-            return;
-        hovered_ = false;
-        if (on_hide_tooltip)
-            on_hide_tooltip();
-    }
-
 private:
-    std::string label_text_;
-    std::string value_text_{"—"};
-    std::unique_ptr<tk::TextLayout> label_layout_;
-    std::unique_ptr<tk::TextLayout> value_layout_;
-
-    uint64_t hits_     = 0;
-    uint64_t misses_   = 0;
+    CacheValueCell* value_cell_ = nullptr;
+    uint64_t hits_      = 0;
+    uint64_t misses_    = 0;
     bool     has_stats_ = false;
-    bool     hovered_   = false;
+    // Counter rather than bool: when the pointer crosses from CacheNameCell
+    // to CacheValueCell, dispatch_pointer_move fires the new cell's
+    // on_pointer_move (enter) before the host calls on_pointer_leave on the
+    // old cell (leave). The counter absorbs that overlap so the tooltip
+    // neither flickers nor gets orphaned.
+    int hover_count_ = 0;
+
+    void enter_hover_()
+    {
+        if (hover_count_++ == 0 && has_stats_ && on_show_tooltip)
+            on_show_tooltip(format_hit_miss(hits_, misses_), bounds_);
+    }
+
+    void leave_hover_()
+    {
+        if (hover_count_ > 0 && --hover_count_ == 0)
+        {
+            if (on_hide_tooltip)
+                on_hide_tooltip();
+        }
+    }
 };
 
 // ---------------------------------------------------------------------------
