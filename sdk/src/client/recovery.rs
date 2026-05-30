@@ -40,6 +40,28 @@ impl ClientFfi {
         false
     }
 
+    /// Returns the current recovery state as a u8:
+    /// 0 = Unknown, 1 = Disabled, 2 = Enabled, 3 = Incomplete.
+    /// Cheap synchronous read; no block_on needed.
+    #[cfg(not(test))]
+    pub fn recovery_state(&self) -> u8 {
+        let Some(client) = self.client.as_ref() else {
+            return 0;
+        };
+        use matrix_sdk::encryption::recovery::RecoveryState;
+        match client.encryption().recovery().state() {
+            RecoveryState::Unknown    => 0,
+            RecoveryState::Disabled   => 1,
+            RecoveryState::Enabled    => 2,
+            RecoveryState::Incomplete => 3,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn recovery_state(&self) -> u8 {
+        0
+    }
+
     /// Unlock the server-side secret storage with the supplied recovery key
     /// (or passphrase), importing the cross-signing private keys and the
     /// backup decryption key into this device. The actual backup download

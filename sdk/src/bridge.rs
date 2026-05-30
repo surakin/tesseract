@@ -1522,6 +1522,10 @@ pub mod ffi {
         /// surface a "Verify this device" banner when this is true.
         fn needs_recovery(self: &ClientFfi) -> bool;
 
+        /// Returns the current recovery state as a u8:
+        /// 0 = Unknown, 1 = Disabled, 2 = Enabled, 3 = Incomplete.
+        fn recovery_state(self: &ClientFfi) -> u8;
+
         /// Unlock the server-side secret storage with a recovery key or
         /// passphrase, import the cross-signing private keys + backup
         /// decryption key into this device, and start downloading historical
