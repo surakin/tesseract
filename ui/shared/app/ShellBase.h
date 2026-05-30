@@ -1225,11 +1225,12 @@ protected:
     std::string find_existing_dm_(const std::string& user_id) const;
 
     // Async: compute cache directory sizes on a worker thread, then invoke
-    // callback(local_bytes, sdk_bytes, memory_bytes) on the UI thread, where
-    // memory_bytes is the live in-memory image-cache total (read on the UI
-    // thread). No-op when not signed in.
+    // callback(local, sdk, memory, mem_hits, mem_misses, disk_hits,
+    // disk_misses) on the UI thread. No-op when not signed in.
     void compute_cache_sizes_(
-        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory)>
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory,
+                           uint64_t mem_hits, uint64_t mem_misses,
+                           uint64_t disk_hits, uint64_t disk_misses)>
             callback);
 
     // Async: delete all on-disk caches best-effort (media files, waveform DB,
@@ -1237,7 +1238,9 @@ protected:
     // restart the SDK so it opens fresh SQLite stores, then call
     // recompute_callback with fresh sizes. No-op when not signed in.
     void clear_all_caches_(
-        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory)>
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory,
+                           uint64_t mem_hits, uint64_t mem_misses,
+                           uint64_t disk_hits, uint64_t disk_misses)>
             recompute_callback);
 
     // Stop sync, rebuild the matrix-sdk Client against the on-disk session JSON

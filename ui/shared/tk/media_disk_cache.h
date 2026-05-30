@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -35,11 +36,23 @@ public:
     std::uintmax_t size_bytes() const;
 
     // Delete all cached files and recreate the (empty) cache directory.
+    // Resets hit/miss counters.
     void clear() const;
+
+    uint64_t hits() const
+    {
+        return hits_.load(std::memory_order_relaxed);
+    }
+    uint64_t misses() const
+    {
+        return misses_.load(std::memory_order_relaxed);
+    }
 
 private:
     std::filesystem::path path_for(const std::string& key) const;
     std::filesystem::path dir_;
+    mutable std::atomic<uint64_t> hits_{0};
+    mutable std::atomic<uint64_t> misses_{0};
 };
 
 } // namespace tk

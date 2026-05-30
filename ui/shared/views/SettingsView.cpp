@@ -177,6 +177,16 @@ SettingsView::SettingsView()
             [this] { if (on_clear_caches) on_clear_caches(); });
     };
 
+    // Wire tooltip callbacks from AboutSection storage rows to our public callbacks.
+    about_->on_show_tooltip = [this](std::string t, tk::Rect a)
+    {
+        if (on_show_tooltip) on_show_tooltip(std::move(t), a);
+    };
+    about_->on_hide_tooltip = [this]
+    {
+        if (on_hide_tooltip) on_hide_tooltip();
+    };
+
     // ConfirmDialog — painted last so it overlays the entire settings view.
     auto dlg = std::make_unique<ConfirmDialog>();
     confirm_dialog_ = add_child(std::move(dlg));
@@ -298,13 +308,17 @@ void SettingsView::set_current_device_id(std::string id)
 }
 
 void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
-                                   uint64_t memory_bytes)
+                                   uint64_t memory_bytes,
+                                   uint64_t mem_hits, uint64_t mem_misses,
+                                   uint64_t disk_hits, uint64_t disk_misses)
 {
     if (about_)
     {
         about_->set_memory_cache_size(memory_bytes);
         about_->set_local_cache_size(local_bytes);
         about_->set_sdk_store_size(sdk_bytes);
+        about_->set_memory_cache_stats(mem_hits, mem_misses);
+        about_->set_local_cache_stats(disk_hits, disk_misses);
     }
     if (request_repaint_) request_repaint_();
 }

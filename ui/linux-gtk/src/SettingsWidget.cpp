@@ -95,6 +95,38 @@ SettingsWidget::SettingsWidget()
         if (on_clear_caches) on_clear_caches();
     };
 
+    settings_view_->on_show_tooltip =
+        [this](std::string text, tk::Rect anchor)
+    {
+        GtkWidget* w = surface_->widget();
+        if (!cache_tooltip_popover_)
+        {
+            cache_tooltip_label_ = gtk_label_new(nullptr);
+            gtk_label_set_wrap(GTK_LABEL(cache_tooltip_label_), TRUE);
+            gtk_label_set_max_width_chars(GTK_LABEL(cache_tooltip_label_), 80);
+            cache_tooltip_popover_ = gtk_popover_new();
+            gtk_widget_add_css_class(cache_tooltip_popover_, "tooltip");
+            gtk_popover_set_child(GTK_POPOVER(cache_tooltip_popover_),
+                                  cache_tooltip_label_);
+            gtk_widget_set_parent(cache_tooltip_popover_, w);
+            gtk_popover_set_autohide(GTK_POPOVER(cache_tooltip_popover_),
+                                     FALSE);
+            gtk_popover_set_has_arrow(GTK_POPOVER(cache_tooltip_popover_),
+                                      FALSE);
+        }
+        gtk_label_set_text(GTK_LABEL(cache_tooltip_label_), text.c_str());
+        GdkRectangle rect{
+            static_cast<int>(anchor.x), static_cast<int>(anchor.y),
+            static_cast<int>(anchor.w), static_cast<int>(anchor.h)};
+        gtk_popover_set_pointing_to(GTK_POPOVER(cache_tooltip_popover_), &rect);
+        gtk_popover_popup(GTK_POPOVER(cache_tooltip_popover_));
+    };
+    settings_view_->on_hide_tooltip = [this]
+    {
+        if (cache_tooltip_popover_)
+            gtk_popover_popdown(GTK_POPOVER(cache_tooltip_popover_));
+    };
+
     surface_->set_root(std::move(view));
 
     surface_->set_on_layout(
@@ -122,10 +154,14 @@ void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)
 }
 
 void SettingsWidget::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
-                                     uint64_t memory_bytes)
+                                     uint64_t memory_bytes,
+                                     uint64_t mem_hits, uint64_t mem_misses,
+                                     uint64_t disk_hits, uint64_t disk_misses)
 {
     if (settings_view_)
-        settings_view_->set_cache_sizes(local_bytes, sdk_bytes, memory_bytes);
+        settings_view_->set_cache_sizes(local_bytes, sdk_bytes, memory_bytes,
+                                        mem_hits, mem_misses,
+                                        disk_hits, disk_misses);
 }
 
 void SettingsWidget::set_theme(const tk::Theme& t)

@@ -48,8 +48,10 @@ ImageRef PixmapCache::acquire(const std::string& key)
     auto it = entries_.find(key);
     if (it == entries_.end())
     {
+        ++misses_;
         return nullptr;
     }
+    ++hits_;
     it->second.last_use = now_();
     return it->second.img;
 }
@@ -59,8 +61,10 @@ const Image* PixmapCache::peek(const std::string& key)
     auto it = entries_.find(key);
     if (it == entries_.end())
     {
+        ++misses_;
         return nullptr;
     }
+    ++hits_;
     it->second.last_use = now_();
     return it->second.img.get();
 }
@@ -90,6 +94,8 @@ void PixmapCache::clear()
 {
     entries_.clear();
     current_bytes_ = 0;
+    hits_          = 0;
+    misses_        = 0;
 }
 
 void PixmapCache::sweep()

@@ -138,3 +138,41 @@ TEST_CASE("evict removes only unreferenced entries", "[pixmap-cache]")
     CHECK_FALSE(c.contains("u"));
     CHECK(c.current_bytes() == 50);
 }
+
+TEST_CASE("acquire counts hits and misses", "[pixmap-cache]")
+{
+    PixmapCache c;
+    c.store("a", img(100));
+
+    c.acquire("a");       // hit
+    c.acquire("missing"); // miss
+    c.acquire("a");       // hit
+
+    CHECK(c.hits()   == 2);
+    CHECK(c.misses() == 1);
+}
+
+TEST_CASE("peek counts hits and misses", "[pixmap-cache]")
+{
+    PixmapCache c;
+    c.store("a", img(100));
+
+    c.peek("a");    // hit
+    c.peek("nope"); // miss
+
+    CHECK(c.hits()   == 1);
+    CHECK(c.misses() == 1);
+}
+
+TEST_CASE("clear resets hit/miss counters", "[pixmap-cache]")
+{
+    PixmapCache c;
+    c.store("a", img(100));
+    c.acquire("a");       // hit
+    c.acquire("missing"); // miss
+    REQUIRE(c.hits() == 1);
+
+    c.clear();
+    CHECK(c.hits()   == 0);
+    CHECK(c.misses() == 0);
+}

@@ -39,9 +39,11 @@ public:
     // Forward server capability info into the shared SettingsView.
     void set_server_info(const tesseract::ServerInfo& info);
 
-    // Update the Storage size labels in the About section.
+    // Update the Storage size labels and hit/miss stats in the About section.
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
-                         uint64_t memory_bytes);
+                         uint64_t memory_bytes,
+                         uint64_t mem_hits   = 0, uint64_t mem_misses  = 0,
+                         uint64_t disk_hits  = 0, uint64_t disk_misses = 0);
 
     // Wire the SettingsController and create the NativeTextField for name editing.
     void set_controller(tesseract::SettingsController* ctrl,
@@ -74,6 +76,8 @@ private:
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     tesseract::SettingsController* controller_ = nullptr;
     std::unique_ptr<tk::NativeTextField> name_field_;
+    GtkWidget* cache_tooltip_popover_ = nullptr; // lazy-created GtkPopover
+    GtkWidget* cache_tooltip_label_   = nullptr; // borrowed child of popover
 };
 
 } // namespace gtk4

@@ -3,7 +3,10 @@
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QPoint>
+#include <QPointer>
 #include <QResizeEvent>
+#include <QToolTip>
 
 #include "tk/theme.h"
 
@@ -89,6 +92,24 @@ SettingsWidget::SettingsWidget(QWidget* parent)
 
     settings_view_->on_clear_caches = [this] { emit clearCachesRequested(); };
 
+    {
+        QPointer<tk::qt6::Surface> sfp = surface_;
+        settings_view_->on_show_tooltip =
+            [sfp](std::string text, tk::Rect anchor)
+        {
+            if (!sfp)
+                return;
+            QPoint local(static_cast<int>(anchor.x),
+                         static_cast<int>(anchor.y + anchor.h));
+            QToolTip::showText(sfp->mapToGlobal(local),
+                               QString::fromStdString(text), sfp);
+        };
+        settings_view_->on_hide_tooltip = []
+        {
+            QToolTip::hideText();
+        };
+    }
+
     surface_->set_root(std::move(view));
 
     surface_->set_on_layout(
@@ -140,10 +161,14 @@ void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)
 }
 
 void SettingsWidget::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
-                                     uint64_t memory_bytes)
+                                     uint64_t memory_bytes,
+                                     uint64_t mem_hits, uint64_t mem_misses,
+                                     uint64_t disk_hits, uint64_t disk_misses)
 {
     if (settings_view_)
-        settings_view_->set_cache_sizes(local_bytes, sdk_bytes, memory_bytes);
+        settings_view_->set_cache_sizes(local_bytes, sdk_bytes, memory_bytes,
+                                        mem_hits, mem_misses,
+                                        disk_hits, disk_misses);
 }
 
 void SettingsWidget::set_theme(const tk::Theme& t)

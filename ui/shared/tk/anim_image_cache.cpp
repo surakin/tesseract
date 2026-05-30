@@ -63,8 +63,10 @@ const tk::Image* AnimImageCache::current_frame(const std::string& key) const
     auto it = entries_.find(key);
     if (it == entries_.end() || it->second.frames.empty())
     {
+        ++misses_;
         return nullptr;
     }
+    ++hits_;
     it->second.last_seen_ms = vis_now_();
     return it->second.frames[it->second.current].get();
 }

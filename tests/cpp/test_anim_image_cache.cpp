@@ -109,6 +109,19 @@ TEST_CASE("only visible entries report repaints", "[anim-cache]")
     CHECK(f.cache.advance(/*now_ms=*/100) == false);
 }
 
+TEST_CASE("current_frame counts hits and misses", "[anim-cache]")
+{
+    Fixture f;
+    f.cache.store("k", frames(2), {50, 50}, 0);
+
+    f.cache.current_frame("k");       // hit
+    f.cache.current_frame("missing"); // miss
+    f.cache.current_frame("k");       // hit
+
+    CHECK(f.cache.hits()   == 2);
+    CHECK(f.cache.misses() == 1);
+}
+
 TEST_CASE("returning to view resyncs instead of fast-forwarding many frames",
           "[anim-cache]")
 {

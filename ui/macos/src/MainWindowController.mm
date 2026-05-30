@@ -1512,6 +1512,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Floating tooltip popover for truncated room topics.
     NSPopover* _topicTooltipPopover;
 
+    // Floating tooltip popover for cache hit/miss rows in Settings > About.
+    NSPopover* _cacheTooltipPopover;
+
     // Dock-bounce token; 0 = no request in flight.
     NSInteger _attentionRequestToken;
 }
@@ -3569,13 +3572,70 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = ws;
             if (!s || !s->_shell) return;
             s->_shell->clear_all_caches_(
-                [ws](uint64_t local, uint64_t sdk, uint64_t memory)
+                [ws](uint64_t local, uint64_t sdk, uint64_t memory,
+                     uint64_t mh, uint64_t mm, uint64_t dh, uint64_t dm)
             {
                 MainWindowController* s2 = ws;
                 if (s2 && s2->_settingsView)
-                    s2->_settingsView->set_cache_sizes(local, sdk, memory);
+                    s2->_settingsView->set_cache_sizes(local, sdk, memory,
+                                                       mh, mm, dh, dm);
             });
         };
+        _settingsView->on_show_tooltip =
+            [ws](std::string text, tk::Rect anchor)
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_settingsSurface)
+                return;
+            if (!s->_cacheTooltipPopover)
+            {
+                NSTextField* lbl = [NSTextField wrappingLabelWithString:@""];
+                lbl.translatesAutoresizingMaskIntoConstraints = NO;
+                NSView* cv = [[NSView alloc] init];
+                cv.translatesAutoresizingMaskIntoConstraints = NO;
+                [cv addSubview:lbl];
+                [NSLayoutConstraint activateConstraints:@[
+                    [lbl.leadingAnchor constraintEqualToAnchor:cv.leadingAnchor
+                                                      constant:8],
+                    [lbl.trailingAnchor constraintEqualToAnchor:cv.trailingAnchor
+                                                       constant:-8],
+                    [lbl.topAnchor constraintEqualToAnchor:cv.topAnchor
+                                                  constant:6],
+                    [lbl.bottomAnchor constraintEqualToAnchor:cv.bottomAnchor
+                                                     constant:-6],
+                    [cv.widthAnchor constraintLessThanOrEqualToConstant:480],
+                ]];
+                NSViewController* vc = [[NSViewController alloc] init];
+                vc.view = cv;
+                NSPopover* pop = [[NSPopover alloc] init];
+                pop.contentViewController = vc;
+                pop.behavior = NSPopoverBehaviorSemitransient;
+                pop.animates = NO;
+                s->_cacheTooltipPopover = pop;
+            }
+            NSTextField* lbl =
+                (NSTextField*)s->_cacheTooltipPopover.contentViewController
+                    .view.subviews.firstObject;
+            lbl.stringValue = [NSString stringWithUTF8String:text.c_str()];
+            [s->_cacheTooltipPopover.contentViewController.view
+                layoutSubtreeIfNeeded];
+            s->_cacheTooltipPopover.contentSize =
+                [s->_cacheTooltipPopover.contentViewController.view fittingSize];
+            NSView* view =
+                (__bridge NSView*)s->_settingsSurface->view_handle();
+            NSRect anchorRect =
+                NSMakeRect(anchor.x, anchor.y, anchor.w, anchor.h);
+            [s->_cacheTooltipPopover showRelativeToRect:anchorRect
+                                                 ofView:view
+                                          preferredEdge:NSRectEdgeMinY];
+        };
+        _settingsView->on_hide_tooltip = [ws]
+        {
+            MainWindowController* s = ws;
+            if (s && s->_cacheTooltipPopover && s->_cacheTooltipPopover.shown)
+                [s->_cacheTooltipPopover close];
+        };
+
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
         _settingsSurface->set_on_layout(
@@ -5046,11 +5106,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _settingsSurface->relayout();
 
     _shell->compute_cache_sizes_(
-        [ws](uint64_t local, uint64_t sdk, uint64_t memory)
+        [ws](uint64_t local, uint64_t sdk, uint64_t memory,
+             uint64_t mh, uint64_t mm, uint64_t dh, uint64_t dm)
     {
         MainWindowController* s = ws;
         if (s && s->_settingsView)
-            s->_settingsView->set_cache_sizes(local, sdk, memory);
+            s->_settingsView->set_cache_sizes(local, sdk, memory,
+                                              mh, mm, dh, dm);
     });
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();

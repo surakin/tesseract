@@ -2955,7 +2955,8 @@ void ShellBase::wire_voice_capture_(
 }
 
 void ShellBase::compute_cache_sizes_(
-    std::function<void(uint64_t, uint64_t, uint64_t)> callback)
+    std::function<void(uint64_t, uint64_t, uint64_t,
+                       uint64_t, uint64_t, uint64_t, uint64_t)> callback)
 {
     if (my_user_id_.empty() || !callback)
         return;
@@ -2982,20 +2983,28 @@ void ShellBase::compute_cache_sizes_(
                 sdk += de.file_size(ec);
         }
 
-        // Read the in-memory image-cache total on the UI thread (the caches
-        // live there); deliver all three sizes together.
+        // Read in-memory cache totals and hit/miss stats on the UI thread.
         post_to_ui_([this, cb, local, sdk]
         {
             const uint64_t memory =
                 static_cast<uint64_t>(image_cache_.current_bytes()) +
                 thumbnail_cache_.current_bytes() + anim_cache_.current_bytes();
-            cb(local, sdk, memory);
+            const uint64_t mem_hits =
+                image_cache_.hits() + thumbnail_cache_.hits() +
+                anim_cache_.hits();
+            const uint64_t mem_misses =
+                image_cache_.misses() + thumbnail_cache_.misses() +
+                anim_cache_.misses();
+            const uint64_t disk_hits   = media_disk_cache_.hits();
+            const uint64_t disk_misses = media_disk_cache_.misses();
+            cb(local, sdk, memory, mem_hits, mem_misses, disk_hits, disk_misses);
         });
     });
 }
 
 void ShellBase::clear_all_caches_(
-    std::function<void(uint64_t, uint64_t, uint64_t)> recompute_callback)
+    std::function<void(uint64_t, uint64_t, uint64_t,
+                       uint64_t, uint64_t, uint64_t, uint64_t)> recompute_callback)
 {
     if (my_user_id_.empty())
         return;

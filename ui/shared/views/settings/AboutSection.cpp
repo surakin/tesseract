@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -48,6 +50,32 @@ std::string format_bytes(uint64_t n)
 // Same pattern as ServerSection::HomeserverRow.
 // ---------------------------------------------------------------------------
 
+namespace
+{
+
+std::string format_hit_miss(uint64_t hits, uint64_t misses)
+{
+    const uint64_t total = hits + misses;
+    char buf[128];
+    if (total == 0)
+    {
+        std::snprintf(buf, sizeof(buf), "Hits: 0  ·  Misses: 0");
+    }
+    else
+    {
+        const double rate = 100.0 * static_cast<double>(hits) /
+                            static_cast<double>(total);
+        std::snprintf(buf, sizeof(buf),
+                      "Hits: %llu  ·  Misses: %llu  (%.1f%% hit rate)",
+                      static_cast<unsigned long long>(hits),
+                      static_cast<unsigned long long>(misses),
+                      rate);
+    }
+    return buf;
+}
+
+} // namespace
+
 class AboutSection::CacheSizeRow : public tk::Widget
 {
 public:
@@ -61,6 +89,16 @@ public:
         value_text_ = std::move(value);
         value_layout_.reset();
     }
+
+    void set_stats(uint64_t hits, uint64_t misses)
+    {
+        hits_      = hits;
+        misses_    = misses;
+        has_stats_ = true;
+    }
+
+    std::function<void(std::string, tk::Rect)> on_show_tooltip;
+    std::function<void()>                      on_hide_tooltip;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
@@ -114,11 +152,37 @@ public:
                              pal.text_muted);
     }
 
+    bool on_pointer_move(tk::Point /*local*/) override
+    {
+        if (!has_stats_)
+            return false;
+        if (hovered_)
+            return false;
+        hovered_ = true;
+        if (on_show_tooltip)
+            on_show_tooltip(format_hit_miss(hits_, misses_), bounds_);
+        return true;
+    }
+
+    void on_pointer_leave() override
+    {
+        if (!hovered_)
+            return;
+        hovered_ = false;
+        if (on_hide_tooltip)
+            on_hide_tooltip();
+    }
+
 private:
     std::string label_text_;
     std::string value_text_{"—"};
     std::unique_ptr<tk::TextLayout> label_layout_;
     std::unique_ptr<tk::TextLayout> value_layout_;
+
+    uint64_t hits_     = 0;
+    uint64_t misses_   = 0;
+    bool     has_stats_ = false;
+    bool     hovered_   = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -143,6 +207,23 @@ AboutSection::AboutSection()
         [this] { if (on_clear_caches) on_clear_caches(); },
         tk::Button::Variant::Destructive));
 
+    // Wire row tooltip callbacks up to the section-level callbacks so callers
+    // only need to hook one pair of functions.
+    auto wire = [this](CacheSizeRow* row)
+    {
+        row->on_show_tooltip = [this](std::string t, tk::Rect a)
+        {
+            if (on_show_tooltip) on_show_tooltip(std::move(t), a);
+        };
+        row->on_hide_tooltip = [this]
+        {
+            if (on_hide_tooltip) on_hide_tooltip();
+        };
+    };
+    wire(memory_row_);
+    wire(local_row_);
+    // sdk_row_ intentionally not wired — no hit/miss data available.
+
     auto hbox = std::make_unique<tk::HBox>();
     hbox->add_child(std::move(sg));
     add_widget(std::move(hbox));
@@ -161,6 +242,16 @@ void AboutSection::set_local_cache_size(uint64_t bytes)
 void AboutSection::set_sdk_store_size(uint64_t bytes)
 {
     sdk_row_->set_value(format_bytes(bytes));
+}
+
+void AboutSection::set_memory_cache_stats(uint64_t hits, uint64_t misses)
+{
+    memory_row_->set_stats(hits, misses);
+}
+
+void AboutSection::set_local_cache_stats(uint64_t hits, uint64_t misses)
+{
+    local_row_->set_stats(hits, misses);
 }
 
 } // namespace tesseract::views

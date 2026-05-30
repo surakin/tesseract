@@ -179,10 +179,16 @@ public:
     // Wire to ShellBase::clear_all_caches_() in each shell's settings setup.
     std::function<void()> on_clear_caches;
 
-    // Update the About section's storage size labels.
+    // Update the About section's storage size labels and hit/miss stats.
     // Call on the UI thread after ShellBase::compute_cache_sizes_() posts its result.
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
-                         uint64_t memory_bytes);
+                         uint64_t memory_bytes,
+                         uint64_t mem_hits   = 0, uint64_t mem_misses  = 0,
+                         uint64_t disk_hits  = 0, uint64_t disk_misses = 0);
+
+    // Tooltip callbacks — forward from the AboutSection storage rows.
+    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
+    std::function<void()> on_hide_tooltip;
 
     // Fired when the user selects a different language (BCP47 code or "auto").
     std::function<void(std::string)> on_language_changed;

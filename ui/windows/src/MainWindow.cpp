@@ -2909,12 +2909,66 @@ void MainWindow::on_create(HWND hwnd)
         settings_view_->on_clear_caches = [this]
         {
             clear_all_caches_([this](uint64_t local, uint64_t sdk,
-                                     uint64_t memory)
+                                     uint64_t memory,
+                                     uint64_t mh, uint64_t mm,
+                                     uint64_t dh, uint64_t dm)
             {
                 if (settings_view_)
-                    settings_view_->set_cache_sizes(local, sdk, memory);
+                    settings_view_->set_cache_sizes(local, sdk, memory,
+                                                    mh, mm, dh, dm);
             });
         };
+        settings_view_->on_show_tooltip =
+            [this](std::string text, tk::Rect anchor)
+        {
+            if (!settings_surface_)
+                return;
+            if (!hCacheTooltip_)
+            {
+                hCacheTooltip_ = CreateWindowExW(
+                    WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
+                    WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT,
+                    CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hwnd_,
+                    nullptr, GetModuleHandleW(nullptr), nullptr);
+                SendMessageW(hCacheTooltip_, TTM_SETMAXTIPWIDTH, 0, 500);
+                TOOLINFOW ti{};
+                ti.cbSize = sizeof(ti);
+                ti.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+                ti.hwnd = hwnd_;
+                ti.uId = 2;
+                ti.lpszText = const_cast<LPWSTR>(L"");
+                SendMessageW(hCacheTooltip_, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+            }
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1,
+                                           nullptr, 0);
+            cache_tooltip_text_.resize(static_cast<std::size_t>(wlen));
+            MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1,
+                                cache_tooltip_text_.data(), wlen);
+            TOOLINFOW ti{};
+            ti.cbSize = sizeof(ti);
+            ti.hwnd = hwnd_;
+            ti.uId = 2;
+            ti.lpszText = cache_tooltip_text_.data();
+            SendMessageW(hCacheTooltip_, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+            POINT pt{dip_to_phys(anchor.x),
+                     dip_to_phys(anchor.y + anchor.h)};
+            ClientToScreen(settings_surface_->hwnd(), &pt);
+            SendMessageW(
+                hCacheTooltip_, TTM_TRACKPOSITION, 0,
+                MAKELPARAM(static_cast<WORD>(pt.x), static_cast<WORD>(pt.y)));
+            SendMessageW(hCacheTooltip_, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
+        };
+        settings_view_->on_hide_tooltip = [this]
+        {
+            if (!hCacheTooltip_)
+                return;
+            TOOLINFOW ti{};
+            ti.cbSize = sizeof(ti);
+            ti.hwnd = hwnd_;
+            ti.uId = 2;
+            SendMessageW(hCacheTooltip_, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
+        };
+
         settings_surface_->set_root(std::move(view));
         settings_surface_->set_on_layout(
             [this]
@@ -3406,10 +3460,13 @@ void MainWindow::open_settings_()
         settings_surface_->relayout();
     }
 
-    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory)
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,
+                                uint64_t mh, uint64_t mm,
+                                uint64_t dh, uint64_t dm)
     {
         if (settings_view_)
-            settings_view_->set_cache_sizes(local, sdk, memory);
+            settings_view_->set_cache_sizes(local, sdk, memory, mh, mm, dh,
+                                            dm);
     });
 
     settings_visible_ = true;

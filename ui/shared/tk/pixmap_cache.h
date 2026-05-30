@@ -72,6 +72,15 @@ public:
         return entries_.size();
     }
 
+    std::size_t hits() const
+    {
+        return hits_;
+    }
+    std::size_t misses() const
+    {
+        return misses_;
+    }
+
     // Test seam: override the monotonic clock used for TTL bookkeeping.
     void set_clock_for_testing(
         std::function<std::chrono::steady_clock::time_point()> clock)
@@ -92,6 +101,8 @@ private:
     std::unordered_map<std::string, Entry> entries_;
     std::size_t max_bytes_;
     std::size_t current_bytes_ = 0;
+    std::size_t hits_          = 0;
+    std::size_t misses_        = 0;
     std::chrono::seconds ttl_;
     std::function<std::chrono::steady_clock::time_point()> clock_;
 };

@@ -3855,11 +3855,14 @@ void MainWindow::openSettings()
                 [this]
                 {
                     clear_all_caches_(
-                        [this](uint64_t local, uint64_t sdk, uint64_t memory)
+                        [this](uint64_t local, uint64_t sdk, uint64_t memory,
+                               uint64_t mh, uint64_t mm,
+                               uint64_t dh, uint64_t dm)
                     {
                         if (settingsWidget_)
                             settingsWidget_->set_cache_sizes(local, sdk,
-                                                             memory);
+                                                             memory, mh, mm,
+                                                             dh, dm);
                     });
                 });
 
@@ -3894,10 +3897,13 @@ void MainWindow::openSettings()
                                         my_display_name_);
 
     // Refresh storage sizes each time settings opens.
-    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory)
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,
+                                uint64_t mh, uint64_t mm,
+                                uint64_t dh, uint64_t dm)
     {
         if (settingsWidget_)
-            settingsWidget_->set_cache_sizes(local, sdk, memory);
+            settingsWidget_->set_cache_sizes(local, sdk, memory, mh, mm, dh,
+                                             dm);
     });
 
     contentStack_->setCurrentWidget(settingsWidget_);

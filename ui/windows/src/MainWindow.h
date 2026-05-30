@@ -414,6 +414,8 @@ private:
     void reposition_visible_pickers_(int dx, int dy);
     HWND hTopicTooltip_ = nullptr; // tracking tooltip for truncated room topics
     std::wstring topic_tooltip_text_; // backing store for TTM_UPDATETIPTEXTW
+    HWND hCacheTooltip_ = nullptr; // tracking tooltip for cache hit/miss rows
+    std::wstring cache_tooltip_text_; // backing store for TTM_UPDATETIPTEXTW
 
     HWND hJoinRoom_ = nullptr; // centred WS_POPUP host
     std::unique_ptr<tk::win32::Surface> join_room_surface_;

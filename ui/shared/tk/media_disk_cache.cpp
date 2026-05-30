@@ -40,19 +40,23 @@ std::vector<uint8_t> MediaDiskCache::load(const std::string& key) const
     std::ifstream f(p, std::ios::binary | std::ios::ate);
     if (!f.is_open())
     {
+        ++misses_;
         return {};
     }
     const auto size = static_cast<std::streamsize>(f.tellg());
     if (size <= 0)
     {
+        ++misses_;
         return {};
     }
     f.seekg(0);
     std::vector<uint8_t> buf(static_cast<std::size_t>(size));
     if (!f.read(reinterpret_cast<char*>(buf.data()), size))
     {
+        ++misses_;
         return {};
     }
+    ++hits_;
     return buf;
 }
 
@@ -167,6 +171,8 @@ void MediaDiskCache::clear() const
     std::error_code ec;
     fs::remove_all(dir_, ec);
     fs::create_directories(dir_, ec);
+    hits_.store(0, std::memory_order_relaxed);
+    misses_.store(0, std::memory_order_relaxed);
 }
 
 } // namespace tk

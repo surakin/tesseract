@@ -2077,10 +2077,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         settings_widget_->on_clear_caches = [this]
         {
             clear_all_caches_(
-                [this](uint64_t local, uint64_t sdk, uint64_t memory)
+                [this](uint64_t local, uint64_t sdk, uint64_t memory,
+                       uint64_t mh, uint64_t mm, uint64_t dh, uint64_t dm)
             {
                 if (settings_widget_)
-                    settings_widget_->set_cache_sizes(local, sdk, memory);
+                    settings_widget_->set_cache_sizes(local, sdk, memory,
+                                                      mh, mm, dh, dm);
             });
         };
         settings_widget_->on_local_avatar_changed =
@@ -5006,10 +5008,13 @@ void MainWindow::open_settings_()
                                          my_display_name_);
 
     // Refresh storage sizes each time settings opens.
-    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory)
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,
+                                uint64_t mh, uint64_t mm,
+                                uint64_t dh, uint64_t dm)
     {
         if (settings_widget_)
-            settings_widget_->set_cache_sizes(local, sdk, memory);
+            settings_widget_->set_cache_sizes(local, sdk, memory, mh, mm, dh,
+                                              dm);
     });
 
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");

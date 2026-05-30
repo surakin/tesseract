@@ -76,6 +76,14 @@ public:
     {
         return max_bytes_;
     }
+    std::size_t hits() const
+    {
+        return hits_;
+    }
+    std::size_t misses() const
+    {
+        return misses_;
+    }
 
     // Test seam: override the visibility clock (milliseconds). Defaults to a
     // steady_clock source in production.
@@ -109,6 +117,8 @@ private:
     std::function<std::int64_t()> clock_;
     std::size_t max_bytes_;
     std::size_t current_bytes_ = 0;
+    mutable std::size_t hits_   = 0;
+    mutable std::size_t misses_ = 0;
     std::int64_t ttl_ms_;
 };
 
