@@ -1357,6 +1357,21 @@ BackupProgress Client::backup_state() const
     return from_ffi(impl_->ffi->backup_state());
 }
 
+uint8_t Client::recovery_state() const
+{
+    if (!impl_)
+        return 0;
+    return impl_->ffi->recovery_state();
+}
+
+Result Client::enable_recovery(const std::string& passphrase)
+{
+    MUT_FFI;
+    if (!impl_)
+        return {false, "not logged in"};
+    return from_ffi(impl_->ffi->enable_recovery(passphrase));
+}
+
 Result Client::export_room_keys(const std::string& path,
                                 const std::string& passphrase)
 {

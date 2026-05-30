@@ -109,6 +109,20 @@ public:
     {
     }
 
+    /// Fired as `Client::enable_recovery()` progresses through setup stages.
+    /// `step` encodes EnableProgress: 0=Starting 1=CreatingBackup
+    /// 2=CreatingRecoveryKey 3=BackingUp 4=Done 5=Error 6=RoomKeyUploadError.
+    /// Step 6 is non-fatal — the SDK will retry backup automatically.
+    /// When step==4, `recovery_key` holds the generated key (empty if
+    /// passphrase mode was chosen). When step==3, `backed_up`/`total`
+    /// carry the running backup count.
+    virtual void on_enable_recovery_progress(uint8_t /*step*/,
+                                             const std::string& /*recovery_key*/,
+                                             uint32_t /*backed_up*/,
+                                             uint32_t /*total*/)
+    {
+    }
+
     /// Fired when the sliding-sync `RoomListService` changes phase (Init →
     /// SettingUp → Running, plus Recovering on reconnect). UIs use this to
     /// drive a "Syncing rooms…" status while the joined-room set is still

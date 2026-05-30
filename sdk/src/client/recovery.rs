@@ -2,6 +2,8 @@
 //!
 //! Split out of `client.rs` in the modularization refactor; behavior unchanged.
 
+use std::sync::Arc;
+
 use super::{err, ok, ClientFfi};
 
 #[cfg(test)]
@@ -131,11 +133,11 @@ impl ClientFfi {
                         EnableProgress::Starting => (0, String::new(), 0, 0),
                         EnableProgress::CreatingBackup => (1, String::new(), 0, 0),
                         EnableProgress::CreatingRecoveryKey => (2, String::new(), 0, 0),
-                        EnableProgress::BackingUp(counts) => {
+                        EnableProgress::BackingUp(ref counts) => {
                             (3, String::new(), counts.backed_up as u32, counts.total as u32)
                         }
                         EnableProgress::RoomKeyUploadError => (6, String::new(), 0, 0),
-                        EnableProgress::Done { recovery_key } => (4, recovery_key, 0, 0),
+                        EnableProgress::Done { ref recovery_key } => (4, recovery_key.clone(), 0, 0),
                     };
                     if let Ok(g) = handler2.lock() {
                         g.on_enable_recovery_progress(step, &key, bu, tot);

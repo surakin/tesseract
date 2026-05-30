@@ -298,6 +298,23 @@ void EventHandlerBridge::on_backup_progress(
           });
 }
 
+void EventHandlerBridge::on_enable_recovery_progress(std::uint8_t step,
+                                                     rust::Str recovery_key,
+                                                     std::uint32_t backed_up,
+                                                     std::uint32_t total) const
+{
+    guard("on_enable_recovery_progress",
+          [&]
+          {
+              if (!handler_)
+              {
+                  return;
+              }
+              handler_->on_enable_recovery_progress(
+                  step, std::string(recovery_key), backed_up, total);
+          });
+}
+
 void EventHandlerBridge::on_room_list_state(std::uint8_t state) const
 {
     guard("on_room_list_state",

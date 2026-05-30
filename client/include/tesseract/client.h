@@ -894,6 +894,17 @@ public:
     /// counter. Cheap; reads atomics populated by the sync watcher.
     BackupProgress backup_state() const;
 
+    /// Returns the current recovery state:
+    /// 0 = Unknown, 1 = Disabled (fresh account, no encryption set up),
+    /// 2 = Enabled, 3 = Incomplete (exists on server, device missing secrets).
+    uint8_t recovery_state() const;
+
+    /// Bootstrap cross-signing + key backup for a fresh account.
+    /// Pass an empty `passphrase` to generate a random recovery key; non-empty
+    /// to derive the key from the passphrase. Progress is reported via
+    /// IEventHandler::on_enable_recovery_progress before this call returns.
+    Result enable_recovery(const std::string& passphrase);
+
     /// Export all Megolm room keys to a passphrase-encrypted file at `path`
     /// (standard Matrix key-export format). Blocks — call from a worker thread.
     Result export_room_keys(const std::string& path,
