@@ -107,9 +107,12 @@ public:
 protected:
     void on_rooms_updated_() override;
     void on_space_children_cache_ready_ui_() override;
-    // TODO(task12): implement — show EncryptionSetupOverlay on the main surface.
     void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode) override {}
+        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void handle_enable_recovery_progress_ui_(uint8_t step,
+                                             std::string recovery_key,
+                                             uint32_t backed_up,
+                                             uint32_t total) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& key,
@@ -251,6 +254,8 @@ public:
     using ShellBase::push_rooms_;
     using ShellBase::recovery_banner_dismissed_;
     using ShellBase::recovery_key_chosen_;
+    using ShellBase::encryption_setup_shown_;
+    using ShellBase::encryption_setup_dismissed_;
     using ShellBase::reply_details_requested_;
     using ShellBase::request_forward_history_;
     using ShellBase::return_to_live_;
@@ -552,6 +557,103 @@ void MacShell::on_space_children_cache_ready_ui_()
     {
         [ctrl_ _refreshRoomList];
     }
+}
+
+void MacShell::show_encryption_setup_overlay_(
+    tesseract::views::EncryptionSetupOverlay::Mode mode)
+{
+    MainWindowController* c = ctrl_;
+    if (!c || !main_app_)
+        return;
+    auto* ov = main_app_->encryption_setup();
+    if (!ov)
+        return;
+
+    // Clear any stale NativeTextField fields before re-creating them.
+    c->_encPassphraseField.reset();
+    c->_encKeyField.reset();
+
+    // Reconfigure the overlay for the requested mode and reset all callbacks.
+    ov->reset(mode);
+
+    // Create new NativeTextField overlays from the main-app surface host.
+    c->_encPassphraseField = c->_mainAppSurface->host().make_text_field();
+    c->_encPassphraseField->set_password(true);
+    c->_encKeyField = c->_mainAppSurface->host().make_text_field();
+    c->_encKeyField->set_password(false);
+
+    ov->get_passphrase = [c]() -> std::string {
+        return c->_encPassphraseField ? c->_encPassphraseField->text() : "";
+    };
+    ov->get_key_input = [c]() -> std::string {
+        return c->_encKeyField ? c->_encKeyField->text() : "";
+    };
+
+    ov->on_close = [this, c]() {
+        encryption_setup_dismissed_ = true;
+        if (main_app_)
+            main_app_->show_encryption_setup(false);
+        c->_encPassphraseField.reset();
+        c->_encKeyField.reset();
+        if (c->_mainAppSurface)
+            c->_mainAppSurface->relayout();
+    };
+
+    ov->on_enable_recovery = [this](std::string passphrase) {
+        auto* cl = client_;
+        run_async_mut_([this, cl, passphrase]() {
+            cl->enable_recovery(passphrase);
+            // Progress is delivered via on_enable_recovery_progress callback.
+        });
+    };
+
+    ov->on_recover = [this, c](std::string key) {
+        auto* cl = client_;
+        run_async_mut_([this, cl, key]() {
+            auto res = cl->recover(key);
+            if (!res.ok)
+            {
+                std::string msg = res.message;
+                post_to_ui_([this, msg]() {
+                    if (auto* o = main_app_ ? main_app_->encryption_setup()
+                                            : nullptr)
+                        o->advance_progress(5, msg, 0, 0);
+                });
+            }
+        });
+    };
+
+    ov->on_request_sas = [this, c]() {
+        encryption_setup_dismissed_ = true;
+        if (main_app_)
+            main_app_->show_encryption_setup(false);
+        c->_encPassphraseField.reset();
+        c->_encKeyField.reset();
+        auto* cl = client_;
+        run_async_mut_([cl]() { cl->request_self_verification(); });
+        if (c->_mainAppSurface)
+            c->_mainAppSurface->relayout();
+    };
+
+    ov->on_copy_to_clipboard = [](std::string text) {
+        NSString* ns = [NSString stringWithUTF8String:text.c_str()];
+        [[NSPasteboard generalPasteboard] clearContents];
+        [[NSPasteboard generalPasteboard] setString:ns
+                                           forType:NSPasteboardTypeString];
+    };
+
+    main_app_->show_encryption_setup(true);
+    if (c->_mainAppSurface)
+        c->_mainAppSurface->relayout();
+}
+
+void MacShell::handle_enable_recovery_progress_ui_(uint8_t step,
+                                                   std::string recovery_key,
+                                                   uint32_t backed_up,
+                                                   uint32_t total)
+{
+    if (auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr)
+        ov->advance_progress(step, recovery_key, backed_up, total);
 }
 
 void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -1455,6 +1557,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
     std::unique_ptr<tk::NativeTextField> _recoveryKeyField;
+    std::unique_ptr<tk::NativeTextField> _encPassphraseField;
+    std::unique_ptr<tk::NativeTextField> _encKeyField;
 
     // Settings name field — positioned via _settingsSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _settingsNameField;
@@ -3326,6 +3430,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     s->_topicTextArea->set_visible(false);
                     s->_roomSearchField->set_visible(false);
                     s->_recoveryKeyField->set_visible(false);
+                    if (s->_encPassphraseField)
+                        s->_encPassphraseField->set_visible(false);
+                    if (s->_encKeyField)
+                        s->_encKeyField->set_visible(false);
                     (void)surf;
                     return;
                 }
@@ -3364,6 +3472,25 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     s->_recoveryKeyField->set_rect(
                         app->recovery_key_field_rect());
+                }
+                // Encryption setup passphrase field.
+                if (s->_encPassphraseField && app->encryption_setup())
+                {
+                    auto* ov = app->encryption_setup();
+                    bool ppVisible = ov->passphrase_field_rect_visible();
+                    s->_encPassphraseField->set_visible(ppVisible);
+                    if (ppVisible)
+                        s->_encPassphraseField->set_rect(
+                            ov->passphrase_field_rect_value());
+                }
+                // Encryption setup recovery-key field.
+                if (s->_encKeyField && app->encryption_setup())
+                {
+                    auto* ov = app->encryption_setup();
+                    bool kfVisible = ov->key_field_rect_visible();
+                    s->_encKeyField->set_visible(kfVisible);
+                    if (kfVisible)
+                        s->_encKeyField->set_rect(ov->key_field_rect_value());
                 }
                 (void)surf;
             });
@@ -5958,6 +6085,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_maybeShowRecoveryBanner
 {
+    if (_shell->encryption_setup_shown_)
+        return;
     if (_shell->recovery_banner_dismissed_)
     {
         return;
