@@ -588,7 +588,8 @@ pub mod ffi {
         fn on_backup_progress(self: &EventHandlerBridge, progress: &BackupProgress);
         /// Fired as `enable_recovery()` progresses through setup stages.
         /// `step` encodes EnableProgress: 0=Starting 1=CreatingBackup
-        /// 2=CreatingRecoveryKey 3=BackingUp 4=Done 5=Error.
+        /// 2=CreatingRecoveryKey 3=BackingUp 4=Done 5=Error 6=RoomKeyUploadError.
+        /// Step 6 is non-fatal — the SDK will retry backup automatically.
         /// When step==4, `recovery_key` holds the generated key (empty if
         /// passphrase mode was chosen). When step==3, `backed_up`/`total`
         /// carry the running backup count.

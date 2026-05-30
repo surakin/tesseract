@@ -117,9 +117,9 @@ impl ClientFfi {
         self.rt.block_on(async move {
             let recovery = client.encryption().recovery();
             let enable = if passphrase.is_empty() {
-                recovery.enable()
+                recovery.enable().wait_for_backups_to_upload()
             } else {
-                recovery.enable().with_passphrase(&passphrase)
+                recovery.enable().wait_for_backups_to_upload().with_passphrase(&passphrase)
             };
 
             let mut progress_stream = enable.subscribe_to_progress();
@@ -134,7 +134,7 @@ impl ClientFfi {
                         EnableProgress::BackingUp(counts) => {
                             (3, String::new(), counts.backed_up as u32, counts.total as u32)
                         }
-                        EnableProgress::RoomKeyUploadError => (5, String::new(), 0, 0),
+                        EnableProgress::RoomKeyUploadError => (6, String::new(), 0, 0),
                         EnableProgress::Done { recovery_key } => (4, recovery_key, 0, 0),
                     };
                     if let Ok(g) = handler2.lock() {
@@ -144,12 +144,13 @@ impl ClientFfi {
             });
 
             match enable.await {
-                Ok(recovery_key) => {
+                Ok(_recovery_key) => {
                     let _ = progress_task.await;
-                    ok(recovery_key)
+                    ok("") // key delivered via on_enable_recovery_progress step=4
                 }
                 Err(e) => {
                     progress_task.abort();
+                    let _ = progress_task.await; // wait for task to stop before firing error
                     if let Ok(g) = handler.lock() {
                         g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
                     }
