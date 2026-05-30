@@ -370,6 +370,12 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                 }
             }
 
+            // Inline error (e.g. enable_recovery failed) — shown above the
+            // action row so the user sees why setup bounced back to this step.
+            if (!error_msg_.empty())
+                paint_paragraph(ctx, {cx, by - 44.0f, cw, 0}, error_msg_,
+                                tk::FontRole::Small, pal.destructive);
+
             const std::string cont = "Continue";
             float cwid   = button_width(ctx, cont);
             primary_btn_ = {card.x + card.w - kCardPad - cwid, by, cwid, kBtnH};
