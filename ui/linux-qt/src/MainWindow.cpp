@@ -4777,6 +4777,11 @@ void MainWindow::show_encryption_setup_overlay_(
     auto* ov = mainApp_->encryption_setup();
     if (!ov) return;
 
+    // Pre-reset NativeTextField fields before re-creating them so stale
+    // references are cleared even if the function is called more than once.
+    encPassphraseField_.reset();
+    encKeyField_.reset();
+
     // Reconfigure the overlay in the correct mode and reset all callbacks.
     ov->reset(mode);
 
@@ -4795,7 +4800,7 @@ void MainWindow::show_encryption_setup_overlay_(
 
     ov->on_close = [this]() {
         encryption_setup_dismissed_ = true;
-        mainApp_->show_encryption_setup(false);
+        if (mainApp_) mainApp_->show_encryption_setup(false);
         encPassphraseField_.reset();
         encKeyField_.reset();
         mainAppSurface_->relayout();
@@ -4824,7 +4829,7 @@ void MainWindow::show_encryption_setup_overlay_(
 
     ov->on_request_sas = [this]() {
         encryption_setup_dismissed_ = true;
-        mainApp_->show_encryption_setup(false);
+        if (mainApp_) mainApp_->show_encryption_setup(false);
         encPassphraseField_.reset();
         encKeyField_.reset();
         auto* c = client_;
