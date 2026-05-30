@@ -124,6 +124,14 @@ pub async fn begin(
         .user_agent(build_user_agent())
         .with_encryption_settings(EncryptionSettings {
             backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+            // Bootstrap cross-signing automatically on first login so a fresh
+            // account's device is cross-signed (i.e. verified) without manual
+            // steps. matrix-sdk's recovery().enable() — run by the encryption
+            // setup wizard — only stores EXISTING cross-signing keys into secret
+            // storage; it never creates them. Without this the device stays
+            // unverified and RecoveryState is stuck at Incomplete. OAuth/OIDC
+            // servers permit the initial cross-signing key upload without UIA.
+            auto_enable_cross_signing: true,
             ..Default::default()
         })
         // matrix-sdk's room event cache only routes sync'd thread events to

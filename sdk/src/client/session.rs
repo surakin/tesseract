@@ -118,6 +118,12 @@ impl ClientFfi {
                 .user_agent(crate::oauth::build_user_agent())
                 .with_encryption_settings(EncryptionSettings {
                     backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+                    // Bootstrap cross-signing automatically (see oauth.rs for
+                    // the rationale): recovery().enable() stores existing
+                    // cross-signing keys but never creates them, so without
+                    // this a fresh device is never verified and RecoveryState
+                    // sticks at Incomplete.
+                    auto_enable_cross_signing: true,
                     ..Default::default()
                 })
                 // Keep parity with oauth.rs: route sync'd thread events to
