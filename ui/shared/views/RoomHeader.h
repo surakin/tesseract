@@ -101,20 +101,19 @@ private:
 
     bool condensed_ = false;
     bool show_calendar_btn_ = false;
-    bool hover_calendar_ = false;
-    bool press_calendar_ = false;
-    tk::Rect calendar_btn_rect_{}; // updated each paint pass
-
     bool show_threads_btn_ = false;
-    bool hover_threads_ = false;
-    bool press_threads_ = false;
-    tk::Rect threads_btn_rect_{}; // updated each paint pass
+
+    // Calendar / threads action buttons. Variant::Icon child buttons own their
+    // hover/press background and click dispatch; this view only draws the vector
+    // glyph centred inside each button's bounds (see paint()).
+    tk::Button* calendar_btn_ = nullptr;
+    tk::Button* threads_btn_ = nullptr;
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.
     tk::Rect threads_btn_rect_for_test() const
     {
-        return threads_btn_rect_;
+        return threads_btn_ ? threads_btn_->bounds() : tk::Rect{};
     }
 
 private:

@@ -51,9 +51,6 @@ TEST_CASE("threads button fires on_threads_requested",
     RoomHeader h;
     h.set_show_threads_btn(true);
     st.arrange(h, {0, 0, 800, 60});
-    // Button rects are computed in paint(); drive one paint pass so
-    // threads_btn_rect_ is populated before any pointer events.
-    st.paint(h);
 
     bool clicked = false;
     h.on_threads_requested = [&] { clicked = true; };
@@ -62,10 +59,13 @@ TEST_CASE("threads button fires on_threads_requested",
     REQUIRE(r.w == 28.0f);
     REQUIRE(r.h == 28.0f);
 
-    // Bounds origin is (0,0), so widget-local == world coords.
+    // The threads button is now a child tk::Button; dispatch the press through
+    // the widget tree (as the host does) so the button claims it, then release
+    // inside it to fire the click.
     const tk::Point centre{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
-    REQUIRE(h.on_pointer_down(centre));
-    h.on_pointer_up(centre, true);
+    tk::Widget* claimer = h.dispatch_pointer_down(centre);
+    REQUIRE(claimer != nullptr);
+    claimer->on_pointer_up(claimer->world_to_local(centre), true);
     CHECK(clicked);
 }
 
@@ -76,16 +76,19 @@ TEST_CASE("threads button does NOT fire if release leaves the button rect",
     RoomHeader h;
     h.set_show_threads_btn(true);
     st.arrange(h, {0, 0, 800, 60});
-    st.paint(h);
 
     bool clicked = false;
     h.on_threads_requested = [&] { clicked = true; };
 
     const tk::Rect r = h.threads_btn_rect_for_test();
     const tk::Point press{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
-    REQUIRE(h.on_pointer_down(press));
-    // Release well outside the button (still within the header strip).
-    h.on_pointer_up({10.0f, 30.0f}, true);
+    tk::Widget* claimer = h.dispatch_pointer_down(press);
+    REQUIRE(claimer != nullptr);
+    // Release well outside the button (still within the header strip). The
+    // button only fires when the release lands inside its own bounds.
+    const tk::Point release{10.0f, 30.0f};
+    claimer->on_pointer_up(claimer->world_to_local(release),
+                           claimer->contains_world(release));
     CHECK_FALSE(clicked);
 }
 
@@ -137,23 +140,23 @@ TEST_CASE("toggling threads visibility off after a click in progress is safe",
     RoomHeader h;
     h.set_show_threads_btn(true);
     st.arrange(h, {0, 0, 800, 60});
-    st.paint(h);
 
     bool clicked = false;
     h.on_threads_requested = [&] { clicked = true; };
 
     const tk::Rect r = h.threads_btn_rect_for_test();
     const tk::Point press{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
-    REQUIRE(h.on_pointer_down(press));
+    tk::Widget* claimer = h.dispatch_pointer_down(press);
+    REQUIRE(claimer != nullptr);
 
     // SDK reports list became empty mid-press (e.g., last thread redacted).
     h.set_show_threads_btn(false);
     st.arrange(h, {0, 0, 800, 60});
-    st.paint(h);
 
-    // Release at the original press location. The zeroed rect must reject
-    // the hit so on_threads_requested doesn't fire on a vanished button.
-    h.on_pointer_up(press, true);
+    // Release at the original press location. The button's bounds are now
+    // zeroed, so the release lands outside it and the click must not fire.
+    claimer->on_pointer_up(claimer->world_to_local(press),
+                           claimer->contains_world(press));
     CHECK_FALSE(clicked);
 }
 

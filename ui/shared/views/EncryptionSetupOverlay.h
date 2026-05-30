@@ -2,6 +2,7 @@
 
 #include "tk/widget.h"
 #include "tk/canvas.h"
+#include "tk/controls.h"
 
 #include <chrono>
 #include <functional>
@@ -118,23 +119,28 @@ private:
     bool        key_saved_checked_  = false;
     bool        passphrase_mode_    = false;
 
+    // The filled action buttons are child tk::Button widgets (positioned +
+    // styled per-step in paint()). primary_button_ is reused across every step
+    // that has a bottom-right action (Continue / Verify / Close / …);
+    // copy_button_ appears only on the ShowKey step.
+    tk::Button* primary_button_ = nullptr;
+    tk::Button* copy_button_    = nullptr;
+
     // ── Layout rects computed during paint(), hit-tested in pointer handlers ──
-    tk::Rect primary_btn_{};
-    tk::Rect secondary_link_{};   // "Skip for now" / "Close" (Done reuses primary)
+    // These cover the non-button affordances only (text links, the two toggle
+    // pills, and the "I've saved this key" checkbox).
+    tk::Rect secondary_link_{};   // "Skip for now" / "Close"
     tk::Rect back_link_{};
     tk::Rect sas_link_{};
-    tk::Rect copy_btn_{};
     tk::Rect checkbox_rect_{};
     tk::Rect key_toggle_rect_{};
     tk::Rect pass_toggle_rect_{};
     bool     primary_enabled_ = true;  // recomputed per-step in paint()
 
     // ── Press tracking (mirror ImageViewerOverlay) ──────────────────────────
-    bool press_primary_     = false;
     bool press_secondary_   = false;
     bool press_back_        = false;
     bool press_sas_         = false;
-    bool press_copy_        = false;
     bool press_checkbox_    = false;
     bool press_key_toggle_  = false;
     bool press_pass_toggle_ = false;

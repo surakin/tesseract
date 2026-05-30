@@ -21,15 +21,9 @@ constexpr float kBtnHPad  = 18.0f;
 constexpr float kBtnRad   = 6.0f;
 constexpr float kRowGap   = 12.0f;
 
-enum class BtnKind
-{
-    Primary,
-    Secondary,
-    Disabled,
-    Link
-};
-
 // Width a text button needs to fit its single-line label plus side padding.
+// Shared by the child tk::Button geometry and the bare text links so both keep
+// the original hand-painted widths.
 float button_width(tk::PaintCtx& ctx, const std::string& label)
 {
     tk::TextStyle st;
@@ -39,29 +33,20 @@ float button_width(tk::PaintCtx& ctx, const std::string& label)
 }
 
 // Fill (or, for links, don't) `r` and centre `label` inside it.
-void paint_button(tk::PaintCtx& ctx, tk::Rect r, const std::string& label,
-                  BtnKind kind)
+// A bare, background-less text link (accent-coloured, centred in `r`). Used for
+// the "Skip for now" / "Back" / "Verify with another device" affordances — the
+// filled action buttons are tk::Button children, not these.
+void paint_link(tk::PaintCtx& ctx, tk::Rect r, const std::string& label)
 {
     const auto& pal = ctx.theme.palette;
-    if (kind == BtnKind::Primary)
-        ctx.canvas.fill_rounded_rect(r, kBtnRad, pal.accent);
-    else if (kind == BtnKind::Secondary)
-        ctx.canvas.fill_rounded_rect(r, kBtnRad, pal.subtle_hover);
-    else if (kind == BtnKind::Disabled)
-        ctx.canvas.fill_rounded_rect(r, kBtnRad, pal.subtle_hover);
-
     tk::TextStyle st;
     st.role = tk::FontRole::UiSemibold;
     auto lo = ctx.factory.build_text(label, st);
     if (!lo) return;
-    tk::Size  sz = lo->measure();
-    tk::Color tc = kind == BtnKind::Primary    ? pal.text_on_accent
-                   : kind == BtnKind::Secondary ? pal.text_primary
-                   : kind == BtnKind::Disabled ? pal.text_muted
-                                               : pal.accent;
+    tk::Size sz = lo->measure();
     ctx.canvas.draw_text(*lo,
                          {r.x + (r.w - sz.w) * 0.5f, r.y + (r.h - sz.h) * 0.5f},
-                         tc);
+                         pal.accent);
 }
 
 // Draw a left-aligned body / label paragraph; returns the rendered height so
@@ -84,6 +69,20 @@ float paint_paragraph(tk::PaintCtx& ctx, tk::Rect area, const std::string& text,
 EncryptionSetupOverlay::EncryptionSetupOverlay(Mode mode)
     : mode_(mode)
 {
+    // Filled action buttons. They are positioned, labelled, and (for primary)
+    // enabled/disabled per-step in paint(); both start hidden.
+    auto prim = std::make_unique<tk::Button>(
+        "", std::function<void()>{}, tk::Button::Variant::Primary);
+    primary_button_ = add_child(std::move(prim));
+    primary_button_->set_visible(false);
+    primary_button_->set_on_click([this] { fire_primary_(); });
+
+    auto copy = std::make_unique<tk::Button>(
+        "Copy", std::function<void()>{}, tk::Button::Variant::Subtle);
+    copy_button_ = add_child(std::move(copy));
+    copy_button_->set_visible(false);
+    copy_button_->set_on_click(
+        [this] { if (on_copy_to_clipboard) on_copy_to_clipboard(recovery_key_); });
 }
 
 // ── advance_progress ─────────────────────────────────────────────────────────
@@ -264,10 +263,35 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
     host_           = ctx.host;
 
     // Forget clickable regions from the previous frame so a control that is
-    // not drawn this step can't be hit-tested with a stale rect.
-    primary_btn_ = secondary_link_ = back_link_ = sas_link_ = copy_btn_ =
+    // not drawn this step can't be hit-tested with a stale rect. The child
+    // action buttons are hidden up front and re-shown by the steps that use
+    // them, so a vanished button is skipped by hit-testing too.
+    secondary_link_ = back_link_ = sas_link_ =
         checkbox_rect_ = key_toggle_rect_ = pass_toggle_rect_ = {};
     primary_enabled_ = true;
+    if (primary_button_) primary_button_->set_visible(false);
+    if (copy_button_) copy_button_->set_visible(false);
+
+    // Position, style, and paint the reusable primary button for the current
+    // step. The label/enabled state are refreshed every frame; widths come from
+    // button_width() so they match the old hand-painted geometry exactly.
+    tk::LayoutCtx lc{ctx.factory, ctx.theme};
+    auto place_primary = [&](tk::Rect r, const std::string& label, bool enabled)
+    {
+        if (!primary_button_) return;
+        primary_button_->set_visible(true);
+        if (primary_button_->label() != label) primary_button_->set_label(label);
+        primary_button_->set_enabled(enabled);
+        primary_button_->arrange(lc, r);
+        primary_button_->paint(ctx);
+    };
+    auto place_copy = [&](tk::Rect r)
+    {
+        if (!copy_button_) return;
+        copy_button_->set_visible(true);
+        copy_button_->arrange(lc, r);
+        copy_button_->paint(ctx);
+    };
 
     // Dim backdrop + card.
     c.fill_rect(b, tk::Color{0, 0, 0, 128});
@@ -310,14 +334,14 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
 
             const std::string prim =
                 mode_ == Mode::Fresh ? "Set up encryption" : "Verify";
-            float pw     = button_width(ctx, prim);
-            primary_btn_ = {card.x + card.w - kCardPad - pw, by, pw, kBtnH};
-            paint_button(ctx, primary_btn_, prim, BtnKind::Primary);
+            float pw = button_width(ctx, prim);
+            place_primary({card.x + card.w - kCardPad - pw, by, pw, kBtnH}, prim,
+                          true);
 
             const std::string skip = "Skip for now";
             float             sw   = button_width(ctx, skip);
             secondary_link_        = {cx, by, sw, kBtnH};
-            paint_button(ctx, secondary_link_, skip, BtnKind::Link);
+            paint_link(ctx, secondary_link_, skip);
             break;
         }
 
@@ -376,13 +400,13 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                                 tk::FontRole::Small, pal.destructive);
 
             const std::string cont = "Continue";
-            float cwid   = button_width(ctx, cont);
-            primary_btn_ = {card.x + card.w - kCardPad - cwid, by, cwid, kBtnH};
-            paint_button(ctx, primary_btn_, cont, BtnKind::Primary);
+            float cwid = button_width(ctx, cont);
+            place_primary({card.x + card.w - kCardPad - cwid, by, cwid, kBtnH},
+                          cont, true);
 
             float bw   = button_width(ctx, "Back");
             back_link_ = {cx, by, bw, kBtnH};
-            paint_button(ctx, back_link_, "Back", BtnKind::Link);
+            paint_link(ctx, back_link_, "Back");
             break;
         }
 
@@ -409,15 +433,14 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             const std::string sas = "Verify with another device instead";
             float             sw  = button_width(ctx, sas);
             sas_link_             = {cx, by, sw, kBtnH};
-            paint_button(ctx, sas_link_, sas, BtnKind::Link);
+            paint_link(ctx, sas_link_, sas);
 
             const std::string key =
                 get_key_input ? get_key_input() : key_input_;
             primary_enabled_ = !key.empty();
-            float vw     = button_width(ctx, "Verify");
-            primary_btn_ = {card.x + card.w - kCardPad - vw, by, vw, kBtnH};
-            paint_button(ctx, primary_btn_, "Verify",
-                         primary_enabled_ ? BtnKind::Primary : BtnKind::Disabled);
+            float vw = button_width(ctx, "Verify");
+            place_primary({card.x + card.w - kCardPad - vw, by, vw, kBtnH},
+                          "Verify", primary_enabled_);
             break;
         }
 
@@ -494,9 +517,8 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
 
             // Copy button below the box, right-aligned.
             float copyw = button_width(ctx, "Copy");
-            copy_btn_   = {card.x + card.w - kCardPad - copyw,
-                         box.y + box.h + 10.0f, copyw, kBtnH};
-            paint_button(ctx, copy_btn_, "Copy", BtnKind::Secondary);
+            place_copy({card.x + card.w - kCardPad - copyw,
+                        box.y + box.h + 10.0f, copyw, kBtnH});
 
             // "I've saved this key" checkbox.
             const float cb_box = 18.0f;
@@ -536,10 +558,9 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             }
 
             primary_enabled_ = key_saved_checked_;
-            float cont   = button_width(ctx, "Continue");
-            primary_btn_ = {card.x + card.w - kCardPad - cont, by, cont, kBtnH};
-            paint_button(ctx, primary_btn_, "Continue",
-                         primary_enabled_ ? BtnKind::Primary : BtnKind::Disabled);
+            float cont = button_width(ctx, "Continue");
+            place_primary({card.x + card.w - kCardPad - cont, by, cont, kBtnH},
+                          "Continue", primary_enabled_);
             break;
         }
 
@@ -583,9 +604,9 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                                 pal.text_secondary);
                 }
             }
-            float clw   = button_width(ctx, "Close");
-            primary_btn_ = {card.x + (card.w - clw) * 0.5f, by, clw, kBtnH};
-            paint_button(ctx, primary_btn_, "Close", BtnKind::Primary);
+            float clw = button_width(ctx, "Close");
+            place_primary({card.x + (card.w - clw) * 0.5f, by, clw, kBtnH},
+                          "Close", true);
             break;
         }
     }
@@ -599,26 +620,23 @@ bool EncryptionSetupOverlay::on_pointer_down(tk::Point local)
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
 
-    press_primary_ = press_secondary_ = press_back_ = press_sas_ = press_copy_ =
+    press_secondary_ = press_back_ = press_sas_ =
         press_checkbox_ = press_key_toggle_ = press_pass_toggle_ =
             backdrop_press_ = false;
 
     // During Progress the operation is in flight: swallow every click.
     if (step_ == Step::Progress) return true;
 
-    // Note: don't gate on primary_enabled_ here (that reflects the *last*
-    // paint). fire_primary_() re-reads the live field text / checkbox state and
-    // no-ops when the action isn't yet allowed, so it's the authority.
-    if (rect_contains(primary_btn_, w))
-        press_primary_ = true;
-    else if (rect_contains(secondary_link_, w))
+    // The filled Primary / Copy buttons are tk::Button children; the host
+    // dispatches their presses directly, so they never reach this handler. We
+    // only track the bare links, the toggle pills, the checkbox, and the
+    // backdrop here.
+    if (rect_contains(secondary_link_, w))
         press_secondary_ = true;
     else if (rect_contains(back_link_, w))
         press_back_ = true;
     else if (rect_contains(sas_link_, w))
         press_sas_ = true;
-    else if (rect_contains(copy_btn_, w))
-        press_copy_ = true;
     else if (rect_contains(checkbox_rect_, w))
         press_checkbox_ = true;
     else if (rect_contains(key_toggle_rect_, w))
@@ -636,9 +654,10 @@ void EncryptionSetupOverlay::on_pointer_up(tk::Point local, bool inside_self)
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     auto hit = [&](const tk::Rect& r) { return inside_self && rect_contains(r, w); };
 
-    if (press_primary_ && hit(primary_btn_))
-        fire_primary_();
-    else if (press_secondary_ && hit(secondary_link_))
+    // Primary / Copy are tk::Button children and fire their own on_click; this
+    // handler only runs for the bare links, toggle pills, checkbox, and
+    // backdrop dismiss.
+    if (press_secondary_ && hit(secondary_link_))
     {
         if (on_close) on_close();
     }
@@ -647,10 +666,6 @@ void EncryptionSetupOverlay::on_pointer_up(tk::Point local, bool inside_self)
     else if (press_sas_ && hit(sas_link_))
     {
         if (on_request_sas) on_request_sas();
-    }
-    else if (press_copy_ && hit(copy_btn_))
-    {
-        if (on_copy_to_clipboard) on_copy_to_clipboard(recovery_key_);
     }
     else if (press_checkbox_ && hit(checkbox_rect_))
         key_saved_checked_ = !key_saved_checked_;
@@ -670,7 +685,7 @@ void EncryptionSetupOverlay::on_pointer_up(tk::Point local, bool inside_self)
         if (on_close) on_close();
     }
 
-    press_primary_ = press_secondary_ = press_back_ = press_sas_ = press_copy_ =
+    press_secondary_ = press_back_ = press_sas_ =
         press_checkbox_ = press_key_toggle_ = press_pass_toggle_ =
             backdrop_press_ = false;
 

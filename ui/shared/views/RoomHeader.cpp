@@ -19,7 +19,6 @@ constexpr float kAvatarGap = 12.0f;
 
 constexpr float kCalBtnSize = 28.0f;
 constexpr float kCalBtnMargin = 8.0f;
-constexpr float kCalBtnRadius = 6.0f;
 
 constexpr float kLockW   = 10.0f;
 constexpr float kLockH   = 12.0f;
@@ -46,6 +45,23 @@ RoomHeader::RoomHeader()
     topic->set_trim(tk::TextTrim::Ellipsis);
     topic_label_ = add_child(std::move(topic));
     topic_label_->set_visible(false);
+
+    // Calendar / threads action buttons. Icon-variant buttons paint only their
+    // hover/press background; this view draws the glyph itself in paint(). Both
+    // start hidden until the shell enables them (MSC3030 support / thread roots).
+    auto cal = std::make_unique<tk::Button>("", std::function<void()>{},
+                                            tk::Button::Variant::Icon);
+    calendar_btn_ = add_child(std::move(cal));
+    calendar_btn_->set_visible(false);
+    calendar_btn_->set_on_click(
+        [this] { if (on_jump_to_date_requested) on_jump_to_date_requested(); });
+
+    auto thr = std::make_unique<tk::Button>("", std::function<void()>{},
+                                            tk::Button::Variant::Icon);
+    threads_btn_ = add_child(std::move(thr));
+    threads_btn_->set_visible(false);
+    threads_btn_->set_on_click(
+        [this] { if (on_threads_requested) on_threads_requested(); });
 }
 
 void RoomHeader::set_room(const tesseract::RoomInfo& info)
@@ -143,6 +159,22 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
 
+    // Action buttons are never shown in condensed mode; hide + zero them so the
+    // test rect accessor and hit-testing report no clickable area.
+    auto hide_action_buttons = [&]
+    {
+        if (calendar_btn_)
+        {
+            calendar_btn_->set_visible(false);
+            calendar_btn_->arrange(ctx, {});
+        }
+        if (threads_btn_)
+        {
+            threads_btn_->set_visible(false);
+            threads_btn_->arrange(ctx, {});
+        }
+    };
+
     if (condensed_ && bounds.h <= 0.0f)
     {
         if (name_label_)
@@ -153,6 +185,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         {
             topic_label_->set_visible(false);
         }
+        hide_action_buttons();
         return;
     }
 
@@ -164,6 +197,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         {
             name_label_->set_visible(false);
         }
+        hide_action_buttons();
 
         const float topic_y = bounds.y + (bounds.h - kTopicH) * 0.5f;
         topic_rect_ = {bounds.x + kPadX, topic_y,
@@ -343,6 +377,36 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             }
         }
     }
+
+    // Position the calendar / threads action buttons. Calendar takes the
+    // right-most slot; threads sits 8 px to its left (or takes the right-most
+    // slot itself when calendar is hidden). Mirrors the old paint-time layout.
+    const float btn_y = bounds.y + (kHeight - kCalBtnSize) * 0.5f;
+    tk::Rect cal_r{};
+    if (show_calendar_btn_)
+    {
+        cal_r = {bounds.x + bounds.w - kCalBtnMargin - kCalBtnSize, btn_y,
+                 kCalBtnSize, kCalBtnSize};
+    }
+    if (calendar_btn_)
+    {
+        calendar_btn_->set_visible(show_calendar_btn_);
+        calendar_btn_->arrange(ctx, show_calendar_btn_ ? cal_r : tk::Rect{});
+    }
+
+    tk::Rect thr_r{};
+    if (show_threads_btn_)
+    {
+        const float threads_right =
+            show_calendar_btn_ ? (cal_r.x - 8.0f)
+                               : (bounds.x + bounds.w - kCalBtnMargin);
+        thr_r = {threads_right - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+    }
+    if (threads_btn_)
+    {
+        threads_btn_->set_visible(show_threads_btn_);
+        threads_btn_->arrange(ctx, show_threads_btn_ ? thr_r : tk::Rect{});
+    }
 }
 
 void RoomHeader::paint(tk::PaintCtx& ctx)
@@ -429,49 +493,23 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     }
 
     // Calendar / jump-to-date button — only shown when MSC3030 is supported.
-    if (show_calendar_btn_)
+    // The Icon-variant button paints its own hover/press background (positioned
+    // in arrange()); we draw the vector glyph centred inside its bounds.
+    if (calendar_btn_ && calendar_btn_->visible())
     {
-        calendar_btn_rect_ = {bounds_.x + bounds_.w - kCalBtnMargin - kCalBtnSize,
-                              bounds_.y + (kHeight - kCalBtnSize) * 0.5f,
-                              kCalBtnSize, kCalBtnSize};
-
-        const tk::Color btn_bg =
-            press_calendar_ ? ctx.theme.palette.subtle_pressed
-            : hover_calendar_
-                ? ctx.theme.palette.subtle_hover
-                : ctx.theme.palette.chrome_bg;
-
-        ctx.canvas.fill_rounded_rect(calendar_btn_rect_, kCalBtnRadius, btn_bg);
-        draw_calendar_icon(ctx.canvas, calendar_btn_rect_,
+        calendar_btn_->paint(ctx);
+        draw_calendar_icon(ctx.canvas, calendar_btn_->bounds(),
                            ctx.theme.palette.text_primary);
     }
 
     // Threads button — shown only when the SDK reports the room has at least
     // one thread root. Sits immediately left of the calendar button when both
-    // are visible, otherwise takes the right-most slot.
-    if (show_threads_btn_)
+    // are visible, otherwise takes the right-most slot (see arrange()).
+    if (threads_btn_ && threads_btn_->visible())
     {
-        const float threads_right =
-            show_calendar_btn_
-                ? (calendar_btn_rect_.x - 8.0f)
-                : (bounds_.x + bounds_.w - kCalBtnMargin);
-        threads_btn_rect_ = {threads_right - kCalBtnSize,
-                             bounds_.y + (kHeight - kCalBtnSize) * 0.5f,
-                             kCalBtnSize, kCalBtnSize};
-
-        const tk::Color btn_bg =
-            press_threads_ ? ctx.theme.palette.subtle_pressed
-            : hover_threads_
-                ? ctx.theme.palette.subtle_hover
-                : ctx.theme.palette.chrome_bg;
-
-        ctx.canvas.fill_rounded_rect(threads_btn_rect_, kCalBtnRadius, btn_bg);
-        draw_threads_icon(ctx.canvas, threads_btn_rect_,
+        threads_btn_->paint(ctx);
+        draw_threads_icon(ctx.canvas, threads_btn_->bounds(),
                           ctx.theme.palette.text_primary);
-    }
-    else
-    {
-        threads_btn_rect_ = {};
     }
 }
 
@@ -540,34 +578,13 @@ void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
     canvas.fill_rounded_rect(body, 1.5f, tint);
 }
 
-bool RoomHeader::on_pointer_down(tk::Point local)
+bool RoomHeader::on_pointer_down(tk::Point /*local*/)
 {
-    // calendar_btn_rect_ / threads_btn_rect_ are in world coords; reconstruct
-    // the world point from the widget-local `local` by adding the widget's
-    // own origin.
-    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
-    // Threads button takes priority — checked before calendar so its hit area
-    // short-circuits, even though the rects don't overlap in practice.
-    if (show_threads_btn_ &&
-        world.x >= threads_btn_rect_.x &&
-        world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
-        world.y >= threads_btn_rect_.y &&
-        world.y < threads_btn_rect_.y + threads_btn_rect_.h)
-    {
-        press_threads_ = true;
-        return true;
-    }
-    if (show_calendar_btn_ &&
-        world.x >= calendar_btn_rect_.x &&
-        world.x < calendar_btn_rect_.x + calendar_btn_rect_.w &&
-        world.y >= calendar_btn_rect_.y &&
-        world.y < calendar_btn_rect_.y + calendar_btn_rect_.h)
-    {
-        press_calendar_ = true;
-        return true;
-    }
-    // Capture press on the name/avatar area in full (non-condensed) mode so
-    // on_pointer_up is delivered and can fire on_info_requested.
+    // Calendar / threads clicks are claimed by their child tk::Button widgets
+    // before this fires (the host dispatches to the topmost child). This only
+    // runs for the name/avatar/topic area: capture the press in full
+    // (non-condensed) mode so on_pointer_up is delivered and can fire
+    // on_info_requested.
     if (!condensed_)
     {
         press_info_ = true;
@@ -578,48 +595,6 @@ bool RoomHeader::on_pointer_down(tk::Point local)
 
 void RoomHeader::on_pointer_up(tk::Point local, bool inside_self)
 {
-    // Threads button: handle first since its press has priority.
-    if (press_threads_)
-    {
-        press_threads_ = false;
-        if (inside_self)
-        {
-            const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
-            if (world.x >= threads_btn_rect_.x &&
-                world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
-                world.y >= threads_btn_rect_.y &&
-                world.y < threads_btn_rect_.y + threads_btn_rect_.h)
-            {
-                if (on_threads_requested)
-                {
-                    on_threads_requested();
-                }
-            }
-        }
-        return;
-    }
-
-    // Calendar button takes priority over name/avatar click area.
-    if (press_calendar_)
-    {
-        press_calendar_ = false;
-        if (inside_self)
-        {
-            const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
-            if (world.x >= calendar_btn_rect_.x &&
-                world.x < calendar_btn_rect_.x + calendar_btn_rect_.w &&
-                world.y >= calendar_btn_rect_.y &&
-                world.y < calendar_btn_rect_.y + calendar_btn_rect_.h)
-            {
-                if (on_jump_to_date_requested)
-                {
-                    on_jump_to_date_requested();
-                }
-            }
-        }
-        return;
-    }
-
     if (!press_info_)
         return;
     press_info_ = false;
@@ -681,20 +656,11 @@ bool RoomHeader::on_pointer_move(tk::Point local)
 {
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
 
-    hover_threads_ = show_threads_btn_ &&
-                     world.x >= threads_btn_rect_.x &&
-                     world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
-                     world.y >= threads_btn_rect_.y &&
-                     world.y < threads_btn_rect_.y + threads_btn_rect_.h;
-
-    hover_calendar_ = !hover_threads_ && show_calendar_btn_ &&
-                      world.x >= calendar_btn_rect_.x &&
-                      world.x < calendar_btn_rect_.x + calendar_btn_rect_.w &&
-                      world.y >= calendar_btn_rect_.y &&
-                      world.y < calendar_btn_rect_.y + calendar_btn_rect_.h;
-
-    const bool new_hover_topic = !hover_calendar_ && !hover_threads_ &&
-                                 world.x >= topic_rect_.x &&
+    // Calendar / threads hover backgrounds are driven by the child tk::Button
+    // widgets via the host's topmost-hovered-button tracking; this handler only
+    // owns the topic tooltip. topic_rect_ already excludes the button reserve,
+    // so it never overlaps the action buttons.
+    const bool new_hover_topic = world.x >= topic_rect_.x &&
                                  world.x < topic_rect_.x + topic_rect_.w &&
                                  world.y >= topic_rect_.y &&
                                  world.y < topic_rect_.y + topic_rect_.h;
@@ -719,10 +685,7 @@ bool RoomHeader::on_pointer_move(tk::Point local)
 
 void RoomHeader::on_pointer_leave()
 {
-    hover_calendar_ = false;
-    press_calendar_ = false;
-    hover_threads_ = false;
-    press_threads_ = false;
+    // Action-button hover/press is owned by the child tk::Button widgets.
     press_info_ = false;
     if (hover_topic_ && on_hide_tooltip)
     {
