@@ -3,6 +3,7 @@
 #include "tk/widget.h"
 #include "tk/canvas.h"
 
+#include <chrono>
 #include <functional>
 #include <string>
 
@@ -23,6 +24,13 @@ public:
     std::function<void(std::string)>   on_recover;         // key or passphrase
     std::function<void()>              on_request_sas;
     std::function<void(std::string)>   on_copy_to_clipboard;
+
+    // Fired when a step / mode change alters which native text field should be
+    // visible (e.g. Intro→EnterKey, or toggling the passphrase option). The
+    // shell must respond by relaying out its surface so the on-layout pass
+    // repositions/shows the NativeTextField. Same contract as
+    // RoomView::on_layout_changed.
+    std::function<void()>              on_layout_changed;
 
     // ── Host hooks (NativeTextField rects) ───────────────────────────────
     std::function<tk::Rect()>      passphrase_field_rect;
@@ -75,6 +83,7 @@ public:
         on_recover           = {};
         on_request_sas       = {};
         on_copy_to_clipboard = {};
+        on_layout_changed    = {};
         passphrase_field_rect    = {};
         passphrase_field_visible = {};
         key_field_rect       = {};
@@ -96,6 +105,7 @@ private:
     void     advance_step_(Step next);
     void     fire_primary_();
     tk::Rect card_bounds() const;
+    float    step_card_height_() const;
     void     update_progress_label_(uint8_t step, uint32_t backed_up, uint32_t total);
 
     Mode        mode_;
@@ -107,6 +117,35 @@ private:
     std::string key_input_;
     bool        key_saved_checked_  = false;
     bool        passphrase_mode_    = false;
+
+    // ── Layout rects computed during paint(), hit-tested in pointer handlers ──
+    tk::Rect primary_btn_{};
+    tk::Rect secondary_link_{};   // "Skip for now" / "Close" (Done reuses primary)
+    tk::Rect back_link_{};
+    tk::Rect sas_link_{};
+    tk::Rect copy_btn_{};
+    tk::Rect checkbox_rect_{};
+    tk::Rect key_toggle_rect_{};
+    tk::Rect pass_toggle_rect_{};
+    bool     primary_enabled_ = true;  // recomputed per-step in paint()
+
+    // ── Press tracking (mirror ImageViewerOverlay) ──────────────────────────
+    bool press_primary_     = false;
+    bool press_secondary_   = false;
+    bool press_back_        = false;
+    bool press_sas_         = false;
+    bool press_copy_        = false;
+    bool press_checkbox_    = false;
+    bool press_key_toggle_  = false;
+    bool press_pass_toggle_ = false;
+    bool backdrop_press_    = false;
+
+    // Captured in paint() so pointer handlers can schedule a relayout+repaint
+    // (toggling passphrase mode must refresh the native field's visibility).
+    tk::Host* host_ = nullptr;
+
+    // Spinner animation clock; reset when the Progress step is entered.
+    std::chrono::steady_clock::time_point progress_start_{};
 };
 
 } // namespace tesseract::views

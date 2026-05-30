@@ -4879,6 +4879,11 @@ void MainWindow::show_encryption_setup_overlay_(
         main_app_surface_->host().set_clipboard_text(text);
     };
 
+    ov->on_layout_changed = [this]()
+    {
+        if (main_app_surface_) main_app_surface_->relayout();
+    };
+
     main_app_->show_encryption_setup(true);
     main_app_surface_->relayout();
 }

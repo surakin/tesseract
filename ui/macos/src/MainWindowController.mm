@@ -642,6 +642,11 @@ void MacShell::show_encryption_setup_overlay_(
                                            forType:NSPasteboardTypeString];
     };
 
+    ov->on_layout_changed = [c]() {
+        if (c && c->_mainAppSurface)
+            c->_mainAppSurface->relayout();
+    };
+
     main_app_->show_encryption_setup(true);
     if (c->_mainAppSurface)
         c->_mainAppSurface->relayout();

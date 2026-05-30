@@ -7290,6 +7290,11 @@ void MainWindow::show_encryption_setup_overlay_(
         CloseClipboard();
     };
 
+    ov->on_layout_changed = [this]() {
+        if (main_app_surface_)
+            main_app_surface_->relayout();
+    };
+
     main_app_->show_encryption_setup(true);
     if (main_app_surface_)
         main_app_surface_->relayout();

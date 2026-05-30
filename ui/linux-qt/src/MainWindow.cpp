@@ -4841,6 +4841,10 @@ void MainWindow::show_encryption_setup_overlay_(
         QApplication::clipboard()->setText(QString::fromStdString(text));
     };
 
+    ov->on_layout_changed = [this]() {
+        if (mainAppSurface_) mainAppSurface_->relayout();
+    };
+
     mainApp_->show_encryption_setup(true);
     mainAppSurface_->relayout();
 }
