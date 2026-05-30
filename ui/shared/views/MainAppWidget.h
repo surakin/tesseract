@@ -11,22 +11,19 @@
 //     UserInfo (kUserStripH)
 //   1px Separator
 //   Chat panel (flex)
-//     RecoveryBanner (kBannerH, hidden by default)
 //     VerificationBanner (kBannerH…124, hidden by default)
 //     RoomView (flex)
 //   ImageViewerOverlay (full widget bounds, hidden by default)
 //   VideoViewerOverlay (full widget bounds, hidden by default)
 //
-// Shell wires three native overlays via the surface's set_on_layout():
+// Shell wires two native overlays via the surface's set_on_layout():
 //   compose_text_area_rect()    → NativeTextArea position
 //   room_search_field_rect()    → NativeTextField position
-//   recovery_key_field_rect()   → NativeTextField position
 
 #include "ConfirmDialog.h"
 #include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
 #include "InviteCard.h"
-#include "RecoveryBanner.h"
 #include "RoomListView.h"
 #include "RoomView.h"
 #include "UserInfo.h"
@@ -66,7 +63,6 @@ public:
 
     // ── Banner visibility ─────────────────────────────────────────────────
 
-    void show_recovery_banner(bool show);
     void show_verif_banner(bool show);
 
     // ── Chat panel content switching ──────────────────────────────────────
@@ -109,10 +105,6 @@ public:
     {
         return invite_card_;
     }
-    RecoveryBanner* recovery_banner() const
-    {
-        return recovery_banner_;
-    }
     VerificationBanner* verif_banner() const
     {
         return verif_banner_;
@@ -153,8 +145,6 @@ public:
     tk::Rect compose_text_area_rect() const;
     bool room_search_field_visible() const;
     tk::Rect room_search_field_rect() const;
-    bool recovery_key_field_visible() const;
-    tk::Rect recovery_key_field_rect() const;
 
     // ── Callbacks ─────────────────────────────────────────────────────────
 
@@ -195,7 +185,6 @@ private:
     UserInfo* user_info_ = nullptr;
 
     // Chat panel children
-    RecoveryBanner* recovery_banner_ = nullptr;
     VerificationBanner* verif_banner_ = nullptr;
     tk::TabBar* tab_bar_ = nullptr;
     bool tab_bar_visible_ = false;
@@ -211,7 +200,6 @@ private:
     // lightboxes, so destructive prompts are always reachable.
     ConfirmDialog* confirm_dialog_ = nullptr;
 
-    bool recovery_visible_ = false;
     bool verif_visible_ = false;
 };
 

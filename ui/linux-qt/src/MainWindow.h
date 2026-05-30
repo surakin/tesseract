@@ -94,9 +94,6 @@ private slots:
     void onLoginSucceeded();
     void onSendClicked();
     void onSpaceBack();
-    void onRecoveryVerifyClicked();
-    void onRecoverFinished(bool ok, QString error);
-    void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
     void onLoginCancelled();
     void onAccountSelected(const std::string& user_id);
@@ -111,7 +108,6 @@ private slots:
     void onActivateRequested();
 
 signals:
-    void recoverFinished(bool ok, QString error);
 
 private:
     void doLogin();
@@ -181,7 +177,6 @@ private:
         navigate_to_room(room_id);
     }
     void populateUserStrip();
-    void maybeShowRecoveryBanner();
     void showRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refreshRoomList();
     void onRoomSelected(const std::string& room_id);
@@ -296,7 +291,6 @@ private:
     tesseract::views::MainAppWidget* mainApp_ = nullptr; // borrowed
 
     // Native overlays wired to mainAppSurface_.
-    std::unique_ptr<tk::NativeTextField> recoveryKeyField_;
     std::unique_ptr<tk::NativeTextField> encPassphraseField_;
     std::unique_ptr<tk::NativeTextField> encKeyField_;
     std::unique_ptr<tk::NativeTextField> roomSearchField_;
@@ -357,7 +351,7 @@ private:
     // (its own `tesseract::Client`, its own `EventBridge`). All accounts
     // start sync at restore/login time and keep syncing in the background
     // so notifications fire regardless of which one is foreground. UI
-    // surfaces (room list / message list / compose / recovery banner) are
+    // surfaces (room list / message list / compose) are
     // bound only to the active account; handle_*_ui_() methods filter by
     // user_id to ignore traffic from inactive accounts (their `RoomInfo`
     // snapshots are cached in `per_account_rooms_` so a fast

@@ -115,8 +115,6 @@ private:
                            bool is_mention, std::vector<uint8_t> avatar_bytes,
                            std::vector<uint8_t> image_bytes);
     static void on_login_clicked(GtkButton*, gpointer user_data);
-    static void on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
-    static void on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
     void on_send_clicked();
     void toggle_emoji_picker();
     void popup_emoji_at_rect(GtkWidget* parent, tk::Rect local_rect);
@@ -189,7 +187,6 @@ private:
                              bool is_mention, std::vector<uint8_t> avatar_bytes,
                              std::vector<uint8_t> image_bytes);
     void populate_user_strip();
-    void maybe_show_recovery_banner();
 
     // ShellBase virtual hooks (GTK4 implementations).
     void navigate_to_room_(const std::string& room_id) override
@@ -363,10 +360,7 @@ private:
     void refresh_sync_status();
     static gboolean on_sync_status_debounce_(gpointer user_data);
 
-    tesseract::views::RecoveryBanner* recovery_shared_ = nullptr;
-
     tesseract::views::VerificationBanner* verif_shared_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> recovery_key_field_;
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
 

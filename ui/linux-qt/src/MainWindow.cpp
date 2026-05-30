@@ -241,17 +241,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 QPoint(static_cast<int>(world.x), static_cast<int>(world.y))));
         };
 
-        // ---- Recovery banner ----
-        mainApp_->recovery_banner()->on_verify = [this](const std::string& key)
-        {
-            (void)key;
-            onRecoveryVerifyClicked();
-        };
-        mainApp_->recovery_banner()->on_dismiss = [this]
-        {
-            onDismissRecoveryBanner();
-        };
-
         // ---- Verification banner ----
         mainApp_->verif_banner()->on_verify = [this]
         {
@@ -306,20 +295,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainApp_->verif_banner()->on_use_recovery_key = [this]
         {
             mainApp_->show_verif_banner(false);
-            recovery_key_chosen_ = true;
-            if (!recovery_banner_dismissed_ && mainApp_)
-            {
-                mainApp_->recovery_banner()->set_state(
-                    tesseract::views::RecoveryBanner::State::Form);
-                mainApp_->recovery_banner()->set_current_key("");
-                if (recoveryKeyField_)
-                {
-                    recoveryKeyField_->set_text("");
-                    recoveryKeyField_->set_enabled(true);
-                }
-                mainApp_->show_recovery_banner(true);
-            }
-            mainAppSurface_->relayout();
+            // The recovery-key entry path now lives in the encryption-setup
+            // overlay (Recover mode); the old inline RecoveryBanner was removed.
+            show_encryption_setup_overlay_(
+                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
         };
 
         // ---- Image + video viewers ----
@@ -1502,9 +1481,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                       });
         });
 
-    recoveryKeyField_ = mainAppSurface_->host().make_text_field();
-    recoveryKeyField_->set_password(true);
-
     mainAppSurface_->set_on_layout(
         [this]
         {
@@ -1520,13 +1496,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 roomSearchField_->set_visible(
                     mainApp_->room_search_field_visible());
                 roomSearchField_->set_rect(mainApp_->room_search_field_rect());
-            }
-            if (mainApp_ && recoveryKeyField_)
-            {
-                recoveryKeyField_->set_visible(
-                    mainApp_->recovery_key_field_visible());
-                recoveryKeyField_->set_rect(
-                    mainApp_->recovery_key_field_rect());
             }
             if (mainApp_ && encPassphraseField_)
             {
@@ -2290,7 +2259,6 @@ void MainWindow::doLogin()
                                         my_display_name_);
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
-    maybeShowRecoveryBanner();
 
     if (!tray_)
     {
@@ -2500,7 +2468,6 @@ void MainWindow::onLoginSucceeded()
                                         my_display_name_);
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
-    maybeShowRecoveryBanner();
 
     pending_login_is_add_account_ = false;
     add_account_return_idx_ = -1;
@@ -3610,126 +3577,6 @@ void MainWindow::prep_row_media_(const tesseract::Event& ev)
     ensure_row_media_(ev);
 }
 
-// ---------------------------------------------------------------------------
-// Recovery banner + dialog (Step 6)
-// ---------------------------------------------------------------------------
-
-void MainWindow::maybeShowRecoveryBanner()
-{
-    if (encryption_setup_shown_)
-        return;
-    if (recovery_banner_dismissed_)
-    {
-        return;
-    }
-    if (!client_->needs_recovery())
-    {
-        return;
-    }
-    if (!mainApp_)
-    {
-        return;
-    }
-    // Verification takes priority — don't show recovery banner while the
-    // verification banner is active. The "Use recovery key" link hands off.
-    if (verification_banner_dismissed_ == false &&
-        mainApp_->verif_banner()->visible())
-    {
-        return;
-    }
-    if (!mainApp_->recovery_banner()->visible())
-    {
-        mainApp_->recovery_banner()->set_state(
-            tesseract::views::RecoveryBanner::State::Form);
-        mainApp_->recovery_banner()->set_current_key("");
-        if (recoveryKeyField_)
-        {
-            recoveryKeyField_->set_text("");
-            recoveryKeyField_->set_enabled(true);
-        }
-        mainApp_->show_recovery_banner(true);
-        mainAppSurface_->relayout();
-    }
-}
-
-void MainWindow::onRecoveryVerifyClicked()
-{
-    std::string key;
-    if (recoveryKeyField_)
-    {
-        key = recoveryKeyField_->text();
-    }
-    // Trim whitespace.
-    auto a = key.find_first_not_of(" \t\r\n");
-    auto b = key.find_last_not_of(" \t\r\n");
-    if (a == std::string::npos)
-    {
-        if (mainApp_)
-        {
-            mainApp_->recovery_banner()->set_state(
-                tesseract::views::RecoveryBanner::State::Failed);
-            mainApp_->recovery_banner()->set_failure_message(
-                "Please enter a recovery key or passphrase.");
-            mainAppSurface_->relayout();
-        }
-        return;
-    }
-    key = key.substr(a, b - a + 1);
-
-    if (mainApp_)
-    {
-        mainApp_->recovery_banner()->set_state(
-            tesseract::views::RecoveryBanner::State::Verifying);
-        mainAppSurface_->relayout();
-    }
-    if (recoveryKeyField_)
-    {
-        recoveryKeyField_->set_enabled(false);
-    }
-
-    run_async_mut_(
-        [this, k = key]()
-        {
-            auto res = client_->recover(k);
-            emit recoverFinished(res.ok, QString::fromStdString(res.message));
-        });
-}
-
-void MainWindow::onRecoverFinished(bool ok, QString error)
-{
-    if (!mainApp_)
-    {
-        return;
-    }
-    if (ok)
-    {
-        mainApp_->recovery_banner()->set_state(
-            tesseract::views::RecoveryBanner::State::Importing);
-        mainAppSurface_->relayout();
-        return;
-    }
-    mainApp_->recovery_banner()->set_state(
-        tesseract::views::RecoveryBanner::State::Failed);
-    mainApp_->recovery_banner()->set_failure_message(error.toStdString());
-    if (recoveryKeyField_)
-    {
-        recoveryKeyField_->set_enabled(true);
-        recoveryKeyField_->set_focused(true);
-    }
-    mainAppSurface_->relayout();
-}
-
-void MainWindow::onDismissRecoveryBanner()
-{
-    recovery_banner_dismissed_ = true;
-    recovery_key_chosen_ = false;
-    if (mainApp_)
-    {
-        mainApp_->show_recovery_banner(false);
-        mainAppSurface_->relayout();
-    }
-}
-
 void MainWindow::refreshSyncStatus()
 {
     // Compose progress text for the status bar. Priority order:
@@ -4079,7 +3926,6 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                     }
                     affected->client->start_sync(affected->bridge.get());
                     statusBar()->showMessage(tr("Reconnected"));
-                    maybeShowRecoveryBanner();
                     return;
                 }
             }
@@ -4102,36 +3948,14 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
 
 void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 {
-    // Only the active account's backup state drives the recovery banner and
-    // status bar — but we can't filter by user_id here since BackupProgress
-    // doesn't carry one. We rely on EventHandlerBase's post_to_ui_ being
-    // per-instance: the active client_ pointer check gates the banner update.
+    // Only the active account's backup state drives the status bar — but we
+    // can't filter by user_id here since BackupProgress doesn't carry one. We
+    // rely on EventHandlerBase's post_to_ui_ being per-instance: the active
+    // client_ pointer check gates the update. Key-download progress is surfaced
+    // by refreshSyncStatus() ("Downloading encryption keys (N)…").
     if (!client_)
     {
         return;
-    }
-
-    maybeShowRecoveryBanner();
-
-    if (mainApp_ && mainApp_->recovery_banner()->visible() &&
-        mainApp_->recovery_banner()->state() ==
-            tesseract::views::RecoveryBanner::State::Importing &&
-        progress.state == tesseract::BackupState::Downloading &&
-        progress.imported_keys > 0)
-    {
-        mainApp_->recovery_banner()->set_import_progress(
-            progress.imported_keys);
-        mainAppSurface_->relayout();
-    }
-    if (progress.state == tesseract::BackupState::Enabled &&
-        !client_->needs_recovery())
-    {
-        if (mainApp_)
-        {
-            mainApp_->show_recovery_banner(false);
-            mainAppSurface_->relayout();
-        }
-        recovery_key_chosen_ = false;
     }
 
     last_backup_state_ = progress.state;
@@ -4464,23 +4288,17 @@ void MainWindow::switchActiveAccount(int new_idx)
     // Save banner state for the outgoing account, then load for the incoming.
     if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
     {
-        accounts_[old_idx]->recovery_banner_dismissed     = recovery_banner_dismissed_;
-        accounts_[old_idx]->recovery_key_chosen           = recovery_key_chosen_;
         accounts_[old_idx]->verification_banner_dismissed = verification_banner_dismissed_;
     }
     if (mainApp_)
     {
-        mainApp_->show_recovery_banner(false);
         mainApp_->show_verif_banner(false);
         mainAppSurface_->relayout();
     }
-    recovery_banner_dismissed_     = s.recovery_banner_dismissed;
-    recovery_key_chosen_           = s.recovery_key_chosen;
     verification_banner_dismissed_ = s.verification_banner_dismissed;
 
     rebuildAccountPicker();
     handle_verification_state_ui_(!s.unverified);
-    maybeShowRecoveryBanner();
 }
 
 void MainWindow::beginAddAccount()
@@ -4562,11 +4380,8 @@ void MainWindow::logoutActiveAccount()
     if (mainApp_)
     {
         mainApp_->clear_content();
-        mainApp_->show_recovery_banner(false);
         mainAppSurface_->relayout();
     }
-    recovery_banner_dismissed_ = false;
-    recovery_key_chosen_ = false;
     verification_banner_dismissed_ = false;
 
     if (accounts_.empty())
@@ -4735,27 +4550,6 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
         active_verification_flow_id_.clear();
         mainApp_->verif_banner()->set_state(
             tesseract::views::VerificationBanner::State::Prompt);
-        // Verification takes priority — hide recovery banner if it appeared
-        // before the verification state callback arrived (race on first sync).
-        // But if recovery is actively in progress (Verifying/Importing), let
-        // it finish rather than interrupting with the verification banner.
-        if (mainApp_->recovery_banner()->visible())
-        {
-            auto rs = mainApp_->recovery_banner()->state();
-            if (rs == tesseract::views::RecoveryBanner::State::Form ||
-                rs == tesseract::views::RecoveryBanner::State::Failed)
-            {
-                if (recovery_key_chosen_)
-                {
-                    return;
-                }
-                mainApp_->show_recovery_banner(false);
-            }
-            else
-            {
-                return;
-            }
-        }
         mainApp_->show_verif_banner(true);
         mainAppSurface_->relayout();
     }
@@ -5381,8 +5175,6 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         roomTextArea_->set_text_color(t.palette.text_primary);
     if (roomSearchField_)
         roomSearchField_->set_text_color(t.palette.text_primary);
-    if (recoveryKeyField_)
-        recoveryKeyField_->set_text_color(t.palette.text_primary);
     {
         const auto& p = t.palette;
         QPalette pal = statusBar()->palette();

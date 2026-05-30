@@ -10,7 +10,7 @@
 /// Top-level AppKit window controller. Owns the `tesseract::Client`,
 /// implements `IEventHandler`, and hosts the shared widget tree via two
 /// `tk::macos::Surface` views (sidebar room list, message list) plus
-/// native AppKit chrome (room header, recovery banner, compose bar).
+/// native AppKit chrome (room header, compose bar).
 @interface MainWindowController : NSWindowController
 
 /// Kick off the sign-in flow. Called from AppDelegate after the window

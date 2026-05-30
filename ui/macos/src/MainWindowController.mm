@@ -248,8 +248,6 @@ public:
     using ShellBase::notify_user_activity_;
     using ShellBase::notify_window_active_;
     using ShellBase::push_rooms_;
-    using ShellBase::recovery_banner_dismissed_;
-    using ShellBase::recovery_key_chosen_;
     using ShellBase::encryption_setup_shown_;
     using ShellBase::encryption_setup_dismissed_;
     using ShellBase::reply_details_requested_;
@@ -373,9 +371,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 - (void)onRoomSelected:(std::string)roomId;
 - (void)_setComposeDraft:(const std::string&)draft;
-- (void)_onRecoveryVerify;
-- (void)_onRecoveryDismiss;
-- (void)_maybeShowRecoveryBanner;
 - (void)showShortcodePopupWithSuggestions:
             (const std::vector<tesseract::views::ShortcodeSuggestion>&)
                 suggestions
@@ -1483,7 +1478,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
-    std::unique_ptr<tk::NativeTextField> _recoveryKeyField;
     std::unique_ptr<tk::NativeTextField> _encPassphraseField;
     std::unique_ptr<tk::NativeTextField> _encKeyField;
 
@@ -1493,7 +1487,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Borrowed sub-view aliases (set after building _mainAppSurface).
     tesseract::views::RoomListView* _roomListView;      // via _mainApp
     tesseract::views::RoomView* _roomView;              // via _mainApp
-    tesseract::views::RecoveryBanner* _recoveryShared;  // via _mainApp
     tesseract::views::VerificationBanner* _verifShared; // via _mainApp
     tesseract::views::ImageViewerOverlay* _imgViewer;   // via _mainApp
     tesseract::views::VideoViewerOverlay* _vidViewer;   // via _mainApp
@@ -1646,7 +1639,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
         // Wire borrowed sub-view aliases.
         _roomListView = _mainApp->room_list_view();
         _roomView = _mainApp->room_view();
-        _recoveryShared = _mainApp->recovery_banner();
         _verifShared = _mainApp->verif_banner();
         _imgViewer = _mainApp->image_viewer();
         _vidViewer = _mainApp->video_viewer();
@@ -1766,25 +1758,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     afterDelay:0.3];
         };
 
-        // RecoveryBanner callbacks.
-        _mainApp->recovery_banner()->on_verify =
-            [weakSelf](const std::string& /*key*/)
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-            {
-                [s _onRecoveryVerify];
-            }
-        };
-        _mainApp->recovery_banner()->on_dismiss = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (s)
-            {
-                [s _onRecoveryDismiss];
-            }
-        };
-
         // VerificationBanner callbacks.
         _mainApp->verif_banner()->on_verify = [weakSelf]
         {
@@ -1872,20 +1845,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 return;
             }
             s->_mainApp->show_verif_banner(false);
-            s->_shell->recovery_key_chosen_ = true;
-            if (!s->_shell->recovery_banner_dismissed_ && s->_recoveryShared)
-            {
-                s->_recoveryShared->set_state(
-                    tesseract::views::RecoveryBanner::State::Form);
-                s->_recoveryShared->set_current_key("");
-                if (s->_recoveryKeyField)
-                {
-                    s->_recoveryKeyField->set_text("");
-                    s->_recoveryKeyField->set_enabled(true);
-                }
-                s->_mainApp->show_recovery_banner(true);
-            }
-            s->_mainAppSurface->relayout();
+            // The recovery-key entry path now lives in the encryption-setup
+            // overlay (Recover mode); the old inline RecoveryBanner was removed.
+            s->_shell->show_encryption_setup_overlay_(
+                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
         };
 
         // Image + video viewers — providers / repaint / on_close.
@@ -3313,28 +3276,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     [s] { [s _applySearchFilter]; });
             });
 
-        _recoveryKeyField = _mainAppSurface->host().make_text_field();
-        _recoveryKeyField->set_placeholder("Recovery key or passphrase");
-        _recoveryKeyField->set_password(true);
-        _recoveryKeyField->set_on_changed(
-            [weakSelf](const std::string& k)
-            {
-                MainWindowController* s = weakSelf;
-                if (s && s->_recoveryShared)
-                {
-                    s->_recoveryShared->set_current_key(k);
-                }
-            });
-        _recoveryKeyField->set_on_submit(
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (s)
-                {
-                    [s _onRecoveryVerify];
-                }
-            });
-
         _mainAppSurface->set_on_layout(
             [weakSelf]
             {
@@ -3356,7 +3297,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     s->_roomTextArea->set_visible(false);
                     s->_topicTextArea->set_visible(false);
                     s->_roomSearchField->set_visible(false);
-                    s->_recoveryKeyField->set_visible(false);
                     if (s->_encPassphraseField)
                         s->_encPassphraseField->set_visible(false);
                     if (s->_encKeyField)
@@ -3391,14 +3331,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     s->_roomSearchField->set_rect(
                         app->room_search_field_rect());
-                }
-                // Recovery key field.
-                bool recoveryVisible = app->recovery_key_field_visible();
-                s->_recoveryKeyField->set_visible(recoveryVisible);
-                if (recoveryVisible)
-                {
-                    s->_recoveryKeyField->set_rect(
-                        app->recovery_key_field_rect());
                 }
                 // Encryption setup passphrase field.
                 if (s->_encPassphraseField && app->encryption_setup())
@@ -5020,25 +4952,17 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Save banner state for the outgoing account, then load for the incoming.
     if (old_idx >= 0 && old_idx < static_cast<int>(_shell->accounts_.size()))
     {
-        _shell->accounts_[old_idx]->recovery_banner_dismissed =
-            _shell->recovery_banner_dismissed_;
-        _shell->accounts_[old_idx]->recovery_key_chosen =
-            _shell->recovery_key_chosen_;
         _shell->accounts_[old_idx]->verification_banner_dismissed =
             _shell->verification_banner_dismissed_;
     }
     if (_mainApp)
     {
-        _mainApp->show_recovery_banner(false);
         _mainApp->show_verif_banner(false);
         _mainAppSurface->relayout();
     }
-    _shell->recovery_banner_dismissed_     = session->recovery_banner_dismissed;
-    _shell->recovery_key_chosen_           = session->recovery_key_chosen;
     _shell->verification_banner_dismissed_ = session->verification_banner_dismissed;
 
     _shell->handle_verification_state_ui_(!session->unverified);
-    [self _maybeShowRecoveryBanner];
 
     if (!_tray)
     {
@@ -5791,27 +5715,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             _verifShared->set_state(
                 tesseract::views::VerificationBanner::State::Prompt);
-            // Verification takes priority — hide recovery banner if it appeared
-            // before the verification state callback arrived (race on first sync).
-            // But if recovery is actively in progress (Verifying/Importing), let
-            // it finish rather than interrupting with the verification banner.
-            if (_recoveryShared && _recoveryShared->visible())
-            {
-                auto rs = _recoveryShared->state();
-                if (rs == tesseract::views::RecoveryBanner::State::Form ||
-                    rs == tesseract::views::RecoveryBanner::State::Failed)
-                {
-                    if (_shell->recovery_key_chosen_)
-                    {
-                        return;
-                    }
-                    _mainApp->show_recovery_banner(false);
-                }
-                else
-                {
-                    return;
-                }
-            }
             _mainApp->show_verif_banner(true);
             _mainAppSurface->relayout();
         }
@@ -5893,30 +5796,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress
 {
-    [self _maybeShowRecoveryBanner];
-
-    if (_mainApp && _recoveryShared && _recoveryShared->visible() &&
-        _recoveryShared->state() ==
-            tesseract::views::RecoveryBanner::State::Importing &&
-        progress.state == tesseract::BackupState::Downloading &&
-        progress.imported_keys > 0)
-    {
-        _recoveryShared->set_import_progress(progress.imported_keys);
-        if (_mainAppSurface)
-        {
-            _mainAppSurface->relayout();
-        }
-    }
-    if (progress.state == tesseract::BackupState::Enabled && _shell->client_ &&
-        !_shell->client_->needs_recovery() && _mainApp)
-    {
-        _mainApp->show_recovery_banner(false);
-        if (_mainAppSurface)
-        {
-            _mainAppSurface->relayout();
-        }
-        _shell->recovery_key_chosen_ = false;
-    }
+    // The old inline RecoveryBanner was removed; recovery now lives in the
+    // encryption-setup overlay (Recover mode). Backup progress no longer drives
+    // any banner state here.
+    (void)progress;
 }
 
 - (void)_relayoutRoomSurface
@@ -6007,142 +5890,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (_tray)
     {
         _tray->set_unread(hasUnread, hasHighlight);
-    }
-}
-
-- (void)_maybeShowRecoveryBanner
-{
-    if (_shell->encryption_setup_shown_)
-        return;
-    if (_shell->recovery_banner_dismissed_)
-    {
-        return;
-    }
-    if (!_shell->client_ || !_shell->client_->needs_recovery())
-    {
-        return;
-    }
-    if (!_mainApp || !_mainAppSurface)
-    {
-        return;
-    }
-    // Verification takes priority — don't show recovery banner while the
-    // verification banner is active. The "Use recovery key" link hands off.
-    if (_verifShared && _verifShared->visible())
-    {
-        return;
-    }
-    if (_recoveryShared && !_recoveryShared->visible())
-    {
-        {
-            _recoveryShared->set_state(
-                tesseract::views::RecoveryBanner::State::Form);
-            _recoveryShared->set_current_key("");
-        }
-        if (_recoveryKeyField)
-        {
-            _recoveryKeyField->set_text("");
-            _recoveryKeyField->set_enabled(true);
-        }
-        _mainApp->show_recovery_banner(true);
-        _mainAppSurface->relayout();
-    }
-}
-
-- (void)_onRecoveryVerify
-{
-    std::string key;
-    if (_recoveryKeyField)
-    {
-        key = _recoveryKeyField->text();
-    }
-    auto a = key.find_first_not_of(" \t\r\n");
-    auto b = key.find_last_not_of(" \t\r\n");
-    if (a == std::string::npos)
-    {
-        if (_recoveryShared)
-        {
-            _recoveryShared->set_state(
-                tesseract::views::RecoveryBanner::State::Failed);
-            _recoveryShared->set_failure_message(
-                "Please enter a recovery key or passphrase.");
-            if (_mainAppSurface)
-            {
-                _mainAppSurface->relayout();
-            }
-        }
-        return;
-    }
-    key = key.substr(a, b - a + 1);
-
-    if (_recoveryShared)
-    {
-        _recoveryShared->set_state(
-            tesseract::views::RecoveryBanner::State::Verifying);
-    }
-    if (_recoveryKeyField)
-    {
-        _recoveryKeyField->set_enabled(false);
-    }
-    if (_mainAppSurface)
-    {
-        _mainAppSurface->relayout();
-    }
-
-    __weak MainWindowController* weakSelf = self;
-    _shell->run_async_mut_(
-        [weakSelf, key, clientPtr = _shell->client_]()
-        {
-            auto res = clientPtr->recover(key);
-            bool ok = res.ok;
-            std::string msg = res.message;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return;
-                }
-                if (ok)
-                {
-                    if (s->_recoveryShared)
-                    {
-                        s->_recoveryShared->set_state(
-                            tesseract::views::RecoveryBanner::State::Importing);
-                    }
-                }
-                else
-                {
-                    if (s->_recoveryShared)
-                    {
-                        s->_recoveryShared->set_state(
-                            tesseract::views::RecoveryBanner::State::Failed);
-                        s->_recoveryShared->set_failure_message(msg);
-                    }
-                    if (s->_recoveryKeyField)
-                    {
-                        s->_recoveryKeyField->set_enabled(true);
-                        s->_recoveryKeyField->set_focused(true);
-                    }
-                }
-                if (s->_mainAppSurface)
-                {
-                    s->_mainAppSurface->relayout();
-                }
-            });
-        });
-}
-
-- (void)_onRecoveryDismiss
-{
-    _shell->recovery_banner_dismissed_ = true;
-    _shell->recovery_key_chosen_ = false;
-    if (_mainApp)
-    {
-        _mainApp->show_recovery_banner(false);
-        if (_mainAppSurface)
-        {
-            _mainAppSurface->relayout();
-        }
     }
 }
 

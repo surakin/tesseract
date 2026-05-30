@@ -76,8 +76,6 @@ set(_tk_sources
     views/ThreadListView.cpp
     views/ThreadView.h
     views/ThreadView.cpp
-    views/RecoveryBanner.h
-    views/RecoveryBanner.cpp
     views/VerificationBanner.h
     views/VerificationBanner.cpp
     views/RoomHeader.h

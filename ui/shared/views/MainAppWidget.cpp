@@ -41,10 +41,6 @@ MainAppWidget::MainAppWidget()
     user_info_ = add_child(std::move(ui));
 
     // Chat panel: banners (hidden by default).
-    auto rec = std::make_unique<RecoveryBanner>();
-    recovery_banner_ = add_child(std::move(rec));
-    recovery_banner_->set_visible(false);
-
     auto ver = std::make_unique<VerificationBanner>();
     verif_banner_ = add_child(std::move(ver));
     verif_banner_->set_visible(false);
@@ -127,15 +123,6 @@ void MainAppWidget::set_avatar_provider(
     std::function<const tk::Image*(const std::string& mxc_url)> provider)
 {
     avatar_provider_ = std::move(provider);
-}
-
-void MainAppWidget::show_recovery_banner(bool show)
-{
-    recovery_visible_ = show;
-    if (recovery_banner_)
-    {
-        recovery_banner_->set_visible(show);
-    }
 }
 
 void MainAppWidget::show_verif_banner(bool show)
@@ -264,21 +251,6 @@ tk::Rect MainAppWidget::room_search_field_rect() const
     return room_list_view_ ? room_list_view_->search_field_rect() : tk::Rect{};
 }
 
-bool MainAppWidget::recovery_key_field_visible() const
-{
-    return recovery_visible_ && recovery_banner_ &&
-           recovery_banner_->recovery_key_field_visible();
-}
-
-tk::Rect MainAppWidget::recovery_key_field_rect() const
-{
-    if (!recovery_visible_ || !recovery_banner_)
-    {
-        return {};
-    }
-    return recovery_banner_->recovery_key_field_rect();
-}
-
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size MainAppWidget::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -330,12 +302,6 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float chat_x = x + kSidebarW + kSepW;
     const float chat_w = w - kSidebarW - kSepW;
     float chat_y = y;
-
-    if (recovery_visible_)
-    {
-        recovery_banner_->arrange(ctx, {chat_x, chat_y, chat_w, kBannerH});
-        chat_y += kBannerH;
-    }
 
     if (verif_visible_)
     {
@@ -439,10 +405,6 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
                          pal.separator);
 
     // Chat panel.
-    if (recovery_visible_ && recovery_banner_)
-    {
-        recovery_banner_->paint(ctx);
-    }
     if (verif_visible_ && verif_banner_)
     {
         verif_banner_->paint(ctx);

@@ -358,13 +358,6 @@ protected:
     std::uint64_t last_imported_keys_ = 0;
     bool sync_progress_shown_ = false;
 
-    // ── Recovery ──────────────────────────────────────────────────────────────
-    bool recovery_banner_dismissed_ = false;
-    // Set when the user explicitly clicks "Use recovery key" in the
-    // VerificationBanner. Prevents a subsequent on_verification_state_changed
-    // callback from hiding the RecoveryBanner before the user enters their key.
-    bool recovery_key_chosen_ = false;
-
     // ── Encryption setup overlay ──────────────────────────────────────────────
     // True once show_encryption_setup_overlay_() has been called this session;
     // guards against raising the overlay a second time on subsequent sync ticks.

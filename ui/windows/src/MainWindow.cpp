@@ -566,28 +566,6 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
                 verif_shared_->set_state(
                     tesseract::views::VerificationBanner::State::Prompt);
             }
-            // Verification takes priority — hide the recovery banner if it
-            // appeared before the verification state callback arrived.
-            // But if recovery is actively in progress (Verifying/Importing), let
-            // it finish rather than interrupting with the verification banner.
-            if (recovery_banner_visible_ && recovery_shared_)
-            {
-                auto rs = recovery_shared_->state();
-                if (rs == tesseract::views::RecoveryBanner::State::Form ||
-                    rs == tesseract::views::RecoveryBanner::State::Failed)
-                {
-                    if (recovery_key_chosen_)
-                    {
-                        return;
-                    }
-                    main_app_->show_recovery_banner(false);
-                    recovery_banner_visible_ = false;
-                }
-                else
-                {
-                    return;
-                }
-            }
             main_app_->show_verif_banner(true);
             verif_banner_visible_ = true;
             if (main_app_surface_)
@@ -821,8 +799,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     }
 
     case WM_COMMAND:
-        // Compose bar Send / Emoji + recovery banner clicks go through
-        // the shared widgets' callbacks now — no WM_COMMAND wiring. The
+        // Compose bar Send / Emoji clicks go through the shared widgets'
+        // callbacks now — no WM_COMMAND wiring. The
         // emoji-picker search field is a NativeTextField overlay handled
         // by its set_on_changed lambda. Only the logout / add-account
         // items posted by show_user_context_menu_ remain.
@@ -861,13 +839,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_CTLCOLORLISTBOX:
     {
         // Theme any flat children that don't owner-draw themselves: status
-        // colours on the EDIT controls + recovery STATIC labels.
+        // colours on the EDIT controls.
         const auto& pal = theme::palette();
         HDC dc = reinterpret_cast<HDC>(wParam);
         HWND ctl = reinterpret_cast<HWND>(lParam);
         SetBkMode(dc, TRANSPARENT);
-        // The recovery banner and compose bar are now tk::win32::Surfaces —
-        // they paint their own backgrounds; no WM_CTLCOLOR tinting needed.
+        // The compose bar is now a tk::win32::Surface — it paints its own
+        // background; no WM_CTLCOLOR tinting needed.
         // EDIT controls → compose-card bg.
         if (msg == WM_CTLCOLOREDIT)
         {
@@ -924,13 +902,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     {
         auto* p = reinterpret_cast<JumpDonePayload*>(lParam);
         self->on_tesseract_jump_done(p);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_RECOVER_DONE:
-    {
-        auto* p = reinterpret_cast<std::wstring*>(lParam);
-        self->on_recover_done(wParam != 0, std::move(*p));
         delete p;
         return 0;
     }
@@ -1273,7 +1244,6 @@ void MainWindow::on_create(HWND hwnd)
         // Wire borrowed sub-view pointers.
         room_list_view_ = main_app_->room_list_view();
         room_view_ = main_app_->room_view();
-        recovery_shared_ = main_app_->recovery_banner();
         verif_shared_ = main_app_->verif_banner();
         img_viewer_ = main_app_->image_viewer();
         vid_viewer_ = main_app_->video_viewer();
@@ -2404,33 +2374,6 @@ void MainWindow::on_create(HWND hwnd)
             });
         topic_text_area_->set_visible(false);
 
-        recovery_key_field_ = main_app_surface_->host().make_text_field();
-        recovery_key_field_->set_placeholder("Recovery key or passphrase");
-        recovery_key_field_->set_password(true);
-        recovery_key_field_->set_on_changed(
-            [this](const std::string& k)
-            {
-                if (recovery_shared_)
-                {
-                    recovery_shared_->set_current_key(k);
-                }
-            });
-        recovery_key_field_->set_on_submit(
-            [this]
-            {
-                on_recovery_verify_clicked();
-            });
-
-        // ── RecoveryBanner callbacks ─────────────────────────────────────────
-        recovery_shared_->on_verify = [this](const std::string& /*key*/)
-        {
-            on_recovery_verify_clicked();
-        };
-        recovery_shared_->on_dismiss = [this]
-        {
-            on_recovery_dismiss_clicked();
-        };
-
         // ── VerificationBanner callbacks ─────────────────────────────────────
         verif_shared_->on_verify = [this]
         {
@@ -2500,20 +2443,11 @@ void MainWindow::on_create(HWND hwnd)
         {
             main_app_->show_verif_banner(false);
             verif_banner_visible_ = false;
-            recovery_key_chosen_ = true;
-            if (!recovery_banner_dismissed_ && main_app_ && recovery_shared_)
-            {
-                recovery_shared_->set_state(
-                    tesseract::views::RecoveryBanner::State::Form);
-                recovery_shared_->set_current_key("");
-                if (recovery_key_field_)
-                {
-                    recovery_key_field_->set_text("");
-                    recovery_key_field_->set_enabled(true);
-                }
-                main_app_->show_recovery_banner(true);
-                recovery_banner_visible_ = true;
-            }
+            // The recovery-key entry path now lives in the encryption-setup
+            // overlay (Recover mode); the old inline recovery-key banner was
+            // removed.
+            show_encryption_setup_overlay_(
+                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
             if (main_app_surface_)
             {
                 main_app_surface_->relayout();
@@ -2779,18 +2713,6 @@ void MainWindow::on_create(HWND hwnd)
                         r.w -= 4;
                         r.h -= 4;
                         room_search_field_->set_rect(r);
-                    }
-                }
-
-                // Recovery key field.
-                if (recovery_key_field_)
-                {
-                    bool rec = !hide && main_app_->recovery_key_field_visible();
-                    recovery_key_field_->set_visible(rec);
-                    if (rec)
-                    {
-                        recovery_key_field_->set_rect(
-                            main_app_->recovery_key_field_rect());
                     }
                 }
 
@@ -3655,7 +3577,6 @@ void MainWindow::on_auth_error(const std::string& user_id, bool soft_logout)
                 populate_user_strip();
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
                              reinterpret_cast<LPARAM>(L"Reconnected"));
-                maybe_show_recovery_banner();
             }
             accounts_[idx]->client->start_sync(accounts_[idx]->bridge.get());
             return;
@@ -5133,217 +5054,11 @@ void MainWindow::clear_messages()
     }
 }
 
-// ---------------------------------------------------------------------------
-// Recovery banner (Step 6) — inline key entry, no modal dialog.
-// ---------------------------------------------------------------------------
-
-namespace
+void MainWindow::on_backup_progress(tesseract::BackupProgress* progress)
 {
-std::wstring widen_utf8(const std::string& s)
-{
-    if (s.empty())
-    {
-        return {};
-    }
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                static_cast<int>(s.size()), nullptr, 0);
-    std::wstring out(static_cast<size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), n);
-    return out;
-}
-
-} // namespace
-
-void MainWindow::maybe_show_recovery_banner()
-{
-    if (encryption_setup_shown_)
-    {
-        return;
-    }
     if (!client_)
     {
         return;
-    }
-    if (recovery_banner_dismissed_)
-    {
-        return;
-    }
-    if (!client_->needs_recovery())
-    {
-        return;
-    }
-    if (recovery_banner_visible_)
-    {
-        return;
-    }
-    if (verif_banner_visible_)
-    {
-        return;
-    }
-    if (!main_app_)
-    {
-        return;
-    }
-
-    if (recovery_shared_)
-    {
-        recovery_shared_->set_state(
-            tesseract::views::RecoveryBanner::State::Form);
-        recovery_shared_->set_current_key("");
-    }
-    if (recovery_key_field_)
-    {
-        recovery_key_field_->set_text("");
-        recovery_key_field_->set_enabled(true);
-    }
-    main_app_->show_recovery_banner(true);
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-    recovery_banner_visible_ = true;
-    recovery_in_flight_ = false;
-}
-
-void MainWindow::on_recovery_verify_clicked()
-{
-    std::string key;
-    if (recovery_key_field_)
-    {
-        key = recovery_key_field_->text();
-    }
-    auto a = key.find_first_not_of(" \t\r\n");
-    auto b = key.find_last_not_of(" \t\r\n");
-    if (a == std::string::npos)
-    {
-        if (recovery_shared_)
-        {
-            recovery_shared_->set_state(
-                tesseract::views::RecoveryBanner::State::Failed);
-            recovery_shared_->set_failure_message(
-                "Please enter a recovery key or passphrase.");
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        }
-        return;
-    }
-    key = key.substr(a, b - a + 1);
-
-    if (recovery_shared_)
-    {
-        recovery_shared_->set_state(
-            tesseract::views::RecoveryBanner::State::Verifying);
-    }
-    if (recovery_key_field_)
-    {
-        recovery_key_field_->set_enabled(false);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-    recovery_in_flight_ = true;
-
-    HWND target = hwnd_;
-    run_async_mut_(
-        [this, target, key]()
-        {
-            auto res = client_->recover(key);
-            WPARAM ok = res.ok ? 1 : 0;
-            auto* p = new std::wstring(widen_utf8(res.message));
-            PostMessageW(target, WM_TESSERACT_RECOVER_DONE, ok,
-                         reinterpret_cast<LPARAM>(p));
-        });
-}
-
-void MainWindow::on_recover_done(bool ok, std::wstring msg)
-{
-    if (ok)
-    {
-        if (recovery_shared_)
-        {
-            recovery_shared_->set_state(
-                tesseract::views::RecoveryBanner::State::Importing);
-        }
-        if (main_app_surface_)
-        {
-            main_app_surface_->relayout();
-        }
-        return;
-    }
-    if (recovery_shared_)
-    {
-        recovery_shared_->set_state(
-            tesseract::views::RecoveryBanner::State::Failed);
-        // wstring → utf8 for the failure detail.
-        int n = WideCharToMultiByte(CP_UTF8, 0, msg.data(),
-                                    static_cast<int>(msg.size()), nullptr, 0,
-                                    nullptr, nullptr);
-        std::string utf8(static_cast<size_t>(n), '\0');
-        WideCharToMultiByte(CP_UTF8, 0, msg.data(),
-                            static_cast<int>(msg.size()), utf8.data(), n,
-                            nullptr, nullptr);
-        recovery_shared_->set_failure_message(utf8);
-    }
-    if (recovery_key_field_)
-    {
-        recovery_key_field_->set_enabled(true);
-        recovery_key_field_->set_focused(true);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-    recovery_in_flight_ = false;
-}
-
-void MainWindow::on_recovery_dismiss_clicked()
-{
-    recovery_banner_dismissed_ = true;
-    recovery_key_chosen_ = false;
-    if (main_app_)
-    {
-        main_app_->show_recovery_banner(false);
-    }
-    recovery_banner_visible_ = false;
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::on_backup_progress(tesseract::BackupProgress* progress)
-{
-    maybe_show_recovery_banner();
-
-    if (recovery_banner_visible_ && recovery_shared_ &&
-        recovery_shared_->state() ==
-            tesseract::views::RecoveryBanner::State::Importing &&
-        progress->state == tesseract::BackupState::Downloading &&
-        progress->imported_keys > 0)
-    {
-        recovery_shared_->set_import_progress(progress->imported_keys);
-        if (main_app_surface_)
-        {
-            main_app_surface_->relayout();
-        }
-    }
-    if (progress->state == tesseract::BackupState::Enabled &&
-        !client_->needs_recovery())
-    {
-        if (main_app_)
-        {
-            main_app_->show_recovery_banner(false);
-        }
-        recovery_banner_visible_ = false;
-        recovery_key_chosen_ = false;
-        if (main_app_surface_)
-        {
-            main_app_surface_->relayout();
-        }
     }
 
     last_backup_state_ = progress->state;
@@ -5525,18 +5240,10 @@ void MainWindow::switch_active_account(int new_idx)
     // Save banner state for the outgoing account, then load for the incoming.
     if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
     {
-        accounts_[old_idx]->recovery_banner_dismissed      = recovery_banner_dismissed_;
-        accounts_[old_idx]->recovery_key_chosen            = recovery_key_chosen_;
-        accounts_[old_idx]->verification_banner_dismissed  = verification_banner_dismissed_;
+        accounts_[old_idx]->verification_banner_dismissed =
+            verification_banner_dismissed_;
     }
-    recovery_banner_visible_ = false;
-    recovery_banner_dismissed_     = sess->recovery_banner_dismissed;
-    recovery_key_chosen_           = sess->recovery_key_chosen;
     verification_banner_dismissed_ = sess->verification_banner_dismissed;
-    if (main_app_)
-    {
-        main_app_->show_recovery_banner(false);
-    }
     if (main_app_)
     {
         main_app_->show_verif_banner(false);
@@ -5559,7 +5266,6 @@ void MainWindow::switch_active_account(int new_idx)
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Connected"));
     handle_verification_state_ui_(!sess->unverified);
-    maybe_show_recovery_banner();
 
     if (!tray_)
     {
@@ -5702,12 +5408,8 @@ void MainWindow::logout_active_account()
     if (main_app_)
     {
         main_app_->clear_content();
-        main_app_->show_recovery_banner(false);
         main_app_->show_verif_banner(false);
     }
-    recovery_banner_visible_ = false;
-    recovery_banner_dismissed_ = false;
-    recovery_key_chosen_ = false;
     verification_banner_dismissed_ = false;
     verif_banner_visible_ = false;
     if (main_app_surface_)

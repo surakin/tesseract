@@ -65,7 +65,9 @@ constexpr UINT WM_TESSERACT_TIMELINE_RESET = WM_APP + 4;
 constexpr UINT WM_TESSERACT_RECONNECT = WM_APP + 5;
 constexpr UINT WM_TESSERACT_AUTH_ERROR = WM_APP + 6;
 constexpr UINT WM_TESSERACT_BACKUP_PROGRESS = WM_APP + 7;
-constexpr UINT WM_TESSERACT_RECOVER_DONE = WM_APP + 8;
+// WM_APP + 8 was the recover-done message; the inline key-entry banner that
+// consumed it was removed (key recovery now lives in the encryption-setup
+// overlay).
 constexpr UINT WM_TESSERACT_MESSAGE_UPDATED = WM_APP + 9;
 constexpr UINT WM_TESSERACT_PAGINATE_DONE = WM_APP + 10;
 constexpr UINT WM_TESSERACT_MESSAGE_REMOVED = WM_APP + 11;
@@ -236,15 +238,10 @@ private:
     void on_login_cancelled();
     void rebuild_account_picker();
     void open_account_picker();
-    // last_room_list_state_, last_backup_state_, last_imported_keys_,
-    // sync_progress_shown_, and recovery_banner_dismissed_ are inherited
-    // from tesseract::ShellBase.
+    // last_room_list_state_, last_backup_state_, last_imported_keys_, and
+    // sync_progress_shown_ are inherited from tesseract::ShellBase.
     UINT_PTR sync_status_debounce_timer_id_ = 0;
     static constexpr UINT_PTR kSyncStatusDebounceTimerId = 0xA1B2;
-    void maybe_show_recovery_banner();
-    void on_recovery_verify_clicked();
-    void on_recovery_dismiss_clicked();
-    void on_recover_done(bool ok, std::wstring msg);
     void populate_user_strip();
     // Resolve any media bytes the row references and decode them into
     // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
@@ -342,7 +339,6 @@ private:
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
-    tesseract::views::RecoveryBanner* recovery_shared_ = nullptr;
     tesseract::views::VerificationBanner* verif_shared_ = nullptr;
     tesseract::views::ImageViewerOverlay* img_viewer_ = nullptr;
     tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;
@@ -351,7 +347,6 @@ private:
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
-    std::unique_ptr<tk::NativeTextField> recovery_key_field_;
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
 
@@ -427,10 +422,6 @@ private:
         0; // incremented on each open; guards stale callbacks
 
     HWND hStatus_ = nullptr;
-
-    bool recovery_banner_visible_ = false;
-    // recovery_banner_dismissed_ is inherited from tesseract::ShellBase.
-    bool recovery_in_flight_ = false;
 
     bool verif_banner_visible_ = false;
 

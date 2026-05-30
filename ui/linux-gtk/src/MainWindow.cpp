@@ -184,23 +184,6 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
         active_verification_flow_id_.clear();
         verif_shared_->set_state(
             tesseract::views::VerificationBanner::State::Prompt);
-        if (recovery_shared_ && main_app_->recovery_banner()->visible())
-        {
-            auto rs = recovery_shared_->state();
-            if (rs == tesseract::views::RecoveryBanner::State::Form ||
-                rs == tesseract::views::RecoveryBanner::State::Failed)
-            {
-                if (recovery_key_chosen_)
-                {
-                    return;
-                }
-                main_app_->show_recovery_banner(false);
-            }
-            else
-            {
-                return;
-            }
-        }
         main_app_->show_verif_banner(true);
         main_app_surface_->relayout();
     }
@@ -417,7 +400,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         main_app_ = main_app_owner.get();
         room_list_view_ = main_app_->room_list_view();
         room_view_ = main_app_->room_view();
-        recovery_shared_ = main_app_->recovery_banner();
         verif_shared_ = main_app_->verif_banner();
         img_viewer_ = main_app_->image_viewer();
         vid_viewer_ = main_app_->video_viewer();
@@ -1772,16 +1754,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     });
             });
 
-        // Recovery banner callbacks.
-        recovery_shared_->on_verify = [this](const std::string& /*key*/)
-        {
-            on_recovery_verify_clicked_(nullptr, this);
-        };
-        recovery_shared_->on_dismiss = [this]
-        {
-            on_recovery_dismiss_clicked_(nullptr, this);
-        };
-
         // Verification banner callbacks.
         verif_shared_->on_verify = [this]
         {
@@ -1840,20 +1812,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         verif_shared_->on_use_recovery_key = [this]
         {
             main_app_->show_verif_banner(false);
-            recovery_key_chosen_ = true;
-            if (!recovery_banner_dismissed_ && main_app_ && recovery_shared_)
-            {
-                recovery_shared_->set_state(
-                    tesseract::views::RecoveryBanner::State::Form);
-                recovery_shared_->set_current_key("");
-                if (recovery_key_field_)
-                {
-                    recovery_key_field_->set_text("");
-                    recovery_key_field_->set_enabled(true);
-                }
-                main_app_->show_recovery_banner(true);
-            }
-            main_app_surface_->relayout();
+            // The recovery-key entry path now lives in the encryption-setup
+            // overlay (Recover mode); the old inline RecoveryBanner was removed.
+            show_encryption_setup_overlay_(
+                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
         };
 
         // Room search field overlay.
@@ -1875,24 +1837,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                               }
                               refresh_room_list();
                           });
-            });
-
-        // Recovery key field overlay.
-        recovery_key_field_ = main_app_surface_->host().make_text_field();
-        recovery_key_field_->set_placeholder(_("Recovery key or passphrase"));
-        recovery_key_field_->set_password(true);
-        recovery_key_field_->set_on_changed(
-            [this](const std::string& k)
-            {
-                if (recovery_shared_)
-                {
-                    recovery_shared_->set_current_key(k);
-                }
-            });
-        recovery_key_field_->set_on_submit(
-            [this]
-            {
-                on_recovery_verify_clicked_(nullptr, this);
             });
 
         // Unified layout callback — positions all 3 native overlays.
@@ -1934,17 +1878,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                         if (!was_visible)
                             topic_text_area_->set_text(
                                 main_app_->room_view()->topic_edit_initial_text());
-                    }
-                }
-
-                if (recovery_key_field_)
-                {
-                    bool rec_visible = main_app_->recovery_key_field_visible();
-                    recovery_key_field_->set_visible(rec_visible);
-                    if (rec_visible)
-                    {
-                        recovery_key_field_->set_rect(
-                            main_app_->recovery_key_field_rect());
                     }
                 }
 
@@ -2545,7 +2478,6 @@ void MainWindow::do_login()
                                                  my_display_name_);
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
-            maybe_show_recovery_banner();
             start_tray_if_needed_();
             return;
         }
@@ -2773,7 +2705,6 @@ void MainWindow::on_login_succeeded()
                                          my_display_name_);
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
-    maybe_show_recovery_banner();
     start_tray_if_needed_();
 }
 
@@ -3370,7 +3301,6 @@ void MainWindow::handle_auth_error(bool soft_logout)
                 populate_user_strip();
                 client_->start_sync(event_handler_);
                 gtk_label_set_text(GTK_LABEL(status_bar_), _("Reconnected"));
-                maybe_show_recovery_banner();
                 return;
             }
         }
@@ -4622,159 +4552,6 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
 }
 
 // ---------------------------------------------------------------------------
-
-void MainWindow::maybe_show_recovery_banner()
-{
-    if (encryption_setup_shown_)
-        return;
-    if (recovery_banner_dismissed_)
-    {
-        return;
-    }
-    if (!client_->needs_recovery())
-    {
-        return;
-    }
-    if (!main_app_)
-    {
-        return;
-    }
-    // Verification takes priority — don't show recovery banner while the
-    // verification banner is active. The "Use recovery key" link hands off.
-    if (main_app_->verif_banner()->visible())
-    {
-        return;
-    }
-    if (!main_app_->recovery_banner()->visible())
-    {
-        if (recovery_shared_)
-        {
-            recovery_shared_->set_state(
-                tesseract::views::RecoveryBanner::State::Form);
-            recovery_shared_->set_current_key("");
-        }
-        if (recovery_key_field_)
-        {
-            recovery_key_field_->set_text("");
-            recovery_key_field_->set_enabled(true);
-        }
-        main_app_->show_recovery_banner(true);
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data)
-{
-    auto* self = static_cast<MainWindow*>(user_data);
-    std::string key;
-    if (self->recovery_key_field_)
-    {
-        key = self->recovery_key_field_->text();
-    }
-    auto a = key.find_first_not_of(" \t\r\n");
-    auto b = key.find_last_not_of(" \t\r\n");
-    if (a == std::string::npos)
-    {
-        if (self->recovery_shared_)
-        {
-            self->recovery_shared_->set_state(
-                tesseract::views::RecoveryBanner::State::Failed);
-            self->recovery_shared_->set_failure_message(
-                _("Please enter a recovery key or passphrase."));
-            if (self->main_app_surface_)
-            {
-                self->main_app_surface_->relayout();
-            }
-        }
-        return;
-    }
-    key = key.substr(a, b - a + 1);
-
-    if (self->recovery_shared_)
-    {
-        self->recovery_shared_->set_state(
-            tesseract::views::RecoveryBanner::State::Verifying);
-    }
-    if (self->recovery_key_field_)
-    {
-        self->recovery_key_field_->set_enabled(false);
-    }
-    if (self->main_app_surface_)
-    {
-        self->main_app_surface_->relayout();
-    }
-
-    struct RecoverDone
-    {
-        MainWindow* window;
-        bool ok;
-        std::string message;
-        std::weak_ptr<bool> alive;
-    };
-    self->run_async_mut_(
-        [self, key]()
-        {
-            auto res = self->client_->recover(key);
-            auto* p = new RecoverDone{self, res.ok, res.message, self->alive_};
-            g_idle_add(
-                [](gpointer data) -> gboolean
-                {
-                    auto* d = static_cast<RecoverDone*>(data);
-                    if (auto a = d->alive.lock(); a && *a)
-                    {
-                        if (d->ok)
-                        {
-                            if (d->window->recovery_shared_)
-                            {
-                                d->window->recovery_shared_->set_state(
-                                    tesseract::views::RecoveryBanner::State::
-                                        Importing);
-                            }
-                        }
-                        else
-                        {
-                            if (d->window->recovery_shared_)
-                            {
-                                d->window->recovery_shared_->set_state(
-                                    tesseract::views::RecoveryBanner::State::
-                                        Failed);
-                                d->window->recovery_shared_->set_failure_message(
-                                    d->message);
-                            }
-                            if (d->window->recovery_key_field_)
-                            {
-                                d->window->recovery_key_field_->set_enabled(true);
-                                d->window->recovery_key_field_->set_focused(true);
-                            }
-                        }
-                        if (d->window->main_app_surface_)
-                        {
-                            d->window->main_app_surface_->relayout();
-                        }
-                    }
-                    delete d;
-                    return G_SOURCE_REMOVE;
-                },
-                p);
-        });
-}
-
-void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data)
-{
-    auto* self = static_cast<MainWindow*>(user_data);
-    self->recovery_banner_dismissed_ = true;
-    self->recovery_key_chosen_ = false;
-    if (self->main_app_)
-    {
-        self->main_app_->show_recovery_banner(false);
-        if (self->main_app_surface_)
-        {
-            self->main_app_surface_->relayout();
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // EncryptionSetupOverlay wiring (GTK4 shell)
 // ---------------------------------------------------------------------------
 
@@ -4930,26 +4707,8 @@ void MainWindow::refresh_pickers_packs_()
 
 void MainWindow::push_backup_progress(tesseract::BackupProgress progress)
 {
-    maybe_show_recovery_banner();
-
-    if (main_app_ && recovery_shared_ &&
-        main_app_->recovery_banner()->visible() &&
-        recovery_shared_->state() ==
-            tesseract::views::RecoveryBanner::State::Importing &&
-        progress.state == tesseract::BackupState::Downloading &&
-        progress.imported_keys > 0)
-    {
-        recovery_shared_->set_import_progress(progress.imported_keys);
-        main_app_surface_->relayout();
-    }
-    if (progress.state == tesseract::BackupState::Enabled &&
-        !client_->needs_recovery() && main_app_)
-    {
-        main_app_->show_recovery_banner(false);
-        main_app_surface_->relayout();
-        recovery_key_chosen_ = false;
-    }
-
+    // Key-download progress is surfaced by refresh_sync_status()
+    // ("Downloading encryption keys (N)…").
     last_backup_state_ = progress.state;
     last_imported_keys_ = progress.imported_keys;
     refresh_sync_status();
@@ -6124,26 +5883,20 @@ void MainWindow::switch_active_account(int new_idx)
     // Save banner state for the outgoing account, then load for the incoming.
     if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
     {
-        accounts_[old_idx]->recovery_banner_dismissed     = recovery_banner_dismissed_;
-        accounts_[old_idx]->recovery_key_chosen           = recovery_key_chosen_;
         accounts_[old_idx]->verification_banner_dismissed = verification_banner_dismissed_;
     }
     if (main_app_)
     {
-        main_app_->show_recovery_banner(false);
         main_app_->show_verif_banner(false);
     }
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
     }
-    recovery_banner_dismissed_     = sess.recovery_banner_dismissed;
-    recovery_key_chosen_           = sess.recovery_key_chosen;
     verification_banner_dismissed_ = sess.verification_banner_dismissed;
 
     rebuild_account_picker();
     handle_verification_state_ui_(!sess.unverified);
-    maybe_show_recovery_banner();
 }
 
 void MainWindow::begin_add_account()
@@ -6223,14 +5976,11 @@ void MainWindow::logout_active_account()
     if (main_app_)
     {
         main_app_->clear_content();
-        main_app_->show_recovery_banner(false);
         if (main_app_surface_)
         {
             main_app_surface_->relayout();
         }
     }
-    recovery_banner_dismissed_ = false;
-    recovery_key_chosen_ = false;
     verification_banner_dismissed_ = false;
 
     gtk_label_set_text(
