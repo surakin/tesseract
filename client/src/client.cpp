@@ -39,7 +39,8 @@ struct Client::Impl
     // acquire this lock and may run concurrently: fetch_*, get_url_preview,
     // get_room_summary, get_room_members, space_children,
     // get_room_notification_mode, can_pin_in_room, needs_recovery,
-    // backup_state, list_pack_images, list_devices, get_sas_emojis.
+    // backup_state, recovery_state, list_pack_images, list_devices,
+    // get_sas_emojis.
     mutable std::mutex ffi_mu;
 
     explicit Impl() : ffi(tesseract_ffi::client_create())
@@ -1366,9 +1367,9 @@ uint8_t Client::recovery_state() const
 
 Result Client::enable_recovery(const std::string& passphrase)
 {
-    MUT_FFI;
     if (!impl_)
         return {false, "not logged in"};
+    MUT_FFI;
     return from_ffi(impl_->ffi->enable_recovery(passphrase));
 }
 

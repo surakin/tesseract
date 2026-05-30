@@ -592,7 +592,8 @@ pub mod ffi {
         /// Step 6 is non-fatal — the SDK will retry backup automatically.
         /// When step==4, `recovery_key` holds the generated key (empty if
         /// passphrase mode was chosen). When step==3, `backed_up`/`total`
-        /// carry the running backup count.
+        /// carry the running backup count. When step==5, `recovery_key` holds
+        /// the error description.
         fn on_enable_recovery_progress(
             self: &EventHandlerBridge,
             step: u8,
