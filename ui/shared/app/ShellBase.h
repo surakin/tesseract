@@ -310,6 +310,12 @@ protected:
     std::unordered_set<std::string> emoji_fetches_in_flight_;
     std::unordered_set<std::string> tile_fetches_in_flight_;
     std::unordered_set<std::string> tile_fetch_failed_;
+    // Keys for which on_media_bytes_ready_ received non-empty bytes but the
+    // platform decoder rejected them (e.g. unsupported format, corrupt data).
+    // Guards ensure_media_image_ / ensure_media_thumbnail_ / ensure_*_avatar_
+    // from re-queuing fetches that will always fail. Cleared on logout/cache
+    // wipe so a re-login or server fix can recover.
+    std::unordered_set<std::string> media_decode_failed_;
 
     // DM creation in-flight guard. Keyed by target user_id.
     std::unordered_set<std::string> dm_in_flight_user_ids_;

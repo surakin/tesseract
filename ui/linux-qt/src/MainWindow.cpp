@@ -2929,15 +2929,33 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             return;
         }
-        QImage img;
-        if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                              static_cast<int>(bytes.size())))
+        QByteArray qb_av(reinterpret_cast<const char*>(bytes.data()),
+                         static_cast<int>(bytes.size()));
+        QBuffer buf_av(&qb_av);
+        buf_av.open(QIODevice::ReadOnly);
+        QImageReader reader_av(&buf_av);
+        reader_av.setAutoTransform(true);
+        const QSize native_av = reader_av.size();
+        if (native_av.isValid() &&
+            (native_av.width() > kAvatarCacheSize ||
+             native_av.height() > kAvatarCacheSize))
         {
+            reader_av.setScaledSize(
+                native_av.scaled(kAvatarCacheSize, kAvatarCacheSize,
+                                 Qt::KeepAspectRatio));
+        }
+        QImage img = reader_av.read();
+        if (img.isNull())
+        {
+            media_decode_failed_.insert(cache_key);
             return;
         }
-        QImage scaled = img.scaled(kAvatarCacheSize, kAvatarCacheSize, Qt::KeepAspectRatio,
-                                   Qt::SmoothTransformation);
-        thumbnail_cache_.store(cache_key, tk::qt6::make_image(std::move(scaled)));
+        if (img.width() > kAvatarCacheSize || img.height() > kAvatarCacheSize)
+        {
+            img = img.scaled(kAvatarCacheSize, kAvatarCacheSize,
+                             Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        }
+        thumbnail_cache_.store(cache_key, tk::qt6::make_image(std::move(img)));
         if (mainAppSurface_)
         {
             mainAppSurface_->update();
@@ -3015,6 +3033,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     }
     else
     {
+        media_decode_failed_.insert(cache_key);
         return;
     }
     if (mainApp_)
@@ -3073,6 +3092,18 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
     QImageReader reader(&buf);
     reader.setAutoTransform(true);
 
+    // Pre-scale large images to avoid Qt's 256 MB allocation limit. A raw
+    // Open Graph image can easily be 4K+ RGBA (≥33 MB) and some exceed 256 MB.
+    // setScaledSize() makes the codec decode directly to the target size without
+    // ever allocating the oversized intermediate buffer.
+    const QSize native_size = reader.size();
+    if (native_size.isValid() &&
+        (native_size.width() > max_w || native_size.height() > max_h))
+    {
+        reader.setScaledSize(
+            native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
+    }
+
     if (reader.supportsAnimation() && reader.imageCount() > 1)
     {
         QImage frame;
@@ -3087,9 +3118,13 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
             {
                 delay = 20;
             }
-            QImage scaled = frame.scaled(max_w, max_h, Qt::KeepAspectRatio,
-                                         Qt::SmoothTransformation);
-            d.frames.push_back(tk::qt6::make_image(std::move(scaled)));
+            // Safety clamp — no-op when setScaledSize already handled it.
+            if (frame.width() > max_w || frame.height() > max_h)
+            {
+                frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio,
+                                     Qt::SmoothTransformation);
+            }
+            d.frames.push_back(tk::qt6::make_image(std::move(frame)));
             d.delays_ms.push_back(delay);
         }
         if (!d.frames.empty())
@@ -3097,17 +3132,33 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
             return d;
         }
         d.delays_ms.clear();
-        buf.seek(0);
     }
-    QImage img;
-    if (!img.loadFromData(reinterpret_cast<const uchar*>(qb.constData()),
-                          qb.size()))
+    // Still-image path: use a fresh reader so the animation-check state does
+    // not interfere. setScaledSize is applied here too to guard against the
+    // 256 MB limit on the still decode.
     {
-        return d;
+        QBuffer still_buf(&qb);
+        still_buf.open(QIODevice::ReadOnly);
+        QImageReader still_reader(&still_buf);
+        still_reader.setAutoTransform(true);
+        const QSize native = still_reader.size();
+        if (native.isValid() &&
+            (native.width() > max_w || native.height() > max_h))
+        {
+            still_reader.setScaledSize(
+                native.scaled(max_w, max_h, Qt::KeepAspectRatio));
+        }
+        QImage img = still_reader.read();
+        if (img.isNull())
+            return d;
+        // Safety clamp if the format plugin ignored setScaledSize.
+        if (img.width() > max_w || img.height() > max_h)
+        {
+            img = img.scaled(max_w, max_h, Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+        }
+        d.still = tk::qt6::make_image(std::move(img));
     }
-    QImage scaled =
-        img.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    d.still = tk::qt6::make_image(std::move(scaled));
     return d;
 }
 

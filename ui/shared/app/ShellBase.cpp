@@ -119,7 +119,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     // media_fetches_in_flight_ without synchronization.
     const bool use_room_endpoint = !r.avatar_url.empty();
     const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
-    if (mxc.empty())
+    if (mxc.empty() || media_decode_failed_.count(mxc))
     {
         return;
     }
@@ -173,7 +173,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 
 void ShellBase::ensure_user_avatar_(const std::string& mxc)
 {
-    if (mxc.empty())
+    if (mxc.empty() || media_decode_failed_.count(mxc))
     {
         return;
     }
@@ -218,7 +218,8 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
 void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                     int /*max_h*/)
 {
-    if (url.empty() || image_cache_.contains(url) || anim_cache_.has(url))
+    if (url.empty() || image_cache_.contains(url) || anim_cache_.has(url) ||
+        media_decode_failed_.count(url))
     {
         return;
     }
@@ -252,7 +253,8 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
                                         bool animated)
 {
     if (url.empty() || image_cache_.contains(url) ||
-        thumbnail_cache_.contains(url) || anim_cache_.has(url))
+        thumbnail_cache_.contains(url) || anim_cache_.has(url) ||
+        media_decode_failed_.count(url))
     {
         return;
     }
@@ -3028,6 +3030,7 @@ void ShellBase::clear_all_caches_(
             thumbnail_cache_.clear();
             image_cache_.clear();
             anim_cache_ = tk::AnimImageCache{};
+            media_decode_failed_.clear();
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());
             restart_sdk_();
