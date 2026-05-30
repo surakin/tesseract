@@ -64,6 +64,52 @@ impl ClientFfi {
         0
     }
 
+    /// Whether a cross-signing identity already exists for our own user.
+    /// Read from the local crypto store only (no network request — see
+    /// `Encryption::get_user_identity`). Lets the UI distinguish a truly fresh
+    /// account (no identity → safe to bootstrap a new one) from one where
+    /// cross-signing was set up on another device and this one can't bootstrap
+    /// over the top — it must be verified against the existing identity.
+    #[cfg(not(test))]
+    pub fn own_identity_exists(&self) -> bool {
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        self.rt.block_on(async move {
+            let Some(uid) = client.user_id().map(|u| u.to_owned()) else {
+                return false;
+            };
+            matches!(
+                client.encryption().get_user_identity(&uid).await,
+                Ok(Some(_))
+            )
+        })
+    }
+
+    #[cfg(test)]
+    pub fn own_identity_exists(&self) -> bool {
+        false
+    }
+
+    /// Whether this device is currently cross-signed / verified. Synchronous
+    /// local read of the matrix-sdk verification state.
+    #[cfg(not(test))]
+    pub fn device_verified(&self) -> bool {
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        use matrix_sdk::encryption::VerificationState;
+        matches!(
+            client.encryption().verification_state().next_now(),
+            VerificationState::Verified
+        )
+    }
+
+    #[cfg(test)]
+    pub fn device_verified(&self) -> bool {
+        false
+    }
+
     /// Unlock the server-side secret storage with the supplied recovery key
     /// (or passphrase), importing the cross-signing private keys and the
     /// backup decryption key into this device. The actual backup download
@@ -84,7 +130,19 @@ impl ClientFfi {
             .rt
             .block_on(async move { client.encryption().recovery().recover(&key).await })
         {
-            Ok(()) => ok(""),
+            Ok(()) => {
+                // Unlike enable_recovery(), recover() has no progress stream, so
+                // drive the encryption-setup overlay to its terminal Done step
+                // explicitly. Without this the overlay sits on the Progress
+                // spinner forever after a successful key import (the shells only
+                // wire the error branch). step=4 maps to EnableProgress::Done.
+                if let Some(h) = self.handler.as_ref() {
+                    if let Ok(g) = h.lock() {
+                        g.on_enable_recovery_progress(4, "", 0, 0);
+                    }
+                }
+                ok("")
+            }
             Err(RecoveryError::SecretStorage(SecretStorageError::MissingKeyInfo { .. })) => err(
                 "No recovery key is configured for this account. \
                  Please verify this device using another signed-in device instead.",
@@ -105,7 +163,7 @@ impl ClientFfi {
     /// Progress is reported via `on_enable_recovery_progress` before this returns.
     #[cfg(not(test))]
     pub fn enable_recovery(&mut self, passphrase: &str) -> OpResult {
-        use matrix_sdk::encryption::recovery::EnableProgress;
+        use matrix_sdk::encryption::recovery::{EnableProgress, RecoveryError};
         use futures_util::StreamExt as _;
 
         let Some(client) = self.client.clone() else {
@@ -117,46 +175,102 @@ impl ClientFfi {
         let passphrase = passphrase.to_owned();
 
         self.rt.block_on(async move {
+            // Make the Fresh path self-contained. The login-time auto-bootstrap
+            // of cross-signing can be cancelled (e.g. the session is invalidated
+            // server-side while the SQLite write is in flight, surfacing as
+            // SQLITE_ABORT), leaving this device without a cross-signing
+            // identity — so recovery().enable() would store nothing and the
+            // device would never verify. Re-run the bootstrap here, at a stable
+            // user-driven moment. It is a no-op when an identity already exists
+            // (incl. one set up on another device — that case is routed to the
+            // Recover flow, not here). OAuth/OIDC servers permit the initial
+            // upload without extra UIA.
+            if let Err(e) =
+                client.encryption().bootstrap_cross_signing_if_needed(None).await
+            {
+                // This only does work (and can fail) when no cross-signing
+                // identity exists yet — it is a no-op when one is already
+                // present. So a failure here means this device has no identity
+                // and recovery().enable() would store nothing and report a
+                // false success with an unverified device. Abort with the error
+                // instead of silently continuing.
+                tracing::warn!("enable_recovery: bootstrap_cross_signing failed: {e:?}");
+                if let Ok(g) = handler.lock() {
+                    g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
+                }
+                return err(e.to_string());
+            }
+
             let recovery = client.encryption().recovery();
-            let enable = if passphrase.is_empty() {
-                recovery.enable().wait_for_backups_to_upload()
-            } else {
-                recovery.enable().wait_for_backups_to_upload().with_passphrase(&passphrase)
-            };
 
-            let mut progress_stream = enable.subscribe_to_progress();
-            let handler2 = Arc::clone(&handler);
-            let progress_task = tokio::spawn(async move {
-                while let Some(update) = progress_stream.next().await {
-                    let Ok(progress) = update else { break };
-                    let (step, key, bu, tot): (u8, String, u32, u32) = match progress {
-                        EnableProgress::Starting => (0, String::new(), 0, 0),
-                        EnableProgress::CreatingBackup => (1, String::new(), 0, 0),
-                        EnableProgress::CreatingRecoveryKey => (2, String::new(), 0, 0),
-                        EnableProgress::BackingUp(ref counts) => {
-                            (3, String::new(), counts.backed_up as u32, counts.total as u32)
+            // `recovery().enable()` refuses to run when a key backup already
+            // exists on the server but is not enabled on this device, returning
+            // BackupExistsOnServer. That happens with an orphaned backup left by
+            // a prior reset; it is unreachable from this device (no secret
+            // storage / backup key), so delete it and retry once.
+            let mut deleted_stale_backup = false;
+
+            loop {
+                let enable = if passphrase.is_empty() {
+                    recovery.enable().wait_for_backups_to_upload()
+                } else {
+                    recovery
+                        .enable()
+                        .wait_for_backups_to_upload()
+                        .with_passphrase(&passphrase)
+                };
+
+                let mut progress_stream = enable.subscribe_to_progress();
+                let handler2 = Arc::clone(&handler);
+                let progress_task = tokio::spawn(async move {
+                    while let Some(update) = progress_stream.next().await {
+                        let Ok(progress) = update else { break };
+                        let (step, key, bu, tot): (u8, String, u32, u32) = match progress {
+                            EnableProgress::Starting => (0, String::new(), 0, 0),
+                            EnableProgress::CreatingBackup => (1, String::new(), 0, 0),
+                            EnableProgress::CreatingRecoveryKey => (2, String::new(), 0, 0),
+                            EnableProgress::BackingUp(ref counts) => {
+                                (3, String::new(), counts.backed_up as u32, counts.total as u32)
+                            }
+                            EnableProgress::RoomKeyUploadError => (6, String::new(), 0, 0),
+                            EnableProgress::Done { ref recovery_key } => {
+                                (4, recovery_key.clone(), 0, 0)
+                            }
+                        };
+                        if let Ok(g) = handler2.lock() {
+                            g.on_enable_recovery_progress(step, &key, bu, tot);
                         }
-                        EnableProgress::RoomKeyUploadError => (6, String::new(), 0, 0),
-                        EnableProgress::Done { ref recovery_key } => (4, recovery_key.clone(), 0, 0),
-                    };
-                    if let Ok(g) = handler2.lock() {
-                        g.on_enable_recovery_progress(step, &key, bu, tot);
                     }
-                }
-            });
+                });
 
-            match enable.await {
-                Ok(_recovery_key) => {
-                    let _ = progress_task.await;
-                    ok("") // key delivered via on_enable_recovery_progress step=4
-                }
-                Err(e) => {
-                    progress_task.abort();
-                    let _ = progress_task.await; // wait for task to stop before firing error
-                    if let Ok(g) = handler.lock() {
-                        g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
+                match enable.await {
+                    Ok(_recovery_key) => {
+                        let _ = progress_task.await;
+                        return ok(""); // key delivered via progress step=4
                     }
-                    err(e.to_string())
+                    Err(RecoveryError::BackupExistsOnServer) if !deleted_stale_backup => {
+                        progress_task.abort();
+                        let _ = progress_task.await;
+                        // Delete the orphaned server backup, then retry enable().
+                        if let Err(e) =
+                            client.encryption().backups().disable_and_delete().await
+                        {
+                            if let Ok(g) = handler.lock() {
+                                g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
+                            }
+                            return err(e.to_string());
+                        }
+                        deleted_stale_backup = true;
+                        // loop and retry once
+                    }
+                    Err(e) => {
+                        progress_task.abort();
+                        let _ = progress_task.await;
+                        if let Ok(g) = handler.lock() {
+                            g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
+                        }
+                        return err(e.to_string());
+                    }
                 }
             }
         })

@@ -1365,6 +1365,20 @@ uint8_t Client::recovery_state() const
     return impl_->ffi->recovery_state();
 }
 
+bool Client::own_identity_exists() const
+{
+    if (!impl_)
+        return false;
+    return impl_->ffi->own_identity_exists();
+}
+
+bool Client::device_verified() const
+{
+    if (!impl_)
+        return false;
+    return impl_->ffi->device_verified();
+}
+
 Result Client::enable_recovery(const std::string& passphrase)
 {
     if (!impl_)

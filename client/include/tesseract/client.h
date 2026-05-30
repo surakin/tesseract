@@ -899,6 +899,14 @@ public:
     /// 2 = Enabled, 3 = Incomplete (exists on server, device missing secrets).
     uint8_t recovery_state() const;
 
+    /// Whether a cross-signing identity already exists for the current user
+    /// (local read, no network). Used to distinguish a pristine account from
+    /// one whose cross-signing identity was set up on another device.
+    bool own_identity_exists() const;
+
+    /// Whether this device is currently cross-signed / verified.
+    bool device_verified() const;
+
     /// Bootstrap cross-signing + key backup for a fresh account.
     /// Pass an empty `passphrase` to generate a random recovery key; non-empty
     /// to derive the key from the passphrase. Progress is reported via

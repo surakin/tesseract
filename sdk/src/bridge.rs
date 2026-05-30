@@ -1541,6 +1541,15 @@ pub mod ffi {
         /// 0 = Unknown, 1 = Disabled, 2 = Enabled, 3 = Incomplete.
         fn recovery_state(self: &ClientFfi) -> u8;
 
+        /// Whether a cross-signing identity already exists for our user
+        /// (local crypto-store read, no network). Distinguishes a pristine
+        /// account from one whose identity was set up on another device.
+        fn own_identity_exists(self: &ClientFfi) -> bool;
+
+        /// Whether this device is currently cross-signed / verified
+        /// (synchronous local read of the verification state).
+        fn device_verified(self: &ClientFfi) -> bool;
+
         /// Unlock the server-side secret storage with a recovery key or
         /// passphrase, import the cross-signing private keys + backup
         /// decryption key into this device, and start downloading historical
