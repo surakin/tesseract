@@ -1,9 +1,11 @@
 #include "ThreadListView.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <ctime>
 #include <memory>
 
 namespace tesseract::views
@@ -40,6 +42,67 @@ std::string truncate_utf8(std::string s, std::size_t max_bytes)
     return s;
 }
 
+// Returns a compact human-readable date for the given millisecond timestamp:
+//   0         → ""
+//   today     → "Today"
+//   yesterday → "Yesterday"
+//   ≤7 days   → "Mon" / "Tue" / … (3-letter weekday)
+//   same year → "May 30"
+//   older     → "5/30/24"
+std::string format_thread_date(std::uint64_t timestamp_ms)
+{
+    if (timestamp_ms == 0)
+        return {};
+
+    std::time_t now_t = std::time(nullptr);
+    std::time_t t     = static_cast<std::time_t>(timestamp_ms / 1000);
+    std::tm now_tm{}, item_tm{};
+#if defined(_WIN32)
+    localtime_s(&now_tm, &now_t);
+    localtime_s(&item_tm, &t);
+#else
+    localtime_r(&now_t, &now_tm);
+    localtime_r(&t, &item_tm);
+#endif
+
+    if (item_tm.tm_year == now_tm.tm_year &&
+        item_tm.tm_mon  == now_tm.tm_mon  &&
+        item_tm.tm_mday == now_tm.tm_mday)
+        return tk::tr("Today");
+
+    std::time_t yest_t = now_t - 86400;
+    std::tm yest_tm{};
+#if defined(_WIN32)
+    localtime_s(&yest_tm, &yest_t);
+#else
+    localtime_r(&yest_t, &yest_tm);
+#endif
+    if (item_tm.tm_year == yest_tm.tm_year &&
+        item_tm.tm_mon  == yest_tm.tm_mon  &&
+        item_tm.tm_mday == yest_tm.tm_mday)
+        return tk::tr("Yesterday");
+
+    if (now_t > t && static_cast<std::uint64_t>(now_t - t) < 7u * 86400u)
+    {
+        constexpr const char* kDays[] = {"Sun", "Mon", "Tue", "Wed",
+                                         "Thu", "Fri", "Sat"};
+        return tk::tr(kDays[item_tm.tm_wday]);
+    }
+
+    constexpr const char* kMonths[] = {"Jan", "Feb", "Mar", "Apr",
+                                       "May", "Jun", "Jul", "Aug",
+                                       "Sep", "Oct", "Nov", "Dec"};
+    char buf[24];
+    if (item_tm.tm_year == now_tm.tm_year)
+        std::snprintf(buf, sizeof(buf), "%s %d",
+                      tk::tr(kMonths[item_tm.tm_mon]).c_str(), item_tm.tm_mday);
+    else
+        std::snprintf(buf, sizeof(buf), "%d/%d/%02d",
+                      item_tm.tm_mon + 1, item_tm.tm_mday,
+                      (item_tm.tm_year + 1900) % 100);
+    return std::string(buf);
+}
+
 } // namespace
 
 ThreadListView::ThreadListView()
@@ -71,6 +134,14 @@ ThreadListView::ThreadListView()
 void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
 {
     threads_ = std::move(threads);
+    std::sort(threads_.begin(), threads_.end(),
+              [](const tesseract::ThreadInfo& a, const tesseract::ThreadInfo& b) {
+                  std::uint64_t ta =
+                      a.latest_timestamp > 0 ? a.latest_timestamp : a.root_timestamp;
+                  std::uint64_t tb =
+                      b.latest_timestamp > 0 ? b.latest_timestamp : b.root_timestamp;
+                  return ta > tb;
+              });
     invalidate_data();
     reset_near_bottom_latch();
 }
@@ -104,6 +175,13 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
     // Rows + scrollbar via ListView (fills full bounds with sidebar_bg,
     // then paints each row via paint_row).
     tk::ListView::paint(ctx);
+
+    // Opaque fill for the header strip — ListView clips all row painting to
+    // bounds_, so when scrolled, thread rows draw into the header area.
+    // Filling here eclipses that content before the separator and button paint.
+    ctx.canvas.fill_rect(
+        {bounds_.x, bounds_.y, bounds_.w, kHeaderH},
+        ctx.theme.palette.bg);
 
     // Separator line below the header-row area.
     ctx.canvas.fill_rect(
@@ -178,29 +256,47 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
     // Per-row separator at the bottom.
     cv.fill_rect({r.x, r.bottom() - 1.0f, r.w, 1.0f}, pal.separator);
 
-    // Right-side reply count chip — reserve its width so previews don't overlap.
+    // Right column: date at top, reply count at bottom.
+    tk::TextStyle cs{};
+    cs.role = tk::FontRole::Small;
+    cs.wrap = false;
+
+    // Date label — most recent activity timestamp.
+    std::uint64_t eff_ts =
+        t.latest_timestamp > 0 ? t.latest_timestamp : t.root_timestamp;
+    std::string date_str = format_thread_date(eff_ts);
+    auto date_layout = ctx.factory.build_text(date_str, cs);
+    float date_w = 0.0f;
+    if (date_layout)
+    {
+        const tk::Size sz = date_layout->measure();
+        date_w = sz.w;
+        cv.draw_text(*date_layout,
+                     {r.x + r.w - kPadX - sz.w, r.y + kPadY},
+                     pal.text_muted);
+    }
+
+    // Reply count — bottom right.
     char count_buf[48];
     std::snprintf(count_buf, sizeof(count_buf),
                   t.num_replies == 1 ? "%llu reply" : "%llu replies",
                   static_cast<unsigned long long>(t.num_replies));
-    tk::TextStyle cs{};
-    cs.role = tk::FontRole::Small;
-    cs.wrap = false;
     auto count_layout = ctx.factory.build_text(count_buf, cs);
     float count_w = 0.0f;
     if (count_layout)
     {
         const tk::Size sz = count_layout->measure();
         count_w = sz.w;
-        const float cx = r.x + r.w - kPadX - sz.w;
-        const float cy = r.y + (kRowH - sz.h) * 0.5f;
-        cv.draw_text(*count_layout, {cx, cy}, pal.text_secondary);
+        cv.draw_text(*count_layout,
+                     {r.x + r.w - kPadX - sz.w, r.y + kRowH - kPadY - sz.h},
+                     pal.text_secondary);
     }
 
+    const float right_reserve = std::max(date_w, count_w);
     const float text_left  = r.x + kPadX;
     const float text_right = r.x + r.w - kPadX
-                             - count_w
-                             - (count_w > 0.0f ? 8.0f : 0.0f);
+                             - right_reserve
+                             - (right_reserve > 0.0f ? 8.0f : 0.0f);
     const float text_max_w = std::max(0.0f, text_right - text_left);
 
     // Top line: "<root_sender_name>: <root_body snippet>".

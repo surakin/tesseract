@@ -15,15 +15,18 @@ using tesseract::views::ThreadListView;
 namespace
 {
 
-ThreadInfo make_thread(const std::string& root, std::uint64_t replies)
+ThreadInfo make_thread(const std::string& root, std::uint64_t replies,
+                       std::uint64_t root_ts = 2000,
+                       std::uint64_t latest_ts = 0)
 {
     ThreadInfo t;
     t.root_event_id      = root;
     t.root_sender_name   = "Alice";
     t.root_body          = "Hello world";
-    t.root_timestamp     = 1000;
+    t.root_timestamp     = root_ts;
     t.latest_sender_name = "Bob";
     t.latest_body        = "Reply!";
+    t.latest_timestamp   = latest_ts;
     t.num_replies        = replies;
     return t;
 }
@@ -48,10 +51,24 @@ struct Stage
 TEST_CASE("ThreadListView::set_threads stores the list", "[thread_list]")
 {
     ThreadListView v;
-    v.set_threads({make_thread("$a", 1), make_thread("$b", 5)});
+    // $a has a higher root timestamp, so it should be first after sort.
+    v.set_threads({make_thread("$a", 1, /*root_ts=*/2000),
+                   make_thread("$b", 5, /*root_ts=*/1000)});
     REQUIRE(v.threads().size() == 2);
     CHECK(v.threads()[0].root_event_id == "$a");
     CHECK(v.threads()[1].root_event_id == "$b");
+}
+
+TEST_CASE("ThreadListView::set_threads sorts newest activity first",
+          "[thread_list]")
+{
+    ThreadListView v;
+    // Pass in reverse order; $new has a later latest_timestamp.
+    v.set_threads({make_thread("$old", 1, /*root_ts=*/1000, /*latest_ts=*/0),
+                   make_thread("$new", 3, /*root_ts=*/1000, /*latest_ts=*/5000)});
+    REQUIRE(v.threads().size() == 2);
+    CHECK(v.threads()[0].root_event_id == "$new");
+    CHECK(v.threads()[1].root_event_id == "$old");
 }
 
 TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
@@ -83,7 +100,9 @@ TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
     Stage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
-    v.set_threads({make_thread("$a", 1), make_thread("$b", 5)});
+    // $a has higher timestamp so it sorts first (row 0 after the header spacer).
+    v.set_threads({make_thread("$a", 1, /*root_ts=*/2000),
+                   make_thread("$b", 5, /*root_ts=*/1000)});
     // set_threads doesn't rebuild row_rects_ — re-arrange after setting.
     st.arrange(v, {0, 0, 300, 400});
 
@@ -117,7 +136,7 @@ TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside ro
     Stage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
-    v.set_threads({make_thread("$a", 1)});
+    v.set_threads({make_thread("$a", 1, /*root_ts=*/2000)});
     st.arrange(v, {0, 0, 300, 400});
 
     std::string clicked;
