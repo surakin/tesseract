@@ -262,6 +262,13 @@ pub mod ffi {
         pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
+        pub fn on_enable_recovery_progress(
+            &self,
+            _step: u8,
+            _recovery_key: &str,
+            _backed_up: u32,
+            _total: u32,
+        ) {}
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
         pub fn on_media_preview_config_updated(&self, _json: &str) {}

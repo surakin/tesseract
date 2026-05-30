@@ -96,6 +96,74 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Bootstrap cross-signing + key backup for a fresh account.
+    /// `passphrase`: empty = generate a random recovery key; non-empty = derive
+    /// the key from this passphrase (the raw key is NOT reported via the callback
+    /// in that case — `recovery_key` in the Done callback will be empty).
+    /// Progress is reported via `on_enable_recovery_progress` before this returns.
+    #[cfg(not(test))]
+    pub fn enable_recovery(&mut self, passphrase: &str) -> OpResult {
+        use matrix_sdk::encryption::recovery::EnableProgress;
+        use futures_util::StreamExt as _;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Some(handler) = self.handler.as_ref().map(Arc::clone) else {
+            return err("sync not started");
+        };
+        let passphrase = passphrase.to_owned();
+
+        self.rt.block_on(async move {
+            let recovery = client.encryption().recovery();
+            let enable = if passphrase.is_empty() {
+                recovery.enable()
+            } else {
+                recovery.enable().with_passphrase(&passphrase)
+            };
+
+            let mut progress_stream = enable.subscribe_to_progress();
+            let handler2 = Arc::clone(&handler);
+            let progress_task = tokio::spawn(async move {
+                while let Some(update) = progress_stream.next().await {
+                    let Ok(progress) = update else { break };
+                    let (step, key, bu, tot): (u8, String, u32, u32) = match progress {
+                        EnableProgress::Starting => (0, String::new(), 0, 0),
+                        EnableProgress::CreatingBackup => (1, String::new(), 0, 0),
+                        EnableProgress::CreatingRecoveryKey => (2, String::new(), 0, 0),
+                        EnableProgress::BackingUp(counts) => {
+                            (3, String::new(), counts.backed_up as u32, counts.total as u32)
+                        }
+                        EnableProgress::RoomKeyUploadError => (5, String::new(), 0, 0),
+                        EnableProgress::Done { recovery_key } => (4, recovery_key, 0, 0),
+                    };
+                    if let Ok(g) = handler2.lock() {
+                        g.on_enable_recovery_progress(step, &key, bu, tot);
+                    }
+                }
+            });
+
+            match enable.await {
+                Ok(recovery_key) => {
+                    let _ = progress_task.await;
+                    ok(recovery_key)
+                }
+                Err(e) => {
+                    progress_task.abort();
+                    if let Ok(g) = handler.lock() {
+                        g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
+                    }
+                    err(e.to_string())
+                }
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn enable_recovery(&mut self, _passphrase: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// Snapshot of the current backup state plus the running imported-key
     /// counter. Cheap; reads atomic state populated by the watcher task.
     #[cfg(not(test))]

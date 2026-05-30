@@ -586,6 +586,19 @@ pub mod ffi {
         /// Fired when the key-backup state changes or when imported-key
         /// counters advance during a recover() call.
         fn on_backup_progress(self: &EventHandlerBridge, progress: &BackupProgress);
+        /// Fired as `enable_recovery()` progresses through setup stages.
+        /// `step` encodes EnableProgress: 0=Starting 1=CreatingBackup
+        /// 2=CreatingRecoveryKey 3=BackingUp 4=Done 5=Error.
+        /// When step==4, `recovery_key` holds the generated key (empty if
+        /// passphrase mode was chosen). When step==3, `backed_up`/`total`
+        /// carry the running backup count.
+        fn on_enable_recovery_progress(
+            self: &EventHandlerBridge,
+            step: u8,
+            recovery_key: &str,
+            backed_up: u32,
+            total: u32,
+        );
         /// Fired when the `RoomListService` state changes (Init →
         /// SettingUp → Running, etc.). `state` is one of the
         /// `ROOM_LIST_STATE_*` constants:
@@ -1532,6 +1545,12 @@ pub mod ffi {
         /// room keys. Returns once the SDK reports a steady-state backup, or
         /// with an error if the key is wrong / no secret storage exists.
         fn recover(self: &mut ClientFfi, key_or_passphrase: &str) -> OpResult;
+
+        /// Bootstrap cross-signing and key backup for a fresh account.
+        /// Empty `passphrase` → generate a random recovery key.
+        /// Non-empty → derive key from passphrase (reported key is "").
+        /// Progress events fire via `on_enable_recovery_progress` before return.
+        fn enable_recovery(self: &mut ClientFfi, passphrase: &str) -> OpResult;
 
         /// Current snapshot of the backup state and import counters.
         fn backup_state(self: &ClientFfi) -> BackupProgress;
