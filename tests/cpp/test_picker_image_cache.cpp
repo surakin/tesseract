@@ -78,6 +78,8 @@ struct TestShell : ShellBase
         std::function<void(std::vector<uint8_t>, std::string)>) override
     {
     }
+    void show_encryption_setup_overlay_(
+        tesseract::views::EncryptionSetupOverlay::Mode) override {}
 
     int anim_tick_starts = 0;
     int repaints = 0;

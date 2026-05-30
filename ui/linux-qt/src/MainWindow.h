@@ -214,6 +214,9 @@ private:
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
+    // TODO(task9): implement — show EncryptionSetupOverlay on the main surface.
+    void show_encryption_setup_overlay_(
+        tesseract::views::EncryptionSetupOverlay::Mode) override {};
 
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;

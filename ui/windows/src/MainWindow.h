@@ -493,6 +493,9 @@ private:
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
+    // TODO(task11): implement — show EncryptionSetupOverlay on the main surface.
+    void show_encryption_setup_overlay_(
+        tesseract::views::EncryptionSetupOverlay::Mode) override {};
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
 

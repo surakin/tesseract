@@ -17,6 +17,7 @@
 #include "tk/pixmap_cache.h"
 #include "tk/theme.h"
 #include "app/RoomWindowBase.h"
+#include "views/EncryptionSetupOverlay.h"
 #include "views/MessageListView.h"
 
 #include <condition_variable>
@@ -363,6 +364,14 @@ protected:
     // callback from hiding the RecoveryBanner before the user enters their key.
     bool recovery_key_chosen_ = false;
 
+    // ── Encryption setup overlay ──────────────────────────────────────────────
+    // True once show_encryption_setup_overlay_() has been called this session;
+    // guards against raising the overlay a second time on subsequent sync ticks.
+    bool encryption_setup_shown_     = false;
+    // Set when the user dismisses the overlay (Skip or Done). Prevents it from
+    // re-appearing if recovery_state() returns Disabled again.
+    bool encryption_setup_dismissed_ = false;
+
     // ── Cross-signing / SAS device verification ───────────────────────────────
     bool verification_banner_dismissed_ = false;
     std::string active_verification_flow_id_; // "" = no flow in progress
@@ -531,6 +540,18 @@ protected:
 
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
+
+    // Raise the encryption-setup modal overlay in the appropriate mode.
+    // Each platform shell implements this to show EncryptionSetupOverlay
+    // as a full-window overlay on its MainAppWidget. Pure virtual so every
+    // shell is required to implement it (Tasks 9–12).
+    virtual void show_encryption_setup_overlay_(
+        tesseract::views::EncryptionSetupOverlay::Mode mode) = 0;
+
+    // Returns the current RecoveryState byte from the SDK client.
+    // Virtual so tests can inject a stub without a real client_.
+    // 0=Unknown, 1=Disabled, 2=Enabled, 3=Incomplete.
+    virtual uint8_t read_recovery_state_() const;
 
     // Called after invites_ is updated — shell refreshes the invite UI.
     // Non-pure: shells are added in Task H; until then the default no-op
@@ -1331,9 +1352,14 @@ protected:
     // implementation after this to update native UI.
     void push_room_list_state_(RoomListState state);
 
+    // One-time check after push_rooms_(): if recovery is Disabled or Incomplete,
+    // raise the encryption-setup overlay. Guards on encryption_setup_shown_ and
+    // encryption_setup_dismissed_ so the overlay is shown at most once per session.
+    void check_encryption_setup_();
+
 private:
-    // intentionally empty — all state is protected so shells can reset it on
-    // logout / account-switch without needing friend declarations.
+    // intentionally empty — all other state is protected so shells can reset it
+    // on logout / account-switch without needing friend declarations.
 };
 
 } // namespace tesseract

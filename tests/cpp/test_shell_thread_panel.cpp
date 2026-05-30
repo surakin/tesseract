@@ -31,6 +31,8 @@ struct TestShell : ShellBase
     void navigate_to_room_(const std::string&) override {}
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)>) override {}
+    void show_encryption_setup_overlay_(
+        tesseract::views::EncryptionSetupOverlay::Mode) override {}
 
     void apply_thread_messages_(const std::string& root,
                                 std::vector<tesseract::views::MessageRowData> rows,

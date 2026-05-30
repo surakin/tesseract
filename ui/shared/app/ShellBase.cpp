@@ -1325,6 +1325,10 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // already in backfill_ts and returns immediately if a task is running.
     if (client_ && tesseract::Settings::instance().group_inactive_rooms)
         client_->start_background_backfill_all_uncached();
+
+    // One-time encryption setup check — raises the overlay on the first
+    // eligible sync tick after login (Disabled → Fresh, Incomplete → Recover).
+    check_encryption_setup_();
 }
 
 void ShellBase::push_invites_(std::string user_id, std::vector<InviteInfo> invites)
@@ -3463,6 +3467,33 @@ void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
                     c->set_room_avatar(room_id, upload.message);
                 });
         });
+}
+
+// ── Encryption setup detection ───────────────────────────────────────────────
+
+uint8_t ShellBase::read_recovery_state_() const
+{
+    return client_ ? static_cast<uint8_t>(client_->recovery_state()) : 0u;
+}
+
+void ShellBase::check_encryption_setup_()
+{
+    if (encryption_setup_shown_ || encryption_setup_dismissed_)
+        return;
+    const uint8_t state = read_recovery_state_();
+    if (state == 1) // Disabled → fresh account, no encryption set up
+    {
+        encryption_setup_shown_ = true;
+        show_encryption_setup_overlay_(
+            tesseract::views::EncryptionSetupOverlay::Mode::Fresh);
+    }
+    else if (state == 3) // Incomplete → existing encryption, new device needs secrets
+    {
+        encryption_setup_shown_ = true;
+        show_encryption_setup_overlay_(
+            tesseract::views::EncryptionSetupOverlay::Mode::Recover);
+    }
+    // Unknown (0) and Enabled (2): do nothing; re-checked on next tick.
 }
 
 } // namespace tesseract
