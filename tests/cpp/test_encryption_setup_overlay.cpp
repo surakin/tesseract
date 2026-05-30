@@ -45,7 +45,6 @@ TEST_CASE("Fresh: Intro → ChooseMethod on primary action", "[encryption][overl
 {
     Stage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
-    ov.on_continue_intro = [&]() {};
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
     CHECK(ov.step() == EncryptionSetupOverlay::Step::ChooseMethod);

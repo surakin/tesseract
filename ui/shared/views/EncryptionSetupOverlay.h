@@ -19,7 +19,6 @@ public:
 
     // ── Callbacks wired by ShellBase ──────────────────────────────────────
     std::function<void()>              on_close;
-    std::function<void()>              on_continue_intro; // unused internally; for test compat
     std::function<void(std::string)>   on_enable_recovery; // passphrase or ""
     std::function<void(std::string)>   on_recover;         // key or passphrase
     std::function<void()>              on_request_sas;
@@ -80,8 +79,6 @@ private:
     std::string progress_label_;
     std::string passphrase_input_;
     std::string key_input_;
-    uint32_t    backed_up_       = 0;
-    uint32_t    total_           = 0;
     bool        key_saved_checked_  = false;
     bool        passphrase_mode_    = false;
 };
