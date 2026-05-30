@@ -63,6 +63,7 @@ struct IdlePaginateResult
     MainWindow* window;
     std::string room_id;
     bool reached_start;
+    std::weak_ptr<bool> alive;
 };
 
 struct IdleSubscribeResult
@@ -70,6 +71,7 @@ struct IdleSubscribeResult
     MainWindow* window;
     std::string room_id;
     bool reached_start;
+    std::weak_ptr<bool> alive;
 };
 
 struct IdleJumpResult
@@ -77,12 +79,14 @@ struct IdleJumpResult
     MainWindow* window;
     std::string room_id;
     std::string event_id;
+    std::weak_ptr<bool> alive;
 };
 
 struct IdleJumpError
 {
     MainWindow* window;
     std::string message;
+    std::weak_ptr<bool> alive;
 };
 
 struct JumpDlgCtx
@@ -263,7 +267,7 @@ void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
         [](gpointer data) -> gboolean
         {
             auto* d = static_cast<DoneData*>(data);
-            if (!d->alive.expired())
+            if (auto a = d->alive.lock(); a && *a)
             {
                 auto* self = d->w;
                 if (self->verif_shared_ && self->verif_shared_->on_done)
@@ -1571,23 +1575,27 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             gtk_widget_grab_focus(main_app_surface_->widget());
             std::string src = src_tok;
             run_async_(
-                [this, src = std::move(src)]() mutable
+                [this, src = std::move(src), walive = std::weak_ptr<bool>(alive_)]() mutable
                 {
                     auto bytes = client_->fetch_source_bytes(src);
                     struct Ctx
                     {
                         MainWindow* self;
                         std::vector<uint8_t> bytes;
+                        std::weak_ptr<bool> alive;
                     };
-                    auto* ctx = new Ctx{this, std::move(bytes)};
+                    auto* ctx = new Ctx{this, std::move(bytes), walive};
                     g_idle_add(
                         [](gpointer p) -> gboolean
                         {
                             auto* c = static_cast<Ctx*>(p);
-                            if (c->self->vid_viewer_)
+                            if (auto a = c->alive.lock(); a && *a)
                             {
-                                c->self->vid_viewer_->load_bytes(
-                                    c->bytes.data(), c->bytes.size());
+                                if (c->self->vid_viewer_)
+                                {
+                                    c->self->vid_viewer_->load_bytes(
+                                        c->bytes.data(), c->bytes.size());
+                                }
                             }
                             delete c;
                             return G_SOURCE_REMOVE;
@@ -2210,13 +2218,24 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                    }),
         this);
 
-    g_idle_add(
-        [](gpointer data) -> gboolean
+    {
+        struct LoginCtx
         {
-            static_cast<MainWindow*>(data)->do_login();
-            return G_SOURCE_REMOVE;
-        },
-        this);
+            MainWindow* self;
+            std::weak_ptr<bool> alive;
+        };
+        auto* lctx = new LoginCtx{this, alive_};
+        g_idle_add(
+            [](gpointer data) -> gboolean
+            {
+                auto* d = static_cast<LoginCtx*>(data);
+                if (auto a = d->alive.lock(); a && *a)
+                    d->self->do_login();
+                delete d;
+                return G_SOURCE_REMOVE;
+            },
+            lctx);
+    }
 }
 
 void MainWindow::start_tray_if_needed_()
@@ -2360,6 +2379,11 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
 
 MainWindow::~MainWindow()
 {
+    // Invalidate all outstanding g_idle_add / g_timeout_add payloads that
+    // captured a weak_ptr<bool> from alive_.  Setting the flag before
+    // draining workers ensures no idle fires on a half-destroyed `this`.
+    *alive_ = false;
+
     if (theme_css_provider_)
     {
         g_object_unref(theme_css_provider_);
@@ -3002,13 +3026,14 @@ void MainWindow::on_room_selected(const std::string& room_id)
                 reached = pr.ok && pr.reached_start;
                 client_->start_background_backfill(visible_ids);
             }
-            auto* d = new IdleSubscribeResult{this, sub_room, reached};
+            auto* d = new IdleSubscribeResult{this, sub_room, reached, alive_};
             g_idle_add(
                 [](gpointer data) -> gboolean
                 {
                     auto* dd = static_cast<IdleSubscribeResult*>(data);
-                    dd->window->push_subscribe_result(std::move(dd->room_id),
-                                                      dd->reached_start);
+                    if (auto a = dd->alive.lock(); a && *a)
+                        dd->window->push_subscribe_result(std::move(dd->room_id),
+                                                          dd->reached_start);
                     delete dd;
                     return G_SOURCE_REMOVE;
                 },
@@ -3058,13 +3083,14 @@ void MainWindow::request_more_history(const std::string& room_id)
             auto pr =
                 client_->paginate_back_with_status(room_id, kPaginationBatch);
             auto* p = new IdlePaginateResult{this, room_id,
-                                             pr.ok && pr.reached_start};
+                                             pr.ok && pr.reached_start, alive_};
             g_idle_add(
                 [](gpointer data) -> gboolean
                 {
                     auto* d = static_cast<IdlePaginateResult*>(data);
-                    d->window->push_paginate_result(std::move(d->room_id),
-                                                    d->reached_start);
+                    if (auto a = d->alive.lock(); a && *a)
+                        d->window->push_paginate_result(std::move(d->room_id),
+                                                        d->reached_start);
                     delete d;
                     return G_SOURCE_REMOVE;
                 },
@@ -3169,16 +3195,19 @@ void MainWindow::on_jump_dialog_ok_(GtkButton*, gpointer user_data)
             auto res = self->client_->timestamp_to_event(room_id, ts_ms, "f");
             if (!res.ok)
             {
-                auto* e = new IdleJumpError{self, res.message};
+                auto* e = new IdleJumpError{self, res.message, self->alive_};
                 g_idle_add(
                     [](gpointer p) -> gboolean
                     {
                         auto* d = static_cast<IdleJumpError*>(p);
-                        if (d->window->status_bar_)
+                        if (auto a = d->alive.lock(); a && *a)
                         {
-                            gtk_label_set_text(
-                                GTK_LABEL(d->window->status_bar_),
-                                d->message.c_str());
+                            if (d->window->status_bar_)
+                            {
+                                gtk_label_set_text(
+                                    GTK_LABEL(d->window->status_bar_),
+                                    d->message.c_str());
+                            }
                         }
                         delete d;
                         return G_SOURCE_REMOVE;
@@ -3186,21 +3215,26 @@ void MainWindow::on_jump_dialog_ok_(GtkButton*, gpointer user_data)
                     e);
                 return;
             }
-            auto* d = new IdleJumpResult{self, room_id, res.message};
+            auto* d = new IdleJumpResult{self, room_id, res.message, self->alive_};
             g_idle_add(
                 [](gpointer p) -> gboolean
                 {
                     auto* data = static_cast<IdleJumpResult*>(p);
-                    MainWindow* w = data->window;
-                    std::string rid = std::move(data->room_id);
-                    std::string eid = std::move(data->event_id);
+                    if (auto a = data->alive.lock(); a && *a)
+                    {
+                        MainWindow* w = data->window;
+                        std::string rid = std::move(data->room_id);
+                        std::string eid = std::move(data->event_id);
+                        delete data;
+                        w->begin_focused_subscription_(rid, eid);
+                        w->run_async_mut_(
+                            [w, rid, eid]
+                            {
+                                w->client_->subscribe_room_at(rid, eid);
+                            });
+                        return G_SOURCE_REMOVE;
+                    }
                     delete data;
-                    w->begin_focused_subscription_(rid, eid);
-                    w->run_async_mut_(
-                        [w, rid, eid]
-                        {
-                            w->client_->subscribe_room_at(rid, eid);
-                        });
                     return G_SOURCE_REMOVE;
                 },
                 d);
@@ -3302,7 +3336,7 @@ void MainWindow::handle_reconnect(const std::string& user_id)
         [](gpointer data) -> gboolean
         {
             auto* d = static_cast<DelayData*>(data);
-            if (!d->alive.expired())
+            if (auto a = d->alive.lock(); a && *a)
             {
                 for (auto& s : d->w->accounts_)
                 {
@@ -3808,13 +3842,15 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
     struct Data
     {
         std::function<void()> fn;
+        std::weak_ptr<bool> alive;
     };
-    auto* d = new Data{std::move(fn)};
+    auto* d = new Data{std::move(fn), alive_};
     g_idle_add(
         [](gpointer p) -> gboolean
         {
             auto* data = static_cast<Data*>(p);
-            data->fn();
+            if (auto a = data->alive.lock(); a && *a)
+                data->fn();
             delete data;
             return G_SOURCE_REMOVE;
         },
@@ -3826,14 +3862,16 @@ void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
     struct Data
     {
         std::function<void()> fn;
+        std::weak_ptr<bool> alive;
     };
-    auto* d = new Data{std::move(fn)};
+    auto* d = new Data{std::move(fn), alive_};
     g_timeout_add(
         static_cast<guint>(ms),
         [](gpointer p) -> gboolean
         {
             auto* data = static_cast<Data*>(p);
-            data->fn();
+            if (auto a = data->alive.lock(); a && *a)
+                data->fn();
             delete data;
             return G_SOURCE_REMOVE;
         },
@@ -4345,15 +4383,19 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
             {
                 MainWindow* mw;
                 tesseract::views::MediaInfo info;
+                std::weak_ptr<bool> alive;
             };
-            auto* ctx = new Ctx{this, std::move(info)};
+            auto* ctx = new Ctx{this, std::move(info), alive_};
             g_idle_add(
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
-                    if (c->mw->room_view_)
-                        c->mw->room_view_->compose_bar()
-                            ->update_pending_attachment(c->info);
+                    if (auto a = c->alive.lock(); a && *a)
+                    {
+                        if (c->mw->room_view_)
+                            c->mw->room_view_->compose_bar()
+                                ->update_pending_attachment(c->info);
+                    }
                     delete c;
                     return G_SOURCE_REMOVE;
                 },
@@ -4490,45 +4532,49 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 std::string key;
                 std::vector<uint8_t> pixels;
                 int w, h;
+                std::weak_ptr<bool> alive;
             };
             auto* ctx =
-                new Ctx{this, "thumb::" + eid, std::move(frame_bytes), w, h};
+                new Ctx{this, "thumb::" + eid, std::move(frame_bytes), w, h, alive_};
             g_idle_add(
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
-                    if (!c->self->image_cache_.contains(c->key))
+                    if (auto a = c->alive.lock(); a && *a)
                     {
-                        // Create an owned cairo surface and blit the BGRA pixels in.
-                        cairo_surface_t* surf = cairo_image_surface_create(
-                            CAIRO_FORMAT_ARGB32, c->w, c->h);
-                        if (surf &&
-                            cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
+                        if (!c->self->image_cache_.contains(c->key))
                         {
-                            int dst_stride =
-                                cairo_image_surface_get_stride(surf);
-                            unsigned char* dst =
-                                cairo_image_surface_get_data(surf);
-                            int src_stride = c->w * 4;
-                            for (int row = 0; row < c->h; ++row)
+                            // Create an owned cairo surface and blit the BGRA pixels in.
+                            cairo_surface_t* surf = cairo_image_surface_create(
+                                CAIRO_FORMAT_ARGB32, c->w, c->h);
+                            if (surf &&
+                                cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
                             {
-                                std::memcpy(
-                                    dst + row * dst_stride,
-                                    c->pixels.data() + row * src_stride,
-                                    static_cast<std::size_t>(src_stride));
+                                int dst_stride =
+                                    cairo_image_surface_get_stride(surf);
+                                unsigned char* dst =
+                                    cairo_image_surface_get_data(surf);
+                                int src_stride = c->w * 4;
+                                for (int row = 0; row < c->h; ++row)
+                                {
+                                    std::memcpy(
+                                        dst + row * dst_stride,
+                                        c->pixels.data() + row * src_stride,
+                                        static_cast<std::size_t>(src_stride));
+                                }
+                                cairo_surface_mark_dirty(surf);
+                                c->self->image_cache_.store(
+                                    c->key, tk::cairo_pango::make_image(surf));
+                                cairo_surface_destroy(surf);
+                                if (c->self->main_app_surface_)
+                                {
+                                    c->self->main_app_surface_->relayout();
+                                }
                             }
-                            cairo_surface_mark_dirty(surf);
-                            c->self->image_cache_.store(
-                                c->key, tk::cairo_pango::make_image(surf));
-                            cairo_surface_destroy(surf);
-                            if (c->self->main_app_surface_)
+                            else if (surf)
                             {
-                                c->self->main_app_surface_->relayout();
+                                cairo_surface_destroy(surf);
                             }
-                        }
-                        else if (surf)
-                        {
-                            cairo_surface_destroy(surf);
                         }
                     }
                     delete c;
@@ -4663,44 +4709,48 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data)
         MainWindow* window;
         bool ok;
         std::string message;
+        std::weak_ptr<bool> alive;
     };
     self->run_async_mut_(
         [self, key]()
         {
             auto res = self->client_->recover(key);
-            auto* p = new RecoverDone{self, res.ok, res.message};
+            auto* p = new RecoverDone{self, res.ok, res.message, self->alive_};
             g_idle_add(
                 [](gpointer data) -> gboolean
                 {
                     auto* d = static_cast<RecoverDone*>(data);
-                    if (d->ok)
+                    if (auto a = d->alive.lock(); a && *a)
                     {
-                        if (d->window->recovery_shared_)
+                        if (d->ok)
                         {
-                            d->window->recovery_shared_->set_state(
-                                tesseract::views::RecoveryBanner::State::
-                                    Importing);
+                            if (d->window->recovery_shared_)
+                            {
+                                d->window->recovery_shared_->set_state(
+                                    tesseract::views::RecoveryBanner::State::
+                                        Importing);
+                            }
                         }
-                    }
-                    else
-                    {
-                        if (d->window->recovery_shared_)
+                        else
                         {
-                            d->window->recovery_shared_->set_state(
-                                tesseract::views::RecoveryBanner::State::
-                                    Failed);
-                            d->window->recovery_shared_->set_failure_message(
-                                d->message);
+                            if (d->window->recovery_shared_)
+                            {
+                                d->window->recovery_shared_->set_state(
+                                    tesseract::views::RecoveryBanner::State::
+                                        Failed);
+                                d->window->recovery_shared_->set_failure_message(
+                                    d->message);
+                            }
+                            if (d->window->recovery_key_field_)
+                            {
+                                d->window->recovery_key_field_->set_enabled(true);
+                                d->window->recovery_key_field_->set_focused(true);
+                            }
                         }
-                        if (d->window->recovery_key_field_)
+                        if (d->window->main_app_surface_)
                         {
-                            d->window->recovery_key_field_->set_enabled(true);
-                            d->window->recovery_key_field_->set_focused(true);
+                            d->window->main_app_surface_->relayout();
                         }
-                    }
-                    if (d->window->main_app_surface_)
-                    {
-                        d->window->main_app_surface_->relayout();
                     }
                     delete d;
                     return G_SOURCE_REMOVE;
@@ -4793,19 +4843,16 @@ void MainWindow::show_encryption_setup_overlay_(
     ov->on_recover = [this](std::string key)
     {
         auto* c = client_;
-        std::weak_ptr<bool> alive = alive_;
         run_async_mut_(
-            [this, c, key, alive]()
+            [this, c, key]()
             {
                 auto res = c->recover(key);
                 if (!res.ok)
                 {
                     std::string msg = res.message;
                     post_to_ui_(
-                        [this, msg, alive]()
+                        [this, msg]()
                         {
-                            if (alive.expired())
-                                return;
                             if (auto* o =
                                     main_app_ ? main_app_->encryption_setup()
                                               : nullptr)
