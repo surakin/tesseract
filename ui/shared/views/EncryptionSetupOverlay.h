@@ -57,6 +57,32 @@ public:
     bool     on_pointer_down(tk::Point world) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
 
+    // Reset mode and step so the overlay can be reused for a different mode.
+    void reset(Mode mode)
+    {
+        mode_                = mode;
+        step_                = Step::Intro;
+        recovery_key_.clear();
+        error_msg_.clear();
+        progress_label_.clear();
+        passphrase_input_.clear();
+        key_input_.clear();
+        key_saved_checked_   = false;
+        passphrase_mode_     = false;
+        // Clear all callbacks so the caller can re-wire fresh ones.
+        on_close             = {};
+        on_enable_recovery   = {};
+        on_recover           = {};
+        on_request_sas       = {};
+        on_copy_to_clipboard = {};
+        passphrase_field_rect    = {};
+        passphrase_field_visible = {};
+        key_field_rect       = {};
+        key_field_visible    = {};
+        get_passphrase       = {};
+        get_key_input        = {};
+    }
+
     // ── Test helpers ──────────────────────────────────────────────────────
     void simulate_primary_action();
     void simulate_skip();

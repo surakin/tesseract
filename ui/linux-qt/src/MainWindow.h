@@ -137,6 +137,10 @@ private:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
+    void handle_enable_recovery_progress_ui_(uint8_t step,
+                                             std::string recovery_key,
+                                             uint32_t backed_up,
+                                             uint32_t total) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -214,9 +218,8 @@ private:
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
-    // TODO(task9): implement — show EncryptionSetupOverlay on the main surface.
     void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode) override {};
+        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
 
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
@@ -298,6 +301,8 @@ private:
 
     // Native overlays wired to mainAppSurface_.
     std::unique_ptr<tk::NativeTextField> recoveryKeyField_;
+    std::unique_ptr<tk::NativeTextField> encPassphraseField_;
+    std::unique_ptr<tk::NativeTextField> encKeyField_;
     std::unique_ptr<tk::NativeTextField> roomSearchField_;
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     std::unique_ptr<tk::NativeTextArea> topicTextArea_;
