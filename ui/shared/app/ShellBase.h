@@ -732,6 +732,12 @@ protected:
     virtual void handle_backup_progress_ui_(BackupProgress /*progress*/)
     {
     }
+    virtual void handle_enable_recovery_progress_ui_(uint8_t /*step*/,
+                                                     std::string /*recovery_key*/,
+                                                     uint32_t /*backed_up*/,
+                                                     uint32_t /*total*/)
+    {
+    }
     // Per-shell native sticker/emoji picker refresh prologue. Default no-op.
     virtual void refresh_pickers_packs_()
     {

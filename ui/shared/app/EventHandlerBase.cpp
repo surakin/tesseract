@@ -211,6 +211,19 @@ void EventHandlerBase::on_backup_progress(const BackupProgress& progress)
         });
 }
 
+void EventHandlerBase::on_enable_recovery_progress(uint8_t step,
+                                                    const std::string& recovery_key,
+                                                    uint32_t backed_up,
+                                                    uint32_t total)
+{
+    auto* s = shell_;
+    std::string key = recovery_key;
+    s->post_to_ui_([s, step, key, backed_up, total]()
+    {
+        s->handle_enable_recovery_progress_ui_(step, key, backed_up, total);
+    });
+}
+
 void EventHandlerBase::on_room_list_state(RoomListState state)
 {
     shell_->post_to_ui_(

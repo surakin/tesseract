@@ -63,6 +63,10 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const BackupProgress& progress) override;
+    void on_enable_recovery_progress(uint8_t step,
+                                     const std::string& recovery_key,
+                                     uint32_t backed_up,
+                                     uint32_t total) final;
     void on_room_list_state(RoomListState state) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;

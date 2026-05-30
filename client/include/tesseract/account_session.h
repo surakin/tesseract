@@ -84,6 +84,14 @@ struct AccountSession
     /// UI state: true after the user dismisses the verification banner for this
     /// account. Persists across account switches within the same app session.
     bool verification_banner_dismissed = false;
+
+    /// UI state: true once the encryption-setup overlay has been raised for
+    /// this account (prevents re-raising on subsequent rooms-updated ticks).
+    bool encryption_setup_shown = false;
+
+    /// UI state: true when the user clicked "Skip" in the encryption-setup
+    /// overlay — suppresses re-showing for the session lifetime of this account.
+    bool encryption_setup_dismissed = false;
 };
 
 } // namespace tesseract
