@@ -900,6 +900,24 @@ impl ClientFfi {
                         let user_id = ev.sender.as_str().to_owned();
                         let device_id = ev.content.from_device.as_str().to_owned();
 
+                        // Ignore the request this device just broadcast itself.
+                        // request_self_verification() sends an
+                        // m.key.verification.request to all of our other
+                        // sessions; the homeserver can echo that to-device
+                        // event back to the sender. Without this guard the echo
+                        // is treated as an incoming request and pops a "verify
+                        // this device" prompt on the very device that started
+                        // the flow. A request is our own echo when it comes
+                        // from our user *and* our own device_id.
+                        if user_id == client.user_id().map(|u| u.as_str().to_owned()).unwrap_or_default()
+                            && client
+                                .device_id()
+                                .map(|d| d.as_str() == device_id)
+                                .unwrap_or(false)
+                        {
+                            return;
+                        }
+
                         // The OlmMachine processes the to-device event and
                         // adds the request to its internal map asynchronously.
                         // A single fixed sleep silently drops the request on
