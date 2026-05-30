@@ -4927,7 +4927,6 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
                                 {
                                     MFGetAttributeSize(cur_type,
                                                        MF_MT_FRAME_SIZE, &vw, &vh);
-                                    cur_type->Release();
                                 }
                                 info.video_w = vw;
                                 info.video_h = vh;
@@ -4942,9 +4941,10 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
                                     // flip rows to top-down before handing to WIC.
                                     LONG stride_val =
                                         static_cast<LONG>(vw * 4);
-                                    cur_type->GetUINT32(
-                                        MF_MT_DEFAULT_STRIDE,
-                                        reinterpret_cast<UINT32*>(&stride_val));
+                                    if (cur_type)
+                                        cur_type->GetUINT32(
+                                            MF_MT_DEFAULT_STRIDE,
+                                            reinterpret_cast<UINT32*>(&stride_val));
                                     UINT abs_stride = stride_val < 0
                                         ? static_cast<UINT>(-stride_val)
                                         : static_cast<UINT>(stride_val);
@@ -5012,6 +5012,7 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
                                         wic->Release();
                                     }
                                 }
+                                if (cur_type) cur_type->Release();
                                 buf->Unlock();
                                 buf->Release();
                             }
