@@ -46,6 +46,11 @@ struct TestShell : ShellBase
     uint8_t recovery_state_stub_ = 0;
     uint8_t read_recovery_state_() const override { return recovery_state_stub_; }
 
+    bool identity_exists_stub_ = false;
+    bool device_verified_stub_ = false;
+    bool read_own_identity_exists_() const override { return identity_exists_stub_; }
+    bool read_device_verified_() const override { return device_verified_stub_; }
+
     // ── Expose internals for test inspection ─────────────────────────────
     using ShellBase::check_encryption_setup_;
     using ShellBase::encryption_setup_shown_;
@@ -62,6 +67,30 @@ TEST_CASE("Disabled state → Fresh overlay shown", "[shell][encryption]")
     REQUIRE(shell.overlay_shown_);
     CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Fresh);
     CHECK(shell.encryption_setup_shown_);
+}
+
+TEST_CASE("Disabled + foreign identity (exists, unverified) → Recover",
+          "[shell][encryption]")
+{
+    TestShell shell;
+    shell.recovery_state_stub_ = 1; // Disabled
+    shell.identity_exists_stub_ = true;  // cross-signing set up elsewhere
+    shell.device_verified_stub_ = false; // this device can't satisfy it
+    shell.check_encryption_setup_();
+    REQUIRE(shell.overlay_shown_);
+    CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Recover);
+}
+
+TEST_CASE("Disabled + own verified identity → Fresh (add recovery key)",
+          "[shell][encryption]")
+{
+    TestShell shell;
+    shell.recovery_state_stub_ = 1; // Disabled
+    shell.identity_exists_stub_ = true; // our own, just bootstrapped
+    shell.device_verified_stub_ = true; // already cross-signed
+    shell.check_encryption_setup_();
+    REQUIRE(shell.overlay_shown_);
+    CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Fresh);
 }
 
 TEST_CASE("Incomplete state → Recover overlay shown", "[shell][encryption]")

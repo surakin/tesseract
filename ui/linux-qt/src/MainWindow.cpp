@@ -4761,15 +4761,6 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
     }
 }
 
-void MainWindow::handle_enable_recovery_progress_ui_(uint8_t step,
-                                                      std::string recovery_key,
-                                                      uint32_t backed_up,
-                                                      uint32_t total)
-{
-    if (auto* ov = mainApp_ ? mainApp_->encryption_setup() : nullptr)
-        ov->advance_progress(step, recovery_key, backed_up, total);
-}
-
 void MainWindow::show_encryption_setup_overlay_(
     tesseract::views::EncryptionSetupOverlay::Mode mode)
 {
@@ -4777,73 +4768,18 @@ void MainWindow::show_encryption_setup_overlay_(
     auto* ov = mainApp_->encryption_setup();
     if (!ov) return;
 
-    // Pre-reset NativeTextField fields before re-creating them so stale
-    // references are cleared even if the function is called more than once.
-    encPassphraseField_.reset();
-    encKeyField_.reset();
-
-    // Reconfigure the overlay in the correct mode and reset all callbacks.
+    // Reconfigure the overlay (clears prior callbacks) before re-creating the
+    // native fields, then wire the shared callbacks via ShellBase.
     ov->reset(mode);
 
-    // Wire NativeTextFields.
     encPassphraseField_ = mainAppSurface_->host().make_text_field();
     encPassphraseField_->set_password(true);
     encKeyField_ = mainAppSurface_->host().make_text_field();
     encKeyField_->set_password(false);
 
-    ov->get_passphrase = [this]() -> std::string {
-        return encPassphraseField_ ? encPassphraseField_->text() : "";
-    };
-    ov->get_key_input = [this]() -> std::string {
-        return encKeyField_ ? encKeyField_->text() : "";
-    };
-
-    ov->on_close = [this]() {
-        encryption_setup_dismissed_ = true;
-        if (mainApp_) mainApp_->show_encryption_setup(false);
-        encPassphraseField_.reset();
-        encKeyField_.reset();
-        mainAppSurface_->relayout();
-    };
-
-    ov->on_enable_recovery = [this](std::string passphrase) {
-        auto* c = client_;
-        run_async_mut_([this, c, passphrase]() {
-            c->enable_recovery(passphrase);
-            // progress delivered via on_enable_recovery_progress callback
-        });
-    };
-
-    ov->on_recover = [this](std::string key) {
-        auto* c = client_;
-        run_async_mut_([this, c, key]() {
-            auto res = c->recover(key);
-            if (!res.ok) {
-                post_to_ui_([this, msg = std::string(res.message)]() {
-                    if (auto* o = mainApp_ ? mainApp_->encryption_setup() : nullptr)
-                        o->advance_progress(5, msg, 0, 0);
-                });
-            }
-        });
-    };
-
-    ov->on_request_sas = [this]() {
-        encryption_setup_dismissed_ = true;
-        if (mainApp_) mainApp_->show_encryption_setup(false);
-        encPassphraseField_.reset();
-        encKeyField_.reset();
-        auto* c = client_;
-        run_async_mut_([c]() { c->request_self_verification(); });
-        mainAppSurface_->relayout();
-    };
-
-    ov->on_copy_to_clipboard = [](std::string text) {
-        QApplication::clipboard()->setText(QString::fromStdString(text));
-    };
-
-    ov->on_layout_changed = [this]() {
-        if (mainAppSurface_) mainAppSurface_->relayout();
-    };
+    wire_encryption_setup_callbacks_(*ov, mainAppSurface_->host(),
+                                     encPassphraseField_.get(),
+                                     encKeyField_.get());
 
     mainApp_->show_encryption_setup(true);
     mainAppSurface_->relayout();

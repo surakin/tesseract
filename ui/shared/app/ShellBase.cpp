@@ -1,7 +1,9 @@
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "tk/blurhash.h"
+#include "tk/host.h"
 #include "tk/theme.h"
+#include "views/EncryptionSetupOverlay.h"
 #include "views/MainAppWidget.h"
 #include "views/RoomListView.h"
 #include "views/RoomView.h"
@@ -3476,22 +3478,114 @@ uint8_t ShellBase::read_recovery_state_() const
     return client_ ? static_cast<uint8_t>(client_->recovery_state()) : 0u;
 }
 
+bool ShellBase::read_own_identity_exists_() const
+{
+    return client_ ? client_->own_identity_exists() : false;
+}
+
+bool ShellBase::read_device_verified_() const
+{
+    return client_ ? client_->device_verified() : false;
+}
+
+void ShellBase::handle_enable_recovery_progress_ui_(uint8_t  step,
+                                                    std::string recovery_key,
+                                                    uint32_t backed_up,
+                                                    uint32_t total)
+{
+    if (auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr)
+        ov->advance_progress(step, recovery_key, backed_up, total);
+}
+
+void ShellBase::wire_encryption_setup_callbacks_(
+    views::EncryptionSetupOverlay& ov,
+    tk::Host&                      host,
+    tk::NativeTextField*           passphrase_field,
+    tk::NativeTextField*           key_field)
+{
+    tk::Host* host_ptr = &host;
+
+    ov.get_passphrase = [passphrase_field]() -> std::string {
+        return passphrase_field ? passphrase_field->text() : std::string();
+    };
+    ov.get_key_input = [key_field]() -> std::string {
+        return key_field ? key_field->text() : std::string();
+    };
+
+    ov.on_enable_recovery = [this](std::string passphrase) {
+        auto* c = client_;
+        run_async_mut_([c, passphrase]() { c->enable_recovery(passphrase); });
+    };
+
+    ov.on_recover = [this](std::string key) {
+        auto* c = client_;
+        run_async_mut_([this, c, key]() {
+            auto res = c->recover(key);
+            if (!res.ok)
+            {
+                post_to_ui_([this, msg = std::string(res.message)]() {
+                    if (auto* o =
+                            main_app_ ? main_app_->encryption_setup() : nullptr)
+                        o->advance_progress(5, msg, 0, 0);
+                });
+            }
+        });
+    };
+
+    ov.on_request_sas = [this]() {
+        encryption_setup_dismissed_ = true;
+        if (main_app_) main_app_->show_encryption_setup(false);
+        auto* c = client_;
+        run_async_mut_([c]() { c->request_self_verification(); });
+        request_relayout_();
+    };
+
+    ov.on_close = [this]() {
+        encryption_setup_dismissed_ = true;
+        if (main_app_) main_app_->show_encryption_setup(false);
+        request_relayout_();
+    };
+
+    ov.on_copy_to_clipboard = [host_ptr](std::string text) {
+        host_ptr->set_clipboard_text(text);
+    };
+
+    ov.on_layout_changed = [this]() { request_relayout_(); };
+}
+
 void ShellBase::check_encryption_setup_()
 {
     if (encryption_setup_shown_ || encryption_setup_dismissed_)
         return;
+
+    using Mode      = tesseract::views::EncryptionSetupOverlay::Mode;
     const uint8_t state = read_recovery_state_();
-    if (state == 1) // Disabled → fresh account, no encryption set up
+
+    if (state == 1) // Disabled → secret storage not set up on this account
     {
+        // Disabled is ambiguous: it covers a truly fresh account (no
+        // cross-signing anywhere → bootstrap a new identity via the Fresh
+        // path) AND an account whose cross-signing identity was set up on
+        // another device but without server-side secret storage. In the
+        // latter case this device can't bootstrap over the existing identity;
+        // the Fresh path would only create an inconsistent secret store and
+        // would never verify this device. Route those to Recover (enter the
+        // recovery key, or hand off to SAS) instead.
+        //
+        // We only treat the identity as "foreign" when it exists AND this
+        // device is not verified. On a pristine account our own login-time
+        // bootstrap creates the identity and signs this device together, so
+        // identity-exists implies verified there → Fresh, as intended.
+        const bool foreign_identity =
+            read_own_identity_exists_() && !read_device_verified_();
         encryption_setup_shown_ = true;
-        show_encryption_setup_overlay_(
-            tesseract::views::EncryptionSetupOverlay::Mode::Fresh);
+        show_encryption_setup_overlay_(foreign_identity ? Mode::Recover
+                                                        : Mode::Fresh);
     }
-    else if (state == 3) // Incomplete → existing encryption, new device needs secrets
+    else if (state == 3) // Incomplete → existing encryption, device needs secrets
     {
         encryption_setup_shown_ = true;
-        show_encryption_setup_overlay_(
-            tesseract::views::EncryptionSetupOverlay::Mode::Recover);
+        show_encryption_setup_overlay_(Mode::Recover);
     }
     // Unknown (0) and Enabled (2): do nothing; re-checked on next tick.
 }

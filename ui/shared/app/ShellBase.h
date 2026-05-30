@@ -36,6 +36,7 @@
 namespace tk
 {
 class Host;
+class NativeTextField;
 } // namespace tk
 
 namespace tesseract
@@ -548,10 +549,30 @@ protected:
     virtual void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) = 0;
 
+    // Wires every platform-agnostic callback on the encryption-setup overlay
+    // (recovery/verify actions, clipboard, field readers, layout/dismiss).
+    // Each shell only creates+stores the two native text fields then calls
+    // this, instead of duplicating ~40 lines of identical wiring. Dismissal
+    // hides the native fields via request_relayout_() (the on-layout pass
+    // reads the overlay's field-visibility), so the fields don't need to be
+    // destroyed here. `host` and the field pointers must outlive the overlay.
+    void wire_encryption_setup_callbacks_(
+        views::EncryptionSetupOverlay& ov,
+        tk::Host&                      host,
+        tk::NativeTextField*           passphrase_field,
+        tk::NativeTextField*           key_field);
+
     // Returns the current RecoveryState byte from the SDK client.
     // Virtual so tests can inject a stub without a real client_.
     // 0=Unknown, 1=Disabled, 2=Enabled, 3=Incomplete.
     virtual uint8_t read_recovery_state_() const;
+
+    // Whether a cross-signing identity already exists for our user, and whether
+    // this device is currently verified. Used to disambiguate the Disabled
+    // recovery state (see check_encryption_setup_). Virtual so tests can stub
+    // them without a real client_.
+    virtual bool read_own_identity_exists_() const;
+    virtual bool read_device_verified_() const;
 
     // Called after invites_ is updated — shell refreshes the invite UI.
     // Non-pure: shells are added in Task H; until then the default no-op
@@ -753,12 +774,12 @@ protected:
     virtual void handle_backup_progress_ui_(BackupProgress /*progress*/)
     {
     }
-    virtual void handle_enable_recovery_progress_ui_(uint8_t /*step*/,
-                                                     std::string /*recovery_key*/,
-                                                     uint32_t /*backed_up*/,
-                                                     uint32_t /*total*/)
-    {
-    }
+    // Forwards encryption-setup progress to the overlay. Identical across all
+    // shells, so it lives here (concrete) rather than being re-overridden.
+    virtual void handle_enable_recovery_progress_ui_(uint8_t  step,
+                                                     std::string recovery_key,
+                                                     uint32_t backed_up,
+                                                     uint32_t total);
     // Per-shell native sticker/emoji picker refresh prologue. Default no-op.
     virtual void refresh_pickers_packs_()
     {

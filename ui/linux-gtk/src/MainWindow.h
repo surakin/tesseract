@@ -91,10 +91,6 @@ private:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
-    void handle_enable_recovery_progress_ui_(uint8_t step,
-                                             std::string recovery_key,
-                                             uint32_t backed_up,
-                                             uint32_t total) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,

@@ -497,10 +497,6 @@ private:
     void on_space_children_cache_ready_ui_() override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
-    void handle_enable_recovery_progress_ui_(uint8_t step,
-                                              std::string recovery_key,
-                                              uint32_t backed_up,
-                                              uint32_t total) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
 

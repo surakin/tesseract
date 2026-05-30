@@ -19,7 +19,6 @@ constexpr float kCardRad  = 10.0f;
 constexpr float kBtnH     = 38.0f;
 constexpr float kBtnHPad  = 18.0f;
 constexpr float kBtnRad   = 6.0f;
-constexpr float kFieldH   = 36.0f;
 constexpr float kRowGap   = 12.0f;
 
 enum class BtnKind
