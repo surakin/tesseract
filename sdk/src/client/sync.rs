@@ -377,6 +377,7 @@ impl ClientFfi {
                     OwnedRoomId,
                     crate::ffi::RoomInfo,
                 > = std::collections::HashMap::new();
+                let mut prev_sort_keys: Vec<(bool, u64, String)> = Vec::new();
                 for room in client_clone.joined_rooms() {
                     if let Some(info) = super::build_room_info(&client_clone, &room).await {
                         cache.insert(room.room_id().to_owned(), info);
@@ -512,7 +513,28 @@ impl ClientFfi {
                                 }
                             }
                             refresh_dm_counterparts(&dm_counterparts_w, &cache);
-                            emit_snapshot(&cache, &previews, &h);
+                            let sort_keys: Vec<(bool, u64, String)> = {
+                                let mut tmp: Vec<&crate::ffi::RoomInfo> =
+                                    cache.values().collect();
+                                tmp.sort_by(|a, b| {
+                                    let au = a.notification_count > 0 || a.highlight_count > 0;
+                                    let bu = b.notification_count > 0 || b.highlight_count > 0;
+                                    bu.cmp(&au)
+                                        .then_with(|| b.last_activity_ts.cmp(&a.last_activity_ts))
+                                        .then_with(|| a.id.cmp(&b.id))
+                                });
+                                tmp.iter()
+                                    .map(|r| {
+                                        let unread =
+                                            r.notification_count > 0 || r.highlight_count > 0;
+                                        (unread, r.last_activity_ts, r.id.clone())
+                                    })
+                                    .collect()
+                            };
+                            if sort_keys != prev_sort_keys {
+                                prev_sort_keys = sort_keys;
+                                emit_snapshot(&cache, &previews, &h);
+                            }
 
                             let invites = build_invite_infos(&client_clone).await;
                             if let Ok(guard) = h.lock() {

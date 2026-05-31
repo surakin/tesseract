@@ -1642,6 +1642,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
         b_unread
             .cmp(&a_unread)
             .then_with(|| b.last_activity_ts.cmp(&a.last_activity_ts))
+            .then_with(|| a.id.cmp(&b.id))
     });
 }
 
