@@ -61,6 +61,7 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let preview_cache = Arc::clone(&self.backfill_previews);
         let db_conn = Arc::clone(&self.app_cache_db);
+        let in_flight = Arc::clone(&self.in_flight);
 
         // Emit on_rooms_updated every UPDATE_EVERY completions so the
         // inactive-room count ticks up visibly during a long backfill run,
@@ -78,11 +79,14 @@ impl ClientFfi {
                     let sem = semaphore.clone();
                     let preview_cache = preview_cache.clone();
                     let db_conn = Arc::clone(&db_conn);
+                    let in_flight = Arc::clone(&in_flight);
+                    let handler_ref = handler.clone();
                     joinset.spawn(async move {
                         let _permit = match sem.acquire_owned().await {
                             Ok(p) => p,
                             Err(_) => return,
                         };
+                        let _guard = super::InFlightGuard::new(&in_flight, &handler_ref);
                         let preview =
                             backfill_room_silent(&client, &rid, 50).await.ok().flatten();
                         // Always record in preview_cache — even on failure — so

@@ -358,6 +358,8 @@ protected:
     BackupState last_backup_state_ = BackupState::Unknown;
     std::uint64_t last_imported_keys_ = 0;
     bool sync_progress_shown_ = false;
+    /// Extra in-flight HTTP request count (excludes the sync long-poll).
+    std::uint32_t last_inflight_ = 0;
 
     // ── Encryption setup overlay ──────────────────────────────────────────────
     // True once show_encryption_setup_overlay_() has been called this session;
@@ -874,6 +876,24 @@ protected:
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_()
     {
+    }
+    // Called whenever last_inflight_ or last_room_list_state_ changes so the
+    // status-bar dot can be repainted with the new combined request count.
+    virtual void on_inflight_ui_()
+    {
+    }
+
+    // Returns the color for the in-flight dot. Green ≤1 (sync only), amber
+    // 2–10 (extra activity), red >10 (heavy load).
+    tk::Color inflight_dot_color_() const
+    {
+        const bool sync_on =
+            last_room_list_state_ == RoomListState::Running ||
+            last_room_list_state_ == RoomListState::Recovering;
+        const std::uint32_t total = last_inflight_ + (sync_on ? 1u : 0u);
+        if (total <= 1u) return tk::Color::rgb(0x40BF4D); // green
+        if (total <= 10u) return tk::Color::rgb(0xF2B21A); // amber
+        return tk::Color::rgb(0xE03838);                   // red
     }
 
     /// Called on the UI thread after `server_info_` has been populated.

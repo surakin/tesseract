@@ -613,6 +613,12 @@ pub mod ffi {
         /// UIs use this to surface "Syncing rooms…" progress in the status
         /// bar while the joined-room set is still being hydrated.
         fn on_room_list_state(self: &EventHandlerBridge, state: u8);
+        /// Fired when the count of in-flight extra HTTP requests changes
+        /// (media downloads, /messages back-pagination). Does not include
+        /// the sync long-poll; C++ adds 1 for that when RoomListState is
+        /// Running or Recovering. Fires on every increment and decrement so
+        /// the status-bar dot tracks the exact concurrent-request count.
+        fn on_inflight_changed(self: &EventHandlerBridge, count: u32);
         /// Fired when the cached set of MSC2545 image packs changes
         /// (user-pack edit, room-pack subscription edit, or live state-event
         /// update on a referenced room). The UI re-queries via

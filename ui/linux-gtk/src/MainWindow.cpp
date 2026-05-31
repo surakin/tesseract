@@ -142,6 +142,19 @@ void MainWindow::handle_notification_ui_(
 void MainWindow::on_room_list_state_ui_()
 {
     refresh_sync_status();
+    on_inflight_ui_();
+}
+
+void MainWindow::on_inflight_ui_()
+{
+    if (!inflight_dot_)
+        return;
+    const auto c = inflight_dot_color_();
+    char buf[64];
+    std::snprintf(buf, sizeof(buf),
+                  "<span color=\"#%02x%02x%02x\">&#x25cf;</span>",
+                  c.r, c.g, c.b);
+    gtk_label_set_markup(GTK_LABEL(inflight_dot_), buf);
 }
 
 void MainWindow::on_server_info_ready_ui_()
@@ -2075,12 +2088,19 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
     // Status bar floats below the main stack (outside the stack so it is
     // always visible regardless of which page is shown).
     status_bar_ = gtk_label_new(_("Not logged in"));
+    gtk_widget_set_hexpand(status_bar_, TRUE);
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
     gtk_widget_set_margin_start(status_bar_, 4);
     gtk_widget_set_margin_bottom(status_bar_, 2);
+    inflight_dot_ = gtk_label_new(u8"●");
+    gtk_widget_set_margin_end(inflight_dot_, 6);
+    gtk_widget_set_margin_bottom(inflight_dot_, 2);
     {
-        // Wrap content_stack_ + status_bar_ in an outer vbox so the status
+        // Wrap content_stack_ + status row in an outer vbox so the status
         // bar stays below the stack on all pages.
+        GtkWidget* status_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_box_append(GTK_BOX(status_row), status_bar_);
+        gtk_box_append(GTK_BOX(status_row), inflight_dot_);
         GtkWidget* outer_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         // Reparent: the constructor already set content_stack_ as child of
         // window_; swap it out for the outer vbox.
@@ -2088,8 +2108,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         gtk_window_set_child(GTK_WINDOW(window_), nullptr);
         gtk_box_append(GTK_BOX(outer_vbox), content_stack_);
         g_object_unref(content_stack_);
-        gtk_box_append(GTK_BOX(outer_vbox), status_bar_);
+        gtk_box_append(GTK_BOX(outer_vbox), status_row);
         gtk_window_set_child(GTK_WINDOW(window_), outer_vbox);
+        on_inflight_ui_();
     }
 
     gtk_widget_set_visible(window_, TRUE);

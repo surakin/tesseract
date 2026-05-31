@@ -1,6 +1,7 @@
 #pragma once
 #include <QMainWindow>
 #include <QHash>
+#include <QLabel>
 #include <QPixmap>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -139,6 +140,7 @@ private:
                                  std::vector<uint8_t> avatar_bytes,
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
+    void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 
@@ -303,6 +305,7 @@ private:
     // by 300 ms so quiet restored sessions (Init→Running in <500 ms) don't
     // flash the status bar.
     QTimer* syncStatusDebounce_ = nullptr;
+    QLabel* inflightDot_ = nullptr;
     QTimer* markReadTimer_ = nullptr;
     void refreshSyncStatus();
 

@@ -352,6 +352,18 @@ void EventHandlerBridge::on_room_list_state(std::uint8_t state) const
           });
 }
 
+void EventHandlerBridge::on_inflight_changed(std::uint32_t count) const
+{
+    guard("on_inflight_changed",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+                  return;
+              handler_->on_inflight_changed(count);
+          });
+}
+
 void EventHandlerBridge::on_image_packs_updated() const
 {
     guard("on_image_packs_updated",

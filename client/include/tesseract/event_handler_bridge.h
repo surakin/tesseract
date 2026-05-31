@@ -99,6 +99,7 @@ public:
                                      std::uint32_t backed_up,
                                      std::uint32_t total) const;
     void on_room_list_state(std::uint8_t state) const;
+    void on_inflight_changed(std::uint32_t count) const;
     void on_image_packs_updated() const;
     void on_threads_updated(rust::Str room_id) const;
     void on_account_prefs_updated(rust::Str json) const;

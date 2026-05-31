@@ -1748,6 +1748,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     };
 
     statusBar()->showMessage(tr("Not logged in"));
+    inflightDot_ = new QLabel(u8"●", this);
+    inflightDot_->setContentsMargins(0, 0, 6, 0);
+    statusBar()->addPermanentWidget(inflightDot_);
+    on_inflight_ui_();
 
     read_portal_color_scheme_();
     QDBusConnection::sessionBus().connect(
@@ -4141,6 +4145,15 @@ void MainWindow::set_compose_draft_(const std::string& draft)
 void MainWindow::on_room_list_state_ui_()
 {
     refreshSyncStatus();
+    on_inflight_ui_();
+}
+
+void MainWindow::on_inflight_ui_()
+{
+    const auto c = inflight_dot_color_();
+    inflightDot_->setStyleSheet(
+        QStringLiteral("color: rgb(%1,%2,%3);")
+            .arg(c.r).arg(c.g).arg(c.b));
 }
 
 void MainWindow::on_server_info_ready_ui_()

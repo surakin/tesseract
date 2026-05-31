@@ -231,8 +231,19 @@ void EventHandlerBase::on_room_list_state(RoomListState state)
         {
             shell->push_room_list_state_(s);
             shell->on_room_list_state_ui_();
+            shell->on_inflight_ui_();
             if (s == RoomListState::Running)
                 shell->begin_server_info_fetch_();
+        });
+}
+
+void EventHandlerBase::on_inflight_changed(uint32_t count)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, n = count]()
+        {
+            shell->last_inflight_ = n;
+            shell->on_inflight_ui_();
         });
 }
 

@@ -148,6 +148,7 @@ public:
                                  std::vector<uint8_t> avatar_bytes,
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
+    void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 

@@ -214,7 +214,10 @@ struct FileBytesPayload
 // STATUSCLASSNAMEW (which carries a 9x-style size grip and chunky borders).
 // Stores the latest text via WM_SETTEXT / SB_SETTEXTW so existing callers
 // using either message continue to work.
+// SB_SET_INFLIGHT_COLOR (WM_USER+2): wParam = COLORREF for the dot indicator.
 // ---------------------------------------------------------------------------
+
+static constexpr UINT SB_SET_INFLIGHT_COLOR = WM_USER + 2;
 
 LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                                      LPARAM lParam)
@@ -223,6 +226,8 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     {
     case WM_NCCREATE:
         SetPropW(hwnd, L"TesseractStatusText", nullptr);
+        SetPropW(hwnd, L"TesseractStatusDot",
+                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(RGB(0x40, 0xBF, 0x4D))));
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     case WM_NCDESTROY:
     {
@@ -230,7 +235,16 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         delete p;
         RemovePropW(hwnd, L"TesseractStatusText");
+        RemovePropW(hwnd, L"TesseractStatusDot");
         return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+    case SB_SET_INFLIGHT_COLOR:
+    {
+        SetPropW(hwnd, L"TesseractStatusDot",
+                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(
+                     static_cast<COLORREF>(wParam))));
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
     }
     case WM_SETTEXT:
     case SB_SETTEXTW:
@@ -297,11 +311,29 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             SetTextColor(hdc, pal.text_secondary);
             HFONT old =
                 (HFONT)SelectObject(hdc, theme::font(theme::FontRole::Small));
-            RECT text_rc = {rc.left + 10, rc.top, rc.right - 10, rc.bottom};
+            // Reserve 24px on the right for the inflight dot.
+            RECT text_rc = {rc.left + 10, rc.top, rc.right - 24, rc.bottom};
             DrawTextW(hdc, p->c_str(), -1, &text_rc,
                       DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS |
                           DT_NOPREFIX);
             SelectObject(hdc, old);
+        }
+        // Draw the inflight dot — always visible on the right.
+        {
+            const COLORREF dot_cr = static_cast<COLORREF>(reinterpret_cast<ULONG_PTR>(
+                GetPropW(hwnd, L"TesseractStatusDot")));
+            const int DOT_R = 4;
+            const int cx = rc.right - 12;
+            const int cy = (rc.top + rc.bottom) / 2;
+            HBRUSH dot_br = CreateSolidBrush(dot_cr);
+            HPEN null_pen = CreatePen(PS_NULL, 0, 0);
+            HBRUSH old_br = static_cast<HBRUSH>(SelectObject(hdc, dot_br));
+            HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
+            Ellipse(hdc, cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R);
+            SelectObject(hdc, old_br);
+            SelectObject(hdc, old_pen);
+            DeleteObject(dot_br);
+            DeleteObject(null_pen);
         }
         EndPaint(hwnd, &ps);
         return 0;
@@ -691,6 +723,17 @@ void MainWindow::handle_notification_ui_(
 void MainWindow::on_room_list_state_ui_()
 {
     refresh_sync_status();
+    on_inflight_ui_();
+}
+
+void MainWindow::on_inflight_ui_()
+{
+    if (!hStatus_)
+        return;
+    const auto c = inflight_dot_color_();
+    const COLORREF cr = RGB(c.r, c.g, c.b);
+    SendMessageW(hStatus_, SB_SET_INFLIGHT_COLOR,
+                 static_cast<WPARAM>(cr), 0);
 }
 
 void MainWindow::on_server_info_ready_ui_()
@@ -2756,6 +2799,7 @@ void MainWindow::on_create(HWND hwnd)
     hStatus_ = CreateWindowExW(0, L"TesseractStatusBar", L"Not logged in",
                                WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr,
                                hInst_, nullptr);
+    on_inflight_ui_();
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd);
     // Route the homeserver-discovery debounce through the shell's worker

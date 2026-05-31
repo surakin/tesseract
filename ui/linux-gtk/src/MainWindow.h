@@ -97,6 +97,7 @@ private:
                                  std::vector<uint8_t> avatar_bytes,
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
+    void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 
@@ -354,6 +355,7 @@ private:
     std::string ctx_sticker_body_;
     std::string ctx_sticker_info_json_;
     GtkWidget* status_bar_ = nullptr;
+    GtkWidget* inflight_dot_ = nullptr;
 
     guint sync_status_debounce_id_ = 0;
     guint mark_read_timer_id_ = 0;

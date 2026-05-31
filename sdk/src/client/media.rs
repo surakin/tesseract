@@ -198,7 +198,10 @@ impl ClientFfi {
             format: MediaFormat::File,
         };
         let stop_rx = self.stop_rx.clone();
+        let in_flight = std::sync::Arc::clone(&self.in_flight);
+        let handler = self.handler.clone();
         self.rt.block_on(async move {
+            let _guard = super::InFlightGuard::new(&in_flight, &handler);
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
@@ -244,7 +247,10 @@ impl ClientFfi {
             format: MediaFormat::File,
         };
         let stop_rx = self.stop_rx.clone();
+        let in_flight = std::sync::Arc::clone(&self.in_flight);
+        let handler = self.handler.clone();
         self.rt.block_on(async move {
+            let _guard = super::InFlightGuard::new(&in_flight, &handler);
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
@@ -309,7 +315,10 @@ impl ClientFfi {
             format: MediaFormat::Thumbnail(settings),
         };
         let stop_rx = self.stop_rx.clone();
+        let in_flight = std::sync::Arc::clone(&self.in_flight);
+        let handler = self.handler.clone();
         self.rt.block_on(async move {
+            let _guard = super::InFlightGuard::new(&in_flight, &handler);
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
@@ -366,7 +375,10 @@ impl ClientFfi {
             format,
         };
         let stop_rx = self.stop_rx.clone();
+        let in_flight = std::sync::Arc::clone(&self.in_flight);
+        let handler = self.handler.clone();
         self.rt.block_on(async move {
+            let _guard = super::InFlightGuard::new(&in_flight, &handler);
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>

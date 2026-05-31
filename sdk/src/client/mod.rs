@@ -45,6 +45,43 @@ use backfill::{
     apply_backfill_previews, load_backfill_ts_conn, open_app_cache_db, BackfillPreview,
 };
 
+/// RAII guard that increments `counter` on creation and decrements it on drop,
+/// firing `on_inflight_changed` through `handler` both times so the UI dot
+/// tracks the exact number of concurrent extra-sync HTTP operations.
+#[cfg(not(test))]
+pub(crate) struct InFlightGuard(
+    Arc<std::sync::atomic::AtomicU32>,
+    Option<Arc<Mutex<SendHandler>>>,
+);
+
+#[cfg(not(test))]
+impl InFlightGuard {
+    pub(crate) fn new(
+        counter: &Arc<std::sync::atomic::AtomicU32>,
+        handler: &Option<Arc<Mutex<SendHandler>>>,
+    ) -> Self {
+        let prev = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self::notify(handler, prev + 1);
+        Self(counter.clone(), handler.clone())
+    }
+
+    fn notify(handler: &Option<Arc<Mutex<SendHandler>>>, count: u32) {
+        if let Some(h) = handler {
+            if let Ok(g) = h.lock() {
+                g.on_inflight_changed(count);
+            }
+        }
+    }
+}
+
+#[cfg(not(test))]
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let prev = self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        Self::notify(&self.1, prev.saturating_sub(1));
+    }
+}
+
 #[cfg(not(test))]
 use crate::ffi::EventHandlerBridge;
 #[cfg(not(test))]
@@ -326,6 +363,11 @@ pub struct ClientFfi {
     /// children live inside a `JoinSet` owned by the orchestrator future).
     #[cfg(not(test))]
     pub(super) backfill_task: Option<tokio::task::AbortHandle>,
+    /// Count of in-flight extra HTTP operations (media downloads, /messages
+    /// back-pagination). Does not include the sync long-poll (always 1 when
+    /// Running). Wrapped in Arc so it can be cloned into spawned tasks.
+    #[cfg(not(test))]
+    pub(super) in_flight: Arc<std::sync::atomic::AtomicU32>,
     /// Room-list previews derived from back-pagination, keyed by room ID.
     /// `room.latest_event()` is only updated by the live sync loop; for rooms
     /// whose latest event arrived only through back-pagination the sync-backed
@@ -645,6 +687,8 @@ impl ClientFfi {
             thread_lists: HashMap::new(),
             #[cfg(not(test))]
             backfill_task: None,
+            #[cfg(not(test))]
+            in_flight: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             #[cfg(not(test))]
             backfill_previews: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]

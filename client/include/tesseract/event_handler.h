@@ -133,6 +133,13 @@ public:
     {
     }
 
+    /// Fired when the count of in-flight extra HTTP requests changes
+    /// (media downloads, /messages back-pagination). The sync long-poll
+    /// is NOT included; add 1 when RoomListState is Running or Recovering.
+    virtual void on_inflight_changed(std::uint32_t /*count*/)
+    {
+    }
+
     /// Fired when the cached set of MSC2545 image packs changes (user-pack
     /// edit, room-pack subscription, or live state-event update on a
     /// referenced room). UIs re-query via `Client::list_image_packs` and
