@@ -307,6 +307,7 @@ impl ClientFfi {
             let mut stop_rx_rooms = stop_rx.clone();
             let packs_cache = Arc::clone(&self.image_packs);
             let write_pending = Arc::clone(&self.user_pack_write_pending);
+            let packs_dirty = Arc::clone(&self.packs_dirty);
             // Open the per-account app cache DB for this session.
             // Load persisted timestamps now so the first on_rooms_updated()
             // already classifies rooms correctly; the connection stays open
@@ -523,19 +524,21 @@ impl ClientFfi {
                             if let Ok(guard) = h.lock() {
                                 guard.on_invites_updated(&invites);
                             }
-                            // Image packs only change when account-data or
-                            // state-event content changes — never on a
-                            // pure read-receipt / recency-stamp / latest-
-                            // event update. matrix-sdk routes those
-                            // changes through the catch-all NONE reason
-                            // (membership and display-name flag them
-                            // explicitly). Skip the rebuild when none of
-                            // those bits are set.
-                            let pack_relevant =
-                                RoomInfoNotableUpdateReasons::MEMBERSHIP
-                                    | RoomInfoNotableUpdateReasons::DISPLAY_NAME
-                                    | RoomInfoNotableUpdateReasons::NONE;
-                            if !combined.intersects(pack_relevant) {
+                            // Image packs only change on membership events
+                            // (joining/leaving changes which room packs are
+                            // visible), when the account-data watcher set
+                            // `packs_dirty` (user pack or emote-rooms list
+                            // changed via any client), or while our own write
+                            // echo is still in flight.  Skip the O(all-rooms)
+                            // SQLite sweep on pure read-receipt / recency /
+                            // typing bursts that only carry the NONE reason.
+                            let pack_dirty =
+                                packs_dirty.swap(false, std::sync::atomic::Ordering::AcqRel);
+                            let membership_changed = combined
+                                .contains(RoomInfoNotableUpdateReasons::MEMBERSHIP);
+                            let echo_pending =
+                                write_pending.load(std::sync::atomic::Ordering::Acquire);
+                            if !membership_changed && !pack_dirty && !echo_pending {
                                 continue;
                             }
                             // Refresh image packs on the same tick.
@@ -964,6 +967,31 @@ impl ClientFfi {
                                 "verification request {flow_id} from {user_id} \
                                  not visible after retries; dropped",
                             );
+                        }
+                    }
+                },
+            ));
+        }
+
+        // Account-data image-pack watcher: set `packs_dirty` whenever the user
+        // pack or emote-rooms subscription changes so the notable-update loop
+        // can rebuild image packs without relying on the catch-all NONE reason
+        // (which also fires on read-receipts, typing, and recency stamps).
+        {
+            use matrix_sdk::ruma::events::AnyGlobalAccountDataEvent;
+            let packs_dirty_eh = Arc::clone(&self.packs_dirty);
+            self.event_handler_handles.push(client.add_event_handler(
+                move |ev: AnyGlobalAccountDataEvent| {
+                    let packs_dirty_eh = Arc::clone(&packs_dirty_eh);
+                    async move {
+                        let type_str = ev.event_type().to_string();
+                        if matches!(
+                            type_str.as_str(),
+                            crate::image_packs::TYPE_USER_PACK
+                                | crate::image_packs::TYPE_EMOTE_ROOMS_STABLE
+                                | crate::image_packs::TYPE_EMOTE_ROOMS_UNSTABLE
+                        ) {
+                            packs_dirty_eh.store(true, std::sync::atomic::Ordering::Release);
                         }
                     }
                 },

@@ -351,6 +351,14 @@ pub struct ClientFfi {
     /// deletion of the pack.
     #[cfg(not(test))]
     pub(super) user_pack_write_pending: Arc<std::sync::atomic::AtomicBool>,
+    /// Set to `true` by the `AnyGlobalAccountDataEvent` handler whenever an
+    /// image-pack account-data event arrives (user pack or emote-rooms list).
+    /// Cleared atomically by the sync watcher after each `rebuild_image_packs`
+    /// call.  Allows the notable-update loop to skip the O(all-rooms) SQLite
+    /// sweep on pure read-receipt / recency-stamp bursts while still catching
+    /// remote pack edits that arrive with the catch-all `NONE` reason.
+    #[cfg(not(test))]
+    pub(super) packs_dirty: Arc<std::sync::atomic::AtomicBool>,
     /// Serializes every account-data read-modify-write (`recent_emoji_bump`,
     /// `save_sticker_to_user_pack`, `toggle_favorite_sticker`). Matrix
     /// account-data is last-write-wins with no server-side merge, so two
@@ -628,6 +636,8 @@ impl ClientFfi {
             image_packs: Arc::new(Mutex::new(Vec::new())),
             #[cfg(not(test))]
             user_pack_write_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(not(test))]
+            packs_dirty: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             #[cfg(not(test))]
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir: default_data_dir(),
