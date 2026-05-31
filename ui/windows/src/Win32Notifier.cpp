@@ -20,8 +20,21 @@ namespace win32
 {
 
 Win32Notifier::Win32Notifier(HWND hwnd, std::string user_id)
-    : hwnd_(hwnd), user_id_(std::move(user_id))
+    : hwnd_(hwnd),
+      user_id_(std::move(user_id)),
+      hwnd_box_(std::make_shared<std::atomic<HWND>>(hwnd))
 {
+}
+
+Win32Notifier::~Win32Notifier()
+{
+    // Signal any outstanding toast Activated handlers that the window is gone.
+    // Each handler holds its own shared_ptr to the box, so this store is safe
+    // even as they may still run on a thread-pool thread.
+    if (hwnd_box_)
+    {
+        hwnd_box_->store(nullptr);
+    }
 }
 
 // Converts a UTF-8 std::string to std::wstring via Win32 MultiByteToWideChar.
