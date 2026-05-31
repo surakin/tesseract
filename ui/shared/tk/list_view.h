@@ -270,6 +270,12 @@ public:
     void on_pointer_leave() override;
 
 protected:
+    // True if row i lies strictly above the current viewport. When heights
+    // are dirty, visible_range() returns {0,-1}; falls back to the stale
+    // row_offsets_ so the check stays reliable even after a concurrent
+    // invalidate_data() call made without an anchor.
+    bool row_above_viewport(std::size_t i) const;
+
     int hovered_row_index() const
     {
         return hovered_index_;

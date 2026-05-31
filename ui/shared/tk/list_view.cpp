@@ -211,6 +211,23 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
     clamp_scroll();
 }
 
+bool ListView::row_above_viewport(std::size_t i) const
+{
+    if (!heights_dirty_)
+    {
+        auto [first, last] = visible_range();
+        return first > 0 && static_cast<int>(i) < first;
+    }
+    // heights_dirty_: visible_range() returns {0,-1} — unreliable.
+    // row_offsets_[i+1] is the bottom edge of row i from the last layout.
+    // If it is at or above scroll_y_, the row was strictly above the viewport.
+    if (scroll_y_ <= 0.0f || i + 1 >= row_offsets_.size())
+    {
+        return false;
+    }
+    return row_offsets_[i + 1] <= scroll_y_;
+}
+
 void ListView::preserve_top_through(const std::function<void()>& mutate)
 {
     if (stick_to_bottom_)

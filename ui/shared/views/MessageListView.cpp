@@ -4394,7 +4394,6 @@ void MessageListView::set_preview_provider(PreviewProvider p)
 void MessageListView::notify_url_preview_ready(const std::string& url)
 {
     on_gate_notify_(url);
-    auto [first, last] = visible_range();
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
         if (messages_[i].first_url == url)
@@ -4402,7 +4401,7 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
             // Preview data (hence image_mxc) is now known; pin the image if it
             // is already cached. Otherwise notify_image_ready re-pins on decode.
             try_acquire_image_(messages_[i]);
-            if (first > 0 && static_cast<int>(i) < first)
+            if (row_above_viewport(i))
             {
                 preserve_top_through(
                     [&]
@@ -4423,7 +4422,6 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
 void MessageListView::notify_image_ready(const std::string& url)
 {
     on_gate_notify_(url);
-    auto [first, last] = visible_range();
     bool matched = false;
     bool above = false;
     for (std::size_t i = 0; i < messages_.size(); ++i)
@@ -4446,7 +4444,7 @@ void MessageListView::notify_image_ready(const std::string& url)
             // Newly decoded → re-pin this row now that the image exists.
             try_acquire_image_(m);
             matched = true;
-            if (first > 0 && static_cast<int>(i) < first)
+            if (row_above_viewport(i))
             {
                 above = true;
             }
@@ -4475,7 +4473,16 @@ void MessageListView::update_voice_waveform(const std::string&         event_id,
             msg.event_id == event_id && msg.waveform.empty())
         {
             msg.waveform = std::move(waveform);
-            invalidate_data();
+            const std::size_t idx =
+                static_cast<std::size_t>(&msg - messages_.data());
+            if (row_above_viewport(idx))
+            {
+                preserve_top_through([this] { invalidate_data(); });
+            }
+            else
+            {
+                invalidate_data();
+            }
             return;
         }
     }
