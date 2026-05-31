@@ -61,6 +61,7 @@ void EventHandlerBridge::on_timeline_reset(
     guard("on_timeline_reset",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -83,6 +84,7 @@ void EventHandlerBridge::on_message_inserted(rust::Str room_id,
     guard("on_message_inserted",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_ || !index_fits(index))
               {
                   return;
@@ -100,6 +102,7 @@ void EventHandlerBridge::on_message_updated(rust::Str room_id,
     guard("on_message_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_ || !index_fits(index))
               {
                   return;
@@ -116,6 +119,7 @@ void EventHandlerBridge::on_message_removed(rust::Str room_id,
     guard("on_message_removed",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_ || !index_fits(index))
               {
                   return;
@@ -132,6 +136,7 @@ void EventHandlerBridge::on_thread_reset(
     guard("on_thread_reset",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -156,6 +161,7 @@ void EventHandlerBridge::on_thread_inserted(rust::Str room_id,
     guard("on_thread_inserted",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_ || !index_fits(index))
               {
                   return;
@@ -174,6 +180,7 @@ void EventHandlerBridge::on_thread_updated(rust::Str room_id,
     guard("on_thread_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_ || !index_fits(index))
               {
                   return;
@@ -191,6 +198,7 @@ void EventHandlerBridge::on_thread_removed(rust::Str room_id,
     guard("on_thread_removed",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_ || !index_fits(index))
               {
                   return;
@@ -207,6 +215,7 @@ void EventHandlerBridge::on_rooms_updated(
     guard("on_rooms_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -227,6 +236,7 @@ void EventHandlerBridge::on_invites_updated(
     guard("on_invites_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -247,6 +257,7 @@ void EventHandlerBridge::on_error(rust::Str context, rust::Str message,
     guard("on_error",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -261,6 +272,7 @@ void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const
     guard("on_session_refreshed",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -290,6 +302,7 @@ void EventHandlerBridge::on_backup_progress(
     guard("on_backup_progress",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -306,6 +319,7 @@ void EventHandlerBridge::on_enable_recovery_progress(std::uint8_t step,
     guard("on_enable_recovery_progress",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -320,6 +334,7 @@ void EventHandlerBridge::on_room_list_state(std::uint8_t state) const
     guard("on_room_list_state",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -342,6 +357,7 @@ void EventHandlerBridge::on_image_packs_updated() const
     guard("on_image_packs_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -355,6 +371,7 @@ void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
     guard("on_threads_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -368,6 +385,7 @@ void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const
     guard("on_account_prefs_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -381,6 +399,7 @@ void EventHandlerBridge::on_media_preview_config_updated(rust::Str json) const
     guard("on_media_preview_config_updated",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -397,6 +416,7 @@ void EventHandlerBridge::on_notification(
     guard("on_notification",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -420,6 +440,7 @@ void EventHandlerBridge::on_verification_request(rust::Str flow_id,
     guard("on_verification_request",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -436,6 +457,7 @@ void EventHandlerBridge::on_sas_ready(
     guard("on_sas_ready",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -457,6 +479,7 @@ void EventHandlerBridge::on_verification_done(rust::Str flow_id) const
     guard("on_verification_done",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -471,6 +494,7 @@ void EventHandlerBridge::on_verification_cancelled(rust::Str flow_id,
     guard("on_verification_cancelled",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -485,6 +509,7 @@ void EventHandlerBridge::on_verification_state_changed(bool verified) const
     guard("on_verification_state_changed",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -499,6 +524,7 @@ void EventHandlerBridge::on_typing_changed(
     guard("on_typing_changed",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;
@@ -519,6 +545,7 @@ void EventHandlerBridge::on_presence_changed(rust::Str user_id,
     guard("on_presence_changed",
           [&]
           {
+              auto* handler_ = slot_->load();
               if (!handler_)
               {
                   return;

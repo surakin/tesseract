@@ -34,6 +34,12 @@ namespace tesseract
 struct Client::Impl
 {
     rust::Box<tesseract_ffi::ClientFfi> ffi;
+    // Shared, mutex-guarded slot holding the IEventHandler the sync bridge
+    // dispatches to. Created on demand in start_sync and detached in stop_sync
+    // so a sync-task callback that fires after stop_sync() (tokio abort only
+    // *requests* cancellation) observes a null handler and drops, instead of
+    // dereferencing the about-to-be-destroyed handler. See HandlerSlot.
+    std::shared_ptr<tesseract_ffi::HandlerSlot> handler_slot;
     // Serialises all calls that reach &mut ClientFfi across the cxx boundary.
     // Any method whose Rust signature is `&self` (not `&mut self`) does NOT
     // acquire this lock and may run concurrently: fetch_*, get_url_preview,
@@ -164,13 +170,30 @@ Result Client::logout()
 void Client::start_sync(IEventHandler* handler)
 {
     MUT_FFI;
+    // Detach any prior slot (e.g. a previous start_sync without an intervening
+    // stop_sync) so its bridge stops dispatching, then publish a fresh slot.
+    if (impl_->handler_slot)
+    {
+        impl_->handler_slot->detach();
+    }
+    impl_->handler_slot =
+        std::make_shared<tesseract_ffi::HandlerSlot>(handler);
     impl_->ffi->start_sync(
-        std::make_unique<tesseract_ffi::EventHandlerBridge>(handler));
+        std::make_unique<tesseract_ffi::EventHandlerBridge>(
+            impl_->handler_slot));
 }
 
 void Client::stop_sync()
 {
     MUT_FFI;
+    // Sever the handler link *before* aborting the Rust tasks: a callback
+    // already in flight on the sync-task thread will then observe a null
+    // handler (under the slot mutex) and drop, even though tokio's abort()
+    // only requests cancellation and cannot wait for that callback to finish.
+    if (impl_->handler_slot)
+    {
+        impl_->handler_slot->detach();
+    }
     impl_->ffi->stop_sync();
 }
 

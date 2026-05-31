@@ -8,6 +8,7 @@
 #include "types.h"
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
 // Forward declarations for cxx-generated types.
 namespace tesseract_ffi
@@ -22,13 +23,54 @@ struct VerificationEmoji;
 namespace tesseract_ffi
 {
 
+/// Thread-safe slot holding the non-owning IEventHandler pointer the bridge
+/// dispatches to. The bridge reads the handler through this slot under a mutex,
+/// so detach() (called during sync teardown) is observed atomically by any
+/// callback already executing on a worker thread.
+///
+/// Why this exists: the Rust sync loop's stop_sync() aborts its tasks, but
+/// tokio abort() only *requests* cancellation — a task already running a
+/// synchronous C++ callback through this bridge runs to its next await point
+/// before it actually stops, so a late callback can still fire after stop_sync
+/// returns (see sdk/src/client/sync.rs::stop_sync). The shell tears the
+/// IEventHandler down shortly after stop_sync(); without this slot, that late
+/// callback would dereference a dangling handler. Detaching the slot inside
+/// Client::stop_sync() (before the handler dies) makes the null check in every
+/// callback below live, so the stray callback drops cleanly instead.
+class HandlerSlot
+{
+public:
+    explicit HandlerSlot(tesseract::IEventHandler* handler) : handler_(handler)
+    {
+    }
+
+    /// Sever the link to the IEventHandler. After this returns every load()
+    /// observes nullptr. Idempotent; safe to call from any thread.
+    void detach() noexcept
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        handler_ = nullptr;
+    }
+
+    /// Snapshot the handler under the lock. Returns nullptr once detached.
+    tesseract::IEventHandler* load() const noexcept
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return handler_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    tesseract::IEventHandler* handler_; // non-owning
+};
+
 /// Concrete bridge object whose pointer is handed to the Rust sync loop.
 /// Rust holds a UniquePtr<EventHandlerBridge> and calls the methods below.
 class EventHandlerBridge
 {
 public:
-    explicit EventHandlerBridge(tesseract::IEventHandler* handler)
-        : handler_(handler)
+    explicit EventHandlerBridge(std::shared_ptr<HandlerSlot> slot)
+        : slot_(std::move(slot))
     {
     }
 
@@ -91,11 +133,14 @@ public:
                            std::uint64_t index) const;
 
 private:
-    // `const`: set once at construction and never reassigned. Rust calls the
-    // methods above from worker threads; making the pointer immutable keeps
-    // those reads data-race-free by construction and prevents a future
-    // setter from silently introducing a check-then-use race.
-    tesseract::IEventHandler* const handler_; // non-owning
+    // Shared, mutex-guarded handler slot. `const`: the shared_ptr is set once
+    // and never reassigned, so the worker-thread reads of it are data-race-free
+    // by construction. The handler *value* is loaded under the slot's mutex via
+    // slot_->load(), so detach() (run during teardown) is observed atomically
+    // and the callbacks below drop cleanly afterwards. Client::Impl holds the
+    // other shared_ptr to this same slot, so a single detach() severs every
+    // live bridge at once.
+    const std::shared_ptr<HandlerSlot> slot_;
 };
 
 /// Synchronously persist a refreshed OAuth session blob to the platform
