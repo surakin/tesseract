@@ -4151,9 +4151,13 @@ void MainWindow::on_room_list_state_ui_()
 void MainWindow::on_inflight_ui_()
 {
     const auto c = inflight_dot_color_();
+    const auto n = inflight_total_();
     inflightDot_->setStyleSheet(
         QStringLiteral("color: rgb(%1,%2,%3);")
             .arg(c.r).arg(c.g).arg(c.b));
+    inflightDot_->setToolTip(n == 1
+        ? tr("1 request in flight")
+        : tr("%1 requests in flight").arg(n));
 }
 
 void MainWindow::on_server_info_ready_ui_()

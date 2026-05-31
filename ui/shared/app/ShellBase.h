@@ -883,14 +883,21 @@ protected:
     {
     }
 
-    // Returns the color for the in-flight dot. Green ≤1 (sync only), amber
-    // 2–10 (extra activity), red >10 (heavy load).
-    tk::Color inflight_dot_color_() const
+    // Combined in-flight count: extra requests + 1 for the sync long-poll
+    // when it is running. Used by both the color helper and tooltip text.
+    std::uint32_t inflight_total_() const
     {
         const bool sync_on =
             last_room_list_state_ == RoomListState::Running ||
             last_room_list_state_ == RoomListState::Recovering;
-        const std::uint32_t total = last_inflight_ + (sync_on ? 1u : 0u);
+        return last_inflight_ + (sync_on ? 1u : 0u);
+    }
+
+    // Returns the color for the in-flight dot. Green ≤1 (sync only), amber
+    // 2–10 (extra activity), red >10 (heavy load).
+    tk::Color inflight_dot_color_() const
+    {
+        const std::uint32_t total = inflight_total_();
         if (total <= 1u) return tk::Color::rgb(0x40BF4D); // green
         if (total <= 10u) return tk::Color::rgb(0xF2B21A); // amber
         return tk::Color::rgb(0xE03838);                   // red

@@ -150,11 +150,16 @@ void MainWindow::on_inflight_ui_()
     if (!inflight_dot_)
         return;
     const auto c = inflight_dot_color_();
+    const auto n = inflight_total_();
     char buf[64];
     std::snprintf(buf, sizeof(buf),
                   "<span color=\"#%02x%02x%02x\">&#x25cf;</span>",
                   c.r, c.g, c.b);
     gtk_label_set_markup(GTK_LABEL(inflight_dot_), buf);
+    char tip[48];
+    std::snprintf(tip, sizeof(tip), "%u request%s in flight", n,
+                  n == 1u ? "" : "s");
+    gtk_widget_set_tooltip_text(inflight_dot_, tip);
 }
 
 void MainWindow::on_server_info_ready_ui_()

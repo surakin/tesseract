@@ -731,9 +731,23 @@ void MainWindow::on_inflight_ui_()
     if (!hStatus_)
         return;
     const auto c = inflight_dot_color_();
-    const COLORREF cr = RGB(c.r, c.g, c.b);
+    const auto n = inflight_total_();
     SendMessageW(hStatus_, SB_SET_INFLIGHT_COLOR,
-                 static_cast<WPARAM>(cr), 0);
+                 static_cast<WPARAM>(RGB(c.r, c.g, c.b)), 0);
+    if (hStatusTip_)
+    {
+        wchar_t buf[48];
+        std::swprintf(buf, 48, n == 1u ? L"1 request in flight"
+                                       : L"%u requests in flight", n);
+        inflight_tip_text_ = buf;
+        TOOLINFOW ti{};
+        ti.cbSize = sizeof(ti);
+        ti.hwnd = hStatus_;
+        ti.uId = reinterpret_cast<UINT_PTR>(hStatus_);
+        ti.lpszText = inflight_tip_text_.data();
+        SendMessageW(hStatusTip_, TTM_UPDATETIPTEXTW, 0,
+                     reinterpret_cast<LPARAM>(&ti));
+    }
 }
 
 void MainWindow::on_server_info_ready_ui_()
@@ -2799,6 +2813,21 @@ void MainWindow::on_create(HWND hwnd)
     hStatus_ = CreateWindowExW(0, L"TesseractStatusBar", L"Not logged in",
                                WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr,
                                hInst_, nullptr);
+    hStatusTip_ = CreateWindowExW(
+        WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
+        WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        hStatus_, nullptr, hInst_, nullptr);
+    {
+        TOOLINFOW ti{};
+        ti.cbSize = sizeof(ti);
+        ti.uFlags = TTF_SUBCLASS | TTF_IDISHWND;
+        ti.hwnd = hStatus_;
+        ti.uId = reinterpret_cast<UINT_PTR>(hStatus_);
+        ti.lpszText = const_cast<LPWSTR>(L"");
+        SendMessageW(hStatusTip_, TTM_ADDTOOLW, 0,
+                     reinterpret_cast<LPARAM>(&ti));
+    }
     on_inflight_ui_();
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd);

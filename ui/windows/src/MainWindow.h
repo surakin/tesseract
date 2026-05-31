@@ -423,6 +423,8 @@ private:
         0; // incremented on each open; guards stale callbacks
 
     HWND hStatus_ = nullptr;
+    HWND hStatusTip_ = nullptr;
+    std::wstring inflight_tip_text_;
 
     bool verif_banner_visible_ = false;
 
