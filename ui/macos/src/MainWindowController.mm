@@ -239,8 +239,7 @@ public:
     using ShellBase::try_restore_tab_session_;
     using ShellBase::per_account_rooms_;
     using ShellBase::per_account_invites_;
-    using ShellBase::current_invite_room_id_;
-    using ShellBase::current_invite_inviter_id_;
+    using ShellBase::current_invite_;
     using ShellBase::pick_and_set_room_avatar_;
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
@@ -4944,8 +4943,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _shell->on_invites_updated_();
 
     // Dismiss any stale InviteCard from the previous account.
-    _shell->current_invite_room_id_.clear();
-    _shell->current_invite_inviter_id_.clear();
+    _shell->current_invite_.reset();
     if (_shell->main_app_)
         _shell->main_app_->show_room();
     if (_roomView)
