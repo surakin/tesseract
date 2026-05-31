@@ -5306,8 +5306,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         _shell->rooms_.clear();
         _shell->invites_.clear();
-        _shell->current_invite_room_id_.clear();
-        _shell->current_invite_inviter_id_.clear();
+        _shell->current_invite_.reset();
         _shell->space_stack_.clear();
         [self _refreshRoomList];
         [self _refreshInviteList];
