@@ -3689,7 +3689,17 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-MessageListView::~MessageListView() = default;
+MessageListView::~MessageListView()
+{
+    // Invalidate the liveness sentinel BEFORE any member is torn down. Deferred
+    // UI-thread callbacks (post_delayed_ timers, video_fetch_provider_ results,
+    // inline-player on_frame) capture a weak_ptr to `alive_` and check
+    // `*alive_` before touching `this`. Clearing the flag here — rather than
+    // relying on `alive_`'s own destruction at the end of member teardown —
+    // closes the window in which a callback could observe a half-destroyed
+    // object while earlier-declared members are still being destroyed.
+    *alive_ = false;
+}
 
 MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
 {
@@ -3845,7 +3855,8 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
             kRoomSwitchGateTimeoutMs,
             [this, walive, ep]()
             {
-                if (walive.expired())
+                auto live = walive.lock();
+                if (!live || !*live)
                 {
                     return;
                 }
@@ -4151,7 +4162,8 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
             post_delayed_(kJustSentHighlightMs,
                           [this, walive, eid]
                           {
-                              if (walive.expired())
+                              auto live = walive.lock();
+                              if (!live || !*live)
                               {
                                   return;
                               }
@@ -4556,7 +4568,8 @@ void MessageListView::start_inline_video(const MessageRowData& m)
         {
             // The view is destroyed on every room switch; the fetch may
             // still be in flight. Bail if we've been torn down.
-            if (walive.expired())
+            auto live = walive.lock();
+            if (!live || !*live)
             {
                 return;
             }
