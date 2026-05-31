@@ -54,11 +54,18 @@ bool MentionController::on_text_changed(const std::string& text, int cursor)
             fetching_room_ = rid;
             auto* c = client_;
             auto alive = alive_;
-            hooks_.run_async(
-                [this, c, rid, alive]
+            // Capture `hooks` by value (it is just std::functions) so the
+            // worker thread never dereferences `this` to reach hooks_. The
+            // controller may be destroyed while this worker is still running;
+            // the previous code called this->hooks_.post_to_ui() on the worker
+            // thread with no liveness check, a use-after-free. The inner
+            // UI-thread lambda still guards *alive before touching `this`.
+            auto hooks = hooks_;
+            hooks.run_async(
+                [c, rid, alive, hooks, this]() mutable
                 {
                     auto members = c->get_room_members(rid);
-                    hooks_.post_to_ui(
+                    hooks.post_to_ui(
                         [this, rid, alive, members = std::move(members)]() mutable
                         {
                             if (!*alive)
