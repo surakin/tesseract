@@ -237,8 +237,11 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         auto lay = ctx.factory.build_text(user_id_, st);
-        ctx.canvas.draw_text(*lay, {text_x, col_top},
-                             theme.palette.text_primary);
+        // build_text can return nullptr on backend/font error or OOM; the
+        // member-layout draws above guard their results, this local did not.
+        if (lay)
+            ctx.canvas.draw_text(*lay, {text_x, col_top},
+                                 theme.palette.text_primary);
     }
 
     if (uid_layout_)

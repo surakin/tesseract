@@ -293,11 +293,14 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
             tk::TextStyle st;
             st.role = tk::FontRole::Title;
             auto lay = ctx.factory.build_text("\xe2\x80\xa6", st);
-            const tk::Size sz = lay->measure();
-            ctx.canvas.draw_text(*lay,
-                                 {centre.x - sz.w * 0.5f,
-                                  centre.y - sz.h * 0.5f},
-                                 tk::Color::rgb(0xffffff));
+            if (lay)
+            {
+                const tk::Size sz = lay->measure();
+                ctx.canvas.draw_text(*lay,
+                                     {centre.x - sz.w * 0.5f,
+                                      centre.y - sz.h * 0.5f},
+                                     tk::Color::rgb(0xffffff));
+            }
         }
         else if (avatar_hovered_)
         {
@@ -307,11 +310,14 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
             tk::TextStyle st;
             st.role = tk::FontRole::Title;
             auto lay = ctx.factory.build_text("+", st);
-            const tk::Size sz = lay->measure();
-            ctx.canvas.draw_text(*lay,
-                                 {centre.x - sz.w * 0.5f,
-                                  centre.y - sz.h * 0.5f},
-                                 tk::Color::rgb(0xffffff));
+            if (lay)
+            {
+                const tk::Size sz = lay->measure();
+                ctx.canvas.draw_text(*lay,
+                                     {centre.x - sz.w * 0.5f,
+                                      centre.y - sz.h * 0.5f},
+                                     tk::Color::rgb(0xffffff));
+            }
 
             if (!avatar_url_.empty())
             {
@@ -325,11 +331,14 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
                 tk::TextStyle xs;
                 xs.role = tk::FontRole::Small;
                 auto xlay = ctx.factory.build_text("\xc3\x97", xs);
-                const tk::Size xsz = xlay->measure();
-                ctx.canvas.draw_text(*xlay,
-                                     {cx - xsz.w * 0.5f,
-                                      cy - xsz.h * 0.5f},
-                                     tk::Color::rgb(0xffffff));
+                if (xlay)
+                {
+                    const tk::Size xsz = xlay->measure();
+                    ctx.canvas.draw_text(*xlay,
+                                         {cx - xsz.w * 0.5f,
+                                          cy - xsz.h * 0.5f},
+                                         tk::Color::rgb(0xffffff));
+                }
             }
         }
 
@@ -385,7 +394,8 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
             st.trim      = tk::TextTrim::Ellipsis;
             st.max_width = text_w;
             auto lay = ctx.factory.build_text(user_id_, st);
-            ctx.canvas.draw_text(*lay, {text_x, col_top}, pal.text_primary);
+            if (lay)
+                ctx.canvas.draw_text(*lay, {text_x, col_top}, pal.text_primary);
         }
     }
     else
@@ -414,9 +424,10 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
                 tk::TextStyle ss;
                 ss.role = tk::FontRole::Body;
                 auto slay = ctx.factory.build_text("…", ss);
-                ctx.canvas.draw_text(*slay,
-                                     {text_x + nsz.w + 4.0f, col_top},
-                                     pal.text_secondary);
+                if (slay)
+                    ctx.canvas.draw_text(*slay,
+                                         {text_x + nsz.w + 4.0f, col_top},
+                                         pal.text_secondary);
             }
         }
     }
