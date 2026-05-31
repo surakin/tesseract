@@ -116,6 +116,30 @@ pub(super) fn is_presence_forbidden(
     matches!(kind, Some(ErrorKind::Forbidden))
 }
 
+/// Look up a room member's display name, falling back to their full Matrix ID.
+#[cfg(not(test))]
+pub(super) async fn member_display_name(
+    room: &matrix_sdk::Room,
+    uid: &matrix_sdk::ruma::UserId,
+) -> String {
+    match room.get_member_no_sync(uid).await {
+        Ok(Some(m)) => m.display_name().map(str::to_owned).unwrap_or_else(|| uid.to_string()),
+        _ => uid.to_string(),
+    }
+}
+
+/// Look up a room member's display name, falling back to their localpart.
+#[cfg(not(test))]
+pub(super) async fn member_display_name_local(
+    room: &matrix_sdk::Room,
+    uid: &matrix_sdk::ruma::UserId,
+) -> String {
+    match room.get_member_no_sync(uid).await {
+        Ok(Some(m)) => m.display_name().map(str::to_owned).unwrap_or_else(|| uid.localpart().to_string()),
+        _ => uid.localpart().to_string(),
+    }
+}
+
 /// Build the spec'd UIAA fallback URL for `stage` and `session`. The
 /// homeserver base may or may not end with `/`; the spec path is
 /// `_matrix/client/v3/auth/<stage>/fallback/web?session=<session>`.
@@ -351,6 +375,16 @@ pub struct ClientFfi {
     /// deletion of the pack.
     #[cfg(not(test))]
     pub(super) user_pack_write_pending: Arc<std::sync::atomic::AtomicBool>,
+    /// Set to `true` by the `AnyGlobalAccountDataEvent` handler whenever an
+    /// image-pack account-data event arrives (user pack or emote-rooms list).
+    /// Cleared atomically by the sync watcher after each `rebuild_image_packs`
+    /// call.  Allows the notable-update loop to skip the O(all-rooms) SQLite
+    /// sweep on pure read-receipt / recency-stamp bursts while still catching
+    /// remote pack edits that arrive with the catch-all `NONE` reason.
+    /// Initialized to `true` so the first sync loop always rebuilds the pack
+    /// cache after login.
+    #[cfg(not(test))]
+    pub(super) packs_dirty: Arc<std::sync::atomic::AtomicBool>,
     /// Serializes every account-data read-modify-write (`recent_emoji_bump`,
     /// `save_sticker_to_user_pack`, `toggle_favorite_sticker`). Matrix
     /// account-data is last-write-wins with no server-side merge, so two
@@ -629,6 +663,8 @@ impl ClientFfi {
             #[cfg(not(test))]
             user_pack_write_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(not(test))]
+            packs_dirty: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            #[cfg(not(test))]
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir: default_data_dir(),
             http_client: reqwest::Client::builder()
@@ -789,36 +825,6 @@ pub(super) async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
     }
 }
 
-
-
-/// MSC2545 migration dual-write: write the same account-data `content`
-/// under every name in `types` (stable + unstable, see
-/// `image_packs::EMOTE_ROOMS_TYPES`), so edits stay visible to clients
-/// still on the unstable names until the ecosystem has migrated. No
-/// callers yet — the pending pack-management write paths (ROADMAP Step 10:
-/// emote-rooms subscribe) will use it. Room-pack state-event edits should
-/// mirror this pattern with `send_state_event` over `ROOM_PACK_TYPES`.
-#[cfg(not(test))]
-#[allow(dead_code)]
-async fn set_account_data_both(
-    client: &Client,
-    types: &[&str],
-    content: &serde_json::Value,
-) -> Result<(), String> {
-    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
-    use matrix_sdk::ruma::serde::Raw;
-    let raw = Raw::new(content)
-        .map_err(|e| format!("serialize account data: {e}"))?
-        .cast_unchecked();
-    for t in types {
-        client
-            .account()
-            .set_account_data_raw(GlobalAccountDataEventType::from(*t), raw.clone())
-            .await
-            .map_err(|e| format!("set {t}: {e}"))?;
-    }
-    Ok(())
-}
 
 /// Rebuild the aggregated image-pack cache. Reads prefer the unstable
 /// `im.ponies.*` names (first entry in `EMOTE_ROOMS_TYPES` / `ROOM_PACK_TYPES`)
@@ -1453,13 +1459,7 @@ async fn resolve_pinned_event(
     out.timestamp = ts_ms;
     out.body_preview = body;
     if let Some(uid) = sender {
-        out.sender_name = match room.get_member_no_sync(&uid).await {
-            Ok(Some(m)) => m
-                .display_name()
-                .map(str::to_owned)
-                .unwrap_or_else(|| uid.localpart().to_string()),
-            _ => uid.localpart().to_string(),
-        };
+        out.sender_name = member_display_name_local(room, &uid).await;
     }
     out
 }
@@ -1533,13 +1533,7 @@ pub(super) async fn build_room_info(
     } else {
         match latest_event_sender(&lev) {
             Some(sender) if client.user_id().is_some_and(|me| me != &*sender) => {
-                match room.get_member_no_sync(&sender).await {
-                    Ok(Some(m)) => m
-                        .display_name()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| sender.localpart().to_string()),
-                    _ => sender.localpart().to_string(),
-                }
+                member_display_name_local(room, &sender).await
             }
             _ => String::new(),
         }
@@ -1586,8 +1580,9 @@ pub(super) async fn build_room_info(
 
     // m.room.pinned_events: resolve each id against the local event cache so
     // the banner UI can render sender + body snippet without a separate
-    // fetch round-trip. Sorted newest-first for the banner. Pinned event
-    // counts are typically <10 per room so serial resolution is fine.
+    // fetch round-trip. Sorted newest-first for the banner.
+    // Resolved concurrently: each load_or_fetch_event may be a network call
+    // on first access; join_all lets them overlap instead of serialising.
     let pinned_events: Vec<crate::ffi::PinnedEvent> = {
         use matrix_sdk::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::room::pinned_events::RoomPinnedEventsEventContent;
@@ -1602,10 +1597,11 @@ pub(super) async fn build_room_info(
             },
             _ => Vec::new(),
         };
-        let mut resolved: Vec<crate::ffi::PinnedEvent> = Vec::with_capacity(pinned_ids.len());
-        for id in &pinned_ids {
-            resolved.push(resolve_pinned_event(room, id).await);
-        }
+        let mut resolved: Vec<crate::ffi::PinnedEvent> =
+            futures_util::future::join_all(
+                pinned_ids.iter().map(|id| resolve_pinned_event(room, id)),
+            )
+            .await;
         resolved.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         resolved
     };

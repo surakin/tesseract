@@ -307,7 +307,7 @@ private:
     static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;
     static constexpr int kRoomRowH = tesseract::visual::kRoomRowHeight;
     static constexpr int kMsgRowPad = tesseract::visual::kMsgRowVerticalPad;
-    static constexpr int kMsgMaxWidth = 520; // matches Qt
+    static constexpr int kMsgMaxWidth = tesseract::visual::kMsgMaxWidth;
 
     float dip_scale() const
     {

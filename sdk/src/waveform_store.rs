@@ -57,12 +57,17 @@ pub fn store(mxc_uri: &str, waveform: &[u16]) {
         params![mxc_uri, bytes, now],
     )
     .ok();
-    db.execute(
-        "DELETE FROM voice_waveforms WHERE mxc_uri NOT IN \
-         (SELECT mxc_uri FROM voice_waveforms ORDER BY stored_at DESC LIMIT ?1)",
-        params![MAX_ROWS],
-    )
-    .ok();
+    let count: i64 = db
+        .query_row("SELECT COUNT(*) FROM voice_waveforms", [], |r| r.get(0))
+        .unwrap_or(0);
+    if count > MAX_ROWS {
+        db.execute(
+            "DELETE FROM voice_waveforms WHERE mxc_uri NOT IN \
+             (SELECT mxc_uri FROM voice_waveforms ORDER BY stored_at DESC LIMIT ?1)",
+            params![MAX_ROWS],
+        )
+        .ok();
+    }
 }
 
 pub fn evict(mxc_uri: &str) {

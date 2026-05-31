@@ -465,8 +465,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         const InviteInfo* inv = find_invite_(room_id);
         if (!inv)
             return;
-        current_invite_room_id_   = inv->room_id;
-        current_invite_inviter_id_ = inv->inviter_user_id;
+        current_invite_ = InviteContext{ inv->room_id, inv->inviter_user_id };
         app->show_invite(*inv, avatar_lookup);
         app->room_list_view()->set_selected_room(""); // clear room highlight
         request_relayout_();
@@ -474,18 +473,19 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 
     app->invite_card()->on_accept = [this]
     {
-        accept_invite_async_(current_invite_room_id_);
+        if (current_invite_) accept_invite_async_(current_invite_->room_id);
     };
     app->invite_card()->on_decline = [this]
     {
-        decline_invite_async_(current_invite_room_id_);
+        if (current_invite_) decline_invite_async_(current_invite_->room_id);
         if (main_app_)
             main_app_->clear_content();
         request_relayout_();
     };
     app->invite_card()->on_block = [this]
     {
-        block_invite_async_(current_invite_room_id_, current_invite_inviter_id_);
+        if (current_invite_)
+            block_invite_async_(current_invite_->room_id, current_invite_->inviter_id);
         if (main_app_)
             main_app_->clear_content();
         request_relayout_();

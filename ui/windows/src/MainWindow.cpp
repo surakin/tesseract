@@ -5222,8 +5222,7 @@ void MainWindow::switch_active_account(int new_idx)
     on_invites_updated_();
 
     // Dismiss any stale InviteCard from the previous account.
-    current_invite_room_id_.clear();
-    current_invite_inviter_id_.clear();
+    current_invite_.reset();
     if (main_app_)
         main_app_->show_room();
 
@@ -5393,8 +5392,7 @@ void MainWindow::logout_active_account()
     my_avatar_url_.clear();
     rooms_.clear();
     invites_.clear();
-    current_invite_room_id_.clear();
-    current_invite_inviter_id_.clear();
+    current_invite_.reset();
     reset_server_info_();
     if (room_list_view_)
     {

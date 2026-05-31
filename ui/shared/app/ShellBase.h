@@ -27,6 +27,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -245,8 +246,8 @@ protected:
     std::string current_room_id_;
     // Tracks the invite currently shown in the InviteCard so the action
     // callbacks (on_accept / on_decline / on_block) can target the right room.
-    std::string current_invite_room_id_;
-    std::string current_invite_inviter_id_;
+    struct InviteContext { std::string room_id; std::string inviter_id; };
+    std::optional<InviteContext> current_invite_;
     // The room whose timeline the message view currently displays. Differs
     // from current_room_id_ between a room switch and the timeline-reset
     // that fills it. Used to tell a genuine switch (gate the display) from

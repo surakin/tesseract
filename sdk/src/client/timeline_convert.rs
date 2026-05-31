@@ -25,6 +25,72 @@ use std::sync::Arc;
 // Free helpers
 // ---------------------------------------------------------------------------
 
+/// Zero-valued `TimelineEvent` used as the base for struct update syntax.
+/// Every construction site only needs to list the fields that differ from zero.
+#[cfg(not(test))]
+pub(super) fn ffi_event_defaults() -> TimelineEvent {
+    TimelineEvent {
+        event_id: String::new(),
+        room_id: String::new(),
+        sender: String::new(),
+        sender_name: String::new(),
+        sender_avatar_url: String::new(),
+        body: String::new(),
+        timestamp: 0,
+        msg_type: String::new(),
+        source_url: String::new(),
+        source_encrypted_json: String::new(),
+        width: 0,
+        height: 0,
+        file_url: String::new(),
+        file_encrypted_json: String::new(),
+        file_name: String::new(),
+        file_size: 0,
+        image_filename: String::new(),
+        audio_url: String::new(),
+        audio_encrypted_json: String::new(),
+        audio_duration_ms: 0,
+        audio_waveform: Vec::new(),
+        audio_mime: String::new(),
+        video_thumbnail_url: String::new(),
+        video_thumbnail_encrypted_json: String::new(),
+        image_thumbnail_url: String::new(),
+        image_thumbnail_encrypted_json: String::new(),
+        video_duration_ms: 0,
+        video_mime: String::new(),
+        video_autoplay: false,
+        video_loop: false,
+        video_no_audio: false,
+        video_hide_controls: false,
+        video_gif: false,
+        reactions: Vec::new(),
+        read_receipts: Vec::new(),
+        in_reply_to_id: String::new(),
+        in_reply_to_sender_name: String::new(),
+        in_reply_to_body: String::new(),
+        in_reply_to_image_url: String::new(),
+        in_reply_to_image_encrypted_json: String::new(),
+        is_edited: false,
+        formatted_body: String::new(),
+        blurhash: String::new(),
+        sticker_info_json: String::new(),
+        image_animated: false,
+        pending_state: String::new(),
+        pending_error: String::new(),
+        pending_recoverable: false,
+        pending_txn_id: String::new(),
+        location_lat: 0.0,
+        location_lon: 0.0,
+        location_description: String::new(),
+        thread_root_id: String::new(),
+        is_thread_root: false,
+        thread_reply_count: 0,
+        thread_latest_sender_name: String::new(),
+        thread_latest_body: String::new(),
+        thread_latest_ts: 0,
+    }
+}
+
 /// Map a UTD cause to a single-line user-facing message. Padlock glyph
 /// matches the system-message style already used for "Message deleted".
 /// Used by the timeline converter when matrix-sdk-ui surfaces an
@@ -76,13 +142,7 @@ pub(super) async fn collect_reactions(
             // Cheap-ish lookup: hits the SDK's in-memory state store. No
             // network. Falls back to the bare Matrix ID when membership
             // for this user hasn't been hydrated yet.
-            let label = match room.get_member_no_sync(uid).await {
-                Ok(Some(m)) => m
-                    .display_name()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| uid.to_string()),
-                _ => uid.to_string(),
-            };
+            let label = super::member_display_name(room, uid).await;
             senders.push(label);
         }
 
@@ -314,61 +374,7 @@ pub(super) async fn timeline_item_to_ffi(
                 room_id: room_id.to_owned(),
                 msg_type: msg_type.to_owned(),
                 timestamp,
-                event_id: String::new(),
-                sender: String::new(),
-                sender_name: String::new(),
-                sender_avatar_url: String::new(),
-                body: String::new(),
-                source_url: String::new(),
-                source_encrypted_json: String::new(),
-                width: 0,
-                height: 0,
-                file_url: String::new(),
-                file_encrypted_json: String::new(),
-                file_name: String::new(),
-                file_size: 0,
-                image_filename: String::new(),
-                audio_url: String::new(),
-                audio_encrypted_json: String::new(),
-                audio_duration_ms: 0,
-                audio_waveform: Vec::new(),
-                audio_mime: String::new(),
-                video_thumbnail_url: String::new(),
-                video_thumbnail_encrypted_json: String::new(),
-                image_thumbnail_url: String::new(),
-                image_thumbnail_encrypted_json: String::new(),
-                video_duration_ms: 0,
-                video_mime: String::new(),
-                video_autoplay: false,
-                video_loop: false,
-                video_no_audio: false,
-                video_hide_controls: false,
-                video_gif: false,
-                reactions: Vec::new(),
-                read_receipts: Vec::new(),
-                in_reply_to_id: String::new(),
-                in_reply_to_sender_name: String::new(),
-                in_reply_to_body: String::new(),
-                in_reply_to_image_url: String::new(),
-                in_reply_to_image_encrypted_json: String::new(),
-                is_edited: false,
-                formatted_body: String::new(),
-                blurhash: String::new(),
-                sticker_info_json: String::new(),
-                image_animated: false,
-                pending_state: String::new(),
-                pending_error: String::new(),
-                pending_recoverable: false,
-                pending_txn_id: String::new(),
-                location_lat: 0.0,
-                location_lon: 0.0,
-                location_description: String::new(),
-                thread_root_id: String::new(),
-                is_thread_root: false,
-                thread_reply_count: 0,
-                thread_latest_sender_name: String::new(),
-                thread_latest_body: String::new(),
-                thread_latest_ts: 0,
+                ..ffi_event_defaults()
             });
         }
     };
@@ -406,36 +412,7 @@ pub(super) async fn timeline_item_to_ffi(
                     sender_avatar_url,
                     body,
                     timestamp: event_item.timestamp().get().into(),
-                    source_url: String::new(),
-                    source_encrypted_json: String::new(),
-                    width: 0, height: 0,
-                    file_url: String::new(), file_encrypted_json: String::new(),
-                    file_name: String::new(), file_size: 0,
-                    image_filename: String::new(),
-                    audio_url: String::new(), audio_encrypted_json: String::new(),
-                    audio_duration_ms: 0, audio_waveform: Vec::new(),
-                    audio_mime: String::new(),
-                    video_thumbnail_url: String::new(),
-                    video_thumbnail_encrypted_json: String::new(),
-                    image_thumbnail_url: String::new(),
-                    image_thumbnail_encrypted_json: String::new(),
-                    video_duration_ms: 0, video_mime: String::new(),
-                    video_autoplay: false, video_loop: false, video_no_audio: false,
-                    video_hide_controls: false, video_gif: false,
-                    reactions: Vec::new(), read_receipts: Vec::new(),
-                    in_reply_to_id: String::new(), in_reply_to_sender_name: String::new(),
-                    in_reply_to_body: String::new(), in_reply_to_image_url: String::new(),
-                    in_reply_to_image_encrypted_json: String::new(),
-                    is_edited: false, formatted_body: String::new(),
-                    blurhash: String::new(), sticker_info_json: String::new(),
-                    image_animated: false,
-                    pending_state: String::new(), pending_error: String::new(),
-                    pending_recoverable: false, pending_txn_id: String::new(),
-                    location_lat: 0.0, location_lon: 0.0, location_description: String::new(),
-                    thread_root_id: String::new(), is_thread_root: false,
-                    thread_reply_count: 0,
-                    thread_latest_sender_name: String::new(),
-                    thread_latest_body: String::new(), thread_latest_ts: 0,
+                    ..ffi_event_defaults()
                 });
             }
         }
@@ -504,56 +481,7 @@ pub(super) async fn timeline_item_to_ffi(
             body,
             timestamp: event_item.timestamp().get().into(),
             msg_type: "m.utd".to_owned(),
-            source_url: String::new(),
-            source_encrypted_json: String::new(),
-            width: 0u64,
-            height: 0u64,
-            file_url: String::new(),
-            file_encrypted_json: String::new(),
-            file_name: String::new(),
-            file_size: 0u64,
-            image_filename: String::new(),
-            audio_url: String::new(),
-            audio_encrypted_json: String::new(),
-            audio_duration_ms: 0u64,
-            audio_waveform: Vec::new(),
-            audio_mime: String::new(),
-            video_thumbnail_url: String::new(),
-            video_thumbnail_encrypted_json: String::new(),
-            image_thumbnail_url: String::new(),
-            image_thumbnail_encrypted_json: String::new(),
-            video_duration_ms: 0u64,
-            video_mime: String::new(),
-            video_autoplay: false,
-            video_loop: false,
-            video_no_audio: false,
-            video_hide_controls: false,
-            video_gif: false,
-            reactions: Vec::new(),
-            read_receipts: Vec::new(),
-            in_reply_to_id: String::new(),
-            in_reply_to_sender_name: String::new(),
-            in_reply_to_body: String::new(),
-            in_reply_to_image_url: String::new(),
-            in_reply_to_image_encrypted_json: String::new(),
-            is_edited: false,
-            formatted_body: String::new(),
-            blurhash: String::new(),
-            sticker_info_json: String::new(),
-            image_animated: false,
-            pending_state: String::new(),
-            pending_error: String::new(),
-            pending_recoverable: false,
-            pending_txn_id: String::new(),
-            location_lat: 0.0,
-            location_lon: 0.0,
-            location_description: String::new(),
-            thread_root_id: String::new(),
-            is_thread_root: false,
-            thread_reply_count: 0,
-            thread_latest_sender_name: String::new(),
-            thread_latest_body: String::new(),
-            thread_latest_ts: 0,
+            ..ffi_event_defaults()
         });
     }
 
@@ -578,6 +506,9 @@ pub(super) async fn timeline_item_to_ffi(
             } else {
                 (String::new(), String::new())
             };
+        // Receipts on a tombstone are meaningless — the original event
+        // is gone; the redacted placeholder doesn't carry a reading
+        // audience worth surfacing.
         return Some(TimelineEvent {
             event_id: event_item
                 .event_id()
@@ -587,62 +518,9 @@ pub(super) async fn timeline_item_to_ffi(
             sender: event_item.sender().to_string(),
             sender_name,
             sender_avatar_url,
-            body: String::new(),
             timestamp: event_item.timestamp().get().into(),
             msg_type: "m.redacted".to_owned(),
-            source_url: String::new(),
-            source_encrypted_json: String::new(),
-            width: 0u64,
-            height: 0u64,
-            file_url: String::new(),
-            file_encrypted_json: String::new(),
-            file_name: String::new(),
-            file_size: 0u64,
-            image_filename: String::new(),
-            audio_url: String::new(),
-            audio_encrypted_json: String::new(),
-            audio_duration_ms: 0u64,
-            audio_waveform: Vec::new(),
-            audio_mime: String::new(),
-            video_thumbnail_url: String::new(),
-            video_thumbnail_encrypted_json: String::new(),
-            image_thumbnail_url: String::new(),
-            image_thumbnail_encrypted_json: String::new(),
-            video_duration_ms: 0u64,
-            video_mime: String::new(),
-            video_autoplay: false,
-            video_loop: false,
-            video_no_audio: false,
-            video_hide_controls: false,
-            video_gif: false,
-            reactions: Vec::new(),
-            // Receipts on a tombstone are meaningless — the original event
-            // is gone; the redacted placeholder doesn't carry a reading
-            // audience worth surfacing.
-            read_receipts: Vec::new(),
-            in_reply_to_id: String::new(),
-            in_reply_to_sender_name: String::new(),
-            in_reply_to_body: String::new(),
-            in_reply_to_image_url: String::new(),
-            in_reply_to_image_encrypted_json: String::new(),
-            is_edited: false,
-            formatted_body: String::new(),
-            blurhash: String::new(),
-            sticker_info_json: String::new(),
-            image_animated: false,
-            pending_state: String::new(),
-            pending_error: String::new(),
-            pending_recoverable: false,
-            pending_txn_id: String::new(),
-            location_lat: 0.0,
-            location_lon: 0.0,
-            location_description: String::new(),
-            thread_root_id: String::new(),
-            is_thread_root: false,
-            thread_reply_count: 0,
-            thread_latest_sender_name: String::new(),
-            thread_latest_body: String::new(),
-            thread_latest_ts: 0,
+            ..ffi_event_defaults()
         });
     }
 
@@ -698,36 +576,10 @@ pub(super) async fn timeline_item_to_ffi(
             source_encrypted_json,
             width: w,
             height: h,
-            file_url: String::new(),
-            file_encrypted_json: String::new(),
-            file_name: String::new(),
-            file_size: 0u64,
-            image_filename: String::new(),
-            audio_url: String::new(),
-            audio_encrypted_json: String::new(),
-            audio_duration_ms: 0u64,
-            audio_waveform: Vec::new(),
-            audio_mime: String::new(),
-            video_thumbnail_url: String::new(),
-            video_thumbnail_encrypted_json: String::new(),
             image_thumbnail_url,
             image_thumbnail_encrypted_json,
-            video_duration_ms: 0u64,
-            video_mime: String::new(),
-            video_autoplay: false,
-            video_loop: false,
-            video_no_audio: false,
-            video_hide_controls: false,
-            video_gif: false,
             reactions,
             read_receipts,
-            in_reply_to_id: String::new(),
-            in_reply_to_sender_name: String::new(),
-            in_reply_to_body: String::new(),
-            in_reply_to_image_url: String::new(),
-            in_reply_to_image_encrypted_json: String::new(),
-            is_edited: false,
-            formatted_body: String::new(),
             blurhash: c.info.blurhash.as_deref().unwrap_or("").to_owned(),
             sticker_info_json: serde_json::to_string(&c.info).unwrap_or_else(|_| "{}".to_owned()),
             image_animated: c.info.is_animated.unwrap_or(false),
@@ -735,15 +587,7 @@ pub(super) async fn timeline_item_to_ffi(
             pending_error: pending_error.clone(),
             pending_recoverable,
             pending_txn_id: pending_txn_id.clone(),
-            location_lat: 0.0,
-            location_lon: 0.0,
-            location_description: String::new(),
-            thread_root_id: String::new(),
-            is_thread_root: false,
-            thread_reply_count: 0,
-            thread_latest_sender_name: String::new(),
-            thread_latest_body: String::new(),
-            thread_latest_ts: 0,
+            ..ffi_event_defaults()
         });
     }
 
@@ -1035,14 +879,17 @@ pub(super) async fn timeline_item_to_ffi(
                 .unwrap_or_default();
             let vid_filename = v.filename.clone().unwrap_or_default();
             // Parse fi.mau.* vendor hints from the raw event JSON.
+            // Parse once and extract all flags from the single Value.
+            let mau_info: Option<serde_json::Value> = event_item
+                .original_json()
+                .and_then(|raw| {
+                    serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
+                })
+                .and_then(|json| json.pointer("/content/info").cloned());
             let mau = |key: &str| -> bool {
-                let path = format!("/content/info/{}", key);
-                event_item
-                    .original_json()
-                    .and_then(|raw| {
-                        serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
-                    })
-                    .and_then(|json| json.pointer(&path)?.as_bool())
+                mau_info
+                    .as_ref()
+                    .and_then(|info| info.get(key)?.as_bool())
                     .unwrap_or(false)
             };
             let video_gif = mau("fi.mau.gif");
@@ -1351,7 +1198,6 @@ pub(super) async fn timeline_item_to_ffi(
         is_edited: msg_content.is_edited(),
         formatted_body,
         blurhash,
-        sticker_info_json: String::new(),
         image_animated,
         pending_state,
         pending_error,
@@ -1366,6 +1212,7 @@ pub(super) async fn timeline_item_to_ffi(
         thread_latest_sender_name,
         thread_latest_body,
         thread_latest_ts,
+        ..ffi_event_defaults()
     })
 }
 
