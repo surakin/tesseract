@@ -1187,13 +1187,18 @@ impl ClientFfi {
             return err("room not found");
         };
 
-        // SAFETY: pcm is guaranteed to have even length above; i16 has no
-        // alignment requirement beyond u8.
-        let samples: &[i16] = unsafe {
-            std::slice::from_raw_parts(pcm.as_ptr() as *const i16, pcm.len() / 2)
-        };
+        // Decode the little-endian PCM byte stream into i16 samples. A
+        // `Vec<u8>` only guarantees 1-byte alignment, so reinterpreting its
+        // buffer as `*const i16` was undefined behavior (i16 needs 2-byte
+        // alignment) and also assumed host endianness. `chunks_exact(2)` +
+        // `from_le_bytes` is safe and endian-explicit; pcm has even length
+        // (checked above) so there is no remainder.
+        let samples: Vec<i16> = pcm
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
 
-        let ogg_bytes = match encode_voice_ogg(samples, waveform, duration_ms) {
+        let ogg_bytes = match encode_voice_ogg(&samples, waveform, duration_ms) {
             Ok(b) => b,
             Err(e) => return err(format!("encode failed: {e}")),
         };
