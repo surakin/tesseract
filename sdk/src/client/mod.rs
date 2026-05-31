@@ -1596,8 +1596,9 @@ pub(super) async fn build_room_info(
 
     // m.room.pinned_events: resolve each id against the local event cache so
     // the banner UI can render sender + body snippet without a separate
-    // fetch round-trip. Sorted newest-first for the banner. Pinned event
-    // counts are typically <10 per room so serial resolution is fine.
+    // fetch round-trip. Sorted newest-first for the banner.
+    // Resolved concurrently: each load_or_fetch_event may be a network call
+    // on first access; join_all lets them overlap instead of serialising.
     let pinned_events: Vec<crate::ffi::PinnedEvent> = {
         use matrix_sdk::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::room::pinned_events::RoomPinnedEventsEventContent;
@@ -1612,10 +1613,11 @@ pub(super) async fn build_room_info(
             },
             _ => Vec::new(),
         };
-        let mut resolved: Vec<crate::ffi::PinnedEvent> = Vec::with_capacity(pinned_ids.len());
-        for id in &pinned_ids {
-            resolved.push(resolve_pinned_event(room, id).await);
-        }
+        let mut resolved: Vec<crate::ffi::PinnedEvent> =
+            futures_util::future::join_all(
+                pinned_ids.iter().map(|id| resolve_pinned_event(room, id)),
+            )
+            .await;
         resolved.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         resolved
     };
