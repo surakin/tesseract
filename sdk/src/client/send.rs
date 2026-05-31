@@ -15,7 +15,7 @@ use super::{
 use super::{err, ok, ClientFfi};
 
 #[cfg(not(test))]
-use super::{encode_voice_ogg, require_room};
+use super::{encode_voice_ogg, parse_room_id, require_room};
 
 #[cfg(not(test))]
 use matrix_sdk::ruma::{events::room::message::RoomMessageEventContent, OwnedRoomId};
@@ -369,10 +369,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let room_id = try_op!(parse_room_id(room_id));
         // Use the live timeline if subscribed — local echo fires immediately.
         {
             let maybe_tl = {
@@ -390,9 +387,7 @@ impl ClientFfi {
             }
         }
         // Fallback: no timeline subscribed for this room.
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let room = try_op!(client.get_room(&room_id).ok_or_else(|| err("room not found")));
         match self.rt.block_on(async move { room.send(content).await }) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -452,10 +447,7 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn abort_send(&mut self, room_id: &str, txn_id: &str) -> OpResult {
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let room_id = try_op!(parse_room_id(room_id));
         let txn_id: matrix_sdk::ruma::OwnedTransactionId = txn_id.into();
         let timeline = {
             let guard = self.timelines.read().unwrap();
@@ -518,16 +510,10 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
         };
         let (mentions, html) = derive_mentions(formatted_body);
         let mut content = if html.is_empty() {
@@ -598,10 +584,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let room_id = try_op!(parse_room_id(room_id));
         let root: matrix_sdk::ruma::OwnedEventId = match thread_root.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid thread root id: {e}")),
@@ -654,9 +637,7 @@ impl ClientFfi {
         // `Room::send` so matrix-sdk handles the type tag and the local-echo
         // queue. The hand-rolled JSON path used to live here; `Relation::Thread`
         // matches the same wire shape.
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let room = try_op!(client.get_room(&room_id).ok_or_else(|| err("room not found")));
         let reply_owned: Option<matrix_sdk::ruma::OwnedEventId> = if in_reply_to.is_empty() {
             None
         } else {
@@ -704,10 +685,7 @@ impl ClientFfi {
     /// immediately — it never blocks the UI thread.
     #[cfg(not(test))]
     pub fn fetch_reply_details(&mut self, room_id: &str, event_id: &str) -> OpResult {
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let room_id = try_op!(parse_room_id(room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
@@ -761,13 +739,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
@@ -884,13 +856,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
@@ -959,13 +925,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id_parsed = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id_parsed) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
@@ -1048,13 +1008,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id_parsed = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id_parsed) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
@@ -1155,13 +1109,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id_parsed = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id_parsed) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
 
         // Decode the little-endian PCM byte stream into i16 samples. A
         // `Vec<u8>` only guarantees 1-byte alignment, so reinterpreting its
@@ -1284,10 +1232,7 @@ impl ClientFfi {
             return err("reaction key is empty");
         }
 
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let room_id = try_op!(parse_room_id(room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
@@ -1335,20 +1280,13 @@ impl ClientFfi {
             return err("reaction key is empty");
         }
 
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let event_id = event_id.to_owned();
-        let key = key.to_owned();
-        let shortcode = shortcode.to_owned();
-
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
+        let event_id = event_id.to_owned();
+        let key = key.to_owned();
+        let shortcode = shortcode.to_owned();
 
         match self.rt.block_on(async move {
             let mut content = serde_json::json!({
@@ -1385,17 +1323,10 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let (_, room) = try_op!(require_room(client, room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
-        };
-        let room = match client.get_room(&room_id) {
-            Some(r) => r,
-            None => return err("room not found"),
         };
         match self.rt.block_on(send_both_receipts(&room, event_id)) {
             Ok(_) => ok(""),
@@ -1417,14 +1348,7 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let room = match client.get_room(&room_id) {
-            Some(r) => r,
-            None => return err("room not found"),
-        };
+        let (_, room) = try_op!(require_room(client, room_id));
         // Deref to the base room type to get the synchronous `latest_event()`
         // with `event_id()`. The `RoomExt` trait (from matrix-sdk-ui, in scope
         // for timeline features) would otherwise shadow it with an async version
@@ -1455,10 +1379,7 @@ impl ClientFfi {
             return err("not logged in");
         }
 
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let room_id = try_op!(parse_room_id(room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
@@ -1512,16 +1433,10 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
         };
         let new_content = if formatted_body.is_empty() {
             RoomMessageEventContent::text_plain(new_body)
@@ -1573,13 +1488,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
 
         if image_url.is_empty() {
             return err("image_url is empty");
@@ -1643,10 +1552,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id_parsed = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
+        let room_id_parsed = try_op!(parse_room_id(room_id));
         let root: matrix_sdk::ruma::OwnedEventId = match thread_root.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid thread root id: {e}")),
@@ -1683,9 +1589,7 @@ impl ClientFfi {
         }
 
         // Fallback: send via room with manual m.thread relation.
-        let Some(room) = client.get_room(&room_id_parsed) else {
-            return err("room not found");
-        };
+        let room = try_op!(client.get_room(&room_id_parsed).ok_or_else(|| err("room not found")));
         let info_val = serde_json::to_value(&info).unwrap_or(serde_json::json!({}));
         let content = serde_json::json!({
             "body": body,
