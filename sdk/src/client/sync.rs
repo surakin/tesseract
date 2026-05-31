@@ -208,7 +208,7 @@ impl ClientFfi {
                             // opaque localpart (e.g. "@78fa3bcde:hs"). Falls
                             // back to the localpart when no member profile is
                             // cached (no extra network round-trip).
-                            let name = super::member_display_name_local(room, u).await;
+                            let name = super::member_display_name_local(&room, u).await;
                             uids.push(name);
                         }
                         if let Ok(g) = h.lock() {
@@ -978,8 +978,9 @@ impl ClientFfi {
                 move |ev: AnyGlobalAccountDataEvent| {
                     let packs_dirty_eh = Arc::clone(&packs_dirty_eh);
                     async move {
+                        let type_str = ev.event_type().to_string();
                         if matches!(
-                            ev.event_type().as_str(),
+                            type_str.as_str(),
                             crate::image_packs::TYPE_USER_PACK
                                 | crate::image_packs::TYPE_EMOTE_ROOMS_STABLE
                                 | crate::image_packs::TYPE_EMOTE_ROOMS_UNSTABLE

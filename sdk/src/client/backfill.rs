@@ -501,7 +501,7 @@ pub(super) async fn backfill_room_silent(
         } else {
             match profile_name.filter(|n| !n.is_empty()) {
                 Some(n) => n,
-                None => super::member_display_name_local(room, &sender_id).await,
+                None => super::member_display_name_local(&room, &sender_id).await,
             }
         };
         (preview, name)
