@@ -180,6 +180,13 @@ impl ClientFfi {
         let skip: std::collections::HashSet<OwnedRoomId> =
             self.timelines.read().unwrap().keys().cloned().collect();
 
+        let cached: std::collections::HashSet<String> = {
+            let Ok(guard) = self.backfill_previews.lock() else {
+                return ok("");
+            };
+            guard.keys().cloned().collect()
+        };
+
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
         for id_cxx in room_ids {
             let Ok(id_str) = id_cxx.to_str() else {
@@ -191,10 +198,17 @@ impl ClientFfi {
             if skip.contains(&id) {
                 continue;
             }
+            if cached.contains(id.as_str()) {
+                continue;
+            }
             if let Some(room) = client.get_room(&id) {
-                if !room.is_tombstoned() {
-                    to_backfill.push(id);
+                if room.is_tombstoned() {
+                    continue;
                 }
+                if room.latest_event_timestamp().is_some() {
+                    continue;
+                }
+                to_backfill.push(id);
             }
         }
 
@@ -251,7 +265,175 @@ impl ClientFfi {
             to_backfill.push(id);
         }
 
-        self.launch_backfill_task_(client, to_backfill);
+        let Some(sync_service) = self.sync_service.clone() else {
+            return err("sync not started");
+        };
+
+        let handler       = self.handler.clone();
+        let preview_cache = Arc::clone(&self.backfill_previews);
+        let db_conn       = Arc::clone(&self.app_cache_db);
+
+        let abort = self.rt.spawn(async move {
+            // Process in batches of 50 so the event cache's internal broadcast
+            // channel is never overwhelmed. Subscribing all rooms at once
+            // produces a sync payload large enough to overflow the channel,
+            // which causes matrix-sdk to clear all cached events and reset
+            // latest_event_timestamp() — making the polling loop stuck.
+            //
+            // Each batch: subscribe → wait up to 30 s for sync to deliver
+            // timestamps → resolve what resolved → move on to next batch.
+            // Rooms not resolved within 30 s fall back to /messages.
+            const BATCH_SIZE: usize = 50;
+            let mut fallback: Vec<OwnedRoomId> = Vec::new();
+
+            for chunk in to_backfill.chunks(BATCH_SIZE) {
+                // Subscribe this batch only. latest_event_timestamp() and
+                // latest_event() are populated by the next sync response;
+                // build_room_info() already reads both, so no manual
+                // BackfillPreview construction is needed for resolved rooms.
+                {
+                    let refs: Vec<&matrix_sdk::ruma::RoomId> =
+                        chunk.iter().map(|id| id.as_ref()).collect();
+                    sync_service.room_list_service().subscribe_to_rooms(&refs).await;
+                }
+
+                let mut pending: Vec<OwnedRoomId> = chunk.to_vec();
+                for _ in 0u32..6 {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                    let mut still_missing: Vec<OwnedRoomId> = Vec::new();
+                    let mut any_new = false;
+                    for rid in &pending {
+                        let Some(room) = client.get_room(rid) else { continue; };
+                        if let Some(ts) = room.latest_event_timestamp() {
+                            let ts_ms = u64::from(ts.0);
+                            if ts_ms != 0 {
+                                if let Ok(db) = db_conn.lock() {
+                                    if let Some(ref conn) = *db {
+                                        let _ = conn.execute(
+                                            "INSERT OR REPLACE INTO backfill_ts \
+                                             (room_id, ts_ms) VALUES (?1, ?2)",
+                                            rusqlite::params![rid.as_str(), ts_ms as i64],
+                                        );
+                                    }
+                                }
+                            }
+                            any_new = true;
+                        } else {
+                            still_missing.push(rid.clone());
+                        }
+                    }
+                    pending = still_missing;
+
+                    if any_new {
+                        if let Some(ref h) = handler {
+                            let mut rooms = build_room_infos(&client).await;
+                            apply_backfill_previews(&mut rooms, &preview_cache);
+                            if let Ok(guard) = h.lock() {
+                                guard.on_rooms_updated(&rooms);
+                            }
+                        }
+                    }
+                    if pending.is_empty() {
+                        break;
+                    }
+                }
+
+                fallback.extend(pending);
+            }
+
+            let remaining = fallback;
+
+            // Rooms still without a timestamp after all batch attempts.
+            // Write zero-timestamp sentinels so they aren't re-queued within
+            // this session, then fall back to per-room /messages pagination.
+            for rid in &remaining {
+                if let Ok(mut cache) = preview_cache.lock() {
+                    cache.entry(rid.to_string()).or_insert(BackfillPreview {
+                        room_id:           rid.to_string(),
+                        kind:              String::new(),
+                        text:              String::new(),
+                        sticker_url:       String::new(),
+                        thumbnail_url:     String::new(),
+                        sender_name:       String::new(),
+                        timestamp_ms:      0,
+                    });
+                }
+            }
+            if !remaining.is_empty() {
+                const UPDATE_EVERY: usize = 5;
+                let semaphore = Arc::new(tokio::sync::Semaphore::new(3));
+                let mut joinset = tokio::task::JoinSet::<()>::new();
+
+                for rid in remaining {
+                    let client        = client.clone();
+                    let sem           = semaphore.clone();
+                    let preview_cache = Arc::clone(&preview_cache);
+                    let db_conn       = Arc::clone(&db_conn);
+                    joinset.spawn(async move {
+                        let _permit = match sem.acquire_owned().await {
+                            Ok(p)  => p,
+                            Err(_) => return,
+                        };
+                        let preview =
+                            backfill_room_silent(&client, &rid, 50).await.ok().flatten();
+                        let bp = preview.unwrap_or(BackfillPreview {
+                            room_id:       rid.to_string(),
+                            kind:          String::new(),
+                            text:          String::new(),
+                            sticker_url:   String::new(),
+                            thumbnail_url: String::new(),
+                            sender_name:   String::new(),
+                            timestamp_ms:  0,
+                        });
+                        if let Ok(mut cache) = preview_cache.lock() {
+                            cache.insert(bp.room_id.clone(), bp.clone());
+                        }
+                        if bp.timestamp_ms != 0 {
+                            if let Ok(db) = db_conn.lock() {
+                                if let Some(ref conn) = *db {
+                                    let _ = conn.execute(
+                                        "INSERT OR REPLACE INTO backfill_ts \
+                                         (room_id, ts_ms) VALUES (?1, ?2)",
+                                        rusqlite::params![
+                                            &bp.room_id,
+                                            bp.timestamp_ms as i64
+                                        ],
+                                    );
+                                }
+                            }
+                        }
+                    });
+                }
+
+                let mut completed: usize = 0;
+                let mut last_update_at: usize = 0;
+                while joinset.join_next().await.is_some() {
+                    completed += 1;
+                    if completed - last_update_at >= UPDATE_EVERY {
+                        last_update_at = completed;
+                        if let Some(ref h) = handler {
+                            let mut rooms = build_room_infos(&client).await;
+                            apply_backfill_previews(&mut rooms, &preview_cache);
+                            if let Ok(guard) = h.lock() {
+                                guard.on_rooms_updated(&rooms);
+                            }
+                        }
+                    }
+                }
+                if completed != last_update_at {
+                    if let Some(ref h) = handler {
+                        let mut rooms = build_room_infos(&client).await;
+                        apply_backfill_previews(&mut rooms, &preview_cache);
+                        if let Ok(guard) = h.lock() {
+                            guard.on_rooms_updated(&rooms);
+                        }
+                    }
+                }
+            }
+        }).abort_handle();
+
+        self.backfill_task = Some(abort);
         ok("")
     }
 

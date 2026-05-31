@@ -106,6 +106,13 @@ pub(super) async fn emit_notification(
     if !should_notify {
         return;
     }
+    // Suppress if the room is already read. This catches backfill-subscription
+    // events (old events delivered when the sync backfills inactive rooms) and
+    // any other case where the event arrived but the user's read receipt is
+    // already at or past it. The server-side unread count is authoritative.
+    if room.num_unread_notifications() == 0 && room.num_unread_mentions() == 0 {
+        return;
+    }
     let room_name = room
         .display_name()
         .await
