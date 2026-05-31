@@ -46,14 +46,18 @@ void TabBar::remove_tab(const std::string& room_id)
     }
     int idx = static_cast<int>(it - items_.begin());
     items_.erase(it);
-    // Clamp active_idx_ after removal.
-    if (active_idx_ >= static_cast<int>(items_.size()))
-    {
-        active_idx_ = static_cast<int>(items_.size()) - 1;
-    }
+    // Keep active_idx_ pointing at the same tab. Shift down FIRST if a tab
+    // before the active one was removed, THEN clamp to the new range. Doing
+    // the clamp first double-decrements when the active tab is the last one
+    // and an earlier tab is removed (clamp drops it to size-1, then the
+    // shift drops it again — landing one tab too far left).
     if (idx < active_idx_)
     {
         --active_idx_;
+    }
+    if (active_idx_ >= static_cast<int>(items_.size()))
+    {
+        active_idx_ = static_cast<int>(items_.size()) - 1;
     }
     if (static_cast<int>(items_.size()) <= 1)
     {
