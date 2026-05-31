@@ -856,13 +856,16 @@ impl ClientFfi {
     pub fn discover_homeserver(&mut self, server_name_or_mxid: &str) -> String {
         let input = server_name_or_mxid.trim();
 
+        let discovery_json = |base_url: &str, error: &str| {
+            serde_json::json!({"base_url": base_url, "error": error}).to_string()
+        };
+
         // Extract server name from a full MXID (@user:server.org → server.org).
         let server = if input.starts_with('@') {
             match input.find(':') {
                 Some(i) => &input[i + 1..],
                 None => {
-                    return r#"{"base_url":"","error":"Invalid Matrix ID — expected @user:server"}"#
-                        .to_owned()
+                    return discovery_json("", "Invalid Matrix ID — expected @user:server");
                 }
             }
         } else {
@@ -870,24 +873,20 @@ impl ClientFfi {
         };
 
         if server.is_empty() {
-            return r#"{"base_url":"","error":""}"#.to_owned();
+            return discovery_json("", "");
         }
 
         let server = server.to_owned();
         self.rt.block_on(async move {
+            let discovery_json = |base_url: &str, error: &str| {
+                serde_json::json!({"base_url": base_url, "error": error}).to_string()
+            };
             let http = match reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
             {
                 Ok(c) => c,
-                Err(e) => {
-                    let msg = e
-                        .to_string()
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', " ");
-                    return format!(r#"{{"base_url":"","error":"{msg}"}}"#);
-                }
+                Err(e) => return discovery_json("", &e.to_string()),
             };
 
             let base_url = if server.starts_with("https://") || server.starts_with("http://") {
@@ -911,17 +910,14 @@ impl ClientFfi {
             };
 
             match base_url {
-                Some(url) => format!(r#"{{"base_url":"{url}","error":""}}"#),
-                None => {
-                    let msg = format!("Could not reach homeserver at {server}");
-                    format!(r#"{{"base_url":"","error":"{msg}"}}"#)
-                }
+                Some(url) => discovery_json(&url, ""),
+                None => discovery_json("", &format!("Could not reach homeserver at {server}")),
             }
         })
     }
 
     #[cfg(test)]
     pub fn discover_homeserver(&mut self, _: &str) -> String {
-        r#"{"base_url":"","error":""}"#.to_owned()
+        serde_json::json!({"base_url": "", "error": ""}).to_string()
     }
 }
