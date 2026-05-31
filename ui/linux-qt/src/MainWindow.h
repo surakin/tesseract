@@ -282,7 +282,7 @@ private:
     static constexpr int kMaxImageHeight =
         tesseract::visual::kMaxInlineImageHeight;
     static constexpr int kMaxStickerSize = tesseract::visual::kStickerSize;
-    static constexpr int kMsgMaxWidth = 520;
+    static constexpr int kMsgMaxWidth = tesseract::visual::kMsgMaxWidth;
 
     // Single surface hosting the full main-app widget tree (sidebar + chat
     // panel + lightbox overlays). Three NativeTextField / NativeTextArea

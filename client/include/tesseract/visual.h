@@ -46,6 +46,9 @@ inline constexpr int kSpaceSM = 8;
 inline constexpr int kSpaceMD = 12;
 inline constexpr int kSpaceLG = 16;
 
+// ── Message bubble layout ──────────────────────────────────────────────
+inline constexpr int kMsgMaxWidth = 520;
+
 // ── Inline media caps ──────────────────────────────────────────────────
 inline constexpr int kMaxInlineImageWidth = 320;
 inline constexpr int kMaxInlineImageHeight = 200;
