@@ -85,10 +85,25 @@ impl ClientFfi {
                         };
                         let preview =
                             backfill_room_silent(&client, &rid, 50).await.ok().flatten();
+                        // Always record in preview_cache — even on failure — so
+                        // start_background_backfill_all_uncached skips this room
+                        // for the rest of the session and we don't re-queue it on
+                        // every on_rooms_updated tick. A zero-timestamp sentinel is
+                        // used for failed rooms; it is not written to backfill_ts
+                        // SQLite (guarded by ts != 0 below), so next session retries.
+                        let bp_to_cache = preview.clone().unwrap_or(BackfillPreview {
+                            room_id: rid.to_string(),
+                            kind: String::new(),
+                            text: String::new(),
+                            sticker_url: String::new(),
+                            thumbnail_url: String::new(),
+                            sender_name: String::new(),
+                            timestamp_ms: 0,
+                        });
+                        if let Ok(mut cache) = preview_cache.lock() {
+                            cache.insert(bp_to_cache.room_id.clone(), bp_to_cache);
+                        }
                         if let Some(ref bp) = preview {
-                            if let Ok(mut cache) = preview_cache.lock() {
-                                cache.insert(bp.room_id.clone(), bp.clone());
-                            }
                             // Write the timestamp immediately so it survives
                             // even if the task is aborted before the batch update.
                             if bp.timestamp_ms != 0 {

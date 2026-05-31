@@ -1669,7 +1669,7 @@ TEST_CASE("MessageListView scroll-to-bottom pill: hidden at bottom, "
         msgs.push_back(std::move(m));
     }
 
-    view.set_messages(std::move(msgs)); // auto-scrolls to bottom
+    view.set_messages(std::move(msgs), /*room_switch=*/true); // auto-scrolls to bottom
     st.run(view, {0, 0, 320, 200});
     REQUIRE(view.content_height() > 200.0f); // content really overflows
     CHECK_FALSE(view.pill_visible());

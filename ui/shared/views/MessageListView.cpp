@@ -3815,8 +3815,12 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         pinned_event_ids_.clear();
         can_pin_ = false;
     }
-    invalidate_data();
-    scroll_to_bottom();
+    if (room_switch) {
+        invalidate_data();
+        scroll_to_bottom();
+    } else {
+        preserve_top_through([this] { invalidate_data(); });
+    }
     // Start inline players for animated video rows near the bottom (most
     // recently received), up to the cap.
     for (auto it = messages_.rbegin(); it != messages_.rend(); ++it)
