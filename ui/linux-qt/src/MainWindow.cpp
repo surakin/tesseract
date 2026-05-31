@@ -2312,8 +2312,8 @@ void MainWindow::onLoginSucceeded()
             statusBar()->showMessage(tr("Already signed in as %1")
                                          .arg(QString::fromStdString(user_id)),
                                      4000);
-            pending_login_client_.reset();
             loginView_->set_client(nullptr);
+            pending_login_client_.reset();
             std::error_code ec;
             std::filesystem::remove_all(pending_login_temp_dir_, ec);
             // Restore previous active account's UI.
@@ -2340,8 +2340,8 @@ void MainWindow::onLoginSucceeded()
 
     // Drop the in-flight Client so its SQLite handles are released
     // before we rename the directory underneath it.
-    pending_login_client_.reset();
     loginView_->set_client(nullptr);
+    pending_login_client_.reset();
 
     // Move the temp account directory into its final per-user-id home.
     std::filesystem::path final_dir =
@@ -2497,8 +2497,8 @@ void MainWindow::onLoginCancelled()
 {
     // The user clicked Cancel during AddAccount. Return to the previous
     // foreground account; the in-flight client is discarded.
-    pending_login_client_.reset();
     loginView_->set_client(nullptr);
+    pending_login_client_.reset();
     if (!pending_login_is_add_account_)
     {
         return; // no back-state in Initial mode

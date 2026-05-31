@@ -3201,11 +3201,11 @@ void MainWindow::on_login_succeeded()
     {
         if (a->user_id == user_id)
         {
-            pending_login_client_.reset();
             if (login_view_)
             {
                 login_view_->set_client(nullptr);
             }
+            pending_login_client_.reset();
             std::error_code ec;
             std::filesystem::remove_all(pending_login_temp_dir_, ec);
             pending_login_temp_dir_.clear();
@@ -3227,12 +3227,11 @@ void MainWindow::on_login_succeeded()
     }
 
     std::string json = pending_login_client_->export_session();
-    pending_login_client_.reset(); // closes SQLite in the temp dir
-    // Null out the dangling pointer before any reset() calls below.
     if (login_view_)
     {
         login_view_->set_client(nullptr);
     }
+    pending_login_client_.reset(); // closes SQLite handles before rename
 
     namespace fs = std::filesystem;
     fs::path final_dir = tesseract::SessionStore::account_dir(user_id);
@@ -5342,6 +5341,10 @@ void MainWindow::begin_add_account()
 
 void MainWindow::on_login_cancelled()
 {
+    if (login_view_)
+    {
+        login_view_->set_client(nullptr);
+    }
     pending_login_client_.reset();
     if (!pending_login_temp_dir_.empty())
     {

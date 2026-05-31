@@ -2518,6 +2518,7 @@ void MainWindow::on_login_succeeded()
     {
         if (a->user_id == uid)
         {
+            login_view_->set_client(nullptr);
             pending_login_client_.reset();
             std::filesystem::remove_all(pending_login_temp_dir_);
             pending_login_temp_dir_.clear();
@@ -2538,6 +2539,7 @@ void MainWindow::on_login_succeeded()
     std::string exported = pending_login_client_->export_session();
 
     // Drop the in-flight client to release SQLite handles before rename.
+    login_view_->set_client(nullptr);
     pending_login_client_.reset();
 
     // Rename temp dir → final per-account dir.
@@ -6042,6 +6044,7 @@ void MainWindow::logout_active_account()
 
 void MainWindow::on_login_cancelled()
 {
+    login_view_->set_client(nullptr);
     pending_login_client_.reset();
     if (!pending_login_temp_dir_.empty())
     {

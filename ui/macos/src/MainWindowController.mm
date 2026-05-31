@@ -4801,6 +4801,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         if (a->user_id == newUserId)
         {
+            [_loginView setClient:nullptr];
             _shell->pending_login_client_.reset();
             std::error_code ec;
             std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
@@ -4827,6 +4828,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         finalDir =
             _shell->pending_login_temp_dir_; // EXDEV fallback: keep as-is
     }
+    [_loginView setClient:nullptr];
     _shell->pending_login_client_.reset(); // close SQLite handles before reopen
     _shell->pending_login_temp_dir_.clear();
 
@@ -4875,6 +4877,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)loginViewDidCancel:(LoginView*)view
 {
+    [_loginView setClient:nullptr];
     _shell->pending_login_client_.reset();
     if (_shell->pending_login_temp_dir_ != std::filesystem::path())
     {
