@@ -208,13 +208,7 @@ impl ClientFfi {
                             // opaque localpart (e.g. "@78fa3bcde:hs"). Falls
                             // back to the localpart when no member profile is
                             // cached (no extra network round-trip).
-                            let name = match room.get_member_no_sync(u).await {
-                                Ok(Some(m)) => m
-                                    .display_name()
-                                    .map(str::to_owned)
-                                    .unwrap_or_else(|| u.localpart().to_string()),
-                                _ => u.localpart().to_string(),
-                            };
+                            let name = super::member_display_name_local(room, u).await;
                             uids.push(name);
                         }
                         if let Ok(g) = h.lock() {

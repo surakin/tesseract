@@ -76,13 +76,7 @@ pub(super) async fn collect_reactions(
             // Cheap-ish lookup: hits the SDK's in-memory state store. No
             // network. Falls back to the bare Matrix ID when membership
             // for this user hasn't been hydrated yet.
-            let label = match room.get_member_no_sync(uid).await {
-                Ok(Some(m)) => m
-                    .display_name()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| uid.to_string()),
-                _ => uid.to_string(),
-            };
+            let label = super::member_display_name(room, uid).await;
             senders.push(label);
         }
 

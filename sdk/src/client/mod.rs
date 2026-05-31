@@ -116,6 +116,30 @@ pub(super) fn is_presence_forbidden(
     matches!(kind, Some(ErrorKind::Forbidden))
 }
 
+/// Look up a room member's display name, falling back to their full Matrix ID.
+#[cfg(not(test))]
+pub(super) async fn member_display_name(
+    room: &matrix_sdk::Room,
+    uid: &matrix_sdk::ruma::UserId,
+) -> String {
+    match room.get_member_no_sync(uid).await {
+        Ok(Some(m)) => m.display_name().map(str::to_owned).unwrap_or_else(|| uid.to_string()),
+        _ => uid.to_string(),
+    }
+}
+
+/// Look up a room member's display name, falling back to their localpart.
+#[cfg(not(test))]
+pub(super) async fn member_display_name_local(
+    room: &matrix_sdk::Room,
+    uid: &matrix_sdk::ruma::UserId,
+) -> String {
+    match room.get_member_no_sync(uid).await {
+        Ok(Some(m)) => m.display_name().map(str::to_owned).unwrap_or_else(|| uid.localpart().to_string()),
+        _ => uid.localpart().to_string(),
+    }
+}
+
 /// Build the spec'd UIAA fallback URL for `stage` and `session`. The
 /// homeserver base may or may not end with `/`; the spec path is
 /// `_matrix/client/v3/auth/<stage>/fallback/web?session=<session>`.
@@ -1433,13 +1457,7 @@ async fn resolve_pinned_event(
     out.timestamp = ts_ms;
     out.body_preview = body;
     if let Some(uid) = sender {
-        out.sender_name = match room.get_member_no_sync(&uid).await {
-            Ok(Some(m)) => m
-                .display_name()
-                .map(str::to_owned)
-                .unwrap_or_else(|| uid.localpart().to_string()),
-            _ => uid.localpart().to_string(),
-        };
+        out.sender_name = member_display_name_local(room, &uid).await;
     }
     out
 }
@@ -1513,13 +1531,7 @@ pub(super) async fn build_room_info(
     } else {
         match latest_event_sender(&lev) {
             Some(sender) if client.user_id().is_some_and(|me| me != &*sender) => {
-                match room.get_member_no_sync(&sender).await {
-                    Ok(Some(m)) => m
-                        .display_name()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| sender.localpart().to_string()),
-                    _ => sender.localpart().to_string(),
-                }
+                member_display_name_local(room, &sender).await
             }
             _ => String::new(),
         }
