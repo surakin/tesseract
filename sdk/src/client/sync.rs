@@ -514,8 +514,9 @@ impl ClientFfi {
                             }
                             refresh_dm_counterparts(&dm_counterparts_w, &cache);
                             let sort_keys: Vec<(bool, u64, String)> = {
-                                let mut tmp: Vec<&crate::ffi::RoomInfo> =
-                                    cache.values().collect();
+                                let mut tmp: Vec<crate::ffi::RoomInfo> =
+                                    cache.values().cloned().collect();
+                                apply_backfill_previews(&mut tmp, &previews);
                                 tmp.sort_by(|a, b| {
                                     let au = a.notification_count > 0 || a.highlight_count > 0;
                                     let bu = b.notification_count > 0 || b.highlight_count > 0;

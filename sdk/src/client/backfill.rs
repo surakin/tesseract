@@ -344,7 +344,7 @@ pub(super) fn apply_backfill_previews(
                 ri.last_message_thumbnail_url = bp.thumbnail_url.clone();
                 ri.last_message_sender_name = bp.sender_name.clone();
             }
-            if ri.last_activity_ts == 0 && bp.timestamp_ms != 0 {
+            if bp.timestamp_ms > ri.last_activity_ts {
                 ri.last_activity_ts = bp.timestamp_ms;
             }
         }
