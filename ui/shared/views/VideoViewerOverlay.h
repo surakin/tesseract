@@ -30,8 +30,8 @@ public:
     // The fi.mau.* params default to false so existing callers need no changes.
     void open(std::string source_json, std::string thumb_url,
               std::string mime_type, std::uint64_t duration_ms, int natural_w,
-              int natural_h, bool autoplay = false, bool loop = false,
-              bool no_audio = false, bool hide_controls = false);
+              int natural_h, bool loop = false, bool no_audio = false,
+              bool hide_controls = false);
 
     // Hide the overlay. Stops playback and fires on_close.
     void close();
@@ -90,7 +90,6 @@ private:
     int natural_h_ = 0;
     float rate_ = 1.0f;
     // fi.mau.* playback hints — reset on each open().
-    bool autoplay_ = false;
     bool loop_ = false;
     bool no_audio_ = false;
     bool hide_controls_ = false;

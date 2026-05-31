@@ -984,7 +984,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
             mainApp_->video_viewer()->open(
                 src_tok, thumb_tok, hit.mime_type,
-                hit.duration_ms, hit.natural_w, hit.natural_h, hit.autoplay,
+                hit.duration_ms, hit.natural_w, hit.natural_h,
                 hit.loop, hit.no_audio, hit.hide_controls);
             mainApp_->show_video_viewer(true);
             mainAppSurface_->relayout();

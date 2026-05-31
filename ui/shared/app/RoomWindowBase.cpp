@@ -354,8 +354,8 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
             vid_viewer_->open(src_tok, thumb_tok,
                               hit.mime_type, hit.duration_ms, hit.natural_w,
-                              hit.natural_h, hit.autoplay, hit.loop,
-                              hit.no_audio, hit.hide_controls);
+                              hit.natural_h, hit.loop, hit.no_audio,
+                              hit.hide_controls);
             vid_viewer_->set_visible(true);
             request_relayout();
             std::string src = src_tok;

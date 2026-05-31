@@ -44,8 +44,8 @@ static std::string fmt_mm_ss(std::uint64_t ms)
 
 void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
                               std::string mime_type, std::uint64_t duration_ms,
-                              int natural_w, int natural_h, bool autoplay,
-                              bool loop, bool no_audio, bool hide_controls)
+                              int natural_w, int natural_h, bool loop,
+                              bool no_audio, bool hide_controls)
 {
     source_json_ = std::move(source_json);
     thumb_url_ = std::move(thumb_url);
@@ -54,7 +54,6 @@ void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
     natural_w_ = natural_w;
     natural_h_ = natural_h;
     rate_ = 1.0f;
-    autoplay_ = autoplay;
     loop_ = loop;
     no_audio_ = no_audio;
     hide_controls_ = hide_controls;
@@ -98,11 +97,6 @@ void VideoViewerOverlay::load_bytes(const std::uint8_t* data, std::size_t size)
     video_player_->set_loop(loop_);
     video_player_->set_muted(no_audio_);
     video_player_->play(data, size, mime_type_);
-    // Non-autoplay clips start paused so the user must press play.
-    if (!autoplay_)
-    {
-        video_player_->pause();
-    }
 }
 
 void VideoViewerOverlay::set_video_player(

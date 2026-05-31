@@ -1550,8 +1550,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
             vid_viewer_->open(src_tok, thumb_tok, hit.mime_type,
                               hit.duration_ms, hit.natural_w, hit.natural_h,
-                              hit.autoplay, hit.loop, hit.no_audio,
-                              hit.hide_controls);
+                              hit.loop, hit.no_audio, hit.hide_controls);
             main_app_->show_video_viewer(true);
             main_app_surface_->relayout();
             gtk_widget_grab_focus(main_app_surface_->widget());

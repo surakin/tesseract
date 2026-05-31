@@ -2345,8 +2345,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
             const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
             s->_vidViewer->open(src_tok, thumb_tok,
                                 hit.mime_type, hit.duration_ms, hit.natural_w,
-                                hit.natural_h, hit.autoplay, hit.loop,
-                                hit.no_audio, hit.hide_controls);
+                                hit.natural_h, hit.loop, hit.no_audio,
+                                hit.hide_controls);
             s->_mainApp->show_video_viewer(true);
             s->_mainAppSurface->relayout();
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
