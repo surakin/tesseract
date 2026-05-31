@@ -101,7 +101,15 @@ bool AnimImageCache::advance(std::int64_t now_ms)
         {
             const bool was_last = (entry.current == entry.frames.size() - 1);
             entry.current = (entry.current + 1) % entry.frames.size();
-            entry.next_advance_ms += entry.delays_ms[entry.current];
+            // Clamp to >=1ms: 0ms frame delays (some encoders emit them) leave
+            // next_advance_ms perpetually due. The was_last break caps it at one
+            // cycle per tick, but frames still flash past and waste CPU.
+            int delay = entry.delays_ms[entry.current];
+            if (delay < 1)
+            {
+                delay = 1;
+            }
+            entry.next_advance_ms += delay;
             any = true;
             if (was_last)
             {
