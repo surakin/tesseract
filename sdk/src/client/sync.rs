@@ -978,9 +978,8 @@ impl ClientFfi {
                 move |ev: AnyGlobalAccountDataEvent| {
                     let packs_dirty_eh = Arc::clone(&packs_dirty_eh);
                     async move {
-                        let type_str = ev.event_type().to_string();
                         if matches!(
-                            type_str.as_str(),
+                            ev.event_type().as_str(),
                             crate::image_packs::TYPE_USER_PACK
                                 | crate::image_packs::TYPE_EMOTE_ROOMS_STABLE
                                 | crate::image_packs::TYPE_EMOTE_ROOMS_UNSTABLE

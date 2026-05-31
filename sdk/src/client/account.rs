@@ -106,10 +106,6 @@ pub(super) async fn read_media_preview_config(client: &Client) -> crate::media_p
     crate::media_preview::Config::default()
 }
 
-/// Map a joined room's local join rule to the MSC4278 wire string. Mirrors
-/// the mapping used for MSC3266 summaries in `room_list.rs`.
-#[cfg(not(test))]
-
 /// Raw JSON of whichever MSC4278 global event exists (stable preferred), or
 /// `"{}"` when none does. Used by the sync watcher to detect changes.
 #[cfg(not(test))]
@@ -839,19 +835,20 @@ impl ClientFfi {
     /// `{"base_url":"","error":"..."}` on failure. Uses raw HTTP — no SDK
     /// Client construction required.
     #[cfg(not(test))]
+    fn discovery_json_str(base_url: &str, error: &str) -> String {
+        serde_json::json!({"base_url": base_url, "error": error}).to_string()
+    }
+
+    #[cfg(not(test))]
     pub fn discover_homeserver(&mut self, server_name_or_mxid: &str) -> String {
         let input = server_name_or_mxid.trim();
-
-        let discovery_json = |base_url: &str, error: &str| {
-            serde_json::json!({"base_url": base_url, "error": error}).to_string()
-        };
 
         // Extract server name from a full MXID (@user:server.org → server.org).
         let server = if input.starts_with('@') {
             match input.find(':') {
                 Some(i) => &input[i + 1..],
                 None => {
-                    return discovery_json("", "Invalid Matrix ID — expected @user:server");
+                    return Self::discovery_json_str("", "Invalid Matrix ID — expected @user:server");
                 }
             }
         } else {
@@ -859,20 +856,17 @@ impl ClientFfi {
         };
 
         if server.is_empty() {
-            return discovery_json("", "");
+            return Self::discovery_json_str("", "");
         }
 
         let server = server.to_owned();
         self.rt.block_on(async move {
-            let discovery_json = |base_url: &str, error: &str| {
-                serde_json::json!({"base_url": base_url, "error": error}).to_string()
-            };
             let http = match reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
             {
                 Ok(c) => c,
-                Err(e) => return discovery_json("", &e.to_string()),
+                Err(e) => return Self::discovery_json_str("", &e.to_string()),
             };
 
             let base_url = if server.starts_with("https://") || server.starts_with("http://") {
@@ -896,14 +890,14 @@ impl ClientFfi {
             };
 
             match base_url {
-                Some(url) => discovery_json(&url, ""),
-                None => discovery_json("", &format!("Could not reach homeserver at {server}")),
+                Some(url) => Self::discovery_json_str(&url, ""),
+                None => Self::discovery_json_str("", &format!("Could not reach homeserver at {server}")),
             }
         })
     }
 
     #[cfg(test)]
     pub fn discover_homeserver(&mut self, _: &str) -> String {
-        serde_json::json!({"base_url": "", "error": ""}).to_string()
+        r#"{"base_url":"","error":""}"#.to_owned()
     }
 }

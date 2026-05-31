@@ -361,7 +361,6 @@ impl ClientFfi {
         None
     }
 
-    #[cfg(not(test))]
     /// Shared send path: client lookup, room_id parse, live-timeline routing
     /// with local-echo, and fallback to Room::send for unsubscribed rooms.
     #[cfg(not(test))]

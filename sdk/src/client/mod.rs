@@ -381,6 +381,8 @@ pub struct ClientFfi {
     /// call.  Allows the notable-update loop to skip the O(all-rooms) SQLite
     /// sweep on pure read-receipt / recency-stamp bursts while still catching
     /// remote pack edits that arrive with the catch-all `NONE` reason.
+    /// Initialized to `true` so the first sync loop always rebuilds the pack
+    /// cache after login.
     #[cfg(not(test))]
     pub(super) packs_dirty: Arc<std::sync::atomic::AtomicBool>,
     /// Serializes every account-data read-modify-write (`recent_emoji_bump`,

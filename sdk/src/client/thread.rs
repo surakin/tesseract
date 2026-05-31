@@ -583,10 +583,10 @@ async fn apply_thread_chips(
                     matrix_sdk::ruma::events::StateEventContentChange::Original { .. }
                 )
             ),
-            TimelineItemContent::MsgLike(MsgLikeContent { kind, .. }) => match kind {
+            TimelineItemContent::MsgLike(MsgLikeContent { kind, thread_root, .. }) => match kind {
                 MsgLikeKind::UnableToDecrypt(_) | MsgLikeKind::Redacted | MsgLikeKind::Sticker(_) => true,
                 // Thread replies are excluded from the Room channel.
-                MsgLikeKind::Message(_) => event_item.content().thread_root().is_none(),
+                MsgLikeKind::Message(_) => thread_root.is_none(),
                 // Reactions, polls, and other kinds are filtered out.
                 _ => false,
             },
