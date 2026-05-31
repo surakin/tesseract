@@ -184,7 +184,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn get_room_summary(&self, room_id_or_alias: &str) -> String {
         use matrix_sdk::ruma::api::client::room::get_summary::v1::Request;
-        use matrix_sdk::ruma::room::{JoinRuleSummary, RoomType};
+        use matrix_sdk::ruma::room::RoomType;
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
         let Some(client) = self.client.clone() else {
@@ -206,15 +206,7 @@ impl ClientFfi {
                     match result {
                         Ok(resp) => {
                             let s = &resp.summary;
-                            let join_rule = match &s.join_rule {
-                                JoinRuleSummary::Public        => "public",
-                                JoinRuleSummary::Invite        => "invite",
-                                JoinRuleSummary::Knock         => "knock",
-                                JoinRuleSummary::KnockRestricted(_) => "knock_restricted",
-                                JoinRuleSummary::Restricted(_) => "restricted",
-                                JoinRuleSummary::Private       => "private",
-                                _                              => "unknown",
-                            };
+                            let join_rule = s.join_rule.as_str();
                             let encryption = s.encryption.as_ref()
                                 .map(|e| e.as_str())
                                 .unwrap_or("");

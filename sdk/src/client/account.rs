@@ -109,20 +109,6 @@ pub(super) async fn read_media_preview_config(client: &Client) -> crate::media_p
 /// Map a joined room's local join rule to the MSC4278 wire string. Mirrors
 /// the mapping used for MSC3266 summaries in `room_list.rs`.
 #[cfg(not(test))]
-fn join_rule_str(room: &matrix_sdk::Room) -> String {
-    use matrix_sdk::ruma::events::room::join_rules::JoinRule;
-    match room.join_rule() {
-        Some(JoinRule::Public) => "public",
-        Some(JoinRule::Invite) => "invite",
-        Some(JoinRule::Knock) => "knock",
-        Some(JoinRule::KnockRestricted(_)) => "knock_restricted",
-        Some(JoinRule::Restricted(_)) => "restricted",
-        Some(JoinRule::Private) => "private",
-        Some(_) => "unknown",
-        None => "",
-    }
-    .to_owned()
-}
 
 /// Raw JSON of whichever MSC4278 global event exists (stable preferred), or
 /// `"{}"` when none does. Used by the sync watcher to detect changes.
@@ -338,7 +324,7 @@ impl ClientFfi {
                 return none();
             };
 
-            let join_rule = join_rule_str(&room);
+            let join_rule = room.join_rule().map(|r| r.as_str().to_owned()).unwrap_or_default();
 
             async fn fetch(room: &matrix_sdk::Room, ty: &str) -> Option<Value> {
                 let et = RoomAccountDataEventType::from(ty);
