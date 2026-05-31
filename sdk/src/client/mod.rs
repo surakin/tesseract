@@ -800,36 +800,6 @@ pub(super) async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
 }
 
 
-
-/// MSC2545 migration dual-write: write the same account-data `content`
-/// under every name in `types` (stable + unstable, see
-/// `image_packs::EMOTE_ROOMS_TYPES`), so edits stay visible to clients
-/// still on the unstable names until the ecosystem has migrated. No
-/// callers yet — the pending pack-management write paths (ROADMAP Step 10:
-/// emote-rooms subscribe) will use it. Room-pack state-event edits should
-/// mirror this pattern with `send_state_event` over `ROOM_PACK_TYPES`.
-#[cfg(not(test))]
-#[allow(dead_code)]
-async fn set_account_data_both(
-    client: &Client,
-    types: &[&str],
-    content: &serde_json::Value,
-) -> Result<(), String> {
-    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
-    use matrix_sdk::ruma::serde::Raw;
-    let raw = Raw::new(content)
-        .map_err(|e| format!("serialize account data: {e}"))?
-        .cast_unchecked();
-    for t in types {
-        client
-            .account()
-            .set_account_data_raw(GlobalAccountDataEventType::from(*t), raw.clone())
-            .await
-            .map_err(|e| format!("set {t}: {e}"))?;
-    }
-    Ok(())
-}
-
 /// Rebuild the aggregated image-pack cache. Reads prefer the unstable
 /// `im.ponies.*` names (first entry in `EMOTE_ROOMS_TYPES` / `ROOM_PACK_TYPES`)
 /// since most homeservers and rooms only carry those. Returns an empty Vec
