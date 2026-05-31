@@ -1469,6 +1469,16 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    #[cfg(not(test))]
+    fn parse_image_info(info_json: &str) -> matrix_sdk::ruma::events::room::ImageInfo {
+        use matrix_sdk::ruma::events::room::ImageInfo;
+        if info_json.is_empty() || info_json == "{}" {
+            ImageInfo::new()
+        } else {
+            serde_json::from_str(info_json).unwrap_or_else(|_| ImageInfo::new())
+        }
+    }
+
     /// Send an `m.sticker` event to `room_id`. Wraps
     /// `room.send(StickerEventContent { .. })`. matrix-sdk encrypts in E2EE
     /// rooms transparently; outgoing stickers always carry a plain
@@ -1481,7 +1491,6 @@ impl ClientFfi {
         image_url: &str,
         info_json: &str,
     ) -> OpResult {
-        use matrix_sdk::ruma::events::room::ImageInfo;
         use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
         use matrix_sdk::ruma::OwnedMxcUri;
 
@@ -1498,14 +1507,7 @@ impl ClientFfi {
             return err("image_url is not a valid mxc:// uri");
         }
 
-        let info: ImageInfo = if info_json.is_empty() || info_json == "{}" {
-            ImageInfo::new()
-        } else {
-            match serde_json::from_str(info_json) {
-                Ok(i) => i,
-                Err(_) => ImageInfo::new(),
-            }
-        };
+        let info = Self::parse_image_info(info_json);
 
         // ruma's StickerEventContent::new takes a plain mxc URI directly;
         // matrix-sdk handles E2EE rooms transparently when sending. The
@@ -1545,7 +1547,6 @@ impl ClientFfi {
         image_url: &str,
         info_json: &str,
     ) -> OpResult {
-        use matrix_sdk::ruma::events::room::ImageInfo;
         use matrix_sdk::ruma::events::sticker::StickerEventContent;
         use matrix_sdk::ruma::OwnedMxcUri;
 
@@ -1564,14 +1565,7 @@ impl ClientFfi {
         if !uri.is_valid() {
             return err("image_url is not a valid mxc:// uri");
         }
-        let info: ImageInfo = if info_json.is_empty() || info_json == "{}" {
-            ImageInfo::new()
-        } else {
-            match serde_json::from_str(info_json) {
-                Ok(i) => i,
-                Err(_) => ImageInfo::new(),
-            }
-        };
+        let info = Self::parse_image_info(info_json);
 
         // Prefer the subscribed thread timeline so the local echo fires via
         // on_thread_inserted (not the room timeline, which would show the
