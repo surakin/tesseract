@@ -4528,7 +4528,13 @@ void MessageListView::start_inline_video(const MessageRowData& m)
     std::weak_ptr<bool> walive = alive_;
     player->on_frame = [this, walive]
     {
-        if (walive.expired())
+        // Lock the weak_ptr and check the flag instead of expired(): during
+        // ~MessageListView the destructor sets *alive_ = false before alive_
+        // is destroyed, and expired() stays false across that window — a frame
+        // landing there would dereference a half-destroyed `this` via
+        // request_repaint_. Matches every other async hop in this file.
+        auto live = walive.lock();
+        if (!live || !*live)
         {
             return;
         }

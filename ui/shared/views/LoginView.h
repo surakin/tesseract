@@ -101,10 +101,17 @@ public:
     // Controller wiring — call before init_with_field()
     // -----------------------------------------------------------------------
 
-    void set_client(tesseract::Client* c)
-    {
-        client_ = c;
-    }
+    // Lifetime invariant: the Client is owned by the shell, not by LoginView
+    // (client_ is a non-owning alias). The OAuth worker thread snapshots
+    // `auto* c = client_` and calls blocking FFI (begin_oauth / await_oauth)
+    // on it; that raw pointer stays valid only while the Client object lives.
+    // OAuth is modal — the shell keeps the Client alive for the whole flow and
+    // does not destroy it mid-flow. If a flow is in flight when the alias is
+    // swapped or cleared, tear it down first (mark cancelled, cancel_oauth to
+    // unblock the in-flight FFI call, join the worker so it has fully returned
+    // and stopped touching the old client_) before changing client_. Defined
+    // out-of-line in LoginView.cpp because it touches the worker machinery.
+    void set_client(tesseract::Client* c);
 
     /// post_to_ui: schedule fn on the UI thread.  Implementations should
     /// wrap the callback with the liveness guard from alive_token().

@@ -233,6 +233,26 @@ void LoginView::set_status_message(const std::string& msg)
         relayout_();
 }
 
+void LoginView::set_client(tesseract::Client* c)
+{
+    // See the header for the full lifetime invariant. If an OAuth flow is in
+    // flight (State::Waiting — worker_ blocked inside begin_oauth/await_oauth
+    // on the current client_), tear it down before swapping the non-owning
+    // alias, using the same sequence shutdown()/reset() use: mark cancelled so
+    // the worker's UI-thread post-back drops, cancel_oauth() to unblock the
+    // in-flight FFI call, then join_worker_() so the worker has fully returned
+    // and stopped touching the old client_ before the alias changes.
+    if (state_ == State::Waiting && client_ && client_ != c)
+    {
+        cancelled_.store(true);
+        client_->cancel_oauth();
+        join_worker_();
+        cancelled_.store(false);
+        set_state(State::Form);
+    }
+    client_ = c;
+}
+
 void LoginView::shutdown()
 {
     ++discovery_gen_;
