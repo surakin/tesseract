@@ -1035,14 +1035,17 @@ pub(super) async fn timeline_item_to_ffi(
                 .unwrap_or_default();
             let vid_filename = v.filename.clone().unwrap_or_default();
             // Parse fi.mau.* vendor hints from the raw event JSON.
+            // Parse once and extract all flags from the single Value.
+            let mau_info: Option<serde_json::Value> = event_item
+                .original_json()
+                .and_then(|raw| {
+                    serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
+                })
+                .and_then(|json| json.pointer("/content/info").cloned());
             let mau = |key: &str| -> bool {
-                let path = format!("/content/info/{}", key);
-                event_item
-                    .original_json()
-                    .and_then(|raw| {
-                        serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
-                    })
-                    .and_then(|json| json.pointer(&path)?.as_bool())
+                mau_info
+                    .as_ref()
+                    .and_then(|info| info.get(key)?.as_bool())
                     .unwrap_or(false)
             };
             let video_gif = mau("fi.mau.gif");
