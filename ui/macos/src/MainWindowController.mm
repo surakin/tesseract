@@ -310,6 +310,19 @@ public:
     using ShellBase::room_view_;
     tk::macos::Surface* app_surface_ = nullptr;
 
+    // Native text fields for the encryption-setup overlay. Owned here (not in
+    // ObjC ivars) so show_encryption_setup_overlay_() can reach them from C++.
+    std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
+    std::unique_ptr<tk::NativeTextField> enc_key_field_;
+
+    // Public forwarder for the protected ShellBase virtual so ObjC++ code can
+    // call it through _shell without a friend declaration.
+    void show_encryption_setup(
+        tesseract::views::EncryptionSetupOverlay::Mode mode)
+    {
+        show_encryption_setup_overlay_(mode);
+    }
+
     // SettingsController — created at login, reset on account switch.
     std::unique_ptr<tesseract::SettingsController> settings_controller_;
 
@@ -564,18 +577,18 @@ void MacShell::show_encryption_setup_overlay_(
     // native fields, then wire the shared callbacks via ShellBase.
     ov->reset(mode);
 
-    c->_encPassphraseField = c->_mainAppSurface->host().make_text_field();
-    c->_encPassphraseField->set_password(true);
-    c->_encKeyField = c->_mainAppSurface->host().make_text_field();
-    c->_encKeyField->set_password(false);
+    enc_passphrase_field_ = app_surface_->host().make_text_field();
+    enc_passphrase_field_->set_password(true);
+    enc_key_field_ = app_surface_->host().make_text_field();
+    enc_key_field_->set_password(false);
 
-    wire_encryption_setup_callbacks_(*ov, c->_mainAppSurface->host(),
-                                     c->_encPassphraseField.get(),
-                                     c->_encKeyField.get());
+    wire_encryption_setup_callbacks_(*ov, app_surface_->host(),
+                                     enc_passphrase_field_.get(),
+                                     enc_key_field_.get());
 
     main_app_->show_encryption_setup(true);
-    if (c->_mainAppSurface)
-        c->_mainAppSurface->relayout();
+    if (app_surface_)
+        app_surface_->relayout();
 }
 
 void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -1478,8 +1491,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
-    std::unique_ptr<tk::NativeTextField> _encPassphraseField;
-    std::unique_ptr<tk::NativeTextField> _encKeyField;
 
     // Settings name field — positioned via _settingsSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _settingsNameField;
@@ -1847,7 +1858,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             s->_mainApp->show_verif_banner(false);
             // The recovery-key entry path now lives in the encryption-setup
             // overlay (Recover mode); the old inline RecoveryBanner was removed.
-            s->_shell->show_encryption_setup_overlay_(
+            s->_shell->show_encryption_setup(
                 tesseract::views::EncryptionSetupOverlay::Mode::Recover);
         };
 
@@ -3297,10 +3308,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     s->_roomTextArea->set_visible(false);
                     s->_topicTextArea->set_visible(false);
                     s->_roomSearchField->set_visible(false);
-                    if (s->_encPassphraseField)
-                        s->_encPassphraseField->set_visible(false);
-                    if (s->_encKeyField)
-                        s->_encKeyField->set_visible(false);
+                    if (s->_shell->enc_passphrase_field_)
+                        s->_shell->enc_passphrase_field_->set_visible(false);
+                    if (s->_shell->enc_key_field_)
+                        s->_shell->enc_key_field_->set_visible(false);
                     (void)surf;
                     return;
                 }
@@ -3333,23 +3344,24 @@ void MacShell::set_compose_draft_(const std::string& draft)
                         app->room_search_field_rect());
                 }
                 // Encryption setup passphrase field.
-                if (s->_encPassphraseField && app->encryption_setup())
+                if (s->_shell->enc_passphrase_field_ && app->encryption_setup())
                 {
                     auto* ov = app->encryption_setup();
                     bool ppVisible = ov->passphrase_field_rect_visible();
-                    s->_encPassphraseField->set_visible(ppVisible);
+                    s->_shell->enc_passphrase_field_->set_visible(ppVisible);
                     if (ppVisible)
-                        s->_encPassphraseField->set_rect(
+                        s->_shell->enc_passphrase_field_->set_rect(
                             ov->passphrase_field_rect_value());
                 }
                 // Encryption setup recovery-key field.
-                if (s->_encKeyField && app->encryption_setup())
+                if (s->_shell->enc_key_field_ && app->encryption_setup())
                 {
                     auto* ov = app->encryption_setup();
                     bool kfVisible = ov->key_field_rect_visible();
-                    s->_encKeyField->set_visible(kfVisible);
+                    s->_shell->enc_key_field_->set_visible(kfVisible);
                     if (kfVisible)
-                        s->_encKeyField->set_rect(ov->key_field_rect_value());
+                        s->_shell->enc_key_field_->set_rect(
+                            ov->key_field_rect_value());
                 }
                 (void)surf;
             });
