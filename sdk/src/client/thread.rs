@@ -482,7 +482,7 @@ async fn apply_thread_chips(
     items: &[matrix_sdk_ui::timeline::thread_list_service::ThreadListItem],
     cache: &mut std::collections::HashMap<String, ChipCount>,
 ) {
-    use super::timeline::{emit_updated, filter_for_channel, TimelineChannel};
+    use super::timeline::{emit_updated, TimelineChannel};
     use super::timeline_convert::timeline_item_to_ffi;
     use std::collections::HashMap;
 
@@ -547,8 +547,10 @@ async fn apply_thread_chips(
         }
     }
 
-    // Second pass: walk the room timeline and emit chip updates. Index
-    // map keyed by event_id avoids re-finding the same root across passes.
+    // Second pass: walk the room timeline and emit chip updates.
+    // Use a cheap synchronous visibility predicate so the full async FFI
+    // conversion (which may issue member-lookup network requests) only fires
+    // for the K thread-root candidates instead of all N timeline items.
     let by_root: HashMap<&str, &_> = items
         .iter()
         .map(|it| (it.root_event.event_id.as_str(), it))
@@ -557,43 +559,82 @@ async fn apply_thread_chips(
     let timeline_items = room_timeline.items().await;
     let mut visible_idx: u64 = 0;
     for tl_item in timeline_items.iter() {
-        let Some(mut ev) = filter_for_channel(
-            timeline_item_to_ffi(tl_item, room_id, room, me).await,
-            &TimelineChannel::Room,
-        ) else {
-            continue;
+        use matrix_sdk_ui::timeline::{
+            AnyOtherStateEventContentChange, MsgLikeContent, MsgLikeKind, TimelineItemContent,
+            TimelineItemKind,
         };
-        if let Some(item) = by_root.get(ev.event_id.as_str()) {
-            let count = cache
-                .get(ev.event_id.as_str())
-                .map(|c| c.server_count)
-                .unwrap_or(item.num_replies as u64);
-            let (latest_name, latest_body, latest_ts) = match &item.latest_event {
-                Some(le) => {
-                    let (_id, n, b, t) = thread_list_event_preview(le);
-                    (n, b, t)
-                }
-                None => (String::new(), String::new(), 0u64),
-            };
-            // Skip if the chip is already aligned — re-emitting an
-            // identical row would trigger a needless C++ relayout pass
-            // for every sync tick.
-            let already_aligned = ev.is_thread_root
-                && ev.thread_reply_count == count
-                && ev.thread_latest_sender_name == latest_name
-                && ev.thread_latest_body == latest_body
-                && ev.thread_latest_ts == latest_ts;
-            if !already_aligned {
-                ev.is_thread_root = true;
-                ev.thread_reply_count = count;
-                ev.thread_latest_sender_name = latest_name;
-                ev.thread_latest_body = latest_body;
-                ev.thread_latest_ts = latest_ts;
-                if let Ok(g) = handler.lock() {
-                    emit_updated(&g, &TimelineChannel::Room, room_id, visible_idx, &ev);
+
+        let event_item = match tl_item.kind() {
+            TimelineItemKind::Virtual(_) => {
+                // Date dividers, read markers, and timeline-start are always
+                // visible in the Room channel.
+                visible_idx += 1;
+                continue;
+            }
+            TimelineItemKind::Event(e) => e,
+        };
+
+        // Cheap visibility predicate replicating filter_for_channel(Room)
+        // without the async timeline_item_to_ffi call.
+        let visible_in_room = match event_item.content() {
+            TimelineItemContent::OtherState(state) => matches!(
+                state.content(),
+                AnyOtherStateEventContentChange::RoomPinnedEvents(
+                    matrix_sdk::ruma::events::StateEventContentChange::Original { .. }
+                )
+            ),
+            TimelineItemContent::MsgLike(MsgLikeContent { kind, .. }) => match kind {
+                MsgLikeKind::UnableToDecrypt(_) | MsgLikeKind::Redacted | MsgLikeKind::Sticker(_) => true,
+                // Thread replies are excluded from the Room channel.
+                MsgLikeKind::Message(_) => event_item.content().thread_root().is_none(),
+                // Reactions, polls, and other kinds are filtered out.
+                _ => false,
+            },
+            _ => false,
+        };
+
+        if !visible_in_room {
+            continue;
+        }
+
+        // Full FFI conversion only for thread-root candidates.
+        if let Some(eid) = event_item.event_id() {
+            if let Some(item) = by_root.get(eid.as_str()) {
+                let Some(mut ev) = timeline_item_to_ffi(tl_item, room_id, room, me).await else {
+                    visible_idx += 1;
+                    continue;
+                };
+                let count = cache
+                    .get(ev.event_id.as_str())
+                    .map(|c| c.server_count)
+                    .unwrap_or(item.num_replies as u64);
+                let (latest_name, latest_body, latest_ts) = match &item.latest_event {
+                    Some(le) => {
+                        let (_id, n, b, t) = thread_list_event_preview(le);
+                        (n, b, t)
+                    }
+                    None => (String::new(), String::new(), 0u64),
+                };
+                // Skip if chip is already aligned — re-emitting an identical
+                // row would trigger a needless C++ relayout on every sync tick.
+                let already_aligned = ev.is_thread_root
+                    && ev.thread_reply_count == count
+                    && ev.thread_latest_sender_name == latest_name
+                    && ev.thread_latest_body == latest_body
+                    && ev.thread_latest_ts == latest_ts;
+                if !already_aligned {
+                    ev.is_thread_root = true;
+                    ev.thread_reply_count = count;
+                    ev.thread_latest_sender_name = latest_name;
+                    ev.thread_latest_body = latest_body;
+                    ev.thread_latest_ts = latest_ts;
+                    if let Ok(g) = handler.lock() {
+                        emit_updated(&g, &TimelineChannel::Room, room_id, visible_idx, &ev);
+                    }
                 }
             }
         }
+
         visible_idx += 1;
     }
 }
