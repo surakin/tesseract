@@ -1727,6 +1727,23 @@ void ShellBase::notify_tray_unread_()
     on_tray_unread_changed_(u, h);
 }
 
+void ShellBase::navigate_tray_unread_()
+{
+    const RoomInfo* best = nullptr;
+    for (const auto& r : rooms_)
+    {
+        if (r.notification_count == 0 && r.highlight_count == 0)
+            continue;
+        if (!best
+            || (r.highlight_count > 0 && best->highlight_count == 0)
+            || (r.highlight_count == best->highlight_count
+                && r.last_activity_ts > best->last_activity_ts))
+            best = &r;
+    }
+    if (best)
+        tab_navigate_room(best->id);
+}
+
 void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
 {
     auto& state = pagination_[room_id];

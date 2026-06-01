@@ -2206,6 +2206,7 @@ void MainWindow::start_tray_if_needed_()
         [this]
         {
             gtk_window_present(GTK_WINDOW(window_));
+            navigate_tray_unread_();
         },
         [this]
         {

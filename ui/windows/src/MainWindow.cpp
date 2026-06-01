@@ -5349,10 +5349,11 @@ void MainWindow::switch_active_account(int new_idx)
                     ShowWindow(hwnd_, SW_RESTORE);
                 }
                 SetForegroundWindow(hwnd_);
+                navigate_tray_unread_();
             },
             [this]
             {
-                if (IsWindowVisible(hwnd_))
+                if (IsWindowVisible(hwnd_) && !last_tray_unread_)
                 {
                     ShowWindow(hwnd_, SW_HIDE);
                 }
@@ -5364,6 +5365,7 @@ void MainWindow::switch_active_account(int new_idx)
                         ShowWindow(hwnd_, SW_RESTORE);
                     }
                     SetForegroundWindow(hwnd_);
+                    navigate_tray_unread_();
                 }
             },
             [this]

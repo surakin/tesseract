@@ -2267,13 +2267,20 @@ void MainWindow::doLogin()
     if (!tray_)
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this] { activateWindowWithToken_(QString{}); },
             [this]
             {
-                if (isVisible())
+                activateWindowWithToken_(QString{});
+                navigate_tray_unread_();
+            },
+            [this]
+            {
+                if (isVisible() && !last_tray_unread_)
                     hide();
                 else
+                {
                     activateWindowWithToken_(QString{});
+                    navigate_tray_unread_();
+                }
             },
             [] { qApp->quit(); },
             this);
@@ -2479,13 +2486,20 @@ void MainWindow::onLoginSucceeded()
     if (!tray_)
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this] { activateWindowWithToken_(QString{}); },
             [this]
             {
-                if (isVisible())
+                activateWindowWithToken_(QString{});
+                navigate_tray_unread_();
+            },
+            [this]
+            {
+                if (isVisible() && !last_tray_unread_)
                     hide();
                 else
+                {
                     activateWindowWithToken_(QString{});
+                    navigate_tray_unread_();
+                }
             },
             [] { qApp->quit(); },
             this);

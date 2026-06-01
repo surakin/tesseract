@@ -586,6 +586,12 @@ protected:
     {
     }
 
+    // Navigate to the highest-priority unread room in the active account,
+    // or no-op if none. Call on the UI thread from tray-click handlers.
+    // Priority: highlight_count > 0 beats notification-only; ties broken by
+    // most-recent last_activity_ts.
+    void navigate_tray_unread_();
+
     // Called on the UI thread when async media bytes arrive.
     // Shell decodes the bytes, stores a tk::Image in tk_avatars_ or tk_images_
     // (or calls anim_cache_.store), and triggers a repaint.

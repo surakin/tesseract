@@ -228,6 +228,7 @@ public:
     using ShellBase::last_tray_highlight_;
     using ShellBase::last_tray_unread_;
     using ShellBase::mark_room_read_;
+    using ShellBase::navigate_tray_unread_;
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::media_fetches_in_flight_;
     using ShellBase::my_avatar_url_;
@@ -5025,6 +5026,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     {
                         [win makeKeyAndOrderFront:nil];
                         [NSApp activateIgnoringOtherApps:YES];
+                        strong->_shell->navigate_tray_unread_();
                     }
                 });
             },
