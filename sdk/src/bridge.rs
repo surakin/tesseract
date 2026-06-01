@@ -781,6 +781,10 @@ pub mod ffi {
         fn stop_sync(self: &mut ClientFfi);
         fn clear_caches(self: &mut ClientFfi) -> OpResult;
 
+        /// Live count of extra in-flight HTTP operations (excludes the sync
+        /// long-poll). Cheap atomic read; safe to call from any thread.
+        fn in_flight_count(self: &ClientFfi) -> u32;
+
         // ----- Room list -----
 
         fn list_rooms(self: &ClientFfi) -> Vec<RoomInfo>;

@@ -242,7 +242,15 @@ void EventHandlerBase::on_inflight_changed(uint32_t count)
     shell_->post_to_ui_(
         [shell = shell_, n = count]()
         {
-            shell->last_inflight_ = n;
+            // Re-read the authoritative atomic on the UI thread rather than
+            // trusting the snapshot `n`: notifications from different worker
+            // threads can be delivered out of order (or dropped if the Rust
+            // handler mutex is contended), which would otherwise leave the
+            // activity dot stuck above the true count. The live read makes the
+            // displayed value converge regardless of delivery order.
+            shell->last_inflight_ = shell->client_
+                                        ? shell->client_->in_flight_count()
+                                        : n;
             shell->on_inflight_ui_();
         });
 }

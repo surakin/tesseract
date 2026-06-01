@@ -185,6 +185,10 @@ public:
     /// Call after stop_sync() and before restore_session().
     Result clear_caches();
 
+    /// Live count of extra in-flight HTTP operations (media downloads, back-
+    /// pagination); excludes the sync long-poll. Cheap atomic read, any thread.
+    std::uint32_t in_flight_count() const;
+
     // ------------------------------------------------------------------
     // Room list (utility — push pipeline drives UI updates via callbacks)
     // ------------------------------------------------------------------

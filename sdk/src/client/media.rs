@@ -36,6 +36,21 @@ pub(super) const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 #[cfg(not(test))]
 pub(super) const MAX_URL_BYTES: usize = 1024 * 1024;
 
+/// Per-request timeout for media fetches. Every fetch runs as
+/// `block_on(select!{ op / stop_fut })`, and `stop_fut` only resolves at app
+/// shutdown — so without these bounds a dead or stalled server response hangs
+/// the call forever, holding an `InFlightGuard` (the activity dot sticks) and
+/// pinning one of only four read-pool worker threads. Thumbnails/avatars/URL
+/// fetches are small and should arrive quickly; full-file downloads get a more
+/// generous bound. On timeout the fetch returns its empty default and the next
+/// trigger (room update, reopen) re-fetches, since nothing was cached.
+#[cfg(not(test))]
+pub(super) const THUMBNAIL_FETCH_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(30);
+#[cfg(not(test))]
+pub(super) const FULL_MEDIA_FETCH_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(120);
+
 #[cfg(not(test))]
 pub(super) fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
     if bytes.len() > MAX_MEDIA_BYTES {
@@ -160,6 +175,14 @@ pub(super) async fn emit_notification(
 
 #[cfg(not(test))]
 impl ClientFfi {
+    /// Authoritative count of extra in-flight HTTP operations (media + back-
+    /// pagination), excluding the sync long-poll. The UI re-reads this on every
+    /// `on_inflight_changed` notification so the activity dot reflects the live
+    /// atomic rather than a possibly-reordered or dropped snapshot value.
+    pub fn in_flight_count(&self) -> u32 {
+        self.in_flight.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn fetch_avatar_bytes(&self, room_id: &str) -> Vec<u8> {
         use matrix_sdk::media::MediaFormat;
         let Some(client) = self.client.clone() else {
@@ -177,6 +200,7 @@ impl ClientFfi {
             tokio::select! {
                 result = room.avatar(MediaFormat::File) =>
                     result.ok().flatten().unwrap_or_default(),
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -206,6 +230,7 @@ impl ClientFfi {
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
                     cap_media_bytes(result.unwrap_or_default()),
+                _ = tokio::time::sleep(FULL_MEDIA_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -255,6 +280,7 @@ impl ClientFfi {
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
                     cap_media_bytes(result.unwrap_or_default()),
+                _ = tokio::time::sleep(FULL_MEDIA_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -281,6 +307,7 @@ impl ClientFfi {
             tokio::select! {
                 result = room.avatar(MediaFormat::Thumbnail(settings)) =>
                     result.ok().flatten().unwrap_or_default(),
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -323,6 +350,7 @@ impl ClientFfi {
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
                     cap_media_bytes(result.unwrap_or_default()),
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -383,6 +411,7 @@ impl ClientFfi {
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
                     cap_media_bytes(result.unwrap_or_default()),
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -438,6 +467,7 @@ impl ClientFfi {
                     }
                     buf
                 } => result,
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -485,6 +515,7 @@ impl ClientFfi {
                         Err(_) => String::new(),
                     }
                 }
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => String::new(),
                 _ = stop_fut(stop_rx) => String::new(),
             }
         })

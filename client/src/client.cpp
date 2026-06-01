@@ -203,6 +203,11 @@ tesseract::Result Client::clear_caches()
     return from_ffi(impl_->ffi->clear_caches());
 }
 
+std::uint32_t Client::in_flight_count() const
+{
+    return impl_->ffi->in_flight_count();
+}
+
 std::vector<RoomInfo> Client::list_rooms() const
 {
     return ffi_vec<RoomInfo>(impl_->ffi->list_rooms());
