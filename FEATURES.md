@@ -13,6 +13,7 @@ version) are noted where relevant.
 - System tray with minimize-to-tray (default), unread dot, and mention-state color
 - Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
+- In-flight request indicator in the status bar (green / amber / red dot with tooltip showing the count)
 
 ## Messaging
 
@@ -70,6 +71,7 @@ version) are noted where relevant.
 ## Security & privacy
 
 - End-to-end encryption
+- Guided encryption setup for new accounts (cross-signing wizard)
 - Device verification via emoji (SAS)
 - Key backup recovery
 - Room key export / import (standard interoperable format)
