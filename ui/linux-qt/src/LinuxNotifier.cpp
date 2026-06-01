@@ -4,24 +4,10 @@
 #include <QDir>
 #include <QGuiApplication>
 #include <QImage>
-#include <cctype>
+#include "../../shared/linux_portal.h"
 
 namespace
 {
-
-// XDG portal notification ids must match [a-zA-Z0-9_-]+. Matrix room ids
-// contain '!', ':' and '.', so map anything outside the allowed set to '_'.
-QString sanitize_portal_id(const std::string& s)
-{
-    QString out;
-    out.reserve(static_cast<int>(s.size()));
-    for (unsigned char c : s)
-    {
-        out +=
-            (std::isalnum(c) || c == '_' || c == '-') ? QChar(c) : QChar('_');
-    }
-    return out.isEmpty() ? QStringLiteral("_") : out;
-}
 
 // Several notification daemons (dunst, mako, GNOME Shell) render a subset
 // of Pango markup in the body. Server-supplied message text must be escaped
@@ -104,7 +90,8 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
 
     if (use_portal())
     {
-        const QString pid = sanitize_portal_id(n.room_id);
+        const QString pid = QString::fromStdString(
+            tesseract::linux_portal::sanitize_notification_id(n.room_id));
         // Record mapping so onPortalActionInvoked can look up the room.
         portal_id_to_room_[pid.toStdString()] = n.room_id;
         QVariantMap portalMap{{"title", escape_markup(n.sender)},

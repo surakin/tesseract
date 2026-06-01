@@ -273,8 +273,8 @@ HICON Win32TrayIcon::make_overlay_icon_(UINT32 dot_color_argb) const
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
 
         const int side  = std::min(cx, cy);
-        const int dot   = std::max(6, side * 38 / 100);
-        const int inset = std::max(1, side / 32);
+        const int dot   = tesseract::badge_dot_px(side);
+        const int inset = tesseract::badge_inset_px(side);
         const int x     = cx - dot - inset;
         const int y     = cy - dot - inset;
 
@@ -284,7 +284,7 @@ HICON Win32TrayIcon::make_overlay_icon_(UINT32 dot_color_argb) const
 
         // White outline so the dot reads on both light and dark trays.
         Gdiplus::Pen pen(Gdiplus::Color(255, 255, 255, 255),
-                         static_cast<Gdiplus::REAL>(std::max(1, side / 32)));
+                         static_cast<Gdiplus::REAL>(tesseract::badge_inset_px(side)));
         g.DrawEllipse(&pen, x, y, dot, dot);
     }
 
@@ -328,13 +328,11 @@ void Win32TrayIcon::set_unread(bool has_unread, bool has_highlight)
     UINT32 dot = 0;
     if (has_highlight)
     {
-        // 0xFFD93636 — destructive/red from the light palette.
-        dot = 0xFFD93636;
+        dot = 0xFF000000u | tesseract::kBadgeColorMention;
     }
     else if (has_unread)
     {
-        // 0xFF0084FF — accent/blue from the light palette.
-        dot = 0xFF0084FF;
+        dot = 0xFF000000u | tesseract::kBadgeColorUnread;
     }
 
     HICON new_icon = nullptr;

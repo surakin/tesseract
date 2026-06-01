@@ -1,25 +1,7 @@
 #include "LinuxNotifier.h"
-#include <cctype>
-#include <cstdlib>
 #include <string>
 #include <gdk-pixbuf/gdk-pixbuf.h>
-
-namespace
-{
-// XDG portal notification ids must match [a-zA-Z0-9_-]+; Matrix room ids
-// contain '!', ':' and '.'.
-std::string sanitize_portal_id(const std::string& s)
-{
-    std::string out;
-    out.reserve(s.size());
-    for (unsigned char c : s)
-    {
-        out += (std::isalnum(c) || c == '_' || c == '-') ? static_cast<char>(c)
-                                                         : '_';
-    }
-    return out.empty() ? std::string("_") : out;
-}
-} // namespace
+#include "../../shared/linux_portal.h"
 
 LinuxNotifierGtk::LinuxNotifierGtk(
     std::function<void(std::string, std::string)> on_activate)
@@ -127,7 +109,7 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
 
     if (use_portal())
     {
-        const std::string pid = sanitize_portal_id(n.room_id);
+        const std::string pid = tesseract::linux_portal::sanitize_notification_id(n.room_id);
         // Record mapping so on_portal_action_invoked_cb can look up the room.
         portal_id_to_room_[pid] = n.room_id;
         GVariantBuilder notif_b;

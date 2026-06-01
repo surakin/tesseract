@@ -103,19 +103,18 @@ void LinuxQtTrayIcon::set_unread(bool has_unread, bool has_highlight)
 
     // Dot sized at ~38% of the icon edge, anchored to the bottom-right with a
     // small inset so the outline isn't clipped.
-    const int side = std::min(pm.width(), pm.height());
-    const int dot  = std::max(8, side * 38 / 100);
-    const int inset = std::max(1, side / 32);
+    const int side  = std::min(pm.width(), pm.height());
+    const int dot   = tesseract::badge_dot_px(side);
+    const int inset = tesseract::badge_inset_px(side);
     const int x = pm.width() - dot - inset;
     const int y = pm.height() - dot - inset;
 
-    // 0xD93636 (destructive/red) for mentions, 0x0084FF (accent/blue) for
-    // plain unread.  Hex values mirror the light palette in ui/shared/tk/theme.cpp.
-    const QColor fill = has_highlight ? QColor(0xD9, 0x36, 0x36)
-                                      : QColor(0x00, 0x84, 0xFF);
+    const unsigned int rgb = has_highlight ? tesseract::kBadgeColorMention
+                                           : tesseract::kBadgeColorUnread;
+    const QColor fill((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
     // White stroke so the dot stays legible on both light and dark trays.
     p.setBrush(fill);
-    p.setPen(QPen(QColor(255, 255, 255), std::max(1, side / 32)));
+    p.setPen(QPen(QColor(255, 255, 255), tesseract::badge_inset_px(side)));
     p.drawEllipse(QRect(x, y, dot, dot));
     p.end();
 

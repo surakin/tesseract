@@ -166,21 +166,16 @@ void MacOSTrayIcon::set_unread(bool has_unread, bool has_highlight)
 
     // Dot at ~38% of the icon edge, anchored bottom-right with a small inset.
     CGFloat side  = MIN(size.width, size.height);
-    CGFloat dot   = MAX(6.0, side * 0.38);
-    CGFloat inset = MAX(1.0, side / 32.0);
+    CGFloat dot   = static_cast<CGFloat>(tesseract::badge_dot_px(static_cast<int>(side)));
+    CGFloat inset = static_cast<CGFloat>(tesseract::badge_inset_px(static_cast<int>(side)));
     NSRect dotRect = NSMakeRect(size.width - dot - inset, inset, dot, dot);
 
-    // 0xD93636 (destructive/red) for mentions, 0x0084FF (accent/blue) for
-    // plain unread. Hex values mirror the light palette in ui/shared/tk/theme.cpp.
-    NSColor* fill = has_highlight
-        ? [NSColor colorWithSRGBRed:0xD9/255.0
-                              green:0x36/255.0
-                               blue:0x36/255.0
-                              alpha:1.0]
-        : [NSColor colorWithSRGBRed:0x00/255.0
-                              green:0x84/255.0
-                               blue:0xFF/255.0
-                              alpha:1.0];
+    const unsigned int rgb = has_highlight ? tesseract::kBadgeColorMention
+                                           : tesseract::kBadgeColorUnread;
+    NSColor* fill = [NSColor colorWithSRGBRed:((rgb >> 16) & 0xFF) / 255.0
+                                        green:((rgb >> 8) & 0xFF) / 255.0
+                                         blue:(rgb & 0xFF) / 255.0
+                                        alpha:1.0];
 
     NSBezierPath* path = [NSBezierPath bezierPathWithOvalInRect:dotRect];
     [fill setFill];
@@ -188,7 +183,7 @@ void MacOSTrayIcon::set_unread(bool has_unread, bool has_highlight)
 
     // White outline so the dot stays legible on both light and dark menu bars.
     [[NSColor whiteColor] setStroke];
-    path.lineWidth = MAX(1.0, side / 32.0);
+    path.lineWidth = static_cast<CGFloat>(tesseract::badge_inset_px(static_cast<int>(side)));
     [path stroke];
     [out unlockFocus];
 

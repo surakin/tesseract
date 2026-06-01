@@ -199,8 +199,8 @@ IconVariant render_variant(GdkPixbuf* base, int side, std::int32_t dot_rgb)
     }
     if (dot_rgb >= 0)
     {
-        const double dot = std::max(8, side * 38 / 100);
-        const double inset = std::max(1.0, side / 32.0);
+        const double dot   = tesseract::badge_dot_px(side);
+        const double inset = tesseract::badge_inset_px(side);
         const double cx = side - dot / 2.0 - inset;
         const double cy = side - dot / 2.0 - inset;
         const double r = dot / 2.0;
@@ -211,7 +211,7 @@ IconVariant render_variant(GdkPixbuf* base, int side, std::int32_t dot_rgb)
         cairo_arc(cr, cx, cy, r, 0.0, 2.0 * G_PI);
         cairo_fill_preserve(cr);
         cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-        cairo_set_line_width(cr, std::max(1.0, side / 32.0));
+        cairo_set_line_width(cr, tesseract::badge_inset_px(side));
         cairo_stroke(cr);
     }
     cairo_destroy(cr);
@@ -508,8 +508,8 @@ GtkSniTrayIcon::GtkSniTrayIcon(std::function<void()> on_show,
         if (base)
         {
             impl_->normal = render_variant(base, 64, -1);
-            impl_->unread = render_variant(base, 64, 0x0084FF);
-            impl_->mention = render_variant(base, 64, 0xD93636);
+            impl_->unread = render_variant(base, 64, static_cast<std::int32_t>(tesseract::kBadgeColorUnread));
+            impl_->mention = render_variant(base, 64, static_cast<std::int32_t>(tesseract::kBadgeColorMention));
             g_object_unref(base);
         }
         else
