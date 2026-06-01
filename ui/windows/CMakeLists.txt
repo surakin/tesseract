@@ -72,6 +72,14 @@ if(MSVC)
     target_compile_options(tesseract_win32 PRIVATE /utf-8)
 endif()
 
+# The RC file embeds Tesseract.manifest (RT_MANIFEST resource ID 1), which
+# declares the ComCtl32 v6 dependentAssembly needed for themed tooltips and
+# controls. Suppress the linker's auto-generated manifest so it does not
+# conflict with the one we embed via the resource compiler.
+if(MSVC)
+    target_link_options(tesseract_win32 PRIVATE "/MANIFEST:NO")
+endif()
+
 # Windows SDK 10.0.19041's bundled C++/WinRT headers predate /permissive-
 # (implied by /std:c++20). winrt/impl/Windows.Foundation.0.h issues the
 # qualified call winrt::impl::wait_for() before that template is declared

@@ -3810,11 +3810,24 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
     }
     case WM_MOUSELEAVE:
-        if (host)
+    {
+        // Guard against spurious WM_MOUSELEAVE that Windows delivers when a
+        // WS_EX_TOPMOST popup (e.g. a tracking tooltip) appears over this
+        // HWND. If the cursor is still physically inside our client rect, the
+        // leave is false and we must ignore it — otherwise the tooltip hides
+        // the instant it appears.
+        POINT cursor{};
+        if (GetCursorPos(&cursor) && ScreenToClient(hwnd, &cursor))
         {
-            host->on_pointer_leave();
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+            if (PtInRect(&rc, cursor))
+                return 0;
         }
+        if (host)
+            host->on_pointer_leave();
         return 0;
+    }
     case WM_MOUSEWHEEL:
     {
         if (host)

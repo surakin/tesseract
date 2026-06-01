@@ -241,6 +241,10 @@ public:
         hits_      = hits;
         misses_    = misses;
         has_stats_ = true;
+        // Stats may arrive after the initial hover-enter (async load).
+        // Fire the tooltip now so the user doesn't have to re-hover.
+        if (hover_count_ > 0 && on_show_tooltip)
+            on_show_tooltip(format_hit_miss(hits_, misses_), bounds_);
     }
 
     std::function<void(std::string, tk::Rect)> on_show_tooltip;

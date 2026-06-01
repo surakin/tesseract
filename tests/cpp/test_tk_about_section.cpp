@@ -103,6 +103,31 @@ TEST_CASE("cache size row value cells are at the same x after layout",
     CHECK(value_xs[1] == value_xs[2]);
 }
 
+TEST_CASE("tooltip fires immediately when stats arrive while already hovering",
+          "[about-section][tooltip]")
+{
+    Stage st;
+    AboutSection section;
+    st.run(section, {0, 0, 400, 600});
+    // No stats set yet — hover the row so hover_count_ > 0 but has_stats_ == false.
+
+    std::string shown;
+    section.on_show_tooltip = [&](std::string t, tk::Rect) { shown = t; };
+    section.on_hide_tooltip = [&] { shown.clear(); };
+
+    // Park the pointer on a cache row without stats — tooltip must NOT fire yet.
+    const bool pre = scan_for_tooltip(section, 50, 600, shown);
+    REQUIRE_FALSE(pre);
+    REQUIRE(shown.empty());
+
+    // Stats arrive while the cursor is still parked over the row.
+    section.set_memory_cache_stats(500, 25);
+
+    // Tooltip must have fired immediately (no re-hover required).
+    CHECK_FALSE(shown.empty());
+    CHECK(shown.find("500") != std::string::npos);
+}
+
 TEST_CASE("sdk store row never triggers a tooltip",
           "[about-section][tooltip]")
 {

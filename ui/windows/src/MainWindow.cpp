@@ -236,7 +236,23 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         delete p;
         RemovePropW(hwnd, L"TesseractStatusText");
         RemovePropW(hwnd, L"TesseractStatusDot");
+        RemovePropW(hwnd, L"StatusTip");
         return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
+    {
+        if (HWND tip = static_cast<HWND>(GetPropW(hwnd, L"StatusTip")))
+        {
+            MSG relay{hwnd, msg, wParam, lParam};
+            SendMessageW(tip, TTM_RELAYEVENT, 0, reinterpret_cast<LPARAM>(&relay));
+        }
+        break;
     }
     case SB_SET_INFLIGHT_COLOR:
     {
@@ -741,7 +757,7 @@ void MainWindow::on_inflight_ui_()
                                        : L"%u requests in flight", n);
         inflight_tip_text_ = buf;
         TOOLINFOW ti{};
-        ti.cbSize = sizeof(ti);
+        ti.cbSize = TTTOOLINFOW_V1_SIZE;
         ti.hwnd = hStatus_;
         ti.uId = reinterpret_cast<UINT_PTR>(hStatus_);
         ti.lpszText = inflight_tip_text_.data();
@@ -1747,7 +1763,7 @@ void MainWindow::on_create(HWND hwnd)
                     GetModuleHandleW(nullptr), nullptr);
                 SendMessageW(hTopicTooltip_, TTM_SETMAXTIPWIDTH, 0, 400);
                 TOOLINFOW ti{};
-                ti.cbSize = sizeof(ti);
+                ti.cbSize = TTTOOLINFOW_V1_SIZE;
                 ti.uFlags = TTF_TRACK | TTF_ABSOLUTE;
                 ti.hwnd = hwnd_;
                 ti.uId = 1;
@@ -1760,7 +1776,7 @@ void MainWindow::on_create(HWND hwnd)
             MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1,
                                 topic_tooltip_text_.data(), wlen);
             TOOLINFOW ti{};
-            ti.cbSize = sizeof(ti);
+            ti.cbSize = TTTOOLINFOW_V1_SIZE;
             ti.hwnd = hwnd_;
             ti.uId = 1;
             ti.lpszText = topic_tooltip_text_.data();
@@ -1780,7 +1796,7 @@ void MainWindow::on_create(HWND hwnd)
                 return;
             }
             TOOLINFOW ti{};
-            ti.cbSize = sizeof(ti);
+            ti.cbSize = TTTOOLINFOW_V1_SIZE;
             ti.hwnd = hwnd_;
             ti.uId = 1;
             SendMessageW(hTopicTooltip_, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
@@ -2813,21 +2829,29 @@ void MainWindow::on_create(HWND hwnd)
     hStatus_ = CreateWindowExW(0, L"TesseractStatusBar", L"Not logged in",
                                WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr,
                                hInst_, nullptr);
+    // Owner must be a top-level window — using hStatus_ (WS_CHILD) as owner
+    // causes the tooltip to be invisible on some Windows 11 builds.
     hStatusTip_ = CreateWindowExW(
         WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
         WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-        hStatus_, nullptr, hInst_, nullptr);
+        hwnd_, nullptr, hInst_, nullptr);
     {
         TOOLINFOW ti{};
-        ti.cbSize = sizeof(ti);
-        ti.uFlags = TTF_SUBCLASS | TTF_IDISHWND;
+        ti.cbSize = TTTOOLINFOW_V1_SIZE;
+        // TTF_IDISHWND without TTF_SUBCLASS: we relay mouse messages manually
+        // from status_bar_wnd_proc via TTM_RELAYEVENT, which is more reliable
+        // on custom window classes than automatic subclassing.
+        ti.uFlags = TTF_IDISHWND;
         ti.hwnd = hStatus_;
         ti.uId = reinterpret_cast<UINT_PTR>(hStatus_);
         ti.lpszText = const_cast<LPWSTR>(L"");
         SendMessageW(hStatusTip_, TTM_ADDTOOLW, 0,
                      reinterpret_cast<LPARAM>(&ti));
     }
+    // Store the tooltip HWND as a property so status_bar_wnd_proc can relay.
+    if (hStatus_ && hStatusTip_)
+        SetPropW(hStatus_, L"StatusTip", hStatusTip_);
     on_inflight_ui_();
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd);
@@ -2948,7 +2972,7 @@ void MainWindow::on_create(HWND hwnd)
                     nullptr, GetModuleHandleW(nullptr), nullptr);
                 SendMessageW(hCacheTooltip_, TTM_SETMAXTIPWIDTH, 0, 500);
                 TOOLINFOW ti{};
-                ti.cbSize = sizeof(ti);
+                ti.cbSize = TTTOOLINFOW_V1_SIZE;
                 ti.uFlags = TTF_TRACK | TTF_ABSOLUTE;
                 ti.hwnd = hwnd_;
                 ti.uId = 2;
@@ -2961,7 +2985,7 @@ void MainWindow::on_create(HWND hwnd)
             MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1,
                                 cache_tooltip_text_.data(), wlen);
             TOOLINFOW ti{};
-            ti.cbSize = sizeof(ti);
+            ti.cbSize = TTTOOLINFOW_V1_SIZE;
             ti.hwnd = hwnd_;
             ti.uId = 2;
             ti.lpszText = cache_tooltip_text_.data();
@@ -2979,7 +3003,7 @@ void MainWindow::on_create(HWND hwnd)
             if (!hCacheTooltip_)
                 return;
             TOOLINFOW ti{};
-            ti.cbSize = sizeof(ti);
+            ti.cbSize = TTTOOLINFOW_V1_SIZE;
             ti.hwnd = hwnd_;
             ti.uId = 2;
             SendMessageW(hCacheTooltip_, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
