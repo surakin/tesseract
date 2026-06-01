@@ -2985,9 +2985,50 @@ private:
             }
             else
             {
-                // Placeholder: fill with the surface background colour and
-                // request the tile from the host.
+                // Placeholder: grey base, then overlay the nearest cached
+                // approximation so the map doesn't flash blank on zoom.
                 ctx.canvas.fill_rect(tdst, ctx.theme.palette.chrome_bg);
+                if (owner_.image_provider_)
+                {
+                    bool used_parent = false;
+                    if (t.z > 0)
+                    {
+                        // Parent tile (zoom-1): this child occupies a 128×128
+                        // quadrant of the parent's 256×256 image; stretch it.
+                        TileCoord parent{t.z - 1, t.x / 2, t.y / 2};
+                        if (const tk::Image* pimg =
+                                owner_.image_provider_(tile_cache_key(parent)))
+                        {
+                            int qx = t.x & 1, qy = t.y & 1;
+                            tk::Rect src{qx * 128.0f, qy * 128.0f, 128.0f,
+                                         128.0f};
+                            ctx.canvas.draw_image_subregion(*pimg, src, tdst);
+                            any_tile_drawn = true;
+                            used_parent = true;
+                        }
+                    }
+                    if (!used_parent && t.z < 19)
+                    {
+                        // Child tiles (zoom+1): each covers a 128×128 quadrant
+                        // of this tile's area; draw whichever are cached.
+                        for (int dy = 0; dy < 2; ++dy)
+                        for (int dx = 0; dx < 2; ++dx)
+                        {
+                            TileCoord child{t.z + 1, t.x * 2 + dx,
+                                            t.y * 2 + dy};
+                            if (const tk::Image* cimg =
+                                    owner_.image_provider_(
+                                        tile_cache_key(child)))
+                            {
+                                tk::Rect qdst{tdst.x + dx * 128.0f,
+                                              tdst.y + dy * 128.0f, 128.0f,
+                                              128.0f};
+                                ctx.canvas.draw_image(*cimg, qdst);
+                                any_tile_drawn = true;
+                            }
+                        }
+                    }
+                }
                 if (owner_.on_tile_needed)
                 {
                     owner_.on_tile_needed(t.z, t.x, t.y);
