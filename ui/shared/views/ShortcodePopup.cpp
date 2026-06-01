@@ -63,10 +63,6 @@ void ShortcodePopup::paint(tk::PaintCtx& ctx)
             tk::TextStyle st{};
             st.role = tk::FontRole::
                 Title; // 15pt — same as EmojiPicker, fits 28px cell
-            st.halign = tk::TextHAlign::Center;
-            st.valign = tk::TextVAlign::Center;
-            st.max_width = cell.w;
-            st.max_height = cell.h;
             auto layout = ctx.factory.build_text(s.glyph, st);
             if (layout)
             {

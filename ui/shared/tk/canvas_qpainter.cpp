@@ -239,11 +239,11 @@ class QtTextLayout : public QtTextLayoutBase
 public:
     QtTextLayout(QString text, QFont font, QTextOption option, QSizeF measured,
                  int line_count, qreal max_width, qreal max_height,
-                 bool elide_single_line, qreal ascent)
+                 bool elide_single_line, qreal ascent, qreal explicit_max_height)
         : text_(std::move(text)), font_(std::move(font)), option_(option),
           measured_(measured), line_count_(line_count), max_width_(max_width),
           max_height_(max_height), elide_single_line_(elide_single_line),
-          ascent_(ascent)
+          ascent_(ascent), explicit_max_height_(explicit_max_height)
     {
         // Pre-build QStaticText for single-line (non-wrap) layouts so draw()
         // submits pre-shaped glyph data instead of re-shaping on every frame.
@@ -289,20 +289,35 @@ public:
 
         if (!static_text_.text().isNull())
         {
-            // Non-wrap path: submit pre-shaped glyph data via QStaticText.
-            // Adjust x for non-leading horizontal alignment.
-            qreal draw_x = origin.x;
-            const Qt::Alignment halign =
-                option_.alignment() & Qt::AlignHorizontal_Mask;
-            if (halign == Qt::AlignHCenter || halign == Qt::AlignRight)
+            // When an explicit bounding rect is available and vertical centering
+            // is requested, let Qt handle both axes natively via drawText(rect).
+            // drawStaticText ignores QTextOption alignment for the vertical axis,
+            // so this is the only reliable path for VCenter.
+            const Qt::Alignment valign =
+                option_.alignment() & Qt::AlignVertical_Mask;
+            if (valign == Qt::AlignVCenter && explicit_max_height_ > 0)
             {
-                const qreal avail =
-                    max_width_ > 0 ? max_width_ : measured_.width();
-                const qreal tw = measured_.width();
-                draw_x += (halign == Qt::AlignHCenter) ? (avail - tw) * 0.5
-                                                       : (avail - tw);
+                p.drawText(
+                    QRectF(origin.x, origin.y, max_width_, explicit_max_height_),
+                    static_cast<int>(option_.alignment()), text_);
             }
-            p.drawStaticText(QPointF(draw_x, origin.y), static_text_);
+            else
+            {
+                // Non-wrap path: submit pre-shaped glyph data via QStaticText.
+                // Adjust x for non-leading horizontal alignment.
+                qreal draw_x = origin.x;
+                const Qt::Alignment halign =
+                    option_.alignment() & Qt::AlignHorizontal_Mask;
+                if (halign == Qt::AlignHCenter || halign == Qt::AlignRight)
+                {
+                    const qreal avail =
+                        max_width_ > 0 ? max_width_ : measured_.width();
+                    const qreal tw = measured_.width();
+                    draw_x += (halign == Qt::AlignHCenter) ? (avail - tw) * 0.5
+                                                           : (avail - tw);
+                }
+                p.drawStaticText(QPointF(draw_x, origin.y), static_text_);
+            }
         }
         else
         {
@@ -433,6 +448,7 @@ private:
     qreal max_height_ = -1;
     bool elide_single_line_ = false;
     qreal ascent_ = 0;
+    qreal explicit_max_height_ = -1;
     mutable std::unique_ptr<QTextLayout> ql_;
     QStaticText static_text_;
 };
@@ -982,7 +998,7 @@ public:
 
         return std::make_unique<QtTextLayout>(
             std::move(text), std::move(f), opt, measured, line_count, max_w,
-            max_h, elide_single_line, fm.ascent());
+            max_h, elide_single_line, fm.ascent(), s.max_height);
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
