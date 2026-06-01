@@ -1,6 +1,29 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-29**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-01**.
+
+> **Encryption-setup overlay.**
+> `EncryptionSetupOverlay`, a shared widget wired on all four shells, guides
+> new-account users through enabling cross-signing. Fresh path: `Intro` →
+> `ChooseMethod` (recovery key or passphrase) → `ShowKey` / `Progress` →
+> `Done`. Recovery path: `Intro` → `EnterKey` → `Progress` → `Done`.
+> Callbacks (`on_enable_recovery`, `on_recover`, `on_request_sas`, `on_close`)
+> drive SDK calls; `advance_progress` / `report_error` advance the progress
+> step after async operations resolve. `ShellBase` gates the overlay with
+> `encryption_setup_shown_` / `encryption_setup_dismissed_` to prevent
+> double-raise and post-dismiss reappearance.
+
+<!-- -->
+
+> **In-flight request indicator.**
+> A small coloured dot in the status bar shows the number of currently
+> in-flight Matrix API requests: green for 0–1, amber for 2–10, red for
+> more than 10. A tooltip on the dot shows the exact count. Wired on Qt6,
+> GTK4, Win32, and macOS. The macOS shell receives its status bar in the same
+> pass (it previously had none), giving all four platforms parity for the
+> sync-state label and in-flight dot.
+
+<!-- -->
 
 > **Pinned events.**
 > A `PinnedBanner` widget above the message list cycles through
@@ -209,7 +232,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 150 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 582 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 625 |
 
 ## Platforms
 

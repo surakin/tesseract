@@ -3,7 +3,9 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## Unreleased
+## v0.1.7 — 2026-06-01
+
+Changes since v0.1.6:
 
 - feat(pins): cross-platform Matrix pinned events — a `PinnedBanner` widget sits above
   the message list and cycles through `m.room.pinned_events`; clicking the banner body
@@ -97,17 +99,6 @@ Tagged releases summarize all changes since the previous tag.
   identity strip.
 - fix: place caret at end of compose field after accepting a slash command from the popup.
 - feat(compose): `/` in the composer opens a filtered slash-command popup —
-  account-data event now carries an `open_rooms` JSON array (all tab room IDs in visual
-  order) alongside the existing `last_room` active-tab field. On every room navigation
-  the full tab list is serialised and written to the homeserver; on startup each shell
-  reads `PrefsData::open_rooms` into `AccountSession` and passes it to a new
-  `ShellBase::try_restore_tab_session_()` helper that pre-populates `tabs_` and fires
-  `on_tab_state_changed_ui_()` once, reconstructing the full tab bar in a single pass
-  with no inter-tab flickering. Account switching clears `tabs_` to prevent the previous
-  account's tabs bleeding through. Backward-compatible: old prefs with only `last_room`
-  auto-populate `open_rooms = {last_room}` on parse. The prefs serializer was migrated
-  from hand-rolled JSON to `nlohmann/json`. 4 new unit tests; wired on all four shells.
-- feat(compose): `/` in the composer opens a filtered slash-command popup —
   arrow keys / Tab accept, Escape dismisses. Initial command set:
   `/me <action>` (m.emote) and `/shrug` (text macro). Wired in all four
   shells (Qt6, GTK4, Win32, macOS) following the same per-shell
@@ -117,6 +108,12 @@ Tagged releases summarize all changes since the previous tag.
 - perf(sdk): suspend the DM presence polling loop while the window is hidden — the per-minute `GET /_matrix/client/v3/presence/{userId}/status` fan-out across every DM counterpart produces data that is only visible while the room list is on-screen, so polling while minimized/unfocused is pure waste. `ShellBase::notify_window_active_` now flips `presence_polling_enabled` off on focus loss and back on (with an immediate one-shot kick via new `Client::poll_presence_now`) on focus regain, so contacts don't appear stale for up to a minute after un-minimize. Gated by the same `Settings::send_presence` flag that `handle_send_presence_toggle_` owns — users who disabled presence in the Privacy tab are not silently re-enabled by a focus change. The poll body is refactored into a free `async fn poll_presence_once(...)` shared by the 60 s loop and the on-focus kick; the 403-Forbidden cache moves onto `ClientFfi` so both call sites share it. No platform-shell changes — all four shells already emit the active/inactive signal.
 - feat(threads): cross-platform Matrix threads UI on top of the MSC3440 SDK/FFI infrastructure landed in `9d99d2e`. A new RoomHeader threads button toggles a right-side panel (60/40 split with the main message list) that hosts either a `ThreadListView` (all threads in the current room, sourced from `Client::list_room_threads`) or a `ThreadView` (one open thread + its own ComposeBar that routes to `Client::send_thread_message`). `ShellBase` owns a `Closed`/`List`/`Open` state machine; a pure `compute_thread_transition_` static function returns a side-effects descriptor that an applier maps onto `subscribe_thread` / `subscribe_room_threads` calls. `EventHandlerBase` marshals the four `on_thread_*` SDK callbacks + `on_threads_updated` to new `ShellBase::handle_thread_*_ui_` virtuals gated on `(current_room_id_, current_thread_root_)`. In-thread events skip the main `MessageListView` (short-circuit in `handle_message_*_ui_` + defence-in-depth filter in `MessageListView`). `MessageListView` gains thread-preview chips under roots that have replies, plus `set_dimmed` / `set_highlighted_event` used by `RoomView` while a thread is active (scrolls the root into view and dims the surrounding list). `ThreadView` composes a reused `MessageListView` + `ComposeBar` and strips `thread_root_id` from rows before forwarding so the inner filter doesn't drop them. All four shells wire four RoomView callbacks (`on_threads_button_clicked`, `on_thread_open_requested`, `on_thread_close_requested`, `on_thread_send`) to the new ShellBase entry points; a `RoomSwitch` transition fires before every `current_room_id_` assignment so the panel auto-closes on room change. 48 new Catch2 tests across 6 new test files; suite at 535/535.
 - fix(message-cache): invalidate a room's cached MessageRowData snapshot when a timeline event arrives for that room while it's not selected — `handle_message_inserted_ui_` / `_updated_ui_` / `_removed_ui_` previously skipped the live-view update for non-current rooms but left any cached snapshot stale, so the next navigation briefly painted the old rows before the live `on_timeline_reset` overwrote them. A new private `invalidate_message_cache_(room_id)` helper drops the entry from both `message_cache_` and `message_cache_lru_`; the three handlers were restructured so the `else` (non-current-room) branch hangs off the room-id comparison alone, not the combined `&& room_view_` guard. 6 new Catch2 tests.
+- feat(encryption): guided encryption-setup overlay — `EncryptionSetupOverlay`, a shared widget wired on all four shells, walks new-account users through cross-signing setup: `Intro` → `ChooseMethod` (recovery key or passphrase) → `ShowKey` / `Progress` → `Done`; a `Recover` path goes `Intro` → `EnterKey` → `Progress` → `Done`. Callbacks (`on_enable_recovery`, `on_recover`, `on_request_sas`, `on_close`) drive the underlying SDK calls; `advance_progress` / `report_error` update the progress step once async operations resolve. `ShellBase` gates the overlay on `encryption_setup_shown_` / `encryption_setup_dismissed_` to prevent double-raise and post-dismiss reappearance. 18 new tests.
+- feat(settings): cache-stats tooltips in About settings — hovering the "Local cache" row in the About/Storage section now fires `on_show_tooltip` with the entry count and byte total; all value-column cells are laid out with a common x offset so numbers align across rows; the SDK store row produces no tooltip since byte-level tracking is not available there. 3 new tests.
+- feat(compose): wheel-event navigation in autocomplete popups — the slash-command, shortcode, and @mention popups now respond to mouse-wheel events, scrolling the suggestion list exactly as Up/Down arrow keys do.
+- feat(status): in-flight HTTP request dot indicator — a small coloured dot in the status bar reflects the number of currently in-flight Matrix API requests: green (0–1 requests), amber (2–10), red (>10). Hovering the dot shows a tooltip with the exact count. Wired across Qt6, GTK4, Win32, and macOS (the macOS shell receives its status bar in the same pass; previously it had none).
+- fix(ui): composer Home / End and scroll-to-caret on Windows — `Home` now moves the insertion point to the start of the logical line and `End` to the end; after either keystroke the control scrolls to keep the caret visible. Matches existing behaviour on Qt6 and GTK4.
+- feat(i18n): extract user-visible strings for translation — all user-facing strings in shared views and shells are now wrapped with the platform translation macro (`tr()` on Qt6, `_()` on GTK4) and the `.ts` / `.pot` templates regenerated. macOS `NSLocalizedString` and Win32 `LoadString` wiring remain deferred.
 
 ## v0.1.6 — 2026-05-24
 
