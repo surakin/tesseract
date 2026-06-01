@@ -580,7 +580,8 @@ private:
                 continue;
             }
 
-            // RGB32 on Windows is actually BGRA — compatible with our WIC path.
+            // MFVideoFormat_RGB32 is BGRX; the unused 4th byte is 0x00. make_image_from_bgra
+            // marks the resulting D2DImage opaque so D2D ignores the zero alpha.
             std::vector<uint8_t> pixels(ptr, ptr + len);
             buf->Unlock();
 

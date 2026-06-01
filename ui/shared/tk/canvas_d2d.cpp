@@ -568,8 +568,8 @@ Backend::~Backend()
 class D2DImage : public Image
 {
 public:
-    D2DImage(ComPtr<IWICBitmap> source, int w, int h)
-        : source_(std::move(source)), width_(w), height_(h)
+    D2DImage(ComPtr<IWICBitmap> source, int w, int h, bool opaque = false)
+        : source_(std::move(source)), width_(w), height_(h), opaque_(opaque)
     {
     }
 
@@ -630,8 +630,20 @@ public:
         }
         bitmap_.Reset();
         rt_cached_ = nullptr;
-        HRESULT hr = rt->CreateBitmapFromWicBitmap(source_.Get(), nullptr,
-                                                   bitmap_.GetAddressOf());
+        HRESULT hr;
+        if (opaque_)
+        {
+            D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                                  D2D1_ALPHA_MODE_IGNORE));
+            hr = rt->CreateBitmapFromWicBitmap(source_.Get(), &props,
+                                               bitmap_.GetAddressOf());
+        }
+        else
+        {
+            hr = rt->CreateBitmapFromWicBitmap(source_.Get(), nullptr,
+                                               bitmap_.GetAddressOf());
+        }
         if (FAILED(hr))
         {
             return nullptr;
@@ -655,6 +667,7 @@ private:
     ComPtr<IWICBitmap> source_;
     int width_;
     int height_;
+    bool opaque_ = false;
     ComPtr<ID2D1Bitmap> bitmap_;
     ID2D1RenderTarget* rt_cached_ = nullptr;
 };
@@ -1927,7 +1940,9 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
         return nullptr;
     }
 
-    return std::make_unique<D2DImage>(std::move(bmp), w, h);
+    // MFVideoFormat_RGB32 is BGRX: the 4th byte is unused (0x00 from MF).
+    // opaque=true tells D2D to ignore it instead of treating it as alpha=0.
+    return std::make_unique<D2DImage>(std::move(bmp), w, h, /*opaque=*/true);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
