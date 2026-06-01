@@ -2307,84 +2307,91 @@ private:
         dc_->BeginDraw();
         dc_->Clear(D2D1::ColorF(bg.r / 255.f, bg.g / 255.f, bg.b / 255.f));
 
+        // Compute caret metrics first (always, when the control has text) so
+        // scroll-to-caret can run before TxDrawD2D paints the scrolled view.
+        // MSFTEDIT's EM_POSFROMCHAR returns (0,0) in windowless D2D mode, so
+        // we route through IDWriteTextLayout::HitTestTextPosition instead.
+        DWORD sel_start = 0, sel_end = 0;
+        float caret_x_dip = 0.f, caret_y_dip = 0.f, caret_h_dip = 0.f;
+        bool  have_caret = false;
+        {
+            LRESULT lr = 0;
+            text_svc_->TxSendMessage(EM_GETSEL,
+                reinterpret_cast<WPARAM>(&sel_start),
+                reinterpret_cast<LPARAM>(&sel_end), &lr);
+            UINT32 tlen = 0;
+            auto layout = build_text_layout(nullptr, nullptr, &tlen);
+            if (layout)
+            {
+                const UINT32 pos = std::min<UINT32>(tlen, sel_end);
+                DWRITE_HIT_TEST_METRICS htm{};
+                layout->HitTestTextPosition(pos, FALSE,
+                    &caret_x_dip, &caret_y_dip, &htm);
+                caret_h_dip = htm.height > 2.f ? htm.height : 16.f;
+                have_caret = true;
+            }
+        }
+
+        // Scroll-to-caret.  ComposeBar clamps the host HWND to kMaxHeight, so
+        // once wrapped text exceeds that the document is taller than the
+        // visible area.  Shift scroll_y_ to keep the caret in view.
+        const float scale_for_view  = dip_scale();
+        const float visible_h_dip = (client.bottom - client.top) / scale_for_view;
+        if (have_caret)
+        {
+            if (caret_y_dip < scroll_y_)
+                scroll_y_ = caret_y_dip;
+            else if (caret_y_dip + caret_h_dip > scroll_y_ + visible_h_dip)
+                scroll_y_ = caret_y_dip + caret_h_dip - visible_h_dip;
+            if (scroll_y_ < 0.f) scroll_y_ = 0.f;
+        }
+        else
+        {
+            scroll_y_ = 0.f;
+        }
+
         // Pass the ID2D1DeviceContext (as ID2D1RenderTarget*) to TxDrawD2D.
         // MSFTEDIT QIs for ID2D1DeviceContext internally to enable its full
         // colour-glyph pipeline (required for COLR v1 / PNG emoji fonts).
-        RECTL bounds{client.left, client.top, client.right, client.bottom};
+        // We give RichEdit a generous vertical bound and rely on the clip +
+        // transform to mask everything outside the visible window.
+        RECTL bounds{client.left, client.top, client.right,
+                     client.top + 100000};
+        const float client_w_dip = (client.right - client.left) / scale_for_view;
+        dc_->PushAxisAlignedClip(
+            D2D1::RectF(0.f, 0.f, client_w_dip, visible_h_dip),
+            D2D1_ANTIALIAS_MODE_ALIASED);
+        dc_->SetTransform(D2D1::Matrix3x2F::Translation(0.f, -scroll_y_));
         in_paint_ = true;
         text_svc_->TxDrawD2D(dc_.Get(), &bounds, nullptr, TXTVIEW_ACTIVE);
         in_paint_ = false;
 
         // D2D-mode caret: MSFTEDIT never calls ITextHost caret APIs in D2D
-        // mode (EM_POSFROMCHAR returns (0,0) in windowless D2D). We build a
-        // temporary IDWriteTextLayout that mirrors the content and call
-        // HitTestTextPosition to get the exact caret position in DIPs.
-        // Blinking is driven by kRichEditCaretTimerId.
-        if (is_caret_on() && GetFocus() == hwnd_ && text_svc_
-            && dwrite_ && placeholder_fmt_)
+        // mode.  Draw a 1.5 DIP rectangle at the layout-computed caret
+        // position; the dc transform applies the scroll offset.  Blinking is
+        // driven by kRichEditCaretTimerId.
+        if (have_caret && sel_start == sel_end &&
+            is_caret_on() && GetFocus() == hwnd_)
         {
-            // Collapsed selection only — TxDrawD2D already renders the highlight
-            // when a range is selected.
-            DWORD sel_start = 0, sel_end = 0;
+            using Microsoft::WRL::ComPtr;
+            ComPtr<ID2D1SolidColorBrush> caret_brush;
+            const tk::Color tc = theme_
+                ? theme_->palette.text_primary
+                : tk::Color{0, 0, 0, 255};
+            dc_->CreateSolidColorBrush(
+                D2D1::ColorF(tc.r / 255.f, tc.g / 255.f, tc.b / 255.f),
+                caret_brush.GetAddressOf());
+            if (caret_brush)
             {
-                LRESULT lr = 0;
-                text_svc_->TxSendMessage(EM_GETSEL,
-                    reinterpret_cast<WPARAM>(&sel_start),
-                    reinterpret_cast<LPARAM>(&sel_end), &lr);
-            }
-
-            if (sel_start == sel_end)
-            {
-                // Get current text as UTF-16 for the layout.
-                LRESULT tlen = 0;
-                text_svc_->TxSendMessage(WM_GETTEXTLENGTH, 0, 0, &tlen);
-                std::wstring tw(static_cast<size_t>(tlen), L'\0');
-                if (tlen > 0)
-                    text_svc_->TxSendMessage(WM_GETTEXT,
-                        static_cast<WPARAM>(tlen + 1),
-                        reinterpret_cast<LPARAM>(tw.data()), &tlen);
-
-                // Build a layout matching our char format.  placeholder_fmt_
-                // uses the same typeface and size as the compose text, so the
-                // glyph advances are identical.
-                const float dpi   = static_cast<float>(GetDpiForWindow(hwnd_));
-                const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
-                const float dip_w = (client.right - client.left) / scale;
-
-                using Microsoft::WRL::ComPtr;
-                ComPtr<IDWriteTextLayout> layout;
-                if (SUCCEEDED(dwrite_->CreateTextLayout(
-                        tw.c_str(), static_cast<UINT32>(tw.size()),
-                        placeholder_fmt_.Get(), dip_w, 100000.f,
-                        layout.GetAddressOf())))
-                {
-                    const UINT32 pos = static_cast<UINT32>(
-                        std::min(static_cast<LRESULT>(tw.size()),
-                                 static_cast<LRESULT>(sel_end)));
-                    float caretX = 0.f, caretY = 0.f;
-                    DWRITE_HIT_TEST_METRICS htm{};
-                    layout->HitTestTextPosition(pos, FALSE,
-                                                &caretX, &caretY, &htm);
-
-                    const float caret_h = htm.height > 2.f ? htm.height : 16.f;
-
-                    ComPtr<ID2D1SolidColorBrush> caret_brush;
-                    const tk::Color tc = theme_
-                        ? theme_->palette.text_primary
-                        : tk::Color{0, 0, 0, 255};
-                    dc_->CreateSolidColorBrush(
-                        D2D1::ColorF(tc.r / 255.f, tc.g / 255.f, tc.b / 255.f),
-                        caret_brush.GetAddressOf());
-                    if (caret_brush)
-                    {
-                        const D2D1_RECT_F cr = D2D1::RectF(
-                            caretX, caretY,
-                            caretX + 1.5f, caretY + caret_h);
-                        dc_->FillRectangle(cr, caret_brush.Get());
-                    }
-                }
+                const D2D1_RECT_F cr = D2D1::RectF(
+                    caret_x_dip, caret_y_dip,
+                    caret_x_dip + 1.5f, caret_y_dip + caret_h_dip);
+                dc_->FillRectangle(cr, caret_brush.Get());
             }
         }
+
+        dc_->SetTransform(D2D1::Matrix3x2F::Identity());
+        dc_->PopAxisAlignedClip();
 
         // Placeholder: drawn when the control is empty and not focused.
         if (!placeholder_.empty() && is_text_empty() && GetFocus() != hwnd_)
@@ -2453,18 +2460,28 @@ private:
         return (elapsed / blink_ms_) % 2 == 0;
     }
 
-    // MSFTEDIT's WM_LBUTTONDOWN hit test is broken in D2D/windowless mode —
-    // it always resolves to position 1 regardless of click x.  This helper
-    // uses IDWriteTextLayout::HitTestPoint to map client-pixel coordinates to
-    // a UTF-16 character index, which we then push back via EM_SETSEL.
-    UINT32 hit_test_client_pos(int x_px, int y_px) const
+    // Shared: build an IDWriteTextLayout mirroring the current text + format
+    // at the visible client width.  Used by every D2D-mode workaround that
+    // needs glyph positions: broken EM_POSFROMCHAR, broken WM_LBUTTONDOWN hit
+    // test, broken Home/End, and the scroll-to-caret tracking in on_paint.
+    Microsoft::WRL::ComPtr<IDWriteTextLayout>
+    build_text_layout(float* out_scale, float* out_dip_w,
+                      UINT32* out_text_len) const
     {
-        if (!dwrite_ || !placeholder_fmt_ || !text_svc_) return 0;
+        using Microsoft::WRL::ComPtr;
+        if (out_scale)    *out_scale    = 1.f;
+        if (out_dip_w)    *out_dip_w    = 0.f;
+        if (out_text_len) *out_text_len = 0;
+        if (!dwrite_ || !placeholder_fmt_ || !text_svc_ || !hwnd_)
+            return nullptr;
+
         RECT cli{};
         GetClientRect(hwnd_, &cli);
         const float dpi   = static_cast<float>(GetDpiForWindow(hwnd_));
         const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
         const float dip_w = (cli.right - cli.left) / scale;
+        if (out_scale) *out_scale = scale;
+        if (out_dip_w) *out_dip_w = dip_w;
 
         LRESULT tlen = 0;
         const_cast<ITextServices2*>(text_svc_.Get())
@@ -2475,20 +2492,69 @@ private:
                 ->TxSendMessage(WM_GETTEXT,
                     static_cast<WPARAM>(tlen + 1),
                     reinterpret_cast<LPARAM>(tw.data()), &tlen);
+        if (out_text_len) *out_text_len = static_cast<UINT32>(tw.size());
 
-        using Microsoft::WRL::ComPtr;
         ComPtr<IDWriteTextLayout> layout;
         if (FAILED(dwrite_->CreateTextLayout(
                 tw.c_str(), static_cast<UINT32>(tw.size()),
                 placeholder_fmt_.Get(), dip_w, 100000.f,
                 layout.GetAddressOf())))
-            return 0;
+            return nullptr;
+        return layout;
+    }
 
+    // MSFTEDIT's WM_LBUTTONDOWN hit test is broken in D2D/windowless mode —
+    // it always resolves to position 1 regardless of click x.  This helper
+    // uses IDWriteTextLayout::HitTestPoint to map client-pixel coordinates to
+    // a UTF-16 character index, which we then push back via EM_SETSEL.
+    // y_px is offset by scroll_y_ so clicks land on the right character when
+    // the content is scrolled (multi-line composer past kMaxHeight).
+    UINT32 hit_test_client_pos(int x_px, int y_px) const
+    {
+        float scale = 1.f;
+        auto layout = build_text_layout(&scale, nullptr, nullptr);
+        if (!layout) return 0;
         BOOL isTrailing = FALSE, isInside = FALSE;
         DWRITE_HIT_TEST_METRICS htm{};
-        layout->HitTestPoint(x_px / scale, y_px / scale,
+        layout->HitTestPoint(x_px / scale,
+                              y_px / scale + scroll_y_,
                               &isTrailing, &isInside, &htm);
         return htm.textPosition + (isTrailing ? 1u : 0u);
+    }
+
+    // Compute the start/end UTF-16 position of the visual line that contains
+    // `caret_pos`.  Used for plain Home/End in D2D mode where MSFTEDIT's own
+    // line-boundary computation is broken (it depends on the layout that
+    // EM_POSFROMCHAR also returns garbage from).
+    void line_bounds_for_pos(UINT32 caret_pos,
+                             UINT32& out_line_start,
+                             UINT32& out_line_end) const
+    {
+        out_line_start = caret_pos;
+        out_line_end   = caret_pos;
+        float dip_w = 0.f;
+        UINT32 tlen = 0;
+        auto layout = build_text_layout(nullptr, &dip_w, &tlen);
+        if (!layout || tlen == 0) return;
+
+        float cx = 0.f, cy = 0.f;
+        DWRITE_HIT_TEST_METRICS chtm{};
+        layout->HitTestTextPosition(
+            std::min<UINT32>(caret_pos, tlen), FALSE,
+            &cx, &cy, &chtm);
+
+        const float probe_y = cy + chtm.height * 0.5f;
+        BOOL isTrailing = FALSE, isInside = FALSE;
+        DWRITE_HIT_TEST_METRICS htm{};
+
+        layout->HitTestPoint(0.f, probe_y, &isTrailing, &isInside, &htm);
+        out_line_start = htm.textPosition + (isTrailing ? 1u : 0u);
+        if (out_line_start > tlen) out_line_start = tlen;
+
+        const float right_x = dip_w > 1.f ? dip_w - 0.5f : dip_w;
+        layout->HitTestPoint(right_x, probe_y, &isTrailing, &isInside, &htm);
+        out_line_end = htm.textPosition + (isTrailing ? 1u : 0u);
+        if (out_line_end > tlen) out_line_end = tlen;
     }
 
     // ── Host WndProc ──────────────────────────────────────────────────────
@@ -2609,14 +2675,72 @@ private:
                     }
                 }
             }
+            // 5. Home / End — MSFTEDIT's line-boundary computation depends
+            //    on the same layout that EM_POSFROMCHAR / WM_LBUTTONDOWN
+            //    derive from, which is broken in D2D windowless mode.  Mirror
+            //    the WM_LBUTTONDOWN workaround: compute the target position
+            //    via IDWriteTextLayout and push it back through EM_SETSEL.
+            if (wParam == VK_HOME || wParam == VK_END)
+            {
+                const bool is_end   = (wParam == VK_END);
+                const bool is_ctrl  = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+                const bool is_shift = (GetKeyState(VK_SHIFT)   & 0x8000) != 0;
+
+                DWORD sel_start = 0, sel_end = 0;
+                {
+                    LRESULT lr = 0;
+                    self->text_svc_->TxSendMessage(EM_GETSEL,
+                        reinterpret_cast<WPARAM>(&sel_start),
+                        reinterpret_cast<LPARAM>(&sel_end), &lr);
+                }
+                // EM_GETSEL always returns (min, max); RichEdit doesn't tell
+                // us which end is the active caret.  Treat sel_end as active
+                // (matches behaviour for the common case of a collapsed
+                // selection or a forward Shift-extension) and pick the
+                // opposite end as the Shift-anchor based on direction.
+                UINT32 new_pos = 0;
+                if (is_ctrl)
+                {
+                    if (is_end)
+                    {
+                        LRESULT lr = 0;
+                        self->text_svc_->TxSendMessage(
+                            WM_GETTEXTLENGTH, 0, 0, &lr);
+                        new_pos = static_cast<UINT32>(lr);
+                    }
+                    else
+                    {
+                        new_pos = 0;
+                    }
+                }
+                else
+                {
+                    UINT32 line_start = 0, line_end = 0;
+                    self->line_bounds_for_pos(sel_end, line_start, line_end);
+                    new_pos = is_end ? line_end : line_start;
+                }
+
+                const UINT32 anchor = is_shift
+                    ? (is_end ? std::min<UINT32>(sel_start, sel_end)
+                              : std::max<UINT32>(sel_start, sel_end))
+                    : new_pos;
+
+                LRESULT lr2 = 0;
+                self->text_svc_->TxSendMessage(EM_SETSEL,
+                    static_cast<WPARAM>(anchor),
+                    static_cast<LPARAM>(new_pos), &lr2);
+                if (!self->in_paint_)
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
             // Fall through to text services.
             if (self->text_svc_)
             {
                 LRESULT r = 0;
                 self->text_svc_->TxSendMessage(msg, wParam, lParam, &r);
-                // Navigation keys (arrows, Home, End, …) move the cursor
-                // without changing text — EN_CHANGE never fires.  Force a
-                // repaint so the self-drawn caret follows immediately.
+                // Arrow keys (Home / End are intercepted above) move the
+                // cursor without changing text — EN_CHANGE never fires.
+                // Force a repaint so the self-drawn caret follows immediately.
                 if (!self->in_paint_)
                     InvalidateRect(hwnd, nullptr, FALSE);
                 // Backspace and Delete modify text; notify explicitly in case
@@ -2837,6 +2961,11 @@ private:
     // Paint-storm guard: set true while inside TxDrawD2D so TxInvalidateRect /
     // TxViewChange don't re-enter on_paint() or queue a follow-up WM_PAINT.
     bool in_paint_       = false;
+    // Vertical scroll offset in DIPs.  ComposeBar caps the host HWND height
+    // at kMaxHeight; once wrapped text exceeds that, on_paint scrolls the
+    // document so the caret stays visible.  D2D-only — MSFTEDIT's own scroll
+    // machinery does not work in windowless D2D mode (TxGetScrollBars=0).
+    float scroll_y_      = 0.f;
 
     IWICImagingFactory* wic_         = nullptr; // borrowed; lifetime ≥ this
     ID2D1Device*        d2d_device_  = nullptr; // borrowed; lifetime ≥ this
