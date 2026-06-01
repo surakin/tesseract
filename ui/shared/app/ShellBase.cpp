@@ -3242,9 +3242,11 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
         apply_threads_list_(client_->list_room_threads(current_room_id_));
         if (auto* tlv = room_view_->thread_list_view())
             tlv->scroll_to_top();
-        // The subscription's initial paginate may have completed before the
-        // panel opened, so on_threads_updated won't fire again — kick loading
-        // here to ensure all pages are fetched.
+        // Re-arm backfill on every open: if the service window shrank (e.g.
+        // after a reconnect or room re-entry), threads_reached_start_ would
+        // incorrectly block re-pagination.  The extra paginate_room_threads
+        // call is a cheap no-op when the service already has all history.
+        threads_reached_start_ = false;
         paginate_threads_();
     }
 }
@@ -3432,6 +3434,8 @@ void ShellBase::paginate_threads_()
             threads_paginating_ = false;
             if (reached)
                 threads_reached_start_ = true;
+            else if (thread_panel_ == ThreadPanel::List)
+                paginate_threads_();
         });
     });
 }
