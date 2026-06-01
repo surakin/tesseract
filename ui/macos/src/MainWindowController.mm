@@ -158,6 +158,7 @@ protected:
                                  std::vector<uint8_t> avatar_bytes,
                                  std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
+    void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 
@@ -218,8 +219,11 @@ public:
     using ShellBase::handle_compose_text_changed_;
     using ShellBase::handle_send_presence_toggle_;
     using ShellBase::apply_media_preview_config_;
+    using ShellBase::inflight_dot_color_;
+    using ShellBase::inflight_total_;
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
+    using ShellBase::last_inflight_;
     using ShellBase::last_room_list_state_;
     using ShellBase::last_tray_highlight_;
     using ShellBase::last_tray_unread_;
@@ -447,6 +451,9 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
 - (void)_onServerInfoReady;
+- (void)_buildStatusBar:(NSView*)content;
+- (void)_refreshSyncStatus;
+- (void)_onInflightChanged;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 
 // Sticker picker + animated stickers.
@@ -1316,6 +1323,12 @@ void MacShell::on_room_list_state_ui_()
     }
 }
 
+void MacShell::on_inflight_ui_()
+{
+    if (ctrl_)
+        [ctrl_ _onInflightChanged];
+}
+
 void MacShell::on_server_info_ready_ui_()
 {
     MainWindowController* c = ctrl_;
@@ -1523,6 +1536,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     // AppKit chrome.
     LoginView* _loginView;
+
+    // Status bar: container view, sync-state label, in-flight dot.
+    NSView*      _statusBarView;
+    NSTextField* _statusLabel;
+    NSTextField* _inflightDotLabel;
 
     NSTimer* _animTimer;
     NSTimer* _markReadTimer;
@@ -3664,33 +3682,41 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [content addSubview:_loginView];
     [content addSubview:settingsView];
     [content addSubview:brandingView];
+
+    // Status bar is added last so it is always on top of other views and
+    // cannot be covered by a full-height sibling.
+    [self _buildStatusBar:content];
+
     [NSLayoutConstraint activateConstraints:@[
+        // All content views stop above the status bar.
         [mainAppView.topAnchor constraintEqualToAnchor:content.topAnchor],
         [mainAppView.leadingAnchor
             constraintEqualToAnchor:content.leadingAnchor],
         [mainAppView.trailingAnchor
             constraintEqualToAnchor:content.trailingAnchor],
-        [mainAppView.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+        [mainAppView.bottomAnchor
+            constraintEqualToAnchor:_statusBarView.topAnchor],
         [_loginView.topAnchor constraintEqualToAnchor:content.topAnchor],
         [_loginView.leadingAnchor
             constraintEqualToAnchor:content.leadingAnchor],
         [_loginView.trailingAnchor
             constraintEqualToAnchor:content.trailingAnchor],
-        [_loginView.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+        [_loginView.bottomAnchor
+            constraintEqualToAnchor:_statusBarView.topAnchor],
         [settingsView.topAnchor constraintEqualToAnchor:content.topAnchor],
         [settingsView.leadingAnchor
             constraintEqualToAnchor:content.leadingAnchor],
         [settingsView.trailingAnchor
             constraintEqualToAnchor:content.trailingAnchor],
         [settingsView.bottomAnchor
-            constraintEqualToAnchor:content.bottomAnchor],
+            constraintEqualToAnchor:_statusBarView.topAnchor],
         [brandingView.topAnchor constraintEqualToAnchor:content.topAnchor],
         [brandingView.leadingAnchor
             constraintEqualToAnchor:content.leadingAnchor],
         [brandingView.trailingAnchor
             constraintEqualToAnchor:content.trailingAnchor],
         [brandingView.bottomAnchor
-            constraintEqualToAnchor:content.bottomAnchor],
+            constraintEqualToAnchor:_statusBarView.topAnchor],
     ]];
 }
 
@@ -3782,6 +3808,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                 ? NSAppearanceNameDarkAqua
                                 : NSAppearanceNameAqua;
     NSApp.appearance = [NSAppearance appearanceNamed:name];
+
 }
 
 - (void)stopSync
@@ -5830,52 +5857,139 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 }
 
-- (void)_onRoomListStateChanged
+- (void)_buildStatusBar:(NSView*)content
 {
-    // Update window title with sync progress (no status bar on macOS).
-    // Priority: Init/SettingUp → "Syncing rooms…",
-    //           Recovering     → "Reconnecting…",
-    //           keys busy      → "Downloading encryption keys (N)…",
-    //           else           → clear progress suffix.
+    _statusBarView = [[NSView alloc] init];
+    _statusBarView.translatesAutoresizingMaskIntoConstraints = NO;
+    // No explicit wantsLayer / layer.backgroundColor here — content already
+    // has wantsLayer = YES; setting it again with an explicit backgroundColor
+    // was preventing the NSTextField subviews from rendering.
+
+    NSBox* sep = [[NSBox alloc] init];
+    sep.translatesAutoresizingMaskIntoConstraints = NO;
+    sep.boxType = NSBoxSeparator;
+    [_statusBarView addSubview:sep];
+
+    _statusLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    _statusLabel.editable = NO;
+    _statusLabel.selectable = NO;
+    _statusLabel.bordered = NO;
+    _statusLabel.bezeled = NO;
+    _statusLabel.drawsBackground = NO;
+    _statusLabel.stringValue = @"Not logged in";
+    _statusLabel.font = [NSFont systemFontOfSize:11];
+    _statusLabel.textColor = NSColor.secondaryLabelColor;
+    _statusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [_statusLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                         forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [_statusBarView addSubview:_statusLabel];
+
+    _inflightDotLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    _inflightDotLabel.editable = NO;
+    _inflightDotLabel.selectable = NO;
+    _inflightDotLabel.bordered = NO;
+    _inflightDotLabel.bezeled = NO;
+    _inflightDotLabel.drawsBackground = NO;
+    _inflightDotLabel.stringValue = @"●";
+    _inflightDotLabel.font = [NSFont systemFontOfSize:10];
+    _inflightDotLabel.textColor = NSColor.tertiaryLabelColor;
+    _inflightDotLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [_inflightDotLabel setContentHuggingPriority:NSLayoutPriorityRequired
+                                forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [_inflightDotLabel setContentCompressionResistancePriority:NSLayoutPriorityRequired
+                                              forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [_statusBarView addSubview:_inflightDotLabel];
+
+    [content addSubview:_statusBarView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [_statusBarView.leadingAnchor
+            constraintEqualToAnchor:content.leadingAnchor],
+        [_statusBarView.trailingAnchor
+            constraintEqualToAnchor:content.trailingAnchor],
+        [_statusBarView.bottomAnchor
+            constraintEqualToAnchor:content.bottomAnchor],
+        [_statusBarView.heightAnchor constraintEqualToConstant:22],
+
+        [sep.topAnchor constraintEqualToAnchor:_statusBarView.topAnchor],
+        [sep.leadingAnchor constraintEqualToAnchor:_statusBarView.leadingAnchor],
+        [sep.trailingAnchor
+            constraintEqualToAnchor:_statusBarView.trailingAnchor],
+        [sep.heightAnchor constraintEqualToConstant:1],
+
+        [_inflightDotLabel.trailingAnchor
+            constraintEqualToAnchor:_statusBarView.trailingAnchor constant:-8],
+        [_inflightDotLabel.centerYAnchor
+            constraintEqualToAnchor:_statusBarView.centerYAnchor],
+
+        [_statusLabel.leadingAnchor
+            constraintEqualToAnchor:_statusBarView.leadingAnchor constant:8],
+        [_statusLabel.centerYAnchor
+            constraintEqualToAnchor:_statusBarView.centerYAnchor],
+        [_statusLabel.trailingAnchor
+            constraintEqualToAnchor:_inflightDotLabel.leadingAnchor
+                           constant:-8],
+    ]];
+
+    [self _onInflightChanged];
+}
+
+- (void)_refreshSyncStatus
+{
+    if (!_statusLabel || !_shell)
+        return;
     using RLS = tesseract::RoomListState;
     using BS = tesseract::BackupState;
 
     const bool room_busy = (_shell->last_room_list_state_ == RLS::Init ||
-                            _shell->last_room_list_state_ == RLS::SettingUp);
+                             _shell->last_room_list_state_ == RLS::SettingUp);
     const bool reconnecting =
         (_shell->last_room_list_state_ == RLS::Recovering);
     const bool keys_busy = (_shell->last_backup_state_ == BS::Downloading);
 
-    NSString* suffix = nil;
+    NSString* text;
     if (room_busy)
-    {
-        suffix = @" — Syncing rooms…";
-    }
+        text = @"Syncing rooms…";
     else if (reconnecting)
-    {
-        suffix = @" — Reconnecting…";
-    }
+        text = @"Reconnecting…";
     else if (keys_busy)
-    {
-        suffix = [NSString
-            stringWithFormat:@" — Downloading encryption keys (%llu)…",
+        text = [NSString
+            stringWithFormat:@"Downloading encryption keys (%llu)…",
                              (unsigned long long)_shell->last_imported_keys_];
-    }
+    else
+        text = @"Connected";
 
-    if (suffix)
-    {
-        _shell->sync_progress_shown_ = true;
-        self.window.title = [@"Tesseract" stringByAppendingString:suffix];
-    }
-    else if (_shell->sync_progress_shown_)
-    {
-        _shell->sync_progress_shown_ = false;
-        self.window.title = @"Tesseract";
-    }
+    _statusLabel.stringValue = text;
+    _shell->sync_progress_shown_ = room_busy || reconnecting || keys_busy;
+}
+
+- (void)_onInflightChanged
+{
+    if (!_inflightDotLabel || !_shell)
+        return;
+    const auto c = _shell->inflight_dot_color_();
+    const uint32_t n = _shell->inflight_total_();
+    _inflightDotLabel.textColor =
+        [NSColor colorWithRed:c.r / 255.0
+                        green:c.g / 255.0
+                         blue:c.b / 255.0
+                        alpha:1.0];
+    NSString* tip = (n == 1)
+                        ? @"1 request in flight"
+                        : [NSString stringWithFormat:@"%u requests in flight", n];
+    _inflightDotLabel.toolTip = tip;
+}
+
+- (void)_onRoomListStateChanged
+{
+    [self _refreshSyncStatus];
+    [self _onInflightChanged];
 
     // Once Running, attempt the deferred room restore (we waited for Running
     // to avoid subscribing to a room during initial sync, which triggers the
     // imbl promote_front data race in matrix-sdk-ui).
+    using RLS = tesseract::RoomListState;
     if (_shell->last_room_list_state_ == RLS::Running &&
         _shell->current_room_id_.empty() &&
         !_shell->pending_restore_rooms_.empty())
