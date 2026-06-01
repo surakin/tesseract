@@ -1974,44 +1974,29 @@ public:
         if (!text_svc_ || !hwnd_)
             return 0.f;
 
-        HDC hdc  = GetDC(hwnd_);
-        int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
-        int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
+        const float s = dip_scale();
+        // Floor: one line of body text expressed in DIPs.
+        const float min_dip =
+            static_cast<float>(tesseract::Settings::instance().font_body) *
+            (96.f / 72.f);
 
-        // Minimum plausible height: one line of body text (pt → px) + padding.
-        // Used as a floor so that early calls before the first layout pass
-        // (when TxGetNaturalSize may return out_h=0) don't shrink the control
-        // to a few pixels.
-        const float body_pt  = static_cast<float>(
-            tesseract::Settings::instance().font_body);
-        const float min_line = body_pt * (static_cast<float>(dpiY) / 72.f);
-
-        RECT client{};
-        GetClientRect(hwnd_, &client);
-        int w = client.right - client.left;
-        if (w <= 0)
+        // TxGetNaturalSize(TXTNS_FITTOCONTENT) returns stale or zero values in
+        // TXTBIT_D2DDWRITE mode and cannot be used to drive compose-bar growth.
+        // build_text_layout() constructs an IDWriteTextLayout at the current
+        // wrap width; GetMetrics().height is the exact content height and is
+        // reliable in D2D mode — the same path used by scroll-to-caret and
+        // hit-testing.
+        float scale = 1.f;
+        auto layout = build_text_layout(&scale, nullptr, nullptr);
+        float content_dip = min_dip;
+        if (layout)
         {
-            ReleaseDC(hwnd_, hdc);
-            return 0.f; // set_rect falls back to rh when nh==0
+            DWRITE_TEXT_METRICS m{};
+            if (SUCCEEDED(layout->GetMetrics(&m)) && m.height > content_dip)
+                content_dip = m.height;
         }
-
-        // Width in HIMETRIC (1 inch = 2540 HM, LOGPIXELSX px/inch).
-        SIZEL extent{MulDiv(w, 2540, dpiX), 0x7FFFFFFF};
-        LONG  out_w = 0, out_h = 0;
-        const_cast<ITextServices2*>(text_svc_.Get())
-            ->TxGetNaturalSize(DVASPECT_CONTENT, hdc, nullptr, nullptr,
-                               TXTNS_FITTOCONTENT, &extent, &out_w, &out_h);
-        ReleaseDC(hwnd_, hdc);
-
-        // Convert HIMETRIC height back to pixels; add 4 px top + 4 px bottom
-        // padding (mirrors the +8 px in Win32NativeTextArea).
-        float px_h = static_cast<float>(
-            MulDiv(static_cast<int>(out_h), dpiY, 2540));
-        // Guard: TxGetNaturalSize returns 0 before the first layout pass.
-        if (px_h < min_line)
-            px_h = min_line;
-        // Return logical (DIP) pixels; set_rect() scales back up for SetWindowPos.
-        return (px_h + 8.f) / dip_scale();
+        // Add 4 px top + 4 px bottom padding, returned as DIPs.
+        return content_dip + 8.f / s;
     }
 
     void set_on_changed(std::function<void(const std::string&)> cb) override
