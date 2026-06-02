@@ -3247,10 +3247,11 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
         room_view_->set_thread_panel(vs, t.new_root);
 
         // set_thread_panel lazily creates thread_list_view_ on the first List
-        // transition — wire its on_near_bottom immediately after so pagination
-        // kicks in when the user scrolls to the bottom.
+        // transition — wire its on_near_top immediately after so older threads
+        // paginate in when the user scrolls up toward the oldest. (Newest sit
+        // at the bottom, matching the message timeline.)
         if (auto* tlv = room_view_->thread_list_view())
-            tlv->on_near_bottom = [this] { paginate_threads_(); };
+            tlv->on_near_top = [this] { paginate_threads_(); };
 
         request_relayout_();
     }
@@ -3265,11 +3266,13 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
     {
         apply_threads_list_(client_->list_room_threads(current_room_id_));
         if (auto* tlv = room_view_->thread_list_view())
-            tlv->scroll_to_top();
+            tlv->scroll_to_bottom();
         // Re-arm backfill on every open: if the service window shrank (e.g.
         // after a reconnect or room re-entry), threads_reached_start_ would
         // incorrectly block re-pagination.  The extra paginate_room_threads
         // call is a cheap no-op when the service already has all history.
+        // Newest threads sit at the bottom (scroll_to_bottom above pins the
+        // view there via stick_to_bottom_); backfill grows the list upward.
         threads_reached_start_ = false;
         paginate_threads_();
     }

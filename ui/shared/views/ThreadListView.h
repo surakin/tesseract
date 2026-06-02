@@ -6,8 +6,10 @@
 // reply count. Clicking a row opens the thread; clicking the floating "×"
 // button in the header strip hides the panel.
 //
-// Inherits tk::ListView (scrolling + scrollbar + on_near_bottom) and
+// Inherits tk::ListView (scrolling + scrollbar + on_near_top) and
 // implements tk::ListAdapter (one fixed-height row per ThreadInfo).
+// Threads sort newest-last (newest at the bottom), matching the message
+// timeline; older threads page in when scrolling up toward the top.
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
@@ -35,8 +37,8 @@ public:
     // Shell callbacks.
     std::function<void()> on_close;
     std::function<void(const std::string& root_event_id)> on_thread_clicked;
-    // on_near_bottom is inherited from tk::ListView — ShellBase wires it
-    // to call paginate_room_threads() for older threads.
+    // on_near_top is inherited from tk::ListView — ShellBase wires it
+    // to call paginate_room_threads() for older threads (loaded above).
 
     // tk::ListView / tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

@@ -134,16 +134,23 @@ ThreadListView::ThreadListView()
 void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
 {
     threads_ = std::move(threads);
+    // Ascending by most-recent activity: oldest first, newest LAST (at the
+    // bottom) to match the message timeline. Older threads load via upward
+    // pagination, so they sort in above the current top.
     std::sort(threads_.begin(), threads_.end(),
               [](const tesseract::ThreadInfo& a, const tesseract::ThreadInfo& b) {
                   std::uint64_t ta =
                       a.latest_timestamp > 0 ? a.latest_timestamp : a.root_timestamp;
                   std::uint64_t tb =
                       b.latest_timestamp > 0 ? b.latest_timestamp : b.root_timestamp;
-                  return ta > tb;
+                  return ta < tb;
               });
-    invalidate_data();
-    reset_near_bottom_latch();
+    // Preserve the user's scroll position across this full-list rebuild so
+    // prepended (older) threads don't shove the viewport — mirrors
+    // MessageListView::set_messages. No-op while stuck to the bottom (reading
+    // the newest), so newest/live additions keep the view pinned to the bottom.
+    preserve_top_through([this] { invalidate_data(); });
+    reset_near_top_latch();
 }
 
 // ── tk::ListView / Widget overrides ──────────────────────────────────────────

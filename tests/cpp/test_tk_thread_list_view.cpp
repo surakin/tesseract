@@ -51,24 +51,24 @@ struct Stage
 TEST_CASE("ThreadListView::set_threads stores the list", "[thread_list]")
 {
     ThreadListView v;
-    // $a has a higher root timestamp, so it should be first after sort.
+    // Ascending by activity: $b (lower timestamp) sorts first, $a last.
     v.set_threads({make_thread("$a", 1, /*root_ts=*/2000),
                    make_thread("$b", 5, /*root_ts=*/1000)});
     REQUIRE(v.threads().size() == 2);
-    CHECK(v.threads()[0].root_event_id == "$a");
-    CHECK(v.threads()[1].root_event_id == "$b");
+    CHECK(v.threads()[0].root_event_id == "$b");
+    CHECK(v.threads()[1].root_event_id == "$a");
 }
 
-TEST_CASE("ThreadListView::set_threads sorts newest activity first",
+TEST_CASE("ThreadListView::set_threads sorts newest activity last",
           "[thread_list]")
 {
     ThreadListView v;
-    // Pass in reverse order; $new has a later latest_timestamp.
+    // $new has a later latest_timestamp, so it sorts LAST (bottom of the list).
     v.set_threads({make_thread("$old", 1, /*root_ts=*/1000, /*latest_ts=*/0),
                    make_thread("$new", 3, /*root_ts=*/1000, /*latest_ts=*/5000)});
     REQUIRE(v.threads().size() == 2);
-    CHECK(v.threads()[0].root_event_id == "$new");
-    CHECK(v.threads()[1].root_event_id == "$old");
+    CHECK(v.threads()[0].root_event_id == "$old");
+    CHECK(v.threads()[1].root_event_id == "$new");
 }
 
 TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
@@ -100,7 +100,8 @@ TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
     Stage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
-    // $a has higher timestamp so it sorts first (row 0 after the header spacer).
+    // Ascending order: $b (lower timestamp) is the first row after the header
+    // spacer; $a sorts last.
     v.set_threads({make_thread("$a", 1, /*root_ts=*/2000),
                    make_thread("$b", 5, /*root_ts=*/1000)});
     // set_threads doesn't rebuild row_rects_ — re-arrange after setting.
@@ -116,7 +117,7 @@ TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
                               ThreadListView::kRowH * 0.5f};
         REQUIRE(v.on_pointer_down(p));
         v.on_pointer_up(p, true);
-        CHECK(clicked == "$a");
+        CHECK(clicked == "$b");
     }
 
     // Second row centre.
@@ -126,7 +127,7 @@ TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
                               ThreadListView::kRowH * 1.5f};
         REQUIRE(v.on_pointer_down(p));
         v.on_pointer_up(p, true);
-        CHECK(clicked == "$b");
+        CHECK(clicked == "$a");
     }
 }
 
