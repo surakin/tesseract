@@ -104,6 +104,7 @@ pub(super) async fn emit_notification(
     msg_type_str: &str,
     event_id: &str,
     ts: u64,
+    session_start_ms: u64,
     preview_source: Option<matrix_sdk::ruma::events::room::MediaSource>,
     handler: &Arc<Mutex<SendHandler>>,
 ) {
@@ -121,11 +122,18 @@ pub(super) async fn emit_notification(
     if !should_notify {
         return;
     }
-    // Suppress if the room is already read. This catches backfill-subscription
-    // events (old events delivered when the sync backfills inactive rooms) and
-    // any other case where the event arrived but the user's read receipt is
-    // already at or past it. The server-side unread count is authoritative.
-    if room.num_unread_notifications() == 0 && room.num_unread_mentions() == 0 {
+    // Suppress events the user has already read. The server-side unread count
+    // is authoritative for historical/backfill events — old events delivered
+    // when the sync backfills inactive rooms, or replayed on restart — so for
+    // anything older than this sync session's start we still defer to it. But
+    // that count lags one sync cycle behind a just-sent read receipt, so a
+    // *live* message (newer than session start) must NOT consult it: otherwise
+    // the first message arriving right after a room is marked read is dropped
+    // while the count still reads zero. Push rules already cleared this event.
+    if ts < session_start_ms
+        && room.num_unread_notifications() == 0
+        && room.num_unread_mentions() == 0
+    {
         return;
     }
     let room_name = room

@@ -95,6 +95,15 @@ impl ClientFfi {
             });
         }
 
+        // Wall-clock start of this sync session, used by the notification
+        // handlers to tell a live message from backfilled/replayed history:
+        // events older than this defer to the (sync-lagged) server unread
+        // count, newer ones do not. See `emit_notification`.
+        let session_start_ms: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         // Global notification handler — fires for every room on every sync
         // response, without requiring a per-room subscribe_room call.
         {
@@ -131,6 +140,7 @@ impl ClientFfi {
                             msg_type_str,
                             ev.event_id.as_str(),
                             ev.origin_server_ts.get().into(),
+                            session_start_ms,
                             preview_source,
                             &h,
                         )
@@ -176,6 +186,7 @@ impl ClientFfi {
                             "m.sticker",
                             ev.event_id.as_str(),
                             ev.origin_server_ts.get().into(),
+                            session_start_ms,
                             preview_source,
                             &h,
                         )
