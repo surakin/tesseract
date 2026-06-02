@@ -188,6 +188,7 @@ public:
     using ShellBase::add_account_return_idx_;
     using ShellBase::anim_cache_;
     using ShellBase::apply_current_theme_;
+    using ShellBase::begin_crypto_identity_reset_;
     using ShellBase::begin_focused_subscription_;
     using ShellBase::build_rows_;
     using ShellBase::cached_emoticons_;
@@ -3472,6 +3473,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+        };
+        _settingsView->on_reset_identity = [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_shell)
+            {
+                return;
+            }
+            // The reset overlay lives on the main window — leave settings
+            // first, then start the reset flow.
+            NSView* mainAppView =
+                (__bridge NSView*)s->_mainAppSurface->view_handle();
+            mainAppView.hidden = NO;
+            ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            s->_shell->begin_crypto_identity_reset_();
         };
         _settingsView->on_logout = [ws]
         {

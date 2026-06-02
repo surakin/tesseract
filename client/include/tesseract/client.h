@@ -927,6 +927,34 @@ public:
     Result import_room_keys(const std::string& path,
                             const std::string& passphrase);
 
+    /// Result of `begin_reset_crypto_identity`. When `needs_approval` is true
+    /// the homeserver requires the user to approve the cross-signing reset in
+    /// a browser: open `approval_url`, then await
+    /// `IEventHandler::on_crypto_reset_result` (the SDK polls in the
+    /// background). When `needs_approval` is false and `ok` is true the reset
+    /// completed with no further auth. `ok == false` means it couldn't start.
+    struct CryptoResetBegin
+    {
+        bool ok = false;
+        std::string message;
+        bool needs_approval = false;
+        std::string approval_url;
+
+        explicit operator bool() const noexcept { return ok; }
+    };
+
+    /// Begin resetting the user's cross-signing identity ("Reset cryptographic
+    /// identity"). Destructive: uploads a brand-new identity, so other sessions
+    /// and contacts must re-verify. Returns quickly; if `needs_approval` is
+    /// set, open `approval_url` and await `on_crypto_reset_result`. The browser
+    /// approval poll runs in the background (this does NOT block for it).
+    /// Blocks only briefly for the initial request — call from a worker thread.
+    CryptoResetBegin begin_reset_crypto_identity();
+
+    /// Abort an in-progress cross-signing reset before
+    /// `on_crypto_reset_result` fires. No-op when none is pending.
+    void cancel_reset_crypto_identity();
+
     /// Enable or disable background presence polling. Thread-safe; may be
     /// called from the UI thread.
     void set_presence_polling_enabled(bool enabled);

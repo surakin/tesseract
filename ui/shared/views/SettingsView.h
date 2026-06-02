@@ -179,6 +179,12 @@ public:
     // Wire to ShellBase::clear_all_caches_() in each shell's settings setup.
     std::function<void()> on_clear_caches;
 
+    // Fired after the user confirms "Reset cryptographic identity" in the
+    // Privacy section. Wire to ShellBase::begin_crypto_identity_reset_() in
+    // each shell (closing the settings UI first — the reset overlay lives on
+    // the main window).
+    std::function<void()> on_reset_identity;
+
     // Update the About section's storage size labels and hit/miss stats.
     // Call on the UI thread after ShellBase::compute_cache_sizes_() posts its result.
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,

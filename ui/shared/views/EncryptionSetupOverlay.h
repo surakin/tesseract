@@ -15,7 +15,18 @@ class EncryptionSetupOverlay : public tk::Widget
 {
 public:
     enum class Mode { Fresh, Recover };
-    enum class Step { Intro, ChooseMethod, EnterKey, Progress, ShowKey, Done };
+    enum class Step {
+        Intro,
+        ChooseMethod,
+        EnterKey,
+        Progress,
+        ShowKey,
+        Done,
+        // Cross-signing reset: waiting for the user to approve the reset in
+        // their browser. On success the overlay advances into the Fresh
+        // recovery-key flow (ChooseMethod → …).
+        ResetApproving,
+    };
 
     explicit EncryptionSetupOverlay(Mode mode);
 
@@ -25,6 +36,9 @@ public:
     std::function<void(std::string)>   on_recover;         // key or passphrase
     std::function<void()>              on_request_sas;
     std::function<void(std::string)>   on_copy_to_clipboard;
+    // Fired when the user clicks Cancel on the ResetApproving step (aborts an
+    // in-progress cross-signing reset).
+    std::function<void()>              on_cancel_reset;
 
     // Fired when a step / mode change alters which native text field should be
     // visible (e.g. Intro→EnterKey, or toggling the passphrase option). The
@@ -46,6 +60,20 @@ public:
                           const std::string& recovery_key,
                           uint32_t backed_up,
                           uint32_t total);
+
+    // ── Cross-signing reset flow (driven by ShellBase) ───────────────────
+    // Enter the "approve in your browser…" wait step. The caller should have
+    // already reset(Mode::Fresh) + re-wired callbacks so the post-approval
+    // hand-off lands in the Fresh recovery-key flow.
+    void begin_reset_wait() { advance_step_(Step::ResetApproving); }
+    // The reset was approved — start the Fresh recovery-key setup.
+    void reset_approved()   { advance_step_(Step::ChooseMethod); }
+    // The reset failed / was cancelled server-side; show the error and turn
+    // the button into a Close.
+    void report_reset_error(const std::string& msg)
+    {
+        error_msg_ = msg;
+    }
 
     // ── Accessors ─────────────────────────────────────────────────────────
     Step        step()          const { return step_; }
@@ -84,6 +112,7 @@ public:
         on_recover           = {};
         on_request_sas       = {};
         on_copy_to_clipboard = {};
+        on_cancel_reset      = {};
         on_layout_changed    = {};
         passphrase_field_rect    = {};
         passphrase_field_visible = {};

@@ -12,6 +12,7 @@ use crate::oauth;
 
 mod account;
 mod backfill;
+mod crypto_reset;
 mod image_packs;
 mod media;
 mod notifications;
@@ -363,6 +364,12 @@ pub struct ClientFfi {
     /// children live inside a `JoinSet` owned by the orchestrator future).
     #[cfg(not(test))]
     pub(super) backfill_task: Option<tokio::task::AbortHandle>,
+    /// In-progress cross-signing reset handle (from `reset_cross_signing`),
+    /// held between `begin_reset_crypto_identity` and the background poll /
+    /// `cancel_reset_crypto_identity`. `None` when no reset is pending.
+    #[cfg(not(test))]
+    pub(super) crypto_reset_handle:
+        Option<Arc<matrix_sdk::encryption::CrossSigningResetHandle>>,
     /// Count of in-flight extra HTTP operations (media downloads, /messages
     /// back-pagination). Does not include the sync long-poll (always 1 when
     /// Running). Wrapped in Arc so it can be cloned into spawned tasks.
@@ -687,6 +694,8 @@ impl ClientFfi {
             thread_lists: HashMap::new(),
             #[cfg(not(test))]
             backfill_task: None,
+            #[cfg(not(test))]
+            crypto_reset_handle: None,
             #[cfg(not(test))]
             in_flight: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             #[cfg(not(test))]

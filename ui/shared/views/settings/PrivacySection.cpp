@@ -34,6 +34,11 @@ PrivacySection::PrivacySection()
     enc_group->add_widget(std::make_unique<tk::Button>(
         "Import room keys…",
         [this] { if (on_import_keys) on_import_keys(); }));
+
+    enc_group->add_widget(std::make_unique<tk::Button>(
+        "Reset cryptographic identity…",
+        [this] { if (on_reset_identity) on_reset_identity(); },
+        tk::Button::Variant::Destructive));
 }
 
 void PrivacySection::set_send_presence(bool enabled)

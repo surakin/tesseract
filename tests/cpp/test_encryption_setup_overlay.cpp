@@ -257,3 +257,50 @@ TEST_CASE("Done: close button fires on_close", "[encryption][overlay]")
     ov.simulate_primary_action(); // Close
     CHECK(closed);
 }
+
+// ── Cross-signing reset flow ─────────────────────────────────────────────────
+
+TEST_CASE("Reset: begin_reset_wait enters ResetApproving", "[encryption][overlay]")
+{
+    Stage st;
+    EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
+    st.run(ov, {0, 0, 800, 600});
+    ov.begin_reset_wait();
+    CHECK(ov.step() == EncryptionSetupOverlay::Step::ResetApproving);
+}
+
+TEST_CASE("Reset: approval hands off to the Fresh recovery-key flow",
+          "[encryption][overlay]")
+{
+    Stage st;
+    EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
+    st.run(ov, {0, 0, 800, 600});
+    ov.begin_reset_wait();
+    ov.reset_approved();
+    CHECK(ov.step() == EncryptionSetupOverlay::Step::ChooseMethod);
+}
+
+TEST_CASE("Reset: Cancel on ResetApproving fires on_cancel_reset",
+          "[encryption][overlay]")
+{
+    Stage st;
+    EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
+    bool cancelled = false;
+    ov.on_cancel_reset = [&]() { cancelled = true; };
+    st.run(ov, {0, 0, 800, 600});
+    ov.begin_reset_wait();
+    ov.simulate_primary_action(); // Cancel
+    CHECK(cancelled);
+}
+
+TEST_CASE("Reset: report_reset_error stays on ResetApproving with a message",
+          "[encryption][overlay]")
+{
+    Stage st;
+    EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
+    st.run(ov, {0, 0, 800, 600});
+    ov.begin_reset_wait();
+    ov.report_reset_error("approval timed out");
+    CHECK(ov.step() == EncryptionSetupOverlay::Step::ResetApproving);
+    CHECK(ov.error_msg() == "approval timed out");
+}

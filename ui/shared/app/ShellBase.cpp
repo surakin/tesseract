@@ -3638,4 +3638,77 @@ void ShellBase::check_encryption_setup_()
     // Unknown (0) and Enabled (2): do nothing; re-checked on next tick.
 }
 
+void ShellBase::begin_crypto_identity_reset_()
+{
+    if (!client_ || !main_app_)
+        return;
+
+    // User-initiated, so bypass the recovery_state gating in
+    // check_encryption_setup_ and drive the overlay directly. Reuse the
+    // per-shell overlay setup (Fresh mode wires the post-approval recovery-key
+    // flow + native fields), then put it into the reset-approval wait.
+    encryption_setup_dismissed_ = false;
+    encryption_setup_shown_     = true;
+    show_encryption_setup_overlay_(
+        tesseract::views::EncryptionSetupOverlay::Mode::Fresh);
+
+    auto* ov = main_app_->encryption_setup();
+    if (!ov)
+        return;
+
+    // show_encryption_setup_overlay_ → reset() cleared callbacks, so set the
+    // cancel hook now (after wiring).
+    ov->on_cancel_reset = [this]() {
+        auto* c = client_;
+        run_async_mut_([c]() { c->cancel_reset_crypto_identity(); });
+        encryption_setup_dismissed_ = true;
+        if (main_app_)
+            main_app_->show_encryption_setup(false);
+        request_relayout_();
+    };
+    ov->begin_reset_wait();
+    request_relayout_();
+
+    auto* c = client_;
+    run_async_mut_([this, c]() {
+        auto r = c->begin_reset_crypto_identity();
+        post_to_ui_([this, ok = r.ok, needs = r.needs_approval,
+                     msg = std::string(r.message),
+                     url = std::string(r.approval_url)]() {
+            auto* o = main_app_ ? main_app_->encryption_setup() : nullptr;
+            if (!o)
+                return;
+            if (!ok)
+            {
+                o->report_reset_error(msg);
+            }
+            else if (!needs)
+            {
+                // Reset completed with no browser approval needed — go straight
+                // to recovery-key setup.
+                o->reset_approved();
+            }
+            else
+            {
+                // Wait for the user to approve in the browser; the SDK polls
+                // and fires on_crypto_reset_result when it resolves.
+                tesseract::Client::open_in_browser(url);
+            }
+            request_relayout_();
+        });
+    });
+}
+
+void ShellBase::handle_crypto_reset_result_ui_(bool ok, std::string message)
+{
+    auto* o = main_app_ ? main_app_->encryption_setup() : nullptr;
+    if (!o)
+        return;
+    if (ok)
+        o->reset_approved(); // → Fresh recovery-key setup (ChooseMethod)
+    else
+        o->report_reset_error(message);
+    request_relayout_();
+}
+
 } // namespace tesseract

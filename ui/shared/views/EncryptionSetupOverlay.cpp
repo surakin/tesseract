@@ -135,7 +135,7 @@ void EncryptionSetupOverlay::advance_step_(Step next)
 {
     error_msg_.clear();
     step_ = next;
-    if (next == Step::Progress)
+    if (next == Step::Progress || next == Step::ResetApproving)
         progress_start_ = std::chrono::steady_clock::now();
     // The visible native field set changes with the step (EnterKey shows the
     // key field; leaving it hides it). Ask the shell to relayout so its
@@ -182,6 +182,12 @@ void EncryptionSetupOverlay::fire_primary_()
 
         case Step::Done:
             if (on_close) on_close();
+            break;
+
+        case Step::ResetApproving:
+            // Button is "Cancel" (or "Close" once an error is shown): abort the
+            // in-progress reset. ShellBase hides the overlay.
+            if (on_cancel_reset) on_cancel_reset();
             break;
     }
 }
@@ -232,6 +238,7 @@ float EncryptionSetupOverlay::step_card_height_() const
         case Step::Progress:     return 220.0f;
         case Step::ShowKey:      return 340.0f;
         case Step::Done:         return 240.0f;
+        case Step::ResetApproving: return 240.0f;
     }
     return 280.0f;
 }
@@ -609,6 +616,59 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                           "Close", true);
             break;
         }
+
+        // ── ResetApproving (cross-signing reset awaiting browser approval) ───
+        case Step::ResetApproving:
+        {
+            draw_title("Resetting your identity");
+
+            const bool failed = !error_msg_.empty();
+            const std::string body =
+                failed
+                    ? error_msg_
+                    : "Approve the reset in the browser window that just "
+                      "opened. This page will continue once you've confirmed.";
+            paint_paragraph(ctx, {cx, content_y, cw, 0}, body,
+                            tk::FontRole::Body,
+                            failed ? pal.destructive : pal.text_secondary);
+
+            // Spinner (only while waiting; hidden once an error is shown).
+            if (!failed)
+            {
+                const float scx = card.x + card.w * 0.5f;
+                const float scy = card.y + card.h * 0.55f;
+                constexpr float kRadius = 16.0f;
+                constexpr float kDotR   = 3.0f;
+                constexpr int   kN      = 8;
+                const auto elapsed_ms =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - progress_start_)
+                        .count();
+                const float phase =
+                    static_cast<float>(elapsed_ms % 1000) / 1000.0f;
+                for (int i = 0; i < kN; ++i)
+                {
+                    const float angle =
+                        (static_cast<float>(i) / kN + phase) * 2.0f * 3.14159265f;
+                    const float dx    = std::cos(angle) * kRadius;
+                    const float dy    = std::sin(angle) * kRadius;
+                    const float t     = static_cast<float>(i) / kN;
+                    const auto  alpha = static_cast<uint8_t>(40.0f + 215.0f * t);
+                    c.fill_rounded_rect({scx + dx - kDotR, scy + dy - kDotR,
+                                         kDotR * 2.0f, kDotR * 2.0f},
+                                        kDotR,
+                                        pal.accent.with_alpha(alpha));
+                }
+                if (host_) host_->request_repaint(); // self-drive the spinner
+            }
+
+            // Cancel (or Close once an error is shown), bottom-right.
+            const std::string lbl = failed ? "Close" : "Cancel";
+            float lw = button_width(ctx, lbl);
+            place_primary({card.x + card.w - kCardPad - lw, by, lw, kBtnH}, lbl,
+                          true);
+            break;
+        }
     }
 }
 
@@ -626,6 +686,10 @@ bool EncryptionSetupOverlay::on_pointer_down(tk::Point local)
 
     // During Progress the operation is in flight: swallow every click.
     if (step_ == Step::Progress) return true;
+
+    // During ResetApproving only the Cancel/Close child button acts; swallow
+    // backdrop / stray clicks so the wait can't be dismissed without aborting.
+    if (step_ == Step::ResetApproving) return true;
 
     // The filled Primary / Copy buttons are tk::Button children; the host
     // dispatches their presses directly, so they never reach this handler. We

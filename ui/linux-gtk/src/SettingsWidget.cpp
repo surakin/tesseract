@@ -95,6 +95,11 @@ SettingsWidget::SettingsWidget()
         if (on_clear_caches) on_clear_caches();
     };
 
+    settings_view_->on_reset_identity = [this]
+    {
+        if (on_reset_identity) on_reset_identity();
+    };
+
     settings_view_->on_show_tooltip =
         [this](std::string text, tk::Rect anchor)
     {

@@ -470,6 +470,19 @@ pub mod ffi {
         session: String,
     }
 
+    /// Result of `begin_reset_crypto_identity`. On `needs_approval == true`
+    /// the homeserver requires the user to approve the cross-signing reset in
+    /// a browser: the UI opens `approval_url` and waits for the asynchronous
+    /// `on_crypto_reset_result` callback (the SDK polls until approval). When
+    /// `needs_approval` is false and `ok` is true the reset completed with no
+    /// further auth. `ok == false` means the reset could not be started.
+    struct CryptoResetBegin {
+        ok: bool,
+        message: String,
+        needs_approval: bool,
+        approval_url: String,
+    }
+
     /// MSC4278 global media-preview config. `media_previews` is a u8 because
     /// cxx shared structs can't carry C++-side enums without boilerplate; the
     /// C++ wrapper maps it to `MediaPreviewConfig::Mode`:
@@ -601,6 +614,11 @@ pub mod ffi {
             backed_up: u32,
             total: u32,
         );
+        /// Fired when an in-progress cross-signing reset (started via
+        /// `begin_reset_crypto_identity`) resolves. `ok` is true when the
+        /// browser approval succeeded and the new identity was uploaded;
+        /// otherwise `message` carries the failure / cancellation reason.
+        fn on_crypto_reset_result(self: &EventHandlerBridge, ok: bool, message: &str);
         /// Fired when the `RoomListService` state changes (Init →
         /// SettingUp → Running, etc.). `state` is one of the
         /// `ROOM_LIST_STATE_*` constants:
@@ -1583,6 +1601,20 @@ pub mod ffi {
         /// Import Megolm room keys from the passphrase-encrypted file at
         /// `path` (standard Matrix key-export format). Blocks — worker thread.
         fn import_room_keys(self: &mut ClientFfi, path: &str, passphrase: &str) -> OpResult;
+
+        /// Begin resetting the user's cross-signing identity (Element's "Reset
+        /// cryptographic identity"). Uploads a fresh cross-signing identity;
+        /// on OAuth/OIDC servers the user must approve in a browser. Returns
+        /// quickly: if `needs_approval` is set, open `approval_url` and await
+        /// the `on_crypto_reset_result` callback (the SDK polls in the
+        /// background, so this does NOT block). Destructive — other sessions
+        /// and contacts must re-verify afterward.
+        fn begin_reset_crypto_identity(self: &mut ClientFfi) -> CryptoResetBegin;
+
+        /// Abort an in-progress cross-signing reset started by
+        /// `begin_reset_crypto_identity` (before `on_crypto_reset_result`
+        /// fires). No-op when no reset is pending.
+        fn cancel_reset_crypto_identity(self: &mut ClientFfi);
 
         // ----- SAS device verification -----
 

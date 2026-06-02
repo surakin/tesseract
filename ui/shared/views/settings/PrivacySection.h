@@ -36,6 +36,9 @@ public:
     // Fired when the user clicks "Import room keys…".
     std::function<void()> on_import_keys;
 
+    // Fired when the user clicks "Reset cryptographic identity…" (destructive).
+    std::function<void()> on_reset_identity;
+
 private:
     tk::CheckButton* presence_cb_ = nullptr;
 };

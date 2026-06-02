@@ -1429,6 +1429,24 @@ Result Client::import_room_keys(const std::string& path,
     return from_ffi(impl_->ffi->import_room_keys(path, passphrase));
 }
 
+Client::CryptoResetBegin Client::begin_reset_crypto_identity()
+{
+    MUT_FFI;
+    auto r = impl_->ffi->begin_reset_crypto_identity();
+    CryptoResetBegin out;
+    out.ok = r.ok;
+    out.message = std::string(r.message);
+    out.needs_approval = r.needs_approval;
+    out.approval_url = std::string(r.approval_url);
+    return out;
+}
+
+void Client::cancel_reset_crypto_identity()
+{
+    MUT_FFI;
+    impl_->ffi->cancel_reset_crypto_identity();
+}
+
 void Client::set_presence_polling_enabled(bool enabled)
 {
     MUT_FFI;

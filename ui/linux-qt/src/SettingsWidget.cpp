@@ -92,6 +92,8 @@ SettingsWidget::SettingsWidget(QWidget* parent)
 
     settings_view_->on_clear_caches = [this] { emit clearCachesRequested(); };
 
+    settings_view_->on_reset_identity = [this] { emit resetIdentityRequested(); };
+
     {
         QPointer<tk::qt6::Surface> sfp = surface_;
         settings_view_->on_show_tooltip =

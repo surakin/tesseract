@@ -123,6 +123,15 @@ public:
     {
     }
 
+    /// Fired when an in-progress cross-signing reset (started via
+    /// `Client::begin_reset_crypto_identity()`) resolves. `ok` is true when the
+    /// browser approval succeeded and the new identity was uploaded; otherwise
+    /// `message` carries the failure / cancellation reason.
+    virtual void on_crypto_reset_result(bool /*ok*/,
+                                        const std::string& /*message*/)
+    {
+    }
+
     /// Fired when the sliding-sync `RoomListService` changes phase (Init →
     /// SettingUp → Running, plus Recovering on reconnect). UIs use this to
     /// drive a "Syncing rooms…" status while the joined-room set is still

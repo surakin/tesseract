@@ -224,6 +224,16 @@ void EventHandlerBase::on_enable_recovery_progress(uint8_t step,
     });
 }
 
+void EventHandlerBase::on_crypto_reset_result(bool ok, const std::string& message)
+{
+    auto* s = shell_;
+    std::string msg = message;
+    s->post_to_ui_([s, ok, msg]()
+    {
+        s->handle_crypto_reset_result_ui_(ok, msg);
+    });
+}
+
 void EventHandlerBase::on_room_list_state(RoomListState state)
 {
     shell_->post_to_ui_(

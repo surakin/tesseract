@@ -3742,6 +3742,14 @@ void MainWindow::openSettings()
                     contentStack_->setCurrentWidget(mainAppSurface_);
                     logoutActiveAccount();
                 });
+        connect(settingsWidget_, &SettingsWidget::resetIdentityRequested, this,
+                [this]
+                {
+                    // The reset overlay lives on the main window — leave
+                    // settings first, then start the reset flow.
+                    contentStack_->setCurrentWidget(mainAppSurface_);
+                    begin_crypto_identity_reset_();
+                });
         connect(settingsWidget_, &SettingsWidget::themeChanged, this,
                 [this](tesseract::Settings::ThemePreference pref)
                 {

@@ -177,6 +177,22 @@ SettingsView::SettingsView()
             [this] { if (on_clear_caches) on_clear_caches(); });
     };
 
+    // PrivacySection: route "Reset cryptographic identity" through the shared
+    // ConfirmDialog — destructive, so guard it behind an explicit confirm.
+    privacy_->on_reset_identity = [this]
+    {
+        confirm_dialog_->open(
+            {.title         = "Reset your cryptographic identity?",
+             .body          = "This creates a brand-new identity and replaces your "
+                              "key backup. Your other sessions and the people you "
+                              "chat with will need to verify you again. You'll set up "
+                              "a new recovery key right after.",
+             .confirm_label = "Reset",
+             .cancel_label  = "Cancel",
+             .destructive   = true},
+            [this] { if (on_reset_identity) on_reset_identity(); });
+    };
+
     // Wire tooltip callbacks from AboutSection storage rows to our public callbacks.
     about_->on_show_tooltip = [this](std::string t, tk::Rect a)
     {

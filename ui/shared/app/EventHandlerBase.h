@@ -67,6 +67,7 @@ public:
                                      const std::string& recovery_key,
                                      uint32_t backed_up,
                                      uint32_t total) final;
+    void on_crypto_reset_result(bool ok, const std::string& message) final;
     void on_room_list_state(RoomListState state) override;
     void on_inflight_changed(uint32_t count) override;
     void on_image_packs_updated() override;

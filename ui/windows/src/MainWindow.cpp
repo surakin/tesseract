@@ -2887,6 +2887,13 @@ void MainWindow::on_create(HWND hwnd)
             close_settings_();
             logout_active_account();
         };
+        settings_view_->on_reset_identity = [this]
+        {
+            // The reset overlay lives on the main window — leave settings
+            // first, then start the reset flow.
+            close_settings_();
+            begin_crypto_identity_reset_();
+        };
         settings_view_->on_theme_changed =
             [this](tesseract::Settings::ThemePreference pref)
         {

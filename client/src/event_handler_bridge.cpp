@@ -329,6 +329,20 @@ void EventHandlerBridge::on_enable_recovery_progress(std::uint8_t step,
           });
 }
 
+void EventHandlerBridge::on_crypto_reset_result(bool ok, rust::Str message) const
+{
+    guard("on_crypto_reset_result",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+              {
+                  return;
+              }
+              handler_->on_crypto_reset_result(ok, std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_room_list_state(std::uint8_t state) const
 {
     guard("on_room_list_state",

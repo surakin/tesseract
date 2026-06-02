@@ -592,6 +592,17 @@ protected:
         tk::NativeTextField*           passphrase_field,
         tk::NativeTextField*           key_field);
 
+    // User-initiated "Reset cryptographic identity" (from Settings → Privacy).
+    // Shows the encryption-setup overlay in its reset-approval wait state,
+    // starts the SDK cross-signing reset, opens the browser approval URL, and
+    // (on success) hands off to the Fresh recovery-key setup. Shells wire their
+    // SettingsView::on_reset_identity to this after closing the settings UI.
+    void begin_crypto_identity_reset_();
+    // Marshalled result of the in-progress cross-signing reset (from
+    // EventHandlerBase::on_crypto_reset_result). Advances the overlay into
+    // recovery setup on success, or shows the error on failure / cancellation.
+    void handle_crypto_reset_result_ui_(bool ok, std::string message);
+
     // Returns the current RecoveryState byte from the SDK client.
     // Virtual so tests can inject a stub without a real client_.
     // 0=Unknown, 1=Disabled, 2=Enabled, 3=Incomplete.
