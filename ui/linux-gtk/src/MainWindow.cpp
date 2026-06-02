@@ -2097,7 +2097,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
     gtk_widget_set_margin_start(status_bar_, 4);
     gtk_widget_set_margin_bottom(status_bar_, 2);
-    inflight_dot_ = gtk_label_new(u8"●");
+    inflight_dot_ = gtk_label_new("●");
     gtk_widget_set_margin_end(inflight_dot_, 6);
     gtk_widget_set_margin_bottom(inflight_dot_, 2);
     {

@@ -1748,7 +1748,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     };
 
     statusBar()->showMessage(tr("Not logged in"));
-    inflightDot_ = new QLabel(u8"●", this);
+    inflightDot_ = new QLabel("●", this);
     inflightDot_->setContentsMargins(0, 0, 6, 0);
     statusBar()->addPermanentWidget(inflightDot_);
     on_inflight_ui_();
