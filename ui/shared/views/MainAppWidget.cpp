@@ -29,7 +29,8 @@ MainAppWidget::MainAppWidget()
 
     auto name = std::make_unique<tk::Label>("", tk::FontRole::Body);
     nav_name_lbl_ = add_child(std::move(name));
-    nav_name_lbl_->set_halign(tk::TextHAlign::Center);
+    nav_name_lbl_->set_halign(tk::TextHAlign::Leading);
+    nav_name_lbl_->set_trim(tk::TextTrim::Ellipsis);
     nav_name_lbl_->set_visible(false);
 
     // Sidebar: room list fills available space above the user strip.
@@ -277,14 +278,17 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         constexpr float kPad = 4.0f;
         const float btn_y = y + (kSpaceNavH - 24.0f) / 2.0f;
         nav_back_btn_->arrange(ctx, {x + kPad, btn_y, kBtnW, 24.0f});
-        // Label spans the full sidebar width with center halign, but
-        // Label::paint draws at bounds_.y so we must vertically centre the
-        // rect ourselves.  kNameH = 18 px matches the body-font line height
-        // used by RoomHeader; centering it in kSpaceNavH gives 9 px margins.
+        // Label is left-aligned just right of the space avatar and elides
+        // with an ellipsis when the name is too long for the remaining width.
+        // Label::paint draws at bounds_.y so we vertically centre the rect
+        // ourselves.  kNameH = 18 px matches the body-font line height used by
+        // RoomHeader; centering it in kSpaceNavH gives 9 px margins.
         constexpr float kNameH = 18.0f;
+        // Text starts after: pad + back button + pad + avatar + pad.
+        const float name_x = x + kPad + kBtnW + kPad + kNavAvatarSize + kPad;
+        const float name_w = std::max(0.0f, (x + kSidebarW) - name_x - kPad);
         nav_name_lbl_->arrange(
-            ctx,
-            {x, y + (kSpaceNavH - kNameH) * 0.5f, kSidebarW, kNameH});
+            ctx, {name_x, y + (kSpaceNavH - kNameH) * 0.5f, name_w, kNameH});
         sidebar_content_y = y + kSpaceNavH;
     }
 
