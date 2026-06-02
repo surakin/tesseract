@@ -121,7 +121,8 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     // media_fetches_in_flight_ without synchronization.
     const bool use_room_endpoint = !r.avatar_url.empty();
     const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
-    if (mxc.empty() || media_decode_failed_.count(mxc))
+    if (mxc.empty() || media_decode_failed_.count(mxc) ||
+        media_fetch_backed_off_(mxc))
     {
         return;
     }
@@ -167,6 +168,10 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
                 [this, mxc, tkey, bytes = std::move(bytes)]() mutable
                 {
                     media_fetches_in_flight_.erase(tkey);
+                    if (bytes.empty())
+                        note_media_fetch_failed_(mxc);
+                    else
+                        note_media_fetch_ok_(mxc);
                     on_media_bytes_ready_(mxc, MediaKind::RoomAvatar,
                                           std::move(bytes));
                 });
@@ -175,7 +180,8 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 
 void ShellBase::ensure_user_avatar_(const std::string& mxc)
 {
-    if (mxc.empty() || media_decode_failed_.count(mxc))
+    if (mxc.empty() || media_decode_failed_.count(mxc) ||
+        media_fetch_backed_off_(mxc))
     {
         return;
     }
@@ -211,6 +217,10 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
                 [this, mxc, tkey, bytes = std::move(bytes)]() mutable
                 {
                     media_fetches_in_flight_.erase(tkey);
+                    if (bytes.empty())
+                        note_media_fetch_failed_(mxc);
+                    else
+                        note_media_fetch_ok_(mxc);
                     on_media_bytes_ready_(mxc, MediaKind::UserAvatar,
                                           std::move(bytes));
                 });
@@ -221,7 +231,7 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                     int /*max_h*/)
 {
     if (url.empty() || image_cache_.contains(url) || anim_cache_.has(url) ||
-        media_decode_failed_.count(url))
+        media_decode_failed_.count(url) || media_fetch_backed_off_(url))
     {
         return;
     }
@@ -245,6 +255,10 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                 [this, url, bytes = std::move(bytes)]() mutable
                 {
                     media_fetches_in_flight_.erase(url);
+                    if (bytes.empty())
+                        note_media_fetch_failed_(url);
+                    else
+                        note_media_fetch_ok_(url);
                     on_media_bytes_ready_(url, MediaKind::MediaImage,
                                           std::move(bytes));
                 });
@@ -256,7 +270,7 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
 {
     if (url.empty() || image_cache_.contains(url) ||
         thumbnail_cache_.contains(url) || anim_cache_.has(url) ||
-        media_decode_failed_.count(url))
+        media_decode_failed_.count(url) || media_fetch_backed_off_(url))
     {
         return;
     }
@@ -283,6 +297,10 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
                 [this, url, tkey, bytes = std::move(bytes)]() mutable
                 {
                     media_fetches_in_flight_.erase(tkey);
+                    if (bytes.empty())
+                        note_media_fetch_failed_(url);
+                    else
+                        note_media_fetch_ok_(url);
                     on_media_bytes_ready_(url, MediaKind::MediaThumbnail,
                                           std::move(bytes));
                 });
@@ -3054,6 +3072,7 @@ void ShellBase::clear_all_caches_(
             image_cache_.clear();
             anim_cache_ = tk::AnimImageCache{};
             media_decode_failed_.clear();
+            media_fetch_failed_.clear();
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());
             restart_sdk_();

@@ -25,6 +25,8 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include <algorithm>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -319,6 +321,38 @@ protected:
     // from re-queuing fetches that will always fail. Cleared on logout/cache
     // wipe so a re-login or server fix can recover.
     std::unordered_set<std::string> media_decode_failed_;
+
+    // Keys whose media fetch returned empty (network error / 5xx / timeout).
+    // Unlike media_decode_failed_ (permanent), these back off and recover: a
+    // growing cooldown throttles re-requests so a dead-homeserver avatar stops
+    // hammering on every sync tick, but a recovered server reloads after the
+    // window. Keyed by the same mxc/url the ensure_* guards already use.
+    struct MediaFetchBackoff
+    {
+        std::uint32_t attempts = 0;
+        std::chrono::steady_clock::time_point retry_after{};
+    };
+    std::unordered_map<std::string, MediaFetchBackoff> media_fetch_failed_;
+
+    bool media_fetch_backed_off_(const std::string& key) const
+    {
+        auto it = media_fetch_failed_.find(key);
+        return it != media_fetch_failed_.end() &&
+               std::chrono::steady_clock::now() < it->second.retry_after;
+    }
+    void note_media_fetch_failed_(const std::string& key)
+    {
+        auto& e    = media_fetch_failed_[key];
+        e.attempts = std::min<std::uint32_t>(e.attempts + 1, 7);
+        const auto delay = std::min<std::chrono::seconds>(
+            std::chrono::seconds(30) * (1u << (e.attempts - 1)),
+            std::chrono::minutes(30));
+        e.retry_after = std::chrono::steady_clock::now() + delay;
+    }
+    void note_media_fetch_ok_(const std::string& key)
+    {
+        media_fetch_failed_.erase(key);
+    }
 
     // DM creation in-flight guard. Keyed by target user_id.
     std::unordered_set<std::string> dm_in_flight_user_ids_;
