@@ -746,15 +746,23 @@ void MainWindow::on_inflight_ui_()
 {
     if (!hStatus_)
         return;
-    const auto c = inflight_dot_color_();
-    const auto n = inflight_total_();
+    const auto   c  = inflight_dot_color_();
+    const auto   n  = inflight_total_();
+    const size_t fp = pool_pending_count_();
+    const size_t sp = mut_pool_pending_count_();
     SendMessageW(hStatus_, SB_SET_INFLIGHT_COLOR,
                  static_cast<WPARAM>(RGB(c.r, c.g, c.b)), 0);
     if (hStatusTip_)
     {
-        wchar_t buf[48];
-        std::swprintf(buf, 48, n == 1u ? L"1 request in flight"
-                                       : L"%u requests in flight", n);
+        wchar_t buf[128];
+        if (n == 1u)
+            std::swprintf(buf, 128,
+                          L"1 request in flight\nfetch: %zu queued \xB7 send: %zu queued",
+                          fp, sp);
+        else
+            std::swprintf(buf, 128,
+                          L"%u requests in flight\nfetch: %zu queued \xB7 send: %zu queued",
+                          n, fp, sp);
         inflight_tip_text_ = buf;
         TOOLINFOW ti{};
         ti.cbSize = TTTOOLINFOW_V1_SIZE;
@@ -2852,6 +2860,7 @@ void MainWindow::on_create(HWND hwnd)
     // Store the tooltip HWND as a property so status_bar_wnd_proc can relay.
     if (hStatus_ && hStatusTip_)
         SetPropW(hStatus_, L"StatusTip", hStatusTip_);
+    init_pool_callbacks_();
     on_inflight_ui_();
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd);

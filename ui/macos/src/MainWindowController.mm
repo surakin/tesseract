@@ -5950,6 +5950,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
                            constant:-8],
     ]];
 
+    if (_shell)
+        _shell->init_pool_callbacks_();
     [self _onInflightChanged];
 }
 
@@ -5986,17 +5988,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
 {
     if (!_inflightDotLabel || !_shell)
         return;
-    const auto c = _shell->inflight_dot_color_();
-    const uint32_t n = _shell->inflight_total_();
+    const auto   c  = _shell->inflight_dot_color_();
+    const uint32_t n  = _shell->inflight_total_();
+    const size_t fp = _shell->pool_pending_count_();
+    const size_t sp = _shell->mut_pool_pending_count_();
     _inflightDotLabel.textColor =
         [NSColor colorWithRed:c.r / 255.0
                         green:c.g / 255.0
                          blue:c.b / 255.0
                         alpha:1.0];
-    NSString* tip = (n == 1)
-                        ? @"1 request in flight"
-                        : [NSString stringWithFormat:@"%u requests in flight", n];
-    _inflightDotLabel.toolTip = tip;
+    NSString* first = (n == 1)
+                          ? @"1 request in flight"
+                          : [NSString stringWithFormat:@"%u requests in flight", n];
+    _inflightDotLabel.toolTip =
+        [NSString stringWithFormat:@"%@\nfetch: %zu queued · send: %zu queued",
+                                   first, fp, sp];
 }
 
 - (void)_onRoomListStateChanged

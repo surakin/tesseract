@@ -451,11 +451,22 @@ protected:
         // Safe to call multiple times (no-op after the first call).
         void drain();
 
+        // Number of tasks waiting in the queue (not yet executing).
+        // Lock-free read; acceptable to see a slightly stale count for display.
+        size_t pending_count() const
+        {
+            return pending_.load(std::memory_order_relaxed);
+        }
+
         std::deque<std::function<void()>> queue_;
         std::mutex                        mu_;
         std::condition_variable           cv_;
         bool                              stop_ = false;
         std::vector<std::thread>          threads_;
+        // Tracks tasks waiting in queue_. Mutated under mu_; readable lock-free.
+        std::atomic<size_t>               pending_{0};
+        // Posted outside mu_ whenever pending_ changes. Cleared in drain().
+        std::function<void()>             on_change_;
     };
     WorkerPool pool_{4};
     WorkerPool mut_pool_{1};
@@ -953,6 +964,14 @@ protected:
         if (total <= 10u) return tk::Color::rgb(0xF2B21A); // amber
         return tk::Color::rgb(0xE03838);                   // red
     }
+
+    // Queue depth helpers for the in-flight tooltip.
+    size_t pool_pending_count_()     const { return pool_.pending_count(); }
+    size_t mut_pool_pending_count_() const { return mut_pool_.pending_count(); }
+
+    // Wire both worker pools to re-fire on_inflight_ui_() on every queue-depth
+    // change. Call once from each shell's setup, after the UI is constructed.
+    void init_pool_callbacks_();
 
     /// Called on the UI thread after `server_info_` has been populated.
     /// Override in shells that gate UI elements on server capabilities.

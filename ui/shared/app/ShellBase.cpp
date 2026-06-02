@@ -58,6 +58,7 @@ ShellBase::WorkerPool::WorkerPool(int threads)
                 for (;;)
                 {
                     std::function<void()> task;
+                    std::function<void()> notify;
                     {
                         std::unique_lock<std::mutex> lk(mu_);
                         cv_.wait(lk, [this] { return stop_ || !queue_.empty(); });
@@ -65,7 +66,11 @@ ShellBase::WorkerPool::WorkerPool(int threads)
                             return;
                         task = std::move(queue_.front());
                         queue_.pop_front();
+                        pending_.fetch_sub(1, std::memory_order_relaxed);
+                        notify = on_change_;
                     }
+                    if (notify)
+                        notify();
                     task();
                 }
             });
@@ -77,9 +82,13 @@ void ShellBase::WorkerPool::drain()
     {
         std::lock_guard<std::mutex> lk(mu_);
         stop_ = true;
+        // Disable change notifications before clearing the queue so no
+        // spurious UI updates fire during or after shutdown.
+        on_change_ = nullptr;
         // Clear the pending queue so threads don't start new work after the
         // stop flag is set — matching the previous shutting_down_ guard.
         queue_.clear();
+        pending_.store(0, std::memory_order_relaxed);
     }
     cv_.notify_all();
     for (auto& t : threads_)
@@ -96,13 +105,18 @@ ShellBase::WorkerPool::~WorkerPool()
 
 void ShellBase::WorkerPool::post(std::function<void()> fn)
 {
+    std::function<void()> notify;
     {
         std::lock_guard<std::mutex> lk(mu_);
         if (stop_)
             return;
+        pending_.fetch_add(1, std::memory_order_relaxed);
         queue_.push_back(std::move(fn));
+        notify = on_change_;
     }
     cv_.notify_one();
+    if (notify)
+        notify();
 }
 
 void ShellBase::run_async_(std::function<void()> fn)
@@ -113,6 +127,19 @@ void ShellBase::run_async_(std::function<void()> fn)
 void ShellBase::run_async_mut_(std::function<void()> fn)
 {
     mut_pool_.post(std::move(fn));
+}
+
+void ShellBase::init_pool_callbacks_()
+{
+    auto notify = [this] { post_to_ui_([this] { on_inflight_ui_(); }); };
+    {
+        std::lock_guard<std::mutex> lk(pool_.mu_);
+        pool_.on_change_ = notify;
+    }
+    {
+        std::lock_guard<std::mutex> lk(mut_pool_.mu_);
+        mut_pool_.on_change_ = notify;
+    }
 }
 
 void ShellBase::ensure_room_avatar_(const RoomInfo& r)

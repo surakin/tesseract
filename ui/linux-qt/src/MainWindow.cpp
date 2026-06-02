@@ -1751,6 +1751,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     inflightDot_ = new QLabel("●", this);
     inflightDot_->setContentsMargins(0, 0, 6, 0);
     statusBar()->addPermanentWidget(inflightDot_);
+    init_pool_callbacks_();
     on_inflight_ui_();
 
     read_portal_color_scheme_();
@@ -4167,14 +4168,21 @@ void MainWindow::on_room_list_state_ui_()
 
 void MainWindow::on_inflight_ui_()
 {
-    const auto c = inflight_dot_color_();
-    const auto n = inflight_total_();
+    const auto c  = inflight_dot_color_();
+    const auto n  = inflight_total_();
+    const auto fp = pool_pending_count_();
+    const auto sp = mut_pool_pending_count_();
     inflightDot_->setStyleSheet(
         QStringLiteral("color: rgb(%1,%2,%3);")
             .arg(c.r).arg(c.g).arg(c.b));
-    inflightDot_->setToolTip(n == 1
-        ? tr("1 request in flight")
-        : tr("%1 requests in flight").arg(n));
+    const QString first = (n == 1) ? tr("1 request in flight")
+                                   : tr("%1 requests in flight").arg(n);
+    const QString tip =
+        first + tr("\nfetch: %1 queued · send: %2 queued").arg(fp).arg(sp);
+    inflightDot_->setToolTip(tip);
+    // Force-refresh the tooltip window if it is currently shown over this widget.
+    if (inflightDot_->underMouse())
+        QToolTip::showText(QCursor::pos(), tip, inflightDot_);
 }
 
 void MainWindow::on_server_info_ready_ui_()

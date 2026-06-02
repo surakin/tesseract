@@ -149,17 +149,22 @@ void MainWindow::on_inflight_ui_()
 {
     if (!inflight_dot_)
         return;
-    const auto c = inflight_dot_color_();
-    const auto n = inflight_total_();
+    const auto   c  = inflight_dot_color_();
+    const auto   n  = inflight_total_();
+    const size_t fp = pool_pending_count_();
+    const size_t sp = mut_pool_pending_count_();
     char buf[64];
     std::snprintf(buf, sizeof(buf),
                   "<span color=\"#%02x%02x%02x\">&#x25cf;</span>",
                   c.r, c.g, c.b);
     gtk_label_set_markup(GTK_LABEL(inflight_dot_), buf);
-    char tip[48];
-    std::snprintf(tip, sizeof(tip), "%u request%s in flight", n,
-                  n == 1u ? "" : "s");
+    char tip[96];
+    std::snprintf(tip, sizeof(tip),
+                  "%u request%s in flight\nfetch: %zu queued · send: %zu queued",
+                  n, n == 1u ? "" : "s", fp, sp);
     gtk_widget_set_tooltip_text(inflight_dot_, tip);
+    // Force-refresh the tooltip window if it is currently shown over this widget.
+    gtk_widget_trigger_tooltip_query(inflight_dot_);
 }
 
 void MainWindow::on_server_info_ready_ui_()
@@ -2122,6 +2127,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         g_object_unref(content_stack_);
         gtk_box_append(GTK_BOX(outer_vbox), status_row);
         gtk_window_set_child(GTK_WINDOW(window_), outer_vbox);
+        init_pool_callbacks_();
         on_inflight_ui_();
     }
 
