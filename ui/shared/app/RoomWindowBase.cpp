@@ -127,6 +127,12 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                                                std::string mode) {
         shell_->set_room_notification_mode_(room_id, mode);
     };
+    rv->on_favourite_changed = [this](std::string room_id, bool on) {
+        shell_->set_room_favourite_(room_id, on);
+    };
+    rv->on_low_priority_changed = [this](std::string room_id, bool on) {
+        shell_->set_room_low_priority_(room_id, on);
+    };
 
     // ── Compose callbacks ────────────────────────────────────────────────
     rv->on_send = [this](const std::string& body)

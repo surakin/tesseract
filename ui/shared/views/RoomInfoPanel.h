@@ -52,6 +52,11 @@ public:
     // Shell callbacks
     std::function<void(std::string room_id)>                on_fetch_notification_mode;
     std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
+    std::function<void(std::string room_id, bool)>          on_favourite_changed;
+    std::function<void(std::string room_id, bool)>          on_low_priority_changed;
+    // Tooltip for an over-long (>kTopicMaxLines) topic, mirroring RoomHeader.
+    std::function<void(std::string text, tk::Rect anchor)>  on_show_tooltip;
+    std::function<void()>                                   on_hide_tooltip;
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
@@ -95,6 +100,8 @@ private:
 
     // Child widgets (borrowed pointers from add_child)
     tk::ComboBox* notification_combo_ = nullptr;
+    tk::SwitchButton* favourite_btn_    = nullptr;
+    tk::SwitchButton* low_priority_btn_ = nullptr;
     tk::Button* close_btn_      = nullptr;
     tk::Button* edit_topic_btn_ = nullptr;
     tk::Button* save_btn_       = nullptr;
@@ -107,6 +114,8 @@ private:
     tk::Rect backdrop_rect_{};
     tk::Rect avatar_rect_{};
     tk::Rect topic_rect_{};
+    bool     topic_truncated_ = false; // topic exceeds kTopicMaxLines lines
+    bool     hover_topic_     = false; // pointer is over the topic region
     // Member row rects: up to 5 (or all when expanded), 44px each
     std::vector<tk::Rect> member_rects_;
 
@@ -122,6 +131,8 @@ private:
     std::vector<MemberLayout> member_layouts_;
 
     float notif_sep_y_ = 0.0f; // world-space y of the Notifications separator
+    float tags_sep_y_  = 0.0f; // world-space y of the separator above the switches
+    float tags_row_y_  = 0.0f; // world-space y of the favourite/low-priority row
 
     bool  press_backdrop_  = false;
     bool  press_avatar_    = false;
@@ -141,6 +152,13 @@ private:
     static constexpr float kButtonH     = 36.0f;
     static constexpr float kMemberRowH  = 44.0f;
     static constexpr float kSmallEditH  = 28.0f;
+    static constexpr int   kTopicMaxLines = 5;     // wrapped-topic display cap
+    static constexpr float kTopicEditH    = 80.0f; // editable-area height
+
+    // Measure the wrapped topic and set topic_truncated_. Returns the display
+    // height for the topic block (1..kTopicMaxLines lines). Builds and caches
+    // topic_layout_ as a side effect.
+    float measure_topic_height_(tk::CanvasFactory& factory, float max_w);
 };
 
 } // namespace tesseract::views

@@ -1397,6 +1397,11 @@ protected:
     void set_room_notification_mode_(const std::string& room_id,
                                       const std::string& mode);
 
+    // Fire-and-forget: toggle the room's m.favourite / m.lowpriority tag.
+    // The two are mutually exclusive server-side.
+    void set_room_favourite_(const std::string& room_id, bool value);
+    void set_room_low_priority_(const std::string& room_id, bool value);
+
     // Mark pagination as complete for room_id.
     void push_paginate_result_(std::string room_id, bool reached_start);
 

@@ -466,6 +466,25 @@ void RoomView::wire_internal_callbacks()
         if (on_notification_mode_changed)
             on_notification_mode_changed(std::move(room_id), std::move(mode));
     };
+    room_info_panel_->on_favourite_changed =
+        [this](std::string room_id, bool on)
+    {
+        if (on_favourite_changed) on_favourite_changed(std::move(room_id), on);
+    };
+    room_info_panel_->on_low_priority_changed =
+        [this](std::string room_id, bool on)
+    {
+        if (on_low_priority_changed) on_low_priority_changed(std::move(room_id), on);
+    };
+    room_info_panel_->on_show_tooltip =
+        [this](std::string text, tk::Rect anchor)
+    {
+        if (on_show_tooltip) on_show_tooltip(std::move(text), anchor);
+    };
+    room_info_panel_->on_hide_tooltip = [this]()
+    {
+        if (on_hide_tooltip) on_hide_tooltip();
+    };
     room_info_panel_->on_fetch_members = [this](std::string room_id)
     {
         if (on_fetch_room_members) on_fetch_room_members(std::move(room_id));

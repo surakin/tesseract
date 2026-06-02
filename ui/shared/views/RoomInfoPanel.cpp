@@ -33,6 +33,21 @@ RoomInfoPanel::RoomInfoPanel()
         std::make_unique<tk::Button>("Leave Room", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
+    // Favourite / Low-priority tag switches (mutually exclusive in the UI).
+    favourite_btn_ = add_child(std::make_unique<tk::SwitchButton>("Favourite"));
+    favourite_btn_->on_change = [this](bool on) {
+        if (on && low_priority_btn_) low_priority_btn_->set_checked(false);
+        if (on_favourite_changed) on_favourite_changed(room_id_, on);
+        if (on_layout_changed) on_layout_changed(); // repaint both switches
+    };
+
+    low_priority_btn_ = add_child(std::make_unique<tk::SwitchButton>("Low priority"));
+    low_priority_btn_->on_change = [this](bool on) {
+        if (on && favourite_btn_) favourite_btn_->set_checked(false);
+        if (on_low_priority_changed) on_low_priority_changed(room_id_, on);
+        if (on_layout_changed) on_layout_changed();
+    };
+
     // ComboBox is added last so it is dispatched first in reverse child order,
     // ensuring its expanded dropdown captures pointer events before leave_btn_.
     auto notif_combo = std::make_unique<tk::ComboBox>();
@@ -125,6 +140,8 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
         notification_combo_->collapse();
         notification_combo_->set_selected_value("default");
     }
+    if (favourite_btn_)    favourite_btn_->set_checked(info.is_favorite);
+    if (low_priority_btn_) low_priority_btn_->set_checked(info.is_low_priority);
     if (on_fetch_notification_mode) on_fetch_notification_mode(room_id_);
 
     if (on_fetch_members) on_fetch_members(room_id_);
@@ -141,6 +158,9 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
     avatar_url_         = info.effective_avatar_url();
     is_encrypted_       = info.is_encrypted;
     history_visibility_ = info.history_visibility;
+    // Authoritative re-sync after a server-side tag change.
+    if (favourite_btn_)    favourite_btn_->set_checked(info.is_favorite);
+    if (low_priority_btn_) low_priority_btn_->set_checked(info.is_low_priority);
     if (topic_ != info.topic || topic_html_ != info.topic_html)
     {
         topic_      = info.topic;
@@ -202,6 +222,41 @@ tk::Rect RoomInfoPanel::topic_edit_rect() const
 
 // ── layout ────────────────────────────────────────────────────────────────
 
+float RoomInfoPanel::measure_topic_height_(tk::CanvasFactory& factory, float max_w)
+{
+    topic_truncated_ = false;
+
+    tk::TextStyle st{};
+    st.role      = tk::FontRole::Body;
+    st.halign    = tk::TextHAlign::Leading;
+    st.wrap      = true;
+    st.max_width = max_w;
+
+    if (!topic_layout_)
+    {
+        if (!topic_html_.empty())
+            topic_layout_ = factory.build_rich_text(html_to_spans(topic_html_), st);
+        else if (!topic_.empty())
+            topic_layout_ = factory.build_text(topic_, st);
+    }
+
+    // Empty topic → a single "No topic set." placeholder line.
+    const tk::TextLayout* lo = topic_layout_.get();
+    std::unique_ptr<tk::TextLayout> placeholder;
+    if (!lo)
+    {
+        placeholder = factory.build_text("No topic set.", st);
+        lo = placeholder.get();
+    }
+    if (!lo) return 20.0f; // defensive fallback (~1 Body line)
+
+    const int   lines  = std::max(1, lo->line_count());
+    const float line_h = lo->measure().h / static_cast<float>(lines);
+    const int   shown  = std::min(lines, kTopicMaxLines);
+    topic_truncated_   = lines > kTopicMaxLines;
+    return line_h * static_cast<float>(shown);
+}
+
 tk::Size RoomInfoPanel::measure(tk::LayoutCtx&, tk::Size constraints)
 {
     return constraints; // fills the entire surface
@@ -249,8 +304,13 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     y += 1.0f + kPadY + 12.0f + 4.0f;
 
     // Topic text region — fixed 80px tall (NativeTextArea height when editing)
-    topic_rect_ = {px + kPadX, y, iw, 80.0f};
-    y += 80.0f + 4.0f;
+    // Topic height adapts to the wrapped line count (capped at kTopicMaxLines);
+    // when editing, a fixed editable area is used instead.
+    const float topic_h =
+        editing_topic_ ? kTopicEditH : measure_topic_height_(lc.factory, iw);
+    if (editing_topic_) topic_truncated_ = false;
+    topic_rect_ = {px + kPadX, y, iw, topic_h};
+    y += topic_h + 4.0f;
 
     topic_edit_rect_ = topic_rect_;
 
@@ -280,6 +340,16 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     }
     if (show_edit_btns)
         y += kSmallEditH + kPadY;
+
+    // Separator + Favourite / Low-priority switch rows — between topic & members.
+    tags_sep_y_ = y;
+    y += 1.0f + kPadY;
+    tags_row_y_ = y;
+    if (favourite_btn_)
+        favourite_btn_->arrange(lc, {px + kPadX, y, iw, kButtonH});
+    if (low_priority_btn_)
+        low_priority_btn_->arrange(lc, {px + kPadX, y + kButtonH, iw, kButtonH});
+    y += 2.0f * kButtonH + kPadY;
 
     // Separator + "Members (N)" section header
     y += 1.0f + kPadY + 12.0f + 4.0f;
@@ -473,7 +543,6 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             st.halign     = tk::TextHAlign::Leading;
             st.wrap       = true;
             st.max_width  = text_max_w;
-            st.max_height = 80.0f;
 
             if (!topic_html_.empty())
             {
@@ -485,9 +554,9 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
                 topic_layout_ = ctx.factory.build_text(topic_, st);
             }
         }
-        // Topic text can exceed the 80px slot reserved by arrange() —
-        // neither QPainter::drawText nor QTextDocument honour max_height,
-        // so clip to the slot to keep overflow off the Members section.
+        // topic_rect_ is sized to the wrapped topic up to kTopicMaxLines lines
+        // (see measure_topic_height_); clip to it so a longer topic is cut at
+        // the cap (the full text is then available via the hover tooltip).
         ctx.canvas.push_clip_rect(topic_rect_);
         if (topic_layout_)
         {
@@ -515,12 +584,22 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     if (save_btn_ && editing_topic_)   save_btn_->paint(ctx);
     if (cancel_btn_ && editing_topic_) cancel_btn_->paint(ctx);
 
-    // 12. Separator before Members section
+    // 11b. Separator + Favourite / Low-priority switch rows (between topic
+    //      and members).
+    cv.fill_rect({panel_rect_.x + kPadX, tags_sep_y_, kPanelW - kPadX * 2.0f, 1.0f},
+                 pal.separator);
+    if (favourite_btn_)    favourite_btn_->paint(ctx);
+    if (low_priority_btn_) low_priority_btn_->paint(ctx);
+
+    // 12. Separator before Members section. Mirror arrange(): topic region,
+    //     then (when editing) the edit buttons, then the switch separator +
+    //     the two switch rows.
     float cur_y = topic_rect_.y + topic_rect_.h + 4.0f;
     if (editing_topic_)
     {
         cur_y += kSmallEditH + kPadY;
     }
+    cur_y += 1.0f + kPadY + 2.0f * kButtonH + kPadY; // switch separator + rows
     cv.fill_rect({panel_rect_.x + kPadX, cur_y, kPanelW - kPadX * 2.0f, 1.0f},
                  pal.separator);
 
@@ -783,6 +862,21 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
 
+    // Topic tooltip: show the full topic when hovering an over-long (clipped)
+    // topic. Mirrors RoomHeader's topic tooltip.
+    const bool over_topic =
+        !editing_topic_ && topic_truncated_ && rect_contains(topic_rect_, w);
+    if (over_topic && !hover_topic_)
+    {
+        hover_topic_ = true;
+        if (on_show_tooltip) on_show_tooltip(topic_, topic_rect_);
+    }
+    else if (!over_topic && hover_topic_)
+    {
+        hover_topic_ = false;
+        if (on_hide_tooltip) on_hide_tooltip();
+    }
+
     int prev_hover = hover_member_;
     hover_member_  = -1;
 
@@ -804,6 +898,8 @@ void RoomInfoPanel::on_pointer_leave()
     press_avatar_   = false;
     hover_member_   = -1;
     press_member_   = -1;
+    if (hover_topic_ && on_hide_tooltip) on_hide_tooltip();
+    hover_topic_    = false;
 }
 
 bool RoomInfoPanel::on_wheel(tk::Point local, float /*dx*/, float dy)

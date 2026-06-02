@@ -348,6 +348,24 @@ void ShellBase::set_room_notification_mode_(const std::string& room_id,
     });
 }
 
+void ShellBase::set_room_favourite_(const std::string& room_id, bool value)
+{
+    if (!client_) return;
+    auto* c = client_;
+    run_async_mut_([c, room_id, value]() {
+        c->set_room_favourite(room_id, value);
+    });
+}
+
+void ShellBase::set_room_low_priority_(const std::string& room_id, bool value)
+{
+    if (!client_) return;
+    auto* c = client_;
+    run_async_mut_([c, room_id, value]() {
+        c->set_room_low_priority(room_id, value);
+    });
+}
+
 void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 {
     auto avatar_lookup = [this](const std::string& mxc) -> const tk::Image*
@@ -479,6 +497,16 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         [this](std::string room_id, std::string mode)
     {
         set_room_notification_mode_(room_id, mode);
+    };
+    app->room_view()->on_favourite_changed =
+        [this](std::string room_id, bool on)
+    {
+        set_room_favourite_(room_id, on);
+    };
+    app->room_view()->on_low_priority_changed =
+        [this](std::string room_id, bool on)
+    {
+        set_room_low_priority_(room_id, on);
     };
 
     // ── Invite selection and action wiring ────────────────────────────────
