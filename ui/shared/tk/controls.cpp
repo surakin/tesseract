@@ -270,6 +270,192 @@ void Button::on_pointer_up(Point /*local*/, bool inside_self)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+//  ToggleButton
+// ─────────────────────────────────────────────────────────────────────────
+
+Size ToggleButton::measure(LayoutCtx& ctx, Size /*constraints*/)
+{
+    if (!cached_)
+    {
+        TextStyle st = button_text_style();
+        st.max_width = -1.0f; // single-line label; see Button::measure
+        cached_      = ctx.factory.build_text(label_, st);
+        if (cached_) cached_size_ = cached_->measure();
+    }
+    float w = cached_size_.w + kBtnHPad * 2;
+    float h = std::max(cached_size_.h + kBtnVPad * 2, kBtnMinHeight);
+    return {w, h};
+}
+
+void ToggleButton::paint(PaintCtx& ctx)
+{
+    const auto& pal = ctx.theme.palette;
+    Color text_col;
+
+    if (checked_)
+    {
+        Color fill = pressed_ ? pal.accent_pressed
+                              : (hovered_ ? pal.accent_hover : pal.accent);
+        ctx.canvas.fill_rounded_rect(bounds_, kBtnRadius, fill);
+        text_col = pal.text_on_accent;
+    }
+    else
+    {
+        if (pressed_ || hovered_)
+        {
+            Color bg = pressed_ ? pal.subtle_pressed : pal.subtle_hover;
+            ctx.canvas.fill_rounded_rect(bounds_, kBtnRadius, bg);
+        }
+        ctx.canvas.stroke_rounded_rect(bounds_, kBtnRadius, pal.border, 1.0f);
+        text_col = enabled_ ? pal.text_primary : pal.text_muted;
+    }
+
+    if (!cached_)
+    {
+        TextStyle st = button_text_style();
+        st.max_width = -1.0f;
+        cached_      = ctx.factory.build_text(label_, st);
+        if (cached_) cached_size_ = cached_->measure();
+    }
+    if (!cached_) return;
+    float tx = bounds_.x + (bounds_.w - cached_size_.w) * 0.5f;
+    float ty = bounds_.y + (bounds_.h - cached_size_.h) * 0.5f;
+    ctx.canvas.draw_text(*cached_, {tx, ty}, text_col);
+}
+
+bool ToggleButton::on_pointer_down(Point /*local*/)
+{
+    if (!enabled_) return false;
+    pressed_ = true;
+    return true;
+}
+
+void ToggleButton::on_pointer_up(Point /*local*/, bool inside_self)
+{
+    bool was_pressed = pressed_;
+    pressed_ = false;
+    if (was_pressed && inside_self && enabled_)
+    {
+        checked_ = !checked_;
+        if (on_change)
+        {
+            auto cb = on_change; // copy: handler may rebuild parent
+            cb(checked_);
+        }
+    }
+}
+
+bool ToggleButton::on_pointer_move(Point /*local*/)
+{
+    if (!hovered_) { hovered_ = true; return true; }
+    return false;
+}
+
+void ToggleButton::on_pointer_leave()
+{
+    hovered_ = false;
+    pressed_ = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  SwitchButton
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+constexpr float kSwTrackW = 36.0f;
+constexpr float kSwTrackH = 20.0f;
+constexpr float kSwKnobD  = 16.0f;
+constexpr float kSwKnobPad = 2.0f;
+} // namespace
+
+Size SwitchButton::measure(LayoutCtx& ctx, Size constraints)
+{
+    if (!cached_)
+    {
+        TextStyle st = button_text_style();
+        st.max_width = -1.0f;
+        cached_      = ctx.factory.build_text(label_, st);
+        if (cached_) cached_size_ = cached_->measure();
+    }
+    float w = (constraints.w > 0) ? constraints.w
+                                  : cached_size_.w + kBtnHPad + kSwTrackW;
+    float h = std::max(cached_size_.h + kBtnVPad * 2, kBtnMinHeight);
+    return {w, h};
+}
+
+void SwitchButton::paint(PaintCtx& ctx)
+{
+    const auto& pal = ctx.theme.palette;
+
+    if (hovered_)
+        ctx.canvas.fill_rounded_rect(bounds_, kBtnRadius, pal.subtle_hover);
+
+    // Label — left-aligned, vertically centred.
+    if (!cached_)
+    {
+        TextStyle st = button_text_style();
+        st.max_width = -1.0f;
+        cached_      = ctx.factory.build_text(label_, st);
+        if (cached_) cached_size_ = cached_->measure();
+    }
+    if (cached_)
+    {
+        float ly = bounds_.y + (bounds_.h - cached_size_.h) * 0.5f;
+        ctx.canvas.draw_text(*cached_, {bounds_.x, ly},
+                             enabled_ ? pal.text_primary : pal.text_muted);
+    }
+
+    // Switch track + knob — right-aligned.
+    float track_x = bounds_.x + bounds_.w - kSwTrackW;
+    float track_y = bounds_.y + (bounds_.h - kSwTrackH) * 0.5f;
+    Rect  track{track_x, track_y, kSwTrackW, kSwTrackH};
+    ctx.canvas.fill_rounded_rect(track, kSwTrackH * 0.5f,
+                                 checked_ ? pal.accent : pal.subtle_pressed);
+
+    float knob_x = checked_ ? (track_x + kSwTrackW - kSwKnobPad - kSwKnobD)
+                            : (track_x + kSwKnobPad);
+    float knob_y = track_y + (kSwTrackH - kSwKnobD) * 0.5f;
+    Rect  knob{knob_x, knob_y, kSwKnobD, kSwKnobD};
+    ctx.canvas.fill_rounded_rect(knob, kSwKnobD * 0.5f, pal.text_on_accent);
+    ctx.canvas.stroke_rounded_rect(knob, kSwKnobD * 0.5f, pal.border, 1.0f);
+}
+
+bool SwitchButton::on_pointer_down(Point /*local*/)
+{
+    if (!enabled_) return false;
+    pressed_ = true;
+    return true;
+}
+
+void SwitchButton::on_pointer_up(Point /*local*/, bool inside_self)
+{
+    bool was_pressed = pressed_;
+    pressed_ = false;
+    if (was_pressed && inside_self && enabled_)
+    {
+        checked_ = !checked_;
+        if (on_change)
+        {
+            auto cb = on_change; // copy: handler may rebuild parent
+            cb(checked_);
+        }
+    }
+}
+
+bool SwitchButton::on_pointer_move(Point /*local*/)
+{
+    if (!hovered_) { hovered_ = true; return true; }
+    return false;
+}
+
+void SwitchButton::on_pointer_leave()
+{
+    hovered_ = false;
+    pressed_ = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 //  CheckButton
 // ─────────────────────────────────────────────────────────────────────────
 

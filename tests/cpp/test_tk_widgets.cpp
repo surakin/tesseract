@@ -179,6 +179,102 @@ TEST_CASE("Button paints a coloured rect at its bounds", "[tk][widget][button]")
     CHECK(nearly(px, accent, /*tol=*/20));
 }
 
+TEST_CASE("ToggleButton toggles checked state and fires on_change",
+          "[tk][widget][toggle]")
+{
+    int  calls = 0;
+    bool last  = false;
+    ToggleButton tb("\xE2\x98\x86 Favourite"); // ☆ Favourite
+    tb.on_change = [&](bool c) { ++calls; last = c; };
+
+    CHECK(tb.checked() == false);
+
+    // Press + release inside toggles on and fires the callback.
+    tb.on_pointer_down({1, 1});
+    tb.on_pointer_up({1, 1}, /*inside_self=*/true);
+    CHECK(tb.checked() == true);
+    CHECK(calls == 1);
+    CHECK(last == true);
+
+    // Release outside does not toggle and does not fire.
+    tb.on_pointer_down({1, 1});
+    tb.on_pointer_up({999, 999}, /*inside_self=*/false);
+    CHECK(tb.checked() == true);
+    CHECK(calls == 1);
+
+    // Disabled swallows the interaction.
+    tb.set_enabled(false);
+    tb.on_pointer_down({1, 1});
+    tb.on_pointer_up({1, 1}, /*inside_self=*/true);
+    CHECK(tb.checked() == true);
+    CHECK(calls == 1);
+
+    // set_checked() is silent (programmatic, no callback).
+    tb.set_enabled(true);
+    tb.set_checked(false);
+    CHECK(tb.checked() == false);
+    CHECK(calls == 1);
+}
+
+TEST_CASE("ToggleButton paints accent fill when checked",
+          "[tk][widget][toggle]")
+{
+    Stage st;
+    auto tb = std::make_unique<ToggleButton>("Favourite", /*checked=*/true);
+    st.run(*tb, {10, 10, 140, 36});
+    auto accent = Theme::light().palette.accent;
+    auto px = st.surface->read_pixel(135, 28); // right edge, clear of glyph
+    CHECK(nearly(px, accent, /*tol=*/20));
+}
+
+TEST_CASE("SwitchButton toggles checked state and fires on_change",
+          "[tk][widget][switch]")
+{
+    int  calls = 0;
+    bool last  = false;
+    SwitchButton sw("Favourite");
+    sw.on_change = [&](bool c) { ++calls; last = c; };
+
+    CHECK(sw.checked() == false);
+
+    sw.on_pointer_down({1, 1});
+    sw.on_pointer_up({1, 1}, /*inside_self=*/true);
+    CHECK(sw.checked() == true);
+    CHECK(calls == 1);
+    CHECK(last == true);
+
+    // Release outside does not toggle.
+    sw.on_pointer_down({1, 1});
+    sw.on_pointer_up({999, 999}, /*inside_self=*/false);
+    CHECK(sw.checked() == true);
+    CHECK(calls == 1);
+
+    // Disabled swallows the interaction.
+    sw.set_enabled(false);
+    sw.on_pointer_down({1, 1});
+    sw.on_pointer_up({1, 1}, /*inside_self=*/true);
+    CHECK(sw.checked() == true);
+    CHECK(calls == 1);
+
+    // set_checked() is silent.
+    sw.set_enabled(true);
+    sw.set_checked(false);
+    CHECK(sw.checked() == false);
+    CHECK(calls == 1);
+}
+
+TEST_CASE("SwitchButton paints an accent track when on", "[tk][widget][switch]")
+{
+    Stage st;
+    auto sw = std::make_unique<SwitchButton>("Favourite", /*checked=*/true);
+    st.run(*sw, {10, 10, 200, 32});
+    auto accent = Theme::light().palette.accent;
+    // Track sits at the right edge (width 36 → x 174..210); sample its left
+    // half, where the knob (parked right when on) does not cover it.
+    auto px = st.surface->read_pixel(180, 26);
+    CHECK(nearly(px, accent, /*tol=*/20));
+}
+
 TEST_CASE("Separator paints a 1 px line by default", "[tk][widget][separator]")
 {
     Stage st;
