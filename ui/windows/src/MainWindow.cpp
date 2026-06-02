@@ -4383,10 +4383,7 @@ void MainWindow::refresh_room_list()
 
         if (!pending_search_text_.empty())
         {
-            for (const auto& r : rooms_)
-            {
-                ensure_room_avatar_(r);
-            }
+            // Avatars load lazily as rows are painted (on_room_avatar_needed).
             room_list_view_->set_rooms(rooms_);
             if (!current_room_id_.empty())
             {
@@ -4464,11 +4461,8 @@ void MainWindow::refresh_room_list()
             }
         }
     }
-    for (const auto& r : filtered)
-    {
-        ensure_room_avatar_(r);
-    }
-
+    // Avatars load lazily as rows are painted (RoomListView's
+    // on_room_avatar_needed), so collapsed / off-screen rooms aren't requested.
     room_list_view_->set_rooms(filtered);
     if (!current_room_id_.empty())
     {

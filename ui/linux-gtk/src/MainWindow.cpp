@@ -3677,13 +3677,8 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms)
         }
     }
 
-    // Eagerly fetch avatars for the new room set so the first paint has
-    // them ready. Bytes-already-cached is a no-op via tk_avatars_.count.
-    for (const auto& r : sorted)
-    {
-        ensure_room_avatar_(r);
-    }
-
+    // Avatars are fetched lazily as rows are painted (RoomListView's
+    // on_room_avatar_needed), so collapsed / off-screen rooms aren't requested.
     room_list_view_->set_rooms(std::move(sorted));
     if (!current_room_id_.empty())
     {

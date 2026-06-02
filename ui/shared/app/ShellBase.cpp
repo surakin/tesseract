@@ -355,6 +355,11 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 
     app->set_avatar_provider(avatar_lookup);
     app->room_list_view()->set_avatar_provider(avatar_lookup);
+    // Lazy avatar fetching: the provider above is a pure cache peek, so the
+    // room list requests an avatar only when a row is first painted (visible).
+    // Avatars for rooms in collapsed / off-screen sections are never fetched.
+    app->room_list_view()->on_room_avatar_needed =
+        [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
     app->room_list_view()->set_sticker_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {

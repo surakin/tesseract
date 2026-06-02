@@ -380,6 +380,11 @@ private:
         if (owner_.avatar_provider_ && !av_mxc.empty())
         {
             avatar = owner_.avatar_provider_(av_mxc);
+            // Lazy fetch: this row is being painted, so it's visible — request
+            // the avatar on a cache miss. Collapsed / off-screen rooms never
+            // reach paint, so they never trigger a fetch.
+            if (!avatar && owner_.on_room_avatar_needed)
+                owner_.on_room_avatar_needed(room);
         }
 
         if (avatar)

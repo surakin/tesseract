@@ -101,6 +101,11 @@ public:
     // Fires when the user clicks a room row (selection moves to that row).
     std::function<void(const std::string& /*room_id*/)> on_room_selected;
 
+    // Fires from paint for a room row whose avatar isn't cached yet, so the
+    // host can lazily fetch it. Only visible (painted) rows trigger this, so
+    // avatars in collapsed or off-screen sections are never requested.
+    std::function<void(const tesseract::RoomInfo& /*room*/)> on_room_avatar_needed;
+
     // Fires when the user clicks the × clear button in the search header.
     // The host should clear the NativeTextField text and reset the search.
     std::function<void()> on_search_clear;

@@ -6096,11 +6096,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
             _mainApp->set_space_nav(true, space_name, space_avatar);
         }
     }
-    for (const auto& r : filtered)
-    {
-        _shell->ensure_room_avatar_(r);
-    }
-
+    // Avatars load lazily as rows are painted (RoomListView's
+    // on_room_avatar_needed), so collapsed / off-screen rooms aren't requested.
     _roomListView->set_rooms(filtered);
     if (!_shell->current_room_id_.empty())
     {
