@@ -123,9 +123,8 @@ impl ClientFfi {
 #[cfg(not(test))]
 impl ClientFfi {
     pub fn get_room_notification_mode(&self, room_id: &str) -> String {
-        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
-        use matrix_sdk::ruma::push::{Action, PushCondition, Ruleset};
-        use serde_json::Value;
+        use matrix_sdk::notification_settings::RoomNotificationMode;
+        use matrix_sdk::ruma::RoomId;
 
         let Some(client) = self.client.clone() else {
             return "default".to_owned();
@@ -133,71 +132,24 @@ impl ClientFfi {
         let room_id = room_id.to_owned();
 
         self.rt.block_on(async move {
-            let et = GlobalAccountDataEventType::from("m.push_rules");
-            let Some(raw) = client
-                .account()
-                .account_data_raw(et)
-                .await
-                .ok()
-                .flatten()
-            else {
+            let Ok(rid) = RoomId::parse(&room_id) else {
                 return "default".to_owned();
             };
-            let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
-                return "default".to_owned();
-            };
-            let global = content.get("global").cloned().unwrap_or_default();
-            let Ok(ruleset) = serde_json::from_value::<Ruleset>(global) else {
-                return "default".to_owned();
-            };
-
-            // Check override rules for a room_id EventMatch condition with empty
-            // actions — that is the "Off" (suppress all, including mentions) mode.
-            for rule in &ruleset.override_ {
-                if !rule.enabled {
-                    continue;
-                }
-                let has_room_match = rule.conditions.iter().any(|c| {
-                    if let PushCondition::EventMatch(data) = c {
-                        data.key == "room_id" && data.pattern == room_id
-                    } else {
-                        false
-                    }
-                });
-                if has_room_match && rule.actions.is_empty() {
-                    return "off".to_owned();
-                }
+            let settings = client.notification_settings().await;
+            // `None` means no user-defined rule for this room → it follows the
+            // account/server default, which we surface as "default".
+            match settings.get_user_defined_room_notification_mode(&rid).await {
+                Some(RoomNotificationMode::AllMessages) => "all".to_owned(),
+                Some(RoomNotificationMode::MentionsAndKeywordsOnly) => "mentions".to_owned(),
+                Some(RoomNotificationMode::Mute) => "off".to_owned(),
+                None => "default".to_owned(),
             }
-
-            // Check room rules for this room_id.
-            for rule in &ruleset.room {
-                if rule.rule_id.as_str() != room_id {
-                    continue;
-                }
-                if !rule.enabled {
-                    continue;
-                }
-                if rule.actions.iter().any(|a| matches!(a, Action::Notify)) {
-                    return "all".to_owned();
-                }
-                return "mentions".to_owned();
-            }
-
-            "default".to_owned()
         })
     }
 
     pub fn set_room_notification_mode(&mut self, room_id: &str, mode: &str) {
-        use matrix_sdk::ruma::api::client::push::{
-            delete_pushrule::v3::Request as DeletePushRule,
-            set_pushrule::v3::Request as SetPushRule,
-            RuleKind,
-        };
-        use matrix_sdk::ruma::push::{
-            Action, EventMatchConditionData, NewConditionalPushRule, NewPushRule,
-            NewSimplePushRule, PushCondition,
-        };
-        use matrix_sdk::ruma::OwnedRoomId;
+        use matrix_sdk::notification_settings::RoomNotificationMode;
+        use matrix_sdk::ruma::RoomId;
 
         let Some(client) = self.client.clone() else {
             return;
@@ -206,49 +158,21 @@ impl ClientFfi {
         let room_id = room_id.to_owned();
 
         self.rt.block_on(async move {
-            match mode.as_str() {
-                "default" => {
-                    let _ = client
-                        .send(DeletePushRule::new(RuleKind::Override, room_id.clone()))
-                        .await;
-                    let _ = client
-                        .send(DeletePushRule::new(RuleKind::Room, room_id))
-                        .await;
+            let Ok(rid) = RoomId::parse(&room_id) else { return; };
+            let settings = client.notification_settings().await;
+
+            let target = match mode.as_str() {
+                "all" => RoomNotificationMode::AllMessages,
+                "mentions" => RoomNotificationMode::MentionsAndKeywordsOnly,
+                "off" => RoomNotificationMode::Mute,
+                // "default" (and any unrecognised value) clears the user-defined
+                // rules so the room falls back to the account/server default.
+                _ => {
+                    let _ = settings.delete_user_defined_room_rules(&rid).await;
+                    return;
                 }
-                "all" => {
-                    let _ = client
-                        .send(DeletePushRule::new(RuleKind::Override, room_id.clone()))
-                        .await;
-                    let Ok(rid) = room_id.parse::<OwnedRoomId>() else { return; };
-                    let rule =
-                        NewPushRule::Room(NewSimplePushRule::new(rid, vec![Action::Notify]));
-                    let _ = client.send(SetPushRule::new(rule)).await;
-                }
-                "mentions" => {
-                    let _ = client
-                        .send(DeletePushRule::new(RuleKind::Override, room_id.clone()))
-                        .await;
-                    let Ok(rid) = room_id.parse::<OwnedRoomId>() else { return; };
-                    let rule = NewPushRule::Room(NewSimplePushRule::new(rid, vec![]));
-                    let _ = client.send(SetPushRule::new(rule)).await;
-                }
-                "off" => {
-                    let _ = client
-                        .send(DeletePushRule::new(RuleKind::Room, room_id.clone()))
-                        .await;
-                    let cond = PushCondition::EventMatch(EventMatchConditionData::new(
-                        "room_id".to_owned(),
-                        room_id.clone(),
-                    ));
-                    let rule = NewPushRule::Override(NewConditionalPushRule::new(
-                        room_id,
-                        vec![cond],
-                        vec![],
-                    ));
-                    let _ = client.send(SetPushRule::new(rule)).await;
-                }
-                _ => {}
-            }
+            };
+            let _ = settings.set_room_notification_mode(&rid, target).await;
         });
     }
 }
