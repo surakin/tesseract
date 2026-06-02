@@ -17,6 +17,10 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Tesseract — cross-platform Matrix clien
 set(CPACK_PACKAGE_INSTALL_DIRECTORY   "Tesseract")
 set(CPACK_PACKAGE_CONTACT             "https://github.com/<TBD>")
 
+# GPLv3 license text. Setting this makes the NSIS installer show a license
+# agreement page (and the macOS .dmg a license panel) before installing.
+set(CPACK_RESOURCE_FILE_LICENSE       "${CMAKE_SOURCE_DIR}/LICENSE")
+
 if(WIN32)
     set(CPACK_GENERATOR "NSIS")
     set(CPACK_PACKAGE_FILE_NAME           "Tesseract-${PROJECT_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
@@ -81,7 +85,7 @@ libopus0 (>= 1.1)")
     # RPM (Fedora / RHEL / openSUSE)
     set(CPACK_RPM_PACKAGE_NAME           "tesseract")
     set(CPACK_RPM_PACKAGE_GROUP          "Applications/Internet")
-    set(CPACK_RPM_PACKAGE_LICENSE        "Proprietary")
+    set(CPACK_RPM_PACKAGE_LICENSE        "GPLv3")
     set(CPACK_RPM_PACKAGE_REQUIRES
         "qt6-qtbase >= 6.2, qt6-qtmultimedia >= 6.2, opus >= 1.1")
     set(CPACK_RPM_PACKAGE_AUTOREQ        OFF)   # we list requires explicitly above
