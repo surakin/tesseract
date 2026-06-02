@@ -7,6 +7,30 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-06-02
 
+- feat(ui): the room info panel's topic now sizes to its wrapped line count
+  (up to 5 lines) instead of a fixed 80px slot; a longer topic is clipped at
+  the cap and reveals the full text via a hover tooltip, mirroring the room
+  header. `measure_topic_height_` builds/measures the wrapped layout in
+  `arrange()`; the panel bubbles `on_show_tooltip` / `on_hide_tooltip` through
+  `RoomView` like the header and compose bar.
+- feat(ui): room tags — Favourite / Low-priority switches in the room info
+  panel, as two stacked rows between the topic and the member list. Two new
+  shared widgets land: `tk::SwitchButton` (settings-style label + sliding
+  on/off switch, used here) and `tk::ToggleButton` (accent-filled pill toggle,
+  available for reuse). The two tags are mutually exclusive in the UI and
+  server-side, backed by matrix-sdk's `Room::set_is_favourite` /
+  `set_is_low_priority` (new FFI `set_room_favourite` / `set_room_low_priority`);
+  tag state rides on `RoomInfo` (`is_favorite` + new `is_low_priority`) so the
+  switches re-sync to authoritative server state on every room update. Wired
+  through `RoomView` → `ShellBase` and the popout room windows. +4 widget tests.
+  The sync watcher's room-list change-detection fingerprint
+  (`room_list_fingerprint`) now includes the favourite / low-priority flags, so
+  toggling a tag re-sections the room in the list immediately rather than only
+  after a restart (account-data updates carry no recency/unread change, which
+  the old fingerprint keyed on exclusively). +3 fingerprint tests.
+- refactor(sdk): use the high-level `NotificationSettings` API for per-room
+  notification mode instead of hand-rolled push-rule requests; keeps the SDK
+  ruleset cache consistent and matches Element's mode resolution.
 - fix(ui): order the thread list newest-at-bottom to match the message timeline.
   `ThreadListView` now sorts ascending (newest last), opens scrolled to the
   bottom, and paginates older threads on scroll-up with anchored scroll

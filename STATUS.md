@@ -47,6 +47,23 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-02
 
 <!-- -->
 
+> **Room tags (favourite / low priority).**
+> The room info panel shows two `tk::SwitchButton`s — Favourite and Low
+> priority — as stacked rows between the topic and the member list.
+> `SwitchButton` is a new shared widget (settings-style label + sliding on/off
+> switch; accent track when on); a sibling `tk::ToggleButton` (accent-filled
+> pill toggle) also lands for general reuse. The two tags are mutually
+> exclusive both in the UI (toggling one clears the other) and server-side,
+> backed by matrix-sdk's `Room::set_is_favourite` / `set_is_low_priority`
+> via new fire-and-forget FFI `set_room_favourite` / `set_room_low_priority`.
+> Tag state is carried on `RoomInfo` (existing `is_favorite` plus a new
+> `is_low_priority`, read from a single `tags()` fetch), so the switches
+> re-sync to authoritative server state through `refresh_info` on every room
+> update. Wired through `RoomView` → `ShellBase` and the popout room windows.
+> 4 new widget tests.
+
+<!-- -->
+
 > **Hover action pill.**
 > The per-message hover affordances are consolidated into a single rounded
 > pill of square cells (reply / thread / react / edit / redact / pin)
@@ -240,8 +257,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 168 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 626 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 171 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 634 |
 
 ## Platforms
 
