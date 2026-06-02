@@ -1,23 +1,23 @@
-# Hardening.cmake — security hardening flags applied to every C / C++ / ObjC++
-# target in the build. Mirrors the hardening set Arch Linux bakes into its
-# default makepkg.conf flags, so a plain `cmake --build` produces a binary
-# hardened the same way the packaged build is — without relying on the distro
-# to inject CXXFLAGS.
+# Hardening.cmake — security hardening flags for the Linux toolchain. Mirrors
+# the hardening set Arch Linux bakes into its default makepkg.conf flags, so a
+# plain `cmake --build` produces a binary hardened the same way the packaged
+# build is — without relying on the distro to inject CXXFLAGS.
 #
-# Every flag is probed (compiler or linker) before use, so flags that a given
-# arch or platform does not support are silently skipped rather than breaking
-# the build:
-#   * -fcf-protection is x86-only; -mbranch-protection is AArch64-only.
-#   * -Wl,-z,relro / -Wl,-z,now are GNU-ld (ELF) only; macOS ld64 rejects them.
+# Linux only. Windows (MSVC and MinGW) and macOS have their own hardening
+# models (MSVC: /GS, /guard:cf; macOS/ld64 differs on RELRO and CET) and are
+# left to their native defaults — add a per-platform module if they need more.
+# The gate is on the target system, not the compiler, so MinGW cross-builds
+# (CMAKE_SYSTEM_NAME=Windows) are excluded too.
 #
-# These apply only to CMake-compiled targets. The Rust crates build under Cargo
-# and are unaffected. MSVC has its own hardening model (/GS on by default,
-# /guard:cf) and is intentionally left untouched.
+# Every flag is still probed (compiler or linker) before use, so flags that a
+# given Linux arch does not support are silently skipped: -fcf-protection is
+# x86-only, -mbranch-protection is AArch64-only. These apply only to
+# CMake-compiled targets; the Rust crates build under Cargo and are unaffected.
 
 option(TESSERACT_ENABLE_HARDENING
-       "Enable security hardening compile/link flags (GCC/Clang)" ON)
+       "Enable Linux security hardening compile/link flags (GCC/Clang)" ON)
 
-if(NOT TESSERACT_ENABLE_HARDENING OR MSVC)
+if(NOT TESSERACT_ENABLE_HARDENING OR NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     return()
 endif()
 
