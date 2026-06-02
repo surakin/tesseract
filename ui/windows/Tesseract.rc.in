@@ -8,4 +8,8 @@ IDI_TESSERACT ICON "@TESSERACT_ICO_PATH@"
 
 IDR_EMOJI_FONT RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/fonts/NotoColorEmoji.ttf"
 
+// App-icon PNG, materialised to disk at startup so the toast notification
+// AppUserModelId IconUri can point at a real image file.
+IDR_TOAST_ICON RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/../icons/tesseract_160.png"
+
 1 RT_MANIFEST "@CMAKE_CURRENT_SOURCE_DIR@/Tesseract.manifest"

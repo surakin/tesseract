@@ -1,13 +1,62 @@
 #include "MainWindow.h"
+#include "resource.h"
 #include <ole2.h>
 #include <ShObjIdl_core.h>
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include <winrt/base.h>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include "tk/i18n.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
+
+namespace
+{
+
+// Materialise the embedded app-icon PNG (IDR_TOAST_ICON) to a stable file and
+// return its path. The toast AppUserModelId IconUri must point at an image
+// file — an .exe path does not render — and the install ships only the exe, so
+// the icon is extracted on disk at startup. Returns empty on failure (the
+// caller then falls back to the exe path).
+std::wstring write_toast_icon_png(HINSTANCE hInstance)
+{
+    HRSRC res =
+        FindResourceW(hInstance, MAKEINTRESOURCEW(IDR_TOAST_ICON), RT_RCDATA);
+    if (!res)
+    {
+        return {};
+    }
+    HGLOBAL handle = LoadResource(hInstance, res);
+    DWORD size = SizeofResource(hInstance, res);
+    const void* data = handle ? LockResource(handle) : nullptr;
+    if (!data || size == 0)
+    {
+        return {};
+    }
+    std::error_code ec;
+    std::filesystem::path dir = tesseract::data_dir();
+    std::filesystem::create_directories(dir, ec);
+    if (ec)
+    {
+        return {};
+    }
+    std::filesystem::path file = dir / L"toast-icon.png";
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    if (!out)
+    {
+        return {};
+    }
+    out.write(static_cast<const char*>(data),
+              static_cast<std::streamsize>(size));
+    if (!out)
+    {
+        return {};
+    }
+    return file.wstring();
+}
+
+} // namespace
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     LPWSTR /*lpCmdLine*/, int nCmdShow)
@@ -63,14 +112,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
             RegSetValueExW(key, L"DisplayName", 0, REG_SZ,
                            reinterpret_cast<const BYTE*>(display),
                            sizeof(display));
-            // IconUri: point at the exe so the Action Centre shows our icon.
-            wchar_t exe_path[MAX_PATH]{};
-            if (GetModuleFileNameW(nullptr, exe_path, MAX_PATH))
+            // IconUri must be an image file — a bare .exe path does not render
+            // in the toast / Action Centre. Materialise the embedded app icon
+            // and point at the PNG; fall back to the exe path if that fails.
+            std::wstring icon_uri = write_toast_icon_png(hInstance);
+            if (icon_uri.empty())
+            {
+                wchar_t exe_path[MAX_PATH]{};
+                if (GetModuleFileNameW(nullptr, exe_path, MAX_PATH))
+                {
+                    icon_uri = exe_path;
+                }
+            }
+            if (!icon_uri.empty())
             {
                 RegSetValueExW(key, L"IconUri", 0, REG_SZ,
-                               reinterpret_cast<const BYTE*>(exe_path),
-                               (static_cast<DWORD>(wcslen(exe_path)) + 1) *
-                                   sizeof(wchar_t));
+                               reinterpret_cast<const BYTE*>(icon_uri.c_str()),
+                               static_cast<DWORD>((icon_uri.size() + 1) *
+                                                  sizeof(wchar_t)));
             }
             RegCloseKey(key);
         }
