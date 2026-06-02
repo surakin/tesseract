@@ -10,7 +10,7 @@ version) are noted where relevant.
 - Multi-account support (multiple accounts active simultaneously)
 - OS-native secure credential storage on every platform
 - Single-instance behavior (launching again restores the running window)
-- System tray with minimize-to-tray (default), unread dot, and mention-state color
+- System tray with minimize-to-tray (default), unread dot, and mention-state color; clicking the tray icon jumps to the first unread room
 - Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
 - In-flight request indicator in the status bar (green / amber / red dot with tooltip showing the count)

@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-01**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-02**.
 
 > **Encryption-setup overlay.**
 > `EncryptionSetupOverlay`, a shared widget wired on all four shells, guides
@@ -21,7 +21,12 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-01
 > more than 10. A tooltip on the dot shows the exact count. Wired on Qt6,
 > GTK4, Win32, and macOS. The macOS shell receives its status bar in the same
 > pass (it previously had none), giving all four platforms parity for the
-> sync-state label and in-flight dot.
+> sync-state label and in-flight dot. Every extra-sync media fetch is bounded
+> by a per-request timeout (30 s thumbnails/avatars, 120 s full media) so a
+> stalled or endlessly-retrying request can't pin the dot or a worker thread,
+> and the displayed count is re-read from the authoritative Rust atomic
+> (`in_flight_count()`) on each change so it stays correct regardless of
+> cross-thread notification ordering.
 
 <!-- -->
 
@@ -117,7 +122,11 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-01
 > `on_threads_updated` to `handle_thread_*_ui_` virtuals gated on
 > `(current_room_id_, current_thread_root_)`. Room switch closes the panel
 > via a `RoomSwitch` transition fired before every `current_room_id_`
-> assignment. Wired in all four shells (Qt6, GTK4, Win32, macOS).
+> assignment. Wired in all four shells (Qt6, GTK4, Win32, macOS). The thread
+> list is ordered newest-at-bottom to match the message timeline: it opens
+> scrolled to the newest, paginates older threads on scroll-up with anchored
+> scroll (`preserve_top_through` + `on_near_top`), and re-backfills the full
+> list on every open.
 
 <!-- -->
 
@@ -231,8 +240,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 150 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 625 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 168 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 626 |
 
 ## Platforms
 
@@ -306,6 +315,9 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 - **`fetch_media_bytes(mxc)`** / **`fetch_source_bytes(source_json)`** — synchronous wrappers around matrix-sdk's media cache; the latter handles plain mxc + encrypted `EncryptedFile` transparently.
 - **Avatars** — sender avatars (24 px per row) + room avatars (36 px); circular crop via `draw_circle_image`; initials-disc fallback when bytes aren't yet cached. Rooms without a custom avatar fall back to the *other participant's* avatar in 1:1 chats (`RoomInfo::dm_avatar_url`, populated in Rust by inspecting `m.direct` first and then filtering joined members by `service_members` per MSC4171); render sites read via the inline `effective_avatar_url()` accessor and `ShellBase::ensure_room_avatar_` routes the DM-fallback fetch through `fetch_media_bytes` so the cache key naturally dedupes with the user's avatar elsewhere.
+- **Lazy room-list avatars** — room-list avatars are requested only when a row is first painted (`RoomListView::on_room_avatar_needed` fires from `paint_row` on a cache miss, wired to `ensure_room_avatar_` in `ShellBase::wire_main_app_widget_`), so rooms in collapsed or off-screen sections fetch nothing until scrolled into view. The former per-shell "fetch every room" loops are gone.
+- **Bounded fetches** — every media download runs under a per-request timeout (30 s thumbnails/avatars, 120 s full files), so a stalled or endlessly-retrying request can't hang a read-pool worker thread or pin the in-flight indicator.
+- **Failed-fetch backoff** — a fetch that returns empty (network error / 5xx / timeout) is recorded in a per-key exponential-backoff cache (30 s → 30 min); the `ensure_*` avatar/media paths skip a key still in cooldown, so an unreachable avatar (e.g. a forgotten DM on a dead homeserver) stops being re-requested on every sync tick. Cleared on success and on cache-wipe.
 - **Inline images** — thumbnail to max 320 × 200, MSC2530 caption rule applied, rounded-rect chrome.
 - **File cards** — fixed 56-px-tall rounded card with filename (ellipsis-trimmed) + human-readable size.
 - **Inline stickers** — borderless 256 × 256 thumbnail; right-click context menu offers "Add to Saved Stickers" (Qt6 / GTK4 / macOS).

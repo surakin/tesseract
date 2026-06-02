@@ -71,7 +71,7 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 
 ### Platform integration
 
-- System tray with unread/mention indicator and minimize-to-tray
+- System tray with unread/mention indicator and minimize-to-tray (clicking the icon jumps to the first unread room)
 - Session restore (last open room)
 - Light / dark / system themes
 
