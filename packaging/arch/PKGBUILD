@@ -1,11 +1,15 @@
 # Maintainer: Marco Antonio Alvarez <surakus@pm.me>
-pkgname=tesseract-git
-pkgver=r1501.da23e72
+pkgname=tesseract-matrix-git
+pkgver=r1172.0463ab3
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
 arch=('x86_64' 'aarch64')
 url="https://gitlab.westeros.lan/surak/matrix-client"
 license=('MIT')
+# The binary is installed as `tesseract-matrix` (not `tesseract`) so this
+# package can coexist with the unrelated Tesseract OCR engine, which owns
+# /usr/bin/tesseract.
+provides=('tesseract-matrix')
 depends=(
     'qt6-base'
     'qt6-multimedia'
@@ -45,4 +49,21 @@ check() {
 
 package() {
     DESTDIR="$pkgdir" cmake --install "$srcdir/build"
+
+    # Rename installed artifacts away from the bare `tesseract` name so this
+    # package does not clash with the Tesseract OCR engine's /usr/bin/tesseract.
+    local _appdir="$pkgdir/usr/share/applications"
+    local _icondir="$pkgdir/usr/share/icons/hicolor/scalable/apps"
+
+    mv "$pkgdir/usr/bin/tesseract" "$pkgdir/usr/bin/tesseract-matrix"
+    mv "$_appdir/tesseract.desktop" "$_appdir/tesseract-matrix.desktop"
+    mv "$_icondir/tesseract.svg" "$_icondir/tesseract-matrix.svg"
+
+    # Point the launcher at the renamed binary/icon. StartupWMClass tracks the
+    # Qt build's WM_CLASS, which derives from the executable basename (argv[0]).
+    sed -i \
+        -e 's/^Exec=tesseract$/Exec=tesseract-matrix/' \
+        -e 's/^Icon=tesseract$/Icon=tesseract-matrix/' \
+        -e 's/^StartupWMClass=tesseract$/StartupWMClass=tesseract-matrix/' \
+        "$_appdir/tesseract-matrix.desktop"
 }
