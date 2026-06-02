@@ -93,6 +93,12 @@ if(TESSERACT_UI STREQUAL "macos")
 endif()
 
 # ---------------------------------------------------------------------------
+# Security hardening flags (GCC/Clang). Included before any add_subdirectory so
+# the directory-scoped compile/link options propagate to every C++ target.
+# ---------------------------------------------------------------------------
+include(${CMAKE_SOURCE_DIR}/cmake/Hardening.cmake)
+
+# ---------------------------------------------------------------------------
 # Corrosion – bridges CMake and Cargo
 # ---------------------------------------------------------------------------
 # Use FetchContent so the project is self-contained (no global install needed).
