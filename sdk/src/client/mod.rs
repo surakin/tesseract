@@ -23,6 +23,7 @@ mod send;
 mod session;
 #[cfg(not(test))]
 mod sync;
+mod tags;
 mod thread;
 mod timeline;
 mod timeline_convert;
@@ -1547,12 +1548,14 @@ pub(super) async fn build_room_info(
         .latest_event_timestamp()
         .map(|t| u64::from(t.0))
         .unwrap_or(0);
-    let is_favorite = room
-        .tags()
-        .await
-        .ok()
-        .flatten()
-        .map(|tags| tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite))
+    let tags = room.tags().await.ok().flatten();
+    let is_favorite = tags
+        .as_ref()
+        .map(|t| t.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite))
+        .unwrap_or(false);
+    let is_low_priority = tags
+        .as_ref()
+        .map(|t| t.contains_key(&matrix_sdk::ruma::events::tag::TagName::LowPriority))
         .unwrap_or(false);
     // MSC3765: extract HTML body from the m.topic content block when present.
     let topic_html = {
@@ -1678,6 +1681,7 @@ pub(super) async fn build_room_info(
         last_activity_ts,
         is_space,
         is_favorite,
+        is_low_priority,
         is_encrypted,
         history_visibility,
         pinned_events,
@@ -1697,6 +1701,42 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
             .then_with(|| b.last_activity_ts.cmp(&a.last_activity_ts))
             .then_with(|| a.id.cmp(&b.id))
     });
+}
+
+/// Change-detection fingerprint for the room-list snapshot. The sync watcher
+/// re-emits the room list to the UI only when this fingerprint differs from the
+/// previous notable update. It must therefore encode every field the UI orders
+/// or *sections* by; a field left out here is silently dropped from live
+/// updates until an unrelated change happens to perturb the fingerprint.
+///
+/// Not `#[cfg(not(test))]`: it is pure (operates on `RoomInfo` only) so it can
+/// be unit-tested without a live client.
+pub(super) fn room_list_fingerprint(
+    rooms: &[crate::ffi::RoomInfo],
+) -> Vec<(bool, bool, bool, u64, String)> {
+    let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
+    tmp.sort_by(|a, b| {
+        let au = a.notification_count > 0 || a.highlight_count > 0;
+        let bu = b.notification_count > 0 || b.highlight_count > 0;
+        bu.cmp(&au)
+            .then_with(|| b.last_activity_ts.cmp(&a.last_activity_ts))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    tmp.iter()
+        .map(|r| {
+            let unread = r.notification_count > 0 || r.highlight_count > 0;
+            // Include the favourite / low-priority tags: they change a room's
+            // room-list section without affecting recency/unread ordering, so
+            // omitting them here suppresses the live update for tag toggles.
+            (
+                unread,
+                r.is_favorite,
+                r.is_low_priority,
+                r.last_activity_ts,
+                r.id.clone(),
+            )
+        })
+        .collect()
 }
 
 #[cfg(not(test))]
@@ -1792,6 +1832,44 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Build a minimal RoomInfo for fingerprint tests.
+    fn room(id: &str) -> crate::ffi::RoomInfo {
+        crate::ffi::RoomInfo {
+            id: id.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn fingerprint_changes_when_favourite_toggles() {
+        // A favourite toggle moves the room to a different room-list section, so
+        // the snapshot fingerprint MUST change — otherwise the sync watcher
+        // suppresses the emit and the UI doesn't update until restart.
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.is_favorite = true;
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_low_priority_toggles() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.is_low_priority = true;
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_stable_when_nothing_relevant_changes() {
+        let r = room("!a:example.org");
+        assert_eq!(
+            room_list_fingerprint(std::slice::from_ref(&r)),
+            room_list_fingerprint(std::slice::from_ref(&r))
+        );
+    }
 
     #[test]
     fn client_ffi_new_starts_empty() {

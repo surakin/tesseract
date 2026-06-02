@@ -53,6 +53,7 @@ pub mod ffi {
         pub last_activity_ts: u64,
         pub is_space: bool,
         pub is_favorite: bool,
+        pub is_low_priority: bool,
         pub is_encrypted: bool,
         pub history_visibility: String,
     }

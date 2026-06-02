@@ -80,6 +80,8 @@ pub mod ffi {
         is_space: bool,
         /// True when the room is tagged `m.favourite` by the current user.
         is_favorite: bool,
+        /// True when the room is tagged `m.lowpriority` by the current user.
+        is_low_priority: bool,
         /// True when the room has encryption enabled.
         is_encrypted: bool,
         /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
@@ -1680,6 +1682,18 @@ pub mod ffi {
         /// Fire-and-forget; errors are logged. Blocks — worker thread.
         fn set_room_notification_mode(self: &mut ClientFfi, room_id: &str, mode: &str);
 
+        // ----- Per-room tags (favourite / low priority) -----
+
+        /// Add or remove the `m.favourite` tag for a room. Setting it removes
+        /// `m.lowpriority` if present (mutually exclusive). Fire-and-forget.
+        /// Blocks — call from a worker thread.
+        fn set_room_favourite(self: &mut ClientFfi, room_id: &str, value: bool);
+
+        /// Add or remove the `m.lowpriority` tag for a room. Setting it removes
+        /// `m.favourite` if present (mutually exclusive). Fire-and-forget.
+        /// Blocks — call from a worker thread.
+        fn set_room_low_priority(self: &mut ClientFfi, room_id: &str, value: bool);
+
         // ----- Session teardown -----
 
         fn logout(self: &mut ClientFfi) -> OpResult;
@@ -1712,6 +1726,7 @@ impl Clone for ffi::RoomInfo {
             last_activity_ts: self.last_activity_ts,
             is_space: self.is_space,
             is_favorite: self.is_favorite,
+            is_low_priority: self.is_low_priority,
             is_encrypted: self.is_encrypted,
             history_visibility: self.history_visibility.clone(),
             pinned_events: self.pinned_events.clone(),
