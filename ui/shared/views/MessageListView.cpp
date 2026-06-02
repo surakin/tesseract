@@ -420,7 +420,7 @@ std::string format_mmss(std::uint64_t ms)
     std::uint64_t total_s = ms / 1000;
     std::uint64_t mm = total_s / 60;
     std::uint64_t ss = total_s % 60;
-    char buf[16];
+    char buf[48];  // worst case: two 20-digit uint64 fields + ':' + NUL
     std::snprintf(buf, sizeof(buf), "%llu:%02llu",
                   static_cast<unsigned long long>(mm),
                   static_cast<unsigned long long>(ss));

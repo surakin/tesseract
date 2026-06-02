@@ -1,7 +1,6 @@
 #include "svg.h"
 
 #include <algorithm>
-#include <cstring>
 #include <vector>
 
 #define NANOSVG_IMPLEMENTATION
@@ -19,9 +18,8 @@ std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
         return nullptr;
 
     // nsvgParse modifies the buffer in-place; we need a mutable null-terminated copy.
-    std::vector<char> buf(bytes.size() + 1);
-    std::memcpy(buf.data(), bytes.data(), bytes.size());
-    buf.back() = '\0';
+    std::vector<char> buf(bytes.begin(), bytes.end());
+    buf.push_back('\0');
 
     NSVGimage* svg = nsvgParse(buf.data(), "px", 96.0f);
     if (!svg || svg->width <= 0.0f || svg->height <= 0.0f)

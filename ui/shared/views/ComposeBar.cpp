@@ -735,7 +735,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         else if (pending_->duration_ms > 0)
         {
             std::uint64_t secs = pending_->duration_ms / 1000;
-            char buf[16];
+            char buf[48];  // worst case: two 20-digit uint64 fields + ':' + NUL
             std::snprintf(buf, sizeof(buf), "%llu:%02llu",
                           static_cast<unsigned long long>(secs / 60),
                           static_cast<unsigned long long>(secs % 60));
@@ -1233,7 +1233,7 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
             (now_ms > recording_start_ms_)
                 ? (now_ms - recording_start_ms_) / 1000
                 : 0;
-        char buf[16];
+        char buf[48];  // worst case: '●' prefix + two 20-digit uint64 + ':' + NUL
         std::snprintf(buf, sizeof(buf), "\xe2\x97\x8f %llu:%02llu",
                       static_cast<unsigned long long>(elapsed_s / 60),
                       static_cast<unsigned long long>(elapsed_s % 60));

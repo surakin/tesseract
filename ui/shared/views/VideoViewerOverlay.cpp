@@ -33,7 +33,7 @@ static std::string fmt_mm_ss(std::uint64_t ms)
     const std::uint64_t s = ms / 1000;
     const std::uint64_t mm = s / 60;
     const std::uint64_t ss = s % 60;
-    char buf[16];
+    char buf[48];  // worst case: two 20-digit uint64 fields + ':' + NUL
     std::snprintf(buf, sizeof(buf), "%llu:%02llu",
                   static_cast<unsigned long long>(mm),
                   static_cast<unsigned long long>(ss));
