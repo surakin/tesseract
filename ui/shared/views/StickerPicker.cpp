@@ -376,9 +376,9 @@ void StickerPicker::paint(tk::PaintCtx& ctx)
         if (!shortcode.empty())
         {
             std::string sc = ":" + shortcode + ":";
-            tk::TextStyle small{};
-            small.role = tk::FontRole::Small;
-            auto layout = ctx.factory.build_text(sc, small);
+            tk::TextStyle small_style{};
+            small_style.role = tk::FontRole::Small;
+            auto layout = ctx.factory.build_text(sc, small_style);
             if (layout)
             {
                 tk::Size tsz = layout->measure();
