@@ -61,6 +61,18 @@ set_source_files_properties("${_icns}" PROPERTIES
 
 target_compile_features(tesseract_macos PRIVATE cxx_std_20)
 target_compile_options(tesseract_macos  PRIVATE -fobjc-arc)
+
+# Std-only PCH (compiled as ObjC++ for these .mm sources). AppKit/Foundation
+# are intentionally excluded — ObjC umbrella frameworks in a PCH are brittle
+# and add little, and project headers are excluded for incremental-build speed.
+tesseract_target_pch(tesseract_macos
+    <memory>
+    <string>
+    <vector>
+    <algorithm>
+    <functional>
+)
+
 target_include_directories(tesseract_macos PRIVATE src)
 
 set_target_properties(tesseract_macos PROPERTIES

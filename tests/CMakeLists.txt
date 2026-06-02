@@ -96,6 +96,20 @@ endif()
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)
 
+# Catch2's test macros are the dominant per-file cost across ~63 of the test
+# TUs; bundle them with the common std headers used by the test harness.
+tesseract_target_pch(tesseract_tests
+    <catch2/catch_test_macros.hpp>
+    <catch2/catch_approx.hpp>
+    <string>
+    <memory>
+    <vector>
+    <cstdint>
+    <filesystem>
+    <optional>
+    <functional>
+)
+
 target_include_directories(tesseract_tests
     PRIVATE
         cpp

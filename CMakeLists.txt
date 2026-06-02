@@ -21,6 +21,24 @@ endif()
 set(TESSERACT_UI "auto" CACHE STRING
     "UI backend to build: auto | win32 | gtk | qt6 | macos")
 
+# Precompiled headers. A target's PCH is rebuilt (and every TU in it
+# recompiled) whenever any header it contains changes, so the per-target PCH
+# lists below hold ONLY stable, heavy system / third-party headers — never
+# project or cxx-generated headers. Toggle off to debug PCH-related build
+# issues or to profile minimal rebuilds.
+option(TESSERACT_ENABLE_PCH "Use precompiled headers to speed up C++ builds" ON)
+
+# Apply a precompiled-header set to `target`, honoring TESSERACT_ENABLE_PCH.
+# Defined at root scope so every subdirectory's CMakeLists can call it. No
+# language guards are needed: no target mixes C with C++/ObjC++ (the Wayland
+# `.c` glue is its own target), and CMake emits a separate PCH per language for
+# mixed C++/ObjC++ targets automatically.
+function(tesseract_target_pch target)
+    if(TESSERACT_ENABLE_PCH)
+        target_precompile_headers(${target} PRIVATE ${ARGN})
+    endif()
+endfunction()
+
 # ---------------------------------------------------------------------------
 # UI auto-detection. Runs before Corrosion so a preset's Rust_CARGO_TARGET
 # is in place before the Cargo workspace is imported.

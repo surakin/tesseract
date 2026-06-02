@@ -25,6 +25,20 @@ add_executable(tesseract_gtk
 
 target_compile_features(tesseract_gtk PRIVATE cxx_std_20)
 
+# GTK/Cairo/pixbuf umbrella headers + std base. (GStreamer lives in
+# tesseract_tk, not the shell sources, so it's not in this PCH.)
+tesseract_target_pch(tesseract_gtk
+    <string>
+    <vector>
+    <cstring>
+    <algorithm>
+    <filesystem>
+    <gtk/gtk.h>
+    <gdk-pixbuf/gdk-pixbuf.h>
+    <cairo.h>
+    <libintl.h>
+)
+
 target_include_directories(tesseract_gtk PRIVATE
     src
     ${GTK4_INCLUDE_DIRS}

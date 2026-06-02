@@ -230,6 +230,28 @@ target_link_libraries(tesseract_tk PUBLIC
     tesseract_client
 )
 
+# Precompiled headers: the cross-platform std base shared by ~90 TUs. The
+# active backend appends its heavy framework umbrella headers below. (Project
+# headers like tk/theme.h are intentionally excluded — see the root option.)
+tesseract_target_pch(tesseract_tk
+    <algorithm>
+    <memory>
+    <utility>
+    <vector>
+    <string>
+    <string_view>
+    <cstring>
+    <cstdint>
+    <cmath>
+    <chrono>
+    <unordered_map>
+    <unordered_set>
+    <mutex>
+    <atomic>
+    <functional>
+    <optional>
+)
+
 if(TESSERACT_UI STREQUAL "win32")
     if(MSVC)
         target_compile_options(tesseract_tk PRIVATE /utf-8)
@@ -256,6 +278,14 @@ if(TESSERACT_UI STREQUAL "win32")
         mfuuid
         shlwapi          # SHCreateMemStream (also used in host_win32.cpp)
     )
+    # WIN32_LEAN_AND_MEAN / NOMINMAX are set as target definitions above, so the
+    # PCH compiles windows.h the same way the TUs do.
+    tesseract_target_pch(tesseract_tk
+        <windows.h>
+        <wrl/client.h>
+        <d2d1.h>
+        <dwrite.h>
+    )
 elseif(TESSERACT_UI STREQUAL "qt6")
     # Multimedia is used by audio_qt.cpp for MSC3245 voice playback
     # (QMediaPlayer + QAudioOutput).
@@ -265,6 +295,11 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         Qt6::Gui
         Qt6::Widgets
         Qt6::Multimedia
+    )
+    tesseract_target_pch(tesseract_tk
+        <QtCore/QtCore>
+        <QtGui/QtGui>
+        <QtMultimedia/QtMultimedia>
     )
 elseif(TESSERACT_UI STREQUAL "gtk")
     find_package(PkgConfig REQUIRED)
@@ -283,6 +318,12 @@ elseif(TESSERACT_UI STREQUAL "gtk")
     target_link_libraries(tesseract_tk PUBLIC
         PkgConfig::TK_GTK4
         PkgConfig::TK_GST
+    )
+    tesseract_target_pch(tesseract_tk
+        <gtk/gtk.h>
+        <gst/gst.h>
+        <cairo.h>
+        <glib.h>
     )
 elseif(TESSERACT_UI STREQUAL "macos")
     target_link_libraries(tesseract_tk PUBLIC

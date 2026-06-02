@@ -42,6 +42,19 @@ endif()
 
 target_compile_features(tesseract_client PUBLIC cxx_std_20)
 
+# Stable std + nlohmann/json (the one heavy third-party header here). The
+# cxx-generated bridge headers are deliberately excluded — they regenerate on
+# Rust changes and would invalidate the PCH constantly.
+tesseract_target_pch(tesseract_client
+    <string>
+    <string_view>
+    <vector>
+    <mutex>
+    <cstdlib>
+    <cctype>
+    <nlohmann/json.hpp>
+)
+
 target_include_directories(tesseract_client
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src

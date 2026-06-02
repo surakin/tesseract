@@ -65,6 +65,22 @@ add_executable(tesseract_win32 WIN32
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
 
+# std base + windows.h. WIN32_LEAN_AND_MEAN / NOMINMAX / _WIN32_WINNT are set as
+# target definitions below, so the PCH compiles windows.h identically to the
+# TUs. C++/WinRT headers are deliberately NOT in the PCH: they're confined to
+# two TUs (main.cpp, Win32Notifier.cpp) that need a relaxed-conformance flag.
+tesseract_target_pch(tesseract_win32
+    <algorithm>
+    <vector>
+    <string>
+    <filesystem>
+    <fstream>
+    <cstdint>
+    <utility>
+    <cwchar>
+    <windows.h>
+)
+
 # MSVC defaults to interpreting source files as Windows-1252. /utf-8 sets
 # both source and execution charset to UTF-8 so that L"…" wide-string
 # literals compile to the correct Unicode codepoints.

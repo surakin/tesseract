@@ -59,6 +59,21 @@ qt_add_executable(tesseract_qt
 
 target_compile_features(tesseract_qt PRIVATE cxx_std_20)
 
+# Qt module umbrella headers dominate per-file parse cost in the shell. Applied
+# only to tesseract_qt; the separate C `tesseract_xdg_protocol` target gets no
+# PCH. (Qt's AUTOMOC mocs_compilation.cpp shares this PCH fine.)
+tesseract_target_pch(tesseract_qt
+    <string>
+    <memory>
+    <vector>
+    <utility>
+    <QtCore/QtCore>
+    <QtGui/QtGui>
+    <QtWidgets/QtWidgets>
+    <QtDBus/QtDBus>
+    <QtMultimedia/QtMultimedia>
+)
+
 target_include_directories(tesseract_qt PRIVATE src)
 
 target_link_libraries(tesseract_qt PRIVATE
