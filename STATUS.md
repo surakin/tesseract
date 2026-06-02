@@ -30,6 +30,26 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-02
 
 <!-- -->
 
+> **Non-blocking media downloads.**
+> Media fetches (room/user avatars, inline image/video/sticker thumbnails,
+> full-size images, sticker/emoji picker images, map tiles, URL previews, and
+> voice/audio playback) run as async `tokio` tasks rather than blocking calls
+> that each pin a C++ worker thread. The Rust SDK exposes `fetch_media_async` /
+> `fetch_url_async` / `get_url_preview_async`, which `rt.spawn` the download
+> under a per-lane `Semaphore` — a wide interactive lane for small avatars and
+> thumbnails, a narrow bulk lane for slow full-size/preview/tile/voice transfers
+> — and deliver the bytes through an `on_media_ready` / `on_url_preview_ready`
+> callback, so a slow or dead-server download can never starve the visible media
+> the user is waiting on. `ShellBase` correlates each request via a UI-thread
+> pending registry; a shared `fetch_media_pipeline_` does disk-read → async
+> fetch → disk-store → deliver. Switching rooms calls `cancel_media_group` to
+> abort the previous room's still-pending timeline downloads (grouped by room id)
+> so the new room's media gets the slots. The voice play/scrub path no longer
+> blocks the UI thread on an uncached clip on any of the four shells — bytes are
+> warmed asynchronously and the view repaints when they land.
+
+<!-- -->
+
 > **Pinned events.**
 > A `PinnedBanner` widget above the message list cycles through
 > `m.room.pinned_events` with left/right chevrons and a counter; clicking

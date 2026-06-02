@@ -84,6 +84,15 @@ impl Drop for InFlightGuard {
     }
 }
 
+/// Max concurrent interactive media downloads (avatars + thumbnails). These are
+/// small and the user is actively waiting on them, so the lane is wide.
+#[cfg(not(test))]
+pub(super) const MEDIA_FG_PERMITS: usize = 12;
+/// Max concurrent bulk media downloads (full-size source, URL previews, tiles,
+/// audio prefetch). Narrow so a stalled large download cannot starve the rest.
+#[cfg(not(test))]
+pub(super) const MEDIA_BULK_PERMITS: usize = 3;
+
 #[cfg(not(test))]
 use crate::ffi::EventHandlerBridge;
 #[cfg(not(test))]
@@ -501,6 +510,26 @@ pub struct ClientFfi {
     /// future where `&mut self` is unavailable.
     #[cfg(not(test))]
     pub(super) verification_tasks: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+    /// Concurrency limiter for interactive media downloads (avatars +
+    /// thumbnails). More permits than the bulk lane so the small, visible
+    /// fetches the user is waiting on are never crowded out by slow full-size
+    /// downloads. Async permits, not OS threads — idle permits cost nothing.
+    #[cfg(not(test))]
+    pub(super) media_sem_fg: Arc<tokio::sync::Semaphore>,
+    /// Concurrency limiter for bulk media downloads (full-size source, URL
+    /// previews, map tiles, audio prefetch). Few permits so a stalled large
+    /// download can occupy at most a handful of slots.
+    #[cfg(not(test))]
+    pub(super) media_sem_bulk: Arc<tokio::sync::Semaphore>,
+    /// Abort handles for in-flight `fetch_media_async` / `get_url_preview_async`
+    /// tasks, keyed by `group_id` (a hash of the originating room id; 0 =
+    /// ungrouped). `cancel_media_group` drains and aborts a group's tasks on
+    /// room switch. Each task removes its own `(request_id, handle)` on
+    /// completion. Interior-mutable so the `&self` media methods can register
+    /// without `&mut self`. Also drained wholesale in `stop_sync`.
+    #[cfg(not(test))]
+    pub(super) media_tasks:
+        Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -745,6 +774,12 @@ impl ClientFfi {
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             verification_tasks: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(not(test))]
+            media_sem_fg: Arc::new(tokio::sync::Semaphore::new(MEDIA_FG_PERMITS)),
+            #[cfg(not(test))]
+            media_sem_bulk: Arc::new(tokio::sync::Semaphore::new(MEDIA_BULK_PERMITS)),
+            #[cfg(not(test))]
+            media_tasks: Arc::new(Mutex::new(HashMap::new())),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 // Timeline construction collects cached events

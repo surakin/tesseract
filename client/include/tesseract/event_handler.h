@@ -163,6 +163,25 @@ public:
     {
     }
 
+    /// Fired when an async media download started via `Client::fetch_media_async`
+    /// completes (or fails / times out / is cancelled — `bytes` is empty then).
+    /// `request_id` is the correlation token passed to `fetch_media_async`. The
+    /// UI looks up its pending request, writes the disk cache, decodes and
+    /// repaints; a late callback for an already-cancelled request is ignored.
+    /// Default no-op.
+    virtual void on_media_ready(std::uint64_t /*request_id*/,
+                                const std::vector<std::uint8_t>& /*bytes*/)
+    {
+    }
+
+    /// Fired when an async URL-preview fetch (`Client::get_url_preview_async`)
+    /// completes. `preview_json` matches the synchronous `get_url_preview`
+    /// shape (empty on failure). Default no-op.
+    virtual void on_url_preview_ready(std::uint64_t /*request_id*/,
+                                      const std::string& /*preview_json*/)
+    {
+    }
+
     /// Fired once at startup (after `start_sync` initialises the room-info
     /// watcher) and again whenever the `im.gnomos.tesseract` global
     /// account-data event changes. `json` is the raw event content object,

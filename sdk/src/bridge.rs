@@ -722,6 +722,24 @@ pub mod ffi {
         /// re-queries via list_room_threads (re-query ping, like
         /// on_image_packs_updated).
         fn on_threads_updated(self: &EventHandlerBridge, room_id: &str);
+
+        /// Fired when an async media download started via `fetch_media_async`
+        /// completes (or fails / times out / is cancelled — `bytes` is empty in
+        /// those cases). `request_id` is the opaque correlation token the caller
+        /// passed to `fetch_media_async`; the C++ side looks up the pending
+        /// request, writes the disk cache, decodes and repaints. A late callback
+        /// for an already-cancelled request is ignored on the C++ side.
+        fn on_media_ready(self: &EventHandlerBridge, request_id: u64, bytes: &[u8]);
+
+        /// Fired when an async URL-preview fetch started via
+        /// `get_url_preview_async` completes. `request_id` is the correlation
+        /// token; `preview_json` is the same JSON shape `get_url_preview`
+        /// returns synchronously (an empty string on failure).
+        fn on_url_preview_ready(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            preview_json: &str,
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1409,6 +1427,46 @@ pub mod ffi {
         /// on any failure (not logged in, network error, rate-limit, no data).
         /// Blocks the calling thread — call only from a worker thread.
         fn get_url_preview(self: &ClientFfi, url: &str) -> String;
+
+        // ----- Async media downloads (non-blocking) -----
+
+        /// Start an async media download. Spawns the fetch on the tokio runtime
+        /// (so it does NOT pin a C++ worker thread for the network round-trip),
+        /// bounded by a per-lane semaphore, and fires `on_media_ready(request_id,
+        /// bytes)` on completion. `request_id` is a caller-owned correlation
+        /// token. `group_id` groups downloads for bulk cancellation via
+        /// `cancel_media_group` (0 = ungrouped/never-cancelled). `kind` selects
+        /// the source shape and lane (see MEDIA_KIND_* in media.rs):
+        ///   0 room-avatar thumbnail (room_id in `source`)
+        ///   1 mxc thumbnail   2 source thumbnail   3 full source
+        /// `w`/`h`/`animated` apply to the thumbnail kinds. Empty bytes on
+        /// failure/timeout/cancel, mirroring the blocking variants.
+        fn fetch_media_async(
+            self: &ClientFfi,
+            request_id: u64,
+            group_id: u64,
+            kind: u8,
+            source: &str,
+            w: u32,
+            h: u32,
+            animated: bool,
+        );
+
+        /// Abort every still-running `fetch_media_async` download registered
+        /// under `group_id`. Used on room switch to drop the previous room's
+        /// in-flight media so the new room's downloads get the semaphore slots.
+        /// No-op for `group_id == 0` or an unknown group.
+        fn cancel_media_group(self: &ClientFfi, group_id: u64);
+
+        /// Async counterpart of `get_url_preview`: spawns the fetch and fires
+        /// `on_url_preview_ready(request_id, preview_json)` on completion
+        /// (an empty string on failure). Does not pin a worker thread.
+        fn get_url_preview_async(self: &ClientFfi, request_id: u64, group_id: u64, url: &str);
+
+        /// Non-blocking counterpart of `fetch_url_bytes` (map tiles). Spawns the
+        /// fetch under the bulk lane and fires `on_media_ready(request_id,
+        /// bytes)` on completion (empty on failure). Does not pin a thread.
+        fn fetch_url_async(self: &ClientFfi, request_id: u64, group_id: u64, url: &str);
 
         // ----- MSC3266 room summary / join -----
 

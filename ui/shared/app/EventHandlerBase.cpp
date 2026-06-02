@@ -161,6 +161,27 @@ void EventHandlerBase::on_threads_updated(const std::string& room_id)
         });
 }
 
+void EventHandlerBase::on_media_ready(std::uint64_t request_id,
+                                      const std::vector<std::uint8_t>& bytes)
+{
+    auto b = std::make_shared<std::vector<std::uint8_t>>(bytes);
+    shell_->post_to_ui_(
+        [shell = shell_, request_id, b]() mutable
+        {
+            shell->handle_media_ready_ui_(request_id, std::move(*b));
+        });
+}
+
+void EventHandlerBase::on_url_preview_ready(std::uint64_t request_id,
+                                            const std::string& preview_json)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, request_id, json = preview_json]() mutable
+        {
+            shell->handle_url_preview_ready_ui_(request_id, std::move(json));
+        });
+}
+
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
     auto rs = rooms; // one copy; moved into the lambda below

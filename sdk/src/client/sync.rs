@@ -1131,6 +1131,16 @@ impl ClientFfi {
         for h in lock_or_recover(&self.verification_tasks).drain(..) {
             h.abort();
         }
+        // Async media downloads (fetch_media_async / get_url_preview_async) hold
+        // cloned handler Arcs and would call back through on_media_ready after
+        // the handler was taken. Abort every group before the slot detaches.
+        if let Ok(mut m) = self.media_tasks.lock() {
+            for (_, v) in m.drain() {
+                for (_, h) in v {
+                    h.abort();
+                }
+            }
+        }
         if let Some(svc) = self.sync_service.take() {
             self.rt.block_on(async move {
                 let _ = svc.stop().await;

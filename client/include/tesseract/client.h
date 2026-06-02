@@ -710,6 +710,45 @@ public:
     std::vector<uint8_t> fetch_url_bytes(const std::string& url);
 
     // ------------------------------------------------------------------
+    // Async media downloads (non-blocking; complete via IEventHandler)
+    // ------------------------------------------------------------------
+
+    /// `kind` discriminants for `fetch_media_async`. Keep in sync with the Rust
+    /// MEDIA_KIND_* constants in sdk/src/client/media.rs.
+    enum class MediaReqKind : std::uint8_t
+    {
+        RoomAvatar   = 0, ///< room.avatar thumbnail; `source` is the room id
+        MxcThumbnail = 1, ///< plain mxc:// thumbnail
+        SourceThumb  = 2, ///< source (plain/encrypted) thumbnail
+        SourceFull   = 3, ///< full source (plain/encrypted) → bulk lane
+    };
+
+    /// Start an async media download. Returns immediately; the bytes arrive via
+    /// `IEventHandler::on_media_ready(request_id, bytes)` (empty on failure /
+    /// timeout / cancel). Unlike `fetch_*_bytes` this does NOT pin a worker
+    /// thread for the network round-trip. `request_id` is a caller-owned
+    /// correlation token; `group_id` groups downloads for `cancel_media_group`
+    /// (0 = ungrouped/never-cancelled). `w`/`h`/`animated` apply to the
+    /// thumbnail kinds.
+    void fetch_media_async(std::uint64_t request_id, std::uint64_t group_id,
+                           MediaReqKind kind, const std::string& source,
+                           std::uint32_t w, std::uint32_t h, bool animated);
+
+    /// Abort every in-flight `fetch_media_async` / `get_url_preview_async`
+    /// registered under `group_id` (e.g. on room switch). No-op for group 0.
+    void cancel_media_group(std::uint64_t group_id);
+
+    /// Async counterpart of `get_url_preview`: returns immediately; the result
+    /// arrives via `IEventHandler::on_url_preview_ready(request_id, json)`.
+    void get_url_preview_async(std::uint64_t request_id, std::uint64_t group_id,
+                               const std::string& url);
+
+    /// Async counterpart of `fetch_url_bytes` (map tiles, etc.): returns
+    /// immediately; the bytes arrive via `IEventHandler::on_media_ready`.
+    void fetch_url_async(std::uint64_t request_id, std::uint64_t group_id,
+                         const std::string& url);
+
+    // ------------------------------------------------------------------
     // URL preview
     // ------------------------------------------------------------------
 
@@ -733,6 +772,11 @@ public:
     /// Blocks the calling thread — invoke only from a worker thread.
     /// Returns `UrlPreview{failed=true}` on any error.
     UrlPreview get_url_preview(const std::string& url);
+
+    /// Parse the raw OpenGraph JSON (as delivered by `get_url_preview_async`'s
+    /// `on_url_preview_ready` callback, or returned by the SDK) into a
+    /// UrlPreview. Empty/contentless JSON yields `UrlPreview{failed=true}`.
+    static UrlPreview parse_url_preview(const std::string& json);
 
     // ------------------------------------------------------------------
     // MSC3266 room summary / join

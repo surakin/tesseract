@@ -287,6 +287,7 @@ public:
     using ShellBase::verification_banner_dismissed_;
     using ShellBase::video_thumb_in_flight_;
     using ShellBase::view_displayed_room_id_;
+    using ShellBase::voice_bytes_or_fetch_;
     using ShellBase::voice_prefetched_;
     using ShellBase::capture_;
     using ShellBase::wire_main_app_viewers_;
@@ -2000,7 +2001,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return {};
                 }
-                return s->_shell->client_->fetch_source_bytes(source_json);
+                // Non-blocking: warmed bytes or empty + async fetch (repaint on
+                // arrival) so playback never freezes the UI thread.
+                MacShell* shell = s->_shell.get();
+                return shell->voice_bytes_or_fetch_(
+                    source_json, [shell] { shell->request_relayout_(); });
             });
         _mainApp->room_view()->set_video_player_factory(
             [weakSelf]() -> std::unique_ptr<tk::VideoPlayer>

@@ -535,7 +535,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         room_view_->set_voice_bytes_provider(
             [this](const std::string& source_json) -> std::vector<std::uint8_t>
             {
-                return client_->fetch_source_bytes(source_json);
+                // Non-blocking: warmed bytes or empty + async fetch (repaint on
+                // arrival) so playback never freezes the UI thread.
+                return voice_bytes_or_fetch_(source_json,
+                                             [this] { request_relayout_(); });
             });
         {
             tk::gtk4::Surface* sfp = main_app_surface_.get();

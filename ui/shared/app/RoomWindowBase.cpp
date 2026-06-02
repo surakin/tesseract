@@ -96,11 +96,27 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             return preview_lookup_(url);
         });
-    rv->set_voice_bytes_provider(
-        [this](const std::string& source_json) -> std::vector<std::uint8_t>
-        {
-            return fetch_source_bytes_(source_json);
-        });
+    {
+        // The provider is invoked on the UI thread (during pointer handling in
+        // MessageListView), so it uses the non-blocking voice_bytes_or_fetch_:
+        // warmed bytes or empty + an async warm that repaints on arrival. The
+        // on_ready closure can outlive this popout window, so guard it with
+        // alive_ (the window may close while a voice clip is still downloading).
+        std::weak_ptr<bool> alive_weak = alive_;
+        rv->set_voice_bytes_provider(
+            [this, alive_weak](
+                const std::string& source_json) -> std::vector<std::uint8_t>
+            {
+                return shell_->voice_bytes_or_fetch_(
+                    source_json,
+                    [this, alive_weak]
+                    {
+                        auto alive = alive_weak.lock();
+                        if (alive && *alive)
+                            surface_repaint_();
+                    });
+            });
+    }
 
     // ── Repaint ──────────────────────────────────────────────────────────
     rv->set_repaint_requester(
@@ -640,6 +656,9 @@ RoomWindowBase::preview_lookup_(const std::string& url)
 std::vector<std::uint8_t>
 RoomWindowBase::fetch_source_bytes_(const std::string& source_json)
 {
+    // Blocking — callers (video-viewer load, save-to-file) already run this on
+    // a worker thread. The UI-thread voice-playback path uses the non-blocking
+    // voice_bytes_or_fetch_ via set_voice_bytes_provider instead.
     if (!shell_->client_)
     {
         return {};

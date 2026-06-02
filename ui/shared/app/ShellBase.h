@@ -307,6 +307,13 @@ protected:
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;
+    // Voice/audio playback bytes warmed asynchronously so the play/scrub UI
+    // path never blocks on a network fetch. Filled by voice_bytes_or_fetch_
+    // when a download lands; consumed (moved out) by the next play/scrub of the
+    // clip. Cleared on logout / cache wipe, and capped (see voice_bytes_or_fetch_)
+    // so warmed-but-never-replayed clips can't retain audio files unbounded.
+    std::unordered_map<std::string, std::vector<std::uint8_t>> voice_bytes_cache_;
+    std::unordered_set<std::string> voice_bytes_in_flight_;
     std::unordered_set<std::string> voice_waveform_in_flight_;
     std::unordered_set<std::string> video_thumb_in_flight_;
     std::unordered_set<std::string> reply_details_requested_;
@@ -352,6 +359,88 @@ protected:
     void note_media_fetch_ok_(const std::string& key)
     {
         media_fetch_failed_.erase(key);
+    }
+
+    // ── Async media request registry ──────────────────────────────────────────
+    // Correlates an outstanding fetch_media_async / get_url_preview_async call
+    // (by request_id) with the UI-thread completion to run when on_media_ready /
+    // on_url_preview_ready fires. UI-thread-only — on_media_ready arrives via
+    // post_to_ui_. A request dropped from the map (room-switch cancel) makes any
+    // late callback a no-op. group_id (a non-zero hash of the originating room,
+    // or 0 for never-cancelled requests like map tiles) lets cancel_media_group_
+    // drop a room's pending requests in bulk and abort their Rust tasks.
+    struct PendingMediaReq
+    {
+        std::uint64_t group_id = 0;
+        // Exactly one is set, matching the request type.
+        std::function<void(std::vector<std::uint8_t>&&)> on_bytes;
+        std::function<void(std::string&&)>               on_preview;
+        // Run when the request is cancelled (room switch) instead of completing.
+        // Clears the caller's dedup-set key so the media can be re-requested on
+        // re-entry; without this the key would stay stuck in-flight forever.
+        std::function<void()>                            on_cancel;
+    };
+    std::unordered_map<std::uint64_t, PendingMediaReq> pending_media_;
+    std::uint64_t next_media_req_id_ = 1;
+    // Cancellation group of the currently-active room's timeline media. When the
+    // active room changes, after_active_room_changed_ cancels this group's
+    // still-pending downloads before adopting the new room's group.
+    std::uint64_t active_media_group_ = 0;
+
+    // Stable non-zero group id for a room's media (so a switch cancels the right
+    // set). 0 is reserved for ungrouped / never-cancelled requests.
+    static std::uint64_t media_group_for_room_(const std::string& room_id)
+    {
+        if (room_id.empty())
+            return 0;
+        std::uint64_t h = std::hash<std::string>{}(room_id);
+        return h == 0 ? 1 : h;
+    }
+
+    // Allocate a request_id and register a bytes-completion. Returns the id to
+    // pass to client_->fetch_media_async. `on_cancel` clears the caller's dedup
+    // key if the request is cancelled before completing.
+    std::uint64_t begin_media_req_(
+        std::uint64_t group_id,
+        std::function<void(std::vector<std::uint8_t>&&)> on_bytes,
+        std::function<void()> on_cancel = {})
+    {
+        std::uint64_t id   = next_media_req_id_++;
+        pending_media_[id] = PendingMediaReq{
+            group_id, std::move(on_bytes), {}, std::move(on_cancel)};
+        return id;
+    }
+
+    // Allocate a request_id and register a URL-preview completion.
+    std::uint64_t begin_url_preview_req_(
+        std::uint64_t group_id, std::function<void(std::string&&)> on_preview,
+        std::function<void()> on_cancel = {})
+    {
+        std::uint64_t id   = next_media_req_id_++;
+        pending_media_[id] = PendingMediaReq{
+            group_id, {}, std::move(on_preview), std::move(on_cancel)};
+        return id;
+    }
+
+    // Abort and drop every pending media request in `group_id` (room switch).
+    // Runs each dropped request's on_cancel so its dedup key is freed and the
+    // media can be re-requested when the room is re-entered.
+    void cancel_media_group_(std::uint64_t group_id)
+    {
+        if (group_id == 0 || !client_)
+            return;
+        client_->cancel_media_group(group_id);
+        for (auto it = pending_media_.begin(); it != pending_media_.end();)
+        {
+            if (it->second.group_id == group_id)
+            {
+                if (it->second.on_cancel)
+                    it->second.on_cancel();
+                it = pending_media_.erase(it);
+            }
+            else
+                ++it;
+        }
     }
 
     // DM creation in-flight guard. Keyed by target user_id.
@@ -435,8 +524,16 @@ protected:
 
     // ── Worker thread pools ───────────────────────────────────────────────────
     // Two pools with different concurrency levels:
-    //   pool_     — 4 threads for &self FFI (fetch_*, decode, disk I/O).
-    //               These hold no C++ mutex; all four can run in parallel.
+    //   pool_     — 4 threads for &self work: image decode, disk-cache I/O, and
+    //               a couple of one-shot blocking &self FFI calls (secondary-
+    //               window video-viewer load + save-to-file). The high-volume
+    //               media downloads (avatars, thumbnails, full images, stickers/
+    //               emoji picker images, tiles, URL previews, voice) NO LONGER
+    //               run here — they are issued as non-blocking tokio tasks via
+    //               fetch_media_async and complete on the on_media_ready
+    //               callback, so a slow download can never pin one of these four
+    //               threads. These hold no C++ mutex; all four can run in
+    //               parallel.
     //   mut_pool_ — 1 thread for &mut FFI (subscribe_room, send_*, etc.).
     //               Serialised by design so ffi_mu is never contended.
     struct WorkerPool
@@ -823,6 +920,14 @@ protected:
                                            std::string thread_root,
                                            std::size_t index);
     virtual void handle_threads_updated_ui_(std::string room_id);
+    // Completion for an async fetch_media_async download. Looks up the pending
+    // request by id (ignoring late callbacks for cancelled/superseded requests)
+    // and runs its registered bytes-completion. Concrete shared logic.
+    void handle_media_ready_ui_(std::uint64_t request_id,
+                                std::vector<std::uint8_t> bytes);
+    // Completion for an async get_url_preview_async fetch.
+    void handle_url_preview_ready_ui_(std::uint64_t request_id,
+                                      std::string preview_json);
     virtual void handle_sync_error_ui_(std::string /*context*/,
                                        std::string /*user_id*/,
                                        std::string /*description*/,
@@ -1150,7 +1255,41 @@ protected:
     // media_fetches_in_flight_ set + cache-presence check).
     void ensure_room_avatar_(const RoomInfo& r);
     void ensure_user_avatar_(const std::string& mxc);
-    void ensure_media_image_(const std::string& url, int max_w, int max_h);
+
+    // Non-blocking voice/audio byte provider for the playback path. Returns the
+    // clip's bytes if already warmed (moving them out of voice_bytes_cache_),
+    // otherwise kicks a one-shot async download (fetch_media_async) and returns
+    // empty; `on_ready` fires on the UI thread when the download lands so the
+    // caller can repaint and the user can replay. Replaces the blocking
+    // fetch_source_bytes that previously froze the UI on an uncached clip.
+    std::vector<std::uint8_t>
+    voice_bytes_or_fetch_(const std::string& token,
+                          std::function<void()> on_ready);
+    // `group_id` is the cancellation group for the download (room switch drops
+    // a room's pending media). Defaults to 0 (never cancelled) for non-timeline
+    // callers (avatar/preview prefetch); timeline callers pass the room group.
+    void ensure_media_image_(const std::string& url, int max_w, int max_h,
+                             std::uint64_t group_id = 0);
+
+    // Shared async media pipeline used by the ensure_* helpers. The network
+    // download runs as a non-blocking tokio task (fetch_media_async) so it does
+    // NOT pin a worker thread; only the small disk-cache read/write and the
+    // decode (inside on_media_bytes_ready_) touch the io pool. Steps:
+    //   1. io pool: read the C++ disk cache for `disk_key`.
+    //   2. UI: on a hit, deliver immediately; on a miss, register a pending
+    //      request and issue client_->fetch_media_async (returns at once).
+    //   3. UI (on_media_ready): persist to disk off-thread, then deliver via
+    //      on_media_bytes_ready_(cache_key, out_kind, bytes).
+    // Clears `inflight_key` from media_fetches_in_flight_ and runs the
+    // failure/ok backoff bookkeeping on `cache_key`. The caller must have
+    // already done the in-memory cache check and inserted `inflight_key`.
+    // `group_id` is the cancellation group (0 = never cancelled).
+    void fetch_media_pipeline_(std::string cache_key, std::string disk_key,
+                               std::string inflight_key, std::uint64_t group_id,
+                               tesseract::Client::MediaReqKind kind,
+                               std::string source, std::uint32_t w,
+                               std::uint32_t h, bool animated,
+                               MediaKind out_kind);
 
     // Fetch a server-scaled thumbnail (w×h) for an inline media preview into
     // thumbnail_cache_ (or anim_cache_ if it decodes animated). Mirrors
@@ -1159,7 +1298,7 @@ protected:
     // and a full-size fetch of the same mxc never collide. `animated` requests
     // an animated thumbnail where the server supports it (MSC2705).
     void ensure_media_thumbnail_(const std::string& url, int w, int h,
-                                 bool animated);
+                                 bool animated, std::uint64_t group_id = 0);
 
     // Size-namespaced cache key for thumbnail fetches (disk + in-flight set).
     static std::string thumb_key(const std::string& key, int w, int h)
@@ -1250,10 +1389,20 @@ protected:
     // Shared async picker-image path. Idempotent: no-op if already in
     // tk_images_ / anim_cache_ / in-flight. Dedups via
     // emoji_fetches_in_flight_ (is_sticker == false) or
-    // sticker_fetches_in_flight_ (true). Worker: media_disk_cache_ →
-    // client_->fetch_source_bytes → media_disk_cache_.store →
-    // decode_image_ (OFF the UI thread) → post finalize_picker_image_.
+    // sticker_fetches_in_flight_ (true). io pool reads media_disk_cache_; on a
+    // miss the network download runs as a non-blocking fetch_media_async (bulk
+    // lane, group 0) so it never pins a pool thread. The decode runs on the io
+    // pool via decode_and_finalize_picker_ → finalize_picker_image_ (UI).
     void ensure_picker_image_(const std::string& url, bool is_sticker);
+
+    // Decode `bytes` for a picker image OFF the UI thread, optionally persisting
+    // them to the disk cache first (`persist` — true for a fresh network fetch,
+    // false for a disk-cache hit), then post finalize_picker_image_ on the UI
+    // thread. Shared by the disk-hit and network-completion branches of
+    // ensure_picker_image_.
+    void decode_and_finalize_picker_(std::string url, bool is_sticker,
+                                     std::vector<std::uint8_t> bytes,
+                                     bool persist);
 
     // UI-thread tail of ensure_picker_image_. Erases the in-flight key,
     // routes `d` into anim_cache_ (animated) or tk_images_ (still),

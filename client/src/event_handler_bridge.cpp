@@ -406,6 +406,38 @@ void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
           });
 }
 
+void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
+                                        rust::Slice<const uint8_t> bytes) const
+{
+    guard("on_media_ready",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+              {
+                  return;
+              }
+              std::vector<uint8_t> b(bytes.data(), bytes.data() + bytes.size());
+              handler_->on_media_ready(request_id, b);
+          });
+}
+
+void EventHandlerBridge::on_url_preview_ready(std::uint64_t request_id,
+                                              rust::Str preview_json) const
+{
+    guard("on_url_preview_ready",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+              {
+                  return;
+              }
+              handler_->on_url_preview_ready(request_id,
+                                             std::string(preview_json));
+          });
+}
+
 void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const
 {
     guard("on_account_prefs_updated",

@@ -103,6 +103,10 @@ public:
     void on_inflight_changed(std::uint32_t count) const;
     void on_image_packs_updated() const;
     void on_threads_updated(rust::Str room_id) const;
+    void on_media_ready(std::uint64_t request_id,
+                        rust::Slice<const uint8_t> bytes) const;
+    void on_url_preview_ready(std::uint64_t request_id,
+                              rust::Str preview_json) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_media_preview_config_updated(rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,

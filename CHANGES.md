@@ -7,6 +7,24 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-06-02
 
+- perf(media): media downloads are now non-blocking. Previously every fetch
+  (avatars, thumbnails, full images, stickers/emoji, map tiles, URL previews,
+  voice/audio) ran as `rt.block_on` and pinned one of only four read-pool worker
+  threads for the whole network round-trip, so opening a busy room could flood
+  and starve those threads — a slow full-size download or a dead-server URL
+  preview blocked the visible avatars the user was waiting on. Downloads now run
+  as async tokio tasks bounded by per-lane semaphores (a wide interactive lane
+  for avatars/thumbnails, a narrow bulk lane for full-size/preview/tile/voice)
+  and complete via a new `on_media_ready` / `on_url_preview_ready` callback, so
+  no download ever pins a thread. New FFI: `fetch_media_async`,
+  `fetch_url_async`, `get_url_preview_async`, `cancel_media_group`. Switching
+  rooms now cancels the previous room's still-pending timeline media (grouped by
+  room) so the new room's media isn't stuck behind the old room's flood. The
+  voice play/scrub path, which previously froze the UI thread on an uncached
+  clip across all four shells, now warms bytes asynchronously and never blocks.
+  C++ side: a shared `fetch_media_pipeline_` (disk-read → async fetch → store +
+  deliver) plus a UI-thread-only pending-request registry on `ShellBase`.
+
 - feat(ui): the room info panel's topic now sizes to its wrapped line count
   (up to 5 lines) instead of a fixed 80px slot; a longer topic is clipped at
   the cap and reveals the full text via a hover tooltip, mirroring the room

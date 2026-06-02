@@ -42,7 +42,8 @@ struct Client::Impl
     std::shared_ptr<tesseract_ffi::HandlerSlot> handler_slot;
     // Serialises all calls that reach &mut ClientFfi across the cxx boundary.
     // Any method whose Rust signature is `&self` (not `&mut self`) does NOT
-    // acquire this lock and may run concurrently: fetch_*, get_url_preview,
+    // acquire this lock and may run concurrently: fetch_*, fetch_media_async,
+    // fetch_url_async, cancel_media_group, get_url_preview, get_url_preview_async,
     // get_room_summary, get_room_members, space_children,
     // get_room_notification_mode, can_pin_in_room, needs_recovery,
     // backup_state, recovery_state, list_pack_images, list_devices,
@@ -812,6 +813,37 @@ std::vector<uint8_t> Client::fetch_url_bytes(const std::string& url)
 }
 
 // ---------------------------------------------------------------------------
+// Async media downloads (non-blocking — &self FFI, no MUT_FFI)
+// ---------------------------------------------------------------------------
+
+void Client::fetch_media_async(std::uint64_t request_id, std::uint64_t group_id,
+                               MediaReqKind kind, const std::string& source,
+                               std::uint32_t w, std::uint32_t h, bool animated)
+{
+    impl_->ffi->fetch_media_async(request_id, group_id,
+                                  static_cast<std::uint8_t>(kind), source, w, h,
+                                  animated);
+}
+
+void Client::cancel_media_group(std::uint64_t group_id)
+{
+    impl_->ffi->cancel_media_group(group_id);
+}
+
+void Client::get_url_preview_async(std::uint64_t request_id,
+                                   std::uint64_t group_id,
+                                   const std::string& url)
+{
+    impl_->ffi->get_url_preview_async(request_id, group_id, url);
+}
+
+void Client::fetch_url_async(std::uint64_t request_id, std::uint64_t group_id,
+                             const std::string& url)
+{
+    impl_->ffi->fetch_url_async(request_id, group_id, url);
+}
+
+// ---------------------------------------------------------------------------
 // URL preview
 // ---------------------------------------------------------------------------
 
@@ -1282,9 +1314,8 @@ ServerInfo Client::get_server_info() const
     return ServerInfo::from_json(std::string(impl_->ffi->get_server_info()));
 }
 
-Client::UrlPreview Client::get_url_preview(const std::string& url)
+Client::UrlPreview Client::parse_url_preview(const std::string& json)
 {
-    std::string json = std::string(impl_->ffi->get_url_preview(url));
     if (json.empty())
     {
         UrlPreview p;
@@ -1302,6 +1333,11 @@ Client::UrlPreview Client::get_url_preview(const std::string& url)
         p.failed = true;
     }
     return p;
+}
+
+Client::UrlPreview Client::get_url_preview(const std::string& url)
+{
+    return parse_url_preview(std::string(impl_->ffi->get_url_preview(url)));
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,8 @@ use matrix_sdk::{
 };
 
 #[cfg(not(test))]
+use std::collections::HashMap;
+#[cfg(not(test))]
 use std::sync::{Arc, Mutex};
 
 /// Hard upper bound on a single media download (64 MiB). A malicious or
@@ -174,6 +176,198 @@ pub(super) async fn emit_notification(
     };
     if let Ok(g) = handler.lock() {
         g.on_notification(&room_id, &room_name, &sender_name, body, is_mention, &avatar, &preview);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Async media downloads (non-blocking; deliver via on_media_ready callback)
+// ---------------------------------------------------------------------------
+
+/// `kind` discriminants for `fetch_media_async` — mirror the blocking fetch
+/// variants. Keep in sync with the C++ side (ShellBase passes these).
+#[cfg(not(test))]
+pub(super) const MEDIA_KIND_ROOM_AVATAR: u8 = 0; // room.avatar thumbnail (source = room_id)
+#[cfg(not(test))]
+pub(super) const MEDIA_KIND_MXC_THUMB: u8 = 1; // plain mxc thumbnail
+#[cfg(not(test))]
+pub(super) const MEDIA_KIND_SOURCE_THUMB: u8 = 2; // source (plain/encrypted) thumbnail
+#[cfg(not(test))]
+pub(super) const MEDIA_KIND_SOURCE_FULL: u8 = 3; // full source (plain/encrypted)
+
+/// Resolve the request and await the download for one `fetch_media_async` task.
+/// Returns the (capped) bytes, or an empty Vec on any invalid input / error.
+/// Does NOT apply the timeout/stop race — the caller wraps this in a `select!`.
+#[cfg(not(test))]
+async fn download_media(
+    client: &Client,
+    kind: u8,
+    source: &str,
+    w: u32,
+    h: u32,
+    animated: bool,
+) -> Vec<u8> {
+    use matrix_sdk::media::{
+        MediaFormat, MediaRequestParameters, MediaThumbnailSettings,
+    };
+    use matrix_sdk::ruma::events::room::MediaSource;
+    use matrix_sdk::ruma::OwnedMxcUri;
+
+    match kind {
+        MEDIA_KIND_ROOM_AVATAR => {
+            let Ok(room_id) = source.parse::<OwnedRoomId>() else {
+                return Vec::new();
+            };
+            let Some(room) = client.get_room(&room_id) else {
+                return Vec::new();
+            };
+            let settings = MediaThumbnailSettings::new(w.into(), h.into());
+            room.avatar(MediaFormat::Thumbnail(settings))
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        }
+        MEDIA_KIND_MXC_THUMB => {
+            let uri = OwnedMxcUri::from(source);
+            if !uri.is_valid() {
+                return Vec::new();
+            }
+            let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
+            settings.animated = animated;
+            let request = MediaRequestParameters {
+                source: MediaSource::Plain(uri.into()),
+                format: MediaFormat::Thumbnail(settings),
+            };
+            cap_media_bytes(
+                client.media().get_media_content(&request, true).await.unwrap_or_default(),
+            )
+        }
+        MEDIA_KIND_SOURCE_THUMB => {
+            if source.is_empty() {
+                return Vec::new();
+            }
+            let (media_source, format) = if source.starts_with("mxc://") {
+                let uri = OwnedMxcUri::from(source);
+                if !uri.is_valid() {
+                    return Vec::new();
+                }
+                let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
+                settings.animated = animated;
+                (MediaSource::Plain(uri.into()), MediaFormat::Thumbnail(settings))
+            } else {
+                match serde_json::from_str::<MediaSource>(source) {
+                    Ok(s) => (s, MediaFormat::File),
+                    Err(_) => return Vec::new(),
+                }
+            };
+            let request = MediaRequestParameters { source: media_source, format };
+            cap_media_bytes(
+                client.media().get_media_content(&request, true).await.unwrap_or_default(),
+            )
+        }
+        // MEDIA_KIND_SOURCE_FULL (and any unknown kind) → full file.
+        _ => {
+            if source.is_empty() {
+                return Vec::new();
+            }
+            let media_source = if source.starts_with("mxc://") {
+                let uri = OwnedMxcUri::from(source);
+                if !uri.is_valid() {
+                    return Vec::new();
+                }
+                MediaSource::Plain(uri.into())
+            } else {
+                match serde_json::from_str::<MediaSource>(source) {
+                    Ok(s) => s,
+                    Err(_) => return Vec::new(),
+                }
+            };
+            let request = MediaRequestParameters {
+                source: media_source,
+                format: MediaFormat::File,
+            };
+            cap_media_bytes(
+                client.media().get_media_content(&request, true).await.unwrap_or_default(),
+            )
+        }
+    }
+}
+
+/// Stream an arbitrary HTTP(S) URL into a byte buffer, enforcing `MAX_URL_BYTES`
+/// both up-front (Content-Length) and mid-stream. Returns an empty Vec on any
+/// error. Shared by the blocking `fetch_url_bytes` and the async
+/// `fetch_url_async` (map tiles); the caller wraps it in the timeout/stop race.
+#[cfg(not(test))]
+async fn download_url(client: &reqwest::Client, url: &str) -> Vec<u8> {
+    use futures_util::StreamExt;
+    let resp = match client.get(url).send().await {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let resp = match resp.error_for_status() {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    if let Some(len) = resp.content_length() {
+        if len as usize > MAX_URL_BYTES {
+            tracing::warn!(
+                "download_url: {url} declared {len} bytes > {MAX_URL_BYTES} cap; rejecting"
+            );
+            return Vec::new();
+        }
+    }
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        if buf.len().saturating_add(chunk.len()) > MAX_URL_BYTES {
+            tracing::warn!(
+                "download_url: {url} exceeded {MAX_URL_BYTES} byte cap mid-stream; aborting"
+            );
+            return Vec::new();
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    buf
+}
+
+/// Deliver a completed media download to C++ via `on_media_ready`. Tolerates a
+/// detached handler (shutdown) and a contended mutex by simply dropping.
+#[cfg(not(test))]
+fn deliver_media(
+    handler: &Option<Arc<Mutex<SendHandler>>>,
+    request_id: u64,
+    bytes: &[u8],
+) {
+    if let Some(h) = handler {
+        if let Ok(g) = h.lock() {
+            g.on_media_ready(request_id, bytes);
+        }
+    }
+}
+
+/// Register a spawned media task under `group_id` for later cancellation.
+/// Skips `group_id == 0` (ungrouped/never-cancelled). Opportunistically prunes
+/// already-finished handles in the group so the vec can't grow unbounded while
+/// a room stays active (tasks don't remove themselves — avoids a register/remove
+/// race). `request_id` is retained only for debugging.
+#[cfg(not(test))]
+fn register_media_task(
+    map: &Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
+    group_id: u64,
+    request_id: u64,
+    handle: tokio::task::AbortHandle,
+) {
+    if group_id == 0 {
+        return;
+    }
+    if let Ok(mut m) = map.lock() {
+        let v = m.entry(group_id).or_default();
+        v.retain(|(_, h)| !h.is_finished());
+        v.push((request_id, handle));
     }
 }
 
@@ -434,51 +628,46 @@ impl ClientFfi {
         let client = self.http_client.clone();
         self.rt.block_on(async move {
             tokio::select! {
-                result = async {
-                    use futures_util::StreamExt;
-                    let resp = match client.get(&url).send().await {
-                        Ok(r) => r,
-                        Err(_) => return Vec::new(),
-                    };
-                    let resp = match resp.error_for_status() {
-                        Ok(r) => r,
-                        Err(_) => return Vec::new(),
-                    };
-                    // Reject up-front when the server advertises a body
-                    // larger than the cap, before we allocate anything.
-                    if let Some(len) = resp.content_length() {
-                        if len as usize > MAX_URL_BYTES {
-                            tracing::warn!(
-                                "fetch_url_bytes: {url} declared {len} bytes \
-                                 > {MAX_URL_BYTES} cap; rejecting"
-                            );
-                            return Vec::new();
-                        }
-                    }
-                    // Stream chunks and bail mid-flight if the body lies
-                    // about its length (or omits Content-Length entirely).
-                    let mut stream = resp.bytes_stream();
-                    let mut buf: Vec<u8> = Vec::new();
-                    while let Some(chunk) = stream.next().await {
-                        let chunk = match chunk {
-                            Ok(c) => c,
-                            Err(_) => return Vec::new(),
-                        };
-                        if buf.len().saturating_add(chunk.len()) > MAX_URL_BYTES {
-                            tracing::warn!(
-                                "fetch_url_bytes: {url} exceeded {MAX_URL_BYTES} \
-                                 byte cap mid-stream; aborting"
-                            );
-                            return Vec::new();
-                        }
-                        buf.extend_from_slice(&chunk);
-                    }
-                    buf
-                } => result,
+                result = download_url(&client, &url) => result,
                 _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
+    }
+
+    /// Non-blocking counterpart of `fetch_url_bytes` (map tiles, etc.). Spawns
+    /// the fetch under the bulk lane and fires `on_media_ready(request_id,
+    /// bytes)` on completion. Does not pin a worker thread.
+    pub fn fetch_url_async(&self, request_id: u64, group_id: u64, url: &str) {
+        let handler = self.handler.clone();
+        if url.is_empty() {
+            deliver_media(&handler, request_id, &[]);
+            return;
+        }
+        let in_flight = Arc::clone(&self.in_flight);
+        let stop_rx = self.stop_rx.clone();
+        let sem = Arc::clone(&self.media_sem_bulk);
+        let client = self.http_client.clone();
+        let url = url.to_owned();
+
+        let handle = self.rt.spawn(async move {
+            let _permit = match sem.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    deliver_media(&handler, request_id, &[]);
+                    return;
+                }
+            };
+            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let bytes = tokio::select! {
+                b = download_url(&client, &url) => b,
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            };
+            deliver_media(&handler, request_id, &bytes);
+        });
+
+        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
     }
 
     // -----------------------------------------------------------------------
@@ -527,6 +716,145 @@ impl ClientFfi {
                 _ = stop_fut(stop_rx) => String::new(),
             }
         })
+    }
+
+    /// Non-blocking media download. Spawns the fetch on the tokio runtime under
+    /// a per-lane semaphore and fires `on_media_ready(request_id, bytes)` on
+    /// completion (empty bytes on failure/timeout/cancel). Unlike the blocking
+    /// `fetch_*_bytes` methods this does not pin a C++ worker thread for the
+    /// network round-trip, so dozens of downloads can be in flight at once.
+    pub fn fetch_media_async(
+        &self,
+        request_id: u64,
+        group_id: u64,
+        kind: u8,
+        source: &str,
+        w: u32,
+        h: u32,
+        animated: bool,
+    ) {
+        let handler = self.handler.clone();
+        let Some(client) = self.client.clone() else {
+            // Resolve immediately so the C++ pending entry never dangles.
+            deliver_media(&handler, request_id, &[]);
+            return;
+        };
+        let in_flight = Arc::clone(&self.in_flight);
+        let stop_rx = self.stop_rx.clone();
+        // Full-size downloads are slow and low-priority → the narrow bulk lane.
+        // Avatars/thumbnails are small and interactive → the wide fg lane.
+        let sem = if kind == MEDIA_KIND_SOURCE_FULL {
+            Arc::clone(&self.media_sem_bulk)
+        } else {
+            Arc::clone(&self.media_sem_fg)
+        };
+        let timeout = if kind == MEDIA_KIND_SOURCE_FULL {
+            FULL_MEDIA_FETCH_TIMEOUT
+        } else {
+            THUMBNAIL_FETCH_TIMEOUT
+        };
+        let source = source.to_owned();
+
+        let handle = self.rt.spawn(async move {
+            // `acquire_owned` yields a 'static permit so it can be held across
+            // the await without borrowing the Arc. Closed semaphore = shutdown.
+            let _permit = match sem.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    deliver_media(&handler, request_id, &[]);
+                    return;
+                }
+            };
+            // Tracks the activity dot for the duration of the actual download.
+            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let bytes = tokio::select! {
+                b = download_media(&client, kind, &source, w, h, animated) => b,
+                _ = tokio::time::sleep(timeout) => Vec::new(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            };
+            deliver_media(&handler, request_id, &bytes);
+        });
+
+        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+    }
+
+    /// Abort every in-flight `fetch_media_async` / `get_url_preview_async`
+    /// download registered under `group_id`. Called on room switch to drop the
+    /// previous room's pending media. No-op for group 0 or an unknown group.
+    pub fn cancel_media_group(&self, group_id: u64) {
+        if group_id == 0 {
+            return;
+        }
+        if let Ok(mut m) = self.media_tasks.lock() {
+            if let Some(v) = m.remove(&group_id) {
+                for (_, h) in v {
+                    h.abort();
+                }
+            }
+        }
+    }
+
+    /// Async counterpart of `get_url_preview`. Spawns the fetch under the bulk
+    /// lane and fires `on_url_preview_ready(request_id, json)` on completion
+    /// (empty string on failure).
+    #[allow(deprecated)]
+    pub fn get_url_preview_async(&self, request_id: u64, group_id: u64, url: &str) {
+        use ruma::api::client::media::get_media_preview::v3::Request;
+
+        let handler = self.handler.clone();
+        let deliver = |json: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() {
+                    g.on_url_preview_ready(request_id, json);
+                }
+            }
+        };
+        let Some(client) = self.client.clone() else {
+            deliver("");
+            return;
+        };
+        if url.is_empty() {
+            deliver("");
+            return;
+        }
+        let in_flight = Arc::clone(&self.in_flight);
+        let stop_rx = self.stop_rx.clone();
+        let sem = Arc::clone(&self.media_sem_bulk);
+        let url_str = url.to_owned();
+        let handler_task = self.handler.clone();
+
+        let handle = self.rt.spawn(async move {
+            let deliver = |json: &str| {
+                if let Some(h) = &handler_task {
+                    if let Ok(g) = h.lock() {
+                        g.on_url_preview_ready(request_id, json);
+                    }
+                }
+            };
+            let _permit = match sem.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    deliver("");
+                    return;
+                }
+            };
+            let _guard = super::InFlightGuard::new(&in_flight, &handler_task);
+            let req = Request::new(url_str);
+            let json = tokio::select! {
+                result = async { client.send(req).await } => match result {
+                    Ok(resp) => {
+                        let json = resp.data.map(|v| v.get().to_owned()).unwrap_or_default();
+                        if json.len() > MAX_URL_BYTES { String::new() } else { json }
+                    }
+                    Err(_) => String::new(),
+                },
+                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => String::new(),
+                _ = stop_fut(stop_rx) => String::new(),
+            };
+            deliver(&json);
+        });
+
+        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
     }
 }
 

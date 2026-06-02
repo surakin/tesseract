@@ -56,6 +56,10 @@ public:
                            const std::string& thread_root,
                            std::size_t index) override;
     void on_threads_updated(const std::string& room_id) override;
+    void on_media_ready(std::uint64_t request_id,
+                        const std::vector<std::uint8_t>& bytes) override;
+    void on_url_preview_ready(std::uint64_t request_id,
+                              const std::string& preview_json) override;
     void on_rooms_updated(const std::vector<RoomInfo>& rooms) override;
     void on_invites_updated(const std::vector<InviteInfo>& invites) override;
     void on_sync_error(const std::string& context,
