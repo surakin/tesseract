@@ -267,6 +267,9 @@ public:
     using ShellBase::shortcode_for_mxc_;
     using ShellBase::pool_;
     using ShellBase::mut_pool_;
+    using ShellBase::init_pool_callbacks_;
+    using ShellBase::pool_pending_count_;
+    using ShellBase::mut_pool_pending_count_;
     using ShellBase::run_async_mut_;
     using ShellBase::apply_space_child_counts_;
     using ShellBase::space_children_cache_;
