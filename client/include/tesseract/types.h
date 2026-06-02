@@ -410,6 +410,7 @@ struct RoomInfo
     uint64_t last_activity_ts = 0;
     bool is_space = false;
     bool is_favorite = false;
+    bool is_low_priority = false;
     /// HTML body from the MSC3765 m.topic block; empty when absent.
     std::string topic_html;
     /// True when the room has encryption enabled.

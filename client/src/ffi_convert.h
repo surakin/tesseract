@@ -126,6 +126,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .last_activity_ts = r.last_activity_ts,
         .is_space = r.is_space,
         .is_favorite = r.is_favorite,
+        .is_low_priority = r.is_low_priority,
         .topic_html = std::string(r.topic_html),
         .is_encrypted = r.is_encrypted,
         .history_visibility = std::string(r.history_visibility),

@@ -799,6 +799,14 @@ public:
     /// Blocks the calling thread — call from a worker thread.
     void set_room_notification_mode(std::string room_id, std::string mode);
 
+    /// Add/remove the m.favourite tag. Setting it clears m.lowpriority.
+    /// Fire-and-forget. Blocks — call from a worker thread.
+    void set_room_favourite(std::string room_id, bool value);
+
+    /// Add/remove the m.lowpriority tag. Setting it clears m.favourite.
+    /// Fire-and-forget. Blocks — call from a worker thread.
+    void set_room_low_priority(std::string room_id, bool value);
+
     /// Add user_id to m.ignored_user_list account data.
     /// Blocks the calling thread — call from a worker thread.
     Result ignore_user(const std::string& user_id);

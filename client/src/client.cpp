@@ -1213,6 +1213,18 @@ void Client::set_room_notification_mode(std::string room_id, std::string mode)
     impl_->ffi->set_room_notification_mode(room_id, mode);
 }
 
+void Client::set_room_favourite(std::string room_id, bool value)
+{
+    MUT_FFI;
+    impl_->ffi->set_room_favourite(room_id, value);
+}
+
+void Client::set_room_low_priority(std::string room_id, bool value)
+{
+    MUT_FFI;
+    impl_->ffi->set_room_low_priority(room_id, value);
+}
+
 Result Client::ignore_user(const std::string& user_id)
 {
     MUT_FFI;
