@@ -1,0 +1,308 @@
+================================================================================
+                     THIRD-PARTY SOFTWARE LICENSES
+================================================================================
+
+Tesseract incorporates and links against the third-party software listed below.
+Each component remains under its own license and copyright; this file reproduces
+the applicable license terms.
+
+SPDX identifiers are taken from each project's own package metadata. Where a
+component is offered under a choice of licenses ("OR"), Tesseract relies on it
+under any one of the listed licenses at the user's option.
+
+The full text of every distinct license referenced below appears in the
+"LICENSE TEXTS" section at the end of this file. The copyleft toolkit licenses
+(LGPL-2.1, LGPL-3.0) are referenced by their canonical URLs rather than inlined;
+their full text ships with the respective libraries.
+
+================================================================================
+                  1. RUST CRATES (sdk/ — direct dependencies)
+================================================================================
+
+Component            SPDX License                       Author / Maintainer
+--------             ------------                       -------------------
+matrix-sdk           Apache-2.0                          The Matrix.org Foundation / Element
+matrix-sdk-base      Apache-2.0                          The Matrix.org Foundation / Element
+matrix-sdk-ui        Apache-2.0                          The Matrix.org Foundation / Element
+ruma                 MIT                                 The Ruma project
+cxx                  MIT OR Apache-2.0                   David Tolnay
+tokio                MIT                                 Tokio project
+reqwest              MIT OR Apache-2.0                   Sean McArthur
+tiny_http            MIT OR Apache-2.0                   Pierre Krieger
+serde                MIT OR Apache-2.0                   David Tolnay & Erick Tryzelaar
+serde_json           MIT OR Apache-2.0                   David Tolnay & Erick Tryzelaar
+futures-util         MIT OR Apache-2.0                   The Rust futures-rs team
+anyhow               MIT OR Apache-2.0                   David Tolnay
+tracing              MIT                                 Tokio project
+tracing-subscriber   MIT                                 Tokio project
+url                  MIT OR Apache-2.0                   The Servo project
+rusqlite             MIT                                 The rusqlite project
+syntect              MIT                                 Tristan Hume
+audiopus             ISC                                 Lars Wirth
+ogg                  BSD-3-Clause                        RustAudio
+mime                 MIT OR Apache-2.0                   Sean McArthur
+hostname             MIT                                 Steven Allen
+
+================================================================================
+            2. RUST CRATES (notable transitive dependencies)
+================================================================================
+
+Component            SPDX License                       Author / Maintainer
+--------             ------------                       -------------------
+rustls               Apache-2.0 OR ISC OR MIT            The Rustls project
+libsqlite3-sys       MIT                                 The rusqlite project
+SQLite (bundled)     Public Domain                       D. Richard Hipp
+aws-lc-sys           ISC AND (Apache-2.0 OR ISC) AND     Amazon Web Services
+                     Apache-2.0 AND MIT AND
+                     BSD-3-Clause AND
+                     (Apache-2.0 OR ISC OR MIT) AND
+                     (Apache-2.0 OR ISC OR MIT-0)
+
+SQLite is dedicated to the public domain by its author; see
+https://www.sqlite.org/copyright.html. It is compiled in-tree via matrix-sdk's
+"bundled-sqlite" feature.
+
+aws-lc / aws-lc-sys aggregates code under several licenses (including portions
+derived from BoringSSL and OpenSSL). See the aws-lc distribution for the
+complete per-file license breakdown: https://github.com/aws/aws-lc.
+
+================================================================================
+                 3. UI TOOLKITS (C++ — per platform)
+================================================================================
+
+Component            SPDX License                       Author / Maintainer
+--------             ------------                       -------------------
+Qt 6                 LGPL-3.0-only (open-source          The Qt Company / Qt Project
+                     edition; GPL / commercial also
+                     available)
+GTK 4                LGPL-2.1-or-later                   The GNOME Project
+Pango                LGPL-2.1-or-later                   The GNOME Project
+Cairo                LGPL-2.1-or-later OR MPL-1.1        The Cairo project
+gdk-pixbuf           LGPL-2.1-or-later                   The GNOME Project
+GLib / GIO           LGPL-2.1-or-later                   The GNOME Project
+GStreamer            LGPL-2.1-or-later                   The GStreamer project
+  + gst-plugins-base LGPL-2.1-or-later                   The GStreamer project
+Win32 / Direct2D     Proprietary (Windows SDK,           Microsoft Corporation
+                     system component)
+AppKit / CoreGraphics/Proprietary (macOS SDK,            Apple Inc.
+CoreText             system component)
+
+Qt is used under the LGPL-3.0; see https://www.gnu.org/licenses/lgpl-3.0.html.
+GTK 4, Pango, gdk-pixbuf, GLib/GIO and GStreamer are used under the
+LGPL-2.1-or-later; see https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+These libraries are dynamically linked. Win32 and AppKit are operating-system
+components provided by Microsoft and Apple respectively under their own platform
+SDK terms and are not redistributed with Tesseract.
+
+================================================================================
+              4. BUILD-TIME & VENDORED LIBRARIES (C++)
+================================================================================
+
+Component            SPDX License                       Author / Maintainer
+--------             ------------                       -------------------
+nanosvg (vendored)   Zlib                                Mikko Mononen
+                                                         (incl. AntiGrain code by
+                                                         Maxim Shemanarev)
+nlohmann/json        MIT                                 Niels Lohmann
+Catch2               BSL-1.0                             Catch2 project (Martin Hořeňovský)
+Corrosion            MIT                                 The Corrosion project
+CMake                BSD-3-Clause                        Kitware, Inc.
+Ninja                Apache-2.0                          Google / Evan Martin
+
+nanosvg (nanosvg.h, nanosvgrast.h) is the only vendored source dependency and
+lives in ui/shared/tk/. Catch2, Corrosion and nlohmann/json are fetched at
+configure time via CMake FetchContent. CMake and Ninja are build tools and are
+not redistributed with the application binary.
+
+================================================================================
+                            LICENSE TEXTS
+================================================================================
+
+--------------------------------------------------------------------------------
+MIT License
+--------------------------------------------------------------------------------
+
+Applies to: ruma, tokio, tracing, tracing-subscriber, rusqlite, syntect,
+hostname, libsqlite3-sys, nlohmann/json, Corrosion, and (at your option) cxx,
+reqwest, tiny_http, serde, serde_json, futures-util, anyhow, url, mime, rustls.
+
+Copyright (c) the respective authors listed above.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+Apache License 2.0
+--------------------------------------------------------------------------------
+
+Applies to: matrix-sdk, matrix-sdk-base, matrix-sdk-ui, Ninja, and (at your
+option) cxx, reqwest, tiny_http, serde, serde_json, futures-util, anyhow, url,
+mime, rustls, aws-lc-sys.
+
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+The complete Apache License 2.0 text is available at:
+https://www.apache.org/licenses/LICENSE-2.0.txt
+
+--------------------------------------------------------------------------------
+BSD 3-Clause License
+--------------------------------------------------------------------------------
+
+Applies to: ogg, CMake, and (as one option) portions of aws-lc-sys.
+
+Copyright (c) the respective authors listed above.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+ISC License
+--------------------------------------------------------------------------------
+
+Applies to: audiopus, and (as one option) rustls and portions of aws-lc-sys.
+
+Copyright (c) the respective authors listed above.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+--------------------------------------------------------------------------------
+zlib License
+--------------------------------------------------------------------------------
+
+Applies to: nanosvg (ui/shared/tk/nanosvg.h, nanosvgrast.h).
+
+Copyright (c) 2013-14 Mikko Mononen memon@inside.org
+Portions copyright (c) 2002-2004 Maxim Shemanarev (McSeem), http://www.antigrain.com/
+
+This software is provided 'as-is', without any express or implied warranty. In
+no event will the authors be held liable for any damages arising from the use
+of this software.
+
+Permission is granted to anyone to use this software for any purpose, including
+commercial applications, and to alter it and redistribute it freely, subject to
+the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim
+   that you wrote the original software. If you use this software in a product,
+   an acknowledgment in the product documentation would be appreciated but is
+   not required.
+
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+
+3. This notice may not be removed or altered from any source distribution.
+
+--------------------------------------------------------------------------------
+Boost Software License 1.0 (BSL-1.0)
+--------------------------------------------------------------------------------
+
+Applies to: Catch2.
+
+Boost Software License - Version 1.0 - August 17th, 2003
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by this
+license (the "Software") to use, reproduce, display, distribute, execute, and
+transmit the Software, and to prepare derivative works of the Software, and to
+permit third-parties to whom the Software is furnished to do so, all subject to
+the following:
+
+The copyright notices in the Software and this entire statement, including the
+above license grant, this restriction and the following disclaimer, must be
+included in all copies of the Software, in whole or in part, and all derivative
+works of the Software, unless such copies or derivative works are solely in the
+form of machine-executable object code generated by a source language
+processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE FOR ANY
+DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+GNU Lesser General Public License
+--------------------------------------------------------------------------------
+
+Applies to: Qt 6 (LGPL-3.0), GTK 4, Pango, gdk-pixbuf, GLib/GIO, GStreamer and
+gst-plugins-base (LGPL-2.1-or-later). These libraries are dynamically linked.
+
+  LGPL-2.1: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+  LGPL-3.0: https://www.gnu.org/licenses/lgpl-3.0.html
+
+The full license texts are distributed with each library.
+
+--------------------------------------------------------------------------------
+SQLite — Public Domain
+--------------------------------------------------------------------------------
+
+SQLite (authored by D. Richard Hipp and contributors) is in the public domain.
+The author disclaims copyright. See https://www.sqlite.org/copyright.html.
+
+================================================================================
+End of THIRD-PARTY-LICENSES.
+================================================================================
