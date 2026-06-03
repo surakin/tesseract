@@ -631,6 +631,22 @@ const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
     return shell_->thumbnail_cache_.peek(mxc);
 }
 
+void RoomWindowBase::wire_mention_shell_hooks_(
+    views::MentionPopup* popup, views::MentionController::Hooks& hooks)
+{
+    if (popup)
+    {
+        popup->set_image_provider(
+            [this](const std::string& mxc) { return shell_avatar_(mxc); });
+    }
+    // Live client getter (robust against account switches while the pop-out is
+    // open) and avatar prefetch into the shared cache. RoomWindowBase is a
+    // friend of ShellBase, so ensure_user_avatar_ is reachable here.
+    hooks.client = [this] { return shell_client_(); };
+    hooks.fetch_avatar =
+        [this](const std::string& mxc) { shell_->ensure_user_avatar_(mxc); };
+}
+
 const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
 {
     if (auto* f = shell_->anim_cache_.current_frame(mxc))

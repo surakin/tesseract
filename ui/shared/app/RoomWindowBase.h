@@ -1,4 +1,5 @@
 #pragma once
+#include "views/MentionController.h"
 #include "views/MessageListView.h"
 #include "views/RoomView.h"
 #include "tk/host.h"
@@ -129,6 +130,14 @@ protected:
     // so platform subclasses don't need their own friend declarations.
     const tk::Image* shell_avatar_(const std::string& mxc) const;
     const tk::Image* shell_image_(const std::string& mxc) const;
+
+    // Wire the shell-backed mention-popup hooks shared by every pop-out window:
+    // a live client getter (so the controller never holds a stale snapshot), an
+    // avatar prefetch into the shell cache, and the popup's avatar image
+    // provider (peeks that same cache). Call after creating the popup widget
+    // and before constructing the MentionController.
+    void wire_mention_shell_hooks_(views::MentionPopup* popup,
+                                   views::MentionController::Hooks& hooks);
     std::vector<std::uint8_t>
     fetch_source_bytes_(const std::string& source_json);
 

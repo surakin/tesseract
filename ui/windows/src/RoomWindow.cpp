@@ -232,6 +232,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         { run_async_(std::move(fn)); };
         hooks.post_to_ui = [this](std::function<void()> fn)
         { post_to_ui_(std::move(fn)); };
+        wire_mention_shell_hooks_(mention_popup_widget_, hooks);
         mention_controller_ =
             std::make_unique<tesseract::views::MentionController>(
                 text_area_.get(), shell_client_(), mention_popup_widget_,

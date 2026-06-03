@@ -706,6 +706,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         [c _relayoutChatSurface];
         [c _relayoutAccountPickerIfVisible];
+        [c _relayoutMentionPopupIfVisible];
     }
 }
 
@@ -2924,6 +2925,28 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 if (MainWindowController* c = mc)
                     c->_shell->post_to_ui_(std::move(fn));
             };
+            // Live client getter: this controller is built before a session is
+            // restored (_shell->client_ is null here), so a snapshot would stay
+            // null. Reading it on each fetch also tracks account switches.
+            hooks.client = [mc]() -> tesseract::Client*
+            {
+                MainWindowController* c = mc;
+                return c ? c->_shell->client_ : nullptr;
+            };
+            hooks.fetch_avatar = [mc](const std::string& mxc)
+            {
+                if (MainWindowController* c = mc)
+                    c->_shell->ensure_user_avatar_(mxc);
+            };
+            // Resolve candidate avatars from the shared avatar cache.
+            _mentionPopupWidget->set_image_provider(
+                [mc](const std::string& mxc) -> const tk::Image*
+                {
+                    MainWindowController* c = mc;
+                    if (!c || !c->_shell)
+                        return nullptr;
+                    return c->_shell->thumbnail_cache_.peek(mxc);
+                });
             _mentionController =
                 std::make_unique<tesseract::views::MentionController>(
                     _roomTextArea.get(), _shell->client_, _mentionPopupWidget,
