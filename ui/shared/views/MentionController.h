@@ -38,6 +38,20 @@ public:
         std::function<void()> hide;
         std::function<void()> repaint;
         std::function<std::string()> room_id; // active room (member cache key)
+        // Live client getter. Optional: when set, it is queried on every fetch
+        // so the controller always sees the current client even if it was
+        // constructed before login (the Win32 main window builds its controller
+        // in on_create, before client_ is assigned). Callers that construct the
+        // controller after login can leave this null and rely on the ctor
+        // snapshot instead.
+        std::function<tesseract::Client*()> client;
+        // Prefetch a candidate's avatar (mxc URL) into the shell's avatar cache
+        // so the popup's image provider can resolve it on a later repaint.
+        // Optional: when null, candidates render initials discs only. The shell
+        // is also responsible for setting the popup's image_provider (it reads
+        // the shell-owned cache) and for repainting the popup surface when the
+        // avatar decodes.
+        std::function<void(const std::string& mxc)> fetch_avatar;
         // ShellBase worker / UI-thread plumbing (members fetch must be off-thread).
         std::function<void(std::function<void()>)> run_async;
         std::function<void(std::function<void()>)> post_to_ui;

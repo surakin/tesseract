@@ -2432,6 +2432,11 @@ void MainWindow::on_create(HWND hwnd)
                 hInst_, mention_popup_hwnd_, main_app_surface_->theme());
             auto pw = std::make_unique<tesseract::views::MentionPopup>();
             mention_popup_widget_ = pw.get();
+            // Resolve candidate avatars from the shared avatar cache; the
+            // controller prefetches them via hooks.fetch_avatar below and they
+            // land here on a later repaint.
+            mention_popup_widget_->set_image_provider(
+                make_avatar_image_provider_());
             mention_popup_surface_->set_root(std::move(pw));
 
             tesseract::views::MentionController::Hooks hooks;
@@ -2444,6 +2449,13 @@ void MainWindow::on_create(HWND hwnd)
                     mention_popup_surface_->host().request_repaint();
             };
             hooks.room_id = [this] { return current_room_id_; };
+            // Live client getter: this controller is built in on_create, before
+            // client_ is assigned at login, so a snapshot would stay null. The
+            // getter reads the current client on every fetch, also tracking
+            // logout and account switches.
+            hooks.client = [this] { return client_; };
+            hooks.fetch_avatar = [this](const std::string& mxc)
+            { ensure_user_avatar_(mxc); };
             hooks.run_async = [this](std::function<void()> fn)
             { run_async_(std::move(fn)); };
             hooks.post_to_ui = [this](std::function<void()> fn)
@@ -4681,6 +4693,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             account_picker_surface_)
         {
             account_picker_surface_->relayout();
+        }
+        if (mention_popup_visible_() && mention_popup_surface_)
+        {
+            mention_popup_surface_->relayout();
         }
         break;
     case MediaKind::MediaImage:

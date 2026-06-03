@@ -44,15 +44,22 @@ bool MentionController::on_text_changed(const std::string& text, int cursor)
 
     std::string rid = hooks_.room_id ? hooks_.room_id() : std::string{};
 
+    // Resolve the live client. The Win32 main window constructs this
+    // controller in on_create — before client_ is assigned at login — so the
+    // ctor snapshot is null there forever. Prefer the (optional) live getter so
+    // the fetch sees the current client; fall back to the snapshot for callers
+    // that build the controller after login.
+    tesseract::Client* client = hooks_.client ? hooks_.client() : client_;
+
     // Member list must be fetched off the UI thread (get_room_members blocks).
     // When the cache is stale, fetch async and re-run when results arrive.
     if (cached_members_room_ != rid)
     {
-        if (fetching_room_ != rid && client_ && hooks_.run_async &&
+        if (fetching_room_ != rid && client && hooks_.run_async &&
             hooks_.post_to_ui)
         {
             fetching_room_ = rid;
-            auto* c = client_;
+            auto* c = client;
             auto alive = alive_;
             // Capture `hooks` by value (it is just std::functions) so the
             // worker thread never dereferences `this` to reach hooks_. The
@@ -94,6 +101,18 @@ bool MentionController::on_text_changed(const std::string& text, int cursor)
     }
     active_match_ = *m;
     popup_->set_candidates(candidates_);
+    // Kick off avatar fetches; they appear on a later popup repaint once the
+    // shell decodes and caches them (the @room entry has no avatar).
+    if (hooks_.fetch_avatar)
+    {
+        for (const auto& c : candidates_)
+        {
+            if (!c.is_room && !c.avatar_url.empty())
+            {
+                hooks_.fetch_avatar(c.avatar_url);
+            }
+        }
+    }
     if (hooks_.show)
     {
         hooks_.show(text_area_->cursor_rect(), popup_->visible_rows());
