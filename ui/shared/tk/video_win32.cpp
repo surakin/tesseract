@@ -40,6 +40,7 @@ MFCreateMFByteStreamOnStream(IStream* pStream, IMFByteStream** ppByteStream);
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -542,6 +543,23 @@ private:
             return;
         }
 
+        // Media Foundation pads each row to a stride that the decoder picks for
+        // alignment, which is often larger than frame_w*4 (e.g. a 200px-wide
+        // video aligns to 208px → 832-byte rows, not the 800 a packed buffer
+        // would have). MF_MT_DEFAULT_STRIDE carries the real stride (signed:
+        // negative means a bottom-up buffer). We repack to a tightly-packed
+        // BGRA buffer below; copying the raw buffer blindly would shear the
+        // image diagonally.
+        LONG src_stride = 0;
+        {
+            UINT32 s32 = 0;
+            if (SUCCEEDED(
+                    actual_type->GetUINT32(MF_MT_DEFAULT_STRIDE, &s32)))
+            {
+                src_stride = static_cast<LONG>(static_cast<INT32>(s32));
+            }
+        }
+
         // Read video samples at 60 Hz pace (no exact timing; just drain as fast
         // as practical so frames are up-to-date during scrub).
         while (decode_running_)
@@ -582,7 +600,59 @@ private:
 
             // MFVideoFormat_RGB32 is BGRX; the unused 4th byte is 0x00. make_image_from_bgra
             // marks the resulting D2DImage opaque so D2D ignores the zero alpha.
-            std::vector<uint8_t> pixels(ptr, ptr + len);
+            //
+            // Repack from MF's (possibly row-padded) buffer into a tightly-
+            // packed frame_w*4 buffer. Decoders pad each row for alignment
+            // (e.g. a 200px-wide video → 208px → 832-byte rows, not 800), so
+            // copying the buffer blindly shears the image diagonally.
+            //
+            // We derive the stride MAGNITUDE from the contiguous buffer length
+            // (len == |stride| * height), which is the ground truth: the
+            // advertised MF_MT_DEFAULT_STRIDE reports the *unpadded* width here
+            // and cannot be trusted for the magnitude. MF_MT_DEFAULT_STRIDE is
+            // still used for the SIGN (negative → bottom-up buffer).
+            const UINT dst_stride = frame_w * 4u;
+            UINT abs_stride = 0;
+            if (frame_h != 0 && (len % frame_h) == 0)
+            {
+                abs_stride = len / frame_h;
+            }
+            else if (src_stride != 0)
+            {
+                abs_stride =
+                    static_cast<UINT>(src_stride < 0 ? -src_stride : src_stride);
+            }
+            else
+            {
+                abs_stride = dst_stride;
+            }
+            const LONG stride =
+                (src_stride < 0) ? -static_cast<LONG>(abs_stride)
+                                 : static_cast<LONG>(abs_stride);
+            // Guard against a malformed stride/length that would read past the
+            // locked buffer.
+            if (abs_stride < dst_stride ||
+                static_cast<DWORD>(abs_stride) * frame_h > len)
+            {
+                buf->Unlock();
+                continue;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(dst_stride) *
+                                        frame_h);
+            // Negative stride → bottom-up buffer: the first row in memory is the
+            // last row of the image, so start at the bottom and walk back up.
+            const BYTE* src_base =
+                (stride < 0)
+                    ? ptr + static_cast<size_t>(abs_stride) * (frame_h - 1)
+                    : ptr;
+            for (UINT y = 0; y < frame_h; ++y)
+            {
+                const BYTE* src_row =
+                    src_base + static_cast<ptrdiff_t>(y) * stride;
+                std::memcpy(pixels.data() +
+                                static_cast<size_t>(y) * dst_stride,
+                            src_row, dst_stride);
+            }
             buf->Unlock();
 
             if (backend_)
