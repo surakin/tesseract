@@ -60,6 +60,10 @@ private:
     static void on_destroy_(GtkWidget* widget, gpointer self);
     static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval,
                                     guint, GdkModifierType, gpointer self);
+    // Global-scope Ctrl+K shortcut — routes to the main window's quick
+    // switcher, bringing the main window forward (the switcher lives there).
+    static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
+                                              gpointer self);
 
     static void on_copy_action_(GSimpleAction*, GVariant*, gpointer self);
 

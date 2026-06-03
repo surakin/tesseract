@@ -3936,6 +3936,15 @@ void MainWindow::open_quick_switch_()
     {
         return;
     }
+    // The Ctrl+K accelerator is application-wide (translated in the message
+    // loop against this window), so it fires even while a pop-out room window
+    // holds focus. Bring the main window forward (the switcher lives here) so
+    // it is visible. Harmless no-op when this window is already foreground.
+    if (IsIconic(hwnd_))
+    {
+        ShowWindow(hwnd_, SW_RESTORE);
+    }
+    SetForegroundWindow(hwnd_);
     main_app_->show_quick_switch(true);
     // Relayout first so the native field is positioned + shown via the
     // surface's on_layout hook before we focus it.

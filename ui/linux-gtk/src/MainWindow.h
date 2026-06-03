@@ -66,6 +66,15 @@ public:
         gtk_window_present(GTK_WINDOW(window_));
     }
 
+    // Bring the main window forward and open the quick switcher. Pop-out room
+    // windows route here on Ctrl+K — their own shortcut controller is scoped
+    // to the pop-out window, while the switcher widget lives in the main one.
+    void request_quick_switch_from_popout()
+    {
+        present();
+        open_quick_switch_();
+    }
+
     // These are called from internal async callbacks (paginate/subscribe workers).
     void push_paginate_result(std::string room_id, bool reached_start);
     void push_subscribe_result(std::string room_id, bool reached_start);

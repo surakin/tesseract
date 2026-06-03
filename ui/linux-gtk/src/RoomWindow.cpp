@@ -331,6 +331,21 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         gtk_widget_add_controller(GTK_WIDGET(window_), key_ctl);
     }
 
+    // Ctrl+K opens the quick switcher on the main window. A global-scope
+    // shortcut controller fires even while the compose entry holds focus; the
+    // switcher widget lives in the main window, so we route there and raise it.
+    {
+        GtkEventController* sc = gtk_shortcut_controller_new();
+        gtk_shortcut_controller_set_scope(GTK_SHORTCUT_CONTROLLER(sc),
+                                          GTK_SHORTCUT_SCOPE_GLOBAL);
+        GtkShortcut* shortcut = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_k, GDK_CONTROL_MASK),
+            gtk_callback_action_new(on_quick_switch_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             shortcut);
+        gtk_widget_add_controller(GTK_WIDGET(window_), sc);
+    }
+
     gtk_window_present(window_);
     finish_init_();
 }
@@ -566,6 +581,16 @@ gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval,
         }
     }
     return FALSE;
+}
+
+// static
+gboolean RoomWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*,
+                                               gpointer self)
+{
+    auto* w = static_cast<RoomWindow*>(self);
+    if (w->parent_shell_)
+        w->parent_shell_->request_quick_switch_from_popout();
+    return TRUE;
 }
 
 void RoomWindow::bring_to_front()

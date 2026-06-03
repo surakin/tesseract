@@ -5334,6 +5334,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
 {
     if (!_mainApp || !_mainApp->quick_switcher())
         return;
+    // The ⌘K monitor is application-local, so it fires while a pop-out room
+    // window is key. Bring the main window forward (the switcher lives here)
+    // so it is visible and its search field can take focus.
+    if (![self.window isKeyWindow])
+        [self.window makeKeyAndOrderFront:nil];
     _mainApp->show_quick_switch(true);
     if (_mainAppSurface)
         _mainAppSurface->relayout();

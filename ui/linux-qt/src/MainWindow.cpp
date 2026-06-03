@@ -2123,6 +2123,11 @@ void MainWindow::openQuickSwitch_()
 {
     if (!mainApp_ || !mainApp_->quick_switcher())
         return;
+    // The Ctrl+K shortcut is application-scoped, so this can fire while a
+    // pop-out room window holds focus. Bring the main window forward (the
+    // switcher lives here) so it is visible and its search field can focus.
+    if (!isActiveWindow())
+        activateWindowWithToken_(QString{});
     mainApp_->show_quick_switch(true);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
