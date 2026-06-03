@@ -648,6 +648,25 @@ void RoomWindow::surface_repaint_()
     }
 }
 
+void RoomWindow::repaint_anim_frame()
+{
+    surface_repaint_();
+    if (emoji_popover_ && gtk_widget_get_visible(emoji_popover_))
+    {
+        if (emoji_picker_shared_)
+            emoji_picker_shared_->invalidate_image_cache();
+        if (emoji_picker_surface_)
+            emoji_picker_surface_->relayout();
+    }
+    if (sticker_popover_ && gtk_widget_get_visible(sticker_popover_))
+    {
+        if (sticker_picker_shared_)
+            sticker_picker_shared_->invalidate_image_cache();
+        if (sticker_picker_surface_)
+            sticker_picker_surface_->relayout();
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 tesseract::RoomWindowBase*

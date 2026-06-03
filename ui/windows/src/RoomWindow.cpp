@@ -696,6 +696,26 @@ void RoomWindow::surface_repaint_()
     }
 }
 
+void RoomWindow::repaint_anim_frame()
+{
+    // Inline animated media in the timeline.
+    surface_repaint_();
+    // Visible pickers: invalidate the shared view's image cache so animated
+    // sticker/emoticon cells advance, then repaint the popup surface.
+    if (emoji_popup_ && emoji_popup_->visible())
+    {
+        if (emoji_picker_)
+            emoji_picker_->invalidate_image_cache();
+        emoji_popup_->repaint();
+    }
+    if (sticker_popup_ && sticker_popup_->visible())
+    {
+        if (sticker_picker_)
+            sticker_picker_->invalidate_image_cache();
+        sticker_popup_->repaint();
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 LRESULT CALLBACK RoomWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,

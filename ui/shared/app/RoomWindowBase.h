@@ -53,6 +53,12 @@ public:
     void on_message_removed(std::size_t idx);
     void on_typing_changed(const std::string& text, bool visible);
 
+    // Called by ShellBase::tick_anim_ on every animation frame so this window's
+    // animated images (inline media, and any open pickers) advance even when
+    // the pointer is still. The base repaints the room surface; subclasses
+    // override to also repaint visible emoji/sticker pickers.
+    virtual void repaint_anim_frame();
+
     // Platform overrides.
     virtual void bring_to_front() = 0;
     virtual void close_window() = 0;

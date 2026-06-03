@@ -2439,6 +2439,13 @@ bool ShellBase::tick_anim_()
     if (anim_cache_.advance(monotonic_ms_()))
     {
         repaint_anim_frame_();
+        // Pop-out windows have their own surfaces (and pickers) the shell's
+        // repaint_anim_frame_ doesn't know about — advance them too.
+        for (auto& w : owned_secondary_windows_)
+        {
+            if (w)
+                w->repaint_anim_frame();
+        }
     }
     return true;
 }

@@ -618,6 +618,13 @@ void RoomWindowBase::on_message_removed(std::size_t idx)
     request_relayout();
 }
 
+void RoomWindowBase::repaint_anim_frame()
+{
+    // Default: repaint the room surface so inline animated media advances.
+    // Subclasses override to also repaint visible emoji/sticker pickers.
+    surface_repaint_();
+}
+
 void RoomWindowBase::on_typing_changed(const std::string& text, bool visible)
 {
     typing_bar_visible_ = visible;

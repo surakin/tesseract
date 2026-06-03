@@ -32,6 +32,7 @@ public:
     void request_relayout() override;
     void update_window_title_(const std::string& name) override;
     void apply_theme(const tk::Theme& t) override;
+    void repaint_anim_frame() override;
 
 protected:
     void surface_repaint_() override;

@@ -62,6 +62,9 @@ public:
     void toggle_at(HWND anchor_hwnd, tk::Rect anchor_rect);
     void hide();
     bool visible() const;
+    // Invalidate the popup surface so it repaints (e.g. animation tick). No-op
+    // when hidden.
+    void repaint();
     void set_theme(const tk::Theme& t);
 
 private:

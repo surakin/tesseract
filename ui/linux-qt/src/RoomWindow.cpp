@@ -392,6 +392,19 @@ void RoomWindow::surface_repaint_()
     }
 }
 
+void RoomWindow::repaint_anim_frame()
+{
+    surface_repaint_();
+    if (emojiPicker_ && emojiPicker_->isVisible())
+    {
+        emojiPicker_->invalidateImages();
+    }
+    if (stickerPicker_ && stickerPicker_->isVisible())
+    {
+        stickerPicker_->invalidateImages();
+    }
+}
+
 void RoomWindow::resizeEvent(QResizeEvent* ev)
 {
     QWidget::resizeEvent(ev);

@@ -114,6 +114,14 @@ void Win32PickerPopup::hide()
     }
 }
 
+void Win32PickerPopup::repaint()
+{
+    if (visible() && surface_)
+    {
+        InvalidateRect(surface_->hwnd(), nullptr, FALSE);
+    }
+}
+
 void Win32PickerPopup::set_theme(const tk::Theme& t)
 {
     cfg_.theme = t;
