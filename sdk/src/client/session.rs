@@ -128,6 +128,7 @@ impl ClientFfi {
                 .sqlite_store(&path, None)
                 .handle_refresh_tokens()
                 .user_agent(crate::oauth::build_user_agent())
+                .http_client(crate::oauth::build_sdk_http_client())
                 .with_encryption_settings(EncryptionSettings {
                     backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
                     // Bootstrap cross-signing automatically (see oauth.rs for

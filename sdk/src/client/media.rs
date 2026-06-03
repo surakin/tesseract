@@ -293,6 +293,13 @@ async fn download_media(
     }
 }
 
+/// Per-chunk idle timeout for `download_url`. If no bytes arrive within this
+/// window the server is considered stalled and the download is aborted. This
+/// fires well before the outer `THUMBNAIL_FETCH_TIMEOUT` select! arm and avoids
+/// holding a semaphore permit on a dead transfer for the full 30s.
+#[cfg(not(test))]
+const CHUNK_STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Stream an arbitrary HTTP(S) URL into a byte buffer, enforcing `MAX_URL_BYTES`
 /// both up-front (Content-Length) and mid-stream. Returns an empty Vec on any
 /// error. Shared by the blocking `fetch_url_bytes` and the async
@@ -318,7 +325,17 @@ async fn download_url(client: &reqwest::Client, url: &str) -> Vec<u8> {
     }
     let mut stream = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
+    loop {
+        let chunk = tokio::select! {
+            item = stream.next() => item,
+            _ = tokio::time::sleep(CHUNK_STALL_TIMEOUT) => {
+                tracing::warn!(
+                    "download_url: {url} stalled (no bytes for {CHUNK_STALL_TIMEOUT:?}); aborting"
+                );
+                return Vec::new();
+            }
+        };
+        let Some(chunk) = chunk else { break };
         let chunk = match chunk {
             Ok(c) => c,
             Err(_) => return Vec::new(),

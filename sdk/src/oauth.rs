@@ -76,6 +76,24 @@ pub(crate) fn build_user_agent() -> String {
     )
 }
 
+/// Shared HTTP client for matrix-sdk instances. Uses a 10s connect timeout
+/// (fast TCP failure) and a 60s total request timeout (longer than the 30s
+/// sync long-poll but short enough to surface stalled media downloads faster
+/// than the outer tokio::select! backstop).
+///
+/// Must use `matrix_sdk::reqwest` (reqwest 0.13) — matrix-sdk re-exports its
+/// own reqwest version, which is a different crate version than the reqwest
+/// 0.12 used for tile/URL fetches. `ClientBuilder::http_client` only accepts
+/// the matrix-sdk re-export.
+pub(crate) fn build_sdk_http_client() -> matrix_sdk::reqwest::Client {
+    matrix_sdk::reqwest::Client::builder()
+        .user_agent(build_user_agent())
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .unwrap_or_else(|_| matrix_sdk::reqwest::Client::new())
+}
+
 /// State carried between `begin` and `await_callback`.
 pub struct PendingFlow {
     /// The half-built client; `finish_login` populates it with tokens.
@@ -122,6 +140,7 @@ pub async fn begin(
         .sqlite_store(sqlite_path, None)
         .handle_refresh_tokens()
         .user_agent(build_user_agent())
+        .http_client(build_sdk_http_client())
         .with_encryption_settings(EncryptionSettings {
             backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
             // Bootstrap cross-signing automatically on first login so a fresh
@@ -329,6 +348,7 @@ pub async fn supports_registration(homeserver: &str) -> bool {
     let client = match Client::builder()
         .server_name_or_homeserver_url(homeserver)
         .user_agent(build_user_agent())
+        .http_client(build_sdk_http_client())
         .build()
         .await
     {
