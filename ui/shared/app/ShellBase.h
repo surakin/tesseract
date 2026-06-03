@@ -72,7 +72,7 @@ class ShellBase
     friend class RoomWindowBase;
 
 public:
-    virtual ~ShellBase() = default;
+    virtual ~ShellBase();
 
     // Open room_id in a new native window. If a secondary window for that room
     // is already open, it is raised instead of duplicated. The platform shell

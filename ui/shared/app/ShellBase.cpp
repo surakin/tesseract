@@ -2133,6 +2133,19 @@ void ShellBase::push_room_list_state_(RoomListState state)
 
 // ── Secondary window registry ─────────────────────────────────────────────────
 
+ShellBase::~ShellBase()
+{
+    // Tear down pop-out windows while the registries they unregister from are
+    // still alive. Members are destroyed in reverse declaration order, so the
+    // owned-window vector (declared before secondary_windows_ /
+    // room_subscription_refs_) would otherwise be destroyed *last* — each
+    // ~RoomWindowBase would then call unregister_room_window_() /
+    // release_room_subscription_() on already-freed maps, a use-after-free that
+    // crashes on shutdown whenever a pop-out is open. Clearing here runs every
+    // ~RoomWindowBase while those maps are intact.
+    owned_secondary_windows_.clear();
+}
+
 void ShellBase::register_room_window_(RoomWindowBase* w)
 {
     secondary_windows_[w->room_id()] = w;
