@@ -54,10 +54,52 @@ namespace tk::qt6
 // Surface so it paints on top of the canvas. We use QPointer to handle
 // the case where the Surface tears down before the NativeTextField does.
 
+// QLineEdit subclass that forwards Up / Down / Escape to a popup the field
+// drives (the Ctrl+K quick switcher) before falling back to default handling.
+class NavLineEdit : public QLineEdit
+{
+public:
+    using QLineEdit::QLineEdit;
+    std::function<bool(NavKey)> popup_nav_;
+
+protected:
+    void keyPressEvent(QKeyEvent* e) override
+    {
+        if (popup_nav_)
+        {
+            NavKey nk{};
+            bool is_nav = true;
+            if (e->key() == Qt::Key_Up)
+            {
+                nk = NavKey::Up;
+            }
+            else if (e->key() == Qt::Key_Down)
+            {
+                nk = NavKey::Down;
+            }
+            else if (e->key() == Qt::Key_Escape)
+            {
+                nk = NavKey::Escape;
+            }
+            else
+            {
+                is_nav = false;
+            }
+            auto nav = popup_nav_;
+            if (is_nav && nav && nav(nk))
+            {
+                e->accept();
+                return;
+            }
+        }
+        QLineEdit::keyPressEvent(e);
+    }
+};
+
 class QtNativeTextField : public NativeTextField
 {
 public:
-    explicit QtNativeTextField(QWidget* parent) : edit_(new QLineEdit(parent))
+    explicit QtNativeTextField(QWidget* parent) : edit_(new NavLineEdit(parent))
     {
         edit_->setAttribute(Qt::WA_StyledBackground, true);
         edit_->setFrame(false);
@@ -181,9 +223,16 @@ public:
     {
         on_submit_ = std::move(cb);
     }
+    void set_on_popup_nav(std::function<bool(NavKey)> cb) override
+    {
+        if (edit_)
+        {
+            edit_->popup_nav_ = std::move(cb);
+        }
+    }
 
 private:
-    QPointer<QLineEdit> edit_;
+    QPointer<NavLineEdit> edit_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
 };

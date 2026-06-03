@@ -41,6 +41,16 @@ public:
         activate_id_ = g_signal_connect(
             entry_, "activate", G_CALLBACK(&GtkNativeTextField::on_activate_cb),
             this);
+
+        // Intercept Up / Down / Escape for a popup the field drives (the
+        // Ctrl+K quick switcher). Capture phase so it wins over the entry's
+        // default caret handling.
+        GtkEventController* key = gtk_event_controller_key_new();
+        gtk_event_controller_set_propagation_phase(key, GTK_PHASE_CAPTURE);
+        g_signal_connect(key, "key-pressed",
+                         G_CALLBACK(&GtkNativeTextField::on_key_pressed_cb),
+                         this);
+        gtk_widget_add_controller(entry_, key);
     }
 
     ~GtkNativeTextField() override
@@ -155,6 +165,10 @@ public:
     {
         on_submit_ = std::move(cb);
     }
+    void set_on_popup_nav(std::function<bool(NavKey)> cb) override
+    {
+        popup_nav_ = std::move(cb);
+    }
     void set_compact(bool compact) override
     {
         if (!entry_)
@@ -199,6 +213,39 @@ private:
             self->on_submit_();
         }
     }
+    static gboolean on_key_pressed_cb(GtkEventControllerKey*, guint keyval,
+                                      guint /*keycode*/, GdkModifierType /*state*/,
+                                      gpointer p)
+    {
+        auto* self = static_cast<GtkNativeTextField*>(p);
+        if (!self->popup_nav_)
+        {
+            return FALSE;
+        }
+        NavKey nk{};
+        bool is_nav = true;
+        if (keyval == GDK_KEY_Up)
+        {
+            nk = NavKey::Up;
+        }
+        else if (keyval == GDK_KEY_Down)
+        {
+            nk = NavKey::Down;
+        }
+        else if (keyval == GDK_KEY_Escape)
+        {
+            nk = NavKey::Escape;
+        }
+        else
+        {
+            is_nav = false;
+        }
+        if (is_nav && self->popup_nav_(nk))
+        {
+            return TRUE;
+        }
+        return FALSE;
+    }
 
     GtkWidget* overlay_;
     GtkWidget* entry_ = nullptr;
@@ -206,6 +253,7 @@ private:
     gulong activate_id_ = 0;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
+    std::function<bool(NavKey)> popup_nav_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

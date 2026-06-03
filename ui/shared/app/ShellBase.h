@@ -254,6 +254,11 @@ protected:
     // synchronously in each shell's refresh_room_list().
     std::unordered_map<std::string, std::vector<std::string>> space_children_cache_;
     std::string current_room_id_;
+    // Most-recently-visited room IDs in visit order (front = most recent),
+    // recorded in after_active_room_changed_(). Feeds the Ctrl+K quick
+    // switcher's "Recent" strip. In-memory only (not persisted across restarts).
+    std::vector<std::string> recent_room_ids_;
+    static constexpr std::size_t kRecentRoomsMax = 8;
     // Tracks the invite currently shown in the InviteCard so the action
     // callbacks (on_accept / on_decline / on_block) can target the right room.
     struct InviteContext { std::string room_id; std::string inviter_id; };

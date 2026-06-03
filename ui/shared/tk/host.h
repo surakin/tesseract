@@ -29,6 +29,19 @@
 namespace tk
 {
 
+// Navigation keys a focused native text control forwards to a popup / list it
+// drives while it keeps keyboard focus — the shortcode / mention popups (via
+// NativeTextArea) and the Ctrl+K quick switcher (via NativeTextField). Lives at
+// namespace scope so both control types can share one type.
+enum class NavKey
+{
+    Up,
+    Down,
+    Escape,
+    Tab,
+    ShiftTab
+};
+
 // A borrowed handle to a native text input control overlaid on top of
 // the canvas, positioned to align with a tk::Widget's rect. Caller
 // destroys to remove the overlay. Hosts back this with QLineEdit,
@@ -56,6 +69,12 @@ public:
     // thread; the callable can mutate the widget tree freely.
     virtual void set_on_changed(std::function<void(const std::string&)>) = 0;
     virtual void set_on_submit(std::function<void()>) = 0;
+
+    // Up / Down / Escape navigation forwarded to a popup the field drives
+    // while it holds focus (the Ctrl+K quick switcher). Return true from the
+    // callback to consume the key. Default no-op so backends opt in; the
+    // single-line field never inserts Tab so only Up/Down/Escape are raised.
+    virtual void set_on_popup_nav(std::function<bool(NavKey)>) {}
 
     // Override the text (and placeholder) colour so the field respects
     // the application's dark/light palette. Default no-op; backends that
@@ -125,15 +144,10 @@ public:
     virtual void insert_at_cursor(std::string text) = 0;
 
     // Tab / ShiftTab cycle forward / backward through the shortcode popup
-    // (wrapping at the ends); Up / Down clamp at the ends.
-    enum class NavKey
-    {
-        Up,
-        Down,
-        Escape,
-        Tab,
-        ShiftTab
-    };
+    // (wrapping at the ends); Up / Down clamp at the ends. Aliased to the
+    // namespace-scope tk::NavKey so existing `NativeTextArea::NavKey`
+    // references keep compiling.
+    using NavKey = tk::NavKey;
 
     /// Bounding rect of the insertion cursor in surface-local coordinates.
     virtual tk::Rect cursor_rect() const = 0;

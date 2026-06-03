@@ -450,6 +450,42 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     // Avatars for rooms in collapsed / off-screen sections are never fetched.
     app->room_list_view()->on_room_avatar_needed =
         [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+
+    // Quick switcher (Ctrl+K): data + activation are shared. The native search
+    // field, the keyboard accelerator, and on_close stay per-shell.
+    if (auto* qs = app->quick_switcher())
+    {
+        qs->set_rooms_provider(
+            [this]() -> std::vector<tesseract::RoomInfo>
+            {
+                auto v = rooms_;
+                std::sort(v.begin(), v.end(),
+                          [](const tesseract::RoomInfo& a,
+                             const tesseract::RoomInfo& b)
+                          { return a.last_activity_ts > b.last_activity_ts; });
+                return v;
+            });
+        qs->set_recent_provider(
+            [this]() -> std::vector<tesseract::RoomInfo>
+            {
+                std::vector<tesseract::RoomInfo> out;
+                out.reserve(recent_room_ids_.size());
+                for (const auto& id : recent_room_ids_)
+                {
+                    auto it = std::find_if(
+                        rooms_.begin(), rooms_.end(),
+                        [&](const tesseract::RoomInfo& r) { return r.id == id; });
+                    if (it != rooms_.end())
+                        out.push_back(*it);
+                }
+                return out;
+            });
+        qs->on_room_avatar_needed =
+            [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+        qs->on_room_selected =
+            [this](const std::string& room_id) { tab_select_room(room_id); };
+    }
+
     app->room_list_view()->set_sticker_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
@@ -3756,6 +3792,18 @@ void ShellBase::after_active_room_changed_()
 
     if (!client_ || current_room_id_.empty())
         return;
+
+    // Record the visit for the quick switcher's "Recent" strip — move this
+    // room to the front of the MRU list (visit order), de-duplicating and
+    // capping the length.
+    {
+        auto& v = recent_room_ids_;
+        v.erase(std::remove(v.begin(), v.end(), current_room_id_), v.end());
+        v.insert(v.begin(), current_room_id_);
+        if (v.size() > kRecentRoomsMax)
+            v.resize(kRecentRoomsMax);
+    }
+
     // Each new room starts with an unknown thread history — allow pagination.
     threads_reached_start_ = false;
     threads_paginating_    = false;

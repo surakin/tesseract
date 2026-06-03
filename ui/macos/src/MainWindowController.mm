@@ -384,6 +384,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
 - (void)_openSettings;
+- (void)_openQuickSwitch;
+- (void)_closeQuickSwitch;
 - (void)loginViewDidCancel:(LoginView*)view;
 - (void)_openAccountPicker;
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress;
@@ -1510,6 +1512,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     // Native overlay fields positioned via _mainAppSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
+    std::unique_ptr<tk::NativeTextField> _quickSwitchField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
 
@@ -3353,6 +3356,60 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     [s] { [s _applySearchFilter]; });
             });
 
+        // Quick switcher (⌘K) search field.
+        _quickSwitchField = _mainAppSurface->host().make_text_field();
+        _quickSwitchField->set_placeholder("Jump to a room…");
+        _quickSwitchField->set_visible(false);
+        _quickSwitchField->set_on_changed(
+            [weakSelf](const std::string& q)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->quick_switcher())
+                {
+                    s->_mainApp->quick_switcher()->set_query(q);
+                    s->_mainAppSurface->relayout();
+                }
+            });
+        _quickSwitchField->set_on_submit(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->quick_switcher())
+                    s->_mainApp->quick_switcher()->activate_selected();
+            });
+        _quickSwitchField->set_on_popup_nav(
+            [weakSelf](tk::NavKey nk) -> bool
+            {
+                MainWindowController* s = weakSelf;
+                auto* qs = (s && s->_mainApp) ? s->_mainApp->quick_switcher()
+                                              : nullptr;
+                if (!qs || !qs->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    qs->move_selection(-1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    qs->move_selection(+1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    [s _closeQuickSwitch];
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (_mainApp->quick_switcher())
+            _mainApp->quick_switcher()->on_close = [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s)
+                    [s _closeQuickSwitch];
+            };
+
         _mainAppSurface->set_on_layout(
             [weakSelf]
             {
@@ -3374,6 +3431,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     s->_roomTextArea->set_visible(false);
                     s->_topicTextArea->set_visible(false);
                     s->_roomSearchField->set_visible(false);
+                    if (s->_quickSwitchField)
+                        s->_quickSwitchField->set_visible(false);
                     if (s->_shell->enc_passphrase_field_)
                         s->_shell->enc_passphrase_field_->set_visible(false);
                     if (s->_shell->enc_key_field_)
@@ -3409,6 +3468,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     s->_roomSearchField->set_rect(
                         app->room_search_field_rect());
                 }
+                // Quick switcher search field (topmost modal — keys off its
+                // own open state, not gated by other overlays).
+                if (s->_quickSwitchField)
+                {
+                    bool qsVisible = app->quick_switch_field_visible();
+                    s->_quickSwitchField->set_visible(qsVisible);
+                    if (qsVisible)
+                        s->_quickSwitchField->set_rect(
+                            app->quick_switch_field_rect());
+                }
                 // Encryption setup passphrase field.
                 if (s->_shell->enc_passphrase_field_ && app->encryption_setup())
                 {
@@ -3432,13 +3501,35 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 (void)surf;
             });
 
-        // Escape key monitor: close lightbox overlays when open.
+        // Key monitor: ⌘K opens the quick switcher; Escape closes the
+        // topmost overlay (switcher first, then lightboxes).
         _escapeMonitor = [NSEvent
             addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
                                          handler:^(NSEvent* event) {
                                              MainWindowController* s = weakSelf;
-                                             if (s && event.keyCode == 53)
+                                             if (!s)
+                                                 return event;
+                                             // ⌘K → open quick switcher.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagCommand) &&
+                                                 [event.charactersIgnoringModifiers
+                                                     isEqualToString:@"k"])
+                                             {
+                                                 [s _openQuickSwitch];
+                                                 return (NSEvent*)nil;
+                                             }
+                                             if (event.keyCode == 53)
                                              { // Escape
+                                                 // Quick switcher is topmost.
+                                                 if (s->_mainApp &&
+                                                     s->_mainApp
+                                                         ->quick_switcher() &&
+                                                     s->_mainApp->quick_switcher()
+                                                         ->is_open())
+                                                 {
+                                                     [s _closeQuickSwitch];
+                                                     return (NSEvent*)nil;
+                                                 }
                                                  if (s->_vidViewer &&
                                                      s->_vidViewer->is_open())
                                                  {
@@ -5237,6 +5328,30 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         _roomListView->set_search_text(_pendingSearchText);
     }
+}
+
+- (void)_openQuickSwitch
+{
+    if (!_mainApp || !_mainApp->quick_switcher())
+        return;
+    _mainApp->show_quick_switch(true);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+    if (_quickSwitchField)
+    {
+        _quickSwitchField->set_text("");
+        _quickSwitchField->set_focused(true);
+    }
+}
+
+- (void)_closeQuickSwitch
+{
+    if (_mainApp)
+        _mainApp->show_quick_switch(false);
+    if (_quickSwitchField)
+        _quickSwitchField->set_visible(false);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
 }
 
 - (void)_onRoomScrollDebounce

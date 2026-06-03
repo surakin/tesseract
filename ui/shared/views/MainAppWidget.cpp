@@ -80,6 +80,12 @@ MainAppWidget::MainAppWidget()
     auto confirm = std::make_unique<ConfirmDialog>();
     confirm_dialog_ = add_child(std::move(confirm));
 
+    // Ctrl+K quick switcher — added last so it paints above (and hit-tests
+    // before) every other overlay. Hidden until show_quick_switch(true).
+    auto qs = std::make_unique<QuickSwitcher>();
+    quick_switcher_ = add_child(std::move(qs));
+    quick_switcher_->set_visible(false);
+
     // Hand RoomView a closure that opens this dialog with caller-supplied
     // options. Downstream destructive actions (leave room, …) route through
     // this provider without each shell needing its own native dialog code.
@@ -124,6 +130,10 @@ void MainAppWidget::set_avatar_provider(
     std::function<const tk::Image*(const std::string& mxc_url)> provider)
 {
     avatar_provider_ = std::move(provider);
+    if (quick_switcher_)
+    {
+        quick_switcher_->set_avatar_provider(avatar_provider_);
+    }
 }
 
 void MainAppWidget::show_verif_banner(bool show)
@@ -200,6 +210,22 @@ void MainAppWidget::show_encryption_setup(bool show)
     }
 }
 
+void MainAppWidget::show_quick_switch(bool show)
+{
+    if (!quick_switcher_)
+    {
+        return;
+    }
+    if (show)
+    {
+        quick_switcher_->open();
+    }
+    else
+    {
+        quick_switcher_->close();
+    }
+}
+
 bool MainAppWidget::encryption_setup_passphrase_field_visible() const
 {
     return encryption_setup_ && encryption_setup_->passphrase_field_rect_visible();
@@ -230,7 +256,8 @@ bool MainAppWidget::any_modal_open_() const
            (room_view_         && room_view_->is_overlay_open()) ||
            (img_viewer_        && img_viewer_->is_open()) ||
            (vid_viewer_        && vid_viewer_->is_open()) ||
-           (encryption_setup_  && encryption_setup_->visible());
+           (encryption_setup_  && encryption_setup_->visible()) ||
+           (quick_switcher_    && quick_switcher_->is_open());
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const
@@ -250,6 +277,19 @@ bool MainAppWidget::room_search_field_visible() const
 tk::Rect MainAppWidget::room_search_field_rect() const
 {
     return room_list_view_ ? room_list_view_->search_field_rect() : tk::Rect{};
+}
+
+bool MainAppWidget::quick_switch_field_visible() const
+{
+    // The switcher *is* the topmost modal, so this is gated only on its own
+    // open state — not any_modal_open_() (which would always be true here).
+    return quick_switcher_ && quick_switcher_->is_open() &&
+           quick_switcher_->search_field_visible();
+}
+
+tk::Rect MainAppWidget::quick_switch_field_rect() const
+{
+    return quick_switcher_ ? quick_switcher_->search_field_rect() : tk::Rect{};
 }
 
 // ── tk::Widget overrides ───────────────────────────────────────────────────
@@ -336,6 +376,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     vid_viewer_->arrange(ctx, bounds);
     if (encryption_setup_) encryption_setup_->arrange(ctx, bounds);
     if (confirm_dialog_) confirm_dialog_->arrange(ctx, bounds);
+    if (quick_switcher_) quick_switcher_->arrange(ctx, bounds);
 }
 
 void MainAppWidget::paint(tk::PaintCtx& ctx)
@@ -444,6 +485,11 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     if (confirm_dialog_ && confirm_dialog_->visible())
     {
         confirm_dialog_->paint(ctx);
+    }
+    // Quick switcher — drawn last so it sits above every other overlay.
+    if (quick_switcher_ && quick_switcher_->visible())
+    {
+        quick_switcher_->paint(ctx);
     }
 }
 

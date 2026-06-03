@@ -24,6 +24,7 @@
 #include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
 #include "InviteCard.h"
+#include "QuickSwitcher.h"
 #include "RoomListView.h"
 #include "RoomView.h"
 #include "UserInfo.h"
@@ -82,6 +83,13 @@ public:
     void show_image_viewer(bool show);
     void show_video_viewer(bool show);
     void show_encryption_setup(bool show);
+
+    // ── Quick switcher (Ctrl+K) ───────────────────────────────────────────
+
+    void show_quick_switch(bool show);
+    QuickSwitcher* quick_switcher() const { return quick_switcher_; }
+    bool     quick_switch_field_visible() const;
+    tk::Rect quick_switch_field_rect()    const;
 
     EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
 
@@ -199,6 +207,10 @@ private:
     // Modal confirmation overlay — sits above everything else, including the
     // lightboxes, so destructive prompts are always reachable.
     ConfirmDialog* confirm_dialog_ = nullptr;
+
+    // Ctrl+K quick switcher — topmost overlay (added/painted after everything
+    // else). Hidden until show_quick_switch(true).
+    QuickSwitcher* quick_switcher_ = nullptr;
 
     bool verif_visible_ = false;
 };

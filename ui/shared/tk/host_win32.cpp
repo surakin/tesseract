@@ -581,6 +581,10 @@ public:
     {
         on_submit_ = std::move(cb);
     }
+    void set_on_popup_nav(std::function<bool(NavKey)> cb) override
+    {
+        popup_nav_ = std::move(cb);
+    }
 
     // Called by Surface's WndProc on WM_COMMAND with EN_CHANGE.
     void notify_changed()
@@ -609,6 +613,35 @@ private:
         if (msg == WM_NCPAINT)
         {
             return 0;
+        }
+        // Up / Down / Escape navigation forwarded to a popup the field drives
+        // (the Ctrl+K quick switcher), mirroring the multi-line variant.
+        if (msg == WM_KEYDOWN && self->popup_nav_)
+        {
+            NavKey nk{};
+            bool is_nav = true;
+            if (wParam == VK_UP)
+            {
+                nk = NavKey::Up;
+            }
+            else if (wParam == VK_DOWN)
+            {
+                nk = NavKey::Down;
+            }
+            else if (wParam == VK_ESCAPE)
+            {
+                nk = NavKey::Escape;
+            }
+            else
+            {
+                is_nav = false;
+            }
+            // Copy to keep the closure alive across re-entrant mutation.
+            auto nav = self->popup_nav_;
+            if (is_nav && nav && nav(nk))
+            {
+                return 0;
+            }
         }
         if (msg == WM_KEYDOWN && wParam == VK_RETURN)
         {
@@ -642,6 +675,7 @@ private:
     Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
+    std::function<bool(NavKey)> popup_nav_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

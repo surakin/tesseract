@@ -1880,7 +1880,53 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                           });
             });
 
-        // Unified layout callback — positions all 3 native overlays.
+        // Quick switcher (Ctrl+K) search field.
+        quick_switch_field_ = main_app_surface_->host().make_text_field();
+        quick_switch_field_->set_placeholder("Jump to a room…");
+        quick_switch_field_->set_visible(false);
+        quick_switch_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (main_app_ && main_app_->quick_switcher())
+                {
+                    main_app_->quick_switcher()->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        quick_switch_field_->set_on_submit(
+            [this]
+            {
+                if (main_app_ && main_app_->quick_switcher())
+                    main_app_->quick_switcher()->activate_selected();
+            });
+        quick_switch_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* qs = main_app_ ? main_app_->quick_switcher() : nullptr;
+                if (!qs || !qs->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    qs->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    qs->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_quick_switch_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (main_app_ && main_app_->quick_switcher())
+            main_app_->quick_switcher()->on_close = [this]
+            { close_quick_switch_(); };
+
+        // Unified layout callback — positions all native overlays.
         main_app_surface_->set_on_layout(
             [this]
             {
@@ -1897,6 +1943,17 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     {
                         room_search_field_->set_rect(
                             main_app_->room_search_field_rect());
+                    }
+                }
+
+                if (quick_switch_field_)
+                {
+                    const bool qs_vis = main_app_->quick_switch_field_visible();
+                    quick_switch_field_->set_visible(qs_vis);
+                    if (qs_vis)
+                    {
+                        quick_switch_field_->set_rect(
+                            main_app_->quick_switch_field_rect());
                     }
                 }
 
@@ -2119,6 +2176,21 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         g_signal_connect(key_ctl, "key-pressed",
                          G_CALLBACK(on_window_key_pressed_), this);
         gtk_widget_add_controller(window_, key_ctl);
+    }
+
+    // Ctrl+K opens the quick switcher. A global-scope GtkShortcutController
+    // fires even while a native entry / text view holds focus — the bubble-
+    // phase key controller above lets the focused widget swallow Ctrl+K first.
+    {
+        GtkEventController* sc = gtk_shortcut_controller_new();
+        gtk_shortcut_controller_set_scope(GTK_SHORTCUT_CONTROLLER(sc),
+                                          GTK_SHORTCUT_SCOPE_GLOBAL);
+        GtkShortcut* shortcut = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_k, GDK_CONTROL_MASK),
+            gtk_callback_action_new(on_quick_switch_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             shortcut);
+        gtk_widget_add_controller(window_, sc);
     }
 
     // Status bar floats below the main stack (outside the stack so it is
@@ -5585,12 +5657,46 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
     gtk_popover_popup(GTK_POPOVER(self->sticker_ctx_menu_));
 }
 
+gboolean MainWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*,
+                                               gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->open_quick_switch_();
+    return TRUE;
+}
+
+void MainWindow::open_quick_switch_()
+{
+    if (!main_app_ || !main_app_->quick_switcher())
+        return;
+    main_app_->show_quick_switch(true);
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+    if (quick_switch_field_)
+    {
+        quick_switch_field_->set_text("");
+        quick_switch_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_quick_switch_()
+{
+    if (main_app_)
+        main_app_->show_quick_switch(false);
+    if (quick_switch_field_)
+        quick_switch_field_->set_visible(false);
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+}
+
 gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
                                             guint keyval, guint,
                                             GdkModifierType state,
                                             gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
+    // Ctrl+K is handled by a global-scope GtkShortcutController (see ctor) so
+    // it works while a native entry / text view has focus.
     if (keyval == GDK_KEY_c && (state & GDK_CONTROL_MASK))
     {
         if (self->room_view_ && self->room_view_->message_list()->has_selection())
@@ -5601,6 +5707,13 @@ gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
     }
     if (keyval == GDK_KEY_Escape)
     {
+        // Quick switcher is the topmost modal — close it first.
+        if (self->main_app_ && self->main_app_->quick_switcher() &&
+            self->main_app_->quick_switcher()->is_open())
+        {
+            self->close_quick_switch_();
+            return TRUE;
+        }
         if (self->vid_viewer_ && self->vid_viewer_->is_open())
         {
             self->vid_viewer_->close();

@@ -903,6 +903,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             self->quitting_ = true;
             DestroyWindow(hwnd);
         }
+        if (LOWORD(wParam) == IDC_QUICK_SWITCH)
+        {
+            self->open_quick_switch_();
+        }
         return 0;
 
     case WM_ERASEBKGND:
@@ -1103,6 +1107,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE)
         {
+            // Quick switcher is the topmost modal — close it first.
+            if (self->main_app_ && self->main_app_->quick_switcher() &&
+                self->main_app_->quick_switcher()->is_open())
+            {
+                self->close_quick_switch_();
+                return 0;
+            }
             if (self->vid_viewer_ && self->vid_viewer_->is_open())
             {
                 self->vid_viewer_->close();
@@ -1113,6 +1124,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 self->img_viewer_->close();
                 return 0;
             }
+        }
+        if (wParam == 'K' && (GetKeyState(VK_CONTROL) & 0x8000))
+        {
+            self->open_quick_switch_();
+            return 0;
         }
         if (wParam == 'C' && (GetKeyState(VK_CONTROL) & 0x8000))
         {
@@ -1255,6 +1271,11 @@ MainWindow::~MainWindow()
     // login_view_ calls cancel_oauth() + joins its worker on destruction.
     // Tear it down while the client pointers are still alive.
     login_view_.reset();
+    if (accel_)
+    {
+        DestroyAcceleratorTable(accel_);
+        accel_ = nullptr;
+    }
     theme::shutdown();
     win32::text::shutdown();
     if (gdiplus_token_)
@@ -1283,6 +1304,17 @@ bool MainWindow::create(int nCmdShow)
 
 void MainWindow::on_create(HWND hwnd)
 {
+    // Application accelerator table: Ctrl+K opens the quick switcher even when
+    // a native edit control (compose / search) holds keyboard focus — those
+    // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
+    // plain key handler only fires when the canvas has focus.
+    {
+        ACCEL acc{};
+        acc.fVirt = FCONTROL | FVIRTKEY;
+        acc.key = 'K';
+        acc.cmd = IDC_QUICK_SWITCH;
+        accel_ = CreateAcceleratorTableW(&acc, 1);
+    }
 
     Gdiplus::GdiplusStartupInput gsi;
     Gdiplus::GdiplusStartup(&gdiplus_token_, &gsi, nullptr);
@@ -2142,6 +2174,57 @@ void MainWindow::on_create(HWND hwnd)
                           });
             });
 
+        // Quick switcher (Ctrl+K) search field.
+        quick_switch_field_ = main_app_surface_->host().make_text_field();
+        quick_switch_field_->set_placeholder("Jump to a room…");
+        quick_switch_field_->set_visible(false);
+        quick_switch_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (auto* qs = main_app_->quick_switcher())
+                {
+                    qs->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        quick_switch_field_->set_on_submit(
+            [this]
+            {
+                if (auto* qs = main_app_->quick_switcher())
+                {
+                    qs->activate_selected();
+                }
+            });
+        quick_switch_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* qs = main_app_->quick_switcher();
+                if (!qs || !qs->is_open())
+                {
+                    return false;
+                }
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    qs->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    qs->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_quick_switch_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (auto* qs = main_app_->quick_switcher())
+        {
+            qs->on_close = [this] { close_quick_switch_(); };
+        }
+
         room_text_area_ = main_app_surface_->host().make_text_area();
         room_text_area_->set_placeholder("Message…");
         room_text_area_->set_on_changed(
@@ -2822,6 +2905,24 @@ void MainWindow::on_create(HWND hwnd)
                         r.w -= 4;
                         r.h -= 4;
                         room_search_field_->set_rect(r);
+                    }
+                }
+
+                // Quick switcher search field — the switcher IS the topmost
+                // modal, so it is NOT gated on `hide`; its own visibility query
+                // already keys off the switcher's open state.
+                if (quick_switch_field_)
+                {
+                    bool vis = main_app_->quick_switch_field_visible();
+                    quick_switch_field_->set_visible(vis);
+                    if (vis)
+                    {
+                        tk::Rect r = main_app_->quick_switch_field_rect();
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
+                        quick_switch_field_->set_rect(r);
                     }
                 }
 
@@ -3818,6 +3919,54 @@ void MainWindow::request_attention_()
     fwi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG;
     fwi.uCount = 3;
     FlashWindowEx(&fwi);
+}
+
+bool MainWindow::pre_translate_message(MSG* msg)
+{
+    if (accel_ && hwnd_ && TranslateAcceleratorW(hwnd_, accel_, msg))
+    {
+        return true;
+    }
+    return false;
+}
+
+void MainWindow::open_quick_switch_()
+{
+    if (!main_app_ || !main_app_->quick_switcher())
+    {
+        return;
+    }
+    main_app_->show_quick_switch(true);
+    // Relayout first so the native field is positioned + shown via the
+    // surface's on_layout hook before we focus it.
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (quick_switch_field_)
+    {
+        quick_switch_field_->set_text("");
+        quick_switch_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_quick_switch_()
+{
+    if (main_app_)
+    {
+        main_app_->show_quick_switch(false);
+    }
+    if (quick_switch_field_)
+    {
+        quick_switch_field_->set_visible(false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    // Restore focus to the main window so subsequent keys (Esc, navigation)
+    // reach the wnd_proc rather than the now-hidden field.
+    SetFocus(hwnd_);
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id)

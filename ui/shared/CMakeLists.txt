@@ -92,6 +92,8 @@ set(_tk_sources
     views/ImageViewerOverlay.cpp
     views/VideoViewerOverlay.h
     views/VideoViewerOverlay.cpp
+    views/QuickSwitcher.h
+    views/QuickSwitcher.cpp
     views/ShortcodeEngine.h
     views/ShortcodeEngine.cpp
     views/SlashCommandEngine.h

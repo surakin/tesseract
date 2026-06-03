@@ -149,9 +149,19 @@ private:
     static void on_quit_user_activate_(GSimpleAction* action,
                                        GVariant* parameter, gpointer user_data);
     void open_settings_();
+
+    // Ctrl+K quick switcher — open focuses the native search field; close
+    // hides it and relayouts.
+    void open_quick_switch_();
+    void close_quick_switch_();
+
     static gboolean on_window_key_pressed_(GtkEventControllerKey*, guint keyval,
                                            guint, GdkModifierType,
                                            gpointer user_data);
+    // Global-scope Ctrl+K shortcut callback — opens the quick switcher even
+    // while a native entry / text view holds focus.
+    static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
+                                              gpointer user_data);
     static gboolean on_window_close_request_(GtkWindow* window,
                                              gpointer user_data);
 
@@ -260,6 +270,7 @@ private:
     // Borrowed pointers into main_app_ (extracted in constructor).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
     std::unique_ptr<tk::NativeTextField> room_search_field_;
+    std::unique_ptr<tk::NativeTextField> quick_switch_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     GtkWidget* emoji_popover_ = nullptr;

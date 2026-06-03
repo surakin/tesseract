@@ -423,11 +423,19 @@ public:
     {
         on_focus_changed_ = std::move(cb);
     }
+    void set_on_popup_nav(std::function<bool(NavKey)> cb) override
+    {
+        popup_nav_ = std::move(cb);
+    }
 
     void notify_changed();
     void notify_submit();
     void notify_focus_gained();
     void notify_focus_lost();
+
+    // Public so TKTextFieldBridge's doCommandBySelector: can forward Up / Down
+    // / Escape to the popup the field drives (the Ctrl+K quick switcher).
+    std::function<bool(NavKey)> popup_nav_;
 
 private:
     TKSurfaceView* superview_ = nil;
@@ -463,6 +471,42 @@ private:
     {
         self.owner->notify_focus_gained();
     }
+}
+
+// Up / Down / Escape navigation forwarded to a popup the field drives (the
+// Ctrl+K quick switcher). The field editor routes these as command selectors;
+// returning YES consumes the command so the caret / field editor ignores it.
+- (BOOL)control:(NSControl*)control
+              textView:(NSTextView*)textView
+    doCommandBySelector:(SEL)commandSelector
+{
+    if (!self.owner || !self.owner->popup_nav_)
+    {
+        return NO;
+    }
+    tk::NavKey nk{};
+    bool is_nav = true;
+    if (commandSelector == @selector(moveUp:))
+    {
+        nk = tk::NavKey::Up;
+    }
+    else if (commandSelector == @selector(moveDown:))
+    {
+        nk = tk::NavKey::Down;
+    }
+    else if (commandSelector == @selector(cancelOperation:))
+    {
+        nk = tk::NavKey::Escape;
+    }
+    else
+    {
+        is_nav = false;
+    }
+    if (is_nav && self.owner->popup_nav_(nk))
+    {
+        return YES;
+    }
+    return NO;
 }
 
 // Fires when the field ends editing (return key, focus loss). The Return

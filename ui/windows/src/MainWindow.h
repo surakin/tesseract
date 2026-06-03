@@ -108,6 +108,12 @@ public:
 
     bool create(int nCmdShow);
 
+    // Called by the main message loop before TranslateMessage/DispatchMessage.
+    // Routes application accelerators (e.g. Ctrl+K → quick switcher) to the
+    // window as commands even when a native edit control holds focus.
+    // Returns true when the message was consumed.
+    bool pre_translate_message(MSG* msg);
+
     // MediaKind is inherited from tesseract::ShellBase.
     // RoomAvatar → tk_avatars_, relayout main_app_surface_
     // UserAvatar → tk_avatars_, invalidate main_app_surface_
@@ -211,6 +217,11 @@ private:
     void on_tesseract_notify(const NotificationPayload* p);
     void request_attention_();
     void navigate_to_room(const std::string& room_id);
+
+    // Ctrl+K quick switcher — open focuses the native search field; close
+    // hides it, relayouts, and restores focus to the main window.
+    void open_quick_switch_();
+    void close_quick_switch_();
     void on_tesseract_timeline_reset(PostedTimelineReset* payload);
     void on_tesseract_message_inserted(PostedMessageEvent* payload);
     void on_tesseract_message_updated(PostedMessageEvent* payload);
@@ -346,6 +357,7 @@ private:
 
     // Native overlays hosted on main_app_surface_.
     std::unique_ptr<tk::NativeTextField> room_search_field_;
+    std::unique_ptr<tk::NativeTextField> quick_switch_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
@@ -528,6 +540,12 @@ private:
     static constexpr int IDM_LOGOUT = 120;
     static constexpr int IDM_ADD_ACCOUNT = 121;
     static constexpr int IDM_QUIT = 122;
+    static constexpr int IDC_QUICK_SWITCH = 130;
+
+    // Application accelerator table (Ctrl+K → quick switcher). Built in
+    // on_create, applied by pre_translate_message so the shortcut fires even
+    // while the compose / search edit controls have focus.
+    HACCEL accel_ = nullptr;
 };
 
 } // namespace win32

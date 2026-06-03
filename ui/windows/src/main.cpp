@@ -188,6 +188,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
             MSG msg{};
             while (GetMessageW(&msg, nullptr, 0, 0) > 0)
             {
+                if (window.pre_translate_message(&msg))
+                {
+                    continue;
+                }
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }

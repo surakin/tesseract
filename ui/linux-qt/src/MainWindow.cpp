@@ -35,6 +35,7 @@
 #include <QStyleHints>
 #include <QCloseEvent>
 #include <QKeyEvent>
+#include <QShortcut>
 #include <QMouseEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -1496,6 +1497,61 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                       });
         });
 
+    quickSwitchField_ = mainAppSurface_->host().make_text_field();
+    quickSwitchField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    quickSwitchField_->set_placeholder(tr("Jump to a room\xe2\x80\xa6").toStdString());
+    quickSwitchField_->set_visible(false);
+    quickSwitchField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (mainApp_ && mainApp_->quick_switcher())
+            {
+                mainApp_->quick_switcher()->set_query(q);
+                mainAppSurface_->relayout();
+            }
+        });
+    quickSwitchField_->set_on_submit(
+        [this]
+        {
+            if (mainApp_ && mainApp_->quick_switcher())
+                mainApp_->quick_switcher()->activate_selected();
+        });
+    quickSwitchField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            auto* qs = mainApp_ ? mainApp_->quick_switcher() : nullptr;
+            if (!qs || !qs->is_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                qs->move_selection(-1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                qs->move_selection(+1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                closeQuickSwitch_();
+                return true;
+            default:
+                return false;
+            }
+        });
+    if (mainApp_ && mainApp_->quick_switcher())
+        mainApp_->quick_switcher()->on_close = [this] { closeQuickSwitch_(); };
+
+    // Ctrl+K accelerator. An application-scoped QShortcut fires even when the
+    // native compose / search QLineEdit/QTextEdit holds focus — keyPressEvent
+    // on the window does not see keys consumed by a focused child widget.
+    {
+        auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this, [this] { openQuickSwitch_(); });
+    }
+
     mainAppSurface_->set_on_layout(
         [this]
         {
@@ -1511,6 +1567,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 roomSearchField_->set_visible(
                     mainApp_->room_search_field_visible());
                 roomSearchField_->set_rect(mainApp_->room_search_field_rect());
+            }
+            if (mainApp_ && quickSwitchField_)
+            {
+                const bool vis = mainApp_->quick_switch_field_visible();
+                quickSwitchField_->set_visible(vis);
+                if (vis)
+                    quickSwitchField_->set_rect(
+                        mainApp_->quick_switch_field_rect());
             }
             if (mainApp_ && encPassphraseField_)
             {
@@ -2055,10 +2119,42 @@ void MainWindow::ensureViewerFullres_(const std::string& url)
 // eventFilter is defined further down (multi-account section) so it can
 // dispatch user-strip left-clicks into the AccountPicker popover.
 
+void MainWindow::openQuickSwitch_()
+{
+    if (!mainApp_ || !mainApp_->quick_switcher())
+        return;
+    mainApp_->show_quick_switch(true);
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+    if (quickSwitchField_)
+    {
+        quickSwitchField_->set_text("");
+        quickSwitchField_->set_focused(true);
+    }
+}
+
+void MainWindow::closeQuickSwitch_()
+{
+    if (mainApp_)
+        mainApp_->show_quick_switch(false);
+    if (quickSwitchField_)
+        quickSwitchField_->set_visible(false);
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+}
+
 void MainWindow::keyPressEvent(QKeyEvent* ev)
 {
     if (ev->key() == Qt::Key_Escape)
     {
+        // Quick switcher is the topmost modal — close it first.
+        if (mainApp_ && mainApp_->quick_switcher() &&
+            mainApp_->quick_switcher()->is_open())
+        {
+            closeQuickSwitch_();
+            ev->accept();
+            return;
+        }
         if (mainApp_ && mainApp_->video_viewer()->is_open())
         {
             mainApp_->video_viewer()->close();
@@ -2076,6 +2172,8 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
             return;
         }
     }
+    // Ctrl+K is handled by an application-scoped QShortcut (see ctor) so it
+    // works while a native text widget has focus; no keyPressEvent branch.
     if (ev->key() == Qt::Key_C && (ev->modifiers() & Qt::ControlModifier))
     {
         if (mainApp_ && mainApp_->room_view()->message_list()->has_selection())
