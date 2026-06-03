@@ -153,15 +153,16 @@ void MainWindow::on_inflight_ui_()
     const auto   n  = inflight_total_();
     const size_t fp = pool_pending_count_();
     const size_t sp = mut_pool_pending_count_();
+    const size_t mp = pending_media_count_();
     char buf[64];
     std::snprintf(buf, sizeof(buf),
                   "<span color=\"#%02x%02x%02x\">&#x25cf;</span>",
                   c.r, c.g, c.b);
     gtk_label_set_markup(GTK_LABEL(inflight_dot_), buf);
-    char tip[96];
+    char tip[128];
     std::snprintf(tip, sizeof(tip),
-                  "%u request%s in flight\nfetch: %zu queued · send: %zu queued",
-                  n, n == 1u ? "" : "s", fp, sp);
+                  "%u request%s in flight\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
+                  n, n == 1u ? "" : "s", mp, fp, sp);
     gtk_widget_set_tooltip_text(inflight_dot_, tip);
     // Force-refresh the tooltip window if it is currently shown over this widget.
     gtk_widget_trigger_tooltip_query(inflight_dot_);

@@ -270,6 +270,7 @@ public:
     using ShellBase::init_pool_callbacks_;
     using ShellBase::pool_pending_count_;
     using ShellBase::mut_pool_pending_count_;
+    using ShellBase::pending_media_count_;
     using ShellBase::run_async_mut_;
     using ShellBase::apply_space_child_counts_;
     using ShellBase::space_children_cache_;
@@ -6000,6 +6001,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     const uint32_t n  = _shell->inflight_total_();
     const size_t fp = _shell->pool_pending_count_();
     const size_t sp = _shell->mut_pool_pending_count_();
+    const size_t mp = _shell->pending_media_count_();
     _inflightDotLabel.textColor =
         [NSColor colorWithRed:c.r / 255.0
                         green:c.g / 255.0
@@ -6009,8 +6011,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                           ? @"1 request in flight"
                           : [NSString stringWithFormat:@"%u requests in flight", n];
     _inflightDotLabel.toolTip =
-        [NSString stringWithFormat:@"%@\nfetch: %zu queued · send: %zu queued",
-                                   first, fp, sp];
+        [NSString stringWithFormat:
+                      @"%@\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
+                      first, mp, fp, sp];
 }
 
 - (void)_onRoomListStateChanged

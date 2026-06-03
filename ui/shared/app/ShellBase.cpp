@@ -2597,6 +2597,7 @@ void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
         return; // Cancelled / superseded — drop the late callback.
     PendingMediaReq req = std::move(it->second);
     pending_media_.erase(it);
+    on_inflight_ui_();
     if (req.on_bytes)
         req.on_bytes(std::move(bytes));
 }
@@ -2609,6 +2610,7 @@ void ShellBase::handle_url_preview_ready_ui_(std::uint64_t request_id,
         return;
     PendingMediaReq req = std::move(it->second);
     pending_media_.erase(it);
+    on_inflight_ui_();
     if (req.on_preview)
         req.on_preview(std::move(preview_json));
 }

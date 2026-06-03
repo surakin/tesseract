@@ -408,6 +408,7 @@ protected:
         std::uint64_t id   = next_media_req_id_++;
         pending_media_[id] = PendingMediaReq{
             group_id, std::move(on_bytes), {}, std::move(on_cancel)};
+        on_inflight_ui_();
         return id;
     }
 
@@ -419,6 +420,7 @@ protected:
         std::uint64_t id   = next_media_req_id_++;
         pending_media_[id] = PendingMediaReq{
             group_id, {}, std::move(on_preview), std::move(on_cancel)};
+        on_inflight_ui_();
         return id;
     }
 
@@ -441,6 +443,7 @@ protected:
             else
                 ++it;
         }
+        on_inflight_ui_();
     }
 
     // DM creation in-flight guard. Keyed by target user_id.
@@ -1073,6 +1076,7 @@ protected:
     // Queue depth helpers for the in-flight tooltip.
     size_t pool_pending_count_()     const { return pool_.pending_count(); }
     size_t mut_pool_pending_count_() const { return mut_pool_.pending_count(); }
+    size_t pending_media_count_()    const { return pending_media_.size(); }
 
     // Wire both worker pools to re-fire on_inflight_ui_() on every queue-depth
     // change. Call once from each shell's setup, after the UI is constructed.

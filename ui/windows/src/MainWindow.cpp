@@ -750,19 +750,20 @@ void MainWindow::on_inflight_ui_()
     const auto   n  = inflight_total_();
     const size_t fp = pool_pending_count_();
     const size_t sp = mut_pool_pending_count_();
+    const size_t mp = pending_media_count_();
     SendMessageW(hStatus_, SB_SET_INFLIGHT_COLOR,
                  static_cast<WPARAM>(RGB(c.r, c.g, c.b)), 0);
     if (hStatusTip_)
     {
-        wchar_t buf[128];
+        wchar_t buf[192];
         if (n == 1u)
-            std::swprintf(buf, 128,
-                          L"1 request in flight\nfetch: %zu queued \xB7 send: %zu queued",
-                          fp, sp);
+            std::swprintf(buf, 192,
+                          L"1 request in flight\nmedia: %zu loading \xB7 fetch: %zu queued \xB7 send: %zu queued",
+                          mp, fp, sp);
         else
-            std::swprintf(buf, 128,
-                          L"%u requests in flight\nfetch: %zu queued \xB7 send: %zu queued",
-                          n, fp, sp);
+            std::swprintf(buf, 192,
+                          L"%u requests in flight\nmedia: %zu loading \xB7 fetch: %zu queued \xB7 send: %zu queued",
+                          n, mp, fp, sp);
         inflight_tip_text_ = buf;
         TOOLINFOW ti{};
         ti.cbSize = TTTOOLINFOW_V1_SIZE;

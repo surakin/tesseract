@@ -4175,13 +4175,16 @@ void MainWindow::on_inflight_ui_()
     const auto n  = inflight_total_();
     const auto fp = pool_pending_count_();
     const auto sp = mut_pool_pending_count_();
+    const auto mp = pending_media_count_();
     inflightDot_->setStyleSheet(
         QStringLiteral("color: rgb(%1,%2,%3);")
             .arg(c.r).arg(c.g).arg(c.b));
     const QString first = (n == 1) ? tr("1 request in flight")
                                    : tr("%1 requests in flight").arg(n);
     const QString tip =
-        first + tr("\nfetch: %1 queued · send: %2 queued").arg(fp).arg(sp);
+        first +
+        tr("\nmedia: %1 loading · fetch: %2 queued · send: %3 queued")
+            .arg(mp).arg(fp).arg(sp);
     inflightDot_->setToolTip(tip);
     // Force-refresh the tooltip window if it is currently shown over this widget.
     if (inflightDot_->underMouse())
