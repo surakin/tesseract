@@ -6,6 +6,7 @@
 #include "views/text_util.h"
 #include <tesseract/client.h>
 #include <tesseract/mentions.h>
+#include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
 #include <fstream>
@@ -40,6 +41,10 @@ void RoomWindowBase::finish_init_()
             {
                 room_view_->set_room(r);
             }
+            // Set the real title immediately from the cached room info; the
+            // subclass created the window with the room_id as a placeholder,
+            // and the first on_room_info_updated may be seconds away.
+            update_window_title_(r.name);
             break;
         }
     }
@@ -59,6 +64,22 @@ void RoomWindowBase::finish_init_()
         {
             shell_->ensure_tile_async(z, x, y);
         };
+    }
+    // Pasting an image attaches it to the composer rather than inserting the
+    // bitmap as text. Wired here (not in wire_room_view_) because the subclass
+    // creates its native text area after wire_room_view_ runs; by finish_init_
+    // (called at the end of the subclass ctor) compose_text_area_() is ready.
+    if (auto* ta = compose_text_area_())
+    {
+        ta->set_on_image_paste(
+            [this](std::vector<std::uint8_t> bytes, std::string mime)
+            {
+                if (room_view_)
+                {
+                    room_view_->compose_bar()->set_pending_image(
+                        std::move(bytes), std::move(mime));
+                }
+            });
     }
 }
 
@@ -270,6 +291,148 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     rv->on_near_top = [this]
     {
         request_pagination_back_();
+    };
+    // Forward pagination / return-to-live so scrolling up into history then
+    // back down re-attaches the pop-out's timeline to the live edge, matching
+    // the main window. Both forward to friend-accessible ShellBase methods.
+    rv->on_near_bottom = [this]
+    {
+        if (!room_id_.empty())
+        {
+            shell_->request_forward_history_(room_id_);
+        }
+    };
+    rv->on_return_to_live = [this]
+    {
+        if (!room_id_.empty())
+        {
+            shell_->return_to_live_(room_id_);
+        }
+    };
+
+    // ── Media send (attachments) ──────────────────────────────────────────
+    // Without these the compose bar drops a pending attachment on send. Clears
+    // the composer on success via compose_text_area_() + room_view_. on_send_
+    // image normalises/compresses via the surface-bound encode_for_send_().
+    auto clear_composer = [this]
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->set_current_text({});
+        }
+    };
+    rv->on_send_image =
+        [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
+                               std::string filename, std::string caption, int w,
+                               int h, bool is_animated,
+                               std::string reply_event_id)
+    {
+        if (room_id_.empty() || !shell_->client_)
+        {
+            return;
+        }
+        tesseract::Result res;
+        if (is_animated)
+        {
+            // Animated GIF/WebP: send original bytes via the MSC4230 raw path
+            // (re-encoding would flatten the animation to one frame).
+            res = shell_->client_->send_image(
+                room_id_, bytes, mime, filename, caption,
+                static_cast<std::uint32_t>(w < 0 ? 0 : w),
+                static_cast<std::uint32_t>(h < 0 ? 0 : h),
+                /*is_animated=*/true, reply_event_id);
+        }
+        else
+        {
+            const bool compress =
+                tesseract::Settings::instance().image_quality ==
+                tesseract::Settings::ImageQuality::Compressed;
+            auto enc = encode_for_send_(bytes.data(), bytes.size(), compress);
+            if (enc.bytes.empty())
+            {
+                return;
+            }
+            std::string out_name = filename;
+            if (enc.mime == "image/jpeg")
+            {
+                auto dot = out_name.find_last_of('.');
+                if (dot != std::string::npos)
+                {
+                    out_name = out_name.substr(0, dot);
+                }
+                out_name += ".jpg";
+            }
+            res = shell_->client_->send_image(room_id_, enc.bytes, enc.mime,
+                                              out_name, caption, enc.width,
+                                              enc.height, /*is_animated=*/false,
+                                              reply_event_id);
+        }
+        if (res)
+        {
+            clear_composer();
+        }
+    };
+    rv->on_send_video =
+        [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
+                               std::string filename, std::string caption, int w,
+                               int h, std::vector<std::uint8_t> thumb_bytes,
+                               int thumb_w, int thumb_h,
+                               std::uint64_t duration_ms,
+                               std::string reply_event_id)
+    {
+        if (room_id_.empty() || !shell_->client_)
+        {
+            return;
+        }
+        auto res = shell_->client_->send_video(
+            room_id_, bytes, mime, filename, caption,
+            static_cast<std::uint32_t>(w < 0 ? 0 : w),
+            static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
+            static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
+            static_cast<std::uint32_t>(thumb_h < 0 ? 0 : thumb_h), duration_ms,
+            reply_event_id);
+        if (res)
+        {
+            clear_composer();
+        }
+    };
+    rv->on_send_audio =
+        [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
+                               std::string filename, std::string caption,
+                               std::uint64_t duration_ms,
+                               std::string reply_event_id)
+    {
+        if (room_id_.empty() || !shell_->client_)
+        {
+            return;
+        }
+        auto res = shell_->client_->send_audio(room_id_, bytes, mime, filename,
+                                               caption, duration_ms,
+                                               reply_event_id);
+        if (res)
+        {
+            clear_composer();
+        }
+    };
+    rv->on_send_file =
+        [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
+                               std::string filename, std::string caption,
+                               std::string reply_event_id)
+    {
+        if (room_id_.empty() || !shell_->client_)
+        {
+            return;
+        }
+        auto res = shell_->client_->send_file(room_id_, bytes, mime, filename,
+                                              caption, reply_event_id);
+        if (res)
+        {
+            clear_composer();
+        }
     };
 
     // Pop-out windows share the shell's singleton capture_ but don't wire
@@ -757,6 +920,12 @@ void RoomWindowBase::ensure_viewer_image_(const std::string& url)
         shell_->ensure_media_image_(url, visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight);
     }
+}
+
+std::function<const tk::Image*(const std::string&, const std::string&)>
+RoomWindowBase::picker_image_provider_(bool is_sticker)
+{
+    return shell_->make_picker_image_provider_(is_sticker);
 }
 
 } // namespace tesseract

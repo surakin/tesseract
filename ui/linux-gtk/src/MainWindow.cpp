@@ -432,7 +432,19 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         main_app_->tab_bar()->on_tab_selected =
             [this](const std::string& room_id)
         {
-            tab_select_room(room_id);
+            // Ctrl+click pops the room out into its own window (and closes the
+            // tab); a plain click just switches to it. The GTK host captures
+            // the modifier from the click gesture (tk pointer events don't
+            // carry it).
+            if (main_app_surface_ &&
+                main_app_surface_->host().pointer_ctrl_held())
+            {
+                tab_popout_room(room_id);
+            }
+            else
+            {
+                tab_select_room(room_id);
+            }
         };
         main_app_->tab_bar()->on_tab_closed = [this](const std::string& room_id)
         {

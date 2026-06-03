@@ -896,6 +896,18 @@ public:
         }
     }
 
+    bool pointer_ctrl_held() const override
+    {
+        return (last_pointer_state_ & GDK_CONTROL_MASK) != 0;
+    }
+
+    // Called by the click gestures before dispatching press/release so that
+    // pointer_ctrl_held() reflects the modifiers of the event being handled.
+    void set_last_pointer_state_(GdkModifierType state)
+    {
+        last_pointer_state_ = state;
+    }
+
     void post_to_ui(std::function<void()> task) override
     {
         // Heap-allocate a std::function we can hand to GLib's idle queue;
@@ -1502,6 +1514,7 @@ private:
     Widget* hovered_widget_ = nullptr;
     double last_pointer_x_ = -1;
     double last_pointer_y_ = -1;
+    GdkModifierType last_pointer_state_ = static_cast<GdkModifierType>(0);
     FileDropHandler on_file_drop_;
     bool drag_active_ = false;
 };
@@ -1525,16 +1538,22 @@ void resize_cb(GtkDrawingArea*, int w, int h, gpointer p)
     static_cast<Host*>(p)->on_resize(w, h);
 }
 
-void click_pressed_cb(GtkGestureClick*, int /*n_press*/, double x, double y,
+void click_pressed_cb(GtkGestureClick* g, int /*n_press*/, double x, double y,
                       gpointer p)
 {
-    static_cast<Host*>(p)->on_pointer_down(x, y);
+    auto* host = static_cast<Host*>(p);
+    host->set_last_pointer_state_(
+        gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(g)));
+    host->on_pointer_down(x, y);
 }
 
-void click_released_cb(GtkGestureClick*, int /*n_press*/, double x, double y,
+void click_released_cb(GtkGestureClick* g, int /*n_press*/, double x, double y,
                        gpointer p)
 {
-    static_cast<Host*>(p)->on_pointer_up(x, y);
+    auto* host = static_cast<Host*>(p);
+    host->set_last_pointer_state_(
+        gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(g)));
+    host->on_pointer_up(x, y);
 }
 
 void click_pressed_secondary_cb(GtkGestureClick*, int /*n_press*/, double x,

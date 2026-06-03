@@ -90,12 +90,20 @@ protected:
 
     // Compose text widget to clear after a successful send / prefill on edit
     // / focus on reply, or nullptr if the shell has no native text area and
-    // drives compose state through room_view_ instead (Qt6/GTK4 return
-    // nullptr; Win32/macOS return their native text area).
+    // drives compose state through room_view_ instead. All four pop-out
+    // subclasses currently return their own native text area.
     virtual tk::NativeTextArea* compose_text_area_()
     {
         return nullptr;
     }
+
+    // Encode raw image bytes for sending via the subclass's surface host
+    // (tk::Host::encode_for_send). Surface-bound, so it can't live in the base;
+    // wire_room_view_'s on_send_image uses it to compress/normalise before
+    // upload. `compress` follows the user's image-quality setting.
+    virtual tk::EncodedImage encode_for_send_(const std::uint8_t* data,
+                                              std::size_t size,
+                                              bool compress) = 0;
 
     // Look up a cached URL-preview card for `url`, or nullptr. Reads from
     // ShellBase::url_preview_data_; every shell shares the same cache.
@@ -156,6 +164,13 @@ protected:
     // Trigger fetch of a full-res image into the shared tk_images_ cache.
     // Idempotent: no-op if already cached or in-flight.
     void ensure_viewer_image_(const std::string& url);
+
+    // Image provider for an emoji/sticker picker, shared with the main window:
+    // synchronous lookup against the shell's animated + static caches, with an
+    // async decode/fetch on miss. The (cache_key, source_token) signature
+    // matches the shared EmojiPicker/StickerPicker ImageProvider alias.
+    std::function<const tk::Image*(const std::string&, const std::string&)>
+    picker_image_provider_(bool is_sticker);
 
     ShellBase* shell_;
     std::string room_id_;

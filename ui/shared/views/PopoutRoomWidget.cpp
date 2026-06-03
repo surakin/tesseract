@@ -46,6 +46,11 @@ tk::Size PopoutRoomWidget::measure(tk::LayoutCtx& ctx, tk::Size constraints)
 
 void PopoutRoomWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
+    // Record our own bounds: pointer dispatch tests contains_world() on this
+    // root before descending to children, so without this bounds_ stays {0,0,
+    // 0,0} and every click/move/wheel is dropped before reaching room_view_
+    // (the children still paint, since paint() calls them directly).
+    bounds_ = bounds;
     if (room_view_)
     {
         room_view_->arrange(ctx, bounds);

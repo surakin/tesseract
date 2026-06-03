@@ -1342,7 +1342,16 @@ void MainWindow::on_create(HWND hwnd)
         main_app_->tab_bar()->on_tab_selected =
             [this](const std::string& room_id)
         {
-            tab_select_room(room_id);
+            // Ctrl+click pops the room out into its own window (and closes the
+            // tab); a plain click just switches to it.
+            if (GetKeyState(VK_CONTROL) & 0x8000)
+            {
+                tab_popout_room(room_id);
+            }
+            else
+            {
+                tab_select_room(room_id);
+            }
         };
         main_app_->tab_bar()->on_tab_closed = [this](const std::string& room_id)
         {

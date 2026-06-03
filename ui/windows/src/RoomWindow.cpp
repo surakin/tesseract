@@ -2,10 +2,16 @@
 #include "MainWindow.h"
 #include "TextRenderer.h"
 #include "Theme.h"
+#include "resource.h"
 
 #include "views/PopoutRoomWidget.h"
 
+#include <tesseract/client.h>
+
+#include <commctrl.h>
+
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace win32
@@ -62,6 +68,24 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         wc.lpszClassName = kClassName;
+        // Match the main window: big icon (Alt+Tab/taskbar) + small icon
+        // (titlebar/system menu), from the multi-resolution .ico.
+        wc.hIcon = static_cast<HICON>(
+            LoadImageW(hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
+                       GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+                       LR_DEFAULTCOLOR | LR_SHARED));
+        wc.hIconSm = static_cast<HICON>(LoadImageW(
+            hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+            LR_DEFAULTCOLOR | LR_SHARED));
+        if (!wc.hIcon)
+        {
+            wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+        }
+        if (!wc.hIconSm)
+        {
+            wc.hIconSm = wc.hIcon;
+        }
         RegisterClassExW(&wc);
         class_registered_ = true;
     }
@@ -260,14 +284,81 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             }
         });
 
+    // ── Platform popups the shared wire_room_view_ can't provide ──────────
+    // Compose-bar emoji / sticker pickers (pop-out-local, route to this
+    // window's room + composer).
+    room_view_->on_emoji = [this](tk::Rect btn)
+    {
+        ensure_pickers_();
+        if (emoji_popup_)
+            emoji_popup_->toggle_at(surface_->hwnd(), btn);
+    };
+    room_view_->on_sticker = [this](tk::Rect btn)
+    {
+        ensure_pickers_();
+        if (sticker_popup_)
+            sticker_popup_->toggle_at(surface_->hwnd(), btn);
+    };
+    // "Add reaction" hover button → open the emoji picker in reaction mode.
+    room_view_->on_add_reaction_requested =
+        [this](const std::string& event_id, tk::Rect anchor)
+    {
+        ensure_pickers_();
+        pending_reaction_event_id_ = event_id;
+        if (emoji_popup_)
+            emoji_popup_->show_at(surface_->hwnd(), anchor);
+    };
+    // Reaction / read-receipt hover tooltips + link-hover cursor.
+    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
+    {
+        show_tooltip_(text, anchor);
+    };
+    room_view_->on_hide_tooltip = [this]
+    {
+        hide_tooltip_();
+    };
+    room_view_->on_link_hovered = [this](const std::string& url)
+    {
+        if (surface_)
+            surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
+                                             : tk::win32::Cursor::Pointer);
+    };
+
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
+
+    // Defensive: size the surface to the client area explicitly so it's
+    // correct even if the initial WM_SIZE fired during CreateWindowExW (before
+    // surface_ existed) and SW_SHOW didn't re-fire it. Idempotent with the
+    // WM_SIZE handler.
+    {
+        RECT rc{};
+        GetClientRect(hwnd_, &rc);
+        if (surface_ && surface_->hwnd())
+        {
+            SetWindowPos(surface_->hwnd(), nullptr, 0, 0, rc.right, rc.bottom,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        if (surface_)
+        {
+            surface_->relayout();
+        }
+    }
 
     finish_init_();
 }
 
 RoomWindow::~RoomWindow()
 {
+    // Tear down owned popups before the host window: they are owner-windows of
+    // hwnd_, so their surfaces must unwind before the owner is destroyed.
+    emoji_popup_.reset();
+    sticker_popup_.reset();
+    if (tooltip_hwnd_)
+    {
+        DestroyWindow(tooltip_hwnd_);
+        tooltip_hwnd_ = nullptr;
+    }
     // If the HWND is still alive (e.g. programmatic close that bypassed
     // WM_DESTROY), destroy it now. WM_DESTROY sets hwnd_ = nullptr to prevent
     // re-entry.
@@ -276,6 +367,216 @@ RoomWindow::~RoomWindow()
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Emoji / sticker / reaction pickers + tooltip (pop-out-local; the main
+// window has its own bespoke instances).
+// ---------------------------------------------------------------------------
+
+void RoomWindow::ensure_pickers_()
+{
+    HINSTANCE inst = GetModuleHandleW(nullptr);
+
+    if (!emoji_popup_)
+    {
+        auto picker = std::make_unique<tesseract::views::EmojiPicker>();
+        emoji_picker_ = picker.get();
+        emoji_picker_->set_client(shell_client_());
+        emoji_picker_->set_image_provider(picker_image_provider_(false));
+        emoji_picker_->on_selected =
+            [this](const std::string& glyph) { on_picker_glyph_(glyph); };
+        emoji_picker_->on_emoticon_selected =
+            [this](const tesseract::ImagePackImage& img)
+        { on_picker_emoticon_(img); };
+
+        Win32PickerPopup::Config cfg;
+        cfg.inst = inst;
+        cfg.owner = hwnd_;
+        cfg.theme = surface_->theme();
+        cfg.class_name = L"TesseractPopoutEmojiPicker";
+        cfg.width_dip = 36.f * 8 + 16; // mirrors MainWindow::kEmojiPickW
+        cfg.height_dip = 320.f;        // MainWindow::kEmojiPickH
+        cfg.search_placeholder = "Search emoji";
+        cfg.on_search = [this](const std::string& q)
+        {
+            if (emoji_picker_)
+                emoji_picker_->set_search_query(q);
+        };
+        cfg.search_rect = [this]() -> tk::Rect
+        {
+            return emoji_picker_ ? emoji_picker_->search_field_rect()
+                                 : tk::Rect{};
+        };
+        cfg.on_before_show = [this]
+        {
+            if (emoji_picker_)
+            {
+                emoji_picker_->refresh_frequents();
+                emoji_picker_->set_search_query("");
+            }
+        };
+        emoji_popup_ = std::make_unique<Win32PickerPopup>(std::move(picker),
+                                                          std::move(cfg));
+    }
+
+    if (!sticker_popup_)
+    {
+        auto picker = std::make_unique<tesseract::views::StickerPicker>();
+        sticker_picker_ = picker.get();
+        sticker_picker_->set_client(shell_client_());
+        sticker_picker_->set_image_provider(picker_image_provider_(true));
+        sticker_picker_->on_selected =
+            [this](const tesseract::ImagePackImage& img)
+        {
+            if (auto* c = shell_client_(); c && !room_id_.empty())
+            {
+                const std::string body =
+                    img.body.empty() ? img.shortcode : img.body;
+                c->send_sticker(room_id_, body, img.url, img.info_json);
+            }
+            if (sticker_popup_)
+                sticker_popup_->hide();
+        };
+
+        Win32PickerPopup::Config cfg;
+        cfg.inst = inst;
+        cfg.owner = hwnd_;
+        cfg.theme = surface_->theme();
+        cfg.class_name = L"TesseractPopoutStickerPicker";
+        cfg.width_dip = 360.f; // MainWindow::kStickerPickW
+        cfg.height_dip = 420.f; // MainWindow::kStickerPickH
+        cfg.search_placeholder = "Search stickers";
+        cfg.on_search = [this](const std::string& q)
+        {
+            if (sticker_picker_)
+                sticker_picker_->set_search_query(q);
+        };
+        cfg.search_rect = [this]() -> tk::Rect
+        {
+            return sticker_picker_ ? sticker_picker_->search_field_rect()
+                                   : tk::Rect{};
+        };
+        cfg.on_before_show = [this]
+        {
+            if (sticker_picker_)
+            {
+                sticker_picker_->refresh_packs();
+                sticker_picker_->set_search_query("");
+            }
+        };
+        sticker_popup_ = std::make_unique<Win32PickerPopup>(std::move(picker),
+                                                            std::move(cfg));
+    }
+}
+
+void RoomWindow::on_picker_glyph_(const std::string& glyph)
+{
+    if (glyph.empty())
+    {
+        return;
+    }
+    // Reaction mode: a "+" hover chip set pending_reaction_event_id_ before
+    // opening the picker. Toggle the reaction and skip the compose insert.
+    if (!pending_reaction_event_id_.empty())
+    {
+        const std::string ev = pending_reaction_event_id_;
+        pending_reaction_event_id_.clear();
+        toggle_reaction_(ev, glyph, std::string{});
+        if (emoji_popup_)
+            emoji_popup_->hide();
+        return;
+    }
+    if (text_area_)
+    {
+        text_area_->insert_at_cursor(glyph);
+        if (room_view_)
+            room_view_->set_current_text(text_area_->text());
+        text_area_->set_focused(true);
+    }
+}
+
+void RoomWindow::on_picker_emoticon_(const tesseract::ImagePackImage& img)
+{
+    if (img.url.empty())
+    {
+        return;
+    }
+    // Reaction mode: send an MSC4027 custom-image reaction (toggle_reaction_
+    // looks up the shortcode from the mxc key). Otherwise insert :shortcode:.
+    if (!pending_reaction_event_id_.empty())
+    {
+        const std::string ev = pending_reaction_event_id_;
+        pending_reaction_event_id_.clear();
+        toggle_reaction_(ev, std::string{}, img.url);
+        if (emoji_popup_)
+            emoji_popup_->hide();
+        return;
+    }
+    if (text_area_)
+    {
+        text_area_->insert_at_cursor(":" + img.shortcode + ":");
+        if (room_view_)
+            room_view_->set_current_text(text_area_->text());
+        text_area_->set_focused(true);
+    }
+}
+
+void RoomWindow::show_tooltip_(const std::string& text, tk::Rect anchor)
+{
+    if (!surface_)
+    {
+        return;
+    }
+    if (!tooltip_hwnd_)
+    {
+        tooltip_hwnd_ = CreateWindowExW(
+            WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
+            WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT,
+            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hwnd_, nullptr,
+            GetModuleHandleW(nullptr), nullptr);
+        SendMessageW(tooltip_hwnd_, TTM_SETMAXTIPWIDTH, 0, 400);
+        TOOLINFOW ti{};
+        ti.cbSize = TTTOOLINFOW_V1_SIZE;
+        ti.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+        ti.hwnd = hwnd_;
+        ti.uId = 1;
+        ti.lpszText = const_cast<LPWSTR>(L"");
+        SendMessageW(tooltip_hwnd_, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+    }
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+    tooltip_text_.resize(static_cast<std::size_t>(wlen));
+    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, tooltip_text_.data(),
+                        wlen);
+    TOOLINFOW ti{};
+    ti.cbSize = TTTOOLINFOW_V1_SIZE;
+    ti.hwnd = hwnd_;
+    ti.uId = 1;
+    ti.lpszText = tooltip_text_.data();
+    SendMessageW(tooltip_hwnd_, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+
+    // anchor is surface-local DIP; convert to physical screen coordinates.
+    const float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
+    const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
+    POINT pt{static_cast<LONG>(std::round(anchor.x * scale)),
+             static_cast<LONG>(std::round((anchor.y + anchor.h) * scale))};
+    ClientToScreen(surface_->hwnd(), &pt);
+    SendMessageW(tooltip_hwnd_, TTM_TRACKPOSITION, 0,
+                 MAKELPARAM(static_cast<WORD>(pt.x), static_cast<WORD>(pt.y)));
+    SendMessageW(tooltip_hwnd_, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
+}
+
+void RoomWindow::hide_tooltip_()
+{
+    if (!tooltip_hwnd_)
+    {
+        return;
+    }
+    TOOLINFOW ti{};
+    ti.cbSize = TTTOOLINFOW_V1_SIZE;
+    ti.hwnd = hwnd_;
+    ti.uId = 1;
+    SendMessageW(tooltip_hwnd_, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +636,14 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     if (mention_popup_surface_)
     {
         mention_popup_surface_->set_theme(t);
+    }
+    if (emoji_popup_)
+    {
+        emoji_popup_->set_theme(t);
+    }
+    if (sticker_popup_)
+    {
+        sticker_popup_->set_theme(t);
     }
 }
 

@@ -1,6 +1,11 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
+#include "views/EmojiPicker.h"
 #include "views/PopoutRoomWidget.h"
+#include "views/StickerPicker.h"
+
+#include <tesseract/client.h>
+#include <tesseract/image_pack.h>
 
 #include <libintl.h>
 #include <string_view>
@@ -248,6 +253,71 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             }
         });
 
+    // ── Platform popups the shared wire_room_view_ can't provide ──────────
+    build_emoji_popover_();
+    build_sticker_popover_();
+    room_view_->on_emoji = [this](tk::Rect btn)
+    {
+        if (!emoji_popover_)
+            return;
+        if (gtk_widget_get_visible(emoji_popover_))
+            gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
+        else
+            popup_emoji_at_rect_(btn);
+    };
+    room_view_->on_sticker = [this](tk::Rect btn)
+    {
+        if (!sticker_popover_)
+            return;
+        if (gtk_widget_get_visible(sticker_popover_))
+            gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
+        else
+            popup_sticker_at_rect_(btn);
+    };
+    room_view_->on_add_reaction_requested =
+        [this](const std::string& event_id, tk::Rect anchor)
+    {
+        if (!emoji_popover_ || room_id_.empty())
+            return;
+        pending_reaction_event_id_ = event_id;
+        popup_emoji_at_rect_(anchor);
+    };
+    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
+    {
+        GtkWidget* w = surface_->widget();
+        if (!topic_tooltip_popover_)
+        {
+            topic_tooltip_label_ = gtk_label_new(nullptr);
+            gtk_label_set_wrap(GTK_LABEL(topic_tooltip_label_), TRUE);
+            gtk_label_set_max_width_chars(GTK_LABEL(topic_tooltip_label_), 60);
+            topic_tooltip_popover_ = gtk_popover_new();
+            gtk_widget_add_css_class(topic_tooltip_popover_, "tooltip");
+            gtk_popover_set_child(GTK_POPOVER(topic_tooltip_popover_),
+                                  topic_tooltip_label_);
+            gtk_widget_set_parent(topic_tooltip_popover_, w);
+            gtk_popover_set_autohide(GTK_POPOVER(topic_tooltip_popover_),
+                                     FALSE);
+            gtk_popover_set_has_arrow(GTK_POPOVER(topic_tooltip_popover_),
+                                      FALSE);
+        }
+        gtk_label_set_text(GTK_LABEL(topic_tooltip_label_), text.c_str());
+        GdkRectangle rect{
+            static_cast<int>(anchor.x), static_cast<int>(anchor.y),
+            static_cast<int>(anchor.w), static_cast<int>(anchor.h)};
+        gtk_popover_set_pointing_to(GTK_POPOVER(topic_tooltip_popover_), &rect);
+        gtk_popover_popup(GTK_POPOVER(topic_tooltip_popover_));
+    };
+    room_view_->on_hide_tooltip = [this]
+    {
+        if (topic_tooltip_popover_)
+            gtk_popover_popdown(GTK_POPOVER(topic_tooltip_popover_));
+    };
+    room_view_->on_link_hovered = [this](const std::string& url)
+    {
+        gtk_widget_set_cursor_from_name(surface_->widget(),
+                                        url.empty() ? "default" : "pointer");
+    };
+
     // "destroy" fires when the GtkWindow is destroyed (user clicks X or
     // gtk_window_destroy is called). At that point the GtkWidget tree is
     // already gone; schedule the C++ object deletion for next idle.
@@ -273,6 +343,177 @@ RoomWindow::~RoomWindow()
         gtk_window_destroy(window_);
         window_ = nullptr;
     }
+}
+
+void RoomWindow::build_emoji_popover_()
+{
+    emoji_popover_ = gtk_popover_new();
+    gtk_widget_set_parent(emoji_popover_, surface_->widget());
+    gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
+    gtk_popover_set_has_arrow(GTK_POPOVER(emoji_popover_), TRUE);
+    gtk_popover_set_autohide(GTK_POPOVER(emoji_popover_), TRUE);
+
+    emoji_picker_surface_ =
+        std::make_unique<tk::gtk4::Surface>(surface_->theme());
+    auto shared = std::make_unique<tesseract::views::EmojiPicker>();
+    emoji_picker_shared_ = shared.get();
+    emoji_picker_shared_->set_client(shell_client_());
+    emoji_picker_shared_->on_selected = [this](const std::string& glyph)
+    {
+        if (!pending_reaction_event_id_.empty())
+        {
+            std::string ev = std::move(pending_reaction_event_id_);
+            pending_reaction_event_id_.clear();
+            toggle_reaction_(ev, glyph, std::string{});
+            if (emoji_popover_)
+                gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
+            return;
+        }
+        if (!room_text_area_)
+            return;
+        room_text_area_->insert_at_cursor(glyph);
+        if (room_view_)
+            room_view_->set_current_text(room_text_area_->text());
+        room_text_area_->set_focused(true);
+    };
+    emoji_picker_shared_->on_emoticon_selected =
+        [this](const tesseract::ImagePackImage& img)
+    {
+        if (!pending_reaction_event_id_.empty())
+        {
+            std::string ev = std::move(pending_reaction_event_id_);
+            pending_reaction_event_id_.clear();
+            if (!img.url.empty())
+                toggle_reaction_(ev, std::string{}, img.url);
+            if (emoji_popover_)
+                gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
+            return;
+        }
+        if (!room_text_area_)
+            return;
+        room_text_area_->insert_at_cursor(":" + img.shortcode + ":");
+        if (room_view_)
+            room_view_->set_current_text(room_text_area_->text());
+        room_text_area_->set_focused(true);
+    };
+    emoji_picker_shared_->set_image_provider(picker_image_provider_(false));
+    emoji_picker_surface_->set_root(std::move(shared));
+
+    emoji_picker_search_field_ =
+        emoji_picker_surface_->host().make_text_field();
+    emoji_picker_search_field_->set_placeholder(_("Search emoji"));
+    emoji_picker_search_field_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (emoji_picker_shared_)
+                emoji_picker_shared_->set_search_query(q);
+            if (emoji_picker_surface_)
+                emoji_picker_surface_->relayout();
+        });
+    emoji_picker_surface_->set_on_layout(
+        [this]
+        {
+            if (emoji_picker_search_field_ && emoji_picker_shared_)
+                emoji_picker_search_field_->set_rect(
+                    emoji_picker_shared_->search_field_rect());
+        });
+
+    GtkWidget* surface_widget = emoji_picker_surface_->widget();
+    gtk_widget_set_size_request(surface_widget, 320, 360);
+    gtk_popover_set_child(GTK_POPOVER(emoji_popover_), surface_widget);
+}
+
+void RoomWindow::build_sticker_popover_()
+{
+    sticker_popover_ = gtk_popover_new();
+    gtk_widget_set_parent(sticker_popover_, surface_->widget());
+    gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
+    gtk_popover_set_has_arrow(GTK_POPOVER(sticker_popover_), TRUE);
+    gtk_popover_set_autohide(GTK_POPOVER(sticker_popover_), TRUE);
+
+    sticker_picker_surface_ =
+        std::make_unique<tk::gtk4::Surface>(surface_->theme());
+    auto shared = std::make_unique<tesseract::views::StickerPicker>();
+    sticker_picker_shared_ = shared.get();
+    sticker_picker_shared_->set_client(shell_client_());
+    sticker_picker_shared_->on_selected =
+        [this](const tesseract::ImagePackImage& img)
+    {
+        if (room_id_.empty())
+            return;
+        std::string body = img.body.empty() ? img.shortcode : img.body;
+        if (auto* c = shell_client_())
+            c->send_sticker(room_id_, body, img.url, img.info_json);
+        if (sticker_popover_)
+            gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
+    };
+    sticker_picker_shared_->set_image_provider(picker_image_provider_(true));
+    sticker_picker_surface_->set_root(std::move(shared));
+
+    sticker_picker_search_field_ =
+        sticker_picker_surface_->host().make_text_field();
+    sticker_picker_search_field_->set_placeholder(_("Search stickers"));
+    sticker_picker_search_field_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (sticker_picker_shared_)
+                sticker_picker_shared_->set_search_query(q);
+            if (sticker_picker_surface_)
+                sticker_picker_surface_->relayout();
+        });
+    sticker_picker_surface_->set_on_layout(
+        [this]
+        {
+            if (sticker_picker_search_field_ && sticker_picker_shared_)
+                sticker_picker_search_field_->set_rect(
+                    sticker_picker_shared_->search_field_rect());
+        });
+
+    GtkWidget* surface_widget = sticker_picker_surface_->widget();
+    gtk_widget_set_size_request(surface_widget, 360, 420);
+    gtk_popover_set_child(GTK_POPOVER(sticker_popover_), surface_widget);
+}
+
+void RoomWindow::popup_emoji_at_rect_(tk::Rect anchor)
+{
+    if (!emoji_popover_)
+        return;
+    GdkRectangle r{
+        static_cast<int>(anchor.x), static_cast<int>(anchor.y),
+        static_cast<int>(anchor.w), static_cast<int>(anchor.h)};
+    gtk_popover_set_pointing_to(GTK_POPOVER(emoji_popover_), &r);
+    gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
+    if (emoji_picker_shared_)
+    {
+        emoji_picker_shared_->refresh_frequents();
+        emoji_picker_shared_->set_search_query("");
+    }
+    if (emoji_picker_search_field_)
+        emoji_picker_search_field_->set_text("");
+    gtk_popover_popup(GTK_POPOVER(emoji_popover_));
+    if (emoji_picker_surface_)
+        emoji_picker_surface_->relayout();
+}
+
+void RoomWindow::popup_sticker_at_rect_(tk::Rect anchor)
+{
+    if (!sticker_popover_)
+        return;
+    GdkRectangle r{
+        static_cast<int>(anchor.x), static_cast<int>(anchor.y),
+        static_cast<int>(anchor.w), static_cast<int>(anchor.h)};
+    gtk_popover_set_pointing_to(GTK_POPOVER(sticker_popover_), &r);
+    gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
+    if (sticker_picker_shared_)
+    {
+        sticker_picker_shared_->refresh_packs();
+        sticker_picker_shared_->set_search_query("");
+    }
+    if (sticker_picker_search_field_)
+        sticker_picker_search_field_->set_text("");
+    gtk_popover_popup(GTK_POPOVER(sticker_popover_));
+    if (sticker_picker_surface_)
+        sticker_picker_surface_->relayout();
 }
 
 // static
@@ -373,6 +614,14 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     {
         room_text_area_->set_mention_colors(t.palette.accent,
                                             t.palette.text_on_accent);
+    }
+    if (emoji_picker_surface_)
+    {
+        emoji_picker_surface_->set_theme(t);
+    }
+    if (sticker_picker_surface_)
+    {
+        sticker_picker_surface_->set_theme(t);
     }
 }
 

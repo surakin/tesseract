@@ -1,4 +1,6 @@
 #import "RoomWindowController.h"
+#import "EmojiPicker.h"
+#import "StickerPicker.h"
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "tk/host_macos.h"
@@ -8,6 +10,9 @@
 #include "views/MessageListView.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
+
+#include <tesseract/client.h>
+#include <tesseract/image_pack.h>
 
 #include <algorithm>
 
@@ -71,11 +76,22 @@ protected:
     {
         return text_area_.get();
     }
+    tk::EncodedImage encode_for_send_(const std::uint8_t* data,
+                                      std::size_t size, bool compress) override
+    {
+        return surface_ ? surface_->host().encode_for_send(data, size, compress)
+                        : tk::EncodedImage{};
+    }
 
     void show_mention_popup_(tk::Rect cursor, int rows);
     void hide_mention_popup_();
 
 private:
+    // Configure + show the shared emoji / sticker panels anchored to this
+    // pop-out's surface, routing selection to this window's room/composer.
+    void show_emoji_panel_(tk::Rect anchor);
+    void show_sticker_panel_(tk::Rect anchor);
+
     __strong RoomWindowController* controller_ = nil;
     std::unique_ptr<tk::macos::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
@@ -83,6 +99,11 @@ private:
     std::unique_ptr<tk::macos::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
+    // Reaction picker: set by on_add_reaction_requested, consumed by the next
+    // emoji selection to send a reaction instead of inserting text.
+    std::string pending_reaction_event_id_;
+    NSPopover* topic_tooltip_popover_ = nil;
+    bool link_hovered_ = false;
     bool window_closed_ = false;
 };
 
@@ -300,6 +321,79 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
                 std::move(hooks));
     }
 
+    // ── Platform popups the shared wire_room_view_ can't provide ──────────
+    room_view_->on_emoji = [this](tk::Rect btn) { show_emoji_panel_(btn); };
+    room_view_->on_sticker = [this](tk::Rect btn) { show_sticker_panel_(btn); };
+    room_view_->on_add_reaction_requested =
+        [this](const std::string& event_id, tk::Rect anchor)
+    {
+        pending_reaction_event_id_ = event_id;
+        show_emoji_panel_(anchor);
+    };
+    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
+    {
+        if (!surface_)
+            return;
+        if (!topic_tooltip_popover_)
+        {
+            NSTextField* lbl = [NSTextField wrappingLabelWithString:@""];
+            lbl.translatesAutoresizingMaskIntoConstraints = NO;
+            NSView* cv = [[NSView alloc] init];
+            cv.translatesAutoresizingMaskIntoConstraints = NO;
+            [cv addSubview:lbl];
+            [NSLayoutConstraint activateConstraints:@[
+                [lbl.leadingAnchor constraintEqualToAnchor:cv.leadingAnchor
+                                                  constant:8],
+                [lbl.trailingAnchor constraintEqualToAnchor:cv.trailingAnchor
+                                                   constant:-8],
+                [lbl.topAnchor constraintEqualToAnchor:cv.topAnchor constant:6],
+                [lbl.bottomAnchor constraintEqualToAnchor:cv.bottomAnchor
+                                                 constant:-6],
+                [cv.widthAnchor constraintLessThanOrEqualToConstant:360],
+            ]];
+            NSViewController* vc = [[NSViewController alloc] init];
+            vc.view = cv;
+            NSPopover* pop = [[NSPopover alloc] init];
+            pop.contentViewController = vc;
+            pop.behavior = NSPopoverBehaviorSemitransient;
+            pop.animates = NO;
+            topic_tooltip_popover_ = pop;
+        }
+        NSTextField* lbl =
+            (NSTextField*)topic_tooltip_popover_.contentViewController.view
+                .subviews.firstObject;
+        lbl.stringValue = [NSString stringWithUTF8String:text.c_str()] ?: @"";
+        [topic_tooltip_popover_.contentViewController.view
+                layoutSubtreeIfNeeded];
+        topic_tooltip_popover_.contentSize =
+            topic_tooltip_popover_.contentViewController.view.fittingSize;
+        NSView* view = (__bridge NSView*)surface_->view_handle();
+        NSRect anchorRect = NSMakeRect(anchor.x, anchor.y, anchor.w, anchor.h);
+        [topic_tooltip_popover_ showRelativeToRect:anchorRect
+                                            ofView:view
+                                     preferredEdge:NSRectEdgeMinY];
+    };
+    room_view_->on_hide_tooltip = [this]
+    {
+        if (topic_tooltip_popover_ && topic_tooltip_popover_.shown)
+        {
+            [topic_tooltip_popover_ close];
+        }
+    };
+    room_view_->on_link_hovered = [this](const std::string& url)
+    {
+        if (!url.empty() && !link_hovered_)
+        {
+            [[NSCursor pointingHandCursor] push];
+            link_hovered_ = true;
+        }
+        else if (url.empty() && link_hovered_)
+        {
+            [NSCursor pop];
+            link_hovered_ = false;
+        }
+    };
+
     // Wire up the ObjC window controller.
     controller_ = [[RoomWindowController alloc] initWithWindow:win];
     controller_.cppWindow = this;
@@ -313,6 +407,96 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 MacRoomWindow::~MacRoomWindow()
 {
     close_window();
+}
+
+void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
+{
+    if (!surface_)
+        return;
+    EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
+    panel.client = shell_client_();
+    [panel setTheme:surface_->theme()];
+    [panel setImageProvider:picker_image_provider_(false)];
+    // The panel is a process-wide singleton that can outlive this pop-out; guard
+    // the stored blocks against use-after-free with the liveness token.
+    std::weak_ptr<bool> alive_weak = alive_;
+    __weak EmojiPickerPanel* weakPanel = panel;
+    panel.onSelect = ^(NSString* glyph) {
+        auto a = alive_weak.lock();
+        if (!a || !*a)
+            return;
+        std::string g = glyph.UTF8String ?: "";
+        if (g.empty())
+            return;
+        if (!pending_reaction_event_id_.empty())
+        {
+            std::string ev = pending_reaction_event_id_;
+            pending_reaction_event_id_.clear();
+            toggle_reaction_(ev, g, std::string{});
+            [weakPanel close];
+            return;
+        }
+        if (text_area_)
+        {
+            text_area_->insert_at_cursor(g);
+            if (room_view_)
+                room_view_->set_current_text(text_area_->text());
+            text_area_->set_focused(true);
+        }
+    };
+    panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
+        auto a = alive_weak.lock();
+        if (!a || !*a)
+            return;
+        if (img.url.empty())
+            return;
+        if (!pending_reaction_event_id_.empty())
+        {
+            std::string ev = pending_reaction_event_id_;
+            pending_reaction_event_id_.clear();
+            toggle_reaction_(ev, std::string{}, img.url);
+            [weakPanel close];
+            return;
+        }
+        if (text_area_)
+        {
+            text_area_->insert_at_cursor(":" + img.shortcode + ":");
+            if (room_view_)
+                room_view_->set_current_text(text_area_->text());
+            text_area_->set_focused(true);
+        }
+    };
+    NSView* anchorView = (__bridge NSView*)surface_->view_handle();
+    [panel popupAtRect:anchor inView:anchorView];
+}
+
+void MacRoomWindow::show_sticker_panel_(tk::Rect anchor)
+{
+    if (!surface_ || room_id_.empty())
+        return;
+    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    panel.client = shell_client_();
+    [panel setTheme:surface_->theme()];
+    [panel setImageProvider:picker_image_provider_(true)];
+    std::weak_ptr<bool> alive_weak = alive_;
+    __weak StickerPickerPanel* weakPanel = panel;
+    panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
+        auto a = alive_weak.lock();
+        if (!a || !*a)
+            return;
+        if (room_id_.empty())
+            return;
+        std::string u = url.UTF8String ?: "";
+        std::string b = body.UTF8String ?: "";
+        std::string j = infoJson.UTF8String ?: "{}";
+        if (auto* c = shell_client_())
+        {
+            c->send_sticker(room_id_, b, u, j);
+        }
+        [weakPanel orderOut:nil];
+    };
+    NSView* anchorView = (__bridge NSView*)surface_->view_handle();
+    [panel popupAtRect:anchor inView:anchorView];
 }
 
 void MacRoomWindow::bring_to_front()

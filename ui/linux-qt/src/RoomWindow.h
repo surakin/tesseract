@@ -6,6 +6,9 @@
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
 
+class EmojiPicker;
+class StickerPicker;
+
 namespace qt6
 {
 class MainWindow;
@@ -38,6 +41,12 @@ protected:
     {
         return roomTextArea_.get();
     }
+    tk::EncodedImage encode_for_send_(const std::uint8_t* data,
+                                      std::size_t size, bool compress) override
+    {
+        return surface_ ? surface_->host().encode_for_send(data, size, compress)
+                        : tk::EncodedImage{};
+    }
 
 private:
     void show_mention_popup_(tk::Rect cursor_local, int rows);
@@ -45,6 +54,12 @@ private:
     MainWindow* parent_shell_;
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
+
+    // Pop-out-local emoji/sticker pickers (parented to this QWidget). The emoji
+    // picker doubles as the reaction picker via pendingReactionEventId_.
+    ::EmojiPicker* emojiPicker_ = nullptr;
+    ::StickerPicker* stickerPicker_ = nullptr;
+    std::string pendingReactionEventId_;
 
     QWidget* mention_popup_frame_ = nullptr;
     std::unique_ptr<tk::qt6::Surface> mention_popup_surface_;

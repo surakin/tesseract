@@ -249,6 +249,17 @@ public:
     // multiple times — the host coalesces.
     virtual void request_repaint() = 0;
 
+    // True if a Ctrl modifier was held during the most recent pointer press/
+    // release dispatched through this host. tk's pointer events don't carry
+    // modifier state, so shells use this to distinguish a plain click from a
+    // Ctrl+click inside widget callbacks (e.g. TabBar::on_tab_selected). Only
+    // the GTK4 host needs to track this — the Win32/Qt6/macOS shells query
+    // their native modifier state directly — so the default returns false.
+    virtual bool pointer_ctrl_held() const
+    {
+        return false;
+    }
+
     // Post `task` to be run on the UI thread. The most common caller is
     // Rust async completion handlers that finish on a worker thread and
     // need to mutate widgets. Safe to call from any thread.

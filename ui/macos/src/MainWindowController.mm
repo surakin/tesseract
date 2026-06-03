@@ -1739,7 +1739,18 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [weakSelf](const std::string& room_id)
         {
             MainWindowController* s = weakSelf;
-            if (s)
+            if (!s)
+            {
+                return;
+            }
+            // ⌘+click pops the room out into its own window (and closes the
+            // tab); a plain click just switches to it. Matches the room-list
+            // new-tab gesture, which also uses Command on macOS.
+            if ([NSEvent modifierFlags] & NSEventModifierFlagCommand)
+            {
+                s->_shell->tab_popout_room(room_id);
+            }
+            else
             {
                 s->_shell->tab_select_room(room_id);
             }

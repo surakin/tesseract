@@ -1,14 +1,20 @@
 #include "RoomWindow.h"
+#include "EmojiPicker.h"
 #include "MainWindow.h"
+#include "StickerPicker.h"
 
 #include "views/ImageViewerOverlay.h"
 #include "views/PopoutRoomWidget.h"
 #include "views/VideoViewerOverlay.h"
 
+#include <tesseract/client.h>
+#include <tesseract/image_pack.h>
+
 #include <QCloseEvent>
 #include <QFileDialog>
 #include <QKeyEvent>
 #include <QResizeEvent>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -199,6 +205,103 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             }
         });
 
+    // ── Platform popups the shared wire_room_view_ can't provide ──────────
+    // Pop-out-local emoji / sticker pickers (parented to this window). The
+    // emoji picker doubles as the reaction picker via pendingReactionEventId_.
+    emojiPicker_ = new ::EmojiPicker(this);
+    emojiPicker_->setClient(shell_client_());
+    emojiPicker_->setImageProvider(picker_image_provider_(false));
+    emojiPicker_->onSelected = [this](const QString& glyph)
+    {
+        if (!pendingReactionEventId_.empty())
+        {
+            std::string ev = std::move(pendingReactionEventId_);
+            pendingReactionEventId_.clear();
+            toggle_reaction_(ev, glyph.toStdString(), std::string{});
+            emojiPicker_->hide();
+            return;
+        }
+        if (!roomTextArea_)
+            return;
+        roomTextArea_->insert_at_cursor(glyph.toStdString());
+        if (room_view_)
+            room_view_->set_current_text(roomTextArea_->text());
+        roomTextArea_->set_focused(true);
+    };
+    emojiPicker_->onEmoticonSelected =
+        [this](const tesseract::ImagePackImage& img)
+    {
+        if (!pendingReactionEventId_.empty())
+        {
+            std::string ev = std::move(pendingReactionEventId_);
+            pendingReactionEventId_.clear();
+            if (!img.url.empty())
+                toggle_reaction_(ev, std::string{}, img.url);
+            emojiPicker_->hide();
+            return;
+        }
+        if (!roomTextArea_)
+            return;
+        roomTextArea_->insert_at_cursor(":" + img.shortcode + ":");
+        if (room_view_)
+            room_view_->set_current_text(roomTextArea_->text());
+        roomTextArea_->set_focused(true);
+    };
+    stickerPicker_ = new ::StickerPicker(this);
+    stickerPicker_->setClient(shell_client_());
+    stickerPicker_->setImageProvider(picker_image_provider_(true));
+    stickerPicker_->onSelected = [this](const tesseract::ImagePackImage& img)
+    {
+        if (room_id_.empty())
+            return;
+        std::string body = img.body.empty() ? img.shortcode : img.body;
+        if (auto* c = shell_client_())
+            c->send_sticker(room_id_, body, img.url, img.info_json);
+        stickerPicker_->hide();
+    };
+    room_view_->on_emoji = [this](tk::Rect btn)
+    {
+        if (!emojiPicker_)
+            return;
+        if (emojiPicker_->isVisible())
+            emojiPicker_->hide();
+        else
+            emojiPicker_->popupAtRect(surface_, btn);
+    };
+    room_view_->on_sticker = [this](tk::Rect btn)
+    {
+        if (!stickerPicker_)
+            return;
+        if (stickerPicker_->isVisible())
+            stickerPicker_->hide();
+        else
+            stickerPicker_->popupAtRect(surface_, btn);
+    };
+    room_view_->on_add_reaction_requested =
+        [this](const std::string& event_id, tk::Rect anchor)
+    {
+        if (!emojiPicker_ || room_id_.empty())
+            return;
+        pendingReactionEventId_ = event_id;
+        emojiPicker_->popupAtRect(surface_, anchor);
+    };
+    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
+    {
+        if (!surface_)
+            return;
+        QPoint local(static_cast<int>(anchor.x),
+                     static_cast<int>(anchor.y + anchor.h));
+        QToolTip::showText(surface_->mapToGlobal(local),
+                           QString::fromStdString(text), surface_);
+    };
+    room_view_->on_hide_tooltip = [] { QToolTip::hideText(); };
+    room_view_->on_link_hovered = [this](const std::string& url)
+    {
+        if (surface_)
+            surface_->setCursor(url.empty() ? Qt::ArrowCursor
+                                            : Qt::PointingHandCursor);
+    };
+
     show();
     finish_init_();
 }
@@ -246,6 +349,14 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     {
         roomTextArea_->set_mention_colors(t.palette.accent,
                                           t.palette.text_on_accent);
+    }
+    if (emojiPicker_)
+    {
+        emojiPicker_->set_theme(t);
+    }
+    if (stickerPicker_)
+    {
+        stickerPicker_->set_theme(t);
     }
 }
 

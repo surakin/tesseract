@@ -2443,27 +2443,26 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     {
         return;
     }
-    if (room_id == current_room_id_)
+    // In-thread replies belong to a thread, not the main timeline. The main
+    // window's list excludes them; pop-out main lists must do the same, or
+    // their rows diverge from the main window and later update/remove indices
+    // (which arrive in main-timeline coordinates) land on the wrong rows.
+    const bool in_thread = !ev->thread_root_id.empty();
+    if (room_id == current_room_id_ && !in_thread && room_view_)
     {
-        // In-thread replies belong to a thread, not the main list.
-        if (!ev->thread_root_id.empty())
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
         {
-            dispatch_message_inserted_secondary_(room_id, index, *ev);
-            return;
+            ensure_reply_details_(ev->event_id);
         }
-        if (room_view_)
-        {
-            prep_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            room_view_->insert_message(
-                index, tesseract::views::make_row_data(*ev, my_user_id_));
-            request_relayout_();
-        }
+        room_view_->insert_message(
+            index, tesseract::views::make_row_data(*ev, my_user_id_));
+        request_relayout_();
     }
-    dispatch_message_inserted_secondary_(room_id, index, *ev);
+    if (!in_thread)
+    {
+        dispatch_message_inserted_secondary_(room_id, index, *ev);
+    }
 }
 
 void ShellBase::handle_message_updated_ui_(std::string room_id,
@@ -2474,26 +2473,25 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
     {
         return;
     }
-    if (room_id == current_room_id_)
+    // See handle_message_inserted_ui_: in-thread replies are excluded from the
+    // main timeline on both the main window and pop-outs, keeping their rows
+    // aligned with the main-timeline indices used by updates/removals.
+    const bool in_thread = !ev->thread_root_id.empty();
+    if (room_id == current_room_id_ && !in_thread && room_view_)
     {
-        if (!ev->thread_root_id.empty())
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
         {
-            dispatch_message_updated_secondary_(room_id, index, *ev);
-            return;
+            ensure_reply_details_(ev->event_id);
         }
-        if (room_view_)
-        {
-            prep_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            room_view_->update_message(
-                index, tesseract::views::make_row_data(*ev, my_user_id_));
-            request_relayout_();
-        }
+        room_view_->update_message(
+            index, tesseract::views::make_row_data(*ev, my_user_id_));
+        request_relayout_();
     }
-    dispatch_message_updated_secondary_(room_id, index, *ev);
+    if (!in_thread)
+    {
+        dispatch_message_updated_secondary_(room_id, index, *ev);
+    }
 }
 
 void ShellBase::handle_message_removed_ui_(std::string room_id,
@@ -3088,6 +3086,23 @@ void ShellBase::tab_close(const std::string& room_id)
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     after_active_room_changed_();
     on_tab_state_changed_ui_();
+}
+
+void ShellBase::tab_popout_room(const std::string& room_id)
+{
+    // Copy first: the callers pass a reference to a TabBar TabItem's room_id
+    // string, and tab_close() below rebuilds the tab bar via
+    // on_tab_state_changed_ui_(), freeing that string. Using the reference
+    // afterwards would be a use-after-free (it manifested as the active room
+    // popping out instead of the clicked one, and closing the active tab doing
+    // nothing because the dangling read came back empty).
+    const std::string id = room_id;
+    if (id.empty())
+    {
+        return;
+    }
+    tab_close(id);               // no-op when this is the last tab
+    open_room_in_new_window(id); // raises an existing pop-out if present
 }
 
 bool ShellBase::try_restore_tab_session_(

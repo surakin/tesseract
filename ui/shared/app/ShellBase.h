@@ -97,6 +97,14 @@ public:
     // Close the tab for room_id. No-op when tabs_.size() <= 1.
     void tab_close(const std::string& room_id);
 
+    // Ctrl/⌘+click on a tab: pop the room out into its own native window and
+    // close the tab. Closes first so current_room_id_ moves off the room before
+    // the new window's acquire_room_subscription_ runs (it then takes its own
+    // SDK subscription rather than relying on the main window). tab_close is a
+    // no-op for the last remaining tab, in which case the room stays shown in
+    // the main window alongside the pop-out.
+    void tab_popout_room(const std::string& room_id);
+
     // Wire room_view_->on_open_dm and room_view_->on_has_dm.
     // Call once per shell after main_app_ and room_view_ are set.
     void setup_dm_callbacks();
