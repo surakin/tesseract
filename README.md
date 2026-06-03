@@ -116,6 +116,8 @@ The app is mostly complete and can be used for existing accounts and new account
 
 Also I don't speak as many languages as I would like to, so translations are a bit lagging behind. I'll do something about that, when I learn how. Stay tuned.
 
+I also have to admit that I have the same design talents as a brick, so even if I made my best effort to make it look good, I'm sure there is a lot of room for improvement.
+
 <!-- One honest paragraph. Solo project? Say so. How actively maintained?
      What's the support expectation? What's NOT promised? Setting this
      explicitly attracts the right users and filters out the wrong ones. -->
