@@ -689,6 +689,17 @@ private:
     class Adapter;
     friend class Adapter;
 
+    // ListView hook: fired after an anchored relayout repositions the
+    // viewport. Re-resolves the hover highlight + chip target from the last
+    // pointer position so they track the same message across the height
+    // change / index shift.
+    void on_anchored_relayout_() override;
+
+    // Clear the cached chip/receipt geometry for the hovered row so the next
+    // paint_row rebuilds it. Shared by on_pointer_move (row changed) and
+    // on_anchored_relayout_ (layout changed under a stationary pointer).
+    void reset_hovered_row_geom_();
+
     // Suppress the "start thread" hover button (set by ThreadView on its
     // embedded list — replies inside a thread don't need to open sub-threads).
     bool thread_button_visible_ = true;

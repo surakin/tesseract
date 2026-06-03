@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-02**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-03**.
 
 > **Encryption-setup overlay.**
 > `EncryptionSetupOverlay`, a shared widget wired on all four shells, guides
@@ -278,7 +278,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 171 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 634 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 638 |
 
 ## Platforms
 
@@ -312,7 +312,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Initial-sync progress in the status bar** — `RoomListService::state` exposed via a new `on_room_list_state` FFI callback; each shell paints "Syncing rooms…" (debounced 300 ms) / "Reconnecting…" / "Downloading encryption keys (N)…" until both sliding-sync and key-backfill settle, then clears to "Connected". Wired on Qt6, GTK4, and Win32; macOS deferred (no status-bar surface).
 - **Per-room `Timeline` handles** — `HashMap<OwnedRoomId, TimelineHandle>` keyed by room; subscribed lazily.
 - **Timeline FFI** — `subscribe_room`, `unsubscribe_room`, `paginate_back`, `paginate_back_with_status` (reports `reached_start`); position-aligned `on_timeline_reset` / `on_message_inserted` / `on_message_updated` / `on_message_removed` callbacks mirror matrix-sdk-ui's `VectorDiff` semantics.
-- **Back-pagination on scroll-to-top** — UI fires `paginate_back` when the user reaches the top; in-place insertion preserves the visual scroll position.
+- **Back-pagination on scroll-to-top** — UI fires `paginate_back` when the user reaches the top; in-place insertion preserves the visual scroll position. Scroll preservation is **row-anchored** (`ListView::ScrollAnchor` + `ListAdapter::row_key`): the row under the cursor (or the top-of-viewport row) is pinned to its screen position across prepends *and* async row-height growth (images, URL previews, voice waveforms decoding in/above the viewport), with the hover highlight re-resolved to the same message after the relayout. Keyless lists (room/thread) fall back to the legacy total-height delta.
 - **Background backfill** — `start_background_backfill` walks every joined room not currently subscribed and warms the persistent event cache with bounded concurrency.
 - **Kind-aware last-message preview** — each room row's preview uses `formatted_body`'s first plain line for text/notice/emote, shows "\<sender\> sent an image/video/file/voice message" for media kinds, and draws an inline ~28 px thumbnail for sticker last-messages (`RoomListView` `sticker_provider_` backed by the shells' shared image cache; wired on all four platforms).
 - **Tombstoned (upgraded) rooms hidden** from the room list.

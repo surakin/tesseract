@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace tk
@@ -39,6 +40,15 @@ public:
     virtual bool is_selectable(std::size_t /*index*/) const
     {
         return true;
+    }
+
+    // Stable identity for a row, used by ListView's scroll anchor to relocate
+    // the anchored row after a height-changing mutation (prepend, async media
+    // load) shifts indices. Empty means "no stable key" — the anchor falls
+    // back to the captured index. Override to return e.g. an event id.
+    virtual std::string row_key(std::size_t /*index*/) const
+    {
+        return {};
     }
 };
 
@@ -270,15 +280,25 @@ public:
     void on_pointer_leave() override;
 
 protected:
-    // True if row i lies strictly above the current viewport. When heights
-    // are dirty, visible_range() returns {0,-1}; falls back to the stale
-    // row_offsets_ so the check stays reliable even after a concurrent
-    // invalidate_data() call made without an anchor.
-    bool row_above_viewport(std::size_t i) const;
-
     int hovered_row_index() const
     {
         return hovered_index_;
+    }
+
+    // Called from arrange() right after an anchored relayout has repositioned
+    // the viewport so the anchor row stays pixel-stable. Subclasses override
+    // to re-resolve pointer-derived state (hover highlight, chip targets) that
+    // may have gone stale because indices shifted or rows changed height.
+    virtual void on_anchored_relayout_()
+    {
+    }
+
+    // Re-run the base hover hit-test from a widget-local pointer position.
+    // Exposes the private update_hover so subclasses can refresh hovered_index_
+    // after an anchored relayout without a fresh pointer event.
+    void refresh_hover_at(Point local)
+    {
+        update_hover(local);
     }
 
     // World-space rect for the row at `idx`. Returns an empty rect when `idx`
@@ -304,6 +324,11 @@ private:
     void rebuild_heights(LayoutCtx&, float width);
     void clamp_scroll();
     void update_hover(Point local);
+    void capture_anchor_();
+    // Locate the anchored row by its stable key in the rebuilt layout.
+    // Returns true and sets out_index when found; false when the key is empty
+    // or the row is gone (caller uses the height-delta fallback).
+    bool locate_anchor_(std::size_t& out_index) const;
     void maybe_fire_near_top();
     void maybe_fire_near_bottom();
     void fire_latch_(bool now_near, bool& was_near,
@@ -342,12 +367,28 @@ private:
     float near_bottom_threshold_px_ = 200.0f;
     bool was_near_bottom_ = false;
 
-    // `preserve_top_through` machinery. Sentinel < 0 means "no anchor
-    // pending". Set by `preserve_top_through`, consumed by `arrange` once
-    // heights are rebuilt and a fresh `content_height()` is known. Stays
-    // < 0 across normal arranges so width-driven rebuilds don't shift the
-    // viewport.
-    float anchor_pre_height_ = -1.0f;
+    // `preserve_top_through` machinery. capture_anchor_() records an anchor
+    // when a height-changing mutation begins; arrange() consumes it after
+    // rebuild_heights. When the adapter supplies a stable row_key, we pin that
+    // row's top to its pre-mutation screen position:
+    //   scroll_y_ = row_offsets_[new_index] - offset
+    // so the anchored row stays pixel-stable regardless of whether height
+    // changed above, at, or below it (and regardless of index shifts from a
+    // prepend). When the key is empty or the row can't be relocated, we fall
+    // back to the legacy total-height delta (scroll_y_ += new_total - pre),
+    // which is correct for pure top-prepends — the behaviour keyless adapters
+    // (room list, thread list) have always relied on. `pending` stays false
+    // across width-driven rebuilds so a resize never shifts the viewport.
+    struct ScrollAnchor
+    {
+        bool        pending    = false;
+        std::size_t index      = 0;   // captured row index (within old layout)
+        std::string key;              // stable identity (preferred locator)
+        float       offset     = 0.f; // row_offsets_[index] - scroll_y_
+        float       pre_height = 0.f; // content_height() before the mutation
+    };
+    ScrollAnchor anchor_;
+    bool anchored_relayout_pending_ = false;
 
     std::vector<float> row_heights_;
     std::vector<float> row_offsets_; // size = count + 1, last = total height

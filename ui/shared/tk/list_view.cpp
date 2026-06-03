@@ -169,7 +169,7 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
     {
         row_heights_.clear();
         row_offsets_.clear();
-        anchor_pre_height_ = -1.0f;
+        anchor_.pending = false;
         return;
     }
     if (heights_dirty_ || measured_width_ != bounds.w)
@@ -179,18 +179,34 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         // which may already reflect additions made before this arrange call.
         std::size_t prev_count = row_heights_.size();
         rebuild_heights(ctx, bounds.w);
-        if (anchor_pre_height_ >= 0.0f)
+        if (anchor_.pending)
         {
-            // Preserve the user's visual position: if rows were added
-            // (typically prepended via back-pagination), the numeric
-            // scroll offset shifts by the height delta so the row the
-            // user was looking at stays under their cursor.
-            float delta = content_height() - anchor_pre_height_;
-            scroll_y_ += delta;
-            anchor_pre_height_ = -1.0f;
+            std::size_t new_idx = 0;
+            if (locate_anchor_(new_idx) && new_idx + 1 < row_offsets_.size())
+            {
+                // Preserve the user's visual position: pin the anchored row's
+                // top to the screen Y it had before the mutation.
+                // row_offsets_[idx] is the prefix sum of heights above the
+                // anchor, so growth/prepend above it moves prefix and scroll
+                // together (screen Y unchanged), growth of the anchor row only
+                // moves its bottom, and growth strictly below leaves the prefix
+                // — hence scroll_y_ — untouched.
+                scroll_y_ = row_offsets_[new_idx] - anchor_.offset;
+            }
+            else
+            {
+                // No stable key (keyless adapter) or the anchored row vanished:
+                // shift by the total height delta. Correct for pure top-
+                // prepends — the legacy behaviour keyless lists relied on.
+                scroll_y_ += content_height() - anchor_.pre_height;
+            }
+            anchor_.pending = false;
             // Re-arm the near-top trigger: another page can be requested
             // the next time the user crosses the threshold.
             was_near_top_ = false;
+            // Defer hover re-resolution until after clamp_scroll() so the
+            // subclass sees the final offset.
+            anchored_relayout_pending_ = true;
         }
         else
         {
@@ -209,23 +225,11 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         scroll_y_ = std::max(0.0f, content_height() - bounds.h);
     }
     clamp_scroll();
-}
-
-bool ListView::row_above_viewport(std::size_t i) const
-{
-    if (!heights_dirty_)
+    if (anchored_relayout_pending_)
     {
-        auto [first, last] = visible_range();
-        return first > 0 && static_cast<int>(i) < first;
+        anchored_relayout_pending_ = false;
+        on_anchored_relayout_();
     }
-    // heights_dirty_: visible_range() returns {0,-1} — unreliable.
-    // row_offsets_[i+1] is the bottom edge of row i from the last layout.
-    // If it is at or above scroll_y_, the row was strictly above the viewport.
-    if (scroll_y_ <= 0.0f || i + 1 >= row_offsets_.size())
-    {
-        return false;
-    }
-    return row_offsets_[i + 1] <= scroll_y_;
 }
 
 void ListView::preserve_top_through(const std::function<void()>& mutate)
@@ -258,17 +262,79 @@ void ListView::preserve_top_through(const std::function<void()>& mutate)
         was_near_top_ = false;
         return;
     }
-    // Latch the pre-mutation height once; if multiple prepends stack up
-    // before the next arrange, they all share this single snapshot so
-    // the total delta is consistent.
-    if (anchor_pre_height_ < 0.0f)
+    // Capture the row anchor once; if multiple height-changing mutations stack
+    // up before the next arrange, they all share this single snapshot so the
+    // anchored row stays consistent.
+    if (!anchor_.pending)
     {
-        anchor_pre_height_ = content_height();
+        capture_anchor_();
     }
     if (mutate)
     {
         mutate();
     }
+}
+
+void ListView::capture_anchor_()
+{
+    // Always record the pre-mutation total height so the height-delta fallback
+    // is available even before any per-row layout exists.
+    anchor_.key.clear();
+    anchor_.index      = 0;
+    anchor_.offset     = 0.0f;
+    anchor_.pre_height = content_height();
+    anchor_.pending    = true;
+
+    // `measured` is the row count of the *current* (pre-mutation) layout. It
+    // may differ from adapter_->count() when the adapter swapped its backing
+    // model just before calling preserve_top_through; we anchor against the
+    // measured layout the user is actually looking at.
+    const std::size_t measured =
+        row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
+    if (measured == 0)
+    {
+        return; // no per-row data yet — height-delta fallback only
+    }
+    // Anchor the row under the mouse so it stays pixel-stable; with no pointer
+    // over the list, fall back to the top-of-viewport row.
+    std::size_t idx;
+    if (hovered_index_ >= 0 && static_cast<std::size_t>(hovered_index_) < measured)
+    {
+        idx = static_cast<std::size_t>(hovered_index_);
+    }
+    else
+    {
+        idx = std::min(first_visible_row_(), measured - 1);
+    }
+    anchor_.index  = idx;
+    anchor_.offset = row_offsets_[idx] - scroll_y_;
+    // row_key must be read against the OLD model. Adapters that swap their
+    // model before preserve_top_through (e.g. the thread list) leave the key
+    // empty and rely on the height-delta fallback; adapters that want precise
+    // row anchoring swap inside the mutate lambda so the OLD row is still here.
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    if (idx < n)
+    {
+        anchor_.key = adapter_->row_key(idx);
+    }
+}
+
+bool ListView::locate_anchor_(std::size_t& out_index) const
+{
+    if (anchor_.key.empty())
+    {
+        return false;
+    }
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (adapter_->row_key(i) == anchor_.key)
+        {
+            out_index = i;
+            return true;
+        }
+    }
+    return false; // anchored row removed by a concurrent update
 }
 
 void ListView::fire_latch_(bool now_near, bool& was_near,

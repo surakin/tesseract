@@ -693,6 +693,42 @@ public:
         return owner_.messages_.size() + 1; // +1 for always-present typing row
     }
 
+    // Stable identity so ListView's scroll anchor can relocate the anchored
+    // row after a prepend or media-driven height change shifts indices. Real
+    // events use their event_id. Virtual rows (separators, markers) and local
+    // echoes without an id get a synthetic key combining their kind with the
+    // nearest preceding real event_id — stable because a prepend only adds
+    // rows above. If that still cannot be matched, locate_anchor_ falls back
+    // to the captured index. The \x01 prefix keeps synthetic keys from
+    // colliding with real event ids.
+    std::string row_key(std::size_t index) const override
+    {
+        if (is_typing_index(index))
+        {
+            return "\x01typing";
+        }
+        if (index >= owner_.messages_.size())
+        {
+            return {};
+        }
+        const auto& m = owner_.messages_[index];
+        if (!m.event_id.empty())
+        {
+            return m.event_id;
+        }
+        std::string nbr;
+        for (std::size_t j = index; j-- > 0;)
+        {
+            if (!owner_.messages_[j].event_id.empty())
+            {
+                nbr = owner_.messages_[j].event_id;
+                break;
+            }
+        }
+        return "\x01" + std::to_string(static_cast<int>(m.kind)) + ":" +
+               (nbr.empty() ? std::to_string(index) : nbr);
+    }
+
     // True when `index` is a continuation of the previous row: same
     // sender, not a reply, within the grouping window. Continuation
     // rows suppress the avatar and sender name.
@@ -3842,25 +3878,40 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     sel_.reset();
     sel_is_dragging_ = false;
     press_sel_ = false;
-    messages_ = std::move(msgs);
-    // Whole-room pinning: hold an ImageRef for every row that displays a
-    // cached image so it survives eviction while this room is open. Rows whose
-    // image is not yet decoded acquire null here and re-pin on notify_*_ready.
-    for (auto& m : messages_)
-    {
-        try_acquire_image_(m);
-    }
+    // Whole-room pinning (the try_acquire_image_ loop): hold an ImageRef for
+    // every row that displays a cached image so it survives eviction while this
+    // room is open. Rows whose image is not yet decoded acquire null here and
+    // re-pin on notify_*_ready.
     pending_scroll_event_id_.clear();
     if (room_switch)
     {
         pinned_event_ids_.clear();
         can_pin_ = false;
-    }
-    if (room_switch) {
+        messages_ = std::move(msgs);
+        for (auto& m : messages_)
+        {
+            try_acquire_image_(m);
+        }
         invalidate_data();
         scroll_to_bottom();
-    } else {
-        preserve_top_through([this] { invalidate_data(); });
+    }
+    else
+    {
+        // Backfill: capture the scroll anchor against the *current* model
+        // before swapping, so the row the user is looking at is located by key
+        // before its index shifts under the prepended history. The swap lives
+        // inside the lambda; arrange() restores the anchor once the new heights
+        // are measured.
+        preserve_top_through(
+            [&]
+            {
+                messages_ = std::move(msgs);
+                for (auto& m : messages_)
+                {
+                    try_acquire_image_(m);
+                }
+                invalidate_data();
+            });
     }
     // Start inline players for animated video rows near the bottom (most
     // recently received), up to the cap.
@@ -4432,6 +4483,38 @@ void MessageListView::set_preview_provider(PreviewProvider p)
     preview_provider_ = std::move(p);
 }
 
+void MessageListView::reset_hovered_row_geom_()
+{
+    hovered_row_geom_.row_index = static_cast<std::size_t>(-1);
+    hovered_row_geom_.chips.clear();
+    hovered_row_geom_.receipt_discs.clear();
+    hovered_row_geom_.add_visible = false;
+}
+
+void MessageListView::on_anchored_relayout_()
+{
+    if (gate_blocks_input_())
+    {
+        return;
+    }
+    // Only re-resolve hover when the pointer is already over a row. If nothing
+    // was hovered, last_pointer_local_ is stale and re-running the hit-test
+    // would establish a phantom highlight. (A hovered row is also exactly the
+    // case the anchor preserved, so this is where re-resolution matters.)
+    if (hovered_row_index() < 0)
+    {
+        return;
+    }
+    // The anchored row kept its screen position, but its index may have
+    // shifted (prepend) and the hovered-row geometry is stale. Re-resolve the
+    // hovered row from the last pointer position; the post-paint chip-hit
+    // re-evaluation then restores the chip target once geometry is repainted.
+    refresh_hover_at(last_pointer_local_);
+    reset_hovered_row_geom_();
+    hover_target_   = HoverTarget::None;
+    hover_chip_idx_ = -1;
+}
+
 void MessageListView::notify_url_preview_ready(const std::string& url)
 {
     on_gate_notify_(url);
@@ -4442,18 +4525,11 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
             // Preview data (hence image_mxc) is now known; pin the image if it
             // is already cached. Otherwise notify_image_ready re-pins on decode.
             try_acquire_image_(messages_[i]);
-            if (row_above_viewport(i))
-            {
-                preserve_top_through(
-                    [&]
-                    {
-                        invalidate_data();
-                    });
-            }
-            else
-            {
-                invalidate_data();
-            }
+            // Anchor unconditionally: the card grows the row downward, so a
+            // card loading anywhere above the anchored row would otherwise
+            // push the viewport. preserve_top_through still no-ops on
+            // stick-to-bottom / at-top, preserving live-tail and top-reveal.
+            preserve_top_through([&] { invalidate_data(); });
             return;
         }
     }
@@ -4464,7 +4540,6 @@ void MessageListView::notify_image_ready(const std::string& url)
 {
     on_gate_notify_(url);
     bool matched = false;
-    bool above = false;
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
         // Match either the full-res token or the thumbnail token.
@@ -4485,24 +4560,16 @@ void MessageListView::notify_image_ready(const std::string& url)
             // Newly decoded → re-pin this row now that the image exists.
             try_acquire_image_(m);
             matched = true;
-            if (row_above_viewport(i))
-            {
-                above = true;
-            }
         }
     }
     if (!matched)
     {
         return;
     }
-    if (above)
-    {
-        preserve_top_through([&] { invalidate_data(); });
-    }
-    else
-    {
-        invalidate_data();
-    }
+    // Anchor unconditionally: a decoded image grows its row downward, so an
+    // image loading anywhere above the anchored row would otherwise push the
+    // viewport. preserve_top_through no-ops on stick-to-bottom / at-top.
+    preserve_top_through([&] { invalidate_data(); });
 }
 
 void MessageListView::update_voice_waveform(const std::string&         event_id,
@@ -4514,16 +4581,9 @@ void MessageListView::update_voice_waveform(const std::string&         event_id,
             msg.event_id == event_id && msg.waveform.empty())
         {
             msg.waveform = std::move(waveform);
-            const std::size_t idx =
-                static_cast<std::size_t>(&msg - messages_.data());
-            if (row_above_viewport(idx))
-            {
-                preserve_top_through([this] { invalidate_data(); });
-            }
-            else
-            {
-                invalidate_data();
-            }
+            // Anchor unconditionally: the waveform fills in the voice card and
+            // can change row height; keep the anchored row pixel-stable.
+            preserve_top_through([this] { invalidate_data(); });
             return;
         }
     }
@@ -5188,10 +5248,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
     int row = hovered_row_index();
     if (row < 0 || static_cast<std::size_t>(row) != hovered_row_geom_.row_index)
     {
-        hovered_row_geom_.row_index = static_cast<std::size_t>(-1);
-        hovered_row_geom_.chips.clear();
-        hovered_row_geom_.receipt_discs.clear();
-        hovered_row_geom_.add_visible = false;
+        reset_hovered_row_geom_();
     }
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);

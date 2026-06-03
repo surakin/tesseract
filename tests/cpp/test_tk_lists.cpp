@@ -10,6 +10,7 @@
 #include <tesseract/types.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -66,6 +67,30 @@ struct FixedHeightAdapter : ListAdapter
                            : (index % 2 == 0 ? Color::rgb(0xEEEEEE)
                                              : Color::rgb(0xFFFFFF));
         ctx.canvas.fill_rect(bounds, c);
+    }
+};
+
+// Adapter with per-row heights and stable keys, for exercising ListView's
+// row-anchored scroll preservation (vs. the keyless height-delta fallback).
+struct KeyedVarAdapter : ListAdapter
+{
+    std::vector<float>       heights;
+    std::vector<std::string> keys;
+
+    std::size_t count() const override
+    {
+        return heights.size();
+    }
+    float measure_row_height(std::size_t i, LayoutCtx&, float) override
+    {
+        return heights[i];
+    }
+    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override
+    {
+    }
+    std::string row_key(std::size_t i) const override
+    {
+        return i < keys.size() ? keys[i] : std::string{};
     }
 };
 
@@ -1146,6 +1171,104 @@ TEST_CASE("ListView::preserve_top_through keeps the user's row under cursor",
     CHECK(list.scroll_y() == 225.0f);
 }
 
+TEST_CASE("ListView row anchor keeps the hovered row's screen Y when a row "
+          "above it grows",
+          "[tk][listview][anchor]")
+{
+    Stage st;
+    ListView list;
+    KeyedVarAdapter ad;
+    ad.heights.assign(20, 25.0f);
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+
+    // Scroll so rows 10+ are in view, then hover row 11 (top at 275, so it
+    // sits 25 px below the viewport top).
+    list.on_wheel({50, 50}, 0, 250);
+    REQUIRE(list.scroll_y() == 250.0f);
+    list.on_pointer_move({50, 30}); // content_y = 280 → row 11
+    REQUIRE(list.index_at({50, 30}) == 11);
+
+    // A row *above* the anchor (row 5) finishes loading media and grows by
+    // 100 px. The anchored row's top shifts down by 100, so scroll must shift
+    // down by 100 too to keep it under the cursor: 275(+100) - 25 = 350.
+    list.preserve_top_through(
+        [&]
+        {
+            ad.heights[5] = 125.0f;
+            list.invalidate_data();
+        });
+    list.arrange(lc, {0, 0, 200, 100});
+
+    CHECK(list.scroll_y() == 350.0f);
+}
+
+TEST_CASE("ListView row anchor ignores growth strictly below the anchor",
+          "[tk][listview][anchor]")
+{
+    Stage st;
+    ListView list;
+    KeyedVarAdapter ad;
+    ad.heights.assign(20, 25.0f);
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    list.on_wheel({50, 50}, 0, 250);
+    list.on_pointer_move({50, 30}); // hover row 11
+    REQUIRE(list.index_at({50, 30}) == 11);
+
+    // Row 18 (below the anchor) grows. Heights above the anchor are unchanged,
+    // so the anchored row's top — and therefore scroll_y — must not move.
+    list.preserve_top_through(
+        [&]
+        {
+            ad.heights[18] = 200.0f;
+            list.invalidate_data();
+        });
+    list.arrange(lc, {0, 0, 200, 100});
+
+    CHECK(list.scroll_y() == 250.0f);
+}
+
+TEST_CASE("ListView row anchor keeps the keyed row stable across a prepend",
+          "[tk][listview][anchor][prepend]")
+{
+    Stage st;
+    ListView list;
+    KeyedVarAdapter ad;
+    ad.heights.assign(20, 25.0f);
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    list.on_wheel({50, 50}, 0, 250);
+    list.on_pointer_move({50, 30}); // hover row 11 → key "k11"
+    REQUIRE(list.index_at({50, 30}) == 11);
+
+    // Prepend 3 older rows. "k11" is now at index 14; its top moves from 275
+    // to 350. To hold it 25 px below the viewport top: 350 - 25 = 325.
+    list.preserve_top_through(
+        [&]
+        {
+            ad.heights.insert(ad.heights.begin(), {25.0f, 25.0f, 25.0f});
+            ad.keys.insert(ad.keys.begin(), {"p0", "p1", "p2"});
+            list.invalidate_data();
+        });
+    list.arrange(lc, {0, 0, 200, 100});
+
+    CHECK(list.content_height() == 25.0f * 23);
+    CHECK(list.scroll_y() == 325.0f);
+}
+
 TEST_CASE("ListView::preserve_top_through is a no-op when stuck to bottom",
           "[tk][listview][prepend]")
 {
@@ -1752,6 +1875,71 @@ TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
     view.notify_image_ready("mxc://example.org/pic");
     st.run(view, {0, 0, 400, 600});
     CHECK(any_image_painted(view)); // revealed
+}
+
+TEST_CASE("MessageListView keeps the hovered message put when a preview card "
+          "above it finishes loading",
+          "[tk][view][messagelist][anchor]")
+{
+    Stage st;
+    MessageListView view;
+    // A text-only URL preview grows the row without an image to paint (a fake
+    // tk::Image would crash the real Qt draw path).
+    const tesseract::views::UrlPreviewData* preview = nullptr;
+    view.set_preview_provider([&](const std::string&) { return preview; });
+
+    // A link row at the top (preview starts unloaded → no card height), then
+    // plenty of distinct text rows so the list scrolls.
+    std::vector<MessageRowData> rows;
+    {
+        MessageRowData link{};
+        link.kind = MessageRowData::Kind::Text;
+        link.event_id = "$link";
+        link.sender_name = "B";
+        link.body = "see http://example.com/page";
+        link.first_url = "http://example.com/page";
+        rows.push_back(link);
+    }
+    for (int i = 0; i < 30; ++i)
+    {
+        MessageRowData t{};
+        t.kind = MessageRowData::Kind::Text;
+        t.event_id = "$t" + std::to_string(i);
+        t.sender_name = "U" + std::to_string(i); // distinct → no grouping
+        t.body = "line " + std::to_string(i);
+        rows.push_back(t);
+    }
+    view.set_messages(rows); // non-switch → not gated, paints immediately
+    st.run(view, {0, 0, 360, 300});
+
+    // Scroll just past the very top so anchoring is active (the at-top
+    // early-out is reserved for revealing newly prepended rows). The link row
+    // still straddles the top of the viewport, so under the old logic it was
+    // "not strictly above the viewport" and got no anchor.
+    view.on_wheel({50, 50}, 0, 20);
+    st.run(view, {0, 0, 360, 300});
+    REQUIRE(view.scroll_y() > 1.0f);
+
+    // Hover a text row in the lower half of the viewport, below the link.
+    view.on_pointer_move({50, 220});
+    st.run(view, {0, 0, 360, 300});
+    REQUIRE(view.hovered_row_geom().row_index != static_cast<std::size_t>(-1));
+    REQUIRE(view.hovered_row_geom().row_index > 0); // a text row, not the link
+    const float y_before  = view.hovered_row_geom().row_bounds.y;
+    const float ch_before = view.content_height();
+
+    // The preview card finishes loading → the link row grows downward.
+    tesseract::views::UrlPreviewData card;
+    card.title       = "Example";
+    card.description = "An example page";
+    preview          = &card;
+    view.notify_url_preview_ready("http://example.com/page");
+    st.run(view, {0, 0, 360, 300});
+
+    REQUIRE(view.content_height() > ch_before); // the row actually grew
+    const float y_after = view.hovered_row_geom().row_bounds.y;
+    // The hovered message stayed under the cursor: same screen Y (±1 px).
+    CHECK(std::abs(y_after - y_before) <= 1.0f);
 }
 
 TEST_CASE("MessageListView non-switch set_messages is never gated",
