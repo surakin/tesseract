@@ -5410,6 +5410,9 @@ void MainWindow::switch_active_account(int new_idx)
             hInst_,
             [this]
             {
+                // If the unread room is popped out, raise that window instead.
+                if (focus_tray_unread_popout_())
+                    return;
                 ShowWindow(hwnd_, SW_SHOW);
                 if (IsIconic(hwnd_))
                 {
@@ -5420,6 +5423,9 @@ void MainWindow::switch_active_account(int new_idx)
             },
             [this]
             {
+                // If the unread room is popped out, raise that window instead.
+                if (focus_tray_unread_popout_())
+                    return;
                 if (IsWindowVisible(hwnd_) && !last_tray_unread_)
                 {
                     ShowWindow(hwnd_, SW_HIDE);

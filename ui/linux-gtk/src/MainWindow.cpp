@@ -2237,6 +2237,9 @@ void MainWindow::start_tray_if_needed_()
     tray_ = std::make_unique<GtkSniTrayIcon>(
         [this]
         {
+            // If the unread room is popped out, raise that window instead.
+            if (focus_tray_unread_popout_())
+                return;
             gtk_window_present(GTK_WINDOW(window_));
             navigate_tray_unread_();
         },

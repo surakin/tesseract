@@ -2285,11 +2285,17 @@ void MainWindow::doLogin()
         tray_ = std::make_unique<LinuxQtTrayIcon>(
             [this]
             {
+                // If the unread room is popped out, raise that window instead.
+                if (focus_tray_unread_popout_())
+                    return;
                 activateWindowWithToken_(QString{});
                 navigate_tray_unread_();
             },
             [this]
             {
+                // If the unread room is popped out, raise that window instead.
+                if (focus_tray_unread_popout_())
+                    return;
                 if (isVisible() && !last_tray_unread_)
                     hide();
                 else
@@ -2504,11 +2510,17 @@ void MainWindow::onLoginSucceeded()
         tray_ = std::make_unique<LinuxQtTrayIcon>(
             [this]
             {
+                // If the unread room is popped out, raise that window instead.
+                if (focus_tray_unread_popout_())
+                    return;
                 activateWindowWithToken_(QString{});
                 navigate_tray_unread_();
             },
             [this]
             {
+                // If the unread room is popped out, raise that window instead.
+                if (focus_tray_unread_popout_())
+                    return;
                 if (isVisible() && !last_tray_unread_)
                     hide();
                 else

@@ -756,6 +756,17 @@ protected:
     // most-recent last_activity_ts.
     void navigate_tray_unread_();
 
+    // The highest-priority unread room (same selection as navigate_tray_unread_),
+    // or nullptr if none. Borrowed; valid only until rooms_ changes.
+    const RoomInfo* best_unread_room_() const;
+
+    // If the highest-priority unread room is open in a pop-out window, raise
+    // that window and return true. Tray-click handlers call this FIRST and
+    // return early on true, so the pop-out is focused instead of the main
+    // window. Returns false (no side effect) when there's no unread or it
+    // isn't popped out.
+    bool focus_tray_unread_popout_();
+
     // Called on the UI thread when async media bytes arrive.
     // Shell decodes the bytes, stores a tk::Image in tk_avatars_ or tk_images_
     // (or calls anim_cache_.store), and triggers a repaint.
@@ -1224,6 +1235,10 @@ protected:
     // Register/unregister a secondary window. Called by RoomWindowBase.
     void register_room_window_(RoomWindowBase* w);
     void unregister_room_window_(RoomWindowBase* w);
+
+    // If `room_id` is open in a secondary (pop-out) window, raise it and return
+    // true so the caller skips opening/selecting the room in the main app.
+    bool focus_secondary_window_(const std::string& room_id);
     // Remove the owning unique_ptr for w from owned_secondary_windows_,
     // destroying the C++ object. Called by RoomWindowBase::schedule_self_close_()
     // via post_to_ui_ so deletion happens outside the window's own message handler.

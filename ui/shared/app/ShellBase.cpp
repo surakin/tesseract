@@ -1947,7 +1947,7 @@ void ShellBase::notify_tray_unread_()
     on_tray_unread_changed_(u, h);
 }
 
-void ShellBase::navigate_tray_unread_()
+const RoomInfo* ShellBase::best_unread_room_() const
 {
     const RoomInfo* best = nullptr;
     for (const auto& r : rooms_)
@@ -1960,8 +1960,19 @@ void ShellBase::navigate_tray_unread_()
                 && r.last_activity_ts > best->last_activity_ts))
             best = &r;
     }
-    if (best)
+    return best;
+}
+
+void ShellBase::navigate_tray_unread_()
+{
+    if (const RoomInfo* best = best_unread_room_())
         tab_navigate_room(best->id);
+}
+
+bool ShellBase::focus_tray_unread_popout_()
+{
+    const RoomInfo* best = best_unread_room_();
+    return best && focus_secondary_window_(best->id);
 }
 
 void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
@@ -2098,6 +2109,17 @@ void ShellBase::unregister_room_window_(RoomWindowBase* w)
     {
         secondary_windows_.erase(it);
     }
+}
+
+bool ShellBase::focus_secondary_window_(const std::string& room_id)
+{
+    auto it = secondary_windows_.find(room_id);
+    if (it != secondary_windows_.end() && it->second)
+    {
+        it->second->bring_to_front();
+        return true;
+    }
+    return false;
 }
 
 void ShellBase::acquire_room_subscription_(const std::string& room_id)
@@ -2915,6 +2937,11 @@ void ShellBase::tab_open_room(const std::string& room_id)
     {
         return;
     }
+    // Already open in a pop-out window: raise it instead of re-opening here.
+    if (focus_secondary_window_(room_id))
+    {
+        return;
+    }
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
@@ -2962,6 +2989,11 @@ void ShellBase::tab_open_room(const std::string& room_id)
 void ShellBase::tab_select_room(const std::string& room_id)
 {
     if (room_id.empty())
+    {
+        return;
+    }
+    // Already open in a pop-out window: raise it and leave the main app as-is.
+    if (focus_secondary_window_(room_id))
     {
         return;
     }
@@ -3013,6 +3045,11 @@ void ShellBase::tab_select_room(const std::string& room_id)
 void ShellBase::tab_navigate_room(const std::string& room_id)
 {
     if (room_id.empty())
+    {
+        return;
+    }
+    // Already open in a pop-out window: raise it instead of navigating here.
+    if (focus_secondary_window_(room_id))
     {
         return;
     }

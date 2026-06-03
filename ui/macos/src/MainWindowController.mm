@@ -230,6 +230,7 @@ public:
     using ShellBase::last_tray_unread_;
     using ShellBase::mark_room_read_;
     using ShellBase::navigate_tray_unread_;
+    using ShellBase::focus_tray_unread_popout_;
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::media_fetches_in_flight_;
     using ShellBase::my_avatar_url_;
@@ -5076,6 +5077,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 dispatch_async(dispatch_get_main_queue(), ^{
                     MainWindowController* strong = weakSelf;
                     if (!strong)
+                    {
+                        return;
+                    }
+                    // If the unread room is popped out, raise that window
+                    // instead of toggling/raising the main window.
+                    if (strong->_shell->focus_tray_unread_popout_())
                     {
                         return;
                     }
