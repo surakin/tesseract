@@ -268,6 +268,8 @@ public:
                 }
                 SysFreeString(burl);
                 engine_->SetPlaybackRate(static_cast<double>(rate_));
+                engine_->SetLoop(loop_ ? TRUE : FALSE);
+                engine_->SetMuted(muted_ ? TRUE : FALSE);
                 engine_->Play();
             }
         }
@@ -358,6 +360,28 @@ public:
     float playback_rate() const override
     {
         return rate_;
+    }
+
+    void set_loop(bool loop) override
+    {
+        loop_ = loop;
+        // The audio engine loops itself; the video decode thread restarts the
+        // source reader on end-of-stream (see decode_loop). They loop
+        // independently, which is fine for the short autoplay/GIF clips this
+        // hint targets (those carry fi.mau.no_audio, so there is no audio to
+        // drift against).
+        if (engine_)
+        {
+            engine_->SetLoop(loop ? TRUE : FALSE);
+        }
+    }
+    void set_muted(bool muted) override
+    {
+        muted_ = muted;
+        if (engine_)
+        {
+            engine_->SetMuted(muted ? TRUE : FALSE);
+        }
     }
 
     std::uint64_t position_ms() const override
@@ -578,6 +602,22 @@ private:
             }
             if (flags & MF_SOURCE_READERF_ENDOFSTREAM)
             {
+                if (loop_)
+                {
+                    // Rewind the source reader to the start and keep decoding
+                    // so fi.mau.loop / fi.mau.gif videos play continuously.
+                    PROPVARIANT pos;
+                    PropVariantInit(&pos);
+                    pos.vt = VT_I8;
+                    pos.hVal.QuadPart = 0;
+                    HRESULT seek_hr =
+                        reader->SetCurrentPosition(GUID_NULL, pos);
+                    PropVariantClear(&pos);
+                    if (SUCCEEDED(seek_hr))
+                    {
+                        continue;
+                    }
+                }
                 break;
             }
             if (!sample)
@@ -727,6 +767,8 @@ private:
     VideoEngineNotify* notify_ = nullptr;
     HANDLE timer_ = nullptr;
     float rate_ = 1.0f;
+    std::atomic<bool> loop_{false}; // read by the decode thread
+    bool muted_ = false;
     std::string mime_;
     std::vector<uint8_t> bytes_;
 

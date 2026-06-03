@@ -140,6 +140,7 @@ public:
         [item addOutput:video_output_];
 
         player_ = [[AVPlayer alloc] initWithPlayerItem:item];
+        player_.muted = muted_ ? YES : NO;
         player_.rate = static_cast<float>(rate_);
 
         if (!delegate_)
@@ -150,6 +151,13 @@ public:
         MacosVideoPlayer* raw = this;
         delegate_.onEnded = [raw]()
         {
+            // fi.mau.loop / fi.mau.gif: rewind and resume at the same rate so
+            // the clip plays continuously.
+            if (raw->loop_ && raw->player_)
+            {
+                [raw->player_ seekToTime:kCMTimeZero];
+                raw->player_.rate = static_cast<float>(raw->rate_);
+            }
             if (raw->on_progress)
             {
                 raw->on_progress();
@@ -241,6 +249,21 @@ public:
     float playback_rate() const override
     {
         return rate_;
+    }
+
+    void set_loop(bool loop) override
+    {
+        loop_ = loop;
+        // Looping is driven from the end-of-stream notification (see play):
+        // on AVPlayerItemDidPlayToEndTimeNotification we rewind and resume.
+    }
+    void set_muted(bool muted) override
+    {
+        muted_ = muted;
+        if (player_)
+        {
+            player_.muted = muted ? YES : NO;
+        }
     }
 
     std::uint64_t position_ms() const override
@@ -427,6 +450,8 @@ private:
     NSTimer* timer_ = nil;
     std::string tmp_path_;
     float rate_ = 1.0f;
+    bool loop_ = false;
+    bool muted_ = false;
     std::vector<uint8_t> bytes_;
 
     mutable std::mutex frame_mutex_;
