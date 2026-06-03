@@ -2,6 +2,38 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-06-03**.
 
+> **Pop-out room windows.**
+> Ctrl/⌘+click a room tab to pop the room out into its own native window (the
+> tab closes). Built on the shared `RoomWindowBase`, so all four shells (Qt6,
+> GTK4, Win32, macOS) get the same behaviour with only thin per-platform glue
+> (window/menu, pickers, native text-area overlay). A pop-out is a full room
+> view: timeline with forward/back pagination, compose with reply/edit/media
+> send and image-paste, emoji/sticker/reaction pickers, @mention autocomplete
+> with avatars, animated inline media and pickers (driven by the shared 60 Hz
+> tick via `repaint_anim_frame`), and a room info panel with members, topic
+> edit, room tags, notification mode, leave, and ignore. Any path that targets a
+> room already open in a pop-out (room-list click, ctrl/⌘+click, notification or
+> tray navigation) raises the existing window via
+> `ShellBase::focus_secondary_window_` instead of re-opening the room.
+> Verified on **Win32**; the other shells mirror the same shared logic.
+
+<!-- -->
+
+> **Quick switcher (Ctrl/⌘+K).**
+> A centered command-palette overlay for jumping between rooms: a native search
+> field with a horizontal "Recent" strip of recently-visited rooms and a full,
+> name-filtered room list below. Up/Down navigate, Enter/click jump,
+> Escape/click-outside close. Implemented once in `views/QuickSwitcher` and
+> mounted as the topmost overlay in `MainAppWidget`; visit-order recency is an
+> MRU list on `ShellBase` recorded at the `after_active_room_changed_`
+> navigation chokepoint. `NativeTextField` gained a `set_on_popup_nav` hook so
+> the arrow keys drive the list while the field holds focus, and each shell
+> wires the accelerator so it fires even over a focused native edit control
+> (Win32 accelerator table, Qt `QShortcut`, GTK `GtkShortcutController`, macOS
+> `NSEvent` monitor).
+
+<!-- -->
+
 > **Encryption-setup overlay.**
 > `EncryptionSetupOverlay`, a shared widget wired on all four shells, guides
 > new-account users through enabling cross-signing. Fresh path: `Intro` →

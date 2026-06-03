@@ -52,6 +52,8 @@ version) are noted where relevant.
 - Room list with sections: Favorites, DMs, Rooms, Spaces (tag-aware: `m.favourite`)
 - Space navigation with drill-down and recursive subspace support
 - Multiple rooms open in tabs
+- Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
+- Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
 - Jump-to-date via a calendar button in the room header (MSC3030; server capability checked)
 - Unread indicators in the room list

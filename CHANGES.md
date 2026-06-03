@@ -5,6 +5,103 @@ Tagged releases summarize all changes since the previous tag.
 
 ## v0.1.8 (unreleased)
 
+### 2026-06-03
+
+- feat(views): pop-out room windows are now reachable and work end-to-end on
+  all four platforms. Ctrl/⌘+click a room tab to pop it out into its own native
+  window (the tab closes). The feature (`open_room_in_new_window`) had been
+  fully built but never wired to an entry point, so it had never run; wiring it
+  surfaced and fixed a batch of bugs — `PopoutRoomWidget::arrange` now sets its
+  own `bounds_` (the zero-rect root had been silently dropping every pointer
+  event), thread replies no longer leak into pop-out timelines, and a
+  use-after-free on the TabBar-owned `room_id` during `tab_popout_room` is
+  avoided by copying the id before `tab_close()` rebuilds the bar.
+  `wire_room_view_` now wires forward-pagination, media send (image/video/audio/
+  file via a new `encode_for_send_` virtual) and image-paste-as-attachment;
+  `finish_init_` seeds the window title from cached room info. Per-platform glue
+  (pickers, tooltips, link-hover cursor, native text-area overlay) mirrors each
+  main window; Win32 also gets a reusable `Win32PickerPopup`.
+- feat(views): targeting a room that is already open in a pop-out now raises that
+  pop-out instead of re-opening the room in the main window (which would show it
+  twice). A shared `ShellBase::focus_secondary_window_` guards `tab_select_room`,
+  `tab_open_room`, and `tab_navigate_room` (room-list click, ctrl/⌘+click,
+  notification navigation), and the tray-activation handlers raise a popped-out
+  unread room via a new `focus_tray_unread_popout_`.
+- feat(views): Ctrl/⌘+K quick switcher — a centered command-palette overlay
+  (Slack/Discord-style) for jumping between rooms: a native search field with a
+  horizontal "Recent" strip and a full, name-filtered room list below. Up/Down
+  navigate, Enter/click jump, Escape/click-outside close. Implemented once in the
+  shared toolkit (`views/QuickSwitcher`) and mounted as the topmost overlay in
+  `MainAppWidget`; visit-order recency is tracked by a new MRU list in `ShellBase`
+  recorded at the `after_active_room_changed_` chokepoint. `NativeTextField` gains
+  a `set_on_popup_nav` hook so the arrow keys drive the list while the field holds
+  focus; each shell wires the accelerator so it fires even while a native edit
+  control has focus (Win32 accelerator table, Qt `QShortcut`, GTK
+  `GtkShortcutController`, macOS `NSEvent` monitor).
+- fix(views): pop-out room info panels now load their member list (and the
+  topic-edit / leave-room / ignore-user actions work). `RoomWindowBase` never
+  wired `on_fetch_room_members` — the panel fetches members lazily through that
+  callback, which only the main windows set — so the panel opened empty. All four
+  callbacks are now wired in the shared base (fixing Qt6/GTK4/Win32/macOS at
+  once): members fetch on the read pool and pre-cache avatars before populating
+  the view; topic/leave/ignore go through a new `run_async_mut_` helper so
+  mutations stay ordered relative to sends; leaving a room from its own pop-out
+  closes that pop-out.
+- fix(views): animated inline media and pop-out emoji/sticker pickers now advance
+  frames without requiring mouse motion. The 60 Hz animation tick repainted only
+  the main shell's surfaces, so pop-outs froze until an unrelated event forced a
+  repaint; `tick_anim_` now also calls a new `RoomWindowBase::repaint_anim_frame`
+  on every owned secondary window (Win32/Qt6/GTK4 override it to also repaint
+  their visible pickers; macOS shares the singleton picker panels).
+- fix(mentions): wire @mention avatars and a live client across all shells,
+  including pop-out windows. Pop-out `MentionController`s never set the popup's
+  avatar image provider and never prefetched candidate avatars (so they always
+  showed initials), and the macOS main window built its controller before the
+  session was restored, leaving a null `Client*` snapshot so the popup never
+  appeared. A shared `RoomWindowBase::wire_mention_shell_hooks_()` installs a live
+  client getter, an avatar prefetch into the shared cache, and the popup's image
+  provider; the macOS main window gets the same hooks inline. (Extends the same
+  fix landed for the Win32 main window: the controller now reads the current
+  client on each fetch via a `Hooks` getter instead of a stale ctor snapshot.)
+- fix(timeline): preserve the scroll position by the row under the cursor instead
+  of by total content-height delta. When an image, URL-preview card, or voice
+  waveform decoded in or above the viewport, the affected row grew and shoved
+  every row below it out from under the mouse (and the hover highlight latched
+  onto the wrong message). A new row-top anchor (`ListView::ScrollAnchor`, keyed
+  by `event_id` via `ListAdapter::row_key()`) captures the row under the cursor
+  and its offset, and restores `scroll_y_` after `rebuild_heights` so growth above
+  the anchor shifts scroll in lock-step and growth below leaves it untouched.
+  Keyless lists (room list, thread list) fall back to the legacy behavior. +4 tests.
+- fix(video): honor the `fi.mau.loop` / `fi.mau.gif` / `fi.mau.no_audio` hints on
+  Windows and macOS — only the Qt backend had overridden the no-op defaults, so
+  looping videos played once and stopped and `no_audio` was ignored. Win32 applies
+  `SetLoop`/`SetMuted` to the `IMFMediaEngine` and rewinds the source reader on
+  end-of-stream; macOS sets `AVPlayer.muted` and rewinds to `kCMTimeZero` on the
+  play-to-end notification.
+- fix(video): repack row-padded Media Foundation frames on Windows. A frame whose
+  width isn't 16-px-aligned arrives with a stride larger than `frame_w*4`; the
+  decode path had handed it to `make_image_from_bgra` as if tightly packed,
+  shearing every row and rendering videos diagonally distorted. The real stride is
+  now derived from the buffer length (`len / height`) and repacked row-by-row,
+  with a bounds guard against a malformed stride/length.
+- fix(views): keep the emoji shortcode popup's Up/Down navigation alive across
+  keystrokes. The nav handler was installed only on first show but wiped on every
+  compose keystroke by `hide_mention_popup_()`, so after the second keystroke the
+  arrows fell through to caret movement. Now installed unconditionally on each
+  tick, matching the slash-command popup. All four shells.
+- fix(sdk): detect stalled media downloads faster via HTTP-layer timeouts — a 10 s
+  `connect_timeout` on both reqwest clients, a 60 s matrix-sdk `request_timeout`
+  (via a shared `build_sdk_http_client` helper), and a 10 s per-chunk idle timeout
+  on `download_url`'s streaming loop, so connection/transfer stalls surface well
+  before the outer `tokio::select!` backstop.
+- fix(ui): count pending media downloads in the in-flight status-bar tooltip.
+  After the async-media rewrite, requests spend time in `pending_media_` before
+  the Rust `InFlightGuard` is created (the guard starts only after a semaphore
+  permit is acquired), so the tooltip read zero while downloads queued behind the
+  bulk lane. The tooltip's second line is now
+  "media: N loading · fetch: N queued · send: N queued", refreshed on every
+  `pending_media_` change across all four shells.
+
 ### 2026-06-02
 
 - perf(media): media downloads are now non-blocking. Previously every fetch
@@ -73,6 +170,27 @@ Tagged releases summarize all changes since the previous tag.
   `const char*`, breaking `gtk_label_new(u8"●")`. Plain `"●"` (the source is
   UTF-8) matches the convention documented in `client/src/emoji.cpp`; applied to
   the Qt6 `QLabel` site too.
+- feat(ui): show worker-pool queue depth in the in-flight indicator tooltip
+  ("fetch: N queued · send: M queued") across all four shells. `WorkerPool` gains
+  an atomic `pending_` counter and an `on_change_` callback fired on enqueue/
+  dequeue; `ShellBase::init_pool_callbacks_()` re-posts `on_inflight_ui_()` so the
+  tooltip stays current, and Qt6/GTK4 force the displayed tooltip to refresh in
+  place so hovering users see live values without re-hovering.
+- build: add Arch-style security hardening as C++ defaults (new
+  `cmake/Hardening.cmake`, gated behind `TESSERACT_ENABLE_HARDENING`, ON):
+  `-fstack-protector-strong`, `-fstack-clash-protection`, `-fcf-protection` /
+  `-mbranch-protection=standard`, `-Wformat -Werror=format-security`,
+  `-D_GLIBCXX_ASSERTIONS`, `-D_FORTIFY_SOURCE=2` (non-Debug), and link-time
+  `-Wl,-z,relro -Wl,-z,now`. Each flag is probed so arch-/platform-specific ones
+  skip cleanly; the flag set is gated to the Linux toolchain (macOS and MinGW/MSVC
+  Windows keep their native hardening).
+- fix(build): silence release-build `-Wformat-truncation` / `-Wstringop-overflow`
+  warnings exposed by the hardening flags — size the mm:ss duration buffers to the
+  worst case, and replace an unbounded span `memcpy` in `svg.cpp` with a vector
+  range constructor.
+- fix(ui): left-align the space nav-bar title and elide it with an ellipsis,
+  constrained to the sidebar width right of the avatar, so a long space name is
+  clipped instead of overflowing under the avatar and back button.
 
 ### 2026-06-01
 
