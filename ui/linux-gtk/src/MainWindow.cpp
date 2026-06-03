@@ -701,10 +701,13 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                 ensure_media_image_(sugg.emoticon.url, 28, 28);
                             }
                         }
-                        bool was_visible = shortcode_popup_visible_();
                         show_shortcode_popup_(shortcode_current_suggestions_,
                                               room_text_area_->cursor_rect());
-                        if (!was_visible)
+                        // Reinstall the nav handler unconditionally on every
+                        // tick: the hide_mention_popup_() call above wipes it
+                        // via set_on_popup_nav(nullptr), so guarding the
+                        // install behind "first show only" leaves nav dead
+                        // after the second keystroke (Up/Down stop working).
                         {
                             room_text_area_->set_on_popup_nav(
                                 [this](tk::NativeTextArea::NavKey nk) -> bool

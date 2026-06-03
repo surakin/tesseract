@@ -3082,13 +3082,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                     sugg.emoticon.url, 28, 28);
                             }
                         }
-                        bool was_visible = [c shortcodePopupVisible];
                         [c showShortcodePopupWithSuggestions:
                                 c->_shell->shortcode_current_suggestions_
                                                   cursorRect:
                                                       c->_roomTextArea
                                                           ->cursor_rect()];
-                        if (!was_visible)
+                        // Reinstall the nav handler unconditionally on every
+                        // tick: the hideMentionPopup call above wipes it via
+                        // set_on_popup_nav(nullptr), so guarding the install
+                        // behind "first show only" leaves nav dead after the
+                        // second keystroke (Up/Down stop working).
                         {
                             c->_roomTextArea->set_on_popup_nav(
                                 [weakSelf](
