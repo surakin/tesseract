@@ -171,6 +171,54 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         shell_->set_room_low_priority_(room_id, on);
     };
 
+    // ── Room info panel: members + topic / leave / ignore ─────────────────
+    // The room info panel fetches its member list lazily through this
+    // callback; pre-cache each avatar into the shared cache before handing
+    // the members to the view so rows paint with pictures.
+    rv->on_fetch_room_members = [this, rv](std::string room_id) {
+        if (!shell_->client_) return;
+        auto* c = shell_->client_;
+        run_async_([this, rv, c, room_id = std::move(room_id),
+                    alive = alive_]() mutable {
+            auto members = c->get_room_members(room_id);
+            post_to_ui_([this, rv, alive = std::move(alive),
+                         members = std::move(members)]() mutable {
+                if (!*alive) return;
+                for (const auto& m : members)
+                    shell_->ensure_user_avatar_(m.avatar_url);
+                rv->set_room_members(std::move(members));
+            });
+        });
+    };
+    rv->on_save_topic = [this](std::string room_id, std::string topic) {
+        if (!shell_->client_) return;
+        auto* c = shell_->client_;
+        run_async_mut_([c, room_id = std::move(room_id),
+                        topic = std::move(topic)]() mutable {
+            c->set_room_topic(room_id, topic);
+        });
+    };
+    rv->on_leave_room = [this](std::string room_id) {
+        if (!shell_->client_) return;
+        auto* c = shell_->client_;
+        run_async_mut_([this, c, room_id = std::move(room_id),
+                        alive = alive_]() mutable {
+            auto res = c->leave_room(room_id);
+            post_to_ui_([this, alive = std::move(alive), ok = res.ok]() mutable {
+                if (!*alive || !ok) return;
+                // Leaving from a room's own pop-out closes that pop-out.
+                schedule_self_close_();
+            });
+        });
+    };
+    rv->on_ignore_user = [this](std::string user_id) {
+        if (!shell_->client_) return;
+        auto* c = shell_->client_;
+        run_async_mut_([c, user_id = std::move(user_id)]() mutable {
+            c->ignore_user(user_id);
+        });
+    };
+
     // ── Compose callbacks ────────────────────────────────────────────────
     rv->on_send = [this](const std::string& body)
     {
@@ -882,6 +930,14 @@ void RoomWindowBase::run_async_(std::function<void()> fn)
     if (shell_)
     {
         shell_->run_async_(std::move(fn));
+    }
+}
+
+void RoomWindowBase::run_async_mut_(std::function<void()> fn)
+{
+    if (shell_)
+    {
+        shell_->run_async_mut_(std::move(fn));
     }
 }
 

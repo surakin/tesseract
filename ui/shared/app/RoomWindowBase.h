@@ -159,6 +159,10 @@ protected:
     // from the UI thread; fn runs on a background thread with no UI access.
     void run_async_(std::function<void()> fn);
 
+    // Like run_async_, but routed to the shell's mutation pool so write
+    // operations (set topic, leave, ignore) stay ordered relative to sends.
+    void run_async_mut_(std::function<void()> fn);
+
     // Post a callback to the UI thread (from any thread).
     void post_to_ui_(std::function<void()> fn);
 
