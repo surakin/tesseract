@@ -48,19 +48,25 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 
 - Room list with Favorites, DMs, Rooms, and Spaces (tag-aware)
 - Space and subspace navigation
-- Open multiple rooms in tabs
+- Open multiple rooms in tabs and/or separate windows
 - Automatic grouping of inactive rooms (configurable)
 - Jump-to-date with a calendar picker (if supported by server)
 - Unread indicators and last-message previews (including media)
 - Direct messages
+- Ctrl+K quick switcher
+- Slash commands (/me, /shrug, /slap, /myroomnick, /myroomavatar, /join, /leave, /invite)
+- Room tags (favorite, low priority)
 
 ### Security & privacy
 
 - End-to-end encryption with emoji (SAS) device verification
 - Key backup recovery and room-key export / import
+- Initial encryption setup for new accounts
 - OS-native secure credential storage on every platform
 - Privacy controls, including presence send/poll toggles
 - Device & session management
+- MSC4278 media preview controls
+- Cryptographic identity reset
 
 ### Notifications
 
@@ -88,17 +94,27 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 
 ## A note on how this was built
 
-Tesseract was developed with heavy use of AI assistance (Claude Code). I want to be upfront about that, since it's reasonable to want to know.
+I've been a developer for more than 20 years, ran my own homeserver for more than 8, and developed a few things here and there in the matrix ecosystem (Hello, encrypted sticker support on Element X!). I am a bit tired of everything being a bloated web app (with all the respect to the element web guys).
 
-What that means in practice: I directed the architecture and design decisions, chose to build on the audited [matrix-rust-sdk](https://github.com/matrix-org/matrix-rust-sdk) for everything security-critical (encryption, key management, verification), and reviewed the code that went in. AI assistance is what made it feasible for one person to maintain four native frontends; it didn't replace understanding what the code does.
+This started as a Claude Code experiment, because eventually I gave up and decided to learn what all this fuss was about, at least to be less worried about being out of a job, if that ever happens. So I thought: what was the app I always wanted to do my way and never had the time and/or energy? Yes! A Matrix client, of course.
 
-If that's a dealbreaker for you, that's a fair call to make — the source is open for inspection, and I'd genuinely welcome review.
+So I paid for a month of Claude Max and set myself to see if I could create a full blown Matrix client in that time. Apparently, it can be done, but I don't recommend it; it can be quite time consuming anyway.
+
+It's important to point out that EVERYTHING related to the matrix protocol and communication with the homeserver goes through the matrix-rust-sdk. I didn't set to reimplement the protocol, or encryption, or any of the most sensitive parts of a matrix client, because that would be stupid, and we have this awesome piece of code already written by humans way smarter than any LLM.
+
+I used Claude to write everything else: a C++/Rust bridge to be able to use the SDK from a shared toolkit library and the four platform-specific thin shells.
+
+If you don't like or trust AI-assisted developed apps, that's fine. I'm not sure I do, but this one I made, reviewed the code, and I'm kinda sure what it's doing inside.
+
+Bottom line, I made this little client, and I barely open element these days, which was sort of the point. The code is open, you can see anything, and any contribution/criticism is welcome.
 
 ---
 
 ## Project status
 
-This started as a Claude Code experiment, because eventually I gave up and decided to learn what was all this fuzz about. I thought what was the app I always wanted to do my way and never had the time and/or energy? Yes! A Matrix client, of course.
+The app is mostly complete and can be used for existing accounts and new accounts. I'm curious to see if there is any interest for it out there. I expect to keep polishing it and updating it as the matrix spec evolves. But I do have a day job, and it's not this one :) So I can't promise things are going to be fixed immediately.
+
+Also I don't speak as many languages as I would like to, so translations are a bit lagging behind. I'll do something about that, when I learn how. Stay tuned.
 
 <!-- One honest paragraph. Solo project? Say so. How actively maintained?
      What's the support expectation? What's NOT promised? Setting this
@@ -107,6 +123,10 @@ This started as a Claude Code experiment, because eventually I gave up and decid
 ---
 
 ## Contributing
+
+I'm open to any kind of contribution, with only one caveat: UI parity. I did my best for the app to look more or less the same in all the platforms and I want to keep that.
+
+If you don't care about UI parity or are interested in only one platform, you're welcome to fork it and make it yours! That's the beauty of open source, isn't it?
 
 <!-- Decide your stance before publishing:
      - PRs welcome on any frontend? Or core-only with community-owned shells?
@@ -118,8 +138,40 @@ This started as a Claude Code experiment, because eventually I gave up and decid
 
 ## Acknowledgements
 
-- Built on [matrix-rust-sdk](https://github.com/matrix-org/matrix-rust-sdk)
-<!-- Notable crates, the Matrix spec/community, anything you leaned on heavily. -->
+First of all, big kudos to the Matrix.org foundation and all their awesome people! And Anthropic, for Claude. It's been interesting, to say the least.
+
+Tesseract stands on the work of many open-source projects.
+
+| Library | Purpose | Author / Maintainer |
+| --- | --- | --- |
+| [matrix-sdk](https://github.com/matrix-org/matrix-rust-sdk) (`-base`, `-ui`) | Matrix client, sync, E2E encryption, timeline | The Matrix.org Foundation / Element |
+| [ruma](https://github.com/ruma/ruma) | Matrix data types & event (de)serialization | The Ruma project |
+| [cxx](https://github.com/dtolnay/cxx) | Safe Rust ↔ C++ FFI bridge | David Tolnay |
+| [tokio](https://github.com/tokio-rs/tokio) | Async runtime | Tokio project (Carl Lerche et al.) |
+| [reqwest](https://github.com/seanmonstar/reqwest) | HTTP client (rustls-TLS) | Sean McArthur |
+| [tiny_http](https://github.com/tiny-http/tiny-http) | Loopback HTTP server for OAuth | Pierre Krieger |
+| [serde](https://github.com/serde-rs/serde) / serde_json | Serialization framework | David Tolnay & Erick Tryzelaar |
+| [futures-rs](https://github.com/rust-lang/futures-rs) | Async combinators | The Rust `futures-rs` team |
+| [anyhow](https://github.com/dtolnay/anyhow) | Error handling | David Tolnay |
+| [tracing](https://github.com/tokio-rs/tracing) | Structured logging | Tokio project |
+| [url](https://github.com/servo/rust-url) | URL parsing | The Servo project |
+| [rusqlite](https://github.com/rusqlite/rusqlite) | SQLite bindings | The rusqlite project |
+| [syntect](https://github.com/trishume/syntect) | Code-block syntax highlighting | Tristan Hume |
+| [audiopus](https://github.com/lakelezz/audiopus) | Opus codec bindings (voice) | Lars Wirth |
+| [ogg](https://github.com/RustAudio/ogg) | Ogg container parsing (voice) | RustAudio |
+| [mime](https://github.com/hyperium/mime) | MIME types | Sean McArthur |
+| [hostname](https://github.com/svartalf/hostname) | Local hostname lookup | Steven Allen |
+| [Qt6](https://www.qt.io/) (Core, Gui, Widgets, Multimedia, DBus, Concurrent, Network) | Linux (Qt6 shell) | The Qt Company / Qt Project |
+| [GTK4](https://www.gtk.org/) + Pango / Cairo / gdk-pixbuf | Linux (GTK shell) | The GNOME Project |
+| [GStreamer](https://gstreamer.freedesktop.org/) (+ gst-plugins-base for Opus) | Linux GTK voice playback | The GStreamer Project |
+| Win32 / Direct2D | Windows | Microsoft |
+| AppKit / CoreGraphics / CoreText | macOS | Apple |
+| [nanosvg](https://github.com/memononen/nanosvg) (vendored) | SVG icon rasterization | Mikko Mononen (incl. AntiGrain code by Maxim Shemanarev) |
+| [nlohmann/json](https://github.com/nlohmann/json) | C++ JSON parsing | Niels Lohmann |
+| [Catch2](https://github.com/catchorg/Catch2) | C++ unit test framework | Martin Hořeňovský et al. |
+| [Corrosion](https://github.com/corrosion-rs/corrosion) | CMake ↔ Cargo bridge | The Corrosion project |
+| [CMake](https://cmake.org/) | Build system | Kitware |
+| [Ninja](https://github.com/ninja-build/ninja) | Build backend | Evan Martin / Google |
 
 ---
 
