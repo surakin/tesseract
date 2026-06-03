@@ -3,7 +3,9 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.1.8 (unreleased)
+## v0.1.8 — 2026-06-03
+
+Changes since v0.1.7:
 
 ### 2026-06-03
 
