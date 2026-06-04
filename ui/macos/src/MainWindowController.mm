@@ -25,6 +25,7 @@
 #include "util.h"
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
+#include "views/media_drop.h"
 #include "views/SettingsView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
@@ -307,11 +308,17 @@ public:
         update_typing_bar_(text, visible);
     }
 
-    // Extract thumbnail, dimensions, and duration from raw bytes on a
-    // background thread; posts result back via post_to_ui_.
-    void extract_media_info_(std::uint32_t pending_gen,
+    // Extract thumbnail, dimensions, and duration from a dropped file on a
+    // background thread; posts result back via post_to_ui_. When `target` is
+    // non-null the result is posted to that compose bar (a pop-out window's),
+    // guarded by `target_alive`; otherwise to the main compose bar. Overrides
+    // the ShellBase drag-and-drop probe hook.
+    void extract_drop_media_(std::uint32_t pending_gen,
                              std::vector<std::uint8_t> bytes,
-                             std::string mime);
+                             std::string mime,
+                             tesseract::views::ComposeBar* target = nullptr,
+                             std::shared_ptr<bool> target_alive = nullptr)
+        override;
 
     // Borrowed pointers set by ObjC side after building the chat surface.
     // main_app_ / room_view_ now live in ShellBase; re-export them so the ObjC
@@ -779,11 +786,14 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
         });
 }
 
-void MacShell::extract_media_info_(std::uint32_t pending_gen,
+void MacShell::extract_drop_media_(std::uint32_t pending_gen,
                                    std::vector<std::uint8_t> bytes,
-                                   std::string mime)
+                                   std::string mime,
+                                   tesseract::views::ComposeBar* target,
+                                   std::shared_ptr<bool> target_alive)
 {
-    run_async_([this, pending_gen, bytes = std::move(bytes), mime = std::move(mime)]() mutable
+    run_async_([this, pending_gen, target, target_alive = std::move(target_alive),
+                bytes = std::move(bytes), mime = std::move(mime)]() mutable
     {
         tesseract::views::MediaInfo info;
         info.pending_gen = pending_gen;
@@ -899,12 +909,21 @@ void MacShell::extract_media_info_(std::uint32_t pending_gen,
             [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
         }
 
-        // Post result back to the UI thread; resolve compose_bar() at call
-        // time to avoid dangling pointer if the view was freed.
-        post_to_ui_([this, info = std::move(info)]() mutable
+        // Post result back to the UI thread. A pop-out target (guarded by its
+        // liveness token) takes precedence; otherwise resolve the main
+        // compose_bar() at call time to avoid a dangling pointer.
+        post_to_ui_([this, info = std::move(info), target,
+                     target_alive = std::move(target_alive)]() mutable
         {
-            if (room_view_)
+            if (target)
+            {
+                if (target_alive && *target_alive)
+                    target->update_pending_attachment(info);
+            }
+            else if (room_view_)
+            {
                 room_view_->compose_bar()->update_pending_attachment(info);
+            }
         });
     });
 }
@@ -3296,46 +3315,17 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return;
                 }
-                const auto limit = c->_shell->client_->media_upload_limit();
-                if (limit > 0 && bytes.size() > limit)
-                {
-                    return;
-                }
-                if (bytes.empty()) return;
-                auto* cb = c->_roomView->compose_bar();
-                if (mime == "image/gif" || mime == "image/webp")
-                {
-                    // Show first frame immediately; detect animation in background.
-                    cb->set_pending_image(bytes, mime, filename,
-                                         /*is_animated=*/false);
-                    auto gen = cb->pending_gen();
-                    c->_shell->extract_media_info_(gen, std::move(bytes),
-                                                   std::move(mime));
-                }
-                else if (mime.rfind("image/", 0) == 0)
-                {
-                    cb->set_pending_image(std::move(bytes), std::move(mime),
-                                         std::move(filename), /*is_animated=*/false);
-                }
-                else if (mime.rfind("video/", 0) == 0)
-                {
-                    cb->set_pending_video(bytes, mime, filename);
-                    auto gen = cb->pending_gen();
-                    c->_shell->extract_media_info_(gen, std::move(bytes),
-                                                   std::move(mime));
-                }
-                else if (mime.rfind("audio/", 0) == 0)
-                {
-                    cb->set_pending_audio(bytes, mime, filename);
-                    auto gen = cb->pending_gen();
-                    c->_shell->extract_media_info_(gen, std::move(bytes),
-                                                   std::move(mime));
-                }
-                else
-                {
-                    cb->set_pending_file(std::move(bytes), std::move(mime),
-                                         std::move(filename));
-                }
+                MacShell* shell = c->_shell.get();
+                tesseract::views::dispatch_file_drop(
+                    *c->_roomView->compose_bar(), std::move(bytes),
+                    std::move(mime), std::move(filename),
+                    shell->client_->media_upload_limit(),
+                    [shell](std::uint32_t gen, std::vector<std::uint8_t> b,
+                            std::string m)
+                    {
+                        shell->extract_drop_media_(gen, std::move(b),
+                                                   std::move(m));
+                    });
             });
 
         _roomSearchField = _mainAppSurface->host().make_text_field();

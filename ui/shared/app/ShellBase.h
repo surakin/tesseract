@@ -47,6 +47,7 @@ namespace tesseract
 
 namespace views
 {
+class ComposeBar;
 class MainAppWidget;
 class RoomView;
 }
@@ -784,6 +785,22 @@ protected:
     // (GTK4/GStreamer, Qt6/QMediaPlayer, etc.) override this.
     virtual void generate_video_thumbnail_(const std::string& /*event_id*/,
                                            const std::string& /*video_url*/)
+    {
+    }
+
+    // Drag-and-drop media probe. Each shell overrides this to detect gif/webp
+    // animation and extract a video/audio thumbnail + duration off the UI
+    // thread, then posts update_pending_attachment() back to `target` (a
+    // pop-out window's compose bar, guarded by `alive`) or, when `target` is
+    // null, the main window's compose bar. Default no-op so a shell can opt
+    // out; pop-out windows call this through ShellBase so the same platform
+    // probe serves the main and secondary windows. Pairs with
+    // views::dispatch_file_drop, which invokes it for gif/webp/video/audio.
+    virtual void extract_drop_media_(std::uint32_t /*pending_gen*/,
+                                     std::vector<std::uint8_t> /*bytes*/,
+                                     std::string /*mime*/,
+                                     views::ComposeBar* /*target*/ = nullptr,
+                                     std::shared_ptr<bool> /*alive*/ = nullptr)
     {
     }
 

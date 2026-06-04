@@ -238,19 +238,37 @@ private:
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;
 
-    // Called from set_on_file_drop when a video is dropped. Creates a
-    // QMediaPlayer on the UI thread (Qt Multimedia constraint), extracts
-    // the first frame as a JPEG thumbnail and the media duration, then
-    // calls update_pending_attachment on the current compose_bar().
-    void extract_drop_video_(std::uint32_t pending_gen,
-                             std::vector<std::uint8_t> bytes);
+    // Unified media probe for a dropped file, passed as the extractor hook to
+    // tesseract::views::dispatch_file_drop. Detects gif/webp animation and
+    // dispatches video/audio to the helpers below. When `target` is non-null
+    // the result is posted to that compose bar (a pop-out window's), guarded by
+    // `target_alive`; otherwise it goes to the main window's compose bar.
+    void extract_drop_media_(std::uint32_t pending_gen,
+                             std::vector<std::uint8_t> bytes, std::string mime,
+                             tesseract::views::ComposeBar* target = nullptr,
+                             std::shared_ptr<bool> target_alive = nullptr)
+        override;
 
-    // Called from set_on_file_drop when an audio file is dropped. Creates
-    // a QMediaPlayer on the UI thread, waits for LoadedMedia status to read
-    // the duration, then calls update_pending_attachment on the current
-    // compose_bar().
+    // Post an extracted MediaInfo to the right compose bar on the UI thread:
+    // `target` (a pop-out, guarded by `alive`) when set, else the main window's.
+    void post_pending_attachment_(const tesseract::views::MediaInfo& info,
+                                  tesseract::views::ComposeBar* target,
+                                  std::shared_ptr<bool> alive);
+
+    // Creates a QMediaPlayer on the UI thread (Qt Multimedia constraint),
+    // extracts the first frame as a JPEG thumbnail and the media duration,
+    // then posts via post_pending_attachment_.
+    void extract_drop_video_(std::uint32_t pending_gen,
+                             std::vector<std::uint8_t> bytes,
+                             tesseract::views::ComposeBar* target = nullptr,
+                             std::shared_ptr<bool> target_alive = nullptr);
+
+    // Creates a QMediaPlayer on the UI thread, waits for LoadedMedia status to
+    // read the duration, then posts via post_pending_attachment_.
     void extract_drop_audio_(std::uint32_t pending_gen,
-                             std::vector<std::uint8_t> bytes);
+                             std::vector<std::uint8_t> bytes,
+                             tesseract::views::ComposeBar* target = nullptr,
+                             std::shared_ptr<bool> target_alive = nullptr);
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*

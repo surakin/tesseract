@@ -84,6 +84,8 @@ set(_tk_sources
     views/RoomView.cpp
     views/ComposeBar.h
     views/ComposeBar.cpp
+    views/media_drop.h
+    views/media_drop.cpp
     views/UserInfo.h
     views/UserInfo.cpp
     views/AccountPicker.h

@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "RoomWindow.h"
 #include "views/BrandView.h"
+#include "views/media_drop.h"
 #include "Win32Notifier.h"
 #include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
@@ -2110,46 +2111,18 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     return;
                 }
-                const auto limit = client_->media_upload_limit();
-                if (limit > 0 && bytes.size() > limit)
+                auto outcome = tesseract::views::dispatch_file_drop(
+                    *room_view_->compose_bar(), std::move(bytes),
+                    std::move(mime), std::move(filename),
+                    client_->media_upload_limit(),
+                    [this](std::uint32_t gen, std::vector<std::uint8_t> b,
+                           std::string m)
+                    { extract_drop_media_(gen, std::move(b), std::move(m)); });
+                if (outcome ==
+                        tesseract::views::FileDropOutcome::TooLarge &&
+                    hStatus_)
                 {
-                    if (hStatus_)
-                    {
-                        SetWindowTextW(hStatus_, L"File exceeds server limit");
-                    }
-                    return;
-                }
-                if (bytes.empty()) return;
-                auto* cb = room_view_->compose_bar();
-                if (mime == "image/gif" || mime == "image/webp")
-                {
-                    // Show first frame immediately; detect animation in background.
-                    cb->set_pending_image(bytes, mime, filename,
-                                         /*is_animated=*/false);
-                    auto gen = cb->pending_gen();
-                    extract_media_info_(gen, std::move(bytes), std::move(mime));
-                }
-                else if (mime.rfind("image/", 0) == 0)
-                {
-                    cb->set_pending_image(std::move(bytes), std::move(mime),
-                                         std::move(filename), /*is_animated=*/false);
-                }
-                else if (mime.rfind("video/", 0) == 0)
-                {
-                    cb->set_pending_video(bytes, mime, filename);
-                    auto gen = cb->pending_gen();
-                    extract_media_info_(gen, std::move(bytes), std::move(mime));
-                }
-                else if (mime.rfind("audio/", 0) == 0)
-                {
-                    cb->set_pending_audio(bytes, mime, filename);
-                    auto gen = cb->pending_gen();
-                    extract_media_info_(gen, std::move(bytes), std::move(mime));
-                }
-                else
-                {
-                    cb->set_pending_file(std::move(bytes), std::move(mime),
-                                         std::move(filename));
+                    SetWindowTextW(hStatus_, L"File exceeds server limit");
                 }
             });
 
@@ -5040,11 +5013,14 @@ void MainWindow::repaint_pickers_()
     }
 }
 
-void MainWindow::extract_media_info_(std::uint32_t pending_gen,
+void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                                      std::vector<std::uint8_t> bytes,
-                                     std::string mime)
+                                     std::string mime,
+                                     tesseract::views::ComposeBar* target,
+                                     std::shared_ptr<bool> target_alive)
 {
-    run_async_([this, pending_gen, bytes = std::move(bytes), mime = std::move(mime)]() mutable
+    run_async_([this, pending_gen, target, target_alive = std::move(target_alive),
+                bytes = std::move(bytes), mime = std::move(mime)]() mutable
     {
         tesseract::views::MediaInfo info;
         info.pending_gen = pending_gen;
@@ -5280,12 +5256,21 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
 
         CoUninitialize();
 
-        // Post result back to the UI thread; resolve compose_bar() at call
-        // time to avoid dangling pointer if the view was freed.
-        post_to_ui_([this, info = std::move(info)]() mutable
+        // Post result back to the UI thread. A pop-out target (guarded by its
+        // liveness token) takes precedence; otherwise resolve the main
+        // compose_bar() at call time to avoid a dangling pointer.
+        post_to_ui_([this, info = std::move(info), target,
+                     target_alive = std::move(target_alive)]() mutable
         {
-            if (room_view_)
+            if (target)
+            {
+                if (target_alive && *target_alive)
+                    target->update_pending_attachment(info);
+            }
+            else if (room_view_)
+            {
                 room_view_->compose_bar()->update_pending_attachment(info);
+            }
         });
     });
 }

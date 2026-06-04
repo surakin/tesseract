@@ -155,6 +155,17 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     {
         room_view_->set_audio_player(std::move(player));
     }
+
+    // Drag-and-drop file ingest into this pop-out's compose bar (shared base
+    // routes the payload + runs the shell's media probe against this window).
+    surface_->set_on_file_drop(
+        [this](std::vector<std::uint8_t> bytes, std::string mime,
+               std::string filename)
+        {
+            handle_file_drop_(std::move(bytes), std::move(mime),
+                              std::move(filename));
+        });
+
     room_view_->set_post_delayed(
         [this](int ms, std::function<void()> fn)
         {

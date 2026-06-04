@@ -3,6 +3,7 @@
 #include "app/SlashCommands.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
+#include "views/media_drop.h"
 #include "views/text_util.h"
 #include <tesseract/client.h>
 #include <tesseract/mentions.h>
@@ -614,6 +615,28 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 });
         };
     }
+}
+
+void RoomWindowBase::handle_file_drop_(std::vector<std::uint8_t> bytes,
+                                       std::string mime, std::string filename)
+{
+    if (!room_view_)
+        return;
+    std::uint64_t limit = 0;
+    if (auto* c = shell_client_())
+        limit = c->media_upload_limit();
+    auto* cb = room_view_->compose_bar();
+    views::dispatch_file_drop(
+        *cb, std::move(bytes), std::move(mime), std::move(filename), limit,
+        [this, cb](std::uint32_t gen, std::vector<std::uint8_t> b,
+                   std::string m)
+        {
+            // RoomWindowBase is a friend of ShellBase, so it can reach the
+            // protected per-shell probe and retarget it to this pop-out's
+            // compose bar (guarded by alive_ against late posts after close).
+            shell_->extract_drop_media_(gen, std::move(b), std::move(m), cb,
+                                        alive_);
+        });
 }
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r)

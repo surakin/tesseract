@@ -530,11 +530,17 @@ private:
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
-    // Extract thumbnail, dimensions, and duration from raw bytes on a
-    // background thread; posts result back via post_to_ui_.
-    void extract_media_info_(std::uint32_t pending_gen,
+    // Extract thumbnail, dimensions, and duration from a dropped file on a
+    // background thread; posts result back via post_to_ui_. When `target` is
+    // non-null the result is posted to that compose bar (a pop-out window's),
+    // guarded by `target_alive`; otherwise to the main compose bar. Overrides
+    // the ShellBase drag-and-drop probe hook.
+    void extract_drop_media_(std::uint32_t pending_gen,
                              std::vector<std::uint8_t> bytes,
-                             std::string mime);
+                             std::string mime,
+                             tesseract::views::ComposeBar* target = nullptr,
+                             std::shared_ptr<bool> target_alive = nullptr)
+        override;
 
     static constexpr const wchar_t* CLASS_NAME = L"TesseractMainWnd";
     static constexpr int IDM_LOGOUT = 120;

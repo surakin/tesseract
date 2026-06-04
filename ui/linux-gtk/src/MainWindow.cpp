@@ -7,6 +7,7 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
+#include "views/media_drop.h"
 #include "views/text_util.h"
 
 #include <cairo.h>
@@ -868,53 +869,27 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         });
         topic_text_area_->set_visible(false);
 
-        // File drop.
+        // File drop. Shared dispatch routes the payload into the compose bar
+        // by MIME type; the per-shell hook probes video/audio + gif animation.
         auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
                                    std::string mime, std::string filename)
         {
             if (!room_view_)
                 return;
             const auto limit = client_->media_upload_limit();
-            if (limit > 0 && bytes.size() > limit)
+            auto outcome = tesseract::views::dispatch_file_drop(
+                *room_view_->compose_bar(), std::move(bytes), std::move(mime),
+                std::move(filename), limit,
+                [this](std::uint32_t gen, std::vector<std::uint8_t> b,
+                       std::string m)
+                { extract_drop_media_(gen, std::move(b), std::move(m)); });
+            if (outcome == tesseract::views::FileDropOutcome::TooLarge &&
+                status_bar_)
             {
-                if (status_bar_)
-                {
-                    std::string msg =
-                        std::string(_("File exceeds server limit (")) +
-                        tesseract::views::format_size(limit) + ")";
-                    gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
-                }
-                return;
-            }
-            if (bytes.empty()) return;
-            auto* cb = room_view_->compose_bar();
-            if (mime == "image/gif" || mime == "image/webp")
-            {
-                cb->set_pending_image(bytes, mime, filename, false);
-                auto gen = cb->pending_gen();
-                extract_media_info_(gen, std::move(bytes), std::move(mime));
-            }
-            else if (mime.rfind("image/", 0) == 0)
-            {
-                cb->set_pending_image(std::move(bytes), std::move(mime),
-                                      std::move(filename), false);
-            }
-            else if (mime.rfind("video/", 0) == 0)
-            {
-                cb->set_pending_video(bytes, mime, filename);
-                auto gen = cb->pending_gen();
-                extract_media_info_(gen, std::move(bytes), std::move(mime));
-            }
-            else if (mime.rfind("audio/", 0) == 0)
-            {
-                cb->set_pending_audio(bytes, mime, filename);
-                auto gen = cb->pending_gen();
-                extract_media_info_(gen, std::move(bytes), std::move(mime));
-            }
-            else
-            {
-                cb->set_pending_file(std::move(bytes), std::move(mime),
-                                     std::move(filename));
+                std::string msg =
+                    std::string(_("File exceeds server limit (")) +
+                    tesseract::views::format_size(limit) + ")";
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
             }
         };
         main_app_surface_->set_on_file_drop(on_file_drop);
@@ -4206,13 +4181,15 @@ void MainWindow::repaint_pickers_()
     invalidate_anim_consumers_();
 }
 
-void MainWindow::extract_media_info_(std::uint32_t pending_gen,
+void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                                      std::vector<std::uint8_t> bytes,
-                                     std::string mime)
+                                     std::string mime,
+                                     tesseract::views::ComposeBar* target,
+                                     std::shared_ptr<bool> target_alive)
 {
     run_async_(
-        [this, pending_gen, bytes = std::move(bytes),
-         mime = std::move(mime)]() mutable
+        [this, pending_gen, target, target_alive = std::move(target_alive),
+         bytes = std::move(bytes), mime = std::move(mime)]() mutable
         {
             tesseract::views::MediaInfo info;
             info.pending_gen = pending_gen;
@@ -4443,14 +4420,23 @@ void MainWindow::extract_media_info_(std::uint32_t pending_gen,
             {
                 MainWindow* mw;
                 tesseract::views::MediaInfo info;
-                std::weak_ptr<bool> alive;
+                std::weak_ptr<bool> alive;            // main window liveness
+                tesseract::views::ComposeBar* target; // null → main compose bar
+                std::shared_ptr<bool> target_alive;   // pop-out liveness
             };
-            auto* ctx = new Ctx{this, std::move(info), alive_};
+            auto* ctx = new Ctx{this, std::move(info), alive_, target,
+                                std::move(target_alive)};
             g_idle_add(
                 [](gpointer p) -> gboolean
                 {
                     auto* c = static_cast<Ctx*>(p);
-                    if (auto a = c->alive.lock(); a && *a)
+                    if (c->target)
+                    {
+                        // Pop-out window: post to its compose bar while it lives.
+                        if (c->target_alive && *c->target_alive)
+                            c->target->update_pending_attachment(c->info);
+                    }
+                    else if (auto a = c->alive.lock(); a && *a)
                     {
                         if (c->mw->room_view_)
                             c->mw->room_view_->compose_bar()

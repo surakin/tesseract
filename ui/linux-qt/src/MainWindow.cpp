@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "LoginView.h"
 #include "views/BrandView.h"
+#include "views/media_drop.h"
 #include "SettingsWidget.h"
 #include "EmojiPicker.h"
 #include "StickerPicker.h"
@@ -1617,61 +1618,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             if (!mainApp_)
                 return;
-            if (bytes.empty())
-                return;
-            auto* cb = mainApp_->room_view()->compose_bar();
-
-            if (mime == "image/gif" || mime == "image/webp")
-            {
-                // Show first frame immediately; detect animation on a bg thread.
-                cb->set_pending_image(bytes, mime, filename, false);
-                auto gen = cb->pending_gen();
-                run_async_([this, gen, bytes = std::move(bytes),
-                             mime = std::move(mime)]() mutable
-                {
-                    QByteArray ba(
-                        reinterpret_cast<const char*>(bytes.data()),
-                        static_cast<qsizetype>(bytes.size()));
-                    QBuffer buf;
-                    buf.setData(ba);
-                    buf.open(QIODevice::ReadOnly);
-                    QImageReader reader(&buf);
-                    tesseract::views::MediaInfo info;
-                    info.is_animated = reader.imageCount() > 1;
-                    info.pending_gen = gen;
-                    QMetaObject::invokeMethod(
-                        this,
-                        [this, info]() mutable
-                        {
-                            if (mainApp_)
-                                mainApp_->room_view()->compose_bar()
-                                    ->update_pending_attachment(info);
-                        },
-                        Qt::QueuedConnection);
-                });
-            }
-            else if (mime.starts_with("image/"))
-            {
-                cb->set_pending_image(std::move(bytes), std::move(mime),
-                                      std::move(filename), false);
-            }
-            else if (mime.starts_with("video/"))
-            {
-                cb->set_pending_video(bytes, mime, filename);
-                auto gen = cb->pending_gen();
-                extract_drop_video_(gen, std::move(bytes));
-            }
-            else if (mime.starts_with("audio/"))
-            {
-                cb->set_pending_audio(bytes, mime, filename);
-                auto gen = cb->pending_gen();
-                extract_drop_audio_(gen, std::move(bytes));
-            }
-            else
-            {
-                cb->set_pending_file(std::move(bytes), std::move(mime),
-                                     std::move(filename));
-            }
+            tesseract::views::dispatch_file_drop(
+                *mainApp_->room_view()->compose_bar(), std::move(bytes),
+                std::move(mime), std::move(filename),
+                client_->media_upload_limit(),
+                [this](std::uint32_t gen, std::vector<std::uint8_t> b,
+                       std::string m)
+                { extract_drop_media_(gen, std::move(b), std::move(m)); });
         });
 
     // Right-click: user-strip actions (lower-left corner) or sticker save (chat).
@@ -3327,8 +3280,66 @@ void MainWindow::repaint_pickers_()
     }
 }
 
+void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
+                                     std::vector<std::uint8_t> bytes,
+                                     std::string mime,
+                                     tesseract::views::ComposeBar* target,
+                                     std::shared_ptr<bool> target_alive)
+{
+    if (mime == "image/gif" || mime == "image/webp")
+    {
+        // Detect animation on a bg thread, then post back to the UI thread.
+        run_async_([this, pending_gen, target, target_alive,
+                    bytes = std::move(bytes)]() mutable
+        {
+            QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
+                          static_cast<qsizetype>(bytes.size()));
+            QBuffer buf;
+            buf.setData(ba);
+            buf.open(QIODevice::ReadOnly);
+            QImageReader reader(&buf);
+            tesseract::views::MediaInfo info;
+            info.is_animated = reader.imageCount() > 1;
+            info.pending_gen = pending_gen;
+            QMetaObject::invokeMethod(
+                this,
+                [this, info, target, target_alive]() mutable
+                { post_pending_attachment_(info, target, target_alive); },
+                Qt::QueuedConnection);
+        });
+    }
+    else if (mime.starts_with("video/"))
+    {
+        extract_drop_video_(pending_gen, std::move(bytes), target,
+                            std::move(target_alive));
+    }
+    else if (mime.starts_with("audio/"))
+    {
+        extract_drop_audio_(pending_gen, std::move(bytes), target,
+                            std::move(target_alive));
+    }
+}
+
+void MainWindow::post_pending_attachment_(
+    const tesseract::views::MediaInfo& info,
+    tesseract::views::ComposeBar* target, std::shared_ptr<bool> alive)
+{
+    if (target)
+    {
+        // Pop-out window: post to its compose bar only while it lives.
+        if (alive && *alive)
+            target->update_pending_attachment(info);
+    }
+    else if (mainApp_)
+    {
+        mainApp_->room_view()->compose_bar()->update_pending_attachment(info);
+    }
+}
+
 void MainWindow::extract_drop_video_(std::uint32_t pending_gen,
-                                     std::vector<std::uint8_t> bytes)
+                                     std::vector<std::uint8_t> bytes,
+                                     tesseract::views::ComposeBar* target,
+                                     std::shared_ptr<bool> target_alive)
 {
     auto* player = new QMediaPlayer(this);
     auto* sink = new QVideoSink(player);
@@ -3349,7 +3360,7 @@ void MainWindow::extract_drop_video_(std::uint32_t pending_gen,
     state->info.pending_gen = pending_gen;
 
     QObject::connect(sink, &QVideoSink::videoFrameChanged, sink,
-        [this, player, state](const QVideoFrame& frame)
+        [this, player, state, target, target_alive](const QVideoFrame& frame)
         {
             if (state->done || !frame.isValid())
                 return;
@@ -3374,27 +3385,26 @@ void MainWindow::extract_drop_video_(std::uint32_t pending_gen,
                     reinterpret_cast<const std::uint8_t*>(enc.constData()) +
                         enc.size());
             }
-            if (mainApp_)
-                mainApp_->room_view()->compose_bar()
-                    ->update_pending_attachment(state->info);
+            post_pending_attachment_(state->info, target, target_alive);
         });
     QObject::connect(player,
         qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
         player,
-        [this, player, state](QMediaPlayer::Error, const QString&)
+        [this, player, state, target, target_alive](QMediaPlayer::Error,
+                                                     const QString&)
         {
             if (state->done) return;
             state->done = true;
             player->deleteLater();
-            if (mainApp_)
-                mainApp_->room_view()->compose_bar()
-                    ->update_pending_attachment(state->info);
+            post_pending_attachment_(state->info, target, target_alive);
         });
     player->play();
 }
 
 void MainWindow::extract_drop_audio_(std::uint32_t pending_gen,
-                                     std::vector<std::uint8_t> bytes)
+                                     std::vector<std::uint8_t> bytes,
+                                     tesseract::views::ComposeBar* target,
+                                     std::shared_ptr<bool> target_alive)
 {
     auto* player = new QMediaPlayer(this);
     auto* buf = new QBuffer(player);
@@ -3407,7 +3417,8 @@ void MainWindow::extract_drop_audio_(std::uint32_t pending_gen,
     auto done = std::make_shared<bool>(false);
 
     QObject::connect(player, &QMediaPlayer::mediaStatusChanged, player,
-        [this, player, pending_gen, done](QMediaPlayer::MediaStatus status)
+        [this, player, pending_gen, done, target,
+         target_alive](QMediaPlayer::MediaStatus status)
         {
             if (*done) return;
             if (status != QMediaPlayer::LoadedMedia &&
@@ -3421,23 +3432,20 @@ void MainWindow::extract_drop_audio_(std::uint32_t pending_gen,
                 std::max(qint64(0), player->duration()));
             player->stop();
             player->deleteLater();
-            if (mainApp_)
-                mainApp_->room_view()->compose_bar()
-                    ->update_pending_attachment(info);
+            post_pending_attachment_(info, target, target_alive);
         });
     QObject::connect(player,
         qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
         player,
-        [this, player, pending_gen, done](QMediaPlayer::Error, const QString&)
+        [this, player, pending_gen, done, target,
+         target_alive](QMediaPlayer::Error, const QString&)
         {
             if (*done) return;
             *done = true;
             player->deleteLater();
             tesseract::views::MediaInfo info;
             info.pending_gen = pending_gen;
-            if (mainApp_)
-                mainApp_->room_view()->compose_bar()
-                    ->update_pending_attachment(info);
+            post_pending_attachment_(info, target, target_alive);
         });
     player->play();
 }

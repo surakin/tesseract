@@ -247,11 +247,16 @@ private:
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;
 
-    // Called from the file-drop callback to extract media metadata from raw
-    // bytes on a background thread. Posts the result via g_idle_add.
-    void extract_media_info_(std::uint32_t pending_gen,
+    // Extract media metadata from a dropped file on a background thread, then
+    // post via g_idle_add. When `target` is non-null the result goes to that
+    // compose bar (a pop-out window's), guarded by `target_alive`; otherwise to
+    // the main window's. Overrides the ShellBase drag-and-drop probe hook.
+    void extract_drop_media_(std::uint32_t pending_gen,
                              std::vector<std::uint8_t> bytes,
-                             std::string mime);
+                             std::string mime,
+                             tesseract::views::ComposeBar* target = nullptr,
+                             std::shared_ptr<bool> target_alive = nullptr)
+        override;
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*
