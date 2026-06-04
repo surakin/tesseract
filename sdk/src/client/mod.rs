@@ -33,6 +33,8 @@ mod verification;
 use session::PersistedSession;
 
 #[cfg(test)]
+pub(super) use gif::GifMedia;
+#[cfg(test)]
 pub(super) use send::{
     build_animated_image_content, build_thread_message_content, derive_mentions,
 };
@@ -2479,7 +2481,7 @@ mod tests {
     #[test]
     fn animated_image_content_sets_flags() {
         let val = build_animated_image_content(
-            "mxc://server/abc123",
+            GifMedia::Plain("mxc://server/abc123".into()),
             "anim.gif",
             "", // no caption
             "image/gif",
@@ -2503,9 +2505,37 @@ mod tests {
     }
 
     #[test]
+    fn animated_image_content_encrypted_uses_file_block() {
+        let enc = serde_json::json!({
+            "url": "mxc://server/enc",
+            "key": { "kty": "oct" },
+            "iv": "iv",
+            "hashes": { "sha256": "h" },
+            "v": "v2",
+        });
+        let val = build_animated_image_content(
+            GifMedia::Encrypted(enc.clone()),
+            "anim.webp",
+            "",
+            "image/webp",
+            320,
+            240,
+            2048,
+            "",
+            "",
+        );
+        // Encrypted rooms carry a `file` block, never a plaintext `url`.
+        assert_eq!(val["file"], enc);
+        assert!(val.get("url").is_none(), "no plaintext url when encrypted");
+        assert_eq!(val["org.matrix.msc4230.is_animated"], true);
+        assert_eq!(val["info"]["fi.mau.gif"], true);
+        assert_eq!(val["info"]["mimetype"], "image/webp");
+    }
+
+    #[test]
     fn animated_image_content_with_caption_and_reply() {
         let val = build_animated_image_content(
-            "mxc://server/xyz",
+            GifMedia::Plain("mxc://server/xyz".into()),
             "cat.gif",
             "Look at this",
             "image/gif",
@@ -2523,7 +2553,7 @@ mod tests {
     #[test]
     fn animated_image_content_threaded() {
         let val = build_animated_image_content(
-            "mxc://server/abc", "a.gif", "", "image/gif", 1, 1, 10, "", "$root:server",
+            GifMedia::Plain("mxc://server/abc".into()), "a.gif", "", "image/gif", 1, 1, 10, "", "$root:server",
         );
         assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
         assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
@@ -2534,7 +2564,7 @@ mod tests {
     #[test]
     fn animated_image_content_threaded_reply() {
         let val = build_animated_image_content(
-            "mxc://server/abc", "a.gif", "", "image/gif", 1, 1, 10, "$reply:server",
+            GifMedia::Plain("mxc://server/abc".into()), "a.gif", "", "image/gif", 1, 1, 10, "$reply:server",
             "$root:server",
         );
         assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");

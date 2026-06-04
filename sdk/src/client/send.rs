@@ -49,7 +49,7 @@ use build_uia_fallback_url as _unused_uia;
 /// emitted as a full MSC3440 `m.thread` block instead of a bare
 /// `m.in_reply_to`.
 pub(crate) fn build_animated_image_content(
-    mxc_uri: &str,
+    media: super::gif::GifMedia,
     filename: &str,
     caption: &str,
     mime_type: &str,
@@ -59,6 +59,7 @@ pub(crate) fn build_animated_image_content(
     reply_event_id: &str,
     thread_root: &str,
 ) -> serde_json::Value {
+    use super::gif::GifMedia;
     let body = if caption.is_empty() { filename } else { caption };
     let mut info = serde_json::json!({
         "mimetype": mime_type,
@@ -74,10 +75,15 @@ pub(crate) fn build_animated_image_content(
     let mut content = serde_json::json!({
         "msgtype": "m.image",
         "body": body,
-        "url": mxc_uri,
         "info": info,
         "org.matrix.msc4230.is_animated": true,
     });
+    // Plaintext rooms carry an `mxc://` URL; encrypted rooms carry a serialized
+    // EncryptedFile `file` block (mirrors build_gif_video_content).
+    match media {
+        GifMedia::Plain(mxc) => content["url"] = serde_json::json!(mxc),
+        GifMedia::Encrypted(file) => content["file"] = file,
+    }
     if !caption.is_empty() {
         content["filename"] = serde_json::json!(filename);
     }
@@ -747,8 +753,11 @@ impl ClientFfi {
         // Animated GIF/WebP path: `send_attachment` strips the MSC4230
         // `is_animated` flag and the `fi.mau.gif` vendor hint, so we
         // upload the media ourselves and post a raw `m.image` event whose
-        // `info` carries those fields.
+        // `info` carries those fields. In encrypted rooms we encrypt the bytes
+        // (EncryptedFile `file` block) instead of uploading them plaintext —
+        // mirrors send_gif_video.
         if is_animated {
+            use super::gif::GifMedia;
             let mime_owned = mime.clone();
             let mime_str = mime_type.to_owned();
             let filename = filename.to_owned();
@@ -757,12 +766,26 @@ impl ClientFfi {
             let thread_root = thread_root.to_owned();
             let size = bytes.len();
             let bytes_owned = bytes.to_vec();
-            return match self.rt.block_on(async move {
-                let mxc_uri = super::account::upload_bytes(&client, bytes_owned, &mime_owned)
-                    .await?
-                    .to_string();
+            let result: Result<(), String> = self.rt.block_on(async move {
+                let media = if room.encryption_state().is_encrypted() {
+                    let mut cur = std::io::Cursor::new(bytes_owned);
+                    let file = client
+                        .upload_encrypted_file(&mut cur)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    GifMedia::Encrypted(
+                        serde_json::to_value(&file).map_err(|e| e.to_string())?,
+                    )
+                } else {
+                    let mxc_uri =
+                        super::account::upload_bytes(&client, bytes_owned, &mime_owned)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .to_string();
+                    GifMedia::Plain(mxc_uri)
+                };
                 let content = build_animated_image_content(
-                    &mxc_uri,
+                    media,
                     &filename,
                     &caption,
                     &mime_str,
@@ -772,10 +795,14 @@ impl ClientFfi {
                     &reply_event_id,
                     &thread_root,
                 );
-                room.send_raw("m.room.message", content).await
-            }) {
-                Ok(_) => ok(""),
-                Err(e) => err(e.to_string()),
+                room.send_raw("m.room.message", content)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            });
+            return match result {
+                Ok(()) => ok(""),
+                Err(e) => err(e),
             };
         }
 

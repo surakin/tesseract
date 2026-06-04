@@ -458,11 +458,10 @@ void EventHandlerBridge::on_gif_results(std::uint64_t request_id,
                   g.preview_url = std::string(r.preview_url);
                   g.preview_w = r.preview_w;
                   g.preview_h = r.preview_h;
-                  g.mp4_url = std::string(r.mp4_url);
-                  g.mp4_w = r.mp4_w;
-                  g.mp4_h = r.mp4_h;
-                  g.duration_ms = r.duration_ms;
-                  g.poster_url = std::string(r.poster_url);
+                  g.image_url = std::string(r.image_url);
+                  g.image_w = r.image_w;
+                  g.image_h = r.image_h;
+                  g.image_mime = std::string(r.image_mime);
                   cpp_results.push_back(std::move(g));
               }
               handler_->on_gif_results(request_id, cpp_results);

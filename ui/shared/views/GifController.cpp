@@ -227,17 +227,21 @@ void GifController::accept(const tesseract::GifResult& gif)
     hooks_.run_async(
         [client, room, g, report]
         {
-            std::vector<std::uint8_t> mp4 = client->fetch_gif_bytes(g.mp4_url);
-            if (mp4.empty())
+            std::vector<std::uint8_t> bytes = client->fetch_gif_bytes(g.image_url);
+            if (bytes.empty())
             {
                 report("Couldn't load GIF");
                 return;
             }
-            tesseract::Result r = client->send_gif_video(
-                room, mp4, "video/mp4", "gif.mp4", g.mp4_w, g.mp4_h,
-                g.duration_ms,
-                /*thumb*/ {}, /*thumb_mime*/ "",
-                /*thumb_w*/ 0, /*thumb_h*/ 0,
+            // Send the animated form as an m.image (autoplay/loop via the
+            // fi.mau.gif hint). Routes playback through the image/animation
+            // decoder instead of the video pipeline. send_image encrypts the
+            // bytes itself in E2EE rooms.
+            const std::string filename =
+                (g.image_mime == "image/webp") ? "gif.webp" : "gif.gif";
+            tesseract::Result r = client->send_image(
+                room, bytes, g.image_mime, filename, /*caption*/ "",
+                g.image_w, g.image_h, /*is_animated*/ true,
                 /*reply*/ "", /*thread*/ "");
             if (!r.ok)
             {

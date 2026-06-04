@@ -381,19 +381,18 @@ pub mod ffi {
     }
 
     /// One GIF search result delivered to C++ via `on_gif_results`. URLs point
-    /// at the provider CDN: `preview_url` is a small animated form for the
-    /// result strip, `mp4_url` + `poster_url` are fetched at send time and
-    /// re-uploaded as an `m.video`.
+    /// at the provider CDN: `preview_url` is a small static JPEG for the result
+    /// strip; `image_url` is the animated form (WebP preferred, GIF fallback,
+    /// per `image_mime`) fetched at send time and re-uploaded as an `m.image`.
     struct GifResult {
         id: String,
         preview_url: String,
         preview_w: u32,
         preview_h: u32,
-        mp4_url: String,
-        mp4_w: u32,
-        mp4_h: u32,
-        duration_ms: u64,
-        poster_url: String,
+        image_url: String,
+        image_w: u32,
+        image_h: u32,
+        image_mime: String,
     }
 
     /// Snapshot of the server-side key-backup state plus a running counter of

@@ -16,10 +16,11 @@ std::vector<GifResult> make_results(int n)
     {
         GifResult g;
         g.id = "id" + std::to_string(i);
-        g.preview_url = "https://cdn/" + std::to_string(i) + ".gif";
-        g.mp4_url = "https://cdn/" + std::to_string(i) + ".mp4";
-        g.mp4_w = 100;
-        g.mp4_h = 80;
+        g.preview_url = "https://cdn/" + std::to_string(i) + ".jpg";
+        g.image_url = "https://cdn/" + std::to_string(i) + ".webp";
+        g.image_w = 100;
+        g.image_h = 80;
+        g.image_mime = "image/webp";
         v.push_back(std::move(g));
     }
     return v;
