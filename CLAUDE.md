@@ -154,6 +154,8 @@ See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across
 
 Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected.
 
+When investigating a bug or unexpected behavior, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
+
 ## Shared vs Platform Code
 
 Always implement new functionality in `ui/shared/` (`tk/` or `views/`) rather than duplicating it across platform shells. Platform shells (`ui/windows/`, `ui/linux-qt/`, `ui/linux-gtk/`, `ui/macos/`) should contain only what is genuinely platform-specific: native window/menu management, OS API calls, and thin wiring to the shared layer. If you find yourself writing the same logic in two or more shells, that logic belongs in `ui/shared/`.
