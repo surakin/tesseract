@@ -89,6 +89,14 @@ public:
     // Klipy API key used by the `/gif <query>` picker. Empty disables search
     // (the picker shows a "no API key configured" status). A built-in default
     // can be baked in here; users may override it via app_settings.json.
+    //
+    // NOTE: the embedded default below is intentional, not a leaked secret.
+    // It is a free-tier, client-distributed GIF search key (same class as the
+    // Giphy/Tenor SDK keys every chat client ships embedded), scoped to GIF
+    // search under a hashed per-user customer_id — it grants no account access
+    // or data. Worst case on extraction is free-tier quota abuse. Rotate by
+    // replacing this constant. Automated secret scanners flag it; that is
+    // expected and accepted.
     std::string gif_api_key = "fk7SzdJXhLgp4XwCaX7w8Yo9xOdtngpfPsoO8Dp1MknHYupTZGDwTivyiVioZe39";
 
     // ── Notifications ─────────────────────────────────────────────────
