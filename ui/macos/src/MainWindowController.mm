@@ -204,6 +204,7 @@ public:
     using ShellBase::compute_cache_sizes_;
     using ShellBase::current_room_id_;
     using ShellBase::current_thread_root_;
+    using ShellBase::DecodedImage;
     using ShellBase::debounce_;
     using ShellBase::DebounceSlot;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
