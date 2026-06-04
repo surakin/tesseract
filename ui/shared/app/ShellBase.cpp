@@ -534,7 +534,22 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
-            return shell_sticker_no_fetch_(mxc);
+            if (const auto* f = anim_cache_.current_frame(mxc))
+            {
+                start_anim_tick_();
+                return f;
+            }
+            if (const auto* img = image_cache_.peek(mxc))
+                return img;
+            if (const auto* img = thumbnail_cache_.peek(mxc))
+                return img;
+            // Cache miss after eviction — re-fetch. Deduplicated by the
+            // in-flight set; uses the disk cache when bytes were previously
+            // downloaded, so re-display is usually instant.
+            ensure_media_image_(mxc, visual::kMaxInlineImageWidth,
+                                visual::kMaxInlineImageHeight,
+                                media_group_for_room_(current_room_id_));
+            return nullptr;
         });
     // MSC4278: gate inline media behind the media-preview config + reveal set.
     wire_media_preview_gating_(app->room_view()->message_list());
@@ -543,7 +558,9 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->set_image_acquirer(
         [this](const std::string& mxc) -> tk::ImageRef
         {
-            return image_cache_.acquire(mxc);
+            if (auto ref = image_cache_.acquire(mxc))
+                return ref;
+            return thumbnail_cache_.acquire(mxc);
         });
     app->room_view()->set_preview_provider(
         [this](const std::string& url) -> const views::UrlPreviewData*

@@ -100,12 +100,26 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     rv->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
-            return shell_image_(mxc);
+            if (const auto* f = shell_->anim_cache_.current_frame(mxc))
+            {
+                shell_->start_anim_tick_();
+                return f;
+            }
+            if (const auto* img = shell_->image_cache_.peek(mxc))
+                return img;
+            if (const auto* img = shell_->thumbnail_cache_.peek(mxc))
+                return img;
+            shell_->ensure_media_image_(mxc, visual::kMaxInlineImageWidth,
+                                        visual::kMaxInlineImageHeight,
+                                        shell_->media_group_for_room_(room_id_));
+            return nullptr;
         });
     rv->set_image_acquirer(
         [this](const std::string& mxc) -> tk::ImageRef
         {
-            return shell_->image_cache_.acquire(mxc);
+            if (auto ref = shell_->image_cache_.acquire(mxc))
+                return ref;
+            return shell_->thumbnail_cache_.acquire(mxc);
         });
     rv->set_shortcode_provider(
         [this](const std::string& mxc) -> std::string
