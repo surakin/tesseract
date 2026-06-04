@@ -361,6 +361,7 @@ private:
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
+    bool                                 focus_compose_on_show_ = false;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
     std::unique_ptr<tk::NativeTextField> enc_key_field_;

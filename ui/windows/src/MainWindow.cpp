@@ -851,7 +851,26 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             FlashWindowEx(&fwi);
         }
         self->notify_window_active_(active);
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
+        DefWindowProcW(hwnd, msg, wParam, lParam);
+        // DefWindowProc restores focus to whatever GetFocus() returned at
+        // WM_ACTIVATE(WA_INACTIVE) time. If no focused child was recorded
+        // (e.g. first activation before the compose bar had ever been shown)
+        // DefWindowProc silently leaves focus on the D2D surface HWND or
+        // the main window rather than the compose bar. Detect this case and
+        // redirect explicitly: any HWND that is not a native input overlay
+        // (text field / area) means the restore fell through to a canvas.
+        if (active && self->room_text_area_ &&
+            self->room_text_area_->visible() &&
+            !self->current_room_id_.empty())
+        {
+            HWND focused = GetFocus();
+            HWND surface = self->main_app_surface_
+                               ? self->main_app_surface_->hwnd()
+                               : nullptr;
+            if (focused == nullptr || focused == hwnd || focused == surface)
+                self->room_text_area_->set_focused(true);
+        }
+        return 0;
     }
 
     case WM_SIZE:
@@ -2998,9 +3017,17 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     const tk::Rect ta = main_app_->compose_text_area_rect();
                     const bool show_ta = !hide && !ta.empty();
+                    const bool was_visible = room_text_area_->visible();
                     room_text_area_->set_visible(show_ta);
                     if (show_ta)
+                    {
                         room_text_area_->set_rect(ta);
+                        if (!was_visible && focus_compose_on_show_)
+                        {
+                            room_text_area_->set_focused(true);
+                            focus_compose_on_show_ = false;
+                        }
+                    }
                 }
 
                 // Topic edit text area.
@@ -4176,10 +4203,14 @@ void MainWindow::on_room_selected(const std::string& room_id)
     if (room_text_area_)
     {
         room_text_area_->set_text("");
-    }
-    if (room_text_area_)
-    {
-        room_text_area_->set_focused(true);
+        // Always request focus. If the HWND is already visible (room switch),
+        // set it immediately. If it is hidden because no room was shown yet
+        // (first room load), SetFocus on a hidden HWND silently fails, so
+        // record the intent and apply it in the layout callback once the
+        // text area transitions to visible.
+        focus_compose_on_show_ = true;
+        if (room_text_area_->visible())
+            room_text_area_->set_focused(true);
     }
     if (room_view_)
     {
