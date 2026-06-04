@@ -1646,151 +1646,59 @@ const InviteInfo* ShellBase::find_invite_(const std::string& room_id) const
 void ShellBase::accept_invite_async_(const std::string& room_id)
 {
     if (room_id.empty() || !client_)
-    {
         return;
-    }
-    auto* c = client_;
-    run_async_mut_(
-        [this, c, room_id]()
-        {
-            auto res = c->accept_invite(room_id);
-            post_to_ui_(
-                [this, room_id, res]()
-                {
-                    if (res.ok)
-                    {
-                        tab_select_room(room_id);
-                    }
-                    else
-                    {
-                        std::fprintf(stderr, "[invite] accept failed for %s: %s\n",
-                                     room_id.c_str(), res.message.c_str());
-                    }
-                });
-        });
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::Accept};
+    client_->accept_invite_async(req_id, room_id);
 }
 
 void ShellBase::decline_invite_async_(const std::string& room_id)
 {
     if (room_id.empty() || !client_)
-    {
         return;
-    }
     // Optimistically remove from the local list for immediate UX; the next
     // on_invites_updated callback from sync will confirm or restore it.
     invites_.erase(
         std::remove_if(invites_.begin(), invites_.end(),
                        [&room_id](const InviteInfo& inv)
-                       {
-                           return inv.room_id == room_id;
-                       }),
+                       { return inv.room_id == room_id; }),
         invites_.end());
     on_invites_updated_();
-
-    auto* c = client_;
-    run_async_mut_(
-        [this, c, room_id]()
-        {
-            auto res = c->decline_invite(room_id);
-            if (!res.ok)
-            {
-                post_to_ui_(
-                    [room_id, res]()
-                    {
-                        std::fprintf(stderr,
-                                     "[invite] decline failed for %s: %s\n",
-                                     room_id.c_str(), res.message.c_str());
-                    });
-            }
-        });
+    client_->decline_invite_async(room_id);
 }
 
 void ShellBase::block_invite_async_(const std::string& room_id,
                                     const std::string& inviter_id)
 {
     if (room_id.empty() || !client_)
-    {
         return;
-    }
     // Optimistically remove from the local list for immediate UX; the next
     // on_invites_updated callback from sync will confirm or restore it.
     invites_.erase(
         std::remove_if(invites_.begin(), invites_.end(),
                        [&room_id](const InviteInfo& inv)
-                       {
-                           return inv.room_id == room_id;
-                       }),
+                       { return inv.room_id == room_id; }),
         invites_.end());
     on_invites_updated_();
-
-    auto* c = client_;
-    run_async_mut_(
-        [this, c, room_id, inviter_id]()
-        {
-            auto res = c->block_invite(room_id, inviter_id);
-            if (!res.ok)
-            {
-                post_to_ui_(
-                    [room_id, res]()
-                    {
-                        std::fprintf(stderr,
-                                     "[invite] block failed for %s: %s\n",
-                                     room_id.c_str(), res.message.c_str());
-                    });
-            }
-        });
+    client_->block_invite_async(room_id, inviter_id);
 }
 
 void ShellBase::leave_room_command_(const std::string& room_id)
 {
     if (room_id.empty() || !client_)
         return;
-    auto* c = client_;
-    run_async_mut_(
-        [this, c, room_id]
-        {
-            auto r = c->leave_room(room_id);
-            if (!r.ok)
-                return;
-            post_to_ui_(
-                [this, c, room_id]
-                {
-                    if (c != client_)
-                        return;
-                    if (tabs_.size() > 1)
-                    {
-                        tab_close(room_id);
-                    }
-                    else
-                    {
-                        current_room_id_.clear();
-                        if (room_view_)
-                            room_view_->clear_room();
-                        request_relayout_();
-                    }
-                });
-        });
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::Leave};
+    client_->leave_room_async(req_id, room_id);
 }
 
 void ShellBase::join_room_command_(const std::string& room_id_or_alias)
 {
     if (room_id_or_alias.empty() || !client_)
         return;
-    auto* c = client_;
-    run_async_mut_(
-        [this, c, room_id_or_alias]
-        {
-            auto joined_id = c->join_room(room_id_or_alias);
-            if (joined_id.empty())
-                return;
-            post_to_ui_(
-                [this, c, joined_id]
-                {
-                    if (c != client_)
-                        return;
-                    tab_navigate_room(joined_id);
-                });
-        });
+    auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Join};
+    client_->join_room_async(req_id, room_id_or_alias);
 }
 
 void ShellBase::invite_user_command_(const std::string& room_id,
@@ -1798,8 +1706,7 @@ void ShellBase::invite_user_command_(const std::string& room_id,
 {
     if (room_id.empty() || user_id.empty() || !client_)
         return;
-    auto* c = client_;
-    run_async_mut_([c, room_id, user_id] { c->invite_user(room_id, user_id); });
+    client_->invite_user_async(room_id, user_id);
 }
 
 void ShellBase::update_space_children_cache_()
@@ -2033,6 +1940,88 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
     state.reached_start = reached_start;
 }
 
+void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
+                                           bool reached_start, bool reached_end,
+                                           std::string /*message*/)
+{
+    auto it = pending_paginates_.find(request_id);
+    if (it == pending_paginates_.end())
+        return;
+    auto [room_id, is_backward] = it->second;
+    pending_paginates_.erase(it);
+
+    auto& state = pagination_[room_id];
+    if (is_backward)
+    {
+        state.in_flight = false;
+        if (ok)
+            state.reached_start = reached_start;
+    }
+    else
+    {
+        state.fwd_in_flight = false;
+        if (ok)
+        {
+            state.reached_end = reached_end;
+            if (reached_end)
+                return_to_live_(room_id);
+        }
+    }
+}
+
+void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
+                                                 bool ok,
+                                                 std::string joined_room_id,
+                                                 std::string message)
+{
+    auto it = pending_room_actions_.find(request_id);
+    if (it == pending_room_actions_.end())
+        return;
+    auto [room_id, kind] = std::move(it->second);
+    pending_room_actions_.erase(it);
+
+    if (!ok)
+    {
+        std::fprintf(stderr, "[room-action] failed for %s: %s\n",
+                     room_id.c_str(), message.c_str());
+        return;
+    }
+
+    switch (kind)
+    {
+    case RoomActionKind::Accept:
+        tab_select_room(room_id);
+        break;
+    case RoomActionKind::Join:
+        if (!joined_room_id.empty())
+            tab_navigate_room(joined_room_id);
+        break;
+    case RoomActionKind::Leave:
+        if (tabs_.size() > 1)
+        {
+            tab_close(room_id);
+        }
+        else
+        {
+            current_room_id_.clear();
+            if (room_view_)
+                room_view_->clear_room();
+            request_relayout_();
+        }
+        break;
+    }
+}
+
+void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
+                                            bool ok,
+                                            std::string message)
+{
+    if (!ok)
+    {
+        std::fprintf(stderr, "[upload] failed: %s\n", message.c_str());
+    }
+}
+
 void ShellBase::try_scroll_to_room_event_(const std::string& event_id)
 {
     if (event_id.empty() || !room_view_ || current_room_id_.empty() || !client_)
@@ -2088,33 +2077,14 @@ void ShellBase::request_forward_history_(const std::string& room_id)
 {
     auto& state = pagination_[room_id];
     if (state.fwd_in_flight || state.reached_end)
-    {
         return;
-    }
     if (!state.is_focused)
-    {
         return;
-    }
     state.fwd_in_flight = true;
 
-    run_async_mut_(
-        [this, room_id]()
-        {
-            auto res = client_->paginate_forward(room_id, kPaginationBatch);
-            post_to_ui_(
-                [this, room_id, res]()
-                {
-                    pagination_[room_id].fwd_in_flight = false;
-                    if (res.ok)
-                    {
-                        pagination_[room_id].reached_end = res.reached_end;
-                        if (res.reached_end)
-                        {
-                            return_to_live_(room_id);
-                        }
-                    }
-                });
-        });
+    auto req_id = next_paginate_id_++;
+    pending_paginates_[req_id] = {room_id, false};
+    client_->paginate_forward_async(req_id, room_id, kPaginationBatch);
 }
 
 void ShellBase::return_to_live_(const std::string& room_id)
@@ -2126,17 +2096,20 @@ void ShellBase::return_to_live_(const std::string& room_id)
     state.fwd_in_flight = false;
     state.in_flight = true;
 
+    // subscribe_room is CPU-bound (&mut); keep it on mut_pool_.
+    // paginate_back_async fires a tokio task and returns immediately so
+    // mut_pool_ is freed before the HTTP round-trip begins.
     run_async_mut_(
         [this, room_id]()
         {
             client_->subscribe_room(room_id);
-            auto pr =
-                client_->paginate_back_with_status(room_id, kPaginationBatch);
             post_to_ui_(
-                [this, room_id, pr]()
+                [this, room_id]()
                 {
-                    pagination_[room_id].reached_start = pr.reached_start;
-                    pagination_[room_id].in_flight = false;
+                    auto req_id = next_paginate_id_++;
+                    pending_paginates_[req_id] = {room_id, true};
+                    client_->paginate_back_async(req_id, room_id,
+                                                 kPaginationBatch);
                 });
         });
 }
@@ -3691,8 +3664,14 @@ void ShellBase::on_thread_send_requested(const std::string& body,
 {
     if (!client_ || current_room_id_.empty() || current_thread_root_.empty())
         return;
-    client_->send_thread_message(current_room_id_, current_thread_root_, body,
-                                 formatted_body);
+    auto* c = client_;
+    auto rid = current_room_id_;
+    auto root = current_thread_root_;
+    auto body_copy = body;
+    auto fmt_copy = formatted_body;
+    run_async_mut_([c, rid, root, body_copy, fmt_copy]() mutable {
+        c->send_thread_message(rid, root, body_copy, fmt_copy);
+    });
 }
 
 void ShellBase::on_thread_send_reply_requested(
@@ -3703,22 +3682,33 @@ void ShellBase::on_thread_send_reply_requested(
     if (!client_ || current_room_id_.empty() || current_thread_root_.empty() ||
         in_reply_to_event_id.empty())
         return;
-    client_->send_thread_reply(current_room_id_, current_thread_root_,
-                               in_reply_to_event_id, body, formatted_body);
+    auto* c = client_;
+    auto rid = current_room_id_;
+    auto root = current_thread_root_;
+    auto reply_to = in_reply_to_event_id;
+    auto body_copy = body;
+    auto fmt_copy = formatted_body;
+    run_async_mut_([c, rid, root, reply_to, body_copy, fmt_copy]() mutable {
+        c->send_thread_reply(rid, root, reply_to, body_copy, fmt_copy);
+    });
 }
 
 void ShellBase::on_pin_requested(const std::string& event_id)
 {
     if (!client_ || current_room_id_.empty() || event_id.empty())
         return;
-    auto r = client_->pin_event(current_room_id_, event_id);
-    if (!r.ok)
-    {
-        // TODO: surface this via a transient status mechanism once one exists
-        std::fprintf(stderr, "[pin] pin failed for %s in %s: %s\n",
-                     event_id.c_str(), current_room_id_.c_str(),
-                     r.message.c_str());
-    }
+    auto* c = client_;
+    auto rid = current_room_id_;
+    auto eid = event_id;
+    run_async_mut_([c, rid, eid]() mutable {
+        auto r = c->pin_event(rid, eid);
+        if (!r.ok)
+        {
+            // TODO: surface this via a transient status mechanism once one exists
+            std::fprintf(stderr, "[pin] pin failed for %s in %s: %s\n",
+                         eid.c_str(), rid.c_str(), r.message.c_str());
+        }
+    });
 }
 
 void ShellBase::on_unpin_requested(const std::string& event_id)

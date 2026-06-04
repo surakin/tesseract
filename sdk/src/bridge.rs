@@ -773,6 +773,44 @@ pub mod ffi {
             request_id: u64,
             message: &str,
         );
+
+        /// Fired when an async pagination request started via
+        /// `paginate_back_async` or `paginate_forward_async` completes (or
+        /// fails). `request_id` is the correlation token. For backward
+        /// pagination `reached_start` indicates no more history; for forward
+        /// pagination `reached_end` indicates the live end was reached.
+        fn on_paginate_result(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            ok: bool,
+            reached_start: bool,
+            reached_end: bool,
+            message: &str,
+        );
+
+        /// Fired when an async room action (accept_invite_async,
+        /// join_room_async, leave_room_async) completes or fails.
+        /// `request_id` is the correlation token. `joined_room_id` carries
+        /// the canonical room ID returned by a join (empty on failure or for
+        /// non-join actions). `message` is a human-readable error on failure.
+        fn on_room_action_complete(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            ok: bool,
+            joined_room_id: &str,
+            message: &str,
+        );
+
+        /// Fired when an async media upload started via send_image_async,
+        /// send_file_async, send_audio_async, or send_video_async completes
+        /// or fails. `request_id` is the correlation token. `message` is a
+        /// human-readable error on failure (empty on success).
+        fn on_upload_complete(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            ok: bool,
+            message: &str,
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -867,20 +905,21 @@ pub mod ffi {
         /// `on_invites_updated` fires.
         fn list_invites(self: &ClientFfi) -> Vec<InviteInfo>;
 
-        /// Accepts the pending invitation to the given room. Blocks — call from a worker thread.
-        fn accept_invite(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        /// Non-blocking accept. Spawns the join as a tokio task and delivers
+        /// the result via `on_room_action_complete(request_id, ok, room_id, message)`.
+        fn accept_invite_async(self: &ClientFfi, request_id: u64, room_id: &str);
 
-        /// Declines the pending invitation to the given room. Blocks — call from a worker thread.
-        fn decline_invite(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        /// Non-blocking decline. Spawns `room.leave()` as a tokio task;
+        /// no callback — failures are logged internally.
+        fn decline_invite_async(self: &ClientFfi, room_id: &str);
 
-        /// Decline a room invitation and ignore the inviter. Calls
-        /// `room.leave()` then `account().ignore_user(inviter_user_id)`.
-        /// Blocks — call from a worker thread.
-        fn block_invite(
-            self: &mut ClientFfi,
+        /// Non-blocking block-invite. Spawns leave + ignore_user as a tokio
+        /// task; no callback — failures are logged internally.
+        fn block_invite_async(
+            self: &ClientFfi,
             room_id: &str,
             inviter_user_id: &str,
-        ) -> OpResult;
+        );
 
         // ----- Timeline subscription (Step 2) -----
 
@@ -910,6 +949,18 @@ pub mod ffi {
             count: u16,
         ) -> PaginateResult;
 
+        /// Non-blocking counterpart of `paginate_back_with_status`. Spawns the
+        /// HTTP paginate as a tokio task and fires
+        /// `on_paginate_result(request_id, ok, reached_start, false, message)`
+        /// on completion. Does not pin a C++ worker thread.
+        fn paginate_back_async(self: &ClientFfi, request_id: u64, room_id: &str, count: u16);
+
+        /// Non-blocking counterpart of `paginate_forward`. Spawns the HTTP
+        /// paginate as a tokio task and fires
+        /// `on_paginate_result(request_id, ok, false, reached_end, message)`
+        /// on completion. Does not pin a C++ worker thread.
+        fn paginate_forward_async(self: &ClientFfi, request_id: u64, room_id: &str, count: u16);
+
         /// MSC3030 Jump to Date: resolve a Unix millisecond timestamp to the
         /// nearest event ID in `room_id`. `dir` is `"f"` (forward — first
         /// event ≥ ts) or `"b"` (backward — last event ≤ ts). On success
@@ -924,19 +975,11 @@ pub mod ffi {
 
         /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
         /// specific event. Behaves like `subscribe_room` but builds a
-        /// `TimelineFocus::Event` timeline centered on `focus_event_id`. Sets
-        /// `is_focused = true` on the per-room state so `paginate_forward`
-        /// can gate itself. Fires `on_timeline_reset` + individual event
-        /// callbacks identically to `subscribe_room`.
+        /// `TimelineFocus::Event` timeline centered on `focus_event_id`.
+        /// Fires `on_timeline_reset` + individual event callbacks identically
+        /// to `subscribe_room`.
         fn subscribe_room_at(self: &mut ClientFfi, room_id: &str, focus_event_id: &str)
             -> OpResult;
-
-        /// MSC3030 Jump to Date: paginate forward in a focused timeline.
-        /// Only valid after `subscribe_room_at`; returns
-        /// `ok=false, message="not in focused mode"` for live timelines.
-        /// `reached_end` is `true` when the live end of the timeline has been
-        /// reached and the UI should switch back to a live subscription.
-        fn paginate_forward(self: &mut ClientFfi, room_id: &str, count: u16) -> PaginateResult;
 
         // ----- Thread timeline subscription -----
 
@@ -1171,6 +1214,73 @@ pub mod ffi {
             /// When non-empty, sends the media into this thread root (MSC3440).
             thread_root: &str,
         ) -> OpResult;
+
+        /// Non-blocking image send. Spawns the upload as a tokio task and
+        /// delivers the result via `on_upload_complete`. `bytes` are cloned
+        /// before returning; the caller need not keep them alive.
+        fn send_image_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            width: u32,
+            height: u32,
+            is_animated: bool,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
+
+        /// Non-blocking file send. Spawns the upload as a tokio task and
+        /// delivers the result via `on_upload_complete`.
+        fn send_file_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
+
+        /// Non-blocking audio send. Spawns the upload as a tokio task and
+        /// delivers the result via `on_upload_complete`.
+        fn send_audio_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            duration_ms: u64,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
+
+        /// Non-blocking video send. Spawns the upload as a tokio task and
+        /// delivers the result via `on_upload_complete`.
+        fn send_video_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            width: u32,
+            height: u32,
+            thumb_bytes: &[u8],
+            thumb_width: u32,
+            thumb_height: u32,
+            duration_ms: u64,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
 
         /// Encode raw signed 16-bit mono 48 kHz PCM (`pcm` byte slice,
         /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
@@ -1558,11 +1668,19 @@ pub mod ffi {
         /// Blocks the calling thread — call only from a worker thread.
         fn join_room(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
 
+        /// Non-blocking join. Spawns the join as a tokio task and delivers
+        /// the result via `on_room_action_complete(request_id, ok, joined_room_id, message)`.
+        fn join_room_async(self: &ClientFfi, request_id: u64, room_id_or_alias: &str);
+
         /// Leave a room. Blocks the calling thread — call from a worker thread.
         fn leave_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
 
-        /// Invite a user to a room. Blocks the calling thread — call from a worker thread.
-        fn invite_user(self: &mut ClientFfi, room_id: &str, user_id: &str) -> OpResult;
+        /// Non-blocking leave. Spawns the leave as a tokio task and delivers
+        /// the result via `on_room_action_complete(request_id, ok, "", message)`.
+        fn leave_room_async(self: &ClientFfi, request_id: u64, room_id: &str);
+
+        /// Non-blocking invite. Spawns as a tokio task; no callback.
+        fn invite_user_async(self: &ClientFfi, room_id: &str, user_id: &str);
 
         /// Fetch the joined member list for a room. Blocks — worker thread.
         fn get_room_members(self: &ClientFfi, room_id: &str) -> Vec<RoomMember>;

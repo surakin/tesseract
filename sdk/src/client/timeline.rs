@@ -784,6 +784,161 @@ impl ClientFfi {
     }
 
     // -----------------------------------------------------------------------
+    // Async (non-blocking) pagination
+    // -----------------------------------------------------------------------
+
+    /// Non-blocking paginate-back. Spawns the network call as a tokio task and
+    /// delivers the result via `on_paginate_result(request_id, ok,
+    /// reached_start, false, message)`. Frees the calling C++ thread
+    /// immediately — no worker thread is pinned during the HTTP round-trip.
+    #[cfg(not(test))]
+    pub fn paginate_back_async(&self, request_id: u64, room_id: &str, count: u16) {
+        let handler = self.handler.clone();
+        let deliver = move |ok: bool, reached_start: bool, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() {
+                    g.on_paginate_result(request_id, ok, reached_start, false, msg);
+                }
+            }
+        };
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                deliver(false, false, &format!("invalid room id: {e}"));
+                return;
+            }
+        };
+
+        let tl = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                deliver(false, false, "room not subscribed; call subscribe_room first");
+                return;
+            };
+            Arc::clone(&handle.timeline)
+        };
+        let stop_rx = self.stop_rx.clone();
+        let handler = self.handler.clone();
+
+        self.rt.spawn(async move {
+            let deliver = move |ok: bool, reached_start: bool, msg: &str| {
+                if let Some(h) = &handler {
+                    if let Ok(g) = h.lock() {
+                        g.on_paginate_result(request_id, ok, reached_start, false, msg);
+                    }
+                }
+            };
+
+            let result = async move {
+                let paginate = tl.paginate_backwards(count);
+                if let Some(mut rx) = stop_rx {
+                    tokio::select! {
+                        r = paginate => r.map(Some),
+                        _ = async {
+                            loop {
+                                match rx.changed().await {
+                                    Ok(()) => { if *rx.borrow() { return; } }
+                                    Err(_) => return,
+                                }
+                            }
+                        } => Ok(None),
+                    }
+                } else {
+                    paginate.await.map(Some)
+                }
+            }
+            .await;
+
+            match result {
+                Ok(Some(reached_start)) => deliver(true, reached_start, ""),
+                Ok(None) => deliver(false, false, "shutdown in progress"),
+                Err(e) => deliver(false, false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn paginate_back_async(&self, _request_id: u64, _room_id: &str, _count: u16) {}
+
+    /// Non-blocking paginate-forward. Spawns the network call as a tokio task
+    /// and delivers the result via `on_paginate_result(request_id, ok, false,
+    /// reached_end, message)`. Frees the calling C++ thread immediately.
+    #[cfg(not(test))]
+    pub fn paginate_forward_async(&self, request_id: u64, room_id: &str, count: u16) {
+        let handler = self.handler.clone();
+        let deliver = move |ok: bool, reached_end: bool, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() {
+                    g.on_paginate_result(request_id, ok, false, reached_end, msg);
+                }
+            }
+        };
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                deliver(false, false, &format!("invalid room id: {e}"));
+                return;
+            }
+        };
+
+        let tl = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                deliver(false, false, "room not subscribed; call subscribe_room_at first");
+                return;
+            };
+            if !handle.is_focused {
+                deliver(false, false, "not in focused mode");
+                return;
+            }
+            Arc::clone(&handle.timeline)
+        };
+        let stop_rx = self.stop_rx.clone();
+        let handler = self.handler.clone();
+
+        self.rt.spawn(async move {
+            let deliver = move |ok: bool, reached_end: bool, msg: &str| {
+                if let Some(h) = &handler {
+                    if let Ok(g) = h.lock() {
+                        g.on_paginate_result(request_id, ok, false, reached_end, msg);
+                    }
+                }
+            };
+
+            let result = async move {
+                let paginate = tl.paginate_forwards(count);
+                if let Some(mut rx) = stop_rx {
+                    tokio::select! {
+                        r = paginate => r.map(Some),
+                        _ = async {
+                            loop {
+                                match rx.changed().await {
+                                    Ok(()) => { if *rx.borrow() { return; } }
+                                    Err(_) => return,
+                                }
+                            }
+                        } => Ok(None),
+                    }
+                } else {
+                    paginate.await.map(Some)
+                }
+            }
+            .await;
+
+            match result {
+                Ok(Some(reached_end)) => deliver(true, reached_end, ""),
+                Ok(None) => deliver(false, false, "shutdown in progress"),
+                Err(e) => deliver(false, false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn paginate_forward_async(&self, _request_id: u64, _room_id: &str, _count: u16) {}
+
+    // -----------------------------------------------------------------------
     // MSC3030 Jump to Date
     // -----------------------------------------------------------------------
 
@@ -928,93 +1083,4 @@ impl ClientFfi {
         err("not logged in")
     }
 
-    /// MSC3030: paginate forward in a focused timeline. Only valid after
-    /// `subscribe_room_at`; returns an error for live timelines.
-    /// `reached_end = true` when the timeline has reached the live end.
-    #[cfg(not(test))]
-    pub fn paginate_forward(&mut self, room_id: &str, count: u16) -> PaginateResult {
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => {
-                return PaginateResult {
-                    ok: false,
-                    message: format!("invalid room id: {e}"),
-                    reached_start: false,
-                    reached_end: false,
-                }
-            }
-        };
-
-        let tl = {
-            let guard = self.timelines.read().unwrap();
-            let Some(handle) = guard.get(&room_id) else {
-                return PaginateResult {
-                    ok: false,
-                    message: "room not subscribed; call subscribe_room_at first".into(),
-                    reached_start: false,
-                    reached_end: false,
-                };
-            };
-
-            if !handle.is_focused {
-                return PaginateResult {
-                    ok: false,
-                    message: "not in focused mode".into(),
-                    reached_start: false,
-                    reached_end: false,
-                };
-            }
-
-            Arc::clone(&handle.timeline)
-        };
-        let stop_rx = self.stop_rx.clone();
-
-        match self.rt.block_on(async move {
-            let paginate = tl.paginate_forwards(count);
-            if let Some(mut rx) = stop_rx {
-                tokio::select! {
-                    result = paginate => result.map(Some),
-                    _ = async {
-                        loop {
-                            match rx.changed().await {
-                                Ok(()) => { if *rx.borrow() { return; } }
-                                Err(_) => return,
-                            }
-                        }
-                    } => Ok(None),
-                }
-            } else {
-                paginate.await.map(Some)
-            }
-        }) {
-            Ok(Some(reached_end)) => PaginateResult {
-                ok: true,
-                message: String::new(),
-                reached_start: false,
-                reached_end,
-            },
-            Ok(None) => PaginateResult {
-                ok: false,
-                message: "shutdown in progress".into(),
-                reached_start: false,
-                reached_end: false,
-            },
-            Err(e) => PaginateResult {
-                ok: false,
-                message: e.to_string(),
-                reached_start: false,
-                reached_end: false,
-            },
-        }
-    }
-
-    #[cfg(test)]
-    pub fn paginate_forward(&mut self, _room_id: &str, _count: u16) -> PaginateResult {
-        PaginateResult {
-            ok: false,
-            message: "not in focused mode".into(),
-            reached_start: false,
-            reached_end: false,
-        }
-    }
 }

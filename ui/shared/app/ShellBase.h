@@ -525,6 +525,24 @@ protected:
     };
     std::unordered_map<std::string, PaginationState> pagination_;
 
+    // Correlation map for in-flight async paginations.
+    // request_id → room_id; cleared in handle_paginate_result_ui_.
+    // true = backward paginate, false = forward paginate.
+    std::unordered_map<std::uint64_t, std::pair<std::string, bool>>
+        pending_paginates_;
+    std::uint64_t next_paginate_id_ = 1;
+
+    // ── Async room actions ────────────────────────────────────────────────────
+    enum class RoomActionKind { Accept, Join, Leave };
+    struct PendingRoomAction
+    {
+        std::string room_id;
+        RoomActionKind kind;
+    };
+    // request_id → action; cleared in handle_room_action_complete_ui_.
+    std::unordered_map<std::uint64_t, PendingRoomAction> pending_room_actions_;
+    std::uint64_t next_room_action_id_ = 1;
+
     // ── Read receipts ─────────────────────────────────────────────────────────
     // room_id → last event_id for which a receipt was sent in this session.
     std::unordered_map<std::string, std::string> last_sent_receipt_;
@@ -983,6 +1001,15 @@ protected:
                                               std::string /*message*/)
     {
     }
+    // Completion for paginate_back_async / paginate_forward_async.
+    void handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
+                                    bool reached_start, bool reached_end,
+                                    std::string message);
+    void handle_room_action_complete_ui_(std::uint64_t request_id, bool ok,
+                                         std::string joined_room_id,
+                                         std::string message);
+    void handle_upload_complete_ui_(std::uint64_t request_id, bool ok,
+                                    std::string message);
     virtual void handle_sync_error_ui_(std::string /*context*/,
                                        std::string /*user_id*/,
                                        std::string /*description*/,

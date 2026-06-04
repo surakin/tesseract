@@ -199,6 +199,19 @@ void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
         { shell->handle_gif_search_failed_ui_(request_id, std::move(msg)); });
 }
 
+void EventHandlerBase::on_paginate_result(std::uint64_t request_id, bool ok,
+                                          bool reached_start, bool reached_end,
+                                          const std::string& message)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, request_id, ok, reached_start, reached_end,
+         msg = message]() mutable
+        {
+            shell->handle_paginate_result_ui_(request_id, ok, reached_start,
+                                             reached_end, std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
     auto rs = rooms; // one copy; moved into the lambda below
@@ -439,6 +452,31 @@ void EventHandlerBase::on_typing_changed(const std::string& room_id,
         {
             shell->handle_typing_changed_ui_(std::move(p->rid),
                                              std::move(p->ns));
+        });
+}
+
+void EventHandlerBase::on_upload_complete(std::uint64_t request_id, bool ok,
+                                           const std::string& message)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, request_id, ok, msg = message]() mutable
+        {
+            shell->handle_upload_complete_ui_(request_id, ok, std::move(msg));
+        });
+}
+
+void EventHandlerBase::on_room_action_complete(std::uint64_t request_id,
+                                               bool ok,
+                                               const std::string& joined_room_id,
+                                               const std::string& message)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, request_id, ok, rid = joined_room_id,
+         msg = message]() mutable
+        {
+            shell->handle_room_action_complete_ui_(request_id, ok,
+                                                   std::move(rid),
+                                                   std::move(msg));
         });
 }
 

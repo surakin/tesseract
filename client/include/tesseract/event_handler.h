@@ -197,6 +197,37 @@ public:
     {
     }
 
+    /// Fired when an async paginate request started via
+    /// `Client::paginate_back_async` or `Client::paginate_forward_async`
+    /// completes. `reached_start`/`reached_end` mirror the synchronous
+    /// variants; both are false on error. Default no-op.
+    virtual void on_paginate_result(std::uint64_t /*request_id*/, bool /*ok*/,
+                                    bool /*reached_start*/,
+                                    bool /*reached_end*/,
+                                    const std::string& /*message*/)
+    {
+    }
+
+    /// Fired when an async room action (accept_invite_async, join_room_async,
+    /// leave_room_async) completes or fails. `joined_room_id` carries the
+    /// canonical room ID returned by join; empty for other actions or on
+    /// failure. Default no-op.
+    virtual void on_room_action_complete(std::uint64_t /*request_id*/,
+                                         bool /*ok*/,
+                                         const std::string& /*joined_room_id*/,
+                                         const std::string& /*message*/)
+    {
+    }
+
+    /// Fired when an async media upload (send_image_async, send_file_async,
+    /// send_audio_async, send_video_async) completes or fails.
+    /// `message` is a human-readable error on failure; empty on success.
+    /// Default no-op.
+    virtual void on_upload_complete(std::uint64_t /*request_id*/, bool /*ok*/,
+                                    const std::string& /*message*/)
+    {
+    }
+
     /// Fired once at startup (after `start_sync` initialises the room-info
     /// watcher) and again whenever the `im.gnomos.tesseract` global
     /// account-data event changes. `json` is the raw event content object,

@@ -483,6 +483,54 @@ void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_paginate_result(std::uint64_t request_id,
+                                            bool ok, bool reached_start,
+                                            bool reached_end,
+                                            rust::Str message) const
+{
+    guard("on_paginate_result",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+              {
+                  return;
+              }
+              handler_->on_paginate_result(request_id, ok, reached_start,
+                                           reached_end, std::string(message));
+          });
+}
+
+void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id,
+                                                  bool ok,
+                                                  rust::Str joined_room_id,
+                                                  rust::Str message) const
+{
+    guard("on_room_action_complete",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+                  return;
+              handler_->on_room_action_complete(request_id, ok,
+                                                std::string(joined_room_id),
+                                                std::string(message));
+          });
+}
+
+void EventHandlerBridge::on_upload_complete(std::uint64_t request_id, bool ok,
+                                             rust::Str message) const
+{
+    guard("on_upload_complete",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+                  return;
+              handler_->on_upload_complete(request_id, ok, std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const
 {
     guard("on_account_prefs_updated",

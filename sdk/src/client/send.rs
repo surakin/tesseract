@@ -1102,6 +1102,384 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    // ------------------------------------------------------------------
+    // Non-blocking async upload variants
+    // ------------------------------------------------------------------
+
+    #[cfg(not(test))]
+    pub fn send_image_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        bytes: &[u8],
+        mime_type: &str,
+        filename: &str,
+        caption: &str,
+        width: u32,
+        height: u32,
+        is_animated: bool,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+            }
+        };
+
+        let room_id_str = room_id.to_owned();
+        let bytes = bytes.to_vec();
+        let mime_type = mime_type.to_owned();
+        let filename = filename.to_owned();
+        let caption = caption.to_owned();
+        let reply_event_id = reply_event_id.to_owned();
+        let thread_root = thread_root.to_owned();
+
+        self.rt.spawn(async move {
+            let (_, room) = match require_room(&client, &room_id_str) {
+                Ok(v) => v,
+                Err(e) => { deliver(false, &e.message); return; }
+            };
+            let mime: mime::Mime = match mime_type.parse() {
+                Ok(m) => m,
+                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+            };
+
+            if is_animated {
+                use super::gif::GifMedia;
+                let mime_owned = mime.clone();
+                let size = bytes.len();
+                let result: Result<(), String> = async {
+                    let media = if room.encryption_state().is_encrypted() {
+                        let mut cur = std::io::Cursor::new(bytes.clone());
+                        let file = client
+                            .upload_encrypted_file(&mut cur)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        GifMedia::Encrypted(
+                            serde_json::to_value(&file).map_err(|e| e.to_string())?,
+                        )
+                    } else {
+                        let mxc_uri = super::account::upload_bytes(&client, bytes.clone(), &mime_owned)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .to_string();
+                        GifMedia::Plain(mxc_uri)
+                    };
+                    let content = build_animated_image_content(
+                        media, &filename, &caption, &mime_type, width, height, size,
+                        &reply_event_id, &thread_root,
+                    );
+                    room.send_raw("m.room.message", content)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(())
+                }.await;
+                match result {
+                    Ok(()) => deliver(true, ""),
+                    Err(e) => deliver(false, &e),
+                }
+                return;
+            }
+
+            let info = BaseImageInfo {
+                width: UInt::new(width as u64),
+                height: UInt::new(height as u64),
+                size: UInt::new(bytes.len() as u64),
+                blurhash: None,
+                is_animated: None,
+            };
+            let mut config = AttachmentConfig::new().info(AttachmentInfo::Image(info));
+            if !caption.is_empty() {
+                config = config.caption(Some(TextMessageEventContent::plain(caption)));
+            }
+            match build_media_reply(&reply_event_id, &thread_root) {
+                Ok(Some(reply)) => config = config.reply(Some(reply)),
+                Ok(None) => {}
+                Err(e) => { deliver(false, &e); return; }
+            }
+            match room.send_attachment(filename, &mime, bytes, config).await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_image_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _bytes: &[u8],
+        _mime_type: &str,
+        _filename: &str,
+        _caption: &str,
+        _width: u32,
+        _height: u32,
+        _is_animated: bool,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {}
+
+    #[cfg(not(test))]
+    pub fn send_file_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        bytes: &[u8],
+        mime_type: &str,
+        filename: &str,
+        caption: &str,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseFileInfo};
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+            }
+        };
+
+        let room_id_str = room_id.to_owned();
+        let bytes = bytes.to_vec();
+        let mime_type = mime_type.to_owned();
+        let filename = filename.to_owned();
+        let caption = caption.to_owned();
+        let reply_event_id = reply_event_id.to_owned();
+        let thread_root = thread_root.to_owned();
+
+        self.rt.spawn(async move {
+            let (_, room) = match require_room(&client, &room_id_str) {
+                Ok(v) => v,
+                Err(e) => { deliver(false, &e.message); return; }
+            };
+            let mime: mime::Mime = match mime_type.parse() {
+                Ok(m) => m,
+                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+            };
+            let info = BaseFileInfo { size: UInt::new(bytes.len() as u64) };
+            let mut config = AttachmentConfig::new().info(AttachmentInfo::File(info));
+            if !caption.is_empty() {
+                config = config.caption(Some(TextMessageEventContent::plain(caption)));
+            }
+            match build_media_reply(&reply_event_id, &thread_root) {
+                Ok(Some(reply)) => config = config.reply(Some(reply)),
+                Ok(None) => {}
+                Err(e) => { deliver(false, &e); return; }
+            }
+            match room.send_attachment(filename, &mime, bytes, config).await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_file_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _bytes: &[u8],
+        _mime_type: &str,
+        _filename: &str,
+        _caption: &str,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {}
+
+    #[cfg(not(test))]
+    pub fn send_audio_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        bytes: &[u8],
+        mime_type: &str,
+        filename: &str,
+        caption: &str,
+        duration_ms: u64,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseAudioInfo};
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+        use std::time::Duration;
+
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+            }
+        };
+
+        let room_id_str = room_id.to_owned();
+        let bytes = bytes.to_vec();
+        let mime_type = mime_type.to_owned();
+        let filename = filename.to_owned();
+        let caption = caption.to_owned();
+        let reply_event_id = reply_event_id.to_owned();
+        let thread_root = thread_root.to_owned();
+
+        self.rt.spawn(async move {
+            let (_, room) = match require_room(&client, &room_id_str) {
+                Ok(v) => v,
+                Err(e) => { deliver(false, &e.message); return; }
+            };
+            let mime: mime::Mime = match mime_type.parse() {
+                Ok(m) => m,
+                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+            };
+            let info = BaseAudioInfo {
+                duration: if duration_ms > 0 { Some(Duration::from_millis(duration_ms)) } else { None },
+                size: UInt::new(bytes.len() as u64),
+                waveform: None,
+            };
+            let mut config = AttachmentConfig::new().info(AttachmentInfo::Audio(info));
+            if !caption.is_empty() {
+                config = config.caption(Some(TextMessageEventContent::plain(caption)));
+            }
+            match build_media_reply(&reply_event_id, &thread_root) {
+                Ok(Some(reply)) => config = config.reply(Some(reply)),
+                Ok(None) => {}
+                Err(e) => { deliver(false, &e); return; }
+            }
+            match room.send_attachment(filename, &mime, bytes, config).await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_audio_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _bytes: &[u8],
+        _mime_type: &str,
+        _filename: &str,
+        _caption: &str,
+        _duration_ms: u64,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {}
+
+    #[cfg(not(test))]
+    pub fn send_video_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        bytes: &[u8],
+        mime_type: &str,
+        filename: &str,
+        caption: &str,
+        width: u32,
+        height: u32,
+        thumb_bytes: &[u8],
+        thumb_width: u32,
+        thumb_height: u32,
+        duration_ms: u64,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseVideoInfo, Thumbnail};
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+        use std::time::Duration;
+
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+            }
+        };
+
+        let room_id_str = room_id.to_owned();
+        let bytes = bytes.to_vec();
+        let thumb_bytes = thumb_bytes.to_vec();
+        let mime_type = mime_type.to_owned();
+        let filename = filename.to_owned();
+        let caption = caption.to_owned();
+        let reply_event_id = reply_event_id.to_owned();
+        let thread_root = thread_root.to_owned();
+
+        self.rt.spawn(async move {
+            let (_, room) = match require_room(&client, &room_id_str) {
+                Ok(v) => v,
+                Err(e) => { deliver(false, &e.message); return; }
+            };
+            let mime: mime::Mime = match mime_type.parse() {
+                Ok(m) => m,
+                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+            };
+            let info = BaseVideoInfo {
+                duration: if duration_ms > 0 { Some(Duration::from_millis(duration_ms)) } else { None },
+                height: UInt::new(height as u64),
+                width: UInt::new(width as u64),
+                size: UInt::new(bytes.len() as u64),
+                blurhash: None,
+            };
+            let mut config = AttachmentConfig::new().info(AttachmentInfo::Video(info));
+            if !thumb_bytes.is_empty() {
+                config = config.thumbnail(Some(Thumbnail {
+                    data: thumb_bytes,
+                    content_type: mime::IMAGE_JPEG,
+                    height: UInt::new(thumb_height as u64).unwrap_or_default(),
+                    width: UInt::new(thumb_width as u64).unwrap_or_default(),
+                    size: UInt::new(0u64).unwrap_or_default(),
+                }));
+            }
+            if !caption.is_empty() {
+                config = config.caption(Some(TextMessageEventContent::plain(caption)));
+            }
+            match build_media_reply(&reply_event_id, &thread_root) {
+                Ok(Some(reply)) => config = config.reply(Some(reply)),
+                Ok(None) => {}
+                Err(e) => { deliver(false, &e); return; }
+            }
+            match room.send_attachment(filename, &mime, bytes, config).await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_video_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _bytes: &[u8],
+        _mime_type: &str,
+        _filename: &str,
+        _caption: &str,
+        _width: u32,
+        _height: u32,
+        _thumb_bytes: &[u8],
+        _thumb_width: u32,
+        _thumb_height: u32,
+        _duration_ms: u64,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {}
+
     /// Encode `pcm` (raw signed 16-bit mono 48 kHz samples as a byte slice,
     /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
     /// `m.voice` event in `room_id`. `waveform` carries the MSC1767 waveform

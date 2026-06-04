@@ -64,6 +64,14 @@ public:
                         const std::vector<GifResult>& results) override;
     void on_gif_search_failed(std::uint64_t request_id,
                               const std::string& message) override;
+    void on_paginate_result(std::uint64_t request_id, bool ok,
+                            bool reached_start, bool reached_end,
+                            const std::string& message) override;
+    void on_room_action_complete(std::uint64_t request_id, bool ok,
+                                 const std::string& joined_room_id,
+                                 const std::string& message) override;
+    void on_upload_complete(std::uint64_t request_id, bool ok,
+                            const std::string& message) override;
     void on_rooms_updated(const std::vector<RoomInfo>& rooms) override;
     void on_invites_updated(const std::vector<InviteInfo>& invites) override;
     void on_sync_error(const std::string& context,

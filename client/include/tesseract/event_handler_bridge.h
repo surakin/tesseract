@@ -112,6 +112,14 @@ public:
                         const rust::Vec<GifResult>& results) const;
     void on_gif_search_failed(std::uint64_t request_id,
                               rust::Str message) const;
+    void on_paginate_result(std::uint64_t request_id, bool ok,
+                            bool reached_start, bool reached_end,
+                            rust::Str message) const;
+    void on_room_action_complete(std::uint64_t request_id, bool ok,
+                                 rust::Str joined_room_id,
+                                 rust::Str message) const;
+    void on_upload_complete(std::uint64_t request_id, bool ok,
+                            rust::Str message) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_media_preview_config_updated(rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,

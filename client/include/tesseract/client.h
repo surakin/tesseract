@@ -204,19 +204,17 @@ public:
     /// `IEventHandler::on_invites_updated` fires.
     std::vector<InviteInfo> list_invites() const;
 
-    /// Accept the pending invitation to `room_id`.
-    /// Blocks the calling thread — call from a worker thread.
-    Result accept_invite(const std::string& room_id);
+    /// Non-blocking accept. Spawns the join as a tokio task; result delivered
+    /// via IEventHandler::on_room_action_complete.
+    void accept_invite_async(std::uint64_t request_id,
+                             const std::string& room_id);
 
-    /// Decline the pending invitation to `room_id`.
-    /// Blocks the calling thread — call from a worker thread.
-    Result decline_invite(const std::string& room_id);
+    /// Non-blocking decline. Fire-and-forget; no callback.
+    void decline_invite_async(const std::string& room_id);
 
-    /// Decline a room invitation and ignore the inviter. Calls leave() then
-    /// ignores `inviter_user_id` via m.ignored_user_list account data.
-    /// Blocks the calling thread — call from a worker thread.
-    Result block_invite(const std::string& room_id,
-                        const std::string& inviter_user_id);
+    /// Non-blocking block-invite. Fire-and-forget; no callback.
+    void block_invite_async(const std::string& room_id,
+                            const std::string& inviter_user_id);
 
     // ------------------------------------------------------------------
     // Timeline subscription (Step 2)
@@ -240,6 +238,20 @@ public:
     PaginateResult paginate_back_with_status(const std::string& room_id,
                                              std::uint16_t count);
 
+    /// Non-blocking counterpart of `paginate_back_with_status`. Spawns the
+    /// HTTP request as a tokio task and delivers the result via
+    /// `IEventHandler::on_paginate_result(request_id, …)`. Does not pin a
+    /// C++ worker thread during the network round-trip.
+    void paginate_back_async(std::uint64_t request_id,
+                             const std::string& room_id,
+                             std::uint16_t count);
+
+    /// Non-blocking counterpart of `paginate_forward`. Delivers result via
+    /// `IEventHandler::on_paginate_result(request_id, …)`.
+    void paginate_forward_async(std::uint64_t request_id,
+                                const std::string& room_id,
+                                std::uint16_t count);
+
     /// MSC3030 Jump to Date: resolve a Unix millisecond timestamp to the
     /// nearest event ID in `room_id`. `dir` is `"f"` (forward — first event
     /// ≥ ts) or `"b"` (backward — last event ≤ ts). On success
@@ -250,17 +262,10 @@ public:
 
     /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
     /// specific event. Behaves like `subscribe_room` but centers the
-    /// timeline on `focus_event_id`. Call `paginate_forward` (and
-    /// `paginate_back`) to load events in either direction from the focus.
+    /// timeline on `focus_event_id`. Call `paginate_forward_async` (and
+    /// `paginate_back_async`) to load events in either direction from the focus.
     Result subscribe_room_at(const std::string& room_id,
                              const std::string& focus_event_id);
-
-    /// MSC3030 Jump to Date: paginate forward in a focused timeline.
-    /// Only valid after `subscribe_room_at`. `reached_end` is true when the
-    /// live end has been reached; the UI should then switch to a live
-    /// subscription via `subscribe_room`.
-    PaginateResult paginate_forward(const std::string& room_id,
-                                    std::uint16_t count);
 
     /// Subscribe to the thread rooted at `root_event_id` in `room_id`. Fires
     /// IEventHandler::on_thread_* callbacks.
@@ -354,6 +359,19 @@ public:
                       const std::string& reply_event_id = "",
                       const std::string& thread_root = std::string{});
 
+    /// Non-blocking image send. Spawns the upload as a tokio task; result
+    /// delivered via IEventHandler::on_upload_complete.
+    void send_image_async(std::uint64_t request_id,
+                          const std::string& room_id,
+                          const std::vector<uint8_t>& bytes,
+                          const std::string& mime_type,
+                          const std::string& filename,
+                          const std::string& caption,
+                          std::uint32_t width, std::uint32_t height,
+                          bool is_animated,
+                          const std::string& reply_event_id = "",
+                          const std::string& thread_root = std::string{});
+
     /// Send a video to `room_id` as an `m.video` event. `width`/`height` are
     /// the video source dimensions; `thumb_bytes` is a JPEG first-frame
     /// thumbnail (pass an empty vector when unavailable) with dimensions
@@ -375,6 +393,21 @@ public:
                       const std::string& reply_event_id = "",
                       const std::string& thread_root = std::string{});
 
+    /// Non-blocking video send. Spawns the upload as a tokio task; result
+    /// delivered via IEventHandler::on_upload_complete.
+    void send_video_async(std::uint64_t request_id,
+                          const std::string& room_id,
+                          const std::vector<uint8_t>& bytes,
+                          const std::string& mime_type,
+                          const std::string& filename,
+                          const std::string& caption,
+                          std::uint32_t width, std::uint32_t height,
+                          const std::vector<uint8_t>& thumb_bytes,
+                          std::uint32_t thumb_width, std::uint32_t thumb_height,
+                          std::uint64_t duration_ms,
+                          const std::string& reply_event_id = "",
+                          const std::string& thread_root = std::string{});
+
     /// Send an audio file to `room_id` as a plain `m.audio` event (not an
     /// MSC3245 voice message). `duration_ms` populates `info.duration` (pass
     /// 0 when unknown). `caption`/`reply_event_id` follow the same MSC2530 /
@@ -390,6 +423,18 @@ public:
                       const std::string& reply_event_id = "",
                       const std::string& thread_root = std::string{});
 
+    /// Non-blocking audio send. Spawns the upload as a tokio task; result
+    /// delivered via IEventHandler::on_upload_complete.
+    void send_audio_async(std::uint64_t request_id,
+                          const std::string& room_id,
+                          const std::vector<uint8_t>& bytes,
+                          const std::string& mime_type,
+                          const std::string& filename,
+                          const std::string& caption,
+                          std::uint64_t duration_ms,
+                          const std::string& reply_event_id = "",
+                          const std::string& thread_root = std::string{});
+
     /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes` is
     /// the raw file payload (no re-encoding); `mime_type` is best-effort —
     /// "application/octet-stream" is acceptable when unknown. When `caption`
@@ -404,6 +449,17 @@ public:
                      const std::string& caption,
                      const std::string& reply_event_id = "",
                      const std::string& thread_root = std::string{});
+
+    /// Non-blocking file send. Spawns the upload as a tokio task; result
+    /// delivered via IEventHandler::on_upload_complete.
+    void send_file_async(std::uint64_t request_id,
+                         const std::string& room_id,
+                         const std::vector<uint8_t>& bytes,
+                         const std::string& mime_type,
+                         const std::string& filename,
+                         const std::string& caption,
+                         const std::string& reply_event_id = "",
+                         const std::string& thread_root = std::string{});
 
     /// Encode `pcm_size` bytes of 48kHz/16-bit/mono PCM as an Opus/OGG voice
     /// message and send it to `room_id` as an MSC3245 m.audio event.
@@ -830,11 +886,20 @@ public:
     /// a worker thread.
     std::string join_room(const std::string& room_id_or_alias);
 
+    /// Non-blocking join. Spawns the join as a tokio task; result delivered
+    /// via IEventHandler::on_room_action_complete.
+    void join_room_async(std::uint64_t request_id,
+                         const std::string& room_id_or_alias);
+
     /// Leave a room. Blocks the calling thread — call from a worker thread.
     Result leave_room(const std::string& room_id);
 
-    /// Invite user_id to room_id. Blocks the calling thread — call from a worker thread.
-    Result invite_user(const std::string& room_id, const std::string& user_id);
+    /// Non-blocking leave. Spawns the leave as a tokio task; result delivered
+    /// via IEventHandler::on_room_action_complete.
+    void leave_room_async(std::uint64_t request_id, const std::string& room_id);
+
+    /// Non-blocking invite. Fire-and-forget; no callback.
+    void invite_user_async(const std::string& room_id, const std::string& user_id);
 
     /// Fetch the joined member list for a room.
     /// Blocks the calling thread — call from a worker thread.

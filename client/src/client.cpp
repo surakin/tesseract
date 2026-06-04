@@ -219,23 +219,27 @@ std::vector<InviteInfo> Client::list_invites() const
     return ffi_vec<InviteInfo>(impl_->ffi->list_invites());
 }
 
-Result Client::accept_invite(const std::string& room_id)
+void Client::accept_invite_async(std::uint64_t request_id,
+                                  const std::string& room_id)
 {
-    MUT_FFI;
-    return from_ffi(impl_->ffi->accept_invite(room_id));
+    if (!impl_)
+        return;
+    impl_->ffi->accept_invite_async(request_id, room_id);
 }
 
-Result Client::decline_invite(const std::string& room_id)
+void Client::decline_invite_async(const std::string& room_id)
 {
-    MUT_FFI;
-    return from_ffi(impl_->ffi->decline_invite(room_id));
+    if (!impl_)
+        return;
+    impl_->ffi->decline_invite_async(room_id);
 }
 
-Result Client::block_invite(const std::string& room_id,
-                            const std::string& inviter_user_id)
+void Client::block_invite_async(const std::string& room_id,
+                                 const std::string& inviter_user_id)
 {
-    MUT_FFI;
-    return from_ffi(impl_->ffi->block_invite(room_id, inviter_user_id));
+    if (!impl_)
+        return;
+    impl_->ffi->block_invite_async(room_id, inviter_user_id);
 }
 
 Result Client::subscribe_room(const std::string& room_id)
@@ -261,6 +265,24 @@ PaginateResult Client::paginate_back_with_status(const std::string& room_id,
     return from_ffi(impl_->ffi->paginate_back_with_status(room_id, count));
 }
 
+void Client::paginate_back_async(std::uint64_t request_id,
+                                 const std::string& room_id,
+                                 std::uint16_t count)
+{
+    if (!impl_)
+        return;
+    impl_->ffi->paginate_back_async(request_id, room_id, count);
+}
+
+void Client::paginate_forward_async(std::uint64_t request_id,
+                                    const std::string& room_id,
+                                    std::uint16_t count)
+{
+    if (!impl_)
+        return;
+    impl_->ffi->paginate_forward_async(request_id, room_id, count);
+}
+
 Result Client::timestamp_to_event(const std::string& room_id, uint64_t ts_ms,
                                   const std::string& dir)
 {
@@ -281,17 +303,6 @@ Result Client::subscribe_room_at(const std::string& room_id,
         return {false, "client not initialised"};
     }
     return from_ffi(impl_->ffi->subscribe_room_at(room_id, focus_event_id));
-}
-
-PaginateResult Client::paginate_forward(const std::string& room_id,
-                                        std::uint16_t count)
-{
-    MUT_FFI;
-    if (!impl_)
-    {
-        return {};
-    }
-    return from_ffi(impl_->ffi->paginate_forward(room_id, count));
 }
 
 Result Client::subscribe_thread(const std::string& room_id,
@@ -476,6 +487,80 @@ Client::send_file(const std::string& room_id, const std::vector<uint8_t>& bytes,
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_file(room_id, slice, mime_type, filename,
                                           caption, reply_event_id, thread_root));
+}
+
+void Client::send_image_async(std::uint64_t request_id,
+                               const std::string& room_id,
+                               const std::vector<uint8_t>& bytes,
+                               const std::string& mime_type,
+                               const std::string& filename,
+                               const std::string& caption,
+                               std::uint32_t width, std::uint32_t height,
+                               bool is_animated,
+                               const std::string& reply_event_id,
+                               const std::string& thread_root)
+{
+    if (!impl_) return;
+    rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
+    impl_->ffi->send_image_async(request_id, room_id, slice, mime_type,
+                                  filename, caption, width, height, is_animated,
+                                  reply_event_id, thread_root);
+}
+
+void Client::send_video_async(std::uint64_t request_id,
+                               const std::string& room_id,
+                               const std::vector<uint8_t>& bytes,
+                               const std::string& mime_type,
+                               const std::string& filename,
+                               const std::string& caption,
+                               std::uint32_t width, std::uint32_t height,
+                               const std::vector<uint8_t>& thumb_bytes,
+                               std::uint32_t thumb_width,
+                               std::uint32_t thumb_height,
+                               std::uint64_t duration_ms,
+                               const std::string& reply_event_id,
+                               const std::string& thread_root)
+{
+    if (!impl_) return;
+    rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
+    rust::Slice<const std::uint8_t> thumb_slice{thumb_bytes.data(),
+                                                thumb_bytes.size()};
+    impl_->ffi->send_video_async(request_id, room_id, slice, mime_type,
+                                  filename, caption, width, height, thumb_slice,
+                                  thumb_width, thumb_height, duration_ms,
+                                  reply_event_id, thread_root);
+}
+
+void Client::send_audio_async(std::uint64_t request_id,
+                               const std::string& room_id,
+                               const std::vector<uint8_t>& bytes,
+                               const std::string& mime_type,
+                               const std::string& filename,
+                               const std::string& caption,
+                               std::uint64_t duration_ms,
+                               const std::string& reply_event_id,
+                               const std::string& thread_root)
+{
+    if (!impl_) return;
+    rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
+    impl_->ffi->send_audio_async(request_id, room_id, slice, mime_type,
+                                  filename, caption, duration_ms,
+                                  reply_event_id, thread_root);
+}
+
+void Client::send_file_async(std::uint64_t request_id,
+                              const std::string& room_id,
+                              const std::vector<uint8_t>& bytes,
+                              const std::string& mime_type,
+                              const std::string& filename,
+                              const std::string& caption,
+                              const std::string& reply_event_id,
+                              const std::string& thread_root)
+{
+    if (!impl_) return;
+    rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
+    impl_->ffi->send_file_async(request_id, room_id, slice, mime_type,
+                                 filename, caption, reply_event_id, thread_root);
 }
 
 Result Client::send_voice(const std::string& room_id,
@@ -1202,16 +1287,33 @@ std::string Client::join_room(const std::string& room_id_or_alias)
     return std::string(impl_->ffi->join_room(room_id_or_alias));
 }
 
+void Client::join_room_async(std::uint64_t request_id,
+                              const std::string& room_id_or_alias)
+{
+    if (!impl_)
+        return;
+    impl_->ffi->join_room_async(request_id, room_id_or_alias);
+}
+
 Result Client::leave_room(const std::string& room_id)
 {
     MUT_FFI;
     return from_ffi(impl_->ffi->leave_room(room_id));
 }
 
-Result Client::invite_user(const std::string& room_id, const std::string& user_id)
+void Client::leave_room_async(std::uint64_t request_id, const std::string& room_id)
 {
-    MUT_FFI;
-    return from_ffi(impl_->ffi->invite_user(room_id, user_id));
+    if (!impl_)
+        return;
+    impl_->ffi->leave_room_async(request_id, room_id);
+}
+
+void Client::invite_user_async(const std::string& room_id,
+                                const std::string& user_id)
+{
+    if (!impl_)
+        return;
+    impl_->ffi->invite_user_async(room_id, user_id);
 }
 
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)

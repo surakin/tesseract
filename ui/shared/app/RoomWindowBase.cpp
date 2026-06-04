@@ -381,19 +381,19 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                                std::string reply_event_id)
     {
         if (room_id_.empty() || !shell_->client_)
-        {
             return;
-        }
-        tesseract::Result res;
+
+        std::vector<std::uint8_t> send_bytes;
+        std::string send_mime;
+        std::string send_name;
+        std::uint32_t send_w = static_cast<std::uint32_t>(w < 0 ? 0 : w);
+        std::uint32_t send_h = static_cast<std::uint32_t>(h < 0 ? 0 : h);
+
         if (is_animated)
         {
-            // Animated GIF/WebP: send original bytes via the MSC4230 raw path
-            // (re-encoding would flatten the animation to one frame).
-            res = shell_->client_->send_image(
-                room_id_, bytes, mime, filename, caption,
-                static_cast<std::uint32_t>(w < 0 ? 0 : w),
-                static_cast<std::uint32_t>(h < 0 ? 0 : h),
-                /*is_animated=*/true, reply_event_id);
+            send_bytes = std::move(bytes);
+            send_mime  = std::move(mime);
+            send_name  = std::move(filename);
         }
         else
         {
@@ -402,28 +402,25 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 tesseract::Settings::ImageQuality::Compressed;
             auto enc = encode_for_send_(bytes.data(), bytes.size(), compress);
             if (enc.bytes.empty())
-            {
                 return;
-            }
-            std::string out_name = filename;
-            if (enc.mime == "image/jpeg")
+            send_bytes = std::move(enc.bytes);
+            send_mime  = std::move(enc.mime);
+            send_w     = enc.width;
+            send_h     = enc.height;
+            send_name  = std::move(filename);
+            if (send_mime == "image/jpeg")
             {
-                auto dot = out_name.find_last_of('.');
+                auto dot = send_name.find_last_of('.');
                 if (dot != std::string::npos)
-                {
-                    out_name = out_name.substr(0, dot);
-                }
-                out_name += ".jpg";
+                    send_name = send_name.substr(0, dot);
+                send_name += ".jpg";
             }
-            res = shell_->client_->send_image(room_id_, enc.bytes, enc.mime,
-                                              out_name, caption, enc.width,
-                                              enc.height, /*is_animated=*/false,
-                                              reply_event_id);
         }
-        if (res)
-        {
-            clear_composer();
-        }
+
+        clear_composer();
+        shell_->client_->send_image_async(0, room_id_, send_bytes, send_mime,
+                                          send_name, caption, send_w, send_h,
+                                          is_animated, reply_event_id);
     };
     rv->on_send_video =
         [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
@@ -434,20 +431,15 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                                std::string reply_event_id)
     {
         if (room_id_.empty() || !shell_->client_)
-        {
             return;
-        }
-        auto res = shell_->client_->send_video(
-            room_id_, bytes, mime, filename, caption,
+        clear_composer();
+        shell_->client_->send_video_async(
+            0, room_id_, bytes, mime, filename, caption,
             static_cast<std::uint32_t>(w < 0 ? 0 : w),
             static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
             static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
             static_cast<std::uint32_t>(thumb_h < 0 ? 0 : thumb_h), duration_ms,
             reply_event_id);
-        if (res)
-        {
-            clear_composer();
-        }
     };
     rv->on_send_audio =
         [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
@@ -456,16 +448,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                                std::string reply_event_id)
     {
         if (room_id_.empty() || !shell_->client_)
-        {
             return;
-        }
-        auto res = shell_->client_->send_audio(room_id_, bytes, mime, filename,
-                                               caption, duration_ms,
-                                               reply_event_id);
-        if (res)
-        {
-            clear_composer();
-        }
+        clear_composer();
+        shell_->client_->send_audio_async(0, room_id_, bytes, mime, filename,
+                                          caption, duration_ms, reply_event_id);
     };
     rv->on_send_file =
         [this, clear_composer](std::vector<std::uint8_t> bytes, std::string mime,
@@ -473,15 +459,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                                std::string reply_event_id)
     {
         if (room_id_.empty() || !shell_->client_)
-        {
             return;
-        }
-        auto res = shell_->client_->send_file(room_id_, bytes, mime, filename,
-                                              caption, reply_event_id);
-        if (res)
-        {
-            clear_composer();
-        }
+        clear_composer();
+        shell_->client_->send_file_async(0, room_id_, bytes, mime, filename,
+                                         caption, reply_event_id);
     };
 
     // Pop-out windows share the shell's singleton capture_ but don't wire
@@ -745,7 +726,12 @@ void RoomWindowBase::send_message_(const std::string& body)
         shell_->invite_user_command_(room_id_, *user);
         return;
     }
-    tesseract::dispatch_compose_send(*shell_->client_, room_id_, body, "");
+    auto* c = shell_->client_;
+    auto rid = room_id_;
+    auto body_copy = body;
+    run_async_mut_([c, rid, body_copy]() mutable {
+        tesseract::dispatch_compose_send(*c, rid, body_copy, "");
+    });
 }
 
 tesseract::Client* RoomWindowBase::shell_client_() const
@@ -778,8 +764,13 @@ void RoomWindowBase::send_message_(const std::string& body,
         shell_->invite_user_command_(room_id_, *user);
         return;
     }
-    tesseract::dispatch_compose_send(
-        *shell_->client_, room_id_, body, formatted_body);
+    auto* c = shell_->client_;
+    auto rid = room_id_;
+    auto body_copy = body;
+    auto fmt_copy = formatted_body;
+    run_async_mut_([c, rid, body_copy, fmt_copy]() mutable {
+        tesseract::dispatch_compose_send(*c, rid, body_copy, fmt_copy);
+    });
 }
 
 void RoomWindowBase::send_reply_(const std::string& reply_event_id,
@@ -789,7 +780,13 @@ void RoomWindowBase::send_reply_(const std::string& reply_event_id,
     {
         return;
     }
-    shell_->client_->send_reply(room_id_, reply_event_id, body);
+    auto* c = shell_->client_;
+    auto rid = room_id_;
+    auto reply_id = reply_event_id;
+    auto body_copy = body;
+    run_async_mut_([c, rid, reply_id, body_copy]() mutable {
+        c->send_reply(rid, reply_id, body_copy);
+    });
 }
 
 void RoomWindowBase::send_edit_(const std::string& event_id,
@@ -799,7 +796,13 @@ void RoomWindowBase::send_edit_(const std::string& event_id,
     {
         return;
     }
-    shell_->client_->send_edit(room_id_, event_id, new_body);
+    auto* c = shell_->client_;
+    auto rid = room_id_;
+    auto eid = event_id;
+    auto body_copy = new_body;
+    run_async_mut_([c, rid, eid, body_copy]() mutable {
+        c->send_edit(rid, eid, body_copy);
+    });
 }
 
 void RoomWindowBase::delete_event_(const std::string& event_id)
@@ -808,7 +811,12 @@ void RoomWindowBase::delete_event_(const std::string& event_id)
     {
         return;
     }
-    shell_->client_->redact_event(room_id_, event_id);
+    auto* c = shell_->client_;
+    auto rid = room_id_;
+    auto eid = event_id;
+    run_async_mut_([c, rid, eid]() mutable {
+        c->redact_event(rid, eid);
+    });
 }
 
 void RoomWindowBase::toggle_reaction_(const std::string& event_id,
@@ -819,20 +827,31 @@ void RoomWindowBase::toggle_reaction_(const std::string& event_id,
     {
         return;
     }
+    auto* c = shell_->client_;
+    auto rid = room_id_;
     if (!source_mxc.empty())
     {
         // For MSC4027 chips matrix-sdk aggregates by the mxc:// key (so the
         // incoming `key` IS the mxc URI). Look up the shortcode locally so
         // the outgoing event carries `:shortcode:` rather than the URI; if
         // unknown, send an empty shortcode (MSC4027 allows omitting it).
+        // shortcode_for_mxc_ reads a UI-thread cache — call it now, before
+        // crossing to mut_pool_.
         std::string sc = shell_->shortcode_for_mxc_(source_mxc);
         std::string shortcode =
             sc.empty() ? std::string() : ":" + sc + ":";
-        shell_->client_->send_reaction_custom(room_id_, event_id, source_mxc,
-                                              shortcode);
+        auto mxc = source_mxc;
+        auto eid = event_id;
+        run_async_mut_([c, rid, eid, mxc, shortcode]() mutable {
+            c->send_reaction_custom(rid, eid, mxc, shortcode);
+        });
         return;
     }
-    shell_->client_->send_reaction(room_id_, event_id, key);
+    auto eid = event_id;
+    auto k = key;
+    run_async_mut_([c, rid, eid, k]() mutable {
+        c->send_reaction(rid, eid, k);
+    });
 }
 
 void RoomWindowBase::send_receipt_(const std::string& event_id)

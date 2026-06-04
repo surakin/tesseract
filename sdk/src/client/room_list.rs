@@ -45,91 +45,6 @@ impl ClientFfi {
         Vec::new()
     }
 
-    /// Accept a pending room invitation. Blocks — worker thread.
-    #[cfg(not(test))]
-    pub fn accept_invite(&mut self, room_id: &str) -> OpResult {
-        let _enter = self.rt.enter();
-        let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
-        };
-        let (_, room) = try_op!(require_room(client, room_id));
-        if room.state() != matrix_sdk::RoomState::Invited {
-            return err("room is not in invited state");
-        }
-        // Joining does not populate m.direct, so a DM invite would otherwise
-        // land in the regular room list. Capture the invite's DM flag (from the
-        // stripped m.room.member event) before joining, then persist it.
-        let was_direct = self.rt.block_on(room.is_direct()).unwrap_or(false);
-        match self.rt.block_on(room.join()) {
-            Ok(_) => {
-                if was_direct {
-                    let _ = self.rt.block_on(room.set_is_direct(true));
-                }
-                ok("")
-            }
-            Err(e) => err(e.to_string()),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn accept_invite(&mut self, _room_id: &str) -> OpResult {
-        err("not logged in")
-    }
-
-    /// Decline a pending room invitation. Blocks — worker thread.
-    #[cfg(not(test))]
-    pub fn decline_invite(&mut self, room_id: &str) -> OpResult {
-        let _enter = self.rt.enter();
-        let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
-        };
-        let (_, room) = try_op!(require_room(client, room_id));
-        match self.rt.block_on(room.leave()) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn decline_invite(&mut self, _room_id: &str) -> OpResult {
-        err("not logged in")
-    }
-
-    /// Decline a room invitation and ignore the inviter. Calls `room.leave()`
-    /// then `account().ignore_user(inviter_user_id)`. Blocks — worker thread.
-    #[cfg(not(test))]
-    pub fn block_invite(&mut self, room_id: &str, inviter_user_id: &str) -> OpResult {
-        let _enter = self.rt.enter();
-        if inviter_user_id.is_empty() {
-            return err("inviter_user_id is empty; use decline_invite instead");
-        }
-        let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
-        };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Ok(uid) = matrix_sdk::ruma::UserId::parse(inviter_user_id) else {
-            return err("invalid user id");
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
-        if let Err(e) = self.rt.block_on(room.leave()) {
-            return err(e.to_string());
-        }
-        match self.rt.block_on(client.account().ignore_user(&uid)) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn block_invite(&mut self, _room_id: &str, _inviter_user_id: &str) -> OpResult {
-        err("not logged in")
-    }
-
     pub fn space_children(&self, space_id: &str) -> Vec<String> {
         #[cfg(not(test))]
         {
@@ -299,26 +214,178 @@ impl ClientFfi {
         err("not logged in")
     }
 
-    /// Invite a user to a room. Blocks the calling thread — call from a worker thread.
+    // ------------------------------------------------------------------
+    // Non-blocking async variants — frees the calling C++ thread immediately
+    // ------------------------------------------------------------------
+
     #[cfg(not(test))]
-    pub fn invite_user(&mut self, room_id: &str, user_id: &str) -> OpResult {
-        use matrix_sdk::ruma::UserId;
-        let _enter = self.rt.enter();
-        let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
+    pub fn accept_invite_async(&self, request_id: u64, room_id: &str) {
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+        let room_id_str = room_id.to_owned();
+
+        let deliver = {
+            let handler = handler.clone();
+            move |ok: bool, joined: &str, msg: &str| {
+                if let Some(h) = &handler {
+                    if let Ok(g) = h.lock() {
+                        g.on_room_action_complete(request_id, ok, joined, msg);
+                    }
+                }
+            }
         };
-        let (_, room) = try_op!(require_room(client, room_id));
-        let uid = try_op!(UserId::parse(user_id).map_err(|e| err(e.to_string())));
-        match self.rt.block_on(room.invite_user_by_id(&uid)) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
-        }
+
+        let room_id_parsed: OwnedRoomId = match room_id_str.parse() {
+            Ok(id) => id,
+            Err(e) => { deliver(false, "", &format!("invalid room id: {e}")); return; }
+        };
+
+        self.rt.spawn(async move {
+            let Some(room) = client.get_room(&room_id_parsed) else {
+                deliver(false, "", "room not found");
+                return;
+            };
+            let was_direct = room.is_direct().await.unwrap_or(false);
+            match room.join().await {
+                Ok(_) => {
+                    if was_direct { let _ = room.set_is_direct(true).await; }
+                    deliver(true, &room_id_str, "");
+                }
+                Err(e) => deliver(false, "", &e.to_string()),
+            }
+        });
     }
 
     #[cfg(test)]
-    pub fn invite_user(&mut self, _room_id: &str, _user_id: &str) -> OpResult {
-        err("not logged in")
+    pub fn accept_invite_async(&self, _request_id: u64, _room_id: &str) {}
+
+    #[cfg(not(test))]
+    pub fn decline_invite_async(&self, room_id: &str) {
+        let Some(client) = self.client.clone() else { return; };
+        let room_id_parsed: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+        self.rt.spawn(async move {
+            if let Some(room) = client.get_room(&room_id_parsed) {
+                let _ = room.leave().await;
+            }
+        });
     }
+
+    #[cfg(test)]
+    pub fn decline_invite_async(&self, _room_id: &str) {}
+
+    #[cfg(not(test))]
+    pub fn block_invite_async(&self, room_id: &str, inviter_user_id: &str) {
+        let Some(client) = self.client.clone() else { return; };
+        let room_id_parsed: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(inviter_user_id) else { return; };
+        self.rt.spawn(async move {
+            if let Some(room) = client.get_room(&room_id_parsed) {
+                let _ = room.leave().await;
+            }
+            let _ = client.account().ignore_user(&uid).await;
+        });
+    }
+
+    #[cfg(test)]
+    pub fn block_invite_async(&self, _room_id: &str, _inviter_user_id: &str) {}
+
+    #[cfg(not(test))]
+    pub fn join_room_async(&self, request_id: u64, room_id_or_alias: &str) {
+        use matrix_sdk::ruma::OwnedRoomOrAliasId;
+
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+        let id_str = room_id_or_alias.to_owned();
+        let stop_rx = self.stop_rx.clone();
+
+        let deliver = move |ok: bool, joined: &str, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() {
+                    g.on_room_action_complete(request_id, ok, joined, msg);
+                }
+            }
+        };
+
+        let id: OwnedRoomOrAliasId = match id_str.as_str().try_into() {
+            Ok(id) => id,
+            Err(_) => { deliver(false, "", "invalid room id or alias"); return; }
+        };
+
+        self.rt.spawn(async move {
+            let result = tokio::select! {
+                r = client.join_room_by_id_or_alias(&id, &[]) => {
+                    r.ok().map(|r| r.room_id().to_string())
+                }
+                _ = stop_fut(stop_rx) => None,
+            };
+            match result {
+                Some(joined_id) => deliver(true, &joined_id, ""),
+                None => deliver(false, "", "join failed or cancelled"),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn join_room_async(&self, _request_id: u64, _room_id_or_alias: &str) {}
+
+    #[cfg(not(test))]
+    pub fn leave_room_async(&self, request_id: u64, room_id: &str) {
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+        let room_id_str = room_id.to_owned();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                if let Ok(g) = h.lock() {
+                    g.on_room_action_complete(request_id, ok, "", msg);
+                }
+            }
+        };
+
+        let room_id_parsed: OwnedRoomId = match room_id_str.parse() {
+            Ok(id) => id,
+            Err(e) => { deliver(false, &format!("invalid room id: {e}")); return; }
+        };
+
+        self.rt.spawn(async move {
+            let Some(room) = client.get_room(&room_id_parsed) else {
+                deliver(false, "room not found");
+                return;
+            };
+            match room.leave().await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn leave_room_async(&self, _request_id: u64, _room_id: &str) {}
+
+    #[cfg(not(test))]
+    pub fn invite_user_async(&self, room_id: &str, user_id: &str) {
+        use matrix_sdk::ruma::UserId;
+        let Some(client) = self.client.clone() else { return; };
+        let room_id_parsed: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+        let Ok(uid) = UserId::parse(user_id) else { return; };
+        self.rt.spawn(async move {
+            if let Some(room) = client.get_room(&room_id_parsed) {
+                let _ = room.invite_user_by_id(&uid).await;
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn invite_user_async(&self, _room_id: &str, _user_id: &str) {}
 
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]
