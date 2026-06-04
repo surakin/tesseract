@@ -930,6 +930,15 @@ tk::Rect RoomView::compose_text_area_rect() const
     return compose_bar_ ? compose_bar_->text_area_rect() : tk::Rect{};
 }
 
+tk::Rect RoomView::compose_bar_rect() const
+{
+    // Full compose-bar bounds in surface space (used to anchor the full-width
+    // GIF strip just above the bar). Empty when no room is active.
+    if (!has_room_)
+        return {};
+    return compose_bar_ ? compose_bar_->bounds() : tk::Rect{};
+}
+
 // ── Panel convenience setters ─────────────────────────────────────────────
 
 void RoomView::set_room_members(std::vector<tesseract::RoomMember> members)

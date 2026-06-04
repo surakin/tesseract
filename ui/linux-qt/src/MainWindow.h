@@ -427,6 +427,7 @@ private:
     // Decoded first-frame previews for the strip, keyed by Tenor preview URL.
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
     std::unordered_set<std::string> gif_preview_inflight_;
+    std::unordered_set<std::string> gif_anim_inflight_;
     std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
     void show_gif_popup_();
     void hide_gif_popup_();

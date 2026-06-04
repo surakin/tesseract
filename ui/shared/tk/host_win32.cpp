@@ -1,4 +1,5 @@
 #include "host_win32.h"
+#include "anim_image_cache.h"
 #include "canvas_d2d.h"
 #include "controls.h"
 
@@ -3047,7 +3048,7 @@ make_video_player_win32(std::function<void(std::function<void()>)> post,
 //  Host — owns the tree, paints into the d2d::Surface, dispatches input
 // ─────────────────────────────────────────────────────────────────────────
 
-class Host : public tk::Host
+class Host : public tk::Host, public tk::AnimDamageSink
 {
 public:
     Host(HWND hwnd, const Theme& theme, bool transparent = false)
@@ -3063,6 +3064,34 @@ public:
         if (hwnd_)
         {
             InvalidateRect(hwnd_, nullptr, FALSE);
+        }
+    }
+
+    void set_anim_cache(const tk::AnimImageCache* cache)
+    {
+        anim_cache_ = cache;
+    }
+
+    // AnimDamageSink: record animated-image rects drawn during this paint.
+    void note_image(const std::string& key, tk::Rect world) override
+    {
+        if (anim_cache_ && anim_cache_->has(key))
+            anim_damage_.push_back(world);
+    }
+
+    // Invalidate just the rects that contain animated images from the last paint.
+    void invalidate_anim_damage()
+    {
+        if (!hwnd_ || anim_damage_.empty())
+            return;
+        for (const auto& r : anim_damage_)
+        {
+            RECT rc;
+            rc.left   = static_cast<LONG>(std::floor(r.x)) - 1;
+            rc.top    = static_cast<LONG>(std::floor(r.y)) - 1;
+            rc.right  = static_cast<LONG>(std::ceil(r.x + r.w)) + 1;
+            rc.bottom = static_cast<LONG>(std::ceil(r.y + r.h)) + 1;
+            InvalidateRect(hwnd_, &rc, FALSE);
         }
     }
 
@@ -3456,7 +3485,8 @@ public:
         if (root_)
         {
             pending_popup_ = nullptr;
-            PaintCtx ctx{canvas, *factory_, *theme_, nullptr, this};
+            anim_damage_.clear();
+            PaintCtx ctx{canvas, *factory_, *theme_, this, this};
             root_->paint(ctx);
             popup_ = pending_popup_;
             root_->paint_overlay(ctx);
@@ -3664,6 +3694,8 @@ private:
     Button* hovered_btn_ = nullptr;
     Widget* hovered_widget_ = nullptr;
     HCURSOR current_cursor_ = LoadCursorW(nullptr, IDC_ARROW);
+    const tk::AnimImageCache* anim_cache_ = nullptr;
+    std::vector<tk::Rect> anim_damage_;
 
     int next_ctrl_id_ = 0x4000;
     std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
@@ -4346,6 +4378,16 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::set_anim_cache(const tk::AnimImageCache* cache)
+{
+    host_->set_anim_cache(cache);
+}
+
+void Surface::update_anim_regions()
+{
+    host_->invalidate_anim_damage();
 }
 
 void Surface::set_on_layout(std::function<void()> cb)

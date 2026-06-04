@@ -1463,12 +1463,21 @@ void Surface::mousePressEvent(QMouseEvent* e)
     if (e->button() == Qt::LeftButton)
     {
         host_->on_pointer_down(pt);
+        // Accept so Qt sets the implicit mouse grab on this surface: without
+        // accepting, Qt propagates the press to the parent and the implicit
+        // grab is not assigned here, meaning the corresponding release event
+        // goes to a different widget and on_pointer_up is never called.
+        e->accept();
     }
     else if (e->button() == Qt::RightButton)
     {
         host_->on_right_click(pt);
+        e->accept();
     }
-    QWidget::mousePressEvent(e);
+    else
+    {
+        QWidget::mousePressEvent(e);
+    }
 }
 
 void Surface::mouseReleaseEvent(QMouseEvent* e)

@@ -1472,6 +1472,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
         gif_popup_frame_, /*transparent=*/false);
     gif_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    gif_popup_surface_->set_anim_cache(&anim_cache_);
     {
         auto w = std::make_unique<tesseract::views::GifPopup>();
         gif_popup_widget_ = w.get();
@@ -1481,17 +1482,26 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         lay->setSpacing(0);
         lay->addWidget(gif_popup_surface_.get());
     }
-    // Strip preview provider: decode each Tenor preview URL's first frame on a
-    // worker thread, cache by URL, and repaint when it lands.
+    // Strip preview provider: two-stage loading.
+    // Stage 1 — preview_url (static JPEG, fast): shown immediately as fallback.
+    // Stage 2 — image_url (animated WebP/GIF): replaces static once decoded.
     gif_popup_widget_->set_image_provider(
-        [this](const std::string& url) -> const tk::Image*
+        [this](const tesseract::GifResult& result) -> const tk::Image*
         {
-            auto it = gif_previews_.find(url);
-            if (it != gif_previews_.end())
-                return it->second.get();
-            if (gif_preview_inflight_.insert(url).second)
+            // Animated frame takes priority over static fallback.
+            if (const tk::Image* f = anim_cache_.current_frame(result.image_url))
+                return f;
+            // Static JPEG fallback.
+            {
+                auto it = gif_previews_.find(result.preview_url);
+                if (it != gif_previews_.end())
+                    return it->second.get();
+            }
+            // Kick off static preview fetch (fast, shown immediately).
+            if (gif_preview_inflight_.insert(result.preview_url).second)
             {
                 auto alive = gif_alive_;
+                auto url = result.preview_url;
                 run_async_(
                     [this, url, alive]
                     {
@@ -1506,21 +1516,54 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                 gif_preview_inflight_.erase(url);
                                 if (b.empty())
                                     return;
-                                QByteArray qb(
-                                    reinterpret_cast<const char*>(b.data()),
-                                    static_cast<int>(b.size()));
-                                QBuffer buf(&qb);
-                                buf.open(QIODevice::ReadOnly);
-                                QImageReader reader(&buf);
-                                reader.setAutoTransform(true);
-                                QImage frame = reader.read(); // first frame
-                                if (frame.isNull())
+                                using CW = tesseract::views::GifPopup;
+                                DecodedImage d = decode_image_(
+                                    b, int(CW::kCellW) * 2, int(CW::kCellH) * 2);
+                                if (d.still)
+                                    gif_previews_[url] = std::move(d.still);
+                                if (gif_popup_surface_)
+                                    gif_popup_surface_->update();
+                            });
+                    });
+            }
+            // Kick off animated image fetch (image_url = animated WebP/GIF).
+            if (gif_anim_inflight_.insert(result.image_url).second)
+            {
+                auto alive = gif_alive_;
+                auto anim_url = result.image_url;
+                run_async_(
+                    [this, anim_url, alive]
+                    {
+                        std::vector<std::uint8_t> bytes =
+                            client_ ? client_->fetch_url_bytes(anim_url)
+                                    : std::vector<std::uint8_t>{};
+                        post_to_ui_(
+                            [this, anim_url, b = std::move(bytes),
+                             alive]() mutable
+                            {
+                                if (!*alive)
                                     return;
-                                if (frame.format() != QImage::Format_RGBA8888)
-                                    frame = frame.convertToFormat(
-                                        QImage::Format_RGBA8888);
-                                gif_previews_[url] =
-                                    tk::qt6::make_image(std::move(frame));
+                                gif_anim_inflight_.erase(anim_url);
+                                if (b.empty())
+                                    return;
+                                using CW = tesseract::views::GifPopup;
+                                DecodedImage d = decode_image_(
+                                    b, int(CW::kCellW) * 2, int(CW::kCellH) * 2);
+                                if (!d.frames.empty())
+                                {
+                                    anim_cache_.store(
+                                        anim_url, std::move(d.frames),
+                                        std::move(d.delays_ms),
+                                        QDateTime::currentMSecsSinceEpoch());
+                                    if (tk_anim_timer_ &&
+                                        !tk_anim_timer_->isActive())
+                                        tk_anim_timer_->start();
+                                }
+                                else if (d.still)
+                                {
+                                    // image_url was non-animated; treat as static.
+                                    gif_previews_[anim_url] = std::move(d.still);
+                                }
                                 if (gif_popup_surface_)
                                     gif_popup_surface_->update();
                             });
@@ -3669,6 +3712,10 @@ void MainWindow::repaint_anim_frame_()
     {
         mainAppSurface_->update_anim_regions();
     }
+    if (gif_popup_surface_ && gif_popup_frame_ && gif_popup_frame_->isVisible())
+    {
+        gif_popup_surface_->update_anim_regions();
+    }
     if (emojiPicker_ && emojiPicker_->isVisible())
     {
         emojiPicker_->invalidateImages();
@@ -5133,28 +5180,22 @@ void MainWindow::show_gif_popup_()
     {
         return;
     }
-    // Clamp the strip to the window width (overflow scrolls with the
-    // selection); content_size() also sizes the status-message row, so the
-    // empty-result case is handled by the {0,0} return below.
-    const float avail = std::max(0.0f, float(rect().width()) - 16.0f);
-    const tk::Size sz = gif_popup_widget_->content_size(avail);
-    if (sz.w <= 0.0f || sz.h <= 0.0f)
+    // Full-width strip spanning the compose bar, floating just above it (like
+    // the attachment preview band). content_size() drives only the height and
+    // the empty/status check; the width comes from the compose bar.
+    const tk::Rect cb = room_view_ ? room_view_->compose_bar_rect() : tk::Rect{};
+    const tk::Size sz = gif_popup_widget_->content_size(cb.w);
+    if (cb.w <= 0.0f || sz.h <= 0.0f)
     {
         hide_gif_popup_();
         return;
     }
-    int w = std::max(1, int(sz.w));
+    int w = std::max(1, int(cb.w));
     int h = std::max(1, int(sz.h));
 
-    tk::Rect cur = roomTextArea_->cursor_rect();
-    QPoint anchor =
-        mainAppSurface_->mapTo(this, QPoint(int(cur.x), int(cur.y)));
-    QRect work = rect();
-    int x = std::clamp(anchor.x(), work.left(),
-                       std::max(work.left(), work.right() - w));
-    int y_above = anchor.y() - h - 4;
-    int y = (y_above >= work.top()) ? y_above : anchor.y() + int(cur.h) + 4;
-    y = std::clamp(y, work.top(), std::max(work.top(), work.bottom() - h));
+    QPoint tl = mainAppSurface_->mapTo(this, QPoint(int(cb.x), int(cb.y)));
+    int x = tl.x();
+    int y = tl.y() - h - 4; // bottom edge sits just above the compose bar top
 
     gif_popup_frame_->setGeometry(x, y, w, h);
     gif_popup_surface_->resize(w, h);

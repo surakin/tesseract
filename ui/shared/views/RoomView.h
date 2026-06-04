@@ -109,6 +109,10 @@ public:
     // Valid after the first arrange() pass.
     tk::Rect compose_text_area_rect() const;
 
+    // Surface-space rect of the full compose bar (used to anchor the full-width
+    // GIF strip just above it). Valid after the first arrange() pass.
+    tk::Rect compose_bar_rect() const;
+
     // ── Historical-mode helpers (forwarded to MessageListView) ──────────
 
     // Toggle historical display mode (pill stays visible; clicking it

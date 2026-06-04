@@ -193,6 +193,12 @@ void GifController::accept(const tesseract::GifResult& gif)
     // would read freed memory and yield an all-empty GifResult.
     const tesseract::GifResult g = gif;
 
+    // Use the user's typed search query as the event body/filename (what other
+    // clients display) instead of a generic "gif.webp". Captured before hide()
+    // since pending_query_ is unaffected, but copy for the async closure.
+    const std::string body =
+        pending_query_.empty() ? std::string("gif") : pending_query_;
+
     hide(); // dismiss the strip immediately; the upload runs in the background
     auto alive = alive_;
     auto post_to_ui = hooks_.post_to_ui;
@@ -225,7 +231,7 @@ void GifController::accept(const tesseract::GifResult& gif)
             });
     };
     hooks_.run_async(
-        [client, room, g, report]
+        [client, room, g, body, report]
         {
             std::vector<std::uint8_t> bytes = client->fetch_gif_bytes(g.image_url);
             if (bytes.empty())
@@ -236,11 +242,9 @@ void GifController::accept(const tesseract::GifResult& gif)
             // Send the animated form as an m.image (autoplay/loop via the
             // fi.mau.gif hint). Routes playback through the image/animation
             // decoder instead of the video pipeline. send_image encrypts the
-            // bytes itself in E2EE rooms.
-            const std::string filename =
-                (g.image_mime == "image/webp") ? "gif.webp" : "gif.gif";
+            // bytes itself in E2EE rooms. The body is the user's search query.
             tesseract::Result r = client->send_image(
-                room, bytes, g.image_mime, filename, /*caption*/ "",
+                room, bytes, g.image_mime, body, /*caption*/ "",
                 g.image_w, g.image_h, /*is_animated*/ true,
                 /*reply*/ "", /*thread*/ "");
             if (!r.ok)

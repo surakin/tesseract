@@ -445,6 +445,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)showGifPopup;
 - (void)hideGifPopup;
 - (BOOL)gifPopupVisible;
+- (void)repaintGifPopupAnimRegions;
 - (void)_relayoutMentionPopupIfVisible;
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
@@ -1175,6 +1176,10 @@ void MacShell::repaint_anim_frame_()
     {
         [panel invalidateImageCache];
     }
+    if (ctrl_)
+    {
+        [ctrl_ repaintGifPopupAnimRegions];
+    }
 }
 
 void MacShell::repaint_pickers_()
@@ -1602,6 +1607,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::unique_ptr<tesseract::views::GifController> _gifController;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> _gifPreviews;
     std::unordered_set<std::string> _gifPreviewInflight;
+    std::unordered_set<std::string> _gifAnimInflight;
     std::shared_ptr<bool> _gifAlive;
 
     // AppKit chrome.
@@ -3043,62 +3049,127 @@ void MacShell::set_compose_draft_(const std::string& draft)
             auto gw = std::make_unique<tesseract::views::GifPopup>();
             _gifPopupWidget = gw.get();
             _gifPopupSurface->set_root(std::move(gw));
+            _gifPopupSurface->set_anim_cache(&_shell->anim_cache_);
             [_gifPanel setContentView:(__bridge NSView*)
                                           _gifPopupSurface->view_handle()];
             _gifAlive = std::make_shared<bool>(true);
 
             __weak MainWindowController* gc = self;
             _gifPopupWidget->set_image_provider(
-                [gc](const std::string& url) -> const tk::Image*
+                [gc](const tesseract::GifResult& result) -> const tk::Image*
                 {
                     MainWindowController* c = gc;
                     if (!c)
                         return nullptr;
-                    auto it = c->_gifPreviews.find(url);
-                    if (it != c->_gifPreviews.end())
-                        return it->second.get();
-                    if (!c->_gifPreviewInflight.insert(url).second)
-                        return nullptr;
-                    auto alive = c->_gifAlive;
                     MacShell* shell = c->_shell.get();
-                    shell->run_async_(
-                        [gc, url, alive, shell]
-                        {
-                            std::vector<std::uint8_t> bytes =
-                                shell->client_
-                                    ? shell->client_->fetch_url_bytes(url)
-                                    : std::vector<std::uint8_t>{};
-                            shell->post_to_ui_(
-                                [gc, url, b = std::move(bytes), alive]() mutable
-                                {
-                                    if (!*alive)
-                                        return;
-                                    MainWindowController* c2 = gc;
-                                    if (!c2)
-                                        return;
-                                    c2->_gifPreviewInflight.erase(url);
-                                    if (b.empty())
-                                        return;
-                                    NSData* d = [NSData dataWithBytes:b.data()
-                                                              length:b.size()];
-                                    CGImageSourceRef src =
-                                        CGImageSourceCreateWithData(
-                                            (__bridge CFDataRef)d, nullptr);
-                                    if (!src)
-                                        return;
-                                    CGImageRef cg =
-                                        CGImageSourceCreateImageAtIndex(
-                                            src, 0, nullptr);
-                                    CFRelease(src);
-                                    if (!cg)
-                                        return;
-                                    c2->_gifPreviews[url] =
-                                        tk::cg::make_image(cg);
-                                    CGImageRelease(cg);
-                                    if (c2->_gifPopupSurface)
-                                        c2->_gifPopupSurface->relayout();
-                                });
-                        });
+                    // Animated frame takes priority.
+                    if (const tk::Image* f =
+                            shell->anim_cache_.current_frame(result.image_url))
+                        return f;
+                    // Static JPEG fallback.
+                    {
+                        auto it = c->_gifPreviews.find(result.preview_url);
+                        if (it != c->_gifPreviews.end())
+                            return it->second.get();
+                    }
+                    // Kick off static preview fetch.
+                    if (c->_gifPreviewInflight.insert(result.preview_url).second)
+                    {
+                        auto alive = c->_gifAlive;
+                        auto url = result.preview_url;
+                        shell->run_async_(
+                            [gc, url, alive, shell]
+                            {
+                                std::vector<std::uint8_t> bytes =
+                                    shell->client_
+                                        ? shell->client_->fetch_url_bytes(url)
+                                        : std::vector<std::uint8_t>{};
+                                shell->post_to_ui_(
+                                    [gc, url, b = std::move(bytes),
+                                     alive]() mutable
+                                    {
+                                        if (!*alive)
+                                            return;
+                                        MainWindowController* c2 = gc;
+                                        if (!c2)
+                                            return;
+                                        c2->_gifPreviewInflight.erase(url);
+                                        if (b.empty())
+                                            return;
+                                        NSData* d =
+                                            [NSData dataWithBytes:b.data()
+                                                          length:b.size()];
+                                        CGImageSourceRef src =
+                                            CGImageSourceCreateWithData(
+                                                (__bridge CFDataRef)d, nullptr);
+                                        if (!src)
+                                            return;
+                                        CGImageRef cg =
+                                            CGImageSourceCreateImageAtIndex(
+                                                src, 0, nullptr);
+                                        CFRelease(src);
+                                        if (!cg)
+                                            return;
+                                        c2->_gifPreviews[url] =
+                                            tk::cg::make_image(cg);
+                                        CGImageRelease(cg);
+                                        if (c2->_gifPopupSurface)
+                                            c2->_gifPopupSurface->relayout();
+                                    });
+                            });
+                    }
+                    // Kick off animated image fetch.
+                    if (c->_gifAnimInflight.insert(result.image_url).second)
+                    {
+                        auto alive = c->_gifAlive;
+                        auto anim_url = result.image_url;
+                        shell->run_async_(
+                            [gc, anim_url, alive, shell]
+                            {
+                                std::vector<std::uint8_t> bytes =
+                                    shell->client_
+                                        ? shell->client_->fetch_url_bytes(
+                                              anim_url)
+                                        : std::vector<std::uint8_t>{};
+                                shell->post_to_ui_(
+                                    [gc, anim_url, b = std::move(bytes),
+                                     alive, shell]() mutable
+                                    {
+                                        if (!*alive)
+                                            return;
+                                        MainWindowController* c2 = gc;
+                                        if (!c2)
+                                            return;
+                                        c2->_gifAnimInflight.erase(anim_url);
+                                        if (b.empty())
+                                            return;
+                                        using CW = tesseract::views::GifPopup;
+                                        MacShell::DecodedImage d =
+                                            shell->decode_image_(
+                                                b, int(CW::kCellW) * 2,
+                                                int(CW::kCellH) * 2);
+                                        if (!d.frames.empty())
+                                        {
+                                            const std::int64_t now =
+                                                static_cast<std::int64_t>(
+                                                    [[NSDate date]
+                                                        timeIntervalSince1970] *
+                                                    1000.0);
+                                            shell->anim_cache_.store(
+                                                anim_url, std::move(d.frames),
+                                                std::move(d.delays_ms), now);
+                                            [c2 _startAnimTickIfNeeded];
+                                        }
+                                        else if (d.still)
+                                        {
+                                            c2->_gifPreviews[anim_url] =
+                                                std::move(d.still);
+                                        }
+                                        if (c2->_gifPopupSurface)
+                                            c2->_gifPopupSurface->relayout();
+                                    });
+                            });
+                    }
                     return nullptr;
                 });
 
@@ -4566,25 +4637,30 @@ void MacShell::set_compose_draft_(const std::string& draft)
     return _gifPanel && _gifPanel.isVisible;
 }
 
+- (void)repaintGifPopupAnimRegions
+{
+    if (_gifPopupSurface && [self gifPopupVisible])
+        _gifPopupSurface->update_anim_regions();
+}
+
 - (void)showGifPopup
 {
     if (!_gifPanel || !_mainAppSurface || !_gifPopupWidget || !_roomTextArea)
     {
         return;
     }
-    // Clamp the strip to the window width (overflow scrolls with the
-    // selection); content_size() also sizes the status-message row, so the
-    // empty-result case falls out of the {0,0} return below.
+    // Full-width strip spanning the compose bar, floating just above it (like
+    // the attachment preview band). content_size() drives only the height and
+    // the empty/status check; the width comes from the compose bar.
     NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
-    const float avail =
-        std::max(0.0f, float(hostView.bounds.size.width) - 16.0f);
-    const tk::Size sz = _gifPopupWidget->content_size(avail);
-    if (sz.w <= 0.0f || sz.h <= 0.0f)
+    const tk::Rect cb = _roomView ? _roomView->compose_bar_rect() : tk::Rect{};
+    const tk::Size sz = _gifPopupWidget->content_size(cb.w);
+    if (cb.w <= 0.0f || sz.h <= 0.0f)
     {
         [self hideGifPopup];
         return;
     }
-    const CGFloat w = sz.w;
+    const CGFloat w = cb.w;
     const CGFloat h = sz.h;
     [_gifPanel setContentSize:NSMakeSize(w, h)];
     if (_gifPopupSurface)
@@ -4592,17 +4668,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _gifPopupSurface->relayout();
     }
 
-    tk::Rect cursor = _roomTextArea->cursor_rect();
-    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
+    // Anchor on the compose bar's top-left (surface coords); the panel's bottom
+    // sits just above that edge.
+    NSPoint localPt = NSMakePoint(cb.x, cb.y);
     NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
     NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
     NSRect sf = _gifPanel.screen ? _gifPanel.screen.visibleFrame
                                  : [NSScreen mainScreen].visibleFrame;
-    CGFloat y_above = screenPt.y + 4;
-    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - h;
     CGFloat x = screenPt.x;
-    CGFloat y = (y_above + h <= sf.origin.y + sf.size.height) ? y_above
-                                                              : y_below;
+    CGFloat y = screenPt.y + 4;
     x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - w);
     y = std::clamp(y, sf.origin.y, sf.origin.y + sf.size.height - h);
     [_gifPanel setFrameOrigin:NSMakePoint(x, y)];

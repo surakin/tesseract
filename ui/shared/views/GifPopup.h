@@ -25,16 +25,18 @@ public:
     static constexpr float kGap = 4.0f;
     static constexpr float kPad = 6.0f;
     static constexpr float kAttribH = 16.0f;
+    static constexpr float kCardRadius = 8.0f; // matches the compose attachment band
     static constexpr int kMaxCells = 16;
     // Status-row metrics (single-line message mode).
     static constexpr float kStatusH = 22.0f;
     static constexpr float kStatusMinW = 160.0f;
 
-    /// Resolve a result's `preview_url` to a decoded (possibly animated) frame,
-    /// or null while it is still loading. The shell kicks off the fetch on a
-    /// miss and repaints once the bytes land.
+    /// Resolve a result to an image frame (animated or static), or null while
+    /// loading. The shell fetches `result.preview_url` (static JPEG, fast) for
+    /// an immediate placeholder and `result.image_url` (animated WebP/GIF) for
+    /// the animated version, storing each in the appropriate cache.
     using ImageProvider =
-        std::function<const tk::Image*(const std::string& preview_url)>;
+        std::function<const tk::Image*(const tesseract::GifResult&)>;
 
     void set_results(std::vector<tesseract::GifResult> results);
     // Show a one-line status message instead of results (e.g. "No GIFs found",
@@ -88,6 +90,7 @@ public:
     void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
+    bool on_wheel(tk::Point local, float dx, float dy) override;
 
 private:
     int cell_at(tk::Point local) const;
@@ -105,8 +108,8 @@ private:
     int selected_index_ = -1;
     int hovered_index_ = -1;
     int pressed_index_ = -1;
-    float scroll_x_ = 0.0f; // horizontal scroll offset of the cell row
-    tk::Rect bounds_{};
+    float scroll_x_ = 0.0f;     // horizontal scroll offset of the cell row
+    float wheel_carry_ = 0.0f;  // sub-notch accumulator for smooth-scroll devices
 };
 
 } // namespace tesseract::views

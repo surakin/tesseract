@@ -1,4 +1,5 @@
 #include "host_gtk.h"
+#include "anim_image_cache.h"
 #include "canvas_cairo.h"
 #include "controls.h"
 
@@ -934,7 +935,7 @@ private:
 //  Host — owns the widget tree, paints into the GtkDrawingArea
 // ─────────────────────────────────────────────────────────────────────────
 
-class Host : public tk::Host
+class Host : public tk::Host, public tk::AnimDamageSink
 {
 public:
     Host(GtkWidget* overlay, GtkWidget* drawing_area, const Theme& theme,
@@ -950,6 +951,26 @@ public:
         {
             gtk_widget_queue_draw(drawing_area_);
         }
+    }
+
+    void set_anim_cache(const tk::AnimImageCache* cache)
+    {
+        anim_cache_ = cache;
+    }
+
+    // AnimDamageSink: record animated-image rects drawn during this paint.
+    void note_image(const std::string& key, tk::Rect /*world*/) override
+    {
+        if (anim_cache_ && anim_cache_->has(key))
+            has_anim_damage_ = true;
+    }
+
+    // Trigger a repaint if any animated image was drawn during the last frame.
+    // GTK4 has no partial-rect invalidation API, so this queues a full redraw.
+    void invalidate_anim_damage()
+    {
+        if (has_anim_damage_ && drawing_area_)
+            gtk_widget_queue_draw(drawing_area_);
     }
 
     bool pointer_ctrl_held() const override
@@ -1345,7 +1366,8 @@ public:
         auto canvas = tk::cairo_pango::make_canvas(cr);
         canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         pending_popup_ = nullptr;
-        PaintCtx ctx{*canvas, *factory_, *theme_, nullptr, this};
+        has_anim_damage_ = false;
+        PaintCtx ctx{*canvas, *factory_, *theme_, this, this};
         root_->paint(ctx);
         popup_ = pending_popup_;
         root_->paint_overlay(ctx);
@@ -1573,6 +1595,8 @@ private:
     GdkModifierType last_pointer_state_ = static_cast<GdkModifierType>(0);
     FileDropHandler on_file_drop_;
     bool drag_active_ = false;
+    const tk::AnimImageCache* anim_cache_ = nullptr;
+    bool has_anim_damage_ = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1812,6 +1836,16 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::set_anim_cache(const AnimImageCache* cache)
+{
+    host_->set_anim_cache(cache);
+}
+
+void Surface::update_anim_regions()
+{
+    host_->invalidate_anim_damage();
 }
 
 void Surface::set_on_layout(std::function<void()> cb)

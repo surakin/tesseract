@@ -884,17 +884,26 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             gif_popup_widget_ = w.get();
             gif_popup_surface_->set_root(std::move(w));
         }
+        gif_popup_surface_->set_anim_cache(&anim_cache_);
         gtk_popover_set_child(GTK_POPOVER(gif_popover_),
                               gif_popup_surface_->widget());
         gif_popup_widget_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
+            [this](const tesseract::GifResult& result) -> const tk::Image*
             {
-                auto it = gif_previews_.find(url);
-                if (it != gif_previews_.end())
-                    return it->second.get();
-                if (gif_preview_inflight_.insert(url).second)
+                // Animated frame takes priority.
+                if (const tk::Image* f = anim_cache_.current_frame(result.image_url))
+                    return f;
+                // Static JPEG fallback.
+                {
+                    auto it = gif_previews_.find(result.preview_url);
+                    if (it != gif_previews_.end())
+                        return it->second.get();
+                }
+                // Kick off static preview fetch.
+                if (gif_preview_inflight_.insert(result.preview_url).second)
                 {
                     auto alive = gif_alive_;
+                    auto url = result.preview_url;
                     run_async_(
                         [this, url, alive]
                         {
@@ -910,13 +919,55 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                     gif_preview_inflight_.erase(url);
                                     if (b.empty())
                                         return;
-                                    cairo_surface_t* surf =
-                                        decode_image_to_cairo_surface(b);
-                                    if (!surf)
+                                    using CW = tesseract::views::GifPopup;
+                                    DecodedImage d = decode_image_(
+                                        b, int(CW::kCellW) * 2,
+                                        int(CW::kCellH) * 2);
+                                    if (d.still)
+                                        gif_previews_[url] = std::move(d.still);
+                                    if (gif_popup_surface_)
+                                        gtk_widget_queue_draw(
+                                            gif_popup_surface_->widget());
+                                });
+                        });
+                }
+                // Kick off animated image fetch.
+                if (gif_anim_inflight_.insert(result.image_url).second)
+                {
+                    auto alive = gif_alive_;
+                    auto anim_url = result.image_url;
+                    run_async_(
+                        [this, anim_url, alive]
+                        {
+                            std::vector<std::uint8_t> bytes =
+                                client_ ? client_->fetch_url_bytes(anim_url)
+                                        : std::vector<std::uint8_t>{};
+                            post_to_ui_(
+                                [this, anim_url, b = std::move(bytes),
+                                 alive]() mutable
+                                {
+                                    if (!*alive)
                                         return;
-                                    gif_previews_[url] =
-                                        tk::cairo_pango::make_image(surf);
-                                    cairo_surface_destroy(surf);
+                                    gif_anim_inflight_.erase(anim_url);
+                                    if (b.empty())
+                                        return;
+                                    using CW = tesseract::views::GifPopup;
+                                    DecodedImage d = decode_image_(
+                                        b, int(CW::kCellW) * 2,
+                                        int(CW::kCellH) * 2);
+                                    if (!d.frames.empty())
+                                    {
+                                        anim_cache_.store(
+                                            anim_url, std::move(d.frames),
+                                            std::move(d.delays_ms),
+                                            g_get_monotonic_time() / 1000);
+                                        start_anim_tick_if_needed_();
+                                    }
+                                    else if (d.still)
+                                    {
+                                        gif_previews_[anim_url] =
+                                            std::move(d.still);
+                                    }
                                     if (gif_popup_surface_)
                                         gtk_widget_queue_draw(
                                             gif_popup_surface_->widget());
@@ -3854,6 +3905,8 @@ void MainWindow::repaint_anim_frame_()
     {
         sticker_picker_surface_->relayout();
     }
+    if (gif_popup_surface_ && gif_popup_visible_())
+        gif_popup_surface_->update_anim_regions();
 }
 
 // ---------------------------------------------------------------------------
@@ -5291,23 +5344,23 @@ void MainWindow::show_gif_popup_()
     {
         return;
     }
-    // Clamp the strip to the window width (overflow scrolls with the
-    // selection); content_size() also sizes the status-message row, so the
-    // empty-result case falls out of the {0,0} return below.
-    int win_w = gtk_widget_get_width(main_app_surface_->widget());
-    const float avail = std::max(0.0f, float(win_w) - 16.0f);
-    const tk::Size sz = gif_popup_widget_->content_size(avail);
-    if (sz.w <= 0.0f || sz.h <= 0.0f)
+    // Full-width strip spanning the compose bar, floating just above it (like
+    // the attachment preview band). content_size() drives only the height and
+    // the empty/status check; the width comes from the compose bar. The popover
+    // (no arrow, POS_TOP) is centred on the bar rect, so a full-bar-width
+    // size_request makes it span the column above the bar.
+    const tk::Rect cb = room_view_ ? room_view_->compose_bar_rect() : tk::Rect{};
+    const tk::Size sz = gif_popup_widget_->content_size(cb.w);
+    if (cb.w <= 0.0f || sz.h <= 0.0f)
     {
         hide_gif_popup_();
         return;
     }
-    const int w = int(sz.w);
+    const int w = int(cb.w);
     const int h = int(sz.h);
     gtk_widget_set_size_request(gif_popup_surface_->widget(), w, h);
 
-    tk::Rect cur = room_text_area_->cursor_rect();
-    GdkRectangle rect{int(cur.x), int(cur.y), int(cur.w), int(cur.h)};
+    GdkRectangle rect{int(cb.x), int(cb.y), int(cb.w), int(cb.h)};
     gtk_popover_set_pointing_to(GTK_POPOVER(gif_popover_), &rect);
     gtk_popover_popup(GTK_POPOVER(gif_popover_));
 

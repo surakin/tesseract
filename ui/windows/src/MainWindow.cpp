@@ -2492,15 +2492,24 @@ void MainWindow::on_create(HWND hwnd)
             gif_popup_widget_ = w.get();
             gif_popup_surface_->set_root(std::move(w));
         }
+        gif_popup_surface_->set_anim_cache(&anim_cache_);
         gif_popup_widget_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
+            [this](const tesseract::GifResult& result) -> const tk::Image*
             {
-                auto it = gif_previews_.find(url);
-                if (it != gif_previews_.end())
-                    return it->second.get();
-                if (gif_preview_inflight_.insert(url).second)
+                // Animated frame takes priority.
+                if (const tk::Image* f = anim_cache_.current_frame(result.image_url))
+                    return f;
+                // Static JPEG fallback.
+                {
+                    auto it = gif_previews_.find(result.preview_url);
+                    if (it != gif_previews_.end())
+                        return it->second.get();
+                }
+                // Kick off static preview fetch.
+                if (gif_preview_inflight_.insert(result.preview_url).second)
                 {
                     auto alive = gif_alive_;
+                    auto url = result.preview_url;
                     run_async_(
                         [this, url, alive]
                         {
@@ -2514,15 +2523,59 @@ void MainWindow::on_create(HWND hwnd)
                                     if (!*alive)
                                         return;
                                     gif_preview_inflight_.erase(url);
-                                    if (b.empty() || !main_app_surface_)
+                                    if (b.empty())
                                         return;
-                                    if (auto img = main_app_surface_->factory()
-                                                       .decode_image(b))
+                                    using CW = tesseract::views::GifPopup;
+                                    DecodedImage d = decode_image_(
+                                        b, int(CW::kCellW) * 2,
+                                        int(CW::kCellH) * 2);
+                                    if (d.still)
+                                        gif_previews_[url] = std::move(d.still);
+                                    if (gif_popup_surface_)
+                                        gif_popup_surface_->relayout();
+                                });
+                        });
+                }
+                // Kick off animated image fetch.
+                if (gif_anim_inflight_.insert(result.image_url).second)
+                {
+                    auto alive = gif_alive_;
+                    auto anim_url = result.image_url;
+                    run_async_(
+                        [this, anim_url, alive]
+                        {
+                            std::vector<std::uint8_t> bytes =
+                                client_ ? client_->fetch_url_bytes(anim_url)
+                                        : std::vector<std::uint8_t>{};
+                            post_to_ui_(
+                                [this, anim_url, b = std::move(bytes),
+                                 alive]() mutable
+                                {
+                                    if (!*alive)
+                                        return;
+                                    gif_anim_inflight_.erase(anim_url);
+                                    if (b.empty())
+                                        return;
+                                    using CW = tesseract::views::GifPopup;
+                                    DecodedImage d = decode_image_(
+                                        b, int(CW::kCellW) * 2,
+                                        int(CW::kCellH) * 2);
+                                    if (!d.frames.empty())
                                     {
-                                        gif_previews_[url] = std::move(img);
-                                        if (gif_popup_surface_)
-                                            gif_popup_surface_->relayout();
+                                        anim_cache_.store(
+                                            anim_url, std::move(d.frames),
+                                            std::move(d.delays_ms),
+                                            static_cast<std::int64_t>(
+                                                GetTickCount64()));
+                                        start_anim_tick_();
                                     }
+                                    else if (d.still)
+                                    {
+                                        gif_previews_[anim_url] =
+                                            std::move(d.still);
+                                    }
+                                    if (gif_popup_surface_)
+                                        gif_popup_surface_->relayout();
                                 });
                         });
                 }
@@ -4858,6 +4911,8 @@ void MainWindow::repaint_anim_frame_()
         }
         InvalidateRect(emoji_picker_surface_->hwnd(), nullptr, FALSE);
     }
+    if (gif_popup_surface_ && gif_popup_visible_())
+        gif_popup_surface_->update_anim_regions();
 }
 
 // ---------------------------------------------------------------------------
@@ -6315,34 +6370,29 @@ void MainWindow::show_gif_popup_()
     {
         return;
     }
-    // Clamp the strip to the main window's width (overflow is reachable by
-    // scrolling the selection); content_size() also returns a compact size for
-    // a status-message row, so we no longer special-case the empty-result case.
-    RECT cr{};
-    GetClientRect(main_app_surface_->hwnd(), &cr);
-    const float avail_dip =
-        std::max(0.0f, float(cr.right - cr.left) / dip_scale() - 16.0f);
-    const tk::Size sz = gif_popup_widget_->content_size(avail_dip);
-    if (sz.w <= 0.0f || sz.h <= 0.0f)
+    // Full-width strip spanning the compose bar, floating just above it (like
+    // the attachment preview band). content_size() drives only the height and
+    // the empty/status check; the width comes from the compose bar.
+    const tk::Rect cb = room_view_ ? room_view_->compose_bar_rect() : tk::Rect{};
+    const tk::Size sz = gif_popup_widget_->content_size(cb.w);
+    if (cb.w <= 0.0f || sz.h <= 0.0f)
     {
         hide_gif_popup_();
         return;
     }
-    const int w = dip_to_phys(sz.w);
+    const int w = dip_to_phys(cb.w);
     const int h = dip_to_phys(sz.h);
 
-    tk::Rect cur = room_text_area_->cursor_rect();
     HWND parent = main_app_surface_->hwnd();
-    POINT pt{LONG(cur.x), LONG(cur.y)};
+    POINT pt{dip_to_phys(cb.x), dip_to_phys(cb.y)};
     ClientToScreen(parent, &pt);
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{};
     mi.cbSize = sizeof(mi);
     GetMonitorInfo(mon, &mi);
     const int gap = dip_to_phys(4.f);
-    int x = pt.x;
-    int y_above = pt.y - h - gap;
-    int y = (y_above >= mi.rcWork.top) ? y_above : pt.y + LONG(cur.h) + gap;
+    int x = pt.x;                  // align with the compose bar's left edge
+    int y = pt.y - h - gap;        // bottom edge just above the compose bar top
     x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
     y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
 

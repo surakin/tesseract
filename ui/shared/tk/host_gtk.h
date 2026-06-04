@@ -15,6 +15,11 @@
 
 typedef struct _GtkWidget GtkWidget;
 
+namespace tk
+{
+class AnimImageCache;
+}
+
 namespace tk::gtk4
 {
 
@@ -47,6 +52,14 @@ public:
     // GtkDrawingArea's "resize" signal also calls this automatically.
     void relayout();
     void set_theme(const Theme& t);
+
+    // Animated-image partial repaints. Point the surface at the shell's
+    // animation cache once at setup; then call update_anim_regions() from the
+    // animation timer to invalidate only the rects where animated images were
+    // drawn on the last paint. (GTK4 always repaints the whole widget, but the
+    // damage sink still lets GifPopup track which cells are animated.)
+    void set_anim_cache(const AnimImageCache* cache);
+    void update_anim_regions();
 
     // Callback fired at the tail of every relayout (initial, resize,
     // explicit). Use this from integration code to keep native overlays

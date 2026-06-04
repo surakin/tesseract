@@ -16,6 +16,7 @@ void GifPopup::set_results(std::vector<tesseract::GifResult> results)
     hovered_index_ = -1;
     pressed_index_ = -1;
     scroll_x_ = 0.0f;
+    wheel_carry_ = 0.0f;
     ensure_selected_visible_();
 }
 
@@ -27,6 +28,7 @@ void GifPopup::set_status(std::string message)
     hovered_index_ = -1;
     pressed_index_ = -1;
     scroll_x_ = 0.0f;
+    wheel_carry_ = 0.0f;
 }
 
 void GifPopup::set_selected_index(int index)
@@ -159,7 +161,8 @@ void GifPopup::paint(tk::PaintCtx& ctx)
         {
             return;
         }
-        ctx.canvas.fill_rect(bounds_, pal.bg);
+        ctx.canvas.fill_rounded_rect(bounds_, kCardRadius, pal.compose_card_bg);
+        ctx.canvas.stroke_rounded_rect(bounds_, kCardRadius, pal.border, 1.0f);
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.halign = tk::TextHAlign::Leading;
@@ -171,20 +174,11 @@ void GifPopup::paint(tk::PaintCtx& ctx)
             float ty = bounds_.y + (bounds_.h - tsz.h) * 0.5f;
             ctx.canvas.draw_text(*tl, {tx, ty}, pal.text_secondary);
         }
-        ctx.canvas.fill_rect({bounds_.x, bounds_.y, bounds_.w, 1.0f},
-                             pal.separator);
-        ctx.canvas.fill_rect(
-            {bounds_.x, bounds_.y + bounds_.h - 1.0f, bounds_.w, 1.0f},
-            pal.separator);
-        ctx.canvas.fill_rect({bounds_.x, bounds_.y, 1.0f, bounds_.h},
-                             pal.separator);
-        ctx.canvas.fill_rect(
-            {bounds_.x + bounds_.w - 1.0f, bounds_.y, 1.0f, bounds_.h},
-            pal.separator);
         return;
     }
 
-    ctx.canvas.fill_rect(bounds_, pal.bg);
+    // Card backing — mirrors the composer's attachment preview band.
+    ctx.canvas.fill_rounded_rect(bounds_, kCardRadius, pal.compose_card_bg);
 
     // Clip the cell row to the scrollable viewport so overflowing / partially
     // scrolled cells don't paint over the side padding, border or attribution.
@@ -204,7 +198,7 @@ void GifPopup::paint(tk::PaintCtx& ctx)
                                              : pal.chrome_bg);
 
         const tk::Image* img =
-            image_provider_ ? image_provider_(results_[std::size_t(i)].preview_url)
+            image_provider_ ? image_provider_(results_[std::size_t(i)])
                             : nullptr;
         if (img)
         {
@@ -218,6 +212,9 @@ void GifPopup::paint(tk::PaintCtx& ctx)
                                              cell.y + (cell.h - dh) * 0.5f, dw,
                                              dh});
             }
+            if (ctx.anim_damage)
+                ctx.anim_damage->note_image(results_[std::size_t(i)].image_url,
+                                            cell);
         }
 
         // Selection border.
@@ -251,13 +248,8 @@ void GifPopup::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // 1px border around the whole strip.
-    ctx.canvas.fill_rect({bounds_.x, bounds_.y, bounds_.w, 1.0f}, pal.separator);
-    ctx.canvas.fill_rect({bounds_.x, bounds_.y + bounds_.h - 1.0f, bounds_.w, 1.0f},
-                         pal.separator);
-    ctx.canvas.fill_rect({bounds_.x, bounds_.y, 1.0f, bounds_.h}, pal.separator);
-    ctx.canvas.fill_rect({bounds_.x + bounds_.w - 1.0f, bounds_.y, 1.0f, bounds_.h},
-                         pal.separator);
+    // 1px rounded border around the whole card.
+    ctx.canvas.stroke_rounded_rect(bounds_, kCardRadius, pal.border, 1.0f);
 }
 
 bool GifPopup::on_pointer_down(tk::Point local)
@@ -290,6 +282,34 @@ bool GifPopup::on_pointer_move(tk::Point local)
 void GifPopup::on_pointer_leave()
 {
     hovered_index_ = -1;
+}
+
+bool GifPopup::on_wheel(tk::Point /*local*/, float dx, float dy)
+{
+    if (visible_count() <= 0)
+        return false;
+    // Vertical scroll is the primary axis for most mice; horizontal (trackpad
+    // swipe) also navigates. Each standard notch (90 px in tk convention) moves
+    // one GIF; accumulate sub-notch input from smooth-scroll devices.
+    float combined = dy != 0.0f ? dy : dx;
+    if (combined == 0.0f)
+        return false;
+    wheel_carry_ += combined;
+    const float kNotch = 90.0f;
+    int steps = static_cast<int>(wheel_carry_ / kNotch);
+    if (steps == 0)
+    {
+        // Smooth-scroll: fire after a quarter-notch so trackpads feel responsive.
+        if (wheel_carry_ >= kNotch * 0.25f)       { steps = 1;  wheel_carry_ = 0.0f; }
+        else if (wheel_carry_ <= -kNotch * 0.25f) { steps = -1; wheel_carry_ = 0.0f; }
+    }
+    else
+    {
+        wheel_carry_ -= steps * kNotch;
+    }
+    if (steps == 0)
+        return false;
+    return move_selection(steps);
 }
 
 } // namespace tesseract::views
