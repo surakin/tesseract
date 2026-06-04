@@ -4419,10 +4419,26 @@ bool MessageListView::media_is_hidden_(const MessageRowData& m) const
     case MessageRowData::Kind::Image:
     case MessageRowData::Kind::Sticker:
     case MessageRowData::Kind::Video:
-        return media_hidden_(m.event_id);
+        return media_hidden_(m.event_id, m.is_own);
     default:
         return false;
     }
+}
+
+bool MessageListView::media_is_hidden_by_eid_(const std::string& event_id) const
+{
+    if (!media_hidden_ || event_id.empty())
+    {
+        return false;
+    }
+    for (const auto& m : messages_)
+    {
+        if (m.event_id == event_id)
+        {
+            return media_is_hidden_(m);
+        }
+    }
+    return false;
 }
 
 void MessageListView::set_image_acquirer(ImageAcquirer a)
@@ -6461,7 +6477,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                 rect_contains(it->second.world_rect, world))
             {
                 // MSC4278: reveal a suppressed video instead of opening it.
-                if (media_hidden_ && media_hidden_(eid))
+                if (media_is_hidden_by_eid_(eid))
                 {
                     if (on_reveal_media)
                         on_reveal_media(eid);
@@ -6490,7 +6506,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             {
                 // MSC4278: a click on a suppressed-media tile reveals it
                 // instead of opening the viewer.
-                if (media_hidden_ && media_hidden_(eid))
+                if (media_is_hidden_by_eid_(eid))
                 {
                     if (on_reveal_media)
                         on_reveal_media(eid);

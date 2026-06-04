@@ -1505,10 +1505,20 @@ protected:
     // config. Resolves Mode::Private against the cached room join_rule (an
     // unknown / public join rule suppresses previews in Private mode).
     bool should_auto_preview_(const std::string& room_id) const;
+    // True when a media item in `room_id` should auto-load, given its sender.
+    // The user's own media (is_own) is exempt from public-room suppression in
+    // Private mode (but not Off — "off means off"); see media_preview_policy.h.
+    bool media_allowed_(const std::string& room_id, bool is_own) const;
+    // Resolve the effective preview mode for `room_id` (global config overlaid
+    // with the per-room override) and report its cached join_rule.
+    tesseract::Settings::MediaPreviews
+    effective_preview_mode_(const std::string& room_id,
+                            std::string& join_rule_out) const;
     // True when `event_id` in `room_id` should be rendered as a click-to-load
-    // placeholder (preview suppressed AND not individually revealed).
+    // placeholder (preview suppressed AND not individually revealed). `is_own`
+    // carries the exemption for the user's own media.
     bool media_preview_hidden_(const std::string& room_id,
-                               const std::string& event_id) const;
+                               const std::string& event_id, bool is_own) const;
     // Ensure the per-room override + join_rule for `room_id` is cached; kicks an
     // async fetch on a cache miss. Call on room switch.
     void ensure_room_preview_override_(const std::string& room_id);

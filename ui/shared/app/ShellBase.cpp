@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
+#include "app/media_preview_policy.h"
 #include "tk/blurhash.h"
 #include "tk/host.h"
 #include "tk/theme.h"
@@ -997,8 +998,13 @@ void ShellBase::ensure_row_media_(const Event& ev)
     // and the BlurHash placeholder are not gated.
     const std::string& gate_room =
         ev.room_id.empty() ? current_room_id_ : ev.room_id;
-    const bool preview = should_auto_preview_(gate_room) ||
-                         revealed_events_.count(ev.event_id) != 0;
+    // The user's own media is exempt from public-room suppression (Private
+    // mode), so it is fetched here just like revealed media — otherwise the
+    // placeholder would be gone but the bytes never fetched.
+    const bool preview =
+        media_allowed_(gate_room, !my_user_id_.empty() &&
+                                      ev.sender == my_user_id_) ||
+        revealed_events_.count(ev.event_id) != 0;
     // Inline media (image/sticker/video) is large, slow, and room-specific, so
     // it is grouped under the originating room and cancelled when the user
     // switches away — see cancel_media_group_ in after_active_room_changed_.
@@ -1217,44 +1223,53 @@ mode_to_settings_(tesseract::MediaPreviewConfig::Mode m)
 }
 } // namespace
 
-bool ShellBase::should_auto_preview_(const std::string& room_id) const
+tesseract::Settings::MediaPreviews
+ShellBase::effective_preview_mode_(const std::string& room_id,
+                                   std::string& join_rule_out) const
 {
     tesseract::Settings::MediaPreviews mode =
         tesseract::Settings::instance().media_previews;
-    std::string join_rule;
+    join_rule_out.clear();
 
     auto it = room_preview_overrides_.find(room_id);
     if (it != room_preview_overrides_.end())
     {
-        join_rule = it->second.join_rule;
+        join_rule_out = it->second.join_rule;
         if (it->second.has_media_previews)
         {
             mode = mode_to_settings_(it->second.media_previews);
         }
     }
+    return mode;
+}
 
-    switch (mode)
-    {
-    case tesseract::Settings::MediaPreviews::On:
-        return true;
-    case tesseract::Settings::MediaPreviews::Off:
-        return false;
-    case tesseract::Settings::MediaPreviews::Private:
-        // Show only in non-public rooms. Unknown / empty join rule is treated
-        // as public (and therefore suppressed), per MSC4278.
-        return !join_rule.empty() && join_rule != "public";
-    }
-    return true;
+bool ShellBase::should_auto_preview_(const std::string& room_id) const
+{
+    // Room-level gate (no per-message ownership): equivalent to media_allowed_
+    // for someone else's media. Used by the bulk re-fetch loops.
+    std::string join_rule;
+    auto mode = effective_preview_mode_(room_id, join_rule);
+    return tesseract::app::media_allowed(mode, join_rule, /*is_own=*/false,
+                                         /*revealed=*/false);
+}
+
+bool ShellBase::media_allowed_(const std::string& room_id, bool is_own) const
+{
+    std::string join_rule;
+    auto mode = effective_preview_mode_(room_id, join_rule);
+    return tesseract::app::media_allowed(mode, join_rule, is_own,
+                                         /*revealed=*/false);
 }
 
 bool ShellBase::media_preview_hidden_(const std::string& room_id,
-                                      const std::string& event_id) const
+                                      const std::string& event_id,
+                                      bool is_own) const
 {
     if (revealed_events_.count(event_id) != 0)
     {
         return false;
     }
-    return !should_auto_preview_(room_id);
+    return !media_allowed_(room_id, is_own);
 }
 
 void ShellBase::ensure_room_preview_override_(const std::string& room_id)
@@ -1348,8 +1363,8 @@ void ShellBase::wire_media_preview_gating_(views::MessageListView* ml)
         return;
     }
     ml->set_media_hidden_predicate(
-        [this](const std::string& event_id)
-        { return media_preview_hidden_(current_room_id_, event_id); });
+        [this](const std::string& event_id, bool is_own)
+        { return media_preview_hidden_(current_room_id_, event_id, is_own); });
     ml->on_reveal_media = [this, ml](const std::string& event_id)
     {
         revealed_events_.insert(event_id);

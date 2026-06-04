@@ -274,7 +274,7 @@ public:
     // the shell from the media-preview config + per-message reveal state.
     // When unset, no media is ever hidden.
     using MediaHiddenPredicate =
-        std::function<bool(const std::string& event_id)>;
+        std::function<bool(const std::string& event_id, bool is_own)>;
     void set_media_hidden_predicate(MediaHiddenPredicate p)
     {
         media_hidden_ = std::move(p);
@@ -781,6 +781,9 @@ private:
     // media / video paint paths and by the click handler to choose reveal
     // over open-viewer.
     bool media_is_hidden_(const MessageRowData& m) const;
+    // Same check from a click handler that only has the event id: resolves the
+    // row's `is_own` from the message list before consulting the predicate.
+    bool media_is_hidden_by_eid_(const std::string& event_id) const;
     MentionAvatarProvider mention_avatar_provider_;
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
