@@ -289,6 +289,14 @@ protected:
             {
                 nk = NativeTextArea::NavKey::Down;
             }
+            else if (e->key() == Qt::Key_Left)
+            {
+                nk = NativeTextArea::NavKey::Left;
+            }
+            else if (e->key() == Qt::Key_Right)
+            {
+                nk = NativeTextArea::NavKey::Right;
+            }
             else if (e->key() == Qt::Key_Escape)
             {
                 nk = NativeTextArea::NavKey::Escape;

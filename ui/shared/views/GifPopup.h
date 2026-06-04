@@ -26,6 +26,9 @@ public:
     static constexpr float kPad = 6.0f;
     static constexpr float kAttribH = 16.0f;
     static constexpr int kMaxCells = 16;
+    // Status-row metrics (single-line message mode).
+    static constexpr float kStatusH = 22.0f;
+    static constexpr float kStatusMinW = 160.0f;
 
     /// Resolve a result's `preview_url` to a decoded (possibly animated) frame,
     /// or null while it is still loading. The shell kicks off the fetch on a
@@ -34,6 +37,13 @@ public:
         std::function<const tk::Image*(const std::string& preview_url)>;
 
     void set_results(std::vector<tesseract::GifResult> results);
+    // Show a one-line status message instead of results (e.g. "No GIFs found",
+    // "No GIF API key configured", "Send failed"). Clears any current results.
+    void set_status(std::string message);
+    bool has_status() const
+    {
+        return !status_.empty() && results_.empty();
+    }
     void set_image_provider(ImageProvider p)
     {
         image_provider_ = std::move(p);
@@ -62,6 +72,12 @@ public:
     /// when there is a list to move within.
     bool move_selection(int delta);
 
+    /// Logical size the popup wants given the host's available width. Returns
+    /// {0,0} when there is nothing to show (no results and no status). The strip
+    /// width is clamped to `max_width` (the overflow is reachable by scrolling
+    /// the selection); a status row gets a compact width clamped the same way.
+    tk::Size content_size(float max_width) const;
+
     std::function<void(const tesseract::GifResult&)> on_accepted;
     std::function<void()> on_dismissed;
 
@@ -76,12 +92,20 @@ public:
 private:
     int cell_at(tk::Point local) const;
     tk::Rect cell_rect(int i) const;
+    // Width the result row would occupy with all `visible_count()` cells laid
+    // out edge to edge (excludes the outer padding's right side beyond cells).
+    float content_width_() const;
+    // Shift scroll_x_ so the selected cell sits fully inside the viewport
+    // (`bounds_.w`), then clamp to the scrollable range.
+    void ensure_selected_visible_();
 
     ImageProvider image_provider_;
     std::vector<tesseract::GifResult> results_;
+    std::string status_;
     int selected_index_ = -1;
     int hovered_index_ = -1;
     int pressed_index_ = -1;
+    float scroll_x_ = 0.0f; // horizontal scroll offset of the cell row
     tk::Rect bounds_{};
 };
 

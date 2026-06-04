@@ -707,7 +707,13 @@ public:
 
     /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
     /// Returns an empty vector on any error. Blocks the calling thread.
+    /// Capped at 1 MiB — for thumbnails / map tiles, not video.
     std::vector<uint8_t> fetch_url_bytes(const std::string& url);
+
+    /// Like `fetch_url_bytes` but capped at the full-media size (64 MiB) with a
+    /// generous timeout — for fetching a `/gif` picker MP4 before sending it.
+    /// Returns an empty vector on any error. Blocks the calling thread.
+    std::vector<uint8_t> fetch_gif_bytes(const std::string& url);
 
     // ------------------------------------------------------------------
     // Async media downloads (non-blocking; complete via IEventHandler)

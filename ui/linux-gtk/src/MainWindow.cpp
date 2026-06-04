@@ -682,6 +682,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                     case tk::NativeTextArea::NavKey::Escape:
                                         hide_slash_popup_();
                                         return true;
+                                    default:
+                                        // Left/Right: let the caret move.
+                                        return false;
                                     }
                                     slash_popup_widget_->set_selected_index(
                                         next);
@@ -793,6 +796,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                     case tk::NativeTextArea::NavKey::Escape:
                                         hide_shortcode_popup_();
                                         return true;
+                                    default:
+                                        // Left/Right: let the caret move.
+                                        return false;
                                     }
                                     shortcode_popup_widget_->set_selected_index(
                                         next);
@@ -940,10 +946,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     main_app_surface_->host().post_delayed(ms, std::move(fn));
             };
             gh.api_key = []() -> std::string
-            {
-                const char* k = std::getenv("TESSERACT_GIF_API_KEY");
-                return k ? std::string(k) : std::string();
-            };
+            { return tesseract::Settings::instance().gif_api_key; };
             gh.client_key = []() -> std::string { return "tesseract"; };
             gh.clear_composer = [this]
             {
@@ -5288,18 +5291,19 @@ void MainWindow::show_gif_popup_()
     {
         return;
     }
-    const int n = gif_popup_widget_->visible_count();
-    if (n <= 0)
+    // Clamp the strip to the window width (overflow scrolls with the
+    // selection); content_size() also sizes the status-message row, so the
+    // empty-result case falls out of the {0,0} return below.
+    int win_w = gtk_widget_get_width(main_app_surface_->widget());
+    const float avail = std::max(0.0f, float(win_w) - 16.0f);
+    const tk::Size sz = gif_popup_widget_->content_size(avail);
+    if (sz.w <= 0.0f || sz.h <= 0.0f)
     {
         hide_gif_popup_();
         return;
     }
-    const int w = int(2.0f * tesseract::views::GifPopup::kPad +
-                      float(n) * tesseract::views::GifPopup::kCellW +
-                      float(n - 1) * tesseract::views::GifPopup::kGap);
-    const int h = int(2.0f * tesseract::views::GifPopup::kPad +
-                      tesseract::views::GifPopup::kCellH +
-                      tesseract::views::GifPopup::kAttribH);
+    const int w = int(sz.w);
+    const int h = int(sz.h);
     gtk_widget_set_size_request(gif_popup_surface_->widget(), w, h);
 
     tk::Rect cur = room_text_area_->cursor_rect();

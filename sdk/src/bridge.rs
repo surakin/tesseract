@@ -1453,7 +1453,13 @@ pub mod ffi {
         /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
         /// Returns the response body on success, or an empty Vec on any error.
         /// Sets User-Agent to "Tesseract/0.1 (Matrix client)" per OSM tile policy.
+        /// Capped at 1 MiB — intended for thumbnails / map tiles, not video.
         fn fetch_url_bytes(self: &ClientFfi, url: &str) -> Vec<u8>;
+
+        /// Like `fetch_url_bytes` but capped at the full-media size (64 MiB)
+        /// with the generous full-download timeout — for fetching a `/gif`
+        /// picker MP4 before sending it.
+        fn fetch_gif_bytes(self: &ClientFfi, url: &str) -> Vec<u8>;
 
         /// Fetch OpenGraph preview metadata for an http(s) URL from the
         /// homeserver's `/_matrix/media/v3/preview_url` endpoint.

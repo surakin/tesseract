@@ -37,6 +37,8 @@ enum class NavKey
 {
     Up,
     Down,
+    Left,
+    Right,
     Escape,
     Tab,
     ShiftTab

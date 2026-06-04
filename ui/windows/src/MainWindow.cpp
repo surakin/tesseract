@@ -2296,6 +2296,9 @@ void MainWindow::on_create(HWND hwnd)
                                     case tk::NativeTextArea::NavKey::Escape:
                                         hide_slash_popup_();
                                         return true;
+                                    default:
+                                        // Left/Right: let the caret move.
+                                        return false;
                                     }
                                     slash_popup_widget_->set_selected_index(
                                         next);
@@ -2408,6 +2411,9 @@ void MainWindow::on_create(HWND hwnd)
                                     case tk::NativeTextArea::NavKey::Escape:
                                         hide_shortcode_popup_();
                                         return true;
+                                    default:
+                                        // Left/Right: let the caret move.
+                                        return false;
                                     }
                                     shortcode_popup_widget_->set_selected_index(
                                         next);
@@ -2543,10 +2549,7 @@ void MainWindow::on_create(HWND hwnd)
                     main_app_surface_->host().post_delayed(ms, std::move(fn));
             };
             gh.api_key = []() -> std::string
-            {
-                const char* k = std::getenv("TESSERACT_GIF_API_KEY");
-                return k ? std::string(k) : std::string();
-            };
+            { return tesseract::Settings::instance().gif_api_key; };
             gh.client_key = []() -> std::string { return "tesseract"; };
             gh.clear_composer = [this]
             {
@@ -6312,18 +6315,21 @@ void MainWindow::show_gif_popup_()
     {
         return;
     }
-    const int n = gif_popup_widget_->visible_count();
-    if (n <= 0)
+    // Clamp the strip to the main window's width (overflow is reachable by
+    // scrolling the selection); content_size() also returns a compact size for
+    // a status-message row, so we no longer special-case the empty-result case.
+    RECT cr{};
+    GetClientRect(main_app_surface_->hwnd(), &cr);
+    const float avail_dip =
+        std::max(0.0f, float(cr.right - cr.left) / dip_scale() - 16.0f);
+    const tk::Size sz = gif_popup_widget_->content_size(avail_dip);
+    if (sz.w <= 0.0f || sz.h <= 0.0f)
     {
         hide_gif_popup_();
         return;
     }
-    const int w = dip_to_phys(2.0f * tesseract::views::GifPopup::kPad +
-                              float(n) * tesseract::views::GifPopup::kCellW +
-                              float(n - 1) * tesseract::views::GifPopup::kGap);
-    const int h = dip_to_phys(2.0f * tesseract::views::GifPopup::kPad +
-                              tesseract::views::GifPopup::kCellH +
-                              tesseract::views::GifPopup::kAttribH);
+    const int w = dip_to_phys(sz.w);
+    const int h = dip_to_phys(sz.h);
 
     tk::Rect cur = room_text_area_->cursor_rect();
     HWND parent = main_app_surface_->hwnd();

@@ -3137,10 +3137,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     c->_mainAppSurface->host().post_delayed(ms, std::move(fn));
             };
             gh.api_key = []() -> std::string
-            {
-                const char* k = std::getenv("TESSERACT_GIF_API_KEY");
-                return k ? std::string(k) : std::string();
-            };
+            { return tesseract::Settings::instance().gif_api_key; };
             gh.client_key = []() -> std::string { return "tesseract"; };
             gh.clear_composer = [gc]
             {
@@ -3399,6 +3396,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                     case tk::NativeTextArea::NavKey::Escape:
                                         [c2 hideShortcodePopup];
                                         return true;
+                                    default:
+                                        // Left/Right: let the caret move.
+                                        return false;
                                     }
                                     c2->_shortcodePopupWidget
                                         ->set_selected_index(next);
@@ -4572,18 +4572,20 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         return;
     }
-    const int n = _gifPopupWidget->visible_count();
-    if (n <= 0)
+    // Clamp the strip to the window width (overflow scrolls with the
+    // selection); content_size() also sizes the status-message row, so the
+    // empty-result case falls out of the {0,0} return below.
+    NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
+    const float avail =
+        std::max(0.0f, float(hostView.bounds.size.width) - 16.0f);
+    const tk::Size sz = _gifPopupWidget->content_size(avail);
+    if (sz.w <= 0.0f || sz.h <= 0.0f)
     {
         [self hideGifPopup];
         return;
     }
-    const CGFloat w = 2.0 * tesseract::views::GifPopup::kPad +
-                      double(n) * tesseract::views::GifPopup::kCellW +
-                      double(n - 1) * tesseract::views::GifPopup::kGap;
-    const CGFloat h = 2.0 * tesseract::views::GifPopup::kPad +
-                      tesseract::views::GifPopup::kCellH +
-                      tesseract::views::GifPopup::kAttribH;
+    const CGFloat w = sz.w;
+    const CGFloat h = sz.h;
     [_gifPanel setContentSize:NSMakeSize(w, h)];
     if (_gifPopupSurface)
     {
@@ -4591,7 +4593,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 
     tk::Rect cursor = _roomTextArea->cursor_rect();
-    NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
     NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
     NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
     NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];

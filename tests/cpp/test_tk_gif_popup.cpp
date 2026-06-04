@@ -68,3 +68,55 @@ TEST_CASE("GifPopup empty results clears selection", "[view][gif][popup]")
     CHECK(p.selected() == nullptr);
     CHECK_FALSE(p.move_selection(+1));
 }
+
+TEST_CASE("GifPopup content_size clamps the strip to the window width",
+          "[view][gif][popup]")
+{
+    GifPopup p;
+    p.set_results(make_results(GifPopup::kMaxCells)); // far wider than a window
+
+    const float full = 2.0f * GifPopup::kPad +
+                       float(GifPopup::kMaxCells) * GifPopup::kCellW +
+                       float(GifPopup::kMaxCells - 1) * GifPopup::kGap;
+
+    // Unbounded (max_width <= 0) returns the full content width.
+    CHECK(p.content_size(0.0f).w == full);
+
+    // A narrow window clamps the width but never the cell height.
+    const float narrow = 400.0f;
+    tk::Size sz = p.content_size(narrow);
+    CHECK(sz.w == narrow);
+    CHECK(sz.h == 2.0f * GifPopup::kPad + GifPopup::kCellH + GifPopup::kAttribH);
+
+    // A window wider than the content does not stretch the strip.
+    CHECK(p.content_size(full + 500.0f).w == full);
+}
+
+TEST_CASE("GifPopup status mode sizes a compact row and shows no cells",
+          "[view][gif][popup]")
+{
+    GifPopup p;
+    p.set_results(make_results(3));
+    p.set_status("No GIF API key configured");
+
+    CHECK(p.has_status());
+    CHECK(p.visible_count() == 0);  // results cleared
+    CHECK(p.selected() == nullptr); // nothing selectable
+
+    tk::Size sz = p.content_size(800.0f);
+    CHECK(sz.w >= GifPopup::kStatusMinW);
+    CHECK(sz.w <= 800.0f);
+    CHECK(sz.h == 2.0f * GifPopup::kPad + GifPopup::kStatusH);
+
+    // Setting results again clears the status.
+    p.set_results(make_results(2));
+    CHECK_FALSE(p.has_status());
+}
+
+TEST_CASE("GifPopup with no results and no status has zero size",
+          "[view][gif][popup]")
+{
+    GifPopup p;
+    CHECK(p.content_size(800.0f).w == 0.0f);
+    CHECK(p.content_size(800.0f).h == 0.0f);
+}

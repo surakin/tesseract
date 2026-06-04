@@ -81,6 +81,9 @@ public:
 private:
     void run_search(std::string query);
     void accept(const tesseract::GifResult& gif);
+    // Show a one-line message in the popup (empty key, no results, failed
+    // search/send) so the strip never fails silently.
+    void show_status(std::string message);
 
     tk::NativeTextArea* text_area_;
     GifPopup* popup_;

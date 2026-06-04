@@ -764,6 +764,14 @@ private:
             {
                 nk = NativeTextArea::NavKey::Down;
             }
+            else if (keyval == GDK_KEY_Left)
+            {
+                nk = NativeTextArea::NavKey::Left;
+            }
+            else if (keyval == GDK_KEY_Right)
+            {
+                nk = NativeTextArea::NavKey::Right;
+            }
             else if (keyval == GDK_KEY_Escape)
             {
                 nk = NativeTextArea::NavKey::Escape;

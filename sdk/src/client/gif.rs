@@ -501,6 +501,56 @@ mod tests {
         assert_eq!(g.duration_ms, 0);
     }
 
+    // One entry from a real api.klipy.com/gifs/search response: every tier
+    // (hd/md/sm/xs) carries gif/webp/jpg/mp4/webm forms. Guards against the
+    // parser regressing on the live response shape (vs. the trimmed SAMPLE).
+    const REAL_ENTRY: &str = r#"{
+        "result": true,
+        "data": { "data": [
+            {
+                "id": 2484942301552561,
+                "title": "Goatplaybanjo's Chatty Cat",
+                "file": {
+                    "hd": {
+                        "gif":  { "url": "https://static.klipy.com/hd.gif",  "width": 220, "height": 229, "size": 273268 },
+                        "webp": { "url": "https://static.klipy.com/hd.webp", "width": 220, "height": 230, "size": 71688 },
+                        "jpg":  { "url": "https://static.klipy.com/hd.jpg",  "width": 220, "height": 229, "size": 8064 },
+                        "mp4":  { "url": "https://static.klipy.com/hd.mp4",  "width": 220, "height": 230, "size": 75638 },
+                        "webm": { "url": "https://static.klipy.com/hd.webm", "width": 220, "height": 229, "size": 60623 }
+                    },
+                    "md": {
+                        "gif":  { "url": "https://static.klipy.com/md.gif",  "width": 220, "height": 229, "size": 271080 },
+                        "webp": { "url": "https://static.klipy.com/md.webp", "width": 220, "height": 229, "size": 137582 },
+                        "jpg":  { "url": "https://static.klipy.com/md.jpg",  "width": 220, "height": 229, "size": 8291 },
+                        "mp4":  { "url": "https://static.klipy.com/md.mp4",  "width": 220, "height": 230, "size": 75638 },
+                        "webm": { "url": "https://static.klipy.com/md.webm", "width": 220, "height": 229, "size": 60623 }
+                    },
+                    "sm": {
+                        "gif":  { "url": "https://static.klipy.com/sm.gif",  "width": 220, "height": 229, "size": 271080 },
+                        "jpg":  { "url": "https://static.klipy.com/sm.jpg",  "width": 220, "height": 229, "size": 8291 },
+                        "mp4":  { "url": "https://static.klipy.com/sm.mp4",  "width": 220, "height": 230, "size": 75638 }
+                    },
+                    "xs": {
+                        "jpg":  { "url": "https://static.klipy.com/xs.jpg",  "width": 87, "height": 90, "size": 2406 },
+                        "mp4":  { "url": "https://static.klipy.com/xs.mp4",  "width": 146, "height": 150, "size": 31334 }
+                    }
+                }
+            }
+        ], "current_page": 1, "per_page": 4, "has_next": true }
+    }"#;
+
+    #[test]
+    fn parse_extracts_md_mp4_from_full_live_entry() {
+        let out = klipy().parse(REAL_ENTRY).unwrap();
+        assert_eq!(out.len(), 1);
+        let g = &out[0];
+        // Send form = medium mp4; strip thumbnail = small static jpg.
+        assert_eq!(g.mp4_url, "https://static.klipy.com/md.mp4");
+        assert_eq!((g.mp4_w, g.mp4_h), (220, 230));
+        assert_eq!(g.preview_url, "https://static.klipy.com/sm.jpg");
+        assert_eq!(g.id, "2484942301552561");
+    }
+
     #[test]
     fn parse_empty_results_is_ok() {
         assert_eq!(

@@ -1282,6 +1282,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                 case tk::NativeTextArea::NavKey::Escape:
                                     hide_slash_popup_();
                                     return true;
+                                default:
+                                    // Left/Right: let the caret move.
+                                    return false;
                                 }
                                 slash_popup_widget_->set_selected_index(next);
                                 slash_popup_surface_->update();
@@ -1386,6 +1389,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                 case tk::NativeTextArea::NavKey::Escape:
                                     hide_shortcode_popup_();
                                     return true;
+                                default:
+                                    // Left/Right: let the caret move.
+                                    return false;
                                 }
                                 shortcode_popup_widget_->set_selected_index(
                                     next);
@@ -1543,10 +1549,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 mainAppSurface_->host().post_delayed(ms, std::move(fn));
         };
         gh.api_key = []() -> std::string
-        {
-            const char* k = std::getenv("TESSERACT_GIF_API_KEY");
-            return k ? std::string(k) : std::string();
-        };
+        { return tesseract::Settings::instance().gif_api_key; };
         gh.client_key = []() -> std::string { return "tesseract"; };
         gh.clear_composer = [this]
         {
@@ -5130,20 +5133,18 @@ void MainWindow::show_gif_popup_()
     {
         return;
     }
-    if (gif_popup_widget_->visible_count() <= 0)
+    // Clamp the strip to the window width (overflow scrolls with the
+    // selection); content_size() also sizes the status-message row, so the
+    // empty-result case is handled by the {0,0} return below.
+    const float avail = std::max(0.0f, float(rect().width()) - 16.0f);
+    const tk::Size sz = gif_popup_widget_->content_size(avail);
+    if (sz.w <= 0.0f || sz.h <= 0.0f)
     {
         hide_gif_popup_();
         return;
     }
-    const int n = gif_popup_widget_->visible_count();
-    const float fw = 2.0f * tesseract::views::GifPopup::kPad +
-                     float(n) * tesseract::views::GifPopup::kCellW +
-                     float(n - 1) * tesseract::views::GifPopup::kGap;
-    const float fh = 2.0f * tesseract::views::GifPopup::kPad +
-                     tesseract::views::GifPopup::kCellH +
-                     tesseract::views::GifPopup::kAttribH;
-    int w = std::max(1, int(fw));
-    int h = std::max(1, int(fh));
+    int w = std::max(1, int(sz.w));
+    int h = std::max(1, int(sz.h));
 
     tk::Rect cur = roomTextArea_->cursor_rect();
     QPoint anchor =

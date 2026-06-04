@@ -300,12 +300,13 @@ async fn download_media(
 #[cfg(not(test))]
 const CHUNK_STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Stream an arbitrary HTTP(S) URL into a byte buffer, enforcing `MAX_URL_BYTES`
+/// Stream an arbitrary HTTP(S) URL into a byte buffer, enforcing `max_bytes`
 /// both up-front (Content-Length) and mid-stream. Returns an empty Vec on any
-/// error. Shared by the blocking `fetch_url_bytes` and the async
-/// `fetch_url_async` (map tiles); the caller wraps it in the timeout/stop race.
+/// error. Shared by the blocking `fetch_url_bytes` / `fetch_gif_bytes` and the
+/// async `fetch_url_async` (map tiles); the caller wraps it in the
+/// timeout/stop race and supplies the appropriate size cap.
 #[cfg(not(test))]
-async fn download_url(client: &reqwest::Client, url: &str) -> Vec<u8> {
+async fn download_url(client: &reqwest::Client, url: &str, max_bytes: usize) -> Vec<u8> {
     use futures_util::StreamExt;
     let resp = match client.get(url).send().await {
         Ok(r) => r,
@@ -316,9 +317,9 @@ async fn download_url(client: &reqwest::Client, url: &str) -> Vec<u8> {
         Err(_) => return Vec::new(),
     };
     if let Some(len) = resp.content_length() {
-        if len as usize > MAX_URL_BYTES {
+        if len as usize > max_bytes {
             tracing::warn!(
-                "download_url: {url} declared {len} bytes > {MAX_URL_BYTES} cap; rejecting"
+                "download_url: {url} declared {len} bytes > {max_bytes} cap; rejecting"
             );
             return Vec::new();
         }
@@ -340,9 +341,9 @@ async fn download_url(client: &reqwest::Client, url: &str) -> Vec<u8> {
             Ok(c) => c,
             Err(_) => return Vec::new(),
         };
-        if buf.len().saturating_add(chunk.len()) > MAX_URL_BYTES {
+        if buf.len().saturating_add(chunk.len()) > max_bytes {
             tracing::warn!(
-                "download_url: {url} exceeded {MAX_URL_BYTES} byte cap mid-stream; aborting"
+                "download_url: {url} exceeded {max_bytes} byte cap mid-stream; aborting"
             );
             return Vec::new();
         }
@@ -645,8 +646,28 @@ impl ClientFfi {
         let client = self.http_client.clone();
         self.rt.block_on(async move {
             tokio::select! {
-                result = download_url(&client, &url) => result,
+                result = download_url(&client, &url, MAX_URL_BYTES) => result,
                 _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
+    }
+
+    /// Like `fetch_url_bytes` but for a GIF-picker MP4: the 1 MiB `MAX_URL_BYTES`
+    /// thumbnail cap is far too small for a video, so this uses the full-media
+    /// cap (`MAX_MEDIA_BYTES`) and the more generous full-download timeout. Used
+    /// by the `/gif` send path to fetch the chosen result before upload.
+    pub fn fetch_gif_bytes(&self, url: &str) -> Vec<u8> {
+        if url.is_empty() {
+            return Vec::new();
+        }
+        let url = url.to_owned();
+        let stop_rx = self.stop_rx.clone();
+        let client = self.http_client.clone();
+        self.rt.block_on(async move {
+            tokio::select! {
+                result = download_url(&client, &url, MAX_MEDIA_BYTES) => result,
+                _ = tokio::time::sleep(FULL_MEDIA_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -677,7 +698,7 @@ impl ClientFfi {
             };
             let _guard = super::InFlightGuard::new(&in_flight, &handler);
             let bytes = tokio::select! {
-                b = download_url(&client, &url) => b,
+                b = download_url(&client, &url, MAX_URL_BYTES) => b,
                 _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             };
@@ -881,5 +902,6 @@ impl ClientFfi {
     pub fn fetch_media_bytes(&self, _mxc_url: &str) -> Vec<u8> { Vec::new() }
     pub fn fetch_source_bytes(&self, _source: &str) -> Vec<u8> { Vec::new() }
     pub fn fetch_url_bytes(&self, _url: &str) -> Vec<u8> { Vec::new() }
+    pub fn fetch_gif_bytes(&self, _url: &str) -> Vec<u8> { Vec::new() }
     pub fn get_url_preview(&self, _url: &str) -> String { String::new() }
 }

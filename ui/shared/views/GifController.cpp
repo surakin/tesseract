@@ -54,6 +54,26 @@ bool GifController::on_text_changed(const std::string& text)
     return true;
 }
 
+void GifController::show_status(std::string message)
+{
+    if (!popup_)
+    {
+        return;
+    }
+    // A status message supersedes any in-flight search's results.
+    request_seq_ = 0;
+    popup_->set_status(std::move(message));
+    visible_ = true;
+    if (hooks_.show)
+    {
+        hooks_.show();
+    }
+    if (hooks_.repaint)
+    {
+        hooks_.repaint();
+    }
+}
+
 void GifController::run_search(std::string query)
 {
     auto* client = hooks_.client ? hooks_.client() : nullptr;
@@ -62,6 +82,13 @@ void GifController::run_search(std::string query)
         return;
     }
     const std::string key = hooks_.api_key ? hooks_.api_key() : std::string{};
+    // No credential → the request would 404; surface it instead of failing
+    // silently (this is exactly what made the empty-key case invisible).
+    if (key.empty())
+    {
+        show_status("No GIF API key configured");
+        return;
+    }
     const std::string ck =
         hooks_.client_key ? hooks_.client_key() : std::string{};
     // Process-global id so the shell can fan on_gif_results() to every
@@ -83,7 +110,7 @@ void GifController::on_results(std::uint64_t request_id,
     }
     if (results.empty())
     {
-        hide();
+        show_status("No GIFs found");
         return;
     }
     popup_->set_results(std::move(results));
@@ -103,7 +130,7 @@ void GifController::on_search_failed(std::uint64_t request_id,
 {
     if (request_id == request_seq_)
     {
-        hide();
+        show_status("GIF search failed");
     }
 }
 
@@ -115,10 +142,12 @@ bool GifController::on_nav(tk::NavKey nk)
     }
     switch (nk)
     {
+    case tk::NavKey::Right:
     case tk::NavKey::Down:
     case tk::NavKey::Tab:
         popup_->move_selection(+1);
         break;
+    case tk::NavKey::Left:
     case tk::NavKey::Up:
     case tk::NavKey::ShiftTab:
         popup_->move_selection(-1);
@@ -157,9 +186,14 @@ void GifController::accept(const tesseract::GifResult& gif)
     {
         return;
     }
-    hide(); // dismiss the strip immediately; the upload runs in the background
 
+    // Copy the result out of the popup's storage BEFORE hide(): `gif` is a
+    // reference into popup_->results_ (from selected() / the click path), and
+    // hide() calls set_results({}) which frees that vector — copying afterward
+    // would read freed memory and yield an all-empty GifResult.
     const tesseract::GifResult g = gif;
+
+    hide(); // dismiss the strip immediately; the upload runs in the background
     auto alive = alive_;
     auto post_to_ui = hooks_.post_to_ui;
     auto clear = hooks_.clear_composer;
@@ -173,21 +207,42 @@ void GifController::accept(const tesseract::GifResult& gif)
     {
         return;
     }
-    hooks_.run_async(
-        [client, room, g, alive, post_to_ui]
+    // Marshal a failure message back to the UI thread so a dropped fetch or send
+    // surfaces in the strip instead of vanishing silently.
+    auto report = [this, alive, post_to_ui](std::string msg)
+    {
+        if (!post_to_ui)
         {
-            std::vector<std::uint8_t> mp4 = client->fetch_url_bytes(g.mp4_url);
+            return;
+        }
+        post_to_ui(
+            [this, alive, msg = std::move(msg)]
+            {
+                if (*alive)
+                {
+                    show_status(msg);
+                }
+            });
+    };
+    hooks_.run_async(
+        [client, room, g, report]
+        {
+            std::vector<std::uint8_t> mp4 = client->fetch_gif_bytes(g.mp4_url);
             if (mp4.empty())
             {
+                report("Couldn't load GIF");
                 return;
             }
-            client->send_gif_video(room, mp4, "video/mp4", "gif.mp4", g.mp4_w,
-                                   g.mp4_h, g.duration_ms,
-                                   /*thumb*/ {}, /*thumb_mime*/ "",
-                                   /*thumb_w*/ 0, /*thumb_h*/ 0,
-                                   /*reply*/ "", /*thread*/ "");
-            (void)alive;
-            (void)post_to_ui;
+            tesseract::Result r = client->send_gif_video(
+                room, mp4, "video/mp4", "gif.mp4", g.mp4_w, g.mp4_h,
+                g.duration_ms,
+                /*thumb*/ {}, /*thumb_mime*/ "",
+                /*thumb_w*/ 0, /*thumb_h*/ 0,
+                /*reply*/ "", /*thread*/ "");
+            if (!r.ok)
+            {
+                report("Send failed");
+            }
         });
 }
 

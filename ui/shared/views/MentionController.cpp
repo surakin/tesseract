@@ -160,6 +160,9 @@ bool MentionController::on_nav(tk::NativeTextArea::NavKey nk)
     case tk::NativeTextArea::NavKey::Escape:
         hide();
         return true;
+    default:
+        // Left/Right (and any future key) aren't ours — let the caret move.
+        return false;
     }
     popup_->set_selected_index(next);
     if (hooks_.repaint)

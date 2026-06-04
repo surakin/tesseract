@@ -812,6 +812,12 @@ std::vector<uint8_t> Client::fetch_url_bytes(const std::string& url)
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
+std::vector<uint8_t> Client::fetch_gif_bytes(const std::string& url)
+{
+    auto v = impl_->ffi->fetch_gif_bytes(url);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
 // ---------------------------------------------------------------------------
 // Async media downloads (non-blocking — &self FFI, no MUT_FFI)
 // ---------------------------------------------------------------------------

@@ -85,6 +85,12 @@ public:
     // Changes take effect after restart.
     std::string language = "auto";
 
+    // ── GIF picker ────────────────────────────────────────────────────
+    // Klipy API key used by the `/gif <query>` picker. Empty disables search
+    // (the picker shows a "no API key configured" status). A built-in default
+    // can be baked in here; users may override it via app_settings.json.
+    std::string gif_api_key = "fk7SzdJXhLgp4XwCaX7w8Yo9xOdtngpfPsoO8Dp1MknHYupTZGDwTivyiVioZe39";
+
     // ── Notifications ─────────────────────────────────────────────────
     // Whether to show desktop notifications for new messages (default: on).
     bool notifications_enabled = true;

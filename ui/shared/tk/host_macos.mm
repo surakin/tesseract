@@ -827,6 +827,14 @@ private:
         {
             nk = tk::NativeTextArea::NavKey::Down;
         }
+        else if (kc == 123)
+        {
+            nk = tk::NativeTextArea::NavKey::Left;
+        }
+        else if (kc == 124)
+        {
+            nk = tk::NativeTextArea::NavKey::Right;
+        }
         else if (kc == 53)
         {
             nk = tk::NativeTextArea::NavKey::Escape;

@@ -2636,6 +2636,12 @@ private:
                 case VK_DOWN:
                     nk = NativeTextArea::NavKey::Down;
                     break;
+                case VK_LEFT:
+                    nk = NativeTextArea::NavKey::Left;
+                    break;
+                case VK_RIGHT:
+                    nk = NativeTextArea::NavKey::Right;
+                    break;
                 case VK_ESCAPE:
                     nk = NativeTextArea::NavKey::Escape;
                     break;

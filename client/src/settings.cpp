@@ -54,6 +54,14 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     {
         language = lang;
     }
+
+    // Only override the (possibly baked-in) default when an explicit non-empty
+    // key is present on disk, mirroring the language handling above.
+    auto gif_key = j.value("gif_api_key", std::string{});
+    if (!gif_key.empty())
+    {
+        gif_api_key = gif_key;
+    }
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const
@@ -87,6 +95,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
     if (!f.is_open())
         return;
     j["language"] = language;
+    j["gif_api_key"] = gif_api_key;
     f << j.dump(4) << '\n';
 }
 
