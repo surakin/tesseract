@@ -4899,6 +4899,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         break;
     }
+    notify_secondary_media_ready_(cache_key, kind);
     if (invalidate_hwnd)
     {
         InvalidateRect(invalidate_hwnd, nullptr, FALSE);

@@ -3053,6 +3053,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             accountPickerSurface_->update();
         }
+        notify_secondary_media_ready_(cache_key, kind);
         return;
     }
 
@@ -3078,6 +3079,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             mainAppSurface_->relayout();
             mainAppSurface_->update();
         }
+        notify_secondary_media_ready_(cache_key, kind);
         return;
     }
 
@@ -3133,6 +3135,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     {
         shortcode_popup_surface_->update();
     }
+    notify_secondary_media_ready_(cache_key, kind);
     return;
 }
 

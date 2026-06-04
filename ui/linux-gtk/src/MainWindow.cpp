@@ -3953,7 +3953,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 if (auto anim = decode_animation(bytes))
                 {
                     post_to_ui_(
-                        [this, cache_key, uses_thumb_cache,
+                        [this, cache_key, kind, uses_thumb_cache,
                          frames_raw = std::move(anim->frames),
                          delays = std::move(anim->delays_ms)]() mutable
                         {
@@ -3989,6 +3989,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                             {
                                 main_app_surface_->relayout();
                             }
+                            notify_secondary_media_ready_(cache_key, kind);
                         });
                     return;
                 }
@@ -4049,6 +4050,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     {
                         account_picker_surface_->relayout();
                     }
+                    notify_secondary_media_ready_(cache_key, kind);
                 });
         });
 }

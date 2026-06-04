@@ -642,6 +642,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         [c _decodeMediaBytes:bytes forKey:key thumbnail:NO];
         [c _relayoutChatSurface];
         [c _relayoutShortcodePopupIfVisible];
+        notify_secondary_media_ready_(key, kind);
         return;
     }
     if (kind == MediaKind::MediaThumbnail)
@@ -649,6 +650,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         [c _decodeMediaBytes:bytes forKey:key thumbnail:YES];
         [c _relayoutChatSurface];
         [c _relayoutShortcodePopupIfVisible];
+        notify_secondary_media_ready_(key, kind);
         return;
     }
     if (kind == MediaKind::Tile)
@@ -682,6 +684,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
             room_view_->message_list()->invalidate_data();
         }
         [c _relayoutChatSurface];
+        notify_secondary_media_ready_(key, kind);
         return;
     }
     if (bytes.empty() || thumbnail_cache_.contains(key))
@@ -718,6 +721,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         [c _relayoutAccountPickerIfVisible];
         [c _relayoutMentionPopupIfVisible];
     }
+    notify_secondary_media_ready_(key, kind);
 }
 
 void MacShell::generate_video_thumbnail_(const std::string& event_id,

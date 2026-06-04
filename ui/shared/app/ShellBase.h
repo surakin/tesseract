@@ -1278,6 +1278,13 @@ protected:
         const std::string& room_id,
         const std::function<void(RoomWindowBase*)>& fn);
 
+    // Notify every open pop-out window that media for cache_key has arrived, so
+    // it can invalidate row heights and repaint. Mirrors on_url_preview_ready_'s
+    // secondary-window fan-out. cache_key is not room-scoped (the same mxc can
+    // appear in several rooms), so notify all secondary windows.
+    void notify_secondary_media_ready_(const std::string& cache_key,
+                                       MediaKind kind);
+
     // Override in a platform shell to instantiate the concrete RoomWindow
     // subclass. The subclass constructor must call finish_init_() before
     // returning. Default: no-op (secondary windows are inert until a shell

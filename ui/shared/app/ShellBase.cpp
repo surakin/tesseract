@@ -2439,6 +2439,40 @@ void ShellBase::on_url_preview_failed_(const std::string& url)
     }
 }
 
+void ShellBase::notify_secondary_media_ready_(const std::string& cache_key,
+                                              MediaKind kind)
+{
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        views::RoomView* rv = w->room_view();
+        if (!rv)
+        {
+            continue;
+        }
+        switch (kind)
+        {
+        case MediaKind::MediaImage:
+        case MediaKind::MediaThumbnail:
+            rv->notify_image_ready(cache_key);
+            w->request_relayout();
+            break;
+        case MediaKind::Tile:
+            if (auto* ml = rv->message_list())
+            {
+                ml->invalidate_data();
+            }
+            w->request_relayout();
+            break;
+        case MediaKind::RoomAvatar:
+        case MediaKind::UserAvatar:
+            // No height change; a relayout/repaint pulls the new avatar from
+            // the shared cache on next paint.
+            w->request_relayout();
+            break;
+        }
+    }
+}
+
 bool ShellBase::tick_anim_()
 {
     // Stop once nothing animated is on-screen — entries linger in the cache
