@@ -104,6 +104,12 @@ set(_tk_sources
     views/SlashCommandPopup.cpp
     views/ShortcodePopup.h
     views/ShortcodePopup.cpp
+    views/GifEngine.h
+    views/GifEngine.cpp
+    views/GifPopup.h
+    views/GifPopup.cpp
+    views/GifController.h
+    views/GifController.cpp
     views/MentionEngine.h
     views/MentionEngine.cpp
     views/MentionPopup.h

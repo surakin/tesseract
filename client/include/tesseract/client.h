@@ -341,7 +341,7 @@ public:
     ///
     /// When `is_animated` is true the image is sent as a raw `m.image` event
     /// carrying the MSC4230 `org.matrix.msc4230.is_animated` flag and the
-    /// `fi.mau.video.gif` vendor hint so animated GIFs/WebPs autoplay and
+    /// `fi.mau.gif` vendor hint so animated GIFs/WebPs autoplay and
     /// loop on capable clients (the standard upload path strips these fields).
     ///
     /// When non-empty, sends into this thread root (MSC3440).
@@ -747,6 +747,35 @@ public:
     /// immediately; the bytes arrive via `IEventHandler::on_media_ready`.
     void fetch_url_async(std::uint64_t request_id, std::uint64_t group_id,
                          const std::string& url);
+
+    // ------------------------------------------------------------------
+    // GIF search + send
+    // ------------------------------------------------------------------
+
+    /// Search the configured GIF provider for `query` (async, non-blocking).
+    /// Results arrive via `IEventHandler::on_gif_results(request_id, …)`, or
+    /// `on_gif_search_failed` on error. `request_id` lets the caller drop stale
+    /// responses; `api_key`/`client_key` come from app settings; `limit` caps
+    /// the result count.
+    void gif_search(std::uint64_t request_id, const std::string& query,
+                    const std::string& api_key, const std::string& client_key,
+                    std::uint32_t limit);
+
+    /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying the
+    /// `fi.mau.gif` vendor hint (autoplay/loop/muted). `thumb_bytes` is a
+    /// static poster image (`thumb_mime`, e.g. "image/png"; empty to omit).
+    /// MP4 + thumbnail are encrypted in E2EE rooms, plaintext otherwise.
+    /// `reply_event_id`/`thread_root` follow the same framing as send_video().
+    Result send_gif_video(const std::string& room_id,
+                          const std::vector<uint8_t>& mp4_bytes,
+                          const std::string& mime_type, const std::string& body,
+                          std::uint32_t width, std::uint32_t height,
+                          std::uint64_t duration_ms,
+                          const std::vector<uint8_t>& thumb_bytes,
+                          const std::string& thumb_mime,
+                          std::uint32_t thumb_width, std::uint32_t thumb_height,
+                          const std::string& reply_event_id,
+                          const std::string& thread_root);
 
     // ------------------------------------------------------------------
     // URL preview

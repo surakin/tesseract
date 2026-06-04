@@ -972,6 +972,17 @@ protected:
     // Completion for an async get_url_preview_async fetch.
     void handle_url_preview_ready_ui_(std::uint64_t request_id,
                                       std::string preview_json);
+    // Completion for an async gif_search. Each shell forwards to its GIF
+    // controller(s); the controller drops superseded request_ids. Default
+    // no-op so shells opt in.
+    virtual void handle_gif_results_ui_(std::uint64_t /*request_id*/,
+                                        std::vector<GifResult> /*results*/)
+    {
+    }
+    virtual void handle_gif_search_failed_ui_(std::uint64_t /*request_id*/,
+                                              std::string /*message*/)
+    {
+    }
     virtual void handle_sync_error_ui_(std::string /*context*/,
                                        std::string /*user_id*/,
                                        std::string /*description*/,

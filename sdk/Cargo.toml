@@ -25,6 +25,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url        = "2"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2       = "0.10" # hash the MXID into Klipy's customer_id (privacy)
 reqwest    = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 tiny_http     = "0.12"
 hostname      = "0.4"

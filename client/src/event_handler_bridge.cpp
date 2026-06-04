@@ -438,6 +438,52 @@ void EventHandlerBridge::on_url_preview_ready(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_gif_results(std::uint64_t request_id,
+                                        const rust::Vec<GifResult>& results) const
+{
+    guard("on_gif_results",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+              {
+                  return;
+              }
+              std::vector<tesseract::GifResult> cpp_results;
+              cpp_results.reserve(results.size());
+              for (const auto& r : results)
+              {
+                  tesseract::GifResult g;
+                  g.id = std::string(r.id);
+                  g.preview_url = std::string(r.preview_url);
+                  g.preview_w = r.preview_w;
+                  g.preview_h = r.preview_h;
+                  g.mp4_url = std::string(r.mp4_url);
+                  g.mp4_w = r.mp4_w;
+                  g.mp4_h = r.mp4_h;
+                  g.duration_ms = r.duration_ms;
+                  g.poster_url = std::string(r.poster_url);
+                  cpp_results.push_back(std::move(g));
+              }
+              handler_->on_gif_results(request_id, cpp_results);
+          });
+}
+
+void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
+                                              rust::Str message) const
+{
+    guard("on_gif_search_failed",
+          [&]
+          {
+              auto* handler_ = slot_->load();
+              if (!handler_)
+              {
+                  return;
+              }
+              handler_->on_gif_search_failed(request_id, std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const
 {
     guard("on_account_prefs_updated",

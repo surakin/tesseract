@@ -27,6 +27,8 @@
 #include "views/JoinRoomView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
+#include "views/GifController.h"
+#include "views/GifPopup.h"
 #include "views/MentionEngine.h"
 #include "views/MentionPopup.h"
 #include "views/SlashCommandEngine.h"
@@ -332,6 +334,25 @@ private:
     {
         return slash_popover_ && gtk_widget_get_visible(slash_popover_);
     }
+
+    // ── GIF picker (/gif <query>) ────────────────────────────────────────────
+    GtkWidget* gif_popover_ = nullptr;
+    std::unique_ptr<tk::gtk4::Surface> gif_popup_surface_;
+    tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::GifController> gif_controller_;
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
+    std::unordered_set<std::string> gif_preview_inflight_;
+    std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
+    void show_gif_popup_();
+    void hide_gif_popup_();
+    bool gif_popup_visible_() const
+    {
+        return gif_popover_ && gtk_widget_get_visible(gif_popover_);
+    }
+    void handle_gif_results_ui_(std::uint64_t request_id,
+                                std::vector<tesseract::GifResult> results) override;
+    void handle_gif_search_failed_ui_(std::uint64_t request_id,
+                                      std::string message) override;
 
     // ── @mention popup ────────────────────────────────────────────────────
     tesseract::views::MentionEngine mention_engine_;

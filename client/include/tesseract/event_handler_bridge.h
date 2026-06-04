@@ -18,6 +18,7 @@ struct RoomInfo;
 struct InviteInfo;
 struct BackupProgress;
 struct VerificationEmoji;
+struct GifResult;
 } // namespace tesseract_ffi
 
 namespace tesseract_ffi
@@ -107,6 +108,10 @@ public:
                         rust::Slice<const uint8_t> bytes) const;
     void on_url_preview_ready(std::uint64_t request_id,
                               rust::Str preview_json) const;
+    void on_gif_results(std::uint64_t request_id,
+                        const rust::Vec<GifResult>& results) const;
+    void on_gif_search_failed(std::uint64_t request_id,
+                              rust::Str message) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_media_preview_config_updated(rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,

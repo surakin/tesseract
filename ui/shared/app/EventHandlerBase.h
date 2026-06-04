@@ -60,6 +60,10 @@ public:
                         const std::vector<std::uint8_t>& bytes) override;
     void on_url_preview_ready(std::uint64_t request_id,
                               const std::string& preview_json) override;
+    void on_gif_results(std::uint64_t request_id,
+                        const std::vector<GifResult>& results) override;
+    void on_gif_search_failed(std::uint64_t request_id,
+                              const std::string& message) override;
     void on_rooms_updated(const std::vector<RoomInfo>& rooms) override;
     void on_invites_updated(const std::vector<InviteInfo>& invites) override;
     void on_sync_error(const std::string& context,

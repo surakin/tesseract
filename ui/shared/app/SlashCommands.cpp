@@ -139,6 +139,7 @@ const std::vector<SlashCommandDescriptor>& available_commands()
         {"join",         "<#room:server>",    "Join a room by alias or ID"},
         {"leave",        "",                  "Leave the current room"},
         {"invite",       "<@user:server>",    "Invite a user to the current room"},
+        {"gif",          "<search>",          "Search for a GIF to send"},
     };
     return kCommands;
 }

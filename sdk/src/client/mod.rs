@@ -13,6 +13,7 @@ use crate::oauth;
 mod account;
 mod backfill;
 mod crypto_reset;
+pub(crate) mod gif;
 mod image_packs;
 mod media;
 mod notifications;
@@ -2492,7 +2493,7 @@ mod tests {
         assert_eq!(val["body"], "anim.gif");
         assert_eq!(val["url"], "mxc://server/abc123");
         assert_eq!(val["org.matrix.msc4230.is_animated"], true);
-        assert_eq!(val["info"]["fi.mau.video.gif"], true);
+        assert_eq!(val["info"]["fi.mau.gif"], true);
         assert_eq!(val["info"]["mimetype"], "image/gif");
         assert!(
             val.get("filename").is_none(),

@@ -33,6 +33,8 @@
 #include "views/MentionPopup.h"
 #include "views/SlashCommandEngine.h"
 #include "views/SlashCommandPopup.h"
+#include "views/GifController.h"
+#include "views/GifPopup.h"
 
 #include <filesystem>
 #include <functional>
@@ -416,6 +418,26 @@ private:
     {
         return slash_popup_frame_ && slash_popup_frame_->isVisible();
     }
+
+    // ── GIF picker (/gif <query>) ────────────────────────────────────────────
+    QWidget*                          gif_popup_frame_   = nullptr;
+    std::unique_ptr<tk::qt6::Surface> gif_popup_surface_ = nullptr;
+    tesseract::views::GifPopup*       gif_popup_widget_  = nullptr;
+    std::unique_ptr<tesseract::views::GifController> gif_controller_;
+    // Decoded first-frame previews for the strip, keyed by Tenor preview URL.
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
+    std::unordered_set<std::string> gif_preview_inflight_;
+    std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
+    void show_gif_popup_();
+    void hide_gif_popup_();
+    bool gif_popup_visible_() const
+    {
+        return gif_popup_frame_ && gif_popup_frame_->isVisible();
+    }
+    void handle_gif_results_ui_(std::uint64_t request_id,
+                                std::vector<tesseract::GifResult> results) override;
+    void handle_gif_search_failed_ui_(std::uint64_t request_id,
+                                      std::string message) override;
 
     // ── Shortcode popup ──────────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;

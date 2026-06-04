@@ -39,6 +39,8 @@ using std::min;
 #include "views/MentionPopup.h"
 #include "views/SlashCommandEngine.h"
 #include "views/SlashCommandPopup.h"
+#include "views/GifController.h"
+#include "views/GifPopup.h"
 
 #include "views/AccountPicker.h"
 #include "views/SettingsView.h"
@@ -378,6 +380,25 @@ private:
     {
         return slash_popup_hwnd_ && IsWindowVisible(slash_popup_hwnd_);
     }
+
+    // ── GIF picker (/gif <query>) ─────────────────────────────────────────
+    HWND                                gif_popup_hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface> gif_popup_surface_;
+    tesseract::views::GifPopup*         gif_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::GifController> gif_controller_;
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> gif_previews_;
+    std::unordered_set<std::string> gif_preview_inflight_;
+    std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
+    void show_gif_popup_();
+    void hide_gif_popup_();
+    bool gif_popup_visible_() const
+    {
+        return gif_popup_hwnd_ && IsWindowVisible(gif_popup_hwnd_);
+    }
+    void handle_gif_results_ui_(std::uint64_t request_id,
+                                std::vector<tesseract::GifResult> results) override;
+    void handle_gif_search_failed_ui_(std::uint64_t request_id,
+                                      std::string message) override;
 
     // ── Shortcode popup ───────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;

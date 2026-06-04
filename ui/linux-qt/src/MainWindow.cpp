@@ -79,6 +79,7 @@
 #include <QFileDialog>
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <unistd.h>
 #include <unordered_set>
@@ -1199,6 +1200,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
             int cursor = roomTextArea_->cursor_byte_pos();
 
+            // GIF picker: when the composer is a `/gif <query>` command, the
+            // controller debounces a search; the result strip appears later via
+            // handle_gif_results_ui_. Mutually exclusive with the other popups.
+            if (gif_controller_ && gif_controller_->on_text_changed(s))
+            {
+                if (slash_popup_visible_())     hide_slash_popup_();
+                if (shortcode_popup_visible_()) hide_shortcode_popup_();
+                if (mention_popup_visible_())   hide_mention_popup_();
+                return;
+            }
+
             // Slash-command popup: activate when the composer starts with '/'
             // and contains only name chars after it (no args yet).
             {
@@ -1395,6 +1407,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     roomTextArea_->set_on_submit(
         [this]
         {
+            // GIF strip: Enter sends the highlighted GIF (consumes the submit).
+            if (gif_controller_ && gif_controller_->on_submit())
+            {
+                return;
+            }
             if (slash_popup_visible_())
             {
                 int sel = slash_popup_widget_->selected_index();
@@ -1438,6 +1455,110 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             }
             onSendClicked();
         });
+
+    // ── GIF picker (/gif <query>) ────────────────────────────────────────────
+    // Eagerly create the strip + controller so the on_changed/on_submit lambdas
+    // above (which capture `this`) can drive it once the user types `/gif `.
+    gif_popup_frame_ = new QWidget(this);
+    gif_popup_frame_->setFocusPolicy(Qt::NoFocus);
+    gif_popup_frame_->hide();
+    gif_popup_surface_ = std::make_unique<tk::qt6::Surface>(
+        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
+        gif_popup_frame_, /*transparent=*/false);
+    gif_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    {
+        auto w = std::make_unique<tesseract::views::GifPopup>();
+        gif_popup_widget_ = w.get();
+        gif_popup_surface_->set_root(std::move(w));
+        auto* lay = new QVBoxLayout(gif_popup_frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(gif_popup_surface_.get());
+    }
+    // Strip preview provider: decode each Tenor preview URL's first frame on a
+    // worker thread, cache by URL, and repaint when it lands.
+    gif_popup_widget_->set_image_provider(
+        [this](const std::string& url) -> const tk::Image*
+        {
+            auto it = gif_previews_.find(url);
+            if (it != gif_previews_.end())
+                return it->second.get();
+            if (gif_preview_inflight_.insert(url).second)
+            {
+                auto alive = gif_alive_;
+                run_async_(
+                    [this, url, alive]
+                    {
+                        std::vector<std::uint8_t> bytes =
+                            client_ ? client_->fetch_url_bytes(url)
+                                    : std::vector<std::uint8_t>{};
+                        post_to_ui_(
+                            [this, url, b = std::move(bytes), alive]() mutable
+                            {
+                                if (!*alive)
+                                    return;
+                                gif_preview_inflight_.erase(url);
+                                if (b.empty())
+                                    return;
+                                QByteArray qb(
+                                    reinterpret_cast<const char*>(b.data()),
+                                    static_cast<int>(b.size()));
+                                QBuffer buf(&qb);
+                                buf.open(QIODevice::ReadOnly);
+                                QImageReader reader(&buf);
+                                reader.setAutoTransform(true);
+                                QImage frame = reader.read(); // first frame
+                                if (frame.isNull())
+                                    return;
+                                if (frame.format() != QImage::Format_RGBA8888)
+                                    frame = frame.convertToFormat(
+                                        QImage::Format_RGBA8888);
+                                gif_previews_[url] =
+                                    tk::qt6::make_image(std::move(frame));
+                                if (gif_popup_surface_)
+                                    gif_popup_surface_->update();
+                            });
+                    });
+            }
+            return nullptr;
+        });
+    {
+        tesseract::views::GifController::Hooks gh;
+        gh.show = [this] { show_gif_popup_(); };
+        gh.hide = [this] { hide_gif_popup_(); };
+        gh.repaint = [this]
+        {
+            if (gif_popup_surface_)
+                gif_popup_surface_->update();
+        };
+        gh.room_id = [this] { return current_room_id_; };
+        gh.client = [this]() -> tesseract::Client* { return client_; };
+        gh.run_async = [this](std::function<void()> fn)
+        { run_async_(std::move(fn)); };
+        gh.post_to_ui = [this](std::function<void()> fn)
+        { post_to_ui_(std::move(fn)); };
+        gh.post_delayed = [this](int ms, std::function<void()> fn)
+        {
+            if (mainAppSurface_)
+                mainAppSurface_->host().post_delayed(ms, std::move(fn));
+        };
+        gh.api_key = []() -> std::string
+        {
+            const char* k = std::getenv("TESSERACT_GIF_API_KEY");
+            return k ? std::string(k) : std::string();
+        };
+        gh.client_key = []() -> std::string { return "tesseract"; };
+        gh.clear_composer = [this]
+        {
+            if (roomTextArea_)
+                roomTextArea_->set_text("");
+            if (mainApp_ && mainApp_->room_view())
+                mainApp_->room_view()->set_current_text("");
+        };
+        gif_controller_ = std::make_unique<tesseract::views::GifController>(
+            roomTextArea_.get(), gif_popup_widget_, std::move(gh));
+    }
+
     roomTextArea_->set_on_edit_last(
         [this]
         {
@@ -4999,6 +5120,80 @@ void MainWindow::hide_slash_popup_()
     if (roomTextArea_)
     {
         roomTextArea_->set_on_popup_nav(nullptr);
+    }
+}
+
+void MainWindow::show_gif_popup_()
+{
+    if (!gif_popup_frame_ || !gif_popup_widget_ || !roomTextArea_ ||
+        !mainAppSurface_ || !gif_popup_surface_)
+    {
+        return;
+    }
+    if (gif_popup_widget_->visible_count() <= 0)
+    {
+        hide_gif_popup_();
+        return;
+    }
+    const int n = gif_popup_widget_->visible_count();
+    const float fw = 2.0f * tesseract::views::GifPopup::kPad +
+                     float(n) * tesseract::views::GifPopup::kCellW +
+                     float(n - 1) * tesseract::views::GifPopup::kGap;
+    const float fh = 2.0f * tesseract::views::GifPopup::kPad +
+                     tesseract::views::GifPopup::kCellH +
+                     tesseract::views::GifPopup::kAttribH;
+    int w = std::max(1, int(fw));
+    int h = std::max(1, int(fh));
+
+    tk::Rect cur = roomTextArea_->cursor_rect();
+    QPoint anchor =
+        mainAppSurface_->mapTo(this, QPoint(int(cur.x), int(cur.y)));
+    QRect work = rect();
+    int x = std::clamp(anchor.x(), work.left(),
+                       std::max(work.left(), work.right() - w));
+    int y_above = anchor.y() - h - 4;
+    int y = (y_above >= work.top()) ? y_above : anchor.y() + int(cur.h) + 4;
+    y = std::clamp(y, work.top(), std::max(work.top(), work.bottom() - h));
+
+    gif_popup_frame_->setGeometry(x, y, w, h);
+    gif_popup_surface_->resize(w, h);
+    gif_popup_frame_->show();
+    gif_popup_frame_->raise();
+    gif_popup_surface_->relayout();
+
+    // Route ↑/↓/Tab/Esc to the controller while the strip is open.
+    roomTextArea_->set_on_popup_nav(
+        [this](tk::NativeTextArea::NavKey nk) -> bool
+        { return gif_controller_ && gif_controller_->on_nav(nk); });
+}
+
+void MainWindow::hide_gif_popup_()
+{
+    if (gif_popup_frame_)
+    {
+        gif_popup_frame_->hide();
+    }
+    if (roomTextArea_)
+    {
+        roomTextArea_->set_on_popup_nav(nullptr);
+    }
+}
+
+void MainWindow::handle_gif_results_ui_(std::uint64_t request_id,
+                                        std::vector<tesseract::GifResult> results)
+{
+    if (gif_controller_)
+    {
+        gif_controller_->on_results(request_id, std::move(results));
+    }
+}
+
+void MainWindow::handle_gif_search_failed_ui_(std::uint64_t request_id,
+                                              std::string message)
+{
+    if (gif_controller_)
+    {
+        gif_controller_->on_search_failed(request_id, std::move(message));
     }
 }
 

@@ -550,6 +550,23 @@ struct VerificationEmoji
     std::string description; // English label, e.g. "Dog"
 };
 
+/// One GIF search result, surfaced via `IEventHandler::on_gif_results`. URLs
+/// point at the provider CDN: `preview_url` is a small animated form for the
+/// inline result strip; `mp4_url` + `poster_url` are fetched at send time and
+/// re-uploaded as an `m.video`. Mirrors the `GifResult` cxx bridge struct.
+struct GifResult
+{
+    std::string id;
+    std::string preview_url;
+    std::uint32_t preview_w = 0;
+    std::uint32_t preview_h = 0;
+    std::string mp4_url;
+    std::uint32_t mp4_w = 0;
+    std::uint32_t mp4_h = 0;
+    std::uint64_t duration_ms = 0;
+    std::string poster_url;
+};
+
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via
 /// `IEventHandler::on_room_list_state` so UIs can render a "Syncing
 /// rooms…" indicator while the joined-room set is still being hydrated.

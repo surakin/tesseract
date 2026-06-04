@@ -40,7 +40,7 @@ use build_uia_fallback_url as _unused_uia;
 
 /// Build the raw `m.room.message` content object for an animated image
 /// (GIF/WebP). Carries the MSC4230 `org.matrix.msc4230.is_animated` flag and
-/// the `fi.mau.video.gif` vendor hint so capable clients autoplay/loop the
+/// the `fi.mau.gif` vendor hint so capable clients autoplay/loop the
 /// animation. `body` is the caption when one is supplied, otherwise the
 /// filename; the dedicated MSC2530 `filename` field is only added when a
 /// caption is present (matching the rest of the send path). `width`/`height`
@@ -63,7 +63,7 @@ pub(crate) fn build_animated_image_content(
     let mut info = serde_json::json!({
         "mimetype": mime_type,
         "size": size,
-        "fi.mau.video.gif": true,
+        "fi.mau.gif": true,
     });
     if width != 0 {
         info["w"] = serde_json::json!(width);
@@ -714,7 +714,7 @@ impl ClientFfi {
     /// send failures. `width`/`height` of 0 are passed through unset.
     /// When `is_animated` is true the image is sent as a raw `m.image`
     /// event carrying the MSC4230 `org.matrix.msc4230.is_animated` flag and
-    /// the `fi.mau.video.gif` vendor hint so animated GIFs/WebPs autoplay
+    /// the `fi.mau.gif` vendor hint so animated GIFs/WebPs autoplay
     /// and loop on capable clients (the standard `send_attachment` path
     /// strips these fields).
     #[cfg(not(test))]
@@ -745,7 +745,7 @@ impl ClientFfi {
         };
 
         // Animated GIF/WebP path: `send_attachment` strips the MSC4230
-        // `is_animated` flag and the `fi.mau.video.gif` vendor hint, so we
+        // `is_animated` flag and the `fi.mau.gif` vendor hint, so we
         // upload the media ourselves and post a raw `m.image` event whose
         // `info` carries those fields.
         if is_animated {

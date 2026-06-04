@@ -843,6 +843,30 @@ void Client::fetch_url_async(std::uint64_t request_id, std::uint64_t group_id,
     impl_->ffi->fetch_url_async(request_id, group_id, url);
 }
 
+void Client::gif_search(std::uint64_t request_id, const std::string& query,
+                        const std::string& api_key,
+                        const std::string& client_key, std::uint32_t limit)
+{
+    impl_->ffi->gif_search_async(request_id, query, api_key, client_key, limit);
+}
+
+Result Client::send_gif_video(
+    const std::string& room_id, const std::vector<uint8_t>& mp4_bytes,
+    const std::string& mime_type, const std::string& body, std::uint32_t width,
+    std::uint32_t height, std::uint64_t duration_ms,
+    const std::vector<uint8_t>& thumb_bytes, const std::string& thumb_mime,
+    std::uint32_t thumb_width, std::uint32_t thumb_height,
+    const std::string& reply_event_id, const std::string& thread_root)
+{
+    MUT_FFI;
+    rust::Slice<const std::uint8_t> mp4{mp4_bytes.data(), mp4_bytes.size()};
+    rust::Slice<const std::uint8_t> thumb{thumb_bytes.data(),
+                                          thumb_bytes.size()};
+    return from_ffi(impl_->ffi->send_gif_video(
+        room_id, mp4, mime_type, body, width, height, duration_ms, thumb,
+        thumb_mime, thumb_width, thumb_height, reply_event_id, thread_root));
+}
+
 // ---------------------------------------------------------------------------
 // URL preview
 // ---------------------------------------------------------------------------

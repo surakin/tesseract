@@ -37,6 +37,7 @@
 #include <propvarutil.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <chrono>
 #include <ctime>
 #include <cwchar>
@@ -2209,6 +2210,15 @@ void MainWindow::on_create(HWND hwnd)
                     room_view_->set_current_text(s);
                 }
 
+                // ── GIF picker (/gif <query>) ───────────────────────────────────
+                if (gif_controller_ && gif_controller_->on_text_changed(s))
+                {
+                    if (slash_popup_visible_())     hide_slash_popup_();
+                    if (shortcode_popup_visible_()) hide_shortcode_popup_();
+                    if (mention_controller_)        mention_controller_->hide();
+                    return;
+                }
+
                 // ── Slash-command popup ─────────────────────────────────────────
                 int cursor = room_text_area_->cursor_byte_pos();
 
@@ -2424,6 +2434,10 @@ void MainWindow::on_create(HWND hwnd)
         room_text_area_->set_on_submit(
             [this]
             {
+                if (gif_controller_ && gif_controller_->on_submit())
+                {
+                    return;
+                }
                 if (slash_popup_visible_())
                 {
                     int sel = slash_popup_widget_->selected_index();
@@ -2459,6 +2473,92 @@ void MainWindow::on_create(HWND hwnd)
                 }
                 on_send_clicked();
             });
+
+        // ── GIF picker (/gif <query>) ────────────────────────────────────────
+        // Eager WS_POPUP host so the on_changed/on_submit lambdas can drive it.
+        gif_popup_hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                                          L"STATIC", L"", WS_POPUP, 0, 0, 10, 10,
+                                          nullptr, nullptr, hInst_, nullptr);
+        gif_popup_surface_ = std::make_unique<tk::win32::Surface>(
+            hInst_, gif_popup_hwnd_, main_app_surface_->theme());
+        {
+            auto w = std::make_unique<tesseract::views::GifPopup>();
+            gif_popup_widget_ = w.get();
+            gif_popup_surface_->set_root(std::move(w));
+        }
+        gif_popup_widget_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image*
+            {
+                auto it = gif_previews_.find(url);
+                if (it != gif_previews_.end())
+                    return it->second.get();
+                if (gif_preview_inflight_.insert(url).second)
+                {
+                    auto alive = gif_alive_;
+                    run_async_(
+                        [this, url, alive]
+                        {
+                            std::vector<std::uint8_t> bytes =
+                                client_ ? client_->fetch_url_bytes(url)
+                                        : std::vector<std::uint8_t>{};
+                            post_to_ui_(
+                                [this, url, b = std::move(bytes),
+                                 alive]() mutable
+                                {
+                                    if (!*alive)
+                                        return;
+                                    gif_preview_inflight_.erase(url);
+                                    if (b.empty() || !main_app_surface_)
+                                        return;
+                                    if (auto img = main_app_surface_->factory()
+                                                       .decode_image(b))
+                                    {
+                                        gif_previews_[url] = std::move(img);
+                                        if (gif_popup_surface_)
+                                            gif_popup_surface_->relayout();
+                                    }
+                                });
+                        });
+                }
+                return nullptr;
+            });
+        {
+            tesseract::views::GifController::Hooks gh;
+            gh.show = [this] { show_gif_popup_(); };
+            gh.hide = [this] { hide_gif_popup_(); };
+            gh.repaint = [this]
+            {
+                if (gif_popup_surface_)
+                    gif_popup_surface_->relayout();
+            };
+            gh.room_id = [this] { return current_room_id_; };
+            gh.client = [this]() -> tesseract::Client* { return client_; };
+            gh.run_async = [this](std::function<void()> fn)
+            { run_async_(std::move(fn)); };
+            gh.post_to_ui = [this](std::function<void()> fn)
+            { post_to_ui_(std::move(fn)); };
+            gh.post_delayed = [this](int ms, std::function<void()> fn)
+            {
+                if (main_app_surface_)
+                    main_app_surface_->host().post_delayed(ms, std::move(fn));
+            };
+            gh.api_key = []() -> std::string
+            {
+                const char* k = std::getenv("TESSERACT_GIF_API_KEY");
+                return k ? std::string(k) : std::string();
+            };
+            gh.client_key = []() -> std::string { return "tesseract"; };
+            gh.clear_composer = [this]
+            {
+                if (room_text_area_)
+                    room_text_area_->set_text("");
+                if (room_view_)
+                    room_view_->set_current_text({});
+            };
+            gif_controller_ = std::make_unique<tesseract::views::GifController>(
+                room_text_area_.get(), gif_popup_widget_, std::move(gh));
+        }
+
         room_text_area_->set_on_edit_last(
             [this]
             {
@@ -6202,6 +6302,84 @@ void MainWindow::hide_slash_popup_()
     if (room_text_area_)
     {
         room_text_area_->set_on_popup_nav(nullptr);
+    }
+}
+
+void MainWindow::show_gif_popup_()
+{
+    if (!gif_popup_widget_ || !room_text_area_ || !main_app_surface_ ||
+        !gif_popup_hwnd_ || !gif_popup_surface_)
+    {
+        return;
+    }
+    const int n = gif_popup_widget_->visible_count();
+    if (n <= 0)
+    {
+        hide_gif_popup_();
+        return;
+    }
+    const int w = dip_to_phys(2.0f * tesseract::views::GifPopup::kPad +
+                              float(n) * tesseract::views::GifPopup::kCellW +
+                              float(n - 1) * tesseract::views::GifPopup::kGap);
+    const int h = dip_to_phys(2.0f * tesseract::views::GifPopup::kPad +
+                              tesseract::views::GifPopup::kCellH +
+                              tesseract::views::GifPopup::kAttribH);
+
+    tk::Rect cur = room_text_area_->cursor_rect();
+    HWND parent = main_app_surface_->hwnd();
+    POINT pt{LONG(cur.x), LONG(cur.y)};
+    ClientToScreen(parent, &pt);
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(mon, &mi);
+    const int gap = dip_to_phys(4.f);
+    int x = pt.x;
+    int y_above = pt.y - h - gap;
+    int y = (y_above >= mi.rcWork.top) ? y_above : pt.y + LONG(cur.h) + gap;
+    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
+    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+
+    SetWindowPos(gif_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    if (HWND s = gif_popup_surface_->hwnd())
+    {
+        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    gif_popup_surface_->relayout();
+
+    room_text_area_->set_on_popup_nav(
+        [this](tk::NativeTextArea::NavKey nk) -> bool
+        { return gif_controller_ && gif_controller_->on_nav(nk); });
+}
+
+void MainWindow::hide_gif_popup_()
+{
+    if (gif_popup_hwnd_)
+    {
+        ShowWindow(gif_popup_hwnd_, SW_HIDE);
+    }
+    if (room_text_area_)
+    {
+        room_text_area_->set_on_popup_nav(nullptr);
+    }
+}
+
+void MainWindow::handle_gif_results_ui_(std::uint64_t request_id,
+                                        std::vector<tesseract::GifResult> results)
+{
+    if (gif_controller_)
+    {
+        gif_controller_->on_results(request_id, std::move(results));
+    }
+}
+
+void MainWindow::handle_gif_search_failed_ui_(std::uint64_t request_id,
+                                              std::string message)
+{
+    if (gif_controller_)
+    {
+        gif_controller_->on_search_failed(request_id, std::move(message));
     }
 }
 

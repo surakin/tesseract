@@ -182,6 +182,21 @@ public:
     {
     }
 
+    /// Fired when an async GIF search (`Client::gif_search`) completes. The UI
+    /// drops results whose `request_id` is stale (a newer search was issued).
+    /// Default no-op.
+    virtual void on_gif_results(std::uint64_t /*request_id*/,
+                                const std::vector<GifResult>& /*results*/)
+    {
+    }
+
+    /// Fired when an async GIF search fails (network / provider error).
+    /// Default no-op.
+    virtual void on_gif_search_failed(std::uint64_t /*request_id*/,
+                                      const std::string& /*message*/)
+    {
+    }
+
     /// Fired once at startup (after `start_sync` initialises the room-info
     /// watcher) and again whenever the `im.gnomos.tesseract` global
     /// account-data event changes. `json` is the raw event content object,

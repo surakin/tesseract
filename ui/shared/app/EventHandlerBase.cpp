@@ -182,6 +182,23 @@ void EventHandlerBase::on_url_preview_ready(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_gif_results(std::uint64_t request_id,
+                                      const std::vector<GifResult>& results)
+{
+    auto r = std::make_shared<std::vector<GifResult>>(results);
+    shell_->post_to_ui_(
+        [shell = shell_, request_id, r]() mutable
+        { shell->handle_gif_results_ui_(request_id, std::move(*r)); });
+}
+
+void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
+                                            const std::string& message)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, request_id, msg = message]() mutable
+        { shell->handle_gif_search_failed_ui_(request_id, std::move(msg)); });
+}
+
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
     auto rs = rooms; // one copy; moved into the lambda below

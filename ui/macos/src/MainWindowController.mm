@@ -30,6 +30,8 @@
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
 #include "views/MentionController.h"
+#include "views/GifController.h"
+#include "views/GifPopup.h"
 #include "views/MentionPopup.h"
 #include "views/SlashCommandEngine.h"
 #include "views/SlashCommandPopup.h"
@@ -61,6 +63,7 @@
 #include "views/AccountPicker.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -320,6 +323,26 @@ public:
                              std::shared_ptr<bool> target_alive = nullptr)
         override;
 
+    // GIF search results arrive on a MacShell (ShellBase) callback but the
+    // GifController lives on the ObjC MainWindowController; the controller sets
+    // these to forward into itself.
+    std::function<void(std::uint64_t, std::vector<tesseract::GifResult>)>
+        gif_on_results_;
+    std::function<void(std::uint64_t, std::string)> gif_on_failed_;
+    void handle_gif_results_ui_(std::uint64_t request_id,
+                                std::vector<tesseract::GifResult> results)
+        override
+    {
+        if (gif_on_results_)
+            gif_on_results_(request_id, std::move(results));
+    }
+    void handle_gif_search_failed_ui_(std::uint64_t request_id,
+                                      std::string message) override
+    {
+        if (gif_on_failed_)
+            gif_on_failed_(request_id, std::move(message));
+    }
+
     // Borrowed pointers set by ObjC side after building the chat surface.
     // main_app_ / room_view_ now live in ShellBase; re-export them so the ObjC
     // side can keep reaching them through _shell. app_surface_ is the macOS
@@ -419,6 +442,9 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)showMentionPopupAtCursor:(tk::Rect)cursor rows:(int)rows;
 - (void)hideMentionPopup;
 - (BOOL)mentionPopupVisible;
+- (void)showGifPopup;
+- (void)hideGifPopup;
+- (BOOL)gifPopupVisible;
 - (void)_relayoutMentionPopupIfVisible;
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
@@ -1568,6 +1594,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
     tesseract::views::SlashCommandPopup*
         _slashPopupWidget; // borrowed from root
     tesseract::views::SlashCommandEngine _slashEngine;
+
+    // GIF picker (/gif <query>) — NSPanel hosting a tk::macos::Surface.
+    NSPanel* _gifPanel;
+    std::unique_ptr<tk::macos::Surface> _gifPopupSurface;
+    tesseract::views::GifPopup* _gifPopupWidget; // borrowed from root
+    std::unique_ptr<tesseract::views::GifController> _gifController;
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> _gifPreviews;
+    std::unordered_set<std::string> _gifPreviewInflight;
+    std::shared_ptr<bool> _gifAlive;
 
     // AppKit chrome.
     LoginView* _loginView;
@@ -2990,6 +3025,151 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     _roomTextArea.get(), _shell->client_, _mentionPopupWidget,
                     std::move(hooks));
         }
+        {
+            // GIF picker (/gif <query>): NSPanel + GifPopup + controller, built
+            // eagerly so the controller has its borrowed widget from the start.
+            NSRect gf = NSMakeRect(0, 0, 220, 120);
+            _gifPanel = [[NSPanel alloc]
+                initWithContentRect:gf
+                          styleMask:NSWindowStyleMaskNonactivatingPanel |
+                                    NSWindowStyleMaskBorderless
+                            backing:NSBackingStoreBuffered
+                              defer:NO];
+            _gifPanel.floatingPanel = YES;
+            _gifPanel.hidesOnDeactivate = NO;
+            _gifPanel.becomesKeyOnlyIfNeeded = YES;
+            _gifPopupSurface =
+                std::make_unique<tk::macos::Surface>(_mainAppSurface->theme());
+            auto gw = std::make_unique<tesseract::views::GifPopup>();
+            _gifPopupWidget = gw.get();
+            _gifPopupSurface->set_root(std::move(gw));
+            [_gifPanel setContentView:(__bridge NSView*)
+                                          _gifPopupSurface->view_handle()];
+            _gifAlive = std::make_shared<bool>(true);
+
+            __weak MainWindowController* gc = self;
+            _gifPopupWidget->set_image_provider(
+                [gc](const std::string& url) -> const tk::Image*
+                {
+                    MainWindowController* c = gc;
+                    if (!c)
+                        return nullptr;
+                    auto it = c->_gifPreviews.find(url);
+                    if (it != c->_gifPreviews.end())
+                        return it->second.get();
+                    if (!c->_gifPreviewInflight.insert(url).second)
+                        return nullptr;
+                    auto alive = c->_gifAlive;
+                    MacShell* shell = c->_shell.get();
+                    shell->run_async_(
+                        [gc, url, alive, shell]
+                        {
+                            std::vector<std::uint8_t> bytes =
+                                shell->client_
+                                    ? shell->client_->fetch_url_bytes(url)
+                                    : std::vector<std::uint8_t>{};
+                            shell->post_to_ui_(
+                                [gc, url, b = std::move(bytes), alive]() mutable
+                                {
+                                    if (!*alive)
+                                        return;
+                                    MainWindowController* c2 = gc;
+                                    if (!c2)
+                                        return;
+                                    c2->_gifPreviewInflight.erase(url);
+                                    if (b.empty())
+                                        return;
+                                    NSData* d = [NSData dataWithBytes:b.data()
+                                                              length:b.size()];
+                                    CGImageSourceRef src =
+                                        CGImageSourceCreateWithData(
+                                            (__bridge CFDataRef)d, nullptr);
+                                    if (!src)
+                                        return;
+                                    CGImageRef cg =
+                                        CGImageSourceCreateImageAtIndex(
+                                            src, 0, nullptr);
+                                    CFRelease(src);
+                                    if (!cg)
+                                        return;
+                                    c2->_gifPreviews[url] =
+                                        tk::cg::make_image(cg);
+                                    CGImageRelease(cg);
+                                    if (c2->_gifPopupSurface)
+                                        c2->_gifPopupSurface->relayout();
+                                });
+                        });
+                    return nullptr;
+                });
+
+            tesseract::views::GifController::Hooks gh;
+            gh.show = [gc] { if (MainWindowController* c = gc) [c showGifPopup]; };
+            gh.hide = [gc] { if (MainWindowController* c = gc) [c hideGifPopup]; };
+            gh.repaint = [gc]
+            {
+                MainWindowController* c = gc;
+                if (c && c->_gifPopupSurface && [c gifPopupVisible])
+                    c->_gifPopupSurface->relayout();
+            };
+            gh.room_id = [gc]() -> std::string
+            {
+                MainWindowController* c = gc;
+                return c ? c->_shell->current_room_id_ : std::string{};
+            };
+            gh.client = [gc]() -> tesseract::Client*
+            {
+                MainWindowController* c = gc;
+                return c ? c->_shell->client_ : nullptr;
+            };
+            gh.run_async = [gc](std::function<void()> fn)
+            {
+                if (MainWindowController* c = gc)
+                    c->_shell->run_async_(std::move(fn));
+            };
+            gh.post_to_ui = [gc](std::function<void()> fn)
+            {
+                if (MainWindowController* c = gc)
+                    c->_shell->post_to_ui_(std::move(fn));
+            };
+            gh.post_delayed = [gc](int ms, std::function<void()> fn)
+            {
+                if (MainWindowController* c = gc)
+                    c->_mainAppSurface->host().post_delayed(ms, std::move(fn));
+            };
+            gh.api_key = []() -> std::string
+            {
+                const char* k = std::getenv("TESSERACT_GIF_API_KEY");
+                return k ? std::string(k) : std::string();
+            };
+            gh.client_key = []() -> std::string { return "tesseract"; };
+            gh.clear_composer = [gc]
+            {
+                MainWindowController* c = gc;
+                if (!c)
+                    return;
+                if (c->_roomTextArea)
+                    c->_roomTextArea->set_text("");
+                if (c->_shell->room_view_)
+                    c->_shell->room_view_->set_current_text({});
+            };
+            _gifController = std::make_unique<tesseract::views::GifController>(
+                _roomTextArea.get(), _gifPopupWidget, std::move(gh));
+
+            // Bridge ShellBase gif callbacks → this controller.
+            _shell->gif_on_results_ =
+                [gc](std::uint64_t id, std::vector<tesseract::GifResult> r)
+            {
+                MainWindowController* c = gc;
+                if (c && c->_gifController)
+                    c->_gifController->on_results(id, std::move(r));
+            };
+            _shell->gif_on_failed_ = [gc](std::uint64_t id, std::string m)
+            {
+                MainWindowController* c = gc;
+                if (c && c->_gifController)
+                    c->_gifController->on_search_failed(id, std::move(m));
+            };
+        }
         // Topic-edit overlay (positioned by set_on_layout below).
         _topicTextArea = _mainAppSurface->host().make_text_area();
         _topicTextArea->set_on_changed(
@@ -3012,6 +3192,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 if (c->_roomView)
                 {
                     c->_roomView->set_current_text(s);
+                }
+
+                // ── GIF picker (/gif <query>) ──────────────────────────────────
+                if (c->_gifController && c->_gifController->on_text_changed(s))
+                {
+                    if ([c slashPopupVisible])    [c hideSlashPopup];
+                    if (c->_mentionController)    c->_mentionController->hide();
+                    return;
                 }
 
                 // ── Slash-command detection ────────────────────────────────────
@@ -3238,6 +3426,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 MainWindowController* c = weakSelf;
                 if (!c)
+                {
+                    return;
+                }
+                if (c->_gifController && c->_gifController->on_submit())
                 {
                     return;
                 }
@@ -4367,6 +4559,70 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (BOOL)mentionPopupVisible
 {
     return _mentionPanel && _mentionPanel.isVisible;
+}
+
+- (BOOL)gifPopupVisible
+{
+    return _gifPanel && _gifPanel.isVisible;
+}
+
+- (void)showGifPopup
+{
+    if (!_gifPanel || !_mainAppSurface || !_gifPopupWidget || !_roomTextArea)
+    {
+        return;
+    }
+    const int n = _gifPopupWidget->visible_count();
+    if (n <= 0)
+    {
+        [self hideGifPopup];
+        return;
+    }
+    const CGFloat w = 2.0 * tesseract::views::GifPopup::kPad +
+                      double(n) * tesseract::views::GifPopup::kCellW +
+                      double(n - 1) * tesseract::views::GifPopup::kGap;
+    const CGFloat h = 2.0 * tesseract::views::GifPopup::kPad +
+                      tesseract::views::GifPopup::kCellH +
+                      tesseract::views::GifPopup::kAttribH;
+    [_gifPanel setContentSize:NSMakeSize(w, h)];
+    if (_gifPopupSurface)
+    {
+        _gifPopupSurface->relayout();
+    }
+
+    tk::Rect cursor = _roomTextArea->cursor_rect();
+    NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
+    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
+    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
+    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
+    NSRect sf = _gifPanel.screen ? _gifPanel.screen.visibleFrame
+                                 : [NSScreen mainScreen].visibleFrame;
+    CGFloat y_above = screenPt.y + 4;
+    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - h;
+    CGFloat x = screenPt.x;
+    CGFloat y = (y_above + h <= sf.origin.y + sf.size.height) ? y_above
+                                                              : y_below;
+    x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - w);
+    y = std::clamp(y, sf.origin.y, sf.origin.y + sf.size.height - h);
+    [_gifPanel setFrameOrigin:NSMakePoint(x, y)];
+    [_gifPanel orderFront:nil];
+
+    __weak MainWindowController* weakSelf = self;
+    _roomTextArea->set_on_popup_nav(
+        [weakSelf](tk::NativeTextArea::NavKey nk) -> bool
+        {
+            MainWindowController* c = weakSelf;
+            return c && c->_gifController && c->_gifController->on_nav(nk);
+        });
+}
+
+- (void)hideGifPopup
+{
+    [_gifPanel orderOut:nil];
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_on_popup_nav(nullptr);
+    }
 }
 
 - (void)_relayoutMentionPopupIfVisible

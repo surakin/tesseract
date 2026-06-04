@@ -380,6 +380,22 @@ pub mod ffi {
         description: String,
     }
 
+    /// One GIF search result delivered to C++ via `on_gif_results`. URLs point
+    /// at the provider CDN: `preview_url` is a small animated form for the
+    /// result strip, `mp4_url` + `poster_url` are fetched at send time and
+    /// re-uploaded as an `m.video`.
+    struct GifResult {
+        id: String,
+        preview_url: String,
+        preview_w: u32,
+        preview_h: u32,
+        mp4_url: String,
+        mp4_w: u32,
+        mp4_h: u32,
+        duration_ms: u64,
+        poster_url: String,
+    }
+
     /// Snapshot of the server-side key-backup state plus a running counter of
     /// imported room keys for this device. Carried by `on_backup_progress`
     /// callbacks and returned by `backup_state()`.
@@ -740,6 +756,24 @@ pub mod ffi {
             request_id: u64,
             preview_json: &str,
         );
+
+        /// Fired when an async GIF search started via `gif_search_async`
+        /// completes successfully. `request_id` is the correlation token the
+        /// caller passed; the C++ side drops results whose id is stale (a newer
+        /// search has since been issued).
+        fn on_gif_results(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            results: &Vec<GifResult>,
+        );
+
+        /// Fired when an async GIF search fails (network / provider error).
+        /// `request_id` is the correlation token; `message` is human-readable.
+        fn on_gif_search_failed(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            message: &str,
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1057,7 +1091,7 @@ pub mod ffi {
         /// and `height` populate `info.{w,h}`; pass 0 when unknown. When
         /// `is_animated` is true the image is sent as a raw `m.image` event
         /// carrying the MSC4230 `org.matrix.msc4230.is_animated` flag and the
-        /// `fi.mau.video.gif` vendor hint so animated GIFs/WebPs autoplay and
+        /// `fi.mau.gif` vendor hint so animated GIFs/WebPs autoplay and
         /// loop on capable clients (the standard `send_attachment` path
         /// strips these fields).
         fn send_image(
@@ -1467,6 +1501,43 @@ pub mod ffi {
         /// fetch under the bulk lane and fires `on_media_ready(request_id,
         /// bytes)` on completion (empty on failure). Does not pin a thread.
         fn fetch_url_async(self: &ClientFfi, request_id: u64, group_id: u64, url: &str);
+
+        // ----- GIF search + send -----
+
+        /// Search the configured GIF provider (Klipy) for `query`, returning at
+        /// most `limit` results via `on_gif_results(request_id, …)` (or
+        /// `on_gif_search_failed`). Non-blocking; runs on a worker thread.
+        /// `api_key` / `client_key` come from app settings.
+        fn gif_search_async(
+            self: &ClientFfi,
+            request_id: u64,
+            query: &str,
+            api_key: &str,
+            client_key: &str,
+            limit: u32,
+        );
+
+        /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying
+        /// the `fi.mau.gif` vendor hint. `thumb_bytes` is a static poster image
+        /// (`thumb_mime`, e.g. `image/png`); empty to omit. MP4 + thumbnail are
+        /// encrypted when the room is encrypted, plaintext otherwise. Blocks the
+        /// calling thread.
+        fn send_gif_video(
+            self: &mut ClientFfi,
+            room_id: &str,
+            mp4_bytes: &[u8],
+            mime_type: &str,
+            body: &str,
+            width: u32,
+            height: u32,
+            duration_ms: u64,
+            thumb_bytes: &[u8],
+            thumb_mime: &str,
+            thumb_width: u32,
+            thumb_height: u32,
+            reply_event_id: &str,
+            thread_root: &str,
+        ) -> OpResult;
 
         // ----- MSC3266 room summary / join -----
 
