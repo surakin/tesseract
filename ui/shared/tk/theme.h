@@ -24,6 +24,8 @@ struct Palette
     Color sidebar_bg;
     Color sidebar_selected;
     Color sidebar_hover;
+    Color section_header_bg;    // room-list section header (idle)
+    Color section_header_hover; // room-list section header (hovered)
     Color chrome_bg; // headers, status, banner backgrounds
     Color compose_card_bg;
     Color border;
@@ -71,6 +73,9 @@ struct Palette
 
     // Text selection highlight — drawn behind glyphs so text remains readable.
     Color selection;
+
+    // Tint drawn behind inline code / fenced code-block runs in message bodies.
+    Color code_bg;
 };
 
 struct Theme

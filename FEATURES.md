@@ -19,7 +19,8 @@ version) are noted where relevant.
 
 - Send, receive, edit, reply, react, and redact
 - Markdown formatting (send and receive)
-- Syntax-highlighted code blocks (bidirectional, theme-aware)
+- Syntax-highlighted code blocks (bidirectional, theme-aware), rendered on a tinted background (single enclosing panel for fenced blocks, inline tint for `code`)
+- Message rows show the event timestamp (HH:MM) under the avatar — always on the first message of a group, on hover for continuation rows; same-sender messages within 5 minutes group into continuation rows
 - Reactions: Unicode and custom emoji, both send and display
 - Custom emoji and stickers via image packs (MSC2545)
 - Threads (matrix-rust-sdk thread support)
@@ -53,6 +54,7 @@ version) are noted where relevant.
 ## Rooms & navigation
 
 - Room list with sections: Favorites, DMs, Rooms, Spaces (tag-aware: `m.favourite`)
+- Sticky section headers — the current section's header pins to the top while scrolling (interactive: click to collapse/expand)
 - Space navigation with drill-down and recursive subspace support
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
@@ -60,7 +62,7 @@ version) are noted where relevant.
 - Back / forward room history navigation (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
 - Jump-to-date via a calendar button in the room header (MSC3030; server capability checked)
-- Unread indicators in the room list
+- Unread indicators in the room list (badge plus a semibold room title when unread)
 - Last-message previews, including image and sticker previews
 - Room search (filters by room display name)
 - Direct messages (create / open; reuses existing DM if present)

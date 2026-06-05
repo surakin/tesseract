@@ -1900,6 +1900,18 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
+            // A space is not a room: clicking one drills into it rather than
+            // opening it as the active room/tab (which would put the space
+            // title in the room header).
+            for (const auto& r : s->_shell->rooms_)
+            {
+                if (r.id == room_id && r.is_space)
+                {
+                    s->_shell->space_stack_.push_back(room_id);
+                    [s _refreshRoomList];
+                    return;
+                }
+            }
             NSEventModifierFlags mods = [NSEvent modifierFlags];
             if (mods & NSEventModifierFlagCommand)
             {

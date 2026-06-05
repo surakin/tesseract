@@ -7,6 +7,36 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-06-05
 
+- feat(ui): code blocks and inline code in message bodies now render on a
+  tinted background. A new `code_bg` palette token (light `0xD9DCE3`, dark
+  `0x2E3138`) is filled behind code runs in `MessageListView::paint_body_text`.
+  Fenced ```` ``` ```` blocks draw a single rounded panel enclosing the whole
+  block (the contiguous `code_block` span run is gathered and its per-line
+  rects unioned); inline `` `code` `` gets a tight per-run tint. A new
+  `code_block` flag on `tk::TextSpan` distinguishes the two.
+- feat(ui): message rows show the event timestamp (HH:MM) tucked under the
+  sender avatar. The first message of a group always shows it; continuation
+  rows (avatar hidden) show it on hover, vertically centred against the
+  message line.
+- change(ui): default message-grouping window raised from 60s to 300s
+  (`Settings::message_group_interval_s`) — consecutive messages from the same
+  sender within 5 minutes collapse into continuation rows.
+- feat(ui): room list — section headers are now sticky. While scrolling a long
+  section, its header pins to the top of the list and is pushed up by the next
+  section's header. The pinned header is interactive (click to collapse/expand,
+  hover highlight); `RoomListView` overrides `dispatch_pointer_down/move` so it
+  wins over the inner `ListView` rows beneath it. `ListView::row_world_rect`
+  was promoted to public for the overlay geometry.
+- feat(ui): room list — a room's title renders semibold (`FontRole::SidebarName`)
+  when it has unread messages; section-header titles are now black
+  (`text_primary`) on a higher-contrast background (new `section_header_bg` /
+  `section_header_hover` palette tokens).
+- fix(shell): clicking a space in the room list now drills into it instead of
+  also selecting it as the active room (the space title could appear in the
+  room header). The `is_space` drill guard was missing from the live click
+  path; added to all four shells (Qt6, GTK4, Win32, macOS).
+- fix(gtk): room-list Ctrl+click now opens the room in a new tab, matching the
+  other shells (the GTK handler was missing the modifier check).
 - feat(shell): room navigation history — Alt+Left / Alt+Right (Cmd+[ / Cmd+]
   on macOS) traverse a per-session back-forward history of visited rooms, like
   browser navigation. `ShellBase` maintains a `room_nav_history_` vector (capped

@@ -14,6 +14,10 @@ constexpr Palette light_palette()
     p.sidebar_bg = Color::rgb(0xF0F2F5);
     p.sidebar_selected = Color::rgb(0xE4E6EB);
     p.sidebar_hover = Color::rgb(0xEBEDF0);
+    // Section headers sit distinctly darker than the room list (sidebar_bg
+    // 0xF0F2F5); the hover state steps darker again for clear feedback.
+    p.section_header_bg    = Color::rgb(0xDADDE5);
+    p.section_header_hover = Color::rgb(0xC6CAD4);
     p.chrome_bg = Color::rgb(0xF8F9FA);
     p.compose_card_bg = Color::rgb(0xF0F2F5);
     p.border = Color::rgb(0xD0D3D8);
@@ -56,6 +60,10 @@ constexpr Palette light_palette()
     // Selection highlight
     p.selection = Color::rgba(0x00, 0x84, 0xFF, 0x50);
 
+    // Code-run tint — distinctly darker than the grey message area
+    // (sidebar_bg 0xF0F2F5) so inline/fenced code reads as a tinted panel.
+    p.code_bg = Color::rgb(0xD9DCE3);
+
     // Presence dots
     p.presence_online      = Color::rgb(0x2ECC40); // green
     p.presence_unavailable = Color::rgb(0xFF851B); // amber
@@ -72,6 +80,10 @@ constexpr Palette dark_palette()
     p.sidebar_bg = Color::rgb(0x16181C);
     p.sidebar_selected = Color::rgb(0x2A2D33);
     p.sidebar_hover = Color::rgb(0x23262B);
+    // Section headers sit distinctly lighter than the dark room list
+    // (sidebar_bg 0x16181C); the hover state steps lighter again.
+    p.section_header_bg    = Color::rgb(0x2D3138);
+    p.section_header_hover = Color::rgb(0x3C414A);
     p.chrome_bg = Color::rgb(0x202327);
     p.compose_card_bg = Color::rgb(0x202327);
     p.border = Color::rgb(0x33363B);
@@ -107,6 +119,9 @@ constexpr Palette dark_palette()
     p.avatar_initials_text = Color::rgb(0xBFD8FF);
 
     p.selection = Color::rgba(0x4D, 0xA3, 0xFF, 0x50);
+
+    // Code-run tint (lighter than the dark message area, sidebar_bg 0x16181C).
+    p.code_bg = Color::rgb(0x2E3138);
 
     // Presence dots
     p.presence_online      = Color::rgb(0x23B064); // green

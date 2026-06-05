@@ -624,6 +624,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             tk::TextSpan sp;
             sp.text = code_buf;
             sp.code = true;
+            sp.code_block = true;
             spans.push_back(std::move(sp));
         }
         else
@@ -631,10 +632,11 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             for (auto& h : hl)
             {
                 tk::TextSpan sp;
-                sp.text      = std::move(h.text);
-                sp.code      = true;
-                sp.has_color = true;
-                sp.color     = tk::Color{h.r, h.g, h.b, 255};
+                sp.text       = std::move(h.text);
+                sp.code       = true;
+                sp.code_block = true;
+                sp.has_color  = true;
+                sp.color      = tk::Color{h.r, h.g, h.b, 255};
                 spans.push_back(std::move(sp));
             }
         }

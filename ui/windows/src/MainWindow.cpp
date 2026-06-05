@@ -1457,6 +1457,18 @@ void MainWindow::on_create(HWND hwnd)
 
         room_list_view_->on_room_selected = [this](const std::string& room_id)
         {
+            // A space is not a room: clicking one drills into it rather than
+            // opening it as the active room/tab (which would put the space
+            // title in the room header).
+            for (const auto& r : rooms_)
+            {
+                if (r.id == room_id && r.is_space)
+                {
+                    space_stack_.push_back(room_id);
+                    refresh_room_list();
+                    return;
+                }
+            }
             if (GetKeyState(VK_CONTROL) & 0x8000)
             {
                 tab_open_room(room_id);

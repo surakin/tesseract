@@ -262,6 +262,20 @@ public:
     // inclusive. Returns {0, -1} when the list is empty or not yet laid out.
     std::pair<int, int> visible_range() const;
 
+    // World-space rect for the row at `idx`. Returns an empty rect when `idx`
+    // is out of range. The Y coordinate accounts for the current scroll offset
+    // so it matches the position used by paint_row(). Used by subclasses and
+    // by container views (e.g. a sticky-header overlay) to locate rows without
+    // waiting for a paint pass to populate geometry caches.
+    Rect row_world_rect(int idx) const
+    {
+        if (idx < 0 || static_cast<std::size_t>(idx) + 1 >= row_offsets_.size())
+            return {};
+        const float top = row_offsets_[static_cast<std::size_t>(idx)];
+        const float bot = row_offsets_[static_cast<std::size_t>(idx) + 1];
+        return {bounds_.x, bounds_.y + top - scroll_y_, bounds_.w, bot - top};
+    }
+
     // Force a height rebuild if dirty (and re-snap to bottom when sticking)
     // without painting any rows. Lets a subclass get a valid visible_range()
     // before it decides whether to paint. Safe to call from paint(); the
@@ -299,20 +313,6 @@ protected:
     void refresh_hover_at(Point local)
     {
         update_hover(local);
-    }
-
-    // World-space rect for the row at `idx`. Returns an empty rect when `idx`
-    // is out of range. The Y coordinate accounts for the current scroll offset
-    // so it matches the position used by paint_row(). Subclasses can use this
-    // in on_pointer_down to hit-test rows without waiting for a paint pass to
-    // populate geometry caches.
-    Rect row_world_rect(int idx) const
-    {
-        if (idx < 0 || static_cast<std::size_t>(idx) + 1 >= row_offsets_.size())
-            return {};
-        const float top = row_offsets_[static_cast<std::size_t>(idx)];
-        const float bot = row_offsets_[static_cast<std::size_t>(idx) + 1];
-        return {bounds_.x, bounds_.y + top - scroll_y_, bounds_.w, bot - top};
     }
 
     // Returns true when `local` (widget-local coords) is over the scrollbar

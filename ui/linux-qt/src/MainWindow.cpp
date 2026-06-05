@@ -172,6 +172,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainApp_->room_list_view()->on_room_selected =
             [this](const std::string& room_id)
         {
+            // A space is not a room: clicking one drills into it (show its
+            // children + the back affordance) rather than opening it as the
+            // active room/tab. Without this guard tab_select_room would set
+            // the space as current_room_id_ and surface its title in the
+            // room header.
+            for (const auto& r : rooms_)
+            {
+                if (r.id == room_id && r.is_space)
+                {
+                    space_stack_.push_back(room_id);
+                    refreshRoomList();
+                    return;
+                }
+            }
             if (QGuiApplication::keyboardModifiers() & Qt::ControlModifier)
             {
                 tab_open_room(room_id);

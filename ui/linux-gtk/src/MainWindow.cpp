@@ -505,7 +505,30 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
 
         room_list_view_->on_room_selected = [this](const std::string& room_id)
         {
-            tab_select_room(room_id);
+            // A space is not a room: clicking one drills into it rather than
+            // opening it as the active room/tab (which would put the space
+            // title in the room header).
+            for (const auto& r : rooms_)
+            {
+                if (r.id == room_id && r.is_space)
+                {
+                    space_stack_.push_back(room_id);
+                    refresh_room_list();
+                    return;
+                }
+            }
+            // Ctrl+click opens the room in a new tab; a plain click switches
+            // the active tab. The GTK host captures the modifier from the
+            // click gesture (tk pointer events don't carry it).
+            if (main_app_surface_ &&
+                main_app_surface_->host().pointer_ctrl_held())
+            {
+                tab_open_room(room_id);
+            }
+            else
+            {
+                tab_select_room(room_id);
+            }
         };
         room_list_view_->on_scroll = [this]
         {

@@ -48,7 +48,7 @@ public:
     // Consecutive messages from the same sender within this window
     // suppress the repeated avatar + sender name (continuation rows).
     // Set to 0 to disable grouping entirely.
-    int message_group_interval_s = 60;
+    int message_group_interval_s = 300;
 
     // ── Read state ───────────────────────────────────────────────────
     // Delay (ms) after selecting a room before it is marked as read.

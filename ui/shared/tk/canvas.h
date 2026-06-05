@@ -301,7 +301,8 @@ struct TextSpan
     std::string spoiler_reason;
     bool bold = false;
     bool italic = false;
-    bool code = false; // render in monospace
+    bool code = false; // render in monospace (inline `code` or fenced block)
+    bool code_block = false; // part of a fenced ```block``` (vs inline code)
     bool strikethrough = false;
     bool spoiler = false;
     // Explicit foreground colour for this run (syntax-highlighted code, or a

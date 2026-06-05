@@ -1520,12 +1520,11 @@ public:
             }
         }
 
-        // Hover-only timestamp, painted under the sender avatar (left
-        // column). The column from `y = kPadY + kAvatarSize` downward is
-        // empty for every row — body text wraps in the right column — so
-        // this can sit hugging the row's bottom padding without colliding
-        // with anything else the strip painted.
-        if (hovered)
+        // Event timestamp, painted in the left column centred on the avatar
+        // column. The first message of a group (the full row, which draws the
+        // avatar) always shows it tucked beneath the disc; continuation rows
+        // show it only on hover, centred against the message body line.
+        if (!cont || hovered)
         {
             std::string ts = format_hhmm(m.timestamp_ms);
             if (!ts.empty())
@@ -1537,7 +1536,21 @@ public:
                 {
                     tk::Size sz = layout->measure();
                     float tx = avatar_cx - sz.w * 0.5f;
-                    float ty = bounds.y + bounds.h - kPadY - sz.h;
+                    float ty;
+                    if (cont)
+                    {
+                        // Centre against the first line of the message body
+                        // (the only thing in a continuation row).
+                        static_cache_.ensure(ctx.factory);
+                        float line_h = static_cache_.body_line_h > 0.0f
+                                           ? static_cache_.body_line_h
+                                           : sz.h;
+                        ty = bounds.y + kContPadY + (line_h - sz.h) * 0.5f;
+                    }
+                    else
+                    {
+                        ty = bounds.y + kPadY + kAvatarSize + 2.0f;
+                    }
                     ctx.canvas.draw_text(*layout, {tx, ty},
                                          ctx.theme.palette.text_muted);
                 }
@@ -2825,8 +2838,9 @@ private:
                     // unchanged — the extension reaches into the preceding
                     // space).
                     int boff = 0;
-                    for (const auto& sp : spans)
+                    for (std::size_t si = 0; si < spans.size();)
                     {
+                        const auto& sp = spans[si];
                         int len = static_cast<int>(sp.text.size());
                         if (sp.is_mention && sp.has_background && len > 0)
                         {
@@ -2839,8 +2853,61 @@ private:
                                 ctx.canvas.fill_rounded_rect(pill, radius,
                                                              sp.background);
                             }
+                            boff += len;
+                            ++si;
                         }
-                        boff += len;
+                        // Fenced ```block```: one rounded panel enclosing the
+                        // whole multi-line run (the highlighter splits it into
+                        // many coloured spans — gather the contiguous run and
+                        // union its per-line rects so the tint is a single box,
+                        // not a rectangle per line).
+                        else if (sp.code_block)
+                        {
+                            int run_start = boff;
+                            while (si < spans.size() && spans[si].code_block)
+                            {
+                                boff += static_cast<int>(spans[si].text.size());
+                                ++si;
+                            }
+                            bool any = false;
+                            tk::Rect u{};
+                            for (const tk::Rect& r :
+                                 layout->selection_rects(run_start, boff))
+                            {
+                                if (!any) { u = r; any = true; continue; }
+                                float x0 = std::min(u.x, r.x);
+                                float y0 = std::min(u.y, r.y);
+                                float x1 = std::max(u.x + u.w, r.x + r.w);
+                                float y1 = std::max(u.y + u.h, r.y + r.h);
+                                u = {x0, y0, x1 - x0, y1 - y0};
+                            }
+                            if (any)
+                            {
+                                tk::Rect panel{u.x + x - 6.0f, u.y + y - 4.0f,
+                                               u.w + 12.0f, u.h + 8.0f};
+                                ctx.canvas.fill_rounded_rect(
+                                    panel, 6.0f, ctx.theme.palette.code_bg);
+                            }
+                        }
+                        // Inline `code`: a tight per-run tint (single line).
+                        else if (sp.code && len > 0)
+                        {
+                            for (const tk::Rect& r :
+                                 layout->selection_rects(boff, boff + len))
+                            {
+                                tk::Rect bg{r.x + x - 2.0f, r.y + y - 1.0f,
+                                            r.w + 4.0f, r.h + 2.0f};
+                                ctx.canvas.fill_rect(bg,
+                                                     ctx.theme.palette.code_bg);
+                            }
+                            boff += len;
+                            ++si;
+                        }
+                        else
+                        {
+                            boff += len;
+                            ++si;
+                        }
                     }
                     std::string plain_spans = spans_to_plain(spans);
                     draw_with_selection(*layout, x, y,
@@ -3685,12 +3752,21 @@ private:
         std::unique_ptr<tk::TextLayout> trash;
         std::unique_ptr<tk::TextLayout> pin;
         std::unique_ptr<tk::TextLayout> unpin;
+        // Height of a single line of body text — used to vertically centre the
+        // gutter timestamp against the message line on continuation rows.
+        float body_line_h = 0.0f;
 
         void ensure(tk::CanvasFactory& f)
         {
             if (plus)
             {
                 return;
+            }
+            tk::TextStyle bst{};
+            bst.role = tk::FontRole::Body;
+            if (auto bl = f.build_text("Ag", bst))
+            {
+                body_line_h = bl->measure().h;
             }
             tk::TextStyle st{};
             st.role = tk::FontRole::Title;

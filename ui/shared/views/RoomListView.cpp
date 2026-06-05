@@ -224,6 +224,7 @@ private:
         float       text_w     = -1.f;
         std::string preview;
         std::string badge_text;
+        bool        unread     = false; // bold title when there are unreads
         // cached layouts (nullptr when not applicable for this row)
         std::unique_ptr<tk::TextLayout> name_layout;
         std::unique_ptr<tk::TextLayout> preview_layout;
@@ -248,9 +249,10 @@ private:
     void paint_header(const Item& item, tk::PaintCtx& ctx, tk::Rect bounds,
                       bool hovered)
     {
-        ctx.canvas.fill_rect(bounds, hovered
-                                         ? ctx.theme.palette.sidebar_selected
-                                         : ctx.theme.palette.sidebar_hover);
+        ctx.canvas.fill_rect(bounds,
+                             hovered
+                                 ? ctx.theme.palette.section_header_hover
+                                 : ctx.theme.palette.section_header_bg);
 
         // Build the title string. Invitations and Inactive sections include counts.
         std::string title_str;
@@ -327,7 +329,7 @@ private:
                        (bounds.h - cache.title_layout->measure().h) * 0.5f;
             ctx.canvas.draw_text(*cache.title_layout,
                                  {bounds.x + kHeaderPadX, ty},
-                                 ctx.theme.palette.text_muted);
+                                 ctx.theme.palette.text_primary);
         }
         if (cache.chevron_layout)
         {
@@ -516,18 +518,24 @@ private:
         // only when the inputs that determine the layout actually change.
         const std::string display_name =
             room.name.empty() ? room.id : room.name;
+        const bool unread = room.notification_count > 0;
         auto& cache = room_cache_[room.id];
 
         if (cache.display_name != display_name || cache.text_w != text_w ||
-            cache.preview != preview || cache.badge_text != badge_text)
+            cache.preview != preview || cache.badge_text != badge_text ||
+            cache.unread != unread)
         {
             cache.display_name = display_name;
             cache.text_w       = text_w;
             cache.preview      = preview;
             cache.badge_text   = badge_text;
+            cache.unread       = unread;
 
+            // Unread rooms get a semibold title (SidebarName is the Body
+            // point-size at DemiBold weight); read rooms stay regular Body.
             tk::TextStyle name_style{};
-            name_style.role      = tk::FontRole::Body;
+            name_style.role      = unread ? tk::FontRole::SidebarName
+                                          : tk::FontRole::Body;
             name_style.trim      = tk::TextTrim::Ellipsis;
             name_style.max_width = text_w;
             cache.name_layout    = ctx.factory.build_text(display_name, name_style);
@@ -765,16 +773,7 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
 
         if (item.kind == Item::Kind::Header)
         {
-            collapsed_[item.section] = !collapsed_[item.section];
-            if (on_section_toggled)
-                on_section_toggled(item.section, collapsed_[item.section]);
-            rebuild_items();
-            list_->invalidate_data();
-            // Re-apply selection — the selected room may have just been
-            // hidden or revealed by the toggle.
-            set_selected_room(selected_room_id_cache_);
-            if (on_scroll)
-                on_scroll();
+            toggle_section_collapsed_(item.section);
             return;
         }
 
@@ -1175,6 +1174,157 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
+void RoomListView::toggle_section_collapsed_(int section)
+{
+    if (section < 0 || section >= kNumSections || !list_)
+    {
+        return;
+    }
+    collapsed_[section] = !collapsed_[section];
+    if (on_section_toggled)
+        on_section_toggled(section, collapsed_[section]);
+    rebuild_items();
+    list_->invalidate_data();
+    // Re-apply selection — the selected room may have just been hidden or
+    // revealed by the toggle.
+    set_selected_room(selected_room_id_cache_);
+    if (on_scroll)
+        on_scroll();
+}
+
+RoomListView::StickyHeader RoomListView::sticky_header_() const
+{
+    StickyHeader s;
+    if (!list_ || items_.empty())
+    {
+        return s;
+    }
+    auto [first, last] = list_->visible_range();
+    (void)last;
+    if (first < 0 || static_cast<std::size_t>(first) >= items_.size())
+    {
+        return s;
+    }
+
+    // Find the header item for the section whose rows sit at the viewport top.
+    const int section = items_[static_cast<std::size_t>(first)].section;
+    int       hdr     = -1;
+    if (items_[static_cast<std::size_t>(first)].kind == Item::Kind::Header)
+    {
+        hdr = first;
+    }
+    else
+    {
+        for (int i = first; i >= 0; --i)
+        {
+            const auto& it = items_[static_cast<std::size_t>(i)];
+            if (it.kind == Item::Kind::Header && it.section == section)
+            {
+                hdr = i;
+                break;
+            }
+        }
+    }
+    if (hdr < 0)
+    {
+        return s;
+    }
+
+    const float list_top = bounds_.y + search_header_h();
+
+    // If the real header is at or below the viewport top it renders normally —
+    // no overlay needed (and drawing one would double up).
+    if (list_->row_world_rect(hdr).y >= list_top)
+    {
+        return s;
+    }
+
+    float world_y = list_top;
+    // The next section's header pushes the pinned header up as it approaches.
+    for (int i = hdr + 1; i < static_cast<int>(items_.size()); ++i)
+    {
+        if (items_[static_cast<std::size_t>(i)].kind == Item::Kind::Header)
+        {
+            const float next_y = list_->row_world_rect(i).y;
+            if (next_y < list_top + kHeaderH)
+            {
+                world_y = next_y - kHeaderH;
+            }
+            break;
+        }
+    }
+
+    s.show        = true;
+    s.header_item = hdr;
+    s.section     = section;
+    s.world_y     = world_y;
+    return s;
+}
+
+bool RoomListView::sticky_band_contains_(const StickyHeader& s,
+                                         tk::Point world) const
+{
+    if (!s.show)
+    {
+        return false;
+    }
+    const float list_top = bounds_.y + search_header_h();
+    return world.x >= bounds_.x && world.x < bounds_.x + bounds_.w &&
+           world.y >= list_top && world.y < s.world_y + kHeaderH;
+}
+
+tk::Widget* RoomListView::dispatch_pointer_down(tk::Point world)
+{
+    // The pinned header must win over the rows the inner ListView would
+    // otherwise claim first (children are tried before this widget).
+    if (visible() && contains_world(world))
+    {
+        StickyHeader s = sticky_header_();
+        if (sticky_band_contains_(s, world))
+        {
+            press_sticky_section_ = s.section;
+            return this;
+        }
+    }
+    return tk::Widget::dispatch_pointer_down(world);
+}
+
+tk::Widget* RoomListView::dispatch_pointer_move(tk::Point world, bool* dirty)
+{
+    if (visible() && contains_world(world))
+    {
+        StickyHeader s = sticky_header_();
+        if (sticky_band_contains_(s, world))
+        {
+            if (!sticky_hovered_)
+            {
+                sticky_hovered_ = true;
+                if (dirty)
+                    *dirty = true;
+            }
+            // Clear any row hover beneath the pinned header so two rows don't
+            // appear highlighted at once.
+            if (list_)
+                list_->on_pointer_leave();
+            return this;
+        }
+    }
+    if (sticky_hovered_)
+    {
+        sticky_hovered_ = false;
+        if (dirty)
+            *dirty = true;
+    }
+    return tk::Widget::dispatch_pointer_move(world, dirty);
+}
+
+void RoomListView::on_pointer_leave()
+{
+    sticky_hovered_ = false;
+    if (list_)
+        list_->on_pointer_leave();
+}
+
 void RoomListView::paint(tk::PaintCtx& ctx)
 {
     if (search_field_visible_)
@@ -1244,6 +1394,23 @@ void RoomListView::paint(tk::PaintCtx& ctx)
     if (list_ && list_->visible())
     {
         list_->paint(ctx);
+
+        // Sticky section header: pin the current section's header to the top
+        // of the list while its rows occupy the viewport, painted on top of the
+        // freshly-drawn rows. Reuses the adapter's header renderer so it is
+        // pixel-identical to a real header.
+        StickyHeader s = sticky_header_();
+        if (s.show && adapter_)
+        {
+            const float list_top = bounds_.y + search_header_h();
+            tk::Rect    area{bounds_.x, list_top, bounds_.w,
+                          std::max(0.0f, bounds_.h - search_header_h())};
+            ctx.canvas.push_clip_rect(area);
+            tk::Rect sb{bounds_.x, s.world_y, bounds_.w, kHeaderH};
+            adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb,
+                                false, sticky_hovered_);
+            ctx.canvas.pop_clip();
+        }
     }
 }
 
@@ -1286,6 +1453,23 @@ bool RoomListView::on_pointer_down(tk::Point local)
 
 void RoomListView::on_pointer_up(tk::Point local, bool inside_self)
 {
+    // Sticky-header click → toggle the pinned section (press claimed in
+    // dispatch_pointer_down). Only fires when released back over the band.
+    if (press_sticky_section_ >= 0)
+    {
+        int sec               = press_sticky_section_;
+        press_sticky_section_ = -1;
+        if (inside_self)
+        {
+            tk::Point    world{local.x + bounds_.x, local.y + bounds_.y};
+            StickyHeader s = sticky_header_();
+            if (s.section == sec && sticky_band_contains_(s, world))
+            {
+                toggle_section_collapsed_(sec);
+            }
+        }
+        return;
+    }
     if (press_join_room_)
     {
         press_join_room_ = false;

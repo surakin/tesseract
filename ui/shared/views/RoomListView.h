@@ -120,6 +120,12 @@ public:
     void paint(tk::PaintCtx&) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
+    // The pinned sticky header overlays the top of the inner ListView child;
+    // these intercept pointer events over it before the child (which is tried
+    // first by the default dispatch) can claim them for a room row beneath.
+    tk::Widget* dispatch_pointer_down(tk::Point world) override;
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override;
+    void on_pointer_leave() override;
 
     // Section indices (matches array positions throughout the class).
     // kSecInvites is fed from invites_; all others are fed from rooms_.
@@ -182,6 +188,25 @@ private:
 
     float search_header_h() const;
 
+    // Collapse/expand a section and refresh the flat item list + selection.
+    // Shared by the real header click and the sticky-header click.
+    void toggle_section_collapsed_(int section);
+
+    // Sticky (pinned) section header: which header to draw at the top of the
+    // list while its section's rooms occupy the viewport top, and where.
+    struct StickyHeader
+    {
+        bool  show        = false;
+        int   header_item = -1; // index into items_
+        int   section     = -1;
+        float world_y     = 0.f; // world-space top of the pinned header
+    };
+    StickyHeader sticky_header_() const;
+
+    // True when `world` (root-surface coords) falls within the visible band of
+    // the pinned header described by `s`.
+    bool sticky_band_contains_(const StickyHeader& s, tk::Point world) const;
+
     std::vector<tesseract::RoomInfo> rooms_;
     // Pending invitations. Not owned; null when no account is signed in or
     // when the data has not yet been wired up.
@@ -207,6 +232,10 @@ private:
     bool search_field_visible_ = false;
     bool press_search_clear_ = false;
     bool press_join_room_ = false;
+    // Sticky-header interaction: section pressed on the pinned header (-1 =
+    // none), and whether the pointer is currently over the pinned header.
+    int  press_sticky_section_ = -1;
+    bool sticky_hovered_ = false;
 
     // Last-known selected room ID, preserved across filter/collapse changes
     // when the selection is temporarily hidden.
