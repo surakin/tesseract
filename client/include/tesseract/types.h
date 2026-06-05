@@ -552,9 +552,9 @@ struct VerificationEmoji
 
 /// One GIF search result, surfaced via `IEventHandler::on_gif_results`. URLs
 /// point at the provider CDN: `preview_url` is a small static JPEG for the
-/// inline result strip; `image_url` is the animated form (WebP preferred, GIF
-/// fallback, per `image_mime`) fetched at send time and re-uploaded as an
-/// `m.image`. Mirrors the `GifResult` cxx bridge struct.
+/// inline result strip; `image_url` is the animated form (MP4 preferred, WebP
+/// fallback, GIF last resort, per `image_mime`) fetched at send time.
+/// Mirrors the `GifResult` cxx bridge struct.
 struct GifResult
 {
     std::string id;

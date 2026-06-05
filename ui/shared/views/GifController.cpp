@@ -239,14 +239,30 @@ void GifController::accept(const tesseract::GifResult& gif)
                 report("Couldn't load GIF");
                 return;
             }
-            // Send the animated form as an m.image (autoplay/loop via the
-            // fi.mau.gif hint). Routes playback through the image/animation
-            // decoder instead of the video pipeline. send_image encrypts the
-            // bytes itself in E2EE rooms. The body is the user's search query.
-            tesseract::Result r = client->send_image(
-                room, bytes, g.image_mime, body, /*caption*/ "",
-                g.image_w, g.image_h, /*is_animated*/ true,
-                /*reply*/ "", /*thread*/ "");
+
+            tesseract::Result r;
+            if (g.image_mime == "video/mp4")
+            {
+                // Fetch the static JPEG preview as a poster thumbnail (best-effort;
+                // non-fatal if absent). send_gif_video encrypts in E2EE rooms.
+                std::vector<std::uint8_t> thumb;
+                if (!g.preview_url.empty())
+                    thumb = client->fetch_gif_bytes(g.preview_url);
+                r = client->send_gif_video(
+                    room, bytes, g.image_mime, body,
+                    g.image_w, g.image_h, /*duration_ms*/ 0,
+                    thumb, thumb.empty() ? std::string{} : std::string{"image/jpeg"},
+                    g.preview_w, g.preview_h,
+                    /*reply*/ "", /*thread*/ "");
+            }
+            else
+            {
+                // WebP or GIF: send as m.image with fi.mau.gif autoplay hint.
+                r = client->send_image(
+                    room, bytes, g.image_mime, body, /*caption*/ "",
+                    g.image_w, g.image_h, /*is_animated*/ true,
+                    /*reply*/ "", /*thread*/ "");
+            }
             if (!r.ok)
             {
                 report("Send failed");

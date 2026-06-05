@@ -382,8 +382,8 @@ pub mod ffi {
 
     /// One GIF search result delivered to C++ via `on_gif_results`. URLs point
     /// at the provider CDN: `preview_url` is a small static JPEG for the result
-    /// strip; `image_url` is the animated form (WebP preferred, GIF fallback,
-    /// per `image_mime`) fetched at send time and re-uploaded as an `m.image`.
+    /// strip; `image_url` is the animated form (MP4 preferred, WebP fallback,
+    /// GIF last resort, per `image_mime`) fetched at send time.
     struct GifResult {
         id: String,
         preview_url: String,

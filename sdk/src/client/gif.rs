@@ -18,12 +18,12 @@ pub struct GifResult {
     pub preview_url: String,
     pub preview_w: u32,
     pub preview_h: u32,
-    /// Animated form (WebP preferred, GIF fallback) re-uploaded into the room
-    /// as an `m.image` carrying the `fi.mau.gif` autoplay hint.
+    /// Animated form re-uploaded into the room. Priority: MP4 (broadest bridge
+    /// compatibility) → WebP (smaller) → GIF (universal fallback).
     pub image_url: String,
     pub image_w: u32,
     pub image_h: u32,
-    /// MIME of `image_url` — "image/webp" or "image/gif".
+    /// MIME of `image_url` — "video/mp4", "image/webp", or "image/gif".
     pub image_mime: String,
 }
 
@@ -81,20 +81,21 @@ impl GifProvider for KlipyProvider {
 }
 
 /// Parse a single Klipy `data.data[]` entry. Returns `None` (skip) when the
-/// entry has no usable MP4 form — we can't send without one. The send form is
-/// the medium MP4; the strip thumbnail is the small static JPEG (tiny, and
-/// decoded by every shell's image backend without a WebP/GIF codec).
+/// entry has no usable animated form. Send-form priority: MP4 (broadest bridge
+/// compatibility) → WebP (smaller than GIF) → GIF (universal fallback). The
+/// strip thumbnail is the small static JPEG (tiny, no WebP/GIF codec needed).
 fn parse_klipy_result(r: &Value) -> Option<GifResult> {
     let file = r.get("file")?;
-    // Send form: animated WebP (smaller) preferred, animated GIF fallback. An
-    // entry with neither is unsendable and skipped.
+    // Priority: MP4 first (most bridge-compatible), WebP second (smaller),
+    // GIF last. An entry with none of these is unsendable and skipped.
     let (image_url, image_w, image_h, image_mime) =
-        match pick_format(file, "webp", &["md", "sm", "hd"]) {
-            Some((u, w, h)) => (u, w, h, "image/webp".to_string()),
-            None => {
-                let (u, w, h) = pick_format(file, "gif", &["md", "sm", "hd"])?;
-                (u, w, h, "image/gif".to_string())
-            }
+        if let Some((u, w, h)) = pick_format(file, "mp4", &["md", "sm", "hd"]) {
+            (u, w, h, "video/mp4".to_string())
+        } else if let Some((u, w, h)) = pick_format(file, "webp", &["md", "sm", "hd"]) {
+            (u, w, h, "image/webp".to_string())
+        } else {
+            let (u, w, h) = pick_format(file, "gif", &["md", "sm", "hd"])?;
+            (u, w, h, "image/gif".to_string())
         };
     if image_url.is_empty() {
         return None;
@@ -471,8 +472,8 @@ mod tests {
         assert!(klipy().search_url("x", 99).contains("per_page=50")); // max 50
     }
 
-    // Trimmed Klipy response covering all three send-form cases: webp-preferred,
-    // gif-fallback, and an entry with no animated form (skipped).
+    // Trimmed Klipy response covering all four send-form cases: mp4-preferred,
+    // webp-fallback, gif-fallback, and an entry with no animated form (skipped).
     const SAMPLE: &str = r#"{
         "result": true,
         "data": {
@@ -498,6 +499,10 @@ mod tests {
                         "md": { "mp4": { "url": "https://cdn/only.mp4", "width": 100, "height": 100, "size": 1234 } },
                         "sm": { "jpg": { "url": "https://cdn/only.jpg", "width": 100, "height": 100, "size": 99 } }
                     }
+                },
+                {
+                    "id": 4,
+                    "file": { "sm": { "jpg": { "url": "https://cdn/still.jpg", "width": 100, "height": 100 } } }
                 }
             ],
             "current_page": 1, "per_page": 24, "has_next": true
@@ -505,10 +510,10 @@ mod tests {
     }"#;
 
     #[test]
-    fn parse_prefers_webp_falls_back_to_gif_and_skips_imageless() {
+    fn parse_prefers_mp4_falls_back_to_webp_then_gif_and_skips_imageless() {
         let out = klipy().parse(SAMPLE).unwrap();
-        // Entry 1 → webp; entry 2 → gif fallback; entry 3 (mp4 only) skipped.
-        assert_eq!(out.len(), 2);
+        // Entry 1 → webp (no mp4 present); entry 2 → gif; entry 3 → mp4; entry 4 skipped.
+        assert_eq!(out.len(), 3);
 
         let a = &out[0];
         assert_eq!(a.id, "8041071659142944"); // numeric id stringified
@@ -522,6 +527,13 @@ mod tests {
         assert_eq!(b.id, "2");
         assert_eq!(b.image_url, "https://cdn/y.gif");
         assert_eq!(b.image_mime, "image/gif");
+
+        let c = &out[2];
+        assert_eq!(c.id, "3");
+        assert_eq!(c.image_url, "https://cdn/only.mp4");
+        assert_eq!(c.image_mime, "video/mp4");
+        assert_eq!((c.image_w, c.image_h), (100, 100));
+        assert_eq!(c.preview_url, "https://cdn/only.jpg");
     }
 
     // One entry from a real api.klipy.com/gifs/search response: every tier
@@ -563,15 +575,15 @@ mod tests {
     }"#;
 
     #[test]
-    fn parse_extracts_md_webp_from_full_live_entry() {
+    fn parse_extracts_md_mp4_from_full_live_entry() {
         let out = klipy().parse(REAL_ENTRY).unwrap();
         assert_eq!(out.len(), 1);
         let g = &out[0];
-        // Send form = medium webp (preferred over gif); strip thumbnail = small
+        // Send form = medium mp4 (highest priority); strip thumbnail = small
         // static jpg.
-        assert_eq!(g.image_url, "https://static.klipy.com/md.webp");
-        assert_eq!(g.image_mime, "image/webp");
-        assert_eq!((g.image_w, g.image_h), (220, 229));
+        assert_eq!(g.image_url, "https://static.klipy.com/md.mp4");
+        assert_eq!(g.image_mime, "video/mp4");
+        assert_eq!((g.image_w, g.image_h), (220, 230));
         assert_eq!(g.preview_url, "https://static.klipy.com/sm.jpg");
         assert_eq!(g.id, "2484942301552561");
     }
