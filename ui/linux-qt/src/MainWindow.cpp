@@ -3055,6 +3055,10 @@ void MainWindow::onRoomSelected(const std::string& room_id)
                 this,
                 [this, sub_room, ok, msg = std::move(msg), reached]() mutable
                 {
+                    // Always clear in_flight regardless of which room is now
+                    // current — otherwise navigating away before the worker
+                    // finishes permanently blocks re-subscription for sub_room.
+                    pagination_[sub_room].in_flight = false;
                     if (!ok)
                     {
                         statusBar()->showMessage(
@@ -3065,9 +3069,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
                     }
                     if (current_room_id_ == sub_room)
                     {
-                        auto& state = pagination_[sub_room];
-                        state.in_flight = false;
-                        state.reached_start = reached;
+                        pagination_[sub_room].reached_start = reached;
                     }
                 },
                 Qt::QueuedConnection);

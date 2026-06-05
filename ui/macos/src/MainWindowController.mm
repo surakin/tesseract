@@ -7156,12 +7156,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached
 {
+    // Always clear in_flight regardless of current room — otherwise navigating
+    // away before the worker finishes permanently blocks re-subscription.
+    auto& state = _shell->pagination_[roomId];
+    state.in_flight = false;
     if (roomId != _shell->current_room_id_)
     {
         return;
     }
-    auto& state = _shell->pagination_[roomId];
-    state.in_flight = false;
     state.reached_start = reached;
 }
 

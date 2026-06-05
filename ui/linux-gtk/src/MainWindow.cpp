@@ -3392,12 +3392,14 @@ void MainWindow::push_paginate_result(std::string room_id, bool reached_start)
 
 void MainWindow::push_subscribe_result(std::string room_id, bool reached_start)
 {
+    // Always clear in_flight regardless of current room — otherwise navigating
+    // away before the worker finishes permanently blocks re-subscription.
+    auto& state = pagination_[room_id];
+    state.in_flight = false;
     if (room_id != current_room_id_)
     {
         return;
     }
-    auto& state = pagination_[room_id];
-    state.in_flight = false;
     state.reached_start = reached_start;
 }
 

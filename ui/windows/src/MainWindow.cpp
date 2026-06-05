@@ -4601,10 +4601,13 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
 void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
                                              bool reached_start)
 {
-    if (!room_id || *room_id != current_room_id_)
+    if (!room_id)
     {
         return;
     }
+    // push_paginate_result_ clears in_flight unconditionally — don't guard on
+    // current room, otherwise navigating away before the worker finishes
+    // permanently blocks re-subscription for that room.
     push_paginate_result_(*room_id, reached_start);
 }
 
