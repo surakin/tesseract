@@ -304,6 +304,10 @@ public:
     // Host::set_clipboard_text in the shell.
     std::function<void(std::string_view)> on_set_clipboard;
 
+    // Fired from set_room() so the shell can ensure the room's avatar thumbnail
+    // is fetched and cached before the header paints.
+    std::function<void(const tesseract::RoomInfo&)> on_room_avatar_needed;
+
     std::function<void(std::string room_id)>                on_fetch_notification_mode;
     std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
     std::function<void(std::string room_id, bool)>          on_favourite_changed;

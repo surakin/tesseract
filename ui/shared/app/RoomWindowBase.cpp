@@ -92,6 +92,8 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             return shell_avatar_(mxc);
         });
+    rv->on_room_avatar_needed =
+        [this](const tesseract::RoomInfo& r) { shell_->ensure_room_avatar_(r); };
     rv->room_info_panel()->set_presence_provider(
         [this](const std::string& uid) -> tesseract::PresenceState
         {

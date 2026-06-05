@@ -777,6 +777,8 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     }
     has_room_ = true;
     current_room_info_ = info;
+    if (on_room_avatar_needed)
+        on_room_avatar_needed(info);
     if (header_)
     {
         header_->set_room(info);

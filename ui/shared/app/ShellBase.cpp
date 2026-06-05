@@ -531,6 +531,8 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     };
 
     app->room_view()->set_avatar_provider(avatar_lookup);
+    app->room_view()->on_room_avatar_needed =
+        [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
