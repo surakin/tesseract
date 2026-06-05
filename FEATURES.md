@@ -37,11 +37,14 @@ version) are noted where relevant.
 ## Media
 
 - Images, video, voice messages, audio, and files — send and receive
+- GIF search and send via `/gif` (Klipy-powered; E2EE-transparent; animated preview strip in picker)
 - Encrypted media supported
+- Animated GIF / WebP / APNG in the message timeline
 - Animated stickers, including stickers sent via bridges
 - Zoomable / pannable image viewer
 - Inline audio player; voice messages render waveforms (MSC3245)
 - Thumbnail-first loading in the timeline, with an optional automatic full-media fetch setting
+- Media preview gating (MSC4278): Off / Private / On modes with BlurHash placeholders for suppressed media; click-to-reveal; user's own uploads are always shown
 - Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer)
 - Image sending via clipboard paste and drag-and-drop
 - File / image / video downloads
@@ -54,6 +57,7 @@ version) are noted where relevant.
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
 - Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
+- Back / forward room history navigation (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
 - Jump-to-date via a calendar button in the room header (MSC3030; server capability checked)
 - Unread indicators in the room list
@@ -103,7 +107,7 @@ version) are noted where relevant.
 - Markdown input
 - Emoji shortcode autocomplete popup
 - User mention (`@`) autocomplete
-- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`; popup autocomplete)
+- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/gif`; popup autocomplete)
 - Send on Enter, newline on Shift+Enter
 
 ---
@@ -124,10 +128,8 @@ version) are noted where relevant.
 ## Possible / planned polish
 
 - Window position/size/maximized state restore
-- Keyboard shortcuts (e.g. quick room switcher, dismiss with Esc)
 - Room mentions (`#room`) as pills; self-mention emphasis
 - New-device warnings for users in your rooms
 - Device rename
 - Edit history viewer
-- GIF picker
 - Additional slash commands
