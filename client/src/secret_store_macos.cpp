@@ -196,9 +196,19 @@ std::optional<std::string> SecretStore::load(const std::string& user_id)
     if (it != g_map->end() && it->is_string())
         return it->get<std::string>();
 
-    // Migration fallback: old per-user item (one extra SecItemCopyMatching
-    // per old-format account, only until save() migrates it).
-    return keychain_load(user_id);
+    // Migration fallback: old per-user item. Migrate eagerly into the
+    // consolidated item here so the next startup reads only "_sessions" and
+    // sees at most one Keychain access dialog regardless of token-refresh
+    // cadence (previously migration only ran inside save(), so accounts that
+    // never refreshed their token kept prompting twice on every launch).
+    auto blob = keychain_load(user_id);
+    if (blob)
+    {
+        (*g_map)[user_id] = *blob;
+        if (flush_map())
+            keychain_remove(user_id);
+    }
+    return blob;
 }
 
 // save() updates the in-memory map and flushes to the Keychain with
