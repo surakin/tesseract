@@ -5029,49 +5029,63 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         break;
     case MediaKind::MediaImage:
-        try_load_animation(cache_key, bytes);
-        if (!anim_cache_.has(cache_key))
-        {
-            if (auto img = main_app_surface_->factory().decode_image(bytes))
-            {
-                image_cache_.store(cache_key, std::move(img));
-            }
-            else
-            {
-                media_disk_cache_.evict(cache_key);
-            }
-        }
-        if (room_view_)
-        {
-            room_view_->notify_image_ready(cache_key);
-        }
-        main_app_surface_->relayout();
-        if (shortcode_popup_visible_() && shortcode_popup_surface_)
-        {
-            shortcode_popup_surface_->relayout();
-        }
-        break;
     case MediaKind::MediaThumbnail:
-        // Inline preview: animated thumbnails go to anim_cache_, still ones to
-        // thumbnail_cache_ (kept separate from full-size image_cache_).
-        try_load_animation(cache_key, bytes);
-        if (!anim_cache_.has(cache_key))
-        {
-            if (auto img = main_app_surface_->factory().decode_image(bytes))
+    {
+        // Decode off the UI thread — WIC factory is free-threaded (see
+        // host_win32.h). decode_image_ handles both animated and still images.
+        const bool is_thumb = (kind == MediaKind::MediaThumbnail);
+        if ((is_thumb ? thumbnail_cache_ : image_cache_).contains(cache_key) ||
+            anim_cache_.has(cache_key))
+            return;
+        run_async_(
+            [this, cache_key, kind, is_thumb, invalidate_hwnd,
+             bytes = std::move(bytes)]() mutable
             {
-                thumbnail_cache_.store(cache_key, std::move(img));
-            }
-        }
-        if (room_view_)
-        {
-            room_view_->notify_image_ready(cache_key);
-        }
-        main_app_surface_->relayout();
-        if (shortcode_popup_visible_() && shortcode_popup_surface_)
-        {
-            shortcode_popup_surface_->relayout();
-        }
-        break;
+                auto d = std::make_shared<DecodedImage>(
+                    decode_image_(bytes, 0, 0));
+                post_to_ui_(
+                    [this, cache_key, kind, is_thumb, invalidate_hwnd,
+                     d]() mutable
+                    {
+                        auto& still_cache =
+                            is_thumb ? thumbnail_cache_ : image_cache_;
+                        if (still_cache.contains(cache_key) ||
+                            anim_cache_.has(cache_key))
+                            return;
+                        if (!d->frames.empty())
+                        {
+                            anim_cache_.store(
+                                cache_key, std::move(d->frames),
+                                std::move(d->delays_ms),
+                                static_cast<std::int64_t>(GetTickCount64()));
+                            start_anim_tick_();
+                            image_cache_.evict(cache_key);
+                        }
+                        else if (d->still)
+                        {
+                            still_cache.store(cache_key,
+                                              std::move(d->still));
+                        }
+                        else
+                        {
+                            if (!is_thumb)
+                                media_disk_cache_.evict(cache_key);
+                            return;
+                        }
+                        if (room_view_)
+                            room_view_->notify_image_ready(cache_key);
+                        if (main_app_surface_)
+                            main_app_surface_->relayout();
+                        if (shortcode_popup_visible_() &&
+                            shortcode_popup_surface_)
+                            shortcode_popup_surface_->relayout();
+                        notify_secondary_media_ready_(cache_key, kind);
+                        if (invalidate_hwnd)
+                            InvalidateRect(invalidate_hwnd, nullptr, FALSE);
+                    });
+            });
+        return;
+    }
     case MediaKind::Tile:
         if (image_cache_.contains(cache_key))
         {

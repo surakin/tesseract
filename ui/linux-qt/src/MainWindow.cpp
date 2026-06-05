@@ -3250,13 +3250,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
 
-    // MediaImage / MediaThumbnail — decode (same path as pickers) then store.
-    // MediaThumbnail (inline preview) lands in thumbnail_cache_; MediaImage
-    // (full-size) in image_cache_. Decode stays on the UI thread here
-    // (unchanged behaviour); pickers decode on a worker via ensure_picker_image_.
+    // MediaImage / MediaThumbnail — decode off the UI thread (QImageReader is
+    // thread-safe), then store + repaint on the UI thread. Mirrors GTK4 and
+    // ensure_picker_image_; pickers already use this pattern so all paths are
+    // now consistent.
     const bool is_thumb = (kind == MediaKind::MediaThumbnail);
-    tk::PixmapCache& still_cache = is_thumb ? thumbnail_cache_ : image_cache_;
-    if (still_cache.contains(cache_key) || anim_cache_.has(cache_key))
+    if ((is_thumb ? thumbnail_cache_ : image_cache_).contains(cache_key) ||
+        anim_cache_.has(cache_key))
     {
         mediaImageSizes_.erase(cache_key);
         return;
@@ -3269,41 +3269,49 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         max_h = sit->second.second;
         mediaImageSizes_.erase(sit);
     }
-    DecodedImage d = decode_image_(bytes, max_w, max_h);
-    if (!d.frames.empty())
-    {
-        anim_cache_.store(cache_key, std::move(d.frames),
-                          std::move(d.delays_ms),
-                          QDateTime::currentMSecsSinceEpoch());
-        if (tk_anim_timer_ && !tk_anim_timer_->isActive())
+    run_async_(
+        [this, cache_key, kind, is_thumb, max_w, max_h,
+         bytes = std::move(bytes)]() mutable
         {
-            tk_anim_timer_->start();
-        }
-    }
-    else if (d.still)
-    {
-        still_cache.store(cache_key, std::move(d.still));
-    }
-    else
-    {
-        media_decode_failed_.insert(cache_key);
-        return;
-    }
-    if (mainApp_)
-    {
-        mainApp_->room_view()->notify_image_ready(cache_key);
-    }
-    if (mainAppSurface_)
-    {
-        mainAppSurface_->relayout();
-        mainAppSurface_->update();
-    }
-    if (shortcode_popup_visible_() && shortcode_popup_surface_)
-    {
-        shortcode_popup_surface_->update();
-    }
-    notify_secondary_media_ready_(cache_key, kind);
-    return;
+            auto d = std::make_shared<DecodedImage>(
+                decode_image_(bytes, max_w, max_h));
+            post_to_ui_(
+                [this, cache_key, kind, is_thumb, d]() mutable
+                {
+                    auto& still_cache =
+                        is_thumb ? thumbnail_cache_ : image_cache_;
+                    if (still_cache.contains(cache_key) ||
+                        anim_cache_.has(cache_key))
+                        return;
+                    if (!d->frames.empty())
+                    {
+                        anim_cache_.store(cache_key, std::move(d->frames),
+                                          std::move(d->delays_ms),
+                                          QDateTime::currentMSecsSinceEpoch());
+                        if (tk_anim_timer_ && !tk_anim_timer_->isActive())
+                            tk_anim_timer_->start();
+                    }
+                    else if (d->still)
+                    {
+                        still_cache.store(cache_key, std::move(d->still));
+                    }
+                    else
+                    {
+                        media_decode_failed_.insert(cache_key);
+                        return;
+                    }
+                    if (mainApp_)
+                        mainApp_->room_view()->notify_image_ready(cache_key);
+                    if (mainAppSurface_)
+                    {
+                        mainAppSurface_->relayout();
+                        mainAppSurface_->update();
+                    }
+                    if (shortcode_popup_visible_() && shortcode_popup_surface_)
+                        shortcode_popup_surface_->update();
+                    notify_secondary_media_ready_(cache_key, kind);
+                });
+        });
 }
 
 void MainWindow::pick_image_file_(

@@ -665,20 +665,55 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         return;
     }
-    if (kind == MediaKind::MediaImage)
+    if (kind == MediaKind::MediaImage || kind == MediaKind::MediaThumbnail)
     {
-        [c _decodeMediaBytes:bytes forKey:key thumbnail:NO];
-        [c _relayoutChatSurface];
-        [c _relayoutShortcodePopupIfVisible];
-        notify_secondary_media_ready_(key, kind);
-        return;
-    }
-    if (kind == MediaKind::MediaThumbnail)
-    {
-        [c _decodeMediaBytes:bytes forKey:key thumbnail:YES];
-        [c _relayoutChatSurface];
-        [c _relayoutShortcodePopupIfVisible];
-        notify_secondary_media_ready_(key, kind);
+        // Decode off the UI thread — CGImageSource is thread-safe. Store and
+        // repaint on the UI thread once the decode completes.
+        const bool is_thumb = (kind == MediaKind::MediaThumbnail);
+        tk::PixmapCache& still_cache =
+            is_thumb ? thumbnail_cache_ : image_cache_;
+        if (still_cache.contains(key) || anim_cache_.has(key))
+            return;
+        run_async_(
+            [this, key, kind, is_thumb,
+             bytes = std::move(bytes)]() mutable
+            {
+                auto d = std::make_shared<DecodedImage>(
+                    decode_image_(bytes, 0, 0));
+                post_to_ui_(
+                    [this, key, kind, is_thumb, d]() mutable
+                    {
+                        MainWindowController* c = ctrl_;
+                        if (!c) return;
+                        tk::PixmapCache& sc =
+                            is_thumb ? thumbnail_cache_ : image_cache_;
+                        if (sc.contains(key) || anim_cache_.has(key))
+                            return;
+                        if (!d->frames.empty())
+                        {
+                            const std::int64_t now =
+                                static_cast<std::int64_t>(
+                                    [[NSDate date] timeIntervalSince1970] *
+                                    1000.0);
+                            anim_cache_.store(key, std::move(d->frames),
+                                              std::move(d->delays_ms), now);
+                            start_anim_tick_();
+                        }
+                        else if (d->still)
+                        {
+                            sc.store(key, std::move(d->still));
+                        }
+                        else
+                        {
+                            return;
+                        }
+                        if (room_view_)
+                            room_view_->notify_image_ready(key);
+                        [c _relayoutChatSurface];
+                        [c _relayoutShortcodePopupIfVisible];
+                        notify_secondary_media_ready_(key, kind);
+                    });
+            });
         return;
     }
     if (kind == MediaKind::Tile)
