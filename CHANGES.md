@@ -7,6 +7,28 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-06-05
 
+- perf(ui): incoming messages no longer re-measure or re-shape the whole room.
+  `MessageListView` body text layouts are cached and shared across measure,
+  paint, and repaints — validity-keyed on width / theme / spoiler-revealed /
+  content and LRU-bounded — so room switches and repaints stop rebuilding text
+  layouts. The cache reuses the existing event-id-keyed `link_layout_cache_`
+  (already read by link/selection hit-testing).
+- perf(ui): `ListView` gained targeted (incremental) height invalidation —
+  `invalidate_row` / `insert_row` / `erase_row` plus a new
+  `ListAdapter::height_dependency_span`. A single inserted/updated/removed
+  message re-measures only a bounded day-block neighbourhood and rewalks the
+  row-offset prefix sum from there, instead of re-measuring every row. The
+  message-list override implements the day-block rule (continuation look-back +
+  adjacent virtual-row visibility); read-marker moves still force a full
+  rebuild. `invalidate_data()` (room list, `set_messages`) is unchanged, and a
+  size-mismatch safety net falls back to a full rebuild.
+- perf(ui): per-message relayout is coalesced. New shared
+  `ShellBase::schedule_relayout_` folds a burst of incoming-message relayout
+  requests into one deferred (still synchronous) layout pass, so a sync flood no
+  longer triggers a whole-tree measure+arrange per message. Native-overlay
+  positioning timing is unchanged. Wired into the incoming-message handlers;
+  all four shells benefit (shared code). 10 new Catch2 tests.
+
 - feat(ui): code blocks and inline code in message bodies now render on a
   tinted background. A new `code_bg` palette token (light `0xD9DCE3`, dark
   `0x2E3138`) is filled behind code runs in `MessageListView::paint_body_text`.

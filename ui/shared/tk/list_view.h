@@ -50,6 +50,20 @@ public:
     {
         return {};
     }
+
+    // The half-open range of rows whose measured height may change when row
+    // `i` is inserted, updated, or removed. Used by ListView's targeted
+    // (incremental) invalidation to re-measure only a bounded neighbourhood
+    // instead of the whole list. The default — row `i` alone — suits adapters
+    // whose rows are independent (e.g. the room list). Adapters whose heights
+    // couple to neighbours (e.g. the message list's continuation grouping and
+    // day-separator visibility) widen the span accordingly.
+    virtual void height_dependency_span(std::size_t i, std::size_t& lo,
+                                        std::size_t& hi) const
+    {
+        lo = i;
+        hi = i + 1;
+    }
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -169,6 +183,18 @@ public:
 
     // Re-measure all row heights on the next arrange/paint.
     void invalidate_data();
+
+    // Targeted (incremental) height invalidation. Instead of re-measuring
+    // every row, these re-measure only the dependency span of the affected
+    // row (see ListAdapter::height_dependency_span) and rewalk the row-offset
+    // prefix sum from that point. The adapter's model must already reflect the
+    // change before these are called (count() and row contents up to date).
+    // They fall back to a full rebuild if the cached layout is structurally
+    // out of step with the adapter, so callers can use them unconditionally.
+    void invalidate_row(std::size_t index);
+    void invalidate_rows(std::size_t lo, std::size_t hi);
+    void insert_row(std::size_t index); // a row was inserted AT `index`
+    void erase_row(std::size_t index);  // the row AT `index` was removed
 
     // Selection state, plumbed through `paint_row(... selected ...)`.
     void set_selected_index(int idx);
@@ -322,6 +348,14 @@ protected:
 
 private:
     void rebuild_heights(LayoutCtx&, float width);
+    // Re-measure only the accumulated dirty range and rewalk offsets from it.
+    void rebuild_dirty_(LayoutCtx&, float width);
+    // Widen the pending dirty range (no-op when lo >= hi).
+    void mark_dirty_range_(std::size_t lo, std::size_t hi);
+    // Widen the dirty range to the adapter's dependency span for `index`.
+    void mark_dependency_span_(std::size_t index);
+    // Apply the captured scroll anchor after a rebuild (full or partial).
+    void consume_scroll_anchor_();
     void clamp_scroll();
     void update_hover(Point local);
     void capture_anchor_();
@@ -356,8 +390,15 @@ private:
 
     float scroll_y_ = 0;
     float measured_width_ = 0;
-    bool heights_dirty_ = true;
+    bool heights_dirty_ = true; // full rebuild pending (subsumes dirty range)
     bool stick_to_bottom_ = false; // re-snap to bottom on heights rebuild
+
+    // Accumulated targeted-invalidation range [dirty_lo_, dirty_hi_). Active
+    // only when has_dirty_range_ and heights_dirty_ is false. A full rebuild
+    // (heights_dirty_ or width change) clears it.
+    bool has_dirty_range_ = false;
+    std::size_t dirty_lo_ = 0;
+    std::size_t dirty_hi_ = 0;
 
     // `on_near_top` machinery — see public docs.
     float near_top_threshold_px_ = 200.0f;

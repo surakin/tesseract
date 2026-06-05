@@ -297,6 +297,7 @@ protected:
     bool threads_paginating_    = false; // in-flight guard for paginate_threads_()
     bool compose_typing_active_ = false;
     bool typing_bar_visible_ = false;
+    bool relayout_scheduled_ = false; // a coalesced relayout flush is pending
 
     // ── Image caches ──────────────────────────────────────────────────────────
     // Bounded, TTL'd image caches. Images stay warm for the TTL window after a
@@ -720,6 +721,16 @@ protected:
     //   macOS: [self _relayoutChatSurface] / _mainAppSurface->host().request_repaint()
     virtual void request_relayout_() = 0;
     virtual void request_repaint_() = 0;
+
+    // Coalescing relayout. Instead of running a synchronous measure+arrange of
+    // the whole widget tree on every call (which a sync burst does N times),
+    // this posts a single deferred flush to the UI thread; further calls before
+    // that flush runs are folded into it. The flush still calls the synchronous
+    // request_relayout_() exactly once, so native-overlay positioning timing is
+    // unchanged — only the redundant per-message passes are eliminated. Use for
+    // hot, high-frequency paths (incoming-message handlers); keep
+    // request_relayout_() where a later step in the same turn reads geometry.
+    void schedule_relayout_();
 
     // Navigate the shell to room_id. Called on the UI thread.
     // Qt6/GTK4/Win32: delegates to navigate_to_room(id).
