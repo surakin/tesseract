@@ -24,6 +24,95 @@ Tagged releases summarize all changes since the previous tag.
   forever, causing every subsequent `onRoomSelected` to bail out immediately.
   Fixed on all four shells (Qt6, GTK4, Win32, macOS) by always clearing
   `in_flight` when the worker completes, regardless of current room.
+- feat(gif): GIF preview strip now animates via WebP / GIF frames decoded
+  off-thread (the previous approach decoded the heavier MP4 send-form through a
+  full video pipeline per cell). `GifResult` carries a separate `strip_url` /
+  `strip_mime` (WebP → GIF → MP4 fallback) for display; the MP4-only fallback
+  extracts a frame off-thread via the native video decoder. Decoded frames are
+  scaled to the cell size and persisted to `MediaDiskCache` so re-search loads
+  skip re-downloading.
+- fix(video/qt6): reset `QMediaPlayer` source device to `nullptr` between clips
+  so Qt's FFmpeg backend rebuilds the demuxer; previously reusing the same
+  pointer was treated as a no-op and the second video decoded through stale
+  H.264 state.
+- fix(video/win32): fix diagonal shearing on hardware-decoded videos — stride
+  was computed from the unpadded width instead of the GPU-aligned row stride;
+  fix `IMF2DBuffer::Lock2D` detection and probe common GPU alignment values
+  (64–2048 bytes) when 2D metadata is absent. Also correct aspect ratio from
+  actual decoded dimensions and sync playback rate to sample `PTS` vs the audio
+  engine clock instead of a hardcoded 60 fps `Sleep(16)`.
+- fix(gif): room-list last-message preview now shows "sent a GIF" for
+  `fi.mau.gif` vendor-hint events from bridges.
+- feat(gif): when sending a GIF from search results, prefer MP4 → WebP → GIF
+  send order so bridges that cannot re-upload WebP receive a `video/mp4`
+  `m.video` instead.
+- feat(ux): status-bar briefly shows an error message (auto-clears after 4 s)
+  when a file drop is refused because the file can't be read or exceeds the
+  server upload limit. Implemented once in `ShellBase` (`show_status_message_` /
+  `on_show_status_message_ui_` hooks) and wired on all four shells and all
+  pop-out windows.
+- fix(macos): accounts that never triggered a token refresh kept the old
+  per-user Keychain item indefinitely, causing two system access-confirmation
+  dialogs on every launch; migration now runs in `load()` (not only `save()`)
+  so it happens on the first startup that reads the legacy item.
+- perf(media): inline images (MediaImage / MediaThumbnail) are now decoded off
+  the UI thread on Qt6, Win32, and macOS, matching GTK4's existing behaviour.
+  Decoded frames are posted back to the UI thread via `post_to_ui_`; all three
+  decoders (`QImageReader`, WIC, `CGImageSource`) are documented thread-safe.
+- fix(media): room avatar was not fetched when `set_room()` is called directly
+  (main and pop-out windows) because the `ensure_room_avatar_` path was only
+  triggered by room-list paints; a cache miss at `set_room` time now fires the
+  fetch.
+
+### 2026-06-04
+
+- fix(views): drag-and-drop into pop-out room windows now works on all four
+  platforms; a new shared `dispatch_file_drop()` in `views/media_drop` owns the
+  MIME routing and size guards, replacing the lambda duplicated across the main
+  windows; `ShellBase::extract_drop_media_()` virtual lets each shell run its
+  media probe retargeted to the correct pop-out compose bar.
+- fix(views): pressing Ctrl/⌘+K from a focused pop-out now brings the main
+  window forward before opening the quick switcher (GTK4 gains a per-pop-out
+  global-scope shortcut that routes to `request_quick_switch_from_popout()`).
+- fix(shell): pop-out windows are now torn down before their `ShellBase`
+  registry entries on shutdown, preventing use-after-free when a closing pop-out
+  posts back to the main shell.
+- feat(gif): `/gif <query>` slash command opens an inline GIF search strip
+  (Klipy SDK) above the composer. Results animate in a horizontal strip (↑/↓/Tab
+  to navigate, Enter to send, Esc to dismiss); chosen GIFs are sent as an
+  autoplaying `m.video` carrying the `fi.mau.gif` vendor hint; E2EE rooms
+  encrypt the MP4 and thumbnail. The Klipy `customer_id` is derived from the
+  local MXID via SHA-256 so no raw identity leaves the device. Wired on all four
+  shells (Qt6, GTK4, Win32, macOS) with the shared `GifEngine` / `GifPopup` /
+  `GifController`; unit-tested.
+- feat(gif): GIF picker strip animates previews in two stages: a static JPEG
+  thumbnail appears immediately while the animated WebP/GIF loads in a
+  background worker, then replaces it. Each platform uses its own image backend
+  (`decode_image_`) and updates `anim_cache_`; GTK4 and Win32 gained the
+  `set_anim_cache()` / `update_anim_regions()` hooks they previously lacked.
+- feat(media): MSC4278 `Private` mode now exempts the local user's own uploads
+  from public-room media suppression (`Off` still blocks everything). The single
+  `media_allowed()` pure function is consulted at both the fetch gate
+  (`ShellBase`) and the paint-time placeholder predicate (`MessageListView`).
+  Adds a truth-table Catch2 test.
+- refactor(async): text sends, reactions, pagination, room join/leave/invite-
+  accept, and file uploads converted from blocking C++ worker threads to
+  fire-and-forget `rt.spawn()` tokio tasks with `IEventHandler` callbacks:
+  `paginate_back_async` / `paginate_forward_async`, `accept_invite_async` /
+  `decline_invite_async` / `block_invite_async` / `join_room_async` /
+  `leave_room_async` / `invite_user_async`, `send_image_async` /
+  `send_video_async` / `send_audio_async` / `send_file_async`. Blocking Rust /
+  C++ wrappers removed.
+- fix(media): animated GIFs and stickers evicted from `anim_cache_` (30 s
+  visibility TTL) are now re-fetched when they scroll back into view; `image_
+  provider_` falls through to `ensure_media_image_` on a full cache miss; static
+  thumbnails are pinned in `thumbnail_cache_` so they are never swept while
+  their row is live.
+- fix(win32): compose bar lost keyboard focus on window re-activation (Alt-Tab /
+  click from background) because `DefWindowProc` restored focus to the D2D
+  canvas HWND (no input handler) rather than the compose field; now redirected
+  explicitly after `WM_ACTIVATE` when focus would otherwise land on a non-input
+  surface.
 
 ## v0.1.8 — 2026-06-03
 
@@ -252,7 +341,7 @@ Changes since v0.1.6:
   otherwise). A Pin / Unpin action appears in the hover action pill, gated by the user's
   power level (`can_pin_in_room` checks `m.room.power_levels`). Architecture: new
   `sdk/src/client/pins.rs` with `pin_event` / `unpin_event` (state-event read-modify-write)
-  + `can_pin_in_room`; `RoomInfo` carries a `pinned_events: Vec<PinnedEvent>` resolved via
+  and `can_pin_in_room`; `RoomInfo` carries a `pinned_events: Vec<PinnedEvent>` resolved via
   `Room::load_or_fetch_event` (cache → SQLite → `/event/{id}` fallback); pin changes flow
   through the existing `on_rooms_updated` path, so no new FFI callback is needed.
   `MessageListView` gains `set_can_pin` + `set_pinned_event_ids`; all four shells

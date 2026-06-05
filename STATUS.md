@@ -19,6 +19,23 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-05
 
 <!-- -->
 
+> **GIF picker (`/gif`).**
+> Type `/gif <query>` in the composer to search and send GIFs (Klipy SDK).
+> Results appear in an animated horizontal strip above the compose bar (↑/↓/Tab
+> to navigate, Enter to send, Esc to dismiss). Chosen GIFs are sent as
+> autoplaying `m.video` carrying the `fi.mau.gif` vendor hint; E2EE rooms
+> encrypt the MP4 and poster thumbnail via `EncryptedFile`. The Klipy
+> `customer_id` is a SHA-256 hash of the local MXID so no raw identity leaves
+> the device. Preview strip loads a static JPEG immediately, then replaces it
+> with animated WebP/GIF frames decoded off-thread (`decode_image_`); MP4-only
+> results fall back to an off-thread first-frame extractor. Strip sources are
+> persisted to `MediaDiskCache` so re-search skips re-downloading. Send format
+> priority: MP4 → WebP → GIF, so bridges that cannot re-upload WebP receive a
+> `video/mp4`. Shared `GifEngine` / `GifPopup` / `GifController`; wired on all
+> four shells (Qt6, GTK4, Win32, macOS). Unit-tested.
+
+<!-- -->
+
 > **Room navigation history (Alt+Left / Alt+Right; Cmd+[ / Cmd+] on macOS).**
 > Back and forward navigation through the session's room visit history, like
 > browser navigation. `ShellBase` maintains a `room_nav_history_` vector (capped
@@ -359,6 +376,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Timeline FFI** — `subscribe_room`, `unsubscribe_room`, `paginate_back`, `paginate_back_with_status` (reports `reached_start`); position-aligned `on_timeline_reset` / `on_message_inserted` / `on_message_updated` / `on_message_removed` callbacks mirror matrix-sdk-ui's `VectorDiff` semantics.
 - **Back-pagination on scroll-to-top** — UI fires `paginate_back` when the user reaches the top; in-place insertion preserves the visual scroll position. Scroll preservation is **row-anchored** (`ListView::ScrollAnchor` + `ListAdapter::row_key`): the row under the cursor (or the top-of-viewport row) is pinned to its screen position across prepends *and* async row-height growth (images, URL previews, voice waveforms decoding in/above the viewport), with the hover highlight re-resolved to the same message after the relayout. Keyless lists (room/thread) fall back to the legacy total-height delta.
 - **Background backfill** — `start_background_backfill` walks every joined room not currently subscribed and warms the persistent event cache with bounded concurrency.
+- **Async room actions** — text sends, reactions, pagination, room join/leave/invite-accept/decline, and file uploads converted from blocking C++ worker-thread calls to fire-and-forget `rt.spawn()` tokio tasks delivering results via `IEventHandler` callbacks (`paginate_back_async`, `accept_invite_async`, `send_image_async`, etc.). Blocking wrappers removed.
 - **Kind-aware last-message preview** — each room row's preview uses `formatted_body`'s first plain line for text/notice/emote, shows "\<sender\> sent an image/video/file/voice message" for media kinds, and draws an inline ~28 px thumbnail for sticker last-messages (`RoomListView` `sticker_provider_` backed by the shells' shared image cache; wired on all four platforms).
 - **Tombstoned (upgraded) rooms hidden** from the room list.
 - **Graceful shutdown** — `Drop` on `ClientFfi` calls `stop_sync()`.
@@ -400,7 +418,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Lazy room-list avatars** — room-list avatars are requested only when a row is first painted (`RoomListView::on_room_avatar_needed` fires from `paint_row` on a cache miss, wired to `ensure_room_avatar_` in `ShellBase::wire_main_app_widget_`), so rooms in collapsed or off-screen sections fetch nothing until scrolled into view. The former per-shell "fetch every room" loops are gone.
 - **Bounded fetches** — every media download runs under a per-request timeout (30 s thumbnails/avatars, 120 s full files), so a stalled or endlessly-retrying request can't hang a read-pool worker thread or pin the in-flight indicator.
 - **Failed-fetch backoff** — a fetch that returns empty (network error / 5xx / timeout) is recorded in a per-key exponential-backoff cache (30 s → 30 min); the `ensure_*` avatar/media paths skip a key still in cooldown, so an unreachable avatar (e.g. a forgotten DM on a dead homeserver) stops being re-requested on every sync tick. Cleared on success and on cache-wipe.
-- **Inline images** — thumbnail to max 320 × 200, MSC2530 caption rule applied, rounded-rect chrome.
+- **Inline images** — thumbnail to max 320 × 200, MSC2530 caption rule applied, rounded-rect chrome. Bytes are decoded off the UI thread on all four shells (`QImageReader` on Qt6, WIC on Win32, `CGImageSource` on macOS, `GdkPixbuf` on GTK4) and posted back via `post_to_ui_` so large images never stall paint or input.
 - **Media-preview gating (MSC4278)** — a global `media_previews` setting (`Off` / `Private` / `On`, default `On`) backed by the `m.media_preview_config` account-data event controls whether inline image/sticker/video thumbnails auto-load. Suppressed media renders a BlurHash (MSC2448) placeholder behind a click-to-load pill and is not fetched until revealed; `Private` mode suppresses only in public rooms (resolved against each room's cached `join_rule`, with the per-room `m.media_preview_config` override applied on top). The decision is a single pure function (`app/media_preview_policy.h::media_allowed`) consulted at both the receive-time fetch gate and the paint-time placeholder predicate, so a revealed/allowed item is fetched exactly when it is shown. **The user's own media is exempt from public-room suppression in `Private` mode** (you already have it locally and it is never a privacy/safety concern to you), but `Off` still suppresses everything including your own uploads. Wired once in `ShellBase`, so all four shells share it.
 - **File cards** — fixed 56-px-tall rounded card with filename (ellipsis-trimmed) + human-readable size.
 - **Inline stickers** — borderless 256 × 256 thumbnail; right-click context menu offers "Add to Saved Stickers" (Qt6 / GTK4 / macOS).
