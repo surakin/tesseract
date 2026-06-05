@@ -154,6 +154,7 @@ protected:
     // so platform subclasses don't need their own friend declarations.
     const tk::Image* shell_avatar_(const std::string& mxc) const;
     const tk::Image* shell_image_(const std::string& mxc) const;
+    void shell_show_status_message_(std::string msg, int auto_clear_ms = 4000);
 
     // Wire the shell-backed mention-popup hooks shared by every pop-out window:
     // a live client getter (so the controller never holds a stale snapshot), an

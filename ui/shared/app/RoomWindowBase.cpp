@@ -909,6 +909,12 @@ const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
     return shell_->thumbnail_cache_.peek(mxc);
 }
 
+void RoomWindowBase::shell_show_status_message_(std::string msg,
+                                                int auto_clear_ms)
+{
+    shell_->show_status_message_(std::move(msg), auto_clear_ms);
+}
+
 void RoomWindowBase::wire_mention_shell_hooks_(
     views::MentionPopup* popup, views::MentionController::Hooks& hooks)
 {

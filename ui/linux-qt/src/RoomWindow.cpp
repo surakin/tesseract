@@ -127,7 +127,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     surface_->set_on_file_drop_error(
         [this](std::string reason)
         {
-            shell_->show_status_message_(std::move(reason));
+            shell_show_status_message_(std::move(reason));
         });
 
     // ── Compose text area overlay + @mention autocomplete ─────────────────
