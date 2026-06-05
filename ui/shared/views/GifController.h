@@ -52,6 +52,11 @@ public:
         std::function<std::string()> client_key;
         // Clear the "/gif …" text from the composer after a successful send.
         std::function<void()> clear_composer;
+        // Called on the UI thread before the async send. Returns cached bytes
+        // if the strip already downloaded image_url (avoids a re-fetch at send
+        // time). Returns an empty vector when no cache entry exists.
+        std::function<std::vector<std::uint8_t>(const std::string& url)>
+            get_cached_gif_bytes;
     };
 
     GifController(tk::NativeTextArea* text_area, GifPopup* popup, Hooks hooks);

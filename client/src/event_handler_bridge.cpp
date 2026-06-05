@@ -462,6 +462,8 @@ void EventHandlerBridge::on_gif_results(std::uint64_t request_id,
                   g.image_w = r.image_w;
                   g.image_h = r.image_h;
                   g.image_mime = std::string(r.image_mime);
+                  g.strip_url = std::string(r.strip_url);
+                  g.strip_mime = std::string(r.strip_mime);
                   cpp_results.push_back(std::move(g));
               }
               handler_->on_gif_results(request_id, cpp_results);

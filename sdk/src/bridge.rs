@@ -382,8 +382,10 @@ pub mod ffi {
 
     /// One GIF search result delivered to C++ via `on_gif_results`. URLs point
     /// at the provider CDN: `preview_url` is a small static JPEG for the result
-    /// strip; `image_url` is the animated form (MP4 preferred, WebP fallback,
-    /// GIF last resort, per `image_mime`) fetched at send time.
+    /// strip; `image_url` is the animated *send* form (MP4 preferred, WebP
+    /// fallback, GIF last resort, per `image_mime`) fetched at send time;
+    /// `strip_url` is the animated form the strip *displays* (WebP/GIF, decoded
+    /// natively without a video pipeline; falls back to `image_url`).
     struct GifResult {
         id: String,
         preview_url: String,
@@ -393,6 +395,8 @@ pub mod ffi {
         image_w: u32,
         image_h: u32,
         image_mime: String,
+        strip_url: String,
+        strip_mime: String,
     }
 
     /// Snapshot of the server-side key-backup state plus a running counter of

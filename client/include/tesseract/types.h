@@ -561,10 +561,15 @@ struct GifResult
     std::string preview_url;
     std::uint32_t preview_w = 0;
     std::uint32_t preview_h = 0;
+    /// Animated *send* form (MP4 preferred). Uploaded when the user picks a GIF.
     std::string image_url;
     std::uint32_t image_w = 0;
     std::uint32_t image_h = 0;
     std::string image_mime;
+    /// Animated form the *strip* displays — WebP/GIF decoded natively (no video
+    /// pipeline); falls back to image_url for MP4-only entries.
+    std::string strip_url;
+    std::string strip_mime;
 };
 
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via

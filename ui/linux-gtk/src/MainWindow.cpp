@@ -7,6 +7,7 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
+#include "tk/video_decode.h"
 #include "views/media_drop.h"
 #include "views/text_util.h"
 
@@ -901,26 +902,43 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         gif_popup_widget_->set_image_provider(
             [this](const tesseract::GifResult& result) -> const tk::Image*
             {
-                // Animated frame takes priority.
-                if (const tk::Image* f = anim_cache_.current_frame(result.image_url))
-                    return f;
-                // Static JPEG fallback.
+                // The strip animates strip_url (WebP/GIF, native decode), keyed
+                // in anim_cache_. Serving a cached frame means animated content
+                // is on screen, so ensure the tick timer runs: re-shown searches
+                // take this path without re-fetching.
+                if (const tk::Image* f = anim_cache_.current_frame(result.strip_url))
                 {
-                    auto it = gif_previews_.find(result.preview_url);
-                    if (it != gif_previews_.end())
-                        return it->second.get();
+                    start_anim_tick_if_needed_();
+                    return f;
                 }
-                // Kick off static preview fetch.
-                if (gif_preview_inflight_.insert(result.preview_url).second)
+                // NOTE: the static-preview fallback is returned at the *end* of
+                // this lambda, AFTER the animated re-fetch is kicked below.
+                // Returning it here would short-circuit re-animation on a
+                // re-shown search whose anim_cache_ entry was evicted while its
+                // static thumbnail lingers in gif_previews_.
+                // Kick off static preview fetch only when not already cached.
+                if (!gif_previews_.count(result.preview_url) &&
+                    gif_preview_inflight_.insert(result.preview_url).second)
                 {
                     auto alive = gif_alive_;
                     auto url = result.preview_url;
                     run_async_(
                         [this, url, alive]
                         {
+                            // Disk-cache the preview too, symmetrically with the
+                            // animated source. Otherwise a GIF whose MP4 is
+                            // already on disk loads its video faster than its
+                            // preview downloads, leaving the cell blank until
+                            // the video appears instead of the thumbnail first.
+                            const std::string disk_key = gif_src_disk_key_(url);
                             std::vector<std::uint8_t> bytes =
-                                client_ ? client_->fetch_url_bytes(url)
-                                        : std::vector<std::uint8_t>{};
+                                media_disk_cache_.load(disk_key);
+                            if (bytes.empty() && client_)
+                            {
+                                bytes = client_->fetch_url_bytes(url);
+                                if (!bytes.empty())
+                                    media_disk_cache_.store(disk_key, bytes);
+                            }
                             post_to_ui_(
                                 [this, url, b = std::move(bytes),
                                  alive]() mutable
@@ -942,49 +960,130 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                 });
                         });
                 }
-                // Kick off animated image fetch.
-                if (gif_anim_inflight_.insert(result.image_url).second)
+                // Kick off the strip-display fetch (strip_url: WebP/GIF) — decode
+                // on the worker thread. The MP4 send form is fetched at send time.
+                if (gif_anim_inflight_.insert(result.strip_url).second)
                 {
                     auto alive = gif_alive_;
-                    auto anim_url = result.image_url;
+                    auto anim_url = result.strip_url;
+                    auto anim_mime = result.strip_mime;
                     run_async_(
-                        [this, anim_url, alive]
+                        [this, anim_url, anim_mime, alive]
                         {
+                            // Source bytes: disk cache first, else download and
+                            // persist so the send path reuses them.
+                            const std::string disk_key =
+                                gif_src_disk_key_(anim_url);
                             std::vector<std::uint8_t> bytes =
-                                client_ ? client_->fetch_url_bytes(anim_url)
-                                        : std::vector<std::uint8_t>{};
-                            post_to_ui_(
-                                [this, anim_url, b = std::move(bytes),
-                                 alive]() mutable
-                                {
-                                    if (!*alive)
-                                        return;
-                                    gif_anim_inflight_.erase(anim_url);
-                                    if (b.empty())
-                                        return;
-                                    using CW = tesseract::views::GifPopup;
-                                    DecodedImage d = decode_image_(
-                                        b, int(CW::kCellW) * 2,
+                                media_disk_cache_.load(disk_key);
+                            if (bytes.empty() && client_)
+                            {
+                                bytes = client_->fetch_url_bytes(anim_url);
+                                if (!bytes.empty())
+                                    media_disk_cache_.store(disk_key, bytes);
+                            }
+                            using CW = tesseract::views::GifPopup;
+                            if (!bytes.empty() && anim_mime == "video/mp4")
+                            {
+                                tk::DecodedVideoFrames dvf =
+                                    tk::decode_video_frames(
+                                        bytes.data(), bytes.size(),
+                                        int(CW::kCellW) * 2,
                                         int(CW::kCellH) * 2);
-                                    if (!d.frames.empty())
+                                // Convert BGRA → cairo ARGB32 surface → Image.
+                                auto imgs = std::make_shared<
+                                    std::vector<std::unique_ptr<tk::Image>>>();
+                                std::vector<int> delays;
+                                for (auto& f : dvf.frames)
+                                {
+                                    cairo_surface_t* surf =
+                                        cairo_image_surface_create(
+                                            CAIRO_FORMAT_ARGB32, f.w, f.h);
+                                    if (surf &&
+                                        cairo_surface_status(surf) ==
+                                            CAIRO_STATUS_SUCCESS)
                                     {
-                                        anim_cache_.store(
-                                            anim_url, std::move(d.frames),
-                                            std::move(d.delays_ms),
-                                            g_get_monotonic_time() / 1000);
-                                        start_anim_tick_if_needed_();
+                                        unsigned char* dst =
+                                            cairo_image_surface_get_data(surf);
+                                        const int dst_stride =
+                                            cairo_image_surface_get_stride(surf);
+                                        const int src_stride = f.w * 4;
+                                        for (int y = 0; y < f.h; ++y)
+                                        {
+                                            std::memcpy(
+                                                dst + y * dst_stride,
+                                                f.bgra.data() + y * src_stride,
+                                                std::min(src_stride,
+                                                         dst_stride));
+                                        }
+                                        cairo_surface_mark_dirty(surf);
+                                        imgs->push_back(
+                                            tk::cairo_pango::make_image(surf));
+                                        delays.push_back(f.delay_ms);
                                     }
-                                    else if (d.still)
+                                    if (surf)
+                                        cairo_surface_destroy(surf);
+                                }
+                                post_to_ui_(
+                                    [this, anim_url, imgs,
+                                     delays = std::move(delays),
+                                     alive]() mutable
                                     {
-                                        gif_previews_[anim_url] =
-                                            std::move(d.still);
-                                    }
-                                    if (gif_popup_surface_)
-                                        gtk_widget_queue_draw(
-                                            gif_popup_surface_->widget());
-                                });
+                                        if (!*alive)
+                                            return;
+                                        gif_anim_inflight_.erase(anim_url);
+                                        if (!imgs->empty())
+                                        {
+                                            anim_cache_.store(
+                                                anim_url, std::move(*imgs),
+                                                std::move(delays),
+                                                g_get_monotonic_time() / 1000);
+                                            start_anim_tick_if_needed_();
+                                        }
+                                        if (gif_popup_surface_)
+                                            gtk_widget_queue_draw(
+                                                gif_popup_surface_->widget());
+                                    });
+                            }
+                            else
+                            {
+                                auto d = std::make_shared<DecodedImage>(
+                                    bytes.empty()
+                                        ? DecodedImage{}
+                                        : decode_image_(bytes,
+                                                        int(CW::kCellW) * 2,
+                                                        int(CW::kCellH) * 2));
+                                post_to_ui_(
+                                    [this, anim_url, d, alive]() mutable
+                                    {
+                                        if (!*alive)
+                                            return;
+                                        gif_anim_inflight_.erase(anim_url);
+                                        if (!d->frames.empty())
+                                        {
+                                            anim_cache_.store(
+                                                anim_url, std::move(d->frames),
+                                                std::move(d->delays_ms),
+                                                g_get_monotonic_time() / 1000);
+                                            start_anim_tick_if_needed_();
+                                        }
+                                        else if (d->still)
+                                        {
+                                            gif_previews_[anim_url] =
+                                                std::move(d->still);
+                                        }
+                                        if (gif_popup_surface_)
+                                            gtk_widget_queue_draw(
+                                                gif_popup_surface_->widget());
+                                    });
+                            }
                         });
                 }
+                // Static JPEG preview shown while the animation decodes (or as
+                // the permanent fallback for a non-animated result).
+                if (auto it = gif_previews_.find(result.preview_url);
+                    it != gif_previews_.end())
+                    return it->second.get();
                 return nullptr;
             });
         {
@@ -1016,6 +1115,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     room_text_area_->set_text("");
                 if (room_view_)
                     room_view_->clear_compose_text();
+            };
+            gh.get_cached_gif_bytes =
+                [this](const std::string& url) -> std::vector<std::uint8_t>
+            {
+                // Reuse the source bytes the strip persisted to disk on fetch.
+                return media_disk_cache_.load(gif_src_disk_key_(url));
             };
             gif_controller_ = std::make_unique<tesseract::views::GifController>(
                 room_text_area_.get(), gif_popup_widget_, std::move(gh));

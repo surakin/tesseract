@@ -19,6 +19,7 @@
 #include "app/SlashCommands.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
+#include "tk/video_decode.h"
 #include "tk/host.h"
 #include "tk/host_macos.h"
 #include "tk/theme.h"
@@ -223,6 +224,7 @@ public:
     using ShellBase::ensure_user_avatar_;
     using ShellBase::event_handler_;
     using ShellBase::find_existing_dm_;
+    using ShellBase::gif_src_disk_key_;
     using ShellBase::handle_compose_room_leaving_;
     using ShellBase::handle_compose_text_changed_;
     using ShellBase::handle_send_presence_toggle_;
@@ -239,6 +241,7 @@ public:
     using ShellBase::navigate_tray_unread_;
     using ShellBase::focus_tray_unread_popout_;
     using ShellBase::maybe_send_read_receipt_;
+    using ShellBase::media_disk_cache_;
     using ShellBase::media_fetches_in_flight_;
     using ShellBase::my_avatar_url_;
     using ShellBase::my_display_name_;
@@ -3112,28 +3115,47 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     if (!c)
                         return nullptr;
                     MacShell* shell = c->_shell.get();
-                    // Animated frame takes priority.
+                    // The strip animates strip_url (WebP/GIF, native decode),
+                    // keyed in anim_cache_. Serving a cached frame means animated
+                    // content is on screen, so ensure the tick timer runs:
+                    // re-shown searches take this path without re-fetching.
                     if (const tk::Image* f =
-                            shell->anim_cache_.current_frame(result.image_url))
-                        return f;
-                    // Static JPEG fallback.
+                            shell->anim_cache_.current_frame(result.strip_url))
                     {
-                        auto it = c->_gifPreviews.find(result.preview_url);
-                        if (it != c->_gifPreviews.end())
-                            return it->second.get();
+                        [c _startAnimTickIfNeeded];
+                        return f;
                     }
-                    // Kick off static preview fetch.
-                    if (c->_gifPreviewInflight.insert(result.preview_url).second)
+                    // NOTE: the static-preview fallback is returned at the *end*
+                    // of this lambda, AFTER the animated re-fetch is kicked
+                    // below. Returning it here would short-circuit re-animation
+                    // on a re-shown search whose anim_cache_ entry was evicted
+                    // while its static thumbnail lingers in _gifPreviews.
+                    // Kick off static preview fetch only when not already cached.
+                    if (!c->_gifPreviews.count(result.preview_url) &&
+                        c->_gifPreviewInflight.insert(result.preview_url).second)
                     {
                         auto alive = c->_gifAlive;
                         auto url = result.preview_url;
                         shell->run_async_(
                             [gc, url, alive, shell]
                             {
+                                // Disk-cache the preview too, symmetrically with
+                                // the animated source. Otherwise a GIF whose MP4
+                                // is already on disk loads its video faster than
+                                // its preview downloads, leaving the cell blank
+                                // until the video appears instead of the
+                                // thumbnail first.
+                                const std::string disk_key =
+                                    shell->gif_src_disk_key_(url);
                                 std::vector<std::uint8_t> bytes =
-                                    shell->client_
-                                        ? shell->client_->fetch_url_bytes(url)
-                                        : std::vector<std::uint8_t>{};
+                                    shell->media_disk_cache_.load(disk_key);
+                                if (bytes.empty() && shell->client_)
+                                {
+                                    bytes = shell->client_->fetch_url_bytes(url);
+                                    if (!bytes.empty())
+                                        shell->media_disk_cache_.store(
+                                            disk_key, bytes);
+                                }
                                 shell->post_to_ui_(
                                     [gc, url, b = std::move(bytes),
                                      alive]() mutable
@@ -3168,58 +3190,180 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                     });
                             });
                     }
-                    // Kick off animated image fetch.
-                    if (c->_gifAnimInflight.insert(result.image_url).second)
+                    // Kick off the strip-display fetch (strip_url: WebP/GIF). The
+                    // MP4 send form is fetched separately at send time.
+                    if (c->_gifAnimInflight.insert(result.strip_url).second)
                     {
                         auto alive = c->_gifAlive;
-                        auto anim_url = result.image_url;
+                        auto anim_url = result.strip_url;
+                        auto anim_mime = result.strip_mime;
+                        // Decode entirely on worker thread; post only results.
                         shell->run_async_(
-                            [gc, anim_url, alive, shell]
+                            [gc, anim_url, anim_mime, alive, shell]
                             {
+                                // Source bytes: disk cache first, else download
+                                // and persist so the send path reuses them.
+                                const std::string disk_key =
+                                    shell->gif_src_disk_key_(anim_url);
                                 std::vector<std::uint8_t> bytes =
-                                    shell->client_
-                                        ? shell->client_->fetch_url_bytes(
-                                              anim_url)
-                                        : std::vector<std::uint8_t>{};
-                                shell->post_to_ui_(
-                                    [gc, anim_url, b = std::move(bytes),
-                                     alive, shell]() mutable
+                                    shell->media_disk_cache_.load(disk_key);
+                                if (bytes.empty() && shell->client_)
+                                {
+                                    bytes = shell->client_->fetch_url_bytes(
+                                        anim_url);
+                                    if (!bytes.empty())
+                                        shell->media_disk_cache_.store(
+                                            disk_key, bytes);
+                                }
+                                using CW = tesseract::views::GifPopup;
+                                if (!bytes.empty() &&
+                                    anim_mime == "video/mp4")
+                                {
+                                    // Decode MP4 frames off the main thread
+                                    // (AVAssetReader is thread-safe).
+                                    tk::DecodedVideoFrames dvf =
+                                        tk::decode_video_frames(
+                                            bytes.data(), bytes.size(),
+                                            int(CW::kCellW) * 2,
+                                            int(CW::kCellH) * 2);
+                                    // Convert BGRA → CGImage → tk::Image
+                                    // (CoreGraphics is thread-safe).
+                                    // shared_ptr so the lambda is copyable
+                                    // (required by std::function).
+                                    auto imgs = std::make_shared<
+                                        std::vector<
+                                            std::unique_ptr<tk::Image>>>();
+                                    std::vector<int> delays;
+                                    for (auto& f : dvf.frames)
                                     {
-                                        if (!*alive)
-                                            return;
-                                        MainWindowController* c2 = gc;
-                                        if (!c2)
-                                            return;
-                                        c2->_gifAnimInflight.erase(anim_url);
-                                        if (b.empty())
-                                            return;
-                                        using CW = tesseract::views::GifPopup;
-                                        MacShell::DecodedImage d =
-                                            shell->decode_image_(
-                                                b, int(CW::kCellW) * 2,
-                                                int(CW::kCellH) * 2);
-                                        if (!d.frames.empty())
+                                        CGColorSpaceRef cs =
+                                            CGColorSpaceCreateDeviceRGB();
+                                        #pragma clang diagnostic push
+                                        #pragma clang diagnostic ignored \
+                                            "-Wdeprecated-anon-enum-enum-conversion"
+                                        CGContextRef ctx =
+                                            CGBitmapContextCreate(
+                                                nullptr,
+                                                static_cast<size_t>(f.w),
+                                                static_cast<size_t>(f.h),
+                                                8,
+                                                static_cast<size_t>(f.w) * 4,
+                                                cs,
+                                                kCGBitmapByteOrder32Little |
+                                                    kCGImageAlphaPremultipliedFirst);
+                                        #pragma clang diagnostic pop
+                                        CGColorSpaceRelease(cs);
+                                        if (ctx)
                                         {
-                                            const std::int64_t now =
-                                                static_cast<std::int64_t>(
-                                                    [[NSDate date]
-                                                        timeIntervalSince1970] *
-                                                    1000.0);
-                                            shell->anim_cache_.store(
-                                                anim_url, std::move(d.frames),
-                                                std::move(d.delays_ms), now);
-                                            [c2 _startAnimTickIfNeeded];
+                                            uint8_t* dst =
+                                                static_cast<uint8_t*>(
+                                                    CGBitmapContextGetData(
+                                                        ctx));
+                                            if (dst)
+                                            {
+                                                std::memcpy(
+                                                    dst, f.bgra.data(),
+                                                    f.bgra.size());
+                                            }
+                                            CGImageRef cg =
+                                                CGBitmapContextCreateImage(
+                                                    ctx);
+                                            CGContextRelease(ctx);
+                                            if (cg)
+                                            {
+                                                imgs->push_back(
+                                                    tk::cg::make_image(cg));
+                                                delays.push_back(
+                                                    f.delay_ms);
+                                                CGImageRelease(cg);
+                                            }
                                         }
-                                        else if (d.still)
+                                        else
                                         {
-                                            c2->_gifPreviews[anim_url] =
-                                                std::move(d.still);
+                                            CGColorSpaceRelease(cs);
                                         }
-                                        if (c2->_gifPopupSurface)
-                                            c2->_gifPopupSurface->relayout();
-                                    });
+                                    }
+                                    shell->post_to_ui_(
+                                        [gc, anim_url, imgs,
+                                         delays = std::move(delays),
+                                         alive, shell]() mutable
+                                        {
+                                            if (!*alive)
+                                                return;
+                                            MainWindowController* c2 = gc;
+                                            if (!c2)
+                                                return;
+                                            c2->_gifAnimInflight.erase(
+                                                anim_url);
+                                            if (!imgs->empty())
+                                            {
+                                                const std::int64_t now =
+                                                    static_cast<std::int64_t>(
+                                                        [[NSDate date]
+                                                            timeIntervalSince1970] *
+                                                        1000.0);
+                                                shell->anim_cache_.store(
+                                                    anim_url,
+                                                    std::move(*imgs),
+                                                    std::move(delays), now);
+                                                [c2 _startAnimTickIfNeeded];
+                                            }
+                                            if (c2->_gifPopupSurface)
+                                                c2->_gifPopupSurface
+                                                    ->relayout();
+                                        });
+                                }
+                                else
+                                {
+                                    auto d = std::make_shared<
+                                        MacShell::DecodedImage>(
+                                        bytes.empty()
+                                            ? MacShell::DecodedImage{}
+                                            : shell->decode_image_(
+                                                  bytes,
+                                                  int(CW::kCellW) * 2,
+                                                  int(CW::kCellH) * 2));
+                                    shell->post_to_ui_(
+                                        [gc, anim_url, d, alive, shell]()
+                                        {
+                                            if (!*alive)
+                                                return;
+                                            MainWindowController* c2 = gc;
+                                            if (!c2)
+                                                return;
+                                            c2->_gifAnimInflight.erase(
+                                                anim_url);
+                                            if (!d->frames.empty())
+                                            {
+                                                const std::int64_t now =
+                                                    static_cast<std::int64_t>(
+                                                        [[NSDate date]
+                                                            timeIntervalSince1970] *
+                                                        1000.0);
+                                                shell->anim_cache_.store(
+                                                    anim_url,
+                                                    std::move(d->frames),
+                                                    std::move(d->delays_ms),
+                                                    now);
+                                                [c2 _startAnimTickIfNeeded];
+                                            }
+                                            else if (d->still)
+                                            {
+                                                c2->_gifPreviews[anim_url] =
+                                                    std::move(d->still);
+                                            }
+                                            if (c2->_gifPopupSurface)
+                                                c2->_gifPopupSurface
+                                                    ->relayout();
+                                        });
+                                }
                             });
                     }
+                    // Static JPEG preview shown while the animation decodes (or
+                    // as the permanent fallback for a non-animated result).
+                    if (auto it = c->_gifPreviews.find(result.preview_url);
+                        it != c->_gifPreviews.end())
+                        return it->second.get();
                     return nullptr;
                 });
 
@@ -3269,6 +3413,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     c->_roomTextArea->set_text("");
                 if (c->_shell->room_view_)
                     c->_shell->room_view_->set_current_text({});
+            };
+            gh.get_cached_gif_bytes = [gc](const std::string& url)
+                -> std::vector<std::uint8_t>
+            {
+                MainWindowController* c = gc;
+                if (!c)
+                    return {};
+                // Reuse the source bytes the strip persisted to disk on fetch.
+                return c->_shell->media_disk_cache_.load(
+                    c->_shell->gif_src_disk_key_(url));
             };
             _gifController = std::make_unique<tesseract::views::GifController>(
                 _roomTextArea.get(), _gifPopupWidget, std::move(gh));

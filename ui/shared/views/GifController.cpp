@@ -213,6 +213,12 @@ void GifController::accept(const tesseract::GifResult& gif)
     {
         return;
     }
+    // Check the strip's byte cache on the UI thread before going async: if the
+    // preview strip already downloaded image_url, reuse those bytes instead of
+    // fetching again.
+    std::vector<std::uint8_t> cached_bytes =
+        hooks_.get_cached_gif_bytes ? hooks_.get_cached_gif_bytes(g.image_url)
+                                    : std::vector<std::uint8_t>{};
     // Marshal a failure message back to the UI thread so a dropped fetch or send
     // surfaces in the strip instead of vanishing silently.
     auto report = [this, alive, post_to_ui](std::string msg)
@@ -231,9 +237,11 @@ void GifController::accept(const tesseract::GifResult& gif)
             });
     };
     hooks_.run_async(
-        [client, room, g, body, report]
+        [client, room, g, body, report, cached = std::move(cached_bytes)]() mutable
         {
-            std::vector<std::uint8_t> bytes = client->fetch_gif_bytes(g.image_url);
+            std::vector<std::uint8_t> bytes =
+                cached.empty() ? client->fetch_gif_bytes(g.image_url)
+                               : std::move(cached);
             if (bytes.empty())
             {
                 report("Couldn't load GIF");

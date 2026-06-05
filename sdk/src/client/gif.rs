@@ -18,13 +18,21 @@ pub struct GifResult {
     pub preview_url: String,
     pub preview_w: u32,
     pub preview_h: u32,
-    /// Animated form re-uploaded into the room. Priority: MP4 (broadest bridge
-    /// compatibility) → WebP (smaller) → GIF (universal fallback).
+    /// Animated form re-uploaded into the room (the *send* format). Priority:
+    /// MP4 (broadest bridge compatibility) → WebP (smaller) → GIF (universal).
     pub image_url: String,
     pub image_w: u32,
     pub image_h: u32,
     /// MIME of `image_url` — "video/mp4", "image/webp", or "image/gif".
     pub image_mime: String,
+    /// Animated form the *strip* displays. The strip animates this through the
+    /// native image decoder (no video pipeline), so it prefers WebP → GIF and
+    /// only falls back to `image_url` for MP4-only entries. Decoding a small
+    /// WebP/GIF is far cheaper than running a GStreamer/MF/AV pipeline per cell.
+    pub strip_url: String,
+    /// MIME of `strip_url` — "image/webp", "image/gif", or (fallback) the
+    /// `image_mime` value.
+    pub strip_mime: String,
 }
 
 /// A GIF search backend.
@@ -100,6 +108,18 @@ fn parse_klipy_result(r: &Value) -> Option<GifResult> {
     if image_url.is_empty() {
         return None;
     }
+    // Strip-display form: animated via the native image decoder, so prefer
+    // WebP (small) → GIF (universal). Falls back to the send form only when the
+    // entry has neither (an MP4-only result), in which case the strip decodes
+    // the MP4 through the video pipeline.
+    let (strip_url, strip_mime) =
+        if let Some((u, _, _)) = pick_format(file, "webp", &["md", "sm", "hd"]) {
+            (u, "image/webp".to_string())
+        } else if let Some((u, _, _)) = pick_format(file, "gif", &["md", "sm", "hd"]) {
+            (u, "image/gif".to_string())
+        } else {
+            (image_url.clone(), image_mime.clone())
+        };
     let (preview_url, preview_w, preview_h) =
         pick_format(file, "jpg", &["sm", "xs", "md"]).unwrap_or_default();
 
@@ -122,6 +142,8 @@ fn parse_klipy_result(r: &Value) -> Option<GifResult> {
         image_w,
         image_h,
         image_mime,
+        strip_url,
+        strip_mime,
     })
 }
 
@@ -285,6 +307,8 @@ fn deliver_gif(
                     image_w: r.image_w,
                     image_h: r.image_h,
                     image_mime: r.image_mime,
+                    strip_url: r.strip_url,
+                    strip_mime: r.strip_mime,
                 })
                 .collect();
             g.on_gif_results(request_id, &ffi_items);
@@ -522,11 +546,17 @@ mod tests {
         assert_eq!((a.image_w, a.image_h), (498, 498));
         assert_eq!(a.preview_url, "https://cdn/sm.jpg");
         assert_eq!((a.preview_w, a.preview_h), (220, 220));
+        // Strip prefers webp; entry 1 has webp.
+        assert_eq!(a.strip_url, "https://cdn/md.webp");
+        assert_eq!(a.strip_mime, "image/webp");
 
         let b = &out[1];
         assert_eq!(b.id, "2");
         assert_eq!(b.image_url, "https://cdn/y.gif");
         assert_eq!(b.image_mime, "image/gif");
+        // No webp → strip falls back to gif.
+        assert_eq!(b.strip_url, "https://cdn/y.gif");
+        assert_eq!(b.strip_mime, "image/gif");
 
         let c = &out[2];
         assert_eq!(c.id, "3");
@@ -534,6 +564,9 @@ mod tests {
         assert_eq!(c.image_mime, "video/mp4");
         assert_eq!((c.image_w, c.image_h), (100, 100));
         assert_eq!(c.preview_url, "https://cdn/only.jpg");
+        // MP4-only entry → strip falls back to the mp4 send form.
+        assert_eq!(c.strip_url, "https://cdn/only.mp4");
+        assert_eq!(c.strip_mime, "video/mp4");
     }
 
     // One entry from a real api.klipy.com/gifs/search response: every tier
@@ -586,6 +619,9 @@ mod tests {
         assert_eq!((g.image_w, g.image_h), (220, 230));
         assert_eq!(g.preview_url, "https://static.klipy.com/sm.jpg");
         assert_eq!(g.id, "2484942301552561");
+        // Strip display = medium webp (prefers webp over the mp4 send form).
+        assert_eq!(g.strip_url, "https://static.klipy.com/md.webp");
+        assert_eq!(g.strip_mime, "image/webp");
     }
 
     #[test]

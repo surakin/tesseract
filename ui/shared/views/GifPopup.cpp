@@ -213,7 +213,7 @@ void GifPopup::paint(tk::PaintCtx& ctx)
                                              dh});
             }
             if (ctx.anim_damage)
-                ctx.anim_damage->note_image(results_[std::size_t(i)].image_url,
+                ctx.anim_damage->note_image(results_[std::size_t(i)].strip_url,
                                             cell);
         }
 

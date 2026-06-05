@@ -1412,6 +1412,14 @@ protected:
         return "t" + std::to_string(w) + "x" + std::to_string(h) + ":" + key;
     }
 
+    // Disk-cache key for a GIF strip's source bytes (the original MP4/WebP/GIF
+    // uploaded when the user picks it). Namespaced so a Klipy CDN URL never
+    // collides with an mxc:// media key in the shared media_disk_cache_.
+    static std::string gif_src_disk_key_(const std::string& url)
+    {
+        return "gifsrc:" + url;
+    }
+
     // Prefetch avatars for every entry in invites_ (inviter avatar for DMs,
     // room avatar for group invites) so the room-list invite rows render them.
     void ensure_invite_avatars_();

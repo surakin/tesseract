@@ -165,6 +165,7 @@ if(TESSERACT_UI STREQUAL "win32")
         tk/audio_win32.cpp
         tk/audio_capture_win32.cpp
         tk/video_win32.cpp
+        tk/video_decode_mf.cpp
     )
 elseif(TESSERACT_UI STREQUAL "qt6")
     list(APPEND _tk_sources
@@ -175,6 +176,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         tk/audio_qt.cpp
         tk/audio_capture_qt.cpp
         tk/video_qt.cpp
+        tk/video_decode_gst.cpp
     )
 elseif(TESSERACT_UI STREQUAL "gtk")
     list(APPEND _tk_sources
@@ -185,6 +187,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         tk/audio_gtk.cpp
         tk/audio_capture_gtk.cpp
         tk/video_gtk.cpp
+        tk/video_decode_gst.cpp
     )
 elseif(TESSERACT_UI STREQUAL "macos")
     list(APPEND _tk_sources
@@ -195,6 +198,7 @@ elseif(TESSERACT_UI STREQUAL "macos")
         tk/audio_macos.mm
         tk/audio_capture_macos.mm
         tk/video_macos.mm
+        tk/video_decode_av.mm
     )
 endif()
 
@@ -297,14 +301,21 @@ if(TESSERACT_UI STREQUAL "win32")
         <dwrite.h>
     )
 elseif(TESSERACT_UI STREQUAL "qt6")
-    # Multimedia is used by audio_qt.cpp for MSC3245 voice playback
-    # (QMediaPlayer + QAudioOutput).
+    # Multimedia is used by audio_qt.cpp + video_qt.cpp (QMediaPlayer).
+    # GStreamer is used by video_decode_gst.cpp for off-thread MP4 frame
+    # extraction in the GIF strip (the same libraries as the GTK4 backend).
     find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(TK_GST_QT REQUIRED IMPORTED_TARGET
+        gstreamer-1.0
+        gstreamer-app-1.0
+    )
     target_link_libraries(tesseract_tk PUBLIC
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
         Qt6::Multimedia
+        PkgConfig::TK_GST_QT
     )
     tesseract_target_pch(tesseract_tk
         <QtCore/QtCore>
