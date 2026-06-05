@@ -404,7 +404,13 @@ private:
     {
         if (ql_)
             return;
-        ql_ = std::make_unique<QTextLayout>(text_, font_);
+        // QTextLayout does not break on '\n'; it only honors
+        // QChar::LineSeparator (U+2028). Substitute so hard breaks render.
+        // text_ keeps real '\n' so byte/QChar index mapping and clipboard copy
+        // remain correct (both are a single QChar at identical indices).
+        QString laid = text_;
+        laid.replace(QLatin1Char('\n'), QChar(QChar::LineSeparator));
+        ql_ = std::make_unique<QTextLayout>(laid, font_);
         ql_->setTextOption(option_);
         ql_->beginLayout();
         qreal y = 0;
