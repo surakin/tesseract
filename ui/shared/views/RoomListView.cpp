@@ -505,6 +505,7 @@ private:
             }
             else if (kind == "image")   { preview = sender + " sent an image"; }
             else if (kind == "video")   { preview = sender + " sent a video"; }
+            else if (kind == "gif")     { preview = sender + " sent a GIF"; }
             else if (kind == "file")    { preview = sender + " sent a file"; }
             else if (kind == "audio")   { preview = sender + " sent a voice message"; }
             else if (kind == "sticker") { preview = sender + " sent a sticker"; }

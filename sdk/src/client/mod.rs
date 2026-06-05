@@ -1279,7 +1279,18 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                                 thumbnail_url: url,
                             }
                         }
-                        MessageType::Video(_) => media_kind("video"),
+                        MessageType::Video(_) => {
+                            let is_gif = serde_json::from_str::<serde_json::Value>(
+                                timeline_event.raw().json().get(),
+                            )
+                            .ok()
+                            .and_then(|v| {
+                                v.pointer("/content/info/fi.mau.gif")
+                                    .and_then(|v| v.as_bool())
+                            })
+                            .unwrap_or(false);
+                            media_kind(if is_gif { "gif" } else { "video" })
+                        }
                         MessageType::File(_) => media_kind("file"),
                         MessageType::Audio(_) => media_kind("audio"),
                         _ => LatestPreview::default(),
@@ -1387,7 +1398,16 @@ fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) 
         MessageType::Notice(n) => text_kind(&n.body, n.formatted.as_ref().map(|f| f.body.as_str())),
         MessageType::Emote(e) => text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str())),
         MessageType::Image(_) => media_kind("image"),
-        MessageType::Video(_) => media_kind("video"),
+        MessageType::Video(_) => {
+            let is_gif = serde_json::to_value(content)
+                .ok()
+                .and_then(|v| {
+                    v.pointer("/event/info/fi.mau.gif")
+                        .and_then(|v| v.as_bool())
+                })
+                .unwrap_or(false);
+            media_kind(if is_gif { "gif" } else { "video" })
+        }
         MessageType::File(_) => media_kind("file"),
         MessageType::Audio(_) => media_kind("audio"),
         _ => LatestPreview::default(),
@@ -2766,6 +2786,34 @@ mod tests_latest_event_body {
             }));
             assert_eq!(latest_event_preview(&v), media(kind));
         }
+    }
+
+    #[test]
+    fn remote_video_with_fi_mau_gif_returns_gif() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": {
+                "msgtype": "m.video", "body": "tenor.mp4",
+                "url": "mxc://e.com/x",
+                "info": { "mimetype": "video/mp4", "fi.mau.gif": true }
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), media("gif"));
+    }
+
+    #[test]
+    fn remote_video_without_fi_mau_gif_stays_video() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": {
+                "msgtype": "m.video", "body": "clip.mp4",
+                "url": "mxc://e.com/x",
+                "info": { "mimetype": "video/mp4" }
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), media("video"));
     }
 
     #[test]

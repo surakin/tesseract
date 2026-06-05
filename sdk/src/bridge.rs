@@ -65,7 +65,7 @@ pub mod ffi {
         /// the current user (render as "You"), or when there is no last message.
         last_message_sender_name: String,
         /// Kind of the latest event for preview rendering:
-        /// "text" | "image" | "video" | "file" | "audio" | "sticker" | "".
+        /// "text" | "image" | "video" | "gif" | "file" | "audio" | "sticker" | "".
         last_message_kind: String,
         /// mxc:// URI of the sticker image when last_message_kind == "sticker";
         /// empty otherwise.

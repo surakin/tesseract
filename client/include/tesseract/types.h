@@ -400,7 +400,7 @@ struct RoomInfo
     /// current user (render as "You"), or when there is no last message.
     std::string last_message_sender_name;
     /// Kind of the latest event for preview rendering: "text" | "image" |
-    /// "video" | "file" | "audio" | "sticker" | "" (nothing to preview).
+    /// "video" | "gif" | "file" | "audio" | "sticker" | "" (nothing to preview).
     std::string last_message_kind;
     /// mxc:// URI of the sticker image when last_message_kind == "sticker".
     std::string last_message_sticker_url;

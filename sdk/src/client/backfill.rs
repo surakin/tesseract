@@ -673,7 +673,22 @@ pub(super) async fn backfill_room_silent(
                     first_ts = u64::from(ev.timestamp().0);
                 }
                 if found.is_none() {
-                    let preview = preview_from_timeline_content(ev.content());
+                    let mut preview = preview_from_timeline_content(ev.content());
+                    if preview.kind == "video" {
+                        let is_gif = ev
+                            .original_json()
+                            .and_then(|raw| {
+                                serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
+                            })
+                            .and_then(|v| {
+                                v.pointer("/content/info/fi.mau.gif")
+                                    .and_then(|v| v.as_bool())
+                            })
+                            .unwrap_or(false);
+                        if is_gif {
+                            preview.kind = "gif".to_owned();
+                        }
+                    }
                     if !preview.kind.is_empty() {
                         let sender_id = ev.sender().to_owned();
                         let profile_name = match ev.sender_profile() {
