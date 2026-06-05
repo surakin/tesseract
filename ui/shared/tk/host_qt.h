@@ -75,6 +75,9 @@ public:
         set_on_file_drop(std::move(cb));
     }
 
+    // Called when a drop fails because the file could not be read.
+    void set_on_file_drop_error(FileDropErrorHandler cb);
+
     // True while a drag is hovering over the Surface (between
     // dragEnter / dragLeave / drop). Painted as a translucent
     // "Drop to attach" overlay so the user sees a valid target.
@@ -99,6 +102,7 @@ protected:
 private:
     std::unique_ptr<Host> host_;
     FileDropHandler on_file_drop_;
+    FileDropErrorHandler on_file_drop_error_;
     bool drag_active_ = false;
 };
 

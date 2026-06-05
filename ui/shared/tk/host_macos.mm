@@ -130,6 +130,10 @@ public:
     {
         on_file_drop_ = std::move(cb);
     }
+    void set_on_file_drop_error(FileDropErrorHandler cb)
+    {
+        on_file_drop_error_ = std::move(cb);
+    }
     bool has_file_drop_handler() const
     {
         return static_cast<bool>(on_file_drop_);
@@ -157,6 +161,7 @@ private:
     Button* hovered_btn_ = nullptr;
     Widget* hovered_widget_ = nullptr;
     FileDropHandler on_file_drop_;
+    FileDropErrorHandler on_file_drop_error_;
     std::function<void(tk::Point)> on_right_click_;
     bool drag_active_ = false;
     const AnimImageCache* anim_cache_ = nullptr;
@@ -1936,6 +1941,14 @@ bool Host::dispatch_file_drop(NSPasteboard* pb)
                                                            error:&err];
         if (!attrs)
         {
+            if (on_file_drop_error_)
+            {
+                std::string reason =
+                    err.localizedDescription.UTF8String
+                        ? std::string(err.localizedDescription.UTF8String)
+                        : "Could not read file";
+                on_file_drop_error_(std::move(reason));
+            }
             continue;
         }
         unsigned long long sz = [attrs[NSFileSize] unsignedLongLongValue];
@@ -1949,6 +1962,14 @@ bool Host::dispatch_file_drop(NSPasteboard* pb)
                                                 error:&err];
         if (!data || data.length == 0)
         {
+            if (on_file_drop_error_)
+            {
+                std::string reason =
+                    err.localizedDescription.UTF8String
+                        ? std::string(err.localizedDescription.UTF8String)
+                        : "Could not read file";
+                on_file_drop_error_(std::move(reason));
+            }
             continue;
         }
 
@@ -2067,6 +2088,11 @@ void Surface::set_on_layout(std::function<void()> cb)
 void Surface::set_on_file_drop(FileDropHandler cb)
 {
     host_->set_on_file_drop(std::move(cb));
+}
+
+void Surface::set_on_file_drop_error(FileDropErrorHandler cb)
+{
+    host_->set_on_file_drop_error(std::move(cb));
 }
 
 void Surface::set_on_right_click(std::function<void(tk::Point)> cb)

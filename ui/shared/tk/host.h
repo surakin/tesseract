@@ -235,6 +235,10 @@ using FileDropHandler = std::function<void(
 // Deprecated alias for `FileDropHandler` kept while shells migrate.
 using ImageDropHandler = FileDropHandler;
 
+// Callback invoked when a drag-drop file could not be read (e.g. a VFS file
+// that isn't materialised). `reason` is a human-readable error description.
+using FileDropErrorHandler = std::function<void(std::string reason)>;
+
 // Maximum size of an image we'll auto-encode from in-app drag data (no
 // filename) into memory. Arbitrary file drops are gated by the
 // homeserver-reported upload limit at the shell level, not this constant.

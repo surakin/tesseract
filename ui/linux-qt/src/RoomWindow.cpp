@@ -124,6 +124,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             handle_file_drop_(std::move(bytes), std::move(mime),
                               std::move(filename));
         });
+    surface_->set_on_file_drop_error(
+        [this](std::string reason)
+        {
+            shell_->show_status_message_(std::move(reason));
+        });
 
     // ── Compose text area overlay + @mention autocomplete ─────────────────
     roomTextArea_ = surface_->host().make_text_area();

@@ -3717,6 +3717,10 @@ public:
     {
         on_file_drop_ = std::move(cb);
     }
+    void set_on_file_drop_error(FileDropErrorHandler cb)
+    {
+        on_file_drop_error_ = std::move(cb);
+    }
     bool has_file_drop_handler() const
     {
         return static_cast<bool>(on_file_drop_);
@@ -3729,6 +3733,11 @@ public:
             on_file_drop_(std::move(bytes), std::move(mime),
                           std::move(filename));
         }
+    }
+    void fire_file_drop_error(std::string reason)
+    {
+        if (on_file_drop_error_)
+            on_file_drop_error_(std::move(reason));
     }
     void set_on_right_click(std::function<void(tk::Point)> cb)
     {
@@ -3762,6 +3771,7 @@ public:
 
 private:
     FileDropHandler on_file_drop_;
+    FileDropErrorHandler on_file_drop_error_;
     std::function<void(tk::Point)> on_right_click_;
     bool drag_active_ = false;
 };
@@ -4190,6 +4200,8 @@ private:
         WIN32_FILE_ATTRIBUTE_DATA fa{};
         if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
         {
+            if (host_)
+                host_->fire_file_drop_error("Could not read file");
             return false;
         }
         ULARGE_INTEGER sz{};
@@ -4205,6 +4217,8 @@ private:
                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (h == INVALID_HANDLE_VALUE)
         {
+            if (host_)
+                host_->fire_file_drop_error("Could not read file");
             return false;
         }
 
@@ -4403,6 +4417,11 @@ CanvasFactory& Surface::factory()
 void Surface::set_on_file_drop(FileDropHandler cb)
 {
     host_->set_on_file_drop(std::move(cb));
+}
+
+void Surface::set_on_file_drop_error(FileDropErrorHandler cb)
+{
+    host_->set_on_file_drop_error(std::move(cb));
 }
 
 void Surface::set_on_right_click(std::function<void(tk::Point)> cb)

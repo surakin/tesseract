@@ -1381,6 +1381,11 @@ void Surface::set_on_file_drop(FileDropHandler cb)
     setAcceptDrops(static_cast<bool>(on_file_drop_));
 }
 
+void Surface::set_on_file_drop_error(FileDropErrorHandler cb)
+{
+    on_file_drop_error_ = std::move(cb);
+}
+
 namespace
 {
 
@@ -1618,6 +1623,8 @@ void Surface::dropEvent(QDropEvent* e)
             QFile f(path);
             if (!f.open(QIODevice::ReadOnly))
             {
+                if (on_file_drop_error_)
+                    on_file_drop_error_(f.errorString().toStdString());
                 continue;
             }
             const QByteArray ba = f.readAll();

@@ -73,6 +73,9 @@ public:
         set_on_file_drop(std::move(cb));
     }
 
+    // Called when a drop fails because the file could not be read.
+    void set_on_file_drop_error(FileDropErrorHandler cb);
+
     // Install a right-click handler. Receives surface-local widget coordinates.
     void set_on_right_click(std::function<void(tk::Point)> cb);
 

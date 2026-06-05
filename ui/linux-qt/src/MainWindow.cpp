@@ -1785,13 +1785,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             if (!mainApp_)
                 return;
-            tesseract::views::dispatch_file_drop(
+            auto outcome = tesseract::views::dispatch_file_drop(
                 *mainApp_->room_view()->compose_bar(), std::move(bytes),
                 std::move(mime), std::move(filename),
                 client_->media_upload_limit(),
                 [this](std::uint32_t gen, std::vector<std::uint8_t> b,
                        std::string m)
                 { extract_drop_media_(gen, std::move(b), std::move(m)); });
+            if (outcome == tesseract::views::FileDropOutcome::TooLarge)
+                show_status_message_("File exceeds the upload limit");
+        });
+    mainAppSurface_->set_on_file_drop_error(
+        [this](std::string reason)
+        {
+            show_status_message_(std::move(reason));
         });
 
     // Right-click: user-strip actions (lower-left corner) or sticker save (chat).
@@ -4525,6 +4532,16 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
     {
         mainApp_->room_view()->set_typing_text(text);
     }
+}
+
+void MainWindow::on_show_status_message_ui_(const std::string& msg)
+{
+    statusBar()->showMessage(QString::fromStdString(msg));
+}
+
+void MainWindow::on_restore_status_ui_()
+{
+    refreshSyncStatus();
 }
 
 // ---------------------------------------------------------------------------

@@ -109,6 +109,9 @@ public:
         set_on_file_drop(std::move(cb));
     }
 
+    // Called when a drop fails because the file could not be read.
+    void set_on_file_drop_error(FileDropErrorHandler cb);
+
     // Install a right-click handler. Receives surface-local coordinates in
     // the same logical pixel space as pointer-down/up events. Fired on
     // WM_RBUTTONUP. Pass {} to clear.

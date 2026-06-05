@@ -47,6 +47,18 @@ void ShellBase::cancel_debounce_(DebounceSlot slot)
     ++debounce_gen_[static_cast<int>(slot)];
 }
 
+void ShellBase::show_status_message_(std::string msg, int auto_clear_ms)
+{
+    const std::uint32_t gen = ++status_msg_gen_;
+    post_to_ui_([this, msg = std::move(msg)] { on_show_status_message_ui_(msg); });
+    post_to_ui_after_(auto_clear_ms,
+                      [this, gen]
+                      {
+                          if (status_msg_gen_ == gen)
+                              on_restore_status_ui_();
+                      });
+}
+
 // ── WorkerPool ─────────────────────────────────────────────────────────────
 
 ShellBase::WorkerPool::WorkerPool(int threads)

@@ -1246,6 +1246,10 @@ public:
     {
         on_file_drop_ = std::move(cb);
     }
+    void set_on_file_drop_error(FileDropErrorHandler cb)
+    {
+        on_file_drop_error_ = std::move(cb);
+    }
     bool has_file_drop_handler() const
     {
         return static_cast<bool>(on_file_drop_);
@@ -1291,6 +1295,8 @@ public:
         }
         if (!info)
         {
+            if (on_file_drop_error_)
+                on_file_drop_error_("Could not read file");
             return false;
         }
         const goffset sz = g_file_info_get_size(info);
@@ -1308,6 +1314,8 @@ public:
         }
         if (!gb)
         {
+            if (on_file_drop_error_)
+                on_file_drop_error_("Could not read file");
             g_object_unref(info);
             return false;
         }
@@ -1594,6 +1602,7 @@ private:
     double last_pointer_y_ = -1;
     GdkModifierType last_pointer_state_ = static_cast<GdkModifierType>(0);
     FileDropHandler on_file_drop_;
+    FileDropErrorHandler on_file_drop_error_;
     bool drag_active_ = false;
     const tk::AnimImageCache* anim_cache_ = nullptr;
     bool has_anim_damage_ = false;
@@ -1856,6 +1865,11 @@ void Surface::set_on_layout(std::function<void()> cb)
 void Surface::set_on_file_drop(FileDropHandler cb)
 {
     host_->set_on_file_drop(std::move(cb));
+}
+
+void Surface::set_on_file_drop_error(FileDropErrorHandler cb)
+{
+    host_->set_on_file_drop_error(std::move(cb));
 }
 
 // Defined in audio_gtk.cpp.

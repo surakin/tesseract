@@ -165,6 +165,8 @@ protected:
     void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
+    void on_show_status_message_ui_(const std::string& msg) override;
+    void on_restore_status_ui_() override;
 
     tk::ThemeMode os_color_scheme_() const override;
     void apply_theme_ui_(const tk::Theme& t) override;
@@ -305,6 +307,7 @@ public:
     using ShellBase::wire_voice_capture_;
     using ShellBase::reset_server_info_;
     using ShellBase::server_info_;
+    using ShellBase::show_status_message_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -498,6 +501,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onServerInfoReady;
 - (void)_buildStatusBar:(NSView*)content;
 - (void)_refreshSyncStatus;
+- (void)_setStatusLabelText:(NSString*)text;
 - (void)_onInflightChanged;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 
@@ -1452,6 +1456,16 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/)
     {
         room_view_->set_typing_text(text);
     }
+}
+
+void MacShell::on_show_status_message_ui_(const std::string& msg)
+{
+    [ctrl_ _setStatusLabelText:@(msg.c_str())];
+}
+
+void MacShell::on_restore_status_ui_()
+{
+    [ctrl_ _refreshSyncStatus];
 }
 
 tesseract::RoomWindowBase*
@@ -3619,7 +3633,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     return;
                 }
                 MacShell* shell = c->_shell.get();
-                tesseract::views::dispatch_file_drop(
+                auto outcome = tesseract::views::dispatch_file_drop(
                     *c->_roomView->compose_bar(), std::move(bytes),
                     std::move(mime), std::move(filename),
                     shell->client_->media_upload_limit(),
@@ -3629,6 +3643,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
                         shell->extract_drop_media_(gen, std::move(b),
                                                    std::move(m));
                     });
+                if (outcome == tesseract::views::FileDropOutcome::TooLarge)
+                    shell->show_status_message_("File exceeds the upload limit");
+            });
+        _mainAppSurface->set_on_file_drop_error(
+            [weakSelf](std::string reason)
+            {
+                MainWindowController* c = weakSelf;
+                if (!c || !c->_shell)
+                    return;
+                c->_shell->show_status_message_(std::move(reason));
             });
 
         _roomSearchField = _mainAppSurface->host().make_text_field();
@@ -6487,6 +6511,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (_shell)
         _shell->init_pool_callbacks_();
     [self _onInflightChanged];
+}
+
+- (void)_setStatusLabelText:(NSString*)text
+{
+    if (_statusLabel)
+        _statusLabel.stringValue = text;
 }
 
 - (void)_refreshSyncStatus

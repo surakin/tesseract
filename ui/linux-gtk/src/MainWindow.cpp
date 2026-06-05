@@ -197,6 +197,17 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
     }
 }
 
+void MainWindow::on_show_status_message_ui_(const std::string& msg)
+{
+    if (status_bar_)
+        gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+}
+
+void MainWindow::on_restore_status_ui_()
+{
+    refresh_sync_status();
+}
+
 void MainWindow::handle_verification_state_ui_(bool is_verified)
 {
     if (!main_app_ || !verif_shared_)
@@ -1053,16 +1064,15 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 [this](std::uint32_t gen, std::vector<std::uint8_t> b,
                        std::string m)
                 { extract_drop_media_(gen, std::move(b), std::move(m)); });
-            if (outcome == tesseract::views::FileDropOutcome::TooLarge &&
-                status_bar_)
-            {
-                std::string msg =
-                    std::string(_("File exceeds server limit (")) +
-                    tesseract::views::format_size(limit) + ")";
-                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
-            }
+            if (outcome == tesseract::views::FileDropOutcome::TooLarge)
+                show_status_message_("File exceeds the upload limit");
         };
         main_app_surface_->set_on_file_drop(on_file_drop);
+        main_app_surface_->set_on_file_drop_error(
+            [this](std::string reason)
+            {
+                show_status_message_(std::move(reason));
+            });
 
         room_view_->on_layout_changed = [this]
         {

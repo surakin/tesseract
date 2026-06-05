@@ -623,7 +623,7 @@ void RoomWindowBase::handle_file_drop_(std::vector<std::uint8_t> bytes,
     if (auto* c = shell_client_())
         limit = c->media_upload_limit();
     auto* cb = room_view_->compose_bar();
-    views::dispatch_file_drop(
+    auto outcome = views::dispatch_file_drop(
         *cb, std::move(bytes), std::move(mime), std::move(filename), limit,
         [this, cb](std::uint32_t gen, std::vector<std::uint8_t> b,
                    std::string m)
@@ -634,6 +634,8 @@ void RoomWindowBase::handle_file_drop_(std::vector<std::uint8_t> bytes,
             shell_->extract_drop_media_(gen, std::move(b), std::move(m), cb,
                                         alive_);
         });
+    if (outcome == views::FileDropOutcome::TooLarge)
+        shell_->show_status_message_("File exceeds the upload limit");
 }
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r)

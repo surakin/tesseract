@@ -796,6 +796,17 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
     }
 }
 
+void MainWindow::on_show_status_message_ui_(const std::string& msg)
+{
+    if (hStatus_)
+        SetWindowTextW(hStatus_, utf8_to_wstr(msg).c_str());
+}
+
+void MainWindow::on_restore_status_ui_()
+{
+    refresh_sync_status();
+}
+
 // ---------------------------------------------------------------------------
 // wnd_proc
 // ---------------------------------------------------------------------------
@@ -2138,12 +2149,13 @@ void MainWindow::on_create(HWND hwnd)
                     [this](std::uint32_t gen, std::vector<std::uint8_t> b,
                            std::string m)
                     { extract_drop_media_(gen, std::move(b), std::move(m)); });
-                if (outcome ==
-                        tesseract::views::FileDropOutcome::TooLarge &&
-                    hStatus_)
-                {
-                    SetWindowTextW(hStatus_, L"File exceeds server limit");
-                }
+                if (outcome == tesseract::views::FileDropOutcome::TooLarge)
+                    show_status_message_("File exceeds the upload limit");
+            });
+        main_app_surface_->set_on_file_drop_error(
+            [this](std::string reason)
+            {
+                show_status_message_(std::move(reason));
             });
 
         // ── Native overlays ──────────────────────────────────────────────────

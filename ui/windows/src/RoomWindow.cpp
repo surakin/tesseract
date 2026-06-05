@@ -165,6 +165,11 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             handle_file_drop_(std::move(bytes), std::move(mime),
                               std::move(filename));
         });
+    surface_->set_on_file_drop_error(
+        [this](std::string reason)
+        {
+            shell_->show_status_message_(std::move(reason));
+        });
 
     room_view_->set_post_delayed(
         [this](int ms, std::function<void()> fn)

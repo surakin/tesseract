@@ -500,6 +500,9 @@ protected:
     bool sync_progress_shown_ = false;
     /// Extra in-flight HTTP request count (excludes the sync long-poll).
     std::uint32_t last_inflight_ = 0;
+    /// Generation counter for show_status_message_ auto-clear: a late-firing
+    /// callback only calls on_restore_status_ui_() if the gen still matches.
+    std::uint32_t status_msg_gen_ = 0;
 
     // ── Encryption setup overlay ──────────────────────────────────────────────
     // True once show_encryption_setup_overlay_() has been called this session;
@@ -1122,6 +1125,15 @@ protected:
             image_bytes.clear();
         }
     }
+    // Show `msg` in the platform status bar for `auto_clear_ms` milliseconds,
+    // then restore the sync-status text. Safe to call from any thread.
+    void show_status_message_(std::string msg, int auto_clear_ms = 4000);
+
+    // Called by show_status_message_ on the UI thread to display the message.
+    virtual void on_show_status_message_ui_(const std::string& /*msg*/) {}
+    // Called when the auto-clear timer fires to restore normal sync status.
+    virtual void on_restore_status_ui_() {}
+
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_()
     {

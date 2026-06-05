@@ -159,6 +159,8 @@ public:
     void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
+    void on_show_status_message_ui_(const std::string& msg) override;
+    void on_restore_status_ui_() override;
 
     // Returns the user-chosen path, or L"" if cancelled.
     // Also called by RoomWindow for save dialogs in popout windows.
