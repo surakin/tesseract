@@ -111,6 +111,12 @@ public:
               std::string_view /*mime*/) override
     {
         player_.stop();
+        // Detach the previous clip first. QMediaPlayer skips re-probing when the
+        // source-device pointer is unchanged, so reusing &buffer_ across opens
+        // keeps the prior clip's H.264 demuxer state and reads the new bytes as
+        // garbage (Invalid NAL unit size / NAL split errors). Forcing the value
+        // through nullptr makes it a real source change and a fresh probe.
+        player_.setSourceDevice(nullptr);
         buffer_.close();
         bytes_ = QByteArray(reinterpret_cast<const char*>(data),
                             static_cast<qsizetype>(size));
