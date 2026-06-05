@@ -584,8 +584,24 @@ private:
             }
         }
 
-        // Read video samples at 60 Hz pace (no exact timing; just drain as fast
-        // as practical so frames are up-to-date during scrub).
+        // Compute the per-frame sleep time from the declared frame rate so
+        // playback respects the video's actual fps instead of a hardcoded 60.
+        DWORD frame_sleep_ms = 16; // 60 fps fallback
+        {
+            UINT32 fps_num = 0, fps_den = 0;
+            if (SUCCEEDED(MFGetAttributeRatio(actual_type.Get(),
+                                              MF_MT_FRAME_RATE,
+                                              &fps_num, &fps_den)) &&
+                fps_num > 0 && fps_den > 0)
+            {
+                const DWORD ms = static_cast<DWORD>(
+                    static_cast<UINT64>(fps_den) * 1000u / fps_num);
+                if (ms >= 1u && ms <= 500u)
+                    frame_sleep_ms = ms;
+            }
+        }
+
+        // Read video samples and deliver them at the correct frame rate.
         while (decode_running_)
         {
             DWORD stream_idx = 0, flags = 0;
@@ -625,75 +641,142 @@ private:
                 continue;
             }
 
+            // MFVideoFormat_RGB32 is BGRX; the unused 4th byte is 0x00.
+            // make_image_from_bgra marks the resulting D2DImage opaque so D2D
+            // ignores the zero alpha.
+            //
+            // We must repack from MF's (possibly row-padded) buffer into a
+            // tightly-packed frame_w*4 buffer.  Using the wrong row pitch shears
+            // the image diagonally.
+            //
+            // Strategy: try IMF2DBuffer::Lock2D() on the sample's primary buffer
+            // BEFORE calling ConvertToContiguousBuffer().  ConvertToContiguousBuffer
+            // copies the padded data into a new flat MFCreateMemoryBuffer whose
+            // IMF2DBuffer::Lock2D() does not carry 2D stride metadata and will
+            // fail.  The original output buffer from the video processor MFT does
+            // carry correct stride metadata (e.g. 1024 for a 250-px-wide video
+            // whose GPU rows are padded to the next 64-byte boundary).
+
+            BYTE* src_ptr   = nullptr;
+            LONG  src_pitch = 0; // signed: negative → bottom-up buffer
+            bool  locked_2d = false;
             Microsoft::WRL::ComPtr<IMFMediaBuffer> buf;
-            if (FAILED(sample->ConvertToContiguousBuffer(buf.GetAddressOf())))
+            Microsoft::WRL::ComPtr<IMF2DBuffer>    buf2d;
+
             {
-                continue;
+                Microsoft::WRL::ComPtr<IMFMediaBuffer> direct;
+                if (SUCCEEDED(sample->GetBufferByIndex(0, direct.GetAddressOf())))
+                {
+                    Microsoft::WRL::ComPtr<IMF2DBuffer> d2d;
+                    if (SUCCEEDED(direct->QueryInterface(d2d.GetAddressOf())))
+                    {
+                        LONG pitch = 0;
+                        if (SUCCEEDED(d2d->Lock2D(&src_ptr, &pitch)))
+                        {
+                            buf       = std::move(direct);
+                            buf2d     = std::move(d2d);
+                            src_pitch = pitch;
+                            locked_2d = true;
+                        }
+                    }
+                }
             }
 
-            BYTE* ptr = nullptr;
-            DWORD len = 0;
-            if (FAILED(buf->Lock(&ptr, nullptr, &len)))
+            DWORD flat_len = 0; // only valid when locked_2d == false
+            if (!locked_2d)
             {
-                continue;
+                // GetBufferByIndex + Lock2D failed (common when the video
+                // processor outputs a flat MFCreateMemoryBuffer).  Fall back
+                // to ConvertToContiguousBuffer + flat lock.
+                if (FAILED(sample->ConvertToContiguousBuffer(
+                        buf.ReleaseAndGetAddressOf())))
+                {
+                    continue;
+                }
+                if (FAILED(buf->Lock(&src_ptr, nullptr, &flat_len)))
+                {
+                    continue;
+                }
+
+                // Derive pitch magnitude from the buffer length.
+                const UINT target = frame_w * 4u;
+                UINT abs_p = 0;
+                if (flat_len % frame_h == 0)
+                {
+                    // Buffer length is an exact multiple of the frame height:
+                    // each row has len/frame_h bytes (may include alignment
+                    // padding).
+                    abs_p = flat_len / frame_h;
+                }
+                else
+                {
+                    // flat_len is NOT divisible by frame_h — the decoder has
+                    // added height-alignment padding (e.g. 188 rows padded to
+                    // 192 = next multiple of 16).  MF_MT_DEFAULT_STRIDE reports
+                    // the unpadded width and is useless here.
+                    //
+                    // Probe common GPU row-alignment values to find the true
+                    // stride: the smallest s >= frame_w*4 such that
+                    //   flat_len % s == 0  AND  flat_len / s >= frame_h
+                    static const UINT kAligns[] = {
+                        64u, 128u, 256u, 512u, 1024u, 2048u, 4096u};
+                    for (UINT al : kAligns)
+                    {
+                        const UINT s = (target + al - 1u) / al * al;
+                        if (flat_len % s == 0 &&
+                            flat_len / s >= frame_h)
+                        {
+                            abs_p = s;
+                            break;
+                        }
+                    }
+                    if (abs_p == 0)
+                    {
+                        abs_p = target; // last resort
+                    }
+                }
+                src_pitch = (src_stride < 0) ? -static_cast<LONG>(abs_p)
+                                             : static_cast<LONG>(abs_p);
             }
 
-            // MFVideoFormat_RGB32 is BGRX; the unused 4th byte is 0x00. make_image_from_bgra
-            // marks the resulting D2DImage opaque so D2D ignores the zero alpha.
-            //
-            // Repack from MF's (possibly row-padded) buffer into a tightly-
-            // packed frame_w*4 buffer. Decoders pad each row for alignment
-            // (e.g. a 200px-wide video → 208px → 832-byte rows, not 800), so
-            // copying the buffer blindly shears the image diagonally.
-            //
-            // We derive the stride MAGNITUDE from the contiguous buffer length
-            // (len == |stride| * height), which is the ground truth: the
-            // advertised MF_MT_DEFAULT_STRIDE reports the *unpadded* width here
-            // and cannot be trusted for the magnitude. MF_MT_DEFAULT_STRIDE is
-            // still used for the SIGN (negative → bottom-up buffer).
             const UINT dst_stride = frame_w * 4u;
-            UINT abs_stride = 0;
-            if (frame_h != 0 && (len % frame_h) == 0)
+            const UINT abs_pitch  = src_pitch < 0
+                                        ? static_cast<UINT>(-src_pitch)
+                                        : static_cast<UINT>(src_pitch);
+
+            // Guard: pitch must cover a full output row; for flat-lock also
+            // verify the total read stays within the locked buffer.
+            const bool pitch_ok =
+                abs_pitch >= dst_stride &&
+                (locked_2d ||
+                 static_cast<uint64_t>(abs_pitch) * frame_h <=
+                     static_cast<uint64_t>(flat_len));
+            if (!pitch_ok)
             {
-                abs_stride = len / frame_h;
-            }
-            else if (src_stride != 0)
-            {
-                abs_stride =
-                    static_cast<UINT>(src_stride < 0 ? -src_stride : src_stride);
-            }
-            else
-            {
-                abs_stride = dst_stride;
-            }
-            const LONG stride =
-                (src_stride < 0) ? -static_cast<LONG>(abs_stride)
-                                 : static_cast<LONG>(abs_stride);
-            // Guard against a malformed stride/length that would read past the
-            // locked buffer.
-            if (abs_stride < dst_stride ||
-                static_cast<DWORD>(abs_stride) * frame_h > len)
-            {
-                buf->Unlock();
+                if (locked_2d) buf2d->Unlock2D();
+                else           buf->Unlock();
                 continue;
             }
+
             std::vector<uint8_t> pixels(static_cast<size_t>(dst_stride) *
                                         frame_h);
-            // Negative stride → bottom-up buffer: the first row in memory is the
-            // last row of the image, so start at the bottom and walk back up.
+            // Negative pitch → bottom-up buffer: the first byte in memory is
+            // the last row of the image, so start at the end and walk back up.
             const BYTE* src_base =
-                (stride < 0)
-                    ? ptr + static_cast<size_t>(abs_stride) * (frame_h - 1)
-                    : ptr;
+                (src_pitch < 0)
+                    ? src_ptr + static_cast<size_t>(abs_pitch) * (frame_h - 1)
+                    : src_ptr;
             for (UINT y = 0; y < frame_h; ++y)
             {
                 const BYTE* src_row =
-                    src_base + static_cast<ptrdiff_t>(y) * stride;
+                    src_base + static_cast<ptrdiff_t>(y) * src_pitch;
                 std::memcpy(pixels.data() +
                                 static_cast<size_t>(y) * dst_stride,
                             src_row, dst_stride);
             }
-            buf->Unlock();
+
+            if (locked_2d) buf2d->Unlock2D();
+            else           buf->Unlock();
 
             if (backend_)
             {
@@ -719,8 +802,45 @@ private:
                 }
             }
 
-            // Throttle to ~60 fps (16 ms).
-            Sleep(16);
+            // Pace the decode thread to the video's actual frame rate.
+            // For non-looping videos the audio engine is the reference clock:
+            // sleep until the audio position reaches this frame's PTS so
+            // video and audio stay in sync.  For looping GIFs (no audio) use
+            // the sample's own duration; fall back to the static frame rate.
+            {
+                DWORD sleep_ms = frame_sleep_ms;
+
+                // Per-sample duration is more accurate than the static rate
+                // (handles variable frame-rate content).
+                LONGLONG sample_dur = 0;
+                if (SUCCEEDED(sample->GetSampleDuration(&sample_dur)) &&
+                    sample_dur > 0)
+                {
+                    const DWORD dur_ms = static_cast<DWORD>(
+                        std::min<LONGLONG>(sample_dur / 10000LL, 500LL));
+                    if (dur_ms >= 1u)
+                        sleep_ms = dur_ms;
+                }
+
+                // A/V sync: for non-looping videos with a running audio
+                // engine, wait until the audio clock reaches this frame's
+                // presentation timestamp.
+                if (!loop_.load() && engine_ &&
+                    !engine_->IsPaused() && !engine_->IsEnded())
+                {
+                    const double pts   = static_cast<double>(ts) / 1.0e7;
+                    const double audio = engine_->GetCurrentTime();
+                    const long   wait  =
+                        static_cast<long>((pts - audio) * 1000.0);
+                    if (wait > 0 && wait < 2000)
+                        sleep_ms = static_cast<DWORD>(wait);
+                    else if (wait <= 0)
+                        sleep_ms = 0; // video behind audio — display now
+                }
+
+                if (sleep_ms > 0)
+                    Sleep(sleep_ms);
+            }
         }
 
         CoUninitialize();

@@ -168,8 +168,21 @@ void VideoViewerOverlay::recompute_layout()
     const float avail_h = b.h - kMarginY - ctrl_h - 8.0f;
     const float avail_w = b.w - kMarginX;
 
-    tk::Size vs = fit_media(static_cast<float>(natural_w_),
-                            static_cast<float>(natural_h_), avail_w,
+    // Prefer explicit metadata dimensions; when absent, fall back to the
+    // decoded frame dimensions so the display rect always has the right
+    // aspect ratio even if the Matrix event omitted w/h.
+    int use_w = natural_w_, use_h = natural_h_;
+    if ((use_w <= 0 || use_h <= 0) && video_player_)
+    {
+        const tk::Image* f = video_player_->current_frame();
+        if (f && f->width() > 0 && f->height() > 0)
+        {
+            use_w = f->width();
+            use_h = f->height();
+        }
+    }
+    tk::Size vs = fit_media(static_cast<float>(use_w),
+                            static_cast<float>(use_h), avail_w,
                             std::max(avail_h, 1.0f));
     const float vx = b.x + (b.w - vs.w) * 0.5f;
     const float vy = b.y + (b.h - vs.h - ctrl_h - 16.0f) * 0.5f;
