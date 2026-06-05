@@ -130,6 +130,34 @@ TEST_CASE("MessageListView re-shapes the body when its content changes",
     CHECK(st.cf.rich == base + 1);
 }
 
+TEST_CASE("inserting a message collapses an existing read marker",
+          "[message_list][layout_cache]")
+{
+    // Appending a content message flips the global suppress_read_marker_ flag,
+    // which collapses any visible read marker to zero height. A targeted insert
+    // alone would leave the marker (elsewhere in the list) at its stale height,
+    // so this guards that the flag flip forces a full re-measure.
+    Stage st;
+    MessageListView v;
+    std::vector<MessageRowData> msgs;
+    msgs.push_back(make_rich("$a", "hello"));
+    MessageRowData rm;
+    rm.kind = MessageRowData::Kind::ReadMarker;
+    rm.event_id = "$rm";
+    msgs.push_back(rm);
+    msgs.push_back(make_rich("$b", "world"));
+    v.set_messages(std::move(msgs), false);
+    st.run(v, {0, 0, 600, 400});
+
+    REQUIRE(v.messages().size() == 3);
+    REQUIRE(v.row_world_rect(1).h > 0.0f); // marker visible (content after it)
+
+    v.insert_message(3, make_rich("$c", "again")); // append content row
+    st.run(v, {0, 0, 600, 400});
+
+    CHECK(v.row_world_rect(1).h == 0.0f); // marker collapsed by suppress flip
+}
+
 TEST_CASE("MessageListView body layout cache is memory-bounded",
           "[message_list][layout_cache]")
 {

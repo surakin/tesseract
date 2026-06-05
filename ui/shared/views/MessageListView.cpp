@@ -4335,9 +4335,11 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     // Suppress the read marker while the SDK catches up to the new position.
     // update_message() clears this flag when it delivers the updated marker.
     using Kind = MessageRowData::Kind;
+    bool suppress_flipped = false;
     if (msg.kind != Kind::ReadMarker && msg.kind != Kind::DaySeparator &&
         msg.kind != Kind::TimelineStart && msg.kind != Kind::PinnedEvent)
     {
+        suppress_flipped = !suppress_read_marker_;
         suppress_read_marker_ = true;
     }
 
@@ -4353,6 +4355,13 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
         messages_.push_back(std::move(msg));
         try_acquire_image_(messages_.back());
         insert_row(messages_.size() - 1); // targeted: only the new tail row
+        if (suppress_flipped)
+        {
+            // Flipping suppress_read_marker_ changes every row's is_cont
+            // skip-over and any existing read marker's height — a global
+            // effect the targeted insert above cannot cover.
+            invalidate_data();
+        }
         if (at_bottom)
         {
             scroll_to_bottom();
@@ -4377,6 +4386,10 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
             messages_.insert(messages_.begin() + index, std::move(msg));
             try_acquire_image_(messages_[index]);
             insert_row(index); // targeted: re-measure only the inserted gap
+            if (suppress_flipped)
+            {
+                invalidate_data(); // global suppress_read_marker_ effect
+            }
         });
 }
 
@@ -4414,6 +4427,13 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     if ((was_animated && !now_animated) || old_eid != msg.event_id)
     {
         inline_players_.erase(old_eid);
+    }
+    // On a local-echo -> remote event_id swap, drop the body-layout cache entry
+    // keyed by the old id so it doesn't occupy an LRU slot (the new layout will
+    // be cached under msg.event_id).
+    if (old_eid != msg.event_id)
+    {
+        link_layout_cache_.erase(old_eid);
     }
     if (now_animated && !inline_players_.count(msg.event_id))
     {

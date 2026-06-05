@@ -110,8 +110,12 @@ void ListView::insert_row(std::size_t index)
         return;
     }
     // Splice a placeholder; rebuild_dirty_ measures it and rewalks offsets.
+    // Copy the offset to a local first: passing row_offsets_[index] directly
+    // would be a reference into the same vector, which is UB if insert
+    // reallocates (the common at-capacity tail-append path).
+    const float offset_at_index = row_offsets_[index];
     row_heights_.insert(row_heights_.begin() + index, 0.0f);
-    row_offsets_.insert(row_offsets_.begin() + index, row_offsets_[index]);
+    row_offsets_.insert(row_offsets_.begin() + index, offset_at_index);
     mark_dependency_span_(index);
     was_near_bottom_ = false; // content appeared — re-arm the backfill latch
 }
@@ -594,11 +598,19 @@ void ListView::ensure_measured(PaintCtx& ctx)
         {
             rebuild_dirty_(lctx, measured_width_);
         }
+        // A paint can land before the deferred arrange that a relayout was
+        // scheduled for. Consume any pending scroll anchor here too, otherwise
+        // clearing the dirty state above would strand it (the later arrange
+        // sees nothing dirty and never pins the anchored row).
+        if (anchor_.pending)
+        {
+            consume_scroll_anchor_();
+        }
         if (stick_to_bottom_)
         {
             scroll_y_ = std::max(0.0f, content_height() - bounds_.h);
-            clamp_scroll();
         }
+        clamp_scroll();
     }
 }
 
