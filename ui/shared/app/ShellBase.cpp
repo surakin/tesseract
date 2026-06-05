@@ -2516,6 +2516,21 @@ bool ShellBase::tick_anim_()
     return true;
 }
 
+void ShellBase::schedule_relayout_()
+{
+    if (relayout_scheduled_)
+    {
+        return; // a flush is already queued — fold this request into it
+    }
+    relayout_scheduled_ = true;
+    post_to_ui_(
+        [this]
+        {
+            relayout_scheduled_ = false;
+            request_relayout_();
+        });
+}
+
 void ShellBase::handle_timeline_reset_ui_(std::string room_id,
                                           EventList snapshot)
 {
@@ -2588,7 +2603,7 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
         }
         room_view_->insert_message(
             index, tesseract::views::make_row_data(*ev, my_user_id_));
-        request_relayout_();
+        schedule_relayout_(); // coalesce bursts into one layout pass
     }
     if (!in_thread)
     {
@@ -2617,7 +2632,7 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
         }
         room_view_->update_message(
             index, tesseract::views::make_row_data(*ev, my_user_id_));
-        request_relayout_();
+        schedule_relayout_(); // coalesce bursts into one layout pass
     }
     if (!in_thread)
     {
@@ -2633,7 +2648,7 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
         if (room_view_)
         {
             room_view_->remove_message(index);
-            request_relayout_();
+            schedule_relayout_(); // coalesce bursts into one layout pass
         }
     }
     dispatch_message_removed_secondary_(room_id, index);

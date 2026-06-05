@@ -21,6 +21,7 @@ void ListView::set_adapter(ListAdapter* adapter)
 {
     adapter_ = adapter;
     heights_dirty_ = true;
+    has_dirty_range_ = false;
     selected_index_ = kInvalidIndex;
     hovered_index_ = kInvalidIndex;
     pressed_index_ = kInvalidIndex;
@@ -30,6 +31,162 @@ void ListView::set_adapter(ListAdapter* adapter)
 void ListView::invalidate_data()
 {
     heights_dirty_ = true;
+    has_dirty_range_ = false;
+}
+
+void ListView::mark_dirty_range_(std::size_t lo, std::size_t hi)
+{
+    if (lo >= hi)
+    {
+        return;
+    }
+    if (!has_dirty_range_)
+    {
+        dirty_lo_ = lo;
+        dirty_hi_ = hi;
+        has_dirty_range_ = true;
+    }
+    else
+    {
+        dirty_lo_ = std::min(dirty_lo_, lo);
+        dirty_hi_ = std::max(dirty_hi_, hi);
+    }
+}
+
+void ListView::mark_dependency_span_(std::size_t index)
+{
+    if (!adapter_)
+    {
+        return;
+    }
+    std::size_t lo = index;
+    std::size_t hi = index + 1;
+    adapter_->height_dependency_span(index, lo, hi);
+    const std::size_t n = adapter_->count();
+    mark_dirty_range_(std::min(lo, n), std::min(hi, n));
+}
+
+void ListView::invalidate_row(std::size_t index)
+{
+    if (heights_dirty_)
+    {
+        return; // a full rebuild already subsumes this
+    }
+    if (index >= row_heights_.size())
+    {
+        invalidate_data();
+        return;
+    }
+    mark_dependency_span_(index);
+}
+
+void ListView::invalidate_rows(std::size_t lo, std::size_t hi)
+{
+    if (heights_dirty_)
+    {
+        return;
+    }
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    if (row_heights_.size() != n)
+    {
+        invalidate_data();
+        return;
+    }
+    mark_dirty_range_(std::min(lo, n), std::min(hi, n));
+}
+
+void ListView::insert_row(std::size_t index)
+{
+    // The adapter's model already reflects the insertion, so count() is the
+    // post-insert size; the cached vectors are still pre-insert.
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    if (heights_dirty_)
+    {
+        return; // full rebuild will pick up the new row
+    }
+    if (n == 0 || row_heights_.size() + 1 != n || index > row_heights_.size())
+    {
+        invalidate_data();
+        return;
+    }
+    // Splice a placeholder; rebuild_dirty_ measures it and rewalks offsets.
+    row_heights_.insert(row_heights_.begin() + index, 0.0f);
+    row_offsets_.insert(row_offsets_.begin() + index, row_offsets_[index]);
+    mark_dependency_span_(index);
+    was_near_bottom_ = false; // content appeared — re-arm the backfill latch
+}
+
+void ListView::erase_row(std::size_t index)
+{
+    // count() is the post-erase size; the cached vectors are still pre-erase.
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    if (heights_dirty_)
+    {
+        return;
+    }
+    if (index >= row_heights_.size() || row_heights_.size() != n + 1)
+    {
+        invalidate_data();
+        return;
+    }
+    row_heights_.erase(row_heights_.begin() + index);
+    // Drop the boundary offset *after* the erased row so the prefix sum up to
+    // `index` stays correct; rebuild_dirty_ rewalks everything from there on.
+    row_offsets_.erase(row_offsets_.begin() + index + 1);
+    if (n == 0)
+    {
+        return; // nothing left to measure; offsets are already {0}
+    }
+    // Re-measure the neighbourhood the now-removed row coupled to.
+    mark_dependency_span_(std::min(index, n - 1));
+}
+
+void ListView::rebuild_dirty_(LayoutCtx& ctx, float width)
+{
+    has_dirty_range_ = false;
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    if (row_heights_.size() != n || row_offsets_.size() != n + 1)
+    {
+        rebuild_heights(ctx, width); // structural drift — rebuild fully
+        return;
+    }
+    const std::size_t lo = std::min(dirty_lo_, n);
+    const std::size_t hi = std::min(dirty_hi_, n);
+    for (std::size_t i = lo; i < hi; ++i)
+    {
+        row_heights_[i] = adapter_->measure_row_height(i, ctx, width);
+    }
+    // Rewalk the prefix sum from the first dirty row to the end. Rows above lo
+    // are untouched, so row_offsets_[lo] is already correct.
+    float cursor = row_offsets_[lo];
+    for (std::size_t i = lo; i < n; ++i)
+    {
+        row_offsets_[i] = cursor;
+        cursor += row_heights_[i];
+    }
+    row_offsets_[n] = cursor;
+}
+
+void ListView::consume_scroll_anchor_()
+{
+    if (!anchor_.pending)
+    {
+        return;
+    }
+    std::size_t new_idx = 0;
+    if (locate_anchor_(new_idx) && new_idx + 1 < row_offsets_.size())
+    {
+        // Pin the anchored row's top to the screen Y it had pre-mutation.
+        scroll_y_ = row_offsets_[new_idx] - anchor_.offset;
+    }
+    else
+    {
+        // No stable key / row vanished: shift by the total height delta.
+        scroll_y_ += content_height() - anchor_.pre_height;
+    }
+    anchor_.pending = false;
+    was_near_top_ = false;
+    anchored_relayout_pending_ = true;
 }
 
 void ListView::set_selected_index(int idx)
@@ -172,41 +329,24 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         anchor_.pending = false;
         return;
     }
-    if (heights_dirty_ || measured_width_ != bounds.w)
+    const bool width_changed = measured_width_ != bounds.w;
+    if (heights_dirty_ || width_changed)
     {
         // Snapshot the last-measured row count (from row_heights_, which
         // rebuild_heights will overwrite) rather than querying the adapter,
         // which may already reflect additions made before this arrange call.
         std::size_t prev_count = row_heights_.size();
         rebuild_heights(ctx, bounds.w);
+        has_dirty_range_ = false; // subsumed by the full rebuild
         if (anchor_.pending)
         {
-            std::size_t new_idx = 0;
-            if (locate_anchor_(new_idx) && new_idx + 1 < row_offsets_.size())
-            {
-                // Preserve the user's visual position: pin the anchored row's
-                // top to the screen Y it had before the mutation.
-                // row_offsets_[idx] is the prefix sum of heights above the
-                // anchor, so growth/prepend above it moves prefix and scroll
-                // together (screen Y unchanged), growth of the anchor row only
-                // moves its bottom, and growth strictly below leaves the prefix
-                // — hence scroll_y_ — untouched.
-                scroll_y_ = row_offsets_[new_idx] - anchor_.offset;
-            }
-            else
-            {
-                // No stable key (keyless adapter) or the anchored row vanished:
-                // shift by the total height delta. Correct for pure top-
-                // prepends — the legacy behaviour keyless lists relied on.
-                scroll_y_ += content_height() - anchor_.pre_height;
-            }
-            anchor_.pending = false;
-            // Re-arm the near-top trigger: another page can be requested
-            // the next time the user crosses the threshold.
-            was_near_top_ = false;
-            // Defer hover re-resolution until after clamp_scroll() so the
-            // subclass sees the final offset.
-            anchored_relayout_pending_ = true;
+            // Preserve the user's visual position by pinning the anchored row
+            // (see consume_scroll_anchor_). row_offsets_[idx] is the prefix sum
+            // of heights above the anchor, so growth/prepend above it moves
+            // prefix and scroll together (screen Y unchanged), growth of the
+            // anchor row only moves its bottom, and growth strictly below
+            // leaves the prefix — hence scroll_y_ — untouched.
+            consume_scroll_anchor_();
         }
         else
         {
@@ -219,6 +359,14 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
                 was_near_bottom_ = false;
             }
         }
+    }
+    else if (has_dirty_range_)
+    {
+        // Targeted path: re-measure only the dirty span and rewalk offsets.
+        rebuild_dirty_(ctx, bounds.w);
+        // insert_row/erase_row already re-armed the near-bottom latch; here we
+        // only need to settle the scroll anchor a preserve_top_through set up.
+        consume_scroll_anchor_();
     }
     if (stick_to_bottom_)
     {
@@ -434,10 +582,18 @@ void ListView::ensure_measured(PaintCtx& ctx)
     // collapse toggle calls invalidate_data() then triggers a repaint without
     // an intervening layout pass. Rebuild now so paint_row receives correct
     // bounds rather than stale row heights from the previous item set.
-    if (heights_dirty_)
+    if (heights_dirty_ || has_dirty_range_)
     {
         LayoutCtx lctx{ctx.factory, ctx.theme};
-        rebuild_heights(lctx, measured_width_);
+        if (heights_dirty_)
+        {
+            rebuild_heights(lctx, measured_width_);
+            has_dirty_range_ = false;
+        }
+        else
+        {
+            rebuild_dirty_(lctx, measured_width_);
+        }
         if (stick_to_bottom_)
         {
             scroll_y_ = std::max(0.0f, content_height() - bounds_.h);

@@ -790,6 +790,58 @@ public:
                static_cast<std::uint64_t>(interval_s) * 1000;
     }
 
+    // Rows here are not independent: a row's height depends on its predecessor
+    // (continuation grouping via is_cont) and adjacent virtual rows' visibility
+    // depends on neighbouring content (day separators, read markers). So a
+    // change at `i` can also change the row after it and any virtual rows
+    // immediately before it. Widen the targeted-invalidation span to cover
+    // that bounded neighbourhood. (Rare visibility flips of a *distant* trailing
+    // read marker self-heal on the next full rebuild — width/theme change or
+    // set_messages — and any read-marker update forces a full rebuild anyway.)
+    void height_dependency_span(std::size_t i, std::size_t& lo,
+                                std::size_t& hi) const override
+    {
+        const auto& msgs = owner_.messages_;
+        const std::size_t n = msgs.size();
+        if (n == 0)
+        {
+            lo = 0;
+            hi = 0;
+            return;
+        }
+        if (i >= n)
+        {
+            i = n - 1;
+        }
+        using Kind = MessageRowData::Kind;
+        auto is_virtual = [](Kind k)
+        {
+            return k == Kind::DaySeparator || k == Kind::ReadMarker ||
+                   k == Kind::TimelineStart || k == Kind::PinnedEvent;
+        };
+        // Backward: consecutive virtual rows immediately before i (their
+        // visibility flips exactly when content appears/disappears beside them).
+        std::size_t a = i;
+        while (a > 0 && is_virtual(msgs[a - 1].kind))
+        {
+            --a;
+        }
+        // Forward: the next content row's continuation depends on row i; step
+        // over any virtual rows (a suppressed read marker is skipped by is_cont)
+        // to reach it.
+        std::size_t b = i + 1;
+        while (b < n && is_virtual(msgs[b].kind))
+        {
+            ++b;
+        }
+        if (b < n)
+        {
+            ++b; // include that next content row
+        }
+        lo = a;
+        hi = b;
+    }
+
     float measure_row_height(std::size_t index, tk::LayoutCtx& ctx,
                              float width) override
     {
@@ -2103,8 +2155,17 @@ private:
                     ctx.canvas.draw_text(*layout, {x, y},
                                          ctx.theme.palette.text_primary);
                     end_y = y + layout->measure().h;
-                    owner_.link_layout_cache_[m.event_id] = {
-                        std::move(layout), {x, y}, spans_to_plain(spans)};
+                    // Emote bodies aren't routed through body_layout_for; this
+                    // entry exists only for link/selection hit-testing. Tag it
+                    // with a fresh LRU tick so the shared cache's eviction does
+                    // not reclaim a still-visible row's layout.
+                    LinkLayout& le = owner_.link_layout_cache_[m.event_id];
+                    le.layout = std::move(layout);
+                    le.origin = {x, y};
+                    le.plain = spans_to_plain(spans);
+                    le.spans.clear();
+                    le.keyed = false;
+                    le.lru = ++owner_.layout_lru_clock_;
                 }
             }
             if (m.is_edited)
@@ -2733,45 +2794,126 @@ private:
         return result;
     }
 
-    // Measure height for a text message body — uses rich text when
-    // formatted_body is present, otherwise falls back to plain text.
-    float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx,
-                            float w) const
+    // Maximum number of shaped body layouts retained by the shared cache.
+    // Generously covers any plausible viewport's worth of visible rows so
+    // scrolling stays a cache hit, while bounding memory when a room with
+    // thousands of messages is fully measured.
+    static constexpr std::size_t kBodyCacheCap = 128;
+
+    // Hash the inputs that determine a body's shaped text (so an edit or a
+    // formatting change invalidates the cached layout).
+    static std::size_t hash_body(const MessageRowData& m)
     {
-        bool eo = is_emoji_only(m.body);
+        std::size_t h = std::hash<std::string>{}(m.formatted_body);
+        std::size_t b = std::hash<std::string>{}(m.body);
+        h ^= b + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        return h;
+    }
+
+    // Drop least-recently-used cache entries until the cache is back within
+    // kBodyCacheCap, never evicting `keep` (the entry we just produced).
+    void evict_body_cache_if_needed(const std::string& keep) const
+    {
+        auto& cache = owner_.link_layout_cache_;
+        while (cache.size() > kBodyCacheCap)
+        {
+            auto victim = cache.end();
+            std::uint64_t lo = std::numeric_limits<std::uint64_t>::max();
+            for (auto it = cache.begin(); it != cache.end(); ++it)
+            {
+                if (it->first == keep)
+                    continue;
+                if (it->second.lru < lo)
+                {
+                    lo = it->second.lru;
+                    victim = it;
+                }
+            }
+            if (victim == cache.end())
+                break;
+            cache.erase(victim);
+        }
+    }
+
+    // Build-or-reuse the shaped body layout for a message. Both the measure
+    // and paint paths funnel through here so a body is shaped at most once per
+    // (content, width, theme, spoiler) state and shared across repaints. The
+    // returned entry is owned by link_layout_cache_ (also used for link/
+    // selection hit-testing); callers must not move its layout out.
+    LinkLayout& body_layout_for(const MessageRowData& m, tk::CanvasFactory& f,
+                                float w, bool dark, bool revealed) const
+    {
+        LinkLayout& slot = owner_.link_layout_cache_[m.event_id];
+        const std::size_t h = hash_body(m);
+        if (slot.layout && slot.keyed && slot.key_w == w &&
+            slot.key_dark == dark && slot.key_revealed == revealed &&
+            slot.key_hash == h)
+        {
+            slot.lru = ++owner_.layout_lru_clock_;
+            return slot;
+        }
+
+        const bool eo = is_emoji_only(m.body);
+        slot.layout.reset();
+        slot.spans.clear();
+        slot.plain.clear();
+
         if (!m.formatted_body.empty())
         {
-            bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
-            auto spans = prepare_spans(
-                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
+            auto spans = prepare_spans(m, revealed, dark);
             if (!spans.empty())
             {
-                auto layout =
-                    ctx.factory.build_rich_text(spans, body_style(w, eo));
-                if (layout)
+                slot.layout = f.build_rich_text(spans, body_style(w, eo));
+                if (slot.layout)
                 {
-                    return layout->measure().h;
+                    slot.plain = spans_to_plain(spans);
+                    slot.spans = std::move(spans);
                 }
             }
         }
-        // Plain text: autolink bare URLs so they render (and measure) as a
-        // rich-text layout — must mirror paint_body_text exactly.
-        if (!eo && !m.body.empty())
+        // Plain text: autolink bare URLs so they render as a rich-text layout.
+        if (!slot.layout && !eo && !m.body.empty())
         {
             auto link_spans = autolink_plain_to_spans(m.body);
             if (!link_spans.empty())
             {
-                auto layout =
-                    ctx.factory.build_rich_text(link_spans, body_style(w, eo));
-                if (layout)
+                slot.layout = f.build_rich_text(link_spans, body_style(w, eo));
+                if (slot.layout)
                 {
-                    return layout->measure().h;
+                    slot.plain = m.body;
+                    slot.spans = std::move(link_spans);
                 }
             }
         }
-        return measure_text_height(
-            m.body.empty() ? std::string("(empty message)") : m.body, ctx, w,
-            eo);
+        // Plain text with no URLs — a flat layout so selection still works.
+        if (!slot.layout)
+        {
+            std::string plain_text =
+                m.body.empty() ? std::string("(empty message)") : m.body;
+            slot.layout = f.build_text(plain_text, body_style(w, eo));
+            slot.plain = std::move(plain_text);
+            slot.spans.clear();
+        }
+
+        slot.key_w = w;
+        slot.key_dark = dark;
+        slot.key_revealed = revealed;
+        slot.key_hash = h;
+        slot.keyed = true;
+        slot.lru = ++owner_.layout_lru_clock_;
+        evict_body_cache_if_needed(m.event_id);
+        return slot;
+    }
+
+    // Measure height for a text message body — uses the shared body layout
+    // cache so the row is shaped at most once per content/width/theme state.
+    float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx,
+                            float w) const
+    {
+        const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
+        const bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+        LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
+        return e.layout ? e.layout->measure().h : 0.0f;
     }
 
     float paint_wrapped_text(const std::string& text, tk::PaintCtx& ctx,
@@ -2796,11 +2938,18 @@ private:
     float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx, float x,
                           float y, float w, tk::Color color) const
     {
-        bool eo = is_emoji_only(m.body);
+        const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
+        const bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+        LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
+        if (!e.layout)
+            return 0.0f;
+        tk::TextLayout& layout = *e.layout;
+        e.origin = {x, y}; // refresh draw origin for hit-testing this frame
+
         auto ord     = owner_.selection_ordered();
         int  msg_idx = owner_.message_index_of(m.event_id);
-        auto draw_with_selection = [&](tk::TextLayout& layout, float ox,
-                                       float oy, int plain_len)
+        auto draw_with_selection = [&](tk::TextLayout& lay, float ox, float oy,
+                                       int plain_len)
         {
             if (ord && msg_idx >= 0 &&
                 msg_idx >= ord->lo_idx && msg_idx <= ord->hi_idx)
@@ -2810,7 +2959,7 @@ private:
                                                      : plain_len;
                 if (lo_b != hi_b)
                 {
-                    for (const tk::Rect& r : layout.selection_rects(lo_b, hi_b))
+                    for (const tk::Rect& r : lay.selection_rects(lo_b, hi_b))
                     {
                         ctx.canvas.fill_rect(
                             {r.x + ox, r.y + oy, r.w, r.h},
@@ -2818,142 +2967,93 @@ private:
                     }
                 }
             }
-            ctx.canvas.draw_text(layout, {ox, oy}, color);
+            ctx.canvas.draw_text(lay, {ox, oy}, color);
         };
-        if (!m.formatted_body.empty())
+
+        // Rich layouts carry their spans; draw any mention-pill / code-block /
+        // inline-code backgrounds behind the text. (Autolink-only spans have
+        // none of these flags, so the loop is a harmless no-op for them; the
+        // flat plain-text path stores no spans and skips it entirely.)
+        if (!e.spans.empty())
         {
-            bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
-            auto spans = prepare_spans(
-                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
-            if (!spans.empty())
+            const auto& spans = e.spans;
+            // Mention pills: fill a rounded background behind each mention run
+            // before the (selection +) text is painted.
+            int boff = 0;
+            for (std::size_t si = 0; si < spans.size();)
             {
-                auto layout =
-                    ctx.factory.build_rich_text(spans, body_style(w, eo));
-                if (layout)
+                const auto& sp = spans[si];
+                int len = static_cast<int>(sp.text.size());
+                if (sp.is_mention && sp.has_background && len > 0)
                 {
-                    // Mention pills: fill a rounded background behind each
-                    // mention run before the (selection +) text is painted.
-                    // When the mentioned user's avatar resolves, draw it in a
-                    // small left-extension of the pill (the text run itself is
-                    // unchanged — the extension reaches into the preceding
-                    // space).
-                    int boff = 0;
-                    for (std::size_t si = 0; si < spans.size();)
+                    for (const tk::Rect& r :
+                         layout.selection_rects(boff, boff + len))
                     {
-                        const auto& sp = spans[si];
-                        int len = static_cast<int>(sp.text.size());
-                        if (sp.is_mention && sp.has_background && len > 0)
-                        {
-                            for (const tk::Rect& r :
-                                 layout->selection_rects(boff, boff + len))
-                            {
-                                tk::Rect pill{r.x + x - 2.0f, r.y + y,
-                                              r.w + 4.0f, r.h};
-                                float radius = std::min(7.0f, pill.h * 0.5f);
-                                ctx.canvas.fill_rounded_rect(pill, radius,
-                                                             sp.background);
-                            }
-                            boff += len;
-                            ++si;
-                        }
-                        // Fenced ```block```: one rounded panel enclosing the
-                        // whole multi-line run (the highlighter splits it into
-                        // many coloured spans — gather the contiguous run and
-                        // union its per-line rects so the tint is a single box,
-                        // not a rectangle per line).
-                        else if (sp.code_block)
-                        {
-                            int run_start = boff;
-                            while (si < spans.size() && spans[si].code_block)
-                            {
-                                boff += static_cast<int>(spans[si].text.size());
-                                ++si;
-                            }
-                            bool any = false;
-                            tk::Rect u{};
-                            for (const tk::Rect& r :
-                                 layout->selection_rects(run_start, boff))
-                            {
-                                if (!any) { u = r; any = true; continue; }
-                                float x0 = std::min(u.x, r.x);
-                                float y0 = std::min(u.y, r.y);
-                                float x1 = std::max(u.x + u.w, r.x + r.w);
-                                float y1 = std::max(u.y + u.h, r.y + r.h);
-                                u = {x0, y0, x1 - x0, y1 - y0};
-                            }
-                            if (any)
-                            {
-                                tk::Rect panel{u.x + x - 6.0f, u.y + y - 4.0f,
-                                               u.w + 12.0f, u.h + 8.0f};
-                                ctx.canvas.fill_rounded_rect(
-                                    panel, 6.0f, ctx.theme.palette.code_bg);
-                            }
-                        }
-                        // Inline `code`: a tight per-run tint (single line).
-                        else if (sp.code && len > 0)
-                        {
-                            for (const tk::Rect& r :
-                                 layout->selection_rects(boff, boff + len))
-                            {
-                                tk::Rect bg{r.x + x - 2.0f, r.y + y - 1.0f,
-                                            r.w + 4.0f, r.h + 2.0f};
-                                ctx.canvas.fill_rect(bg,
-                                                     ctx.theme.palette.code_bg);
-                            }
-                            boff += len;
-                            ++si;
-                        }
-                        else
-                        {
-                            boff += len;
-                            ++si;
-                        }
+                        tk::Rect pill{r.x + x - 2.0f, r.y + y,
+                                      r.w + 4.0f, r.h};
+                        float radius = std::min(7.0f, pill.h * 0.5f);
+                        ctx.canvas.fill_rounded_rect(pill, radius,
+                                                     sp.background);
                     }
-                    std::string plain_spans = spans_to_plain(spans);
-                    draw_with_selection(*layout, x, y,
-                                        static_cast<int>(plain_spans.size()));
-                    float h = layout->measure().h;
-                    owner_.link_layout_cache_[m.event_id] = {
-                        std::move(layout), {x, y}, std::move(plain_spans)};
-                    return h;
+                    boff += len;
+                    ++si;
                 }
-            }
-        }
-        // Plain text: autolink bare URLs into a rich-text layout and cache
-        // it so link_at() hit-testing fires on_link_clicked. Must mirror
-        // measure_body_text exactly so the row height matches.
-        if (!eo && !m.body.empty())
-        {
-            auto link_spans = autolink_plain_to_spans(m.body);
-            if (!link_spans.empty())
-            {
-                auto layout =
-                    ctx.factory.build_rich_text(link_spans, body_style(w, eo));
-                if (layout)
+                // Fenced ```block```: one rounded panel enclosing the whole
+                // multi-line run (the highlighter splits it into many coloured
+                // spans — gather the contiguous run and union its per-line
+                // rects so the tint is a single box, not a rectangle per line).
+                else if (sp.code_block)
                 {
-                    draw_with_selection(*layout, x, y,
-                                        static_cast<int>(m.body.size()));
-                    float h = layout->measure().h;
-                    owner_.link_layout_cache_[m.event_id] = {
-                        std::move(layout), {x, y}, m.body};
-                    return h;
+                    int run_start = boff;
+                    while (si < spans.size() && spans[si].code_block)
+                    {
+                        boff += static_cast<int>(spans[si].text.size());
+                        ++si;
+                    }
+                    bool any = false;
+                    tk::Rect u{};
+                    for (const tk::Rect& r :
+                         layout.selection_rects(run_start, boff))
+                    {
+                        if (!any) { u = r; any = true; continue; }
+                        float x0 = std::min(u.x, r.x);
+                        float y0 = std::min(u.y, r.y);
+                        float x1 = std::max(u.x + u.w, r.x + r.w);
+                        float y1 = std::max(u.y + u.h, r.y + r.h);
+                        u = {x0, y0, x1 - x0, y1 - y0};
+                    }
+                    if (any)
+                    {
+                        tk::Rect panel{u.x + x - 6.0f, u.y + y - 4.0f,
+                                       u.w + 12.0f, u.h + 8.0f};
+                        ctx.canvas.fill_rounded_rect(
+                            panel, 6.0f, ctx.theme.palette.code_bg);
+                    }
+                }
+                // Inline `code`: a tight per-run tint (single line).
+                else if (sp.code && len > 0)
+                {
+                    for (const tk::Rect& r :
+                         layout.selection_rects(boff, boff + len))
+                    {
+                        tk::Rect bg{r.x + x - 2.0f, r.y + y - 1.0f,
+                                    r.w + 4.0f, r.h + 2.0f};
+                        ctx.canvas.fill_rect(bg, ctx.theme.palette.code_bg);
+                    }
+                    boff += len;
+                    ++si;
+                }
+                else
+                {
+                    boff += len;
+                    ++si;
                 }
             }
         }
-        // Plain text with no URLs — build a text layout so selection works.
-        {
-            std::string plain_text =
-                m.body.empty() ? std::string("(empty message)") : m.body;
-            auto layout = ctx.factory.build_text(plain_text, body_style(w, eo));
-            if (!layout)
-                return 0.0f;
-            draw_with_selection(*layout, x, y,
-                                static_cast<int>(plain_text.size()));
-            float h = layout->measure().h;
-            owner_.link_layout_cache_[m.event_id] = {
-                std::move(layout), {x, y}, std::move(plain_text)};
-            return h;
-        }
+
+        draw_with_selection(layout, x, y,
+                            static_cast<int>(e.plain.size()));
+        return layout.measure().h;
     }
 
     // MSC4278: draw a suppressed-media tile (blurhash if decoded, else a
@@ -4252,7 +4352,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
         }
         messages_.push_back(std::move(msg));
         try_acquire_image_(messages_.back());
-        invalidate_data();
+        insert_row(messages_.size() - 1); // targeted: only the new tail row
         if (at_bottom)
         {
             scroll_to_bottom();
@@ -4276,7 +4376,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
         {
             messages_.insert(messages_.begin() + index, std::move(msg));
             try_acquire_image_(messages_[index]);
-            invalidate_data();
+            insert_row(index); // targeted: re-measure only the inserted gap
         });
 }
 
@@ -4297,6 +4397,12 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     }
     // Copy, not reference: messages_[index] is reassigned below.
     const std::string old_eid = messages_[index].event_id;
+    // A read marker moving (in or out of this row) flips suppress_read_marker_
+    // and the is_cont skip-over logic for *other* rows, so it needs a full
+    // rebuild rather than a targeted one.
+    const bool touches_read_marker =
+        msg.kind == MessageRowData::Kind::ReadMarker ||
+        messages_[index].kind == MessageRowData::Kind::ReadMarker;
     const bool was_animated =
         messages_[index].kind == MessageRowData::Kind::Video &&
         (messages_[index].video_autoplay || messages_[index].video_gif);
@@ -4356,7 +4462,14 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     }
     messages_[index] = std::move(msg);
     try_acquire_image_(messages_[index]);
-    invalidate_data();
+    if (touches_read_marker)
+    {
+        invalidate_data(); // global effect — full rebuild
+    }
+    else
+    {
+        invalidate_row(index); // targeted: this row + its dependency span
+    }
 }
 
 void MessageListView::clear_just_sent(const std::string& event_id)
@@ -4384,7 +4497,7 @@ void MessageListView::remove_message(std::size_t index)
         [&]
         {
             messages_.erase(messages_.begin() + index);
-            invalidate_data();
+            erase_row(index); // targeted: re-measure only around the gap
         });
 }
 

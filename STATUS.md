@@ -2,6 +2,26 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-06-05**.
 
+> **Faster room switching & message bursts.**
+> The message list no longer rebuilds and re-shapes every row when messages
+> arrive or a room is opened. Body text layouts are shaped once and cached —
+> reused across measure, paint, and repaints, keyed on width / theme /
+> spoiler-revealed / content and LRU-bounded — so room switches and repaints
+> stop re-shaping text (the cache reuses the existing event-id-keyed
+> `link_layout_cache_`). `tk::ListView` gained targeted height invalidation
+> (`invalidate_row` / `insert_row` / `erase_row` + an adapter
+> `height_dependency_span`), so a single inserted/updated/removed message
+> re-measures only a bounded day-block neighbourhood and rewalks offsets from
+> there instead of the whole room; the keyless room-list path
+> (`invalidate_data`) is unchanged, with a size-mismatch fallback to a full
+> rebuild. Per-message relayout is coalesced in shared `ShellBase`
+> (`schedule_relayout_`) so a sync burst triggers one layout pass, not one per
+> message, with native-overlay timing unchanged. All three land in shared code,
+> so every shell (Qt6, GTK4, Win32, macOS) benefits. 10 new Catch2 tests.
+> Verified on **Qt6**.
+
+<!-- -->
+
 > **Pop-out room windows.**
 > Ctrl/⌘+click a room tab to pop the room out into its own native window (the
 > tab closes). Built on the shared `RoomWindowBase`, so all four shells (Qt6,

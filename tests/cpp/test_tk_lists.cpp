@@ -94,6 +94,51 @@ struct KeyedVarAdapter : ListAdapter
     }
 };
 
+// Adapter that records how many times each row is measured and declares a
+// configurable height-dependency span, for exercising ListView's targeted
+// (incremental) height invalidation.
+struct CountingAdapter : ListAdapter
+{
+    std::vector<float>       heights;
+    std::vector<std::string> keys;
+    mutable std::vector<int>  measures; // per-index measure count
+    std::size_t back = 0; // span extends `back` rows before i
+    std::size_t fwd  = 1; // span extends `fwd` rows after i
+
+    std::size_t count() const override
+    {
+        return heights.size();
+    }
+    float measure_row_height(std::size_t i, LayoutCtx&, float) override
+    {
+        if (measures.size() < heights.size())
+            measures.resize(heights.size(), 0);
+        ++measures[i];
+        return heights[i];
+    }
+    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override
+    {
+    }
+    std::string row_key(std::size_t i) const override
+    {
+        return i < keys.size() ? keys[i] : std::string{};
+    }
+    void height_dependency_span(std::size_t i, std::size_t& lo,
+                                std::size_t& hi) const override
+    {
+        lo = (i >= back) ? i - back : 0;
+        hi = std::min(i + 1 + fwd, heights.size());
+    }
+    void reset_measures()
+    {
+        measures.assign(heights.size(), 0);
+    }
+    int measure_of(std::size_t i) const
+    {
+        return i < measures.size() ? measures[i] : 0;
+    }
+};
+
 // Minimal adapter for GridView mechanics testing.
 struct FixedGridAdapter : tk::GridAdapter
 {
@@ -2180,4 +2225,152 @@ TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
     // Cell 1: x = bounds_.x + padding_.left + 1*(cell_w_+h_spacing_) = 0+0+34 = 34.
     tk::Rect r1 = grid.rect_at(1);
     CHECK(r1.x == 34.0f);
+}
+
+// ── Part A: targeted (incremental) height invalidation ────────────────────
+
+TEST_CASE("ListView::invalidate_row re-measures only the dependency span",
+          "[tk][listview][incremental]")
+{
+    Stage st;
+    ListView list;
+    CountingAdapter ad;
+    ad.heights.assign(10, 20.0f);
+    ad.fwd = 1; // span = [i, i+2)
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    REQUIRE(list.content_height() == 200.0f);
+    ad.reset_measures();
+
+    // A taller row 5, then a targeted invalidation.
+    ad.heights[5] = 50.0f;
+    list.invalidate_row(5);
+    list.arrange(lc, {0, 0, 200, 100});
+
+    // Only rows 5 and 6 (the [i, i+2) span) are re-measured.
+    CHECK(ad.measure_of(5) == 1);
+    CHECK(ad.measure_of(6) == 1);
+    CHECK(ad.measure_of(0) == 0);
+    CHECK(ad.measure_of(4) == 0);
+    CHECK(ad.measure_of(7) == 0);
+
+    // Offsets below the change still shift correctly without a re-measure.
+    CHECK(list.content_height() == 230.0f);
+    CHECK(list.row_world_rect(6).y == 150.0f); // 5*20 + 50
+}
+
+TEST_CASE("ListView::insert_row shifts offsets and measures only the gap",
+          "[tk][listview][incremental]")
+{
+    Stage st;
+    ListView list;
+    CountingAdapter ad;
+    ad.heights.assign(10, 20.0f);
+    ad.fwd = 1;
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    ad.reset_measures();
+
+    // Insert a 40px row at index 3 in the model, then notify the list.
+    ad.heights.insert(ad.heights.begin() + 3, 40.0f);
+    ad.reset_measures(); // grow measures to the new size, zeroed
+    list.insert_row(3);
+    list.arrange(lc, {0, 0, 200, 100});
+
+    // Only the inserted row (3) and its continuation neighbour (4) measured.
+    CHECK(ad.measure_of(3) == 1);
+    CHECK(ad.measure_of(4) == 1);
+    CHECK(ad.measure_of(0) == 0);
+    CHECK(ad.measure_of(6) == 0);
+    CHECK(ad.measure_of(10) == 0);
+
+    // Total height grew by the inserted row; rows below shifted down.
+    CHECK(list.content_height() == 240.0f);
+    CHECK(list.row_world_rect(5).y == 120.0f); // 3*20 + 40 + 20
+}
+
+TEST_CASE("ListView::erase_row shifts offsets and measures only the gap",
+          "[tk][listview][incremental]")
+{
+    Stage st;
+    ListView list;
+    CountingAdapter ad;
+    ad.heights.assign(10, 20.0f);
+    ad.heights[4] = 60.0f; // make the erased row distinctive
+    ad.fwd = 1;
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    REQUIRE(list.content_height() == 9 * 20.0f + 60.0f); // 240
+    ad.reset_measures();
+
+    // Erase row 4 (the 60px one) from the model, then notify.
+    ad.heights.erase(ad.heights.begin() + 4);
+    ad.reset_measures();
+    list.erase_row(4);
+    list.arrange(lc, {0, 0, 200, 100});
+
+    CHECK(list.content_height() == 180.0f); // 9 rows * 20
+    // The neighbourhood around the gap is re-measured, far rows are not.
+    CHECK(ad.measure_of(0) == 0);
+    CHECK(ad.measure_of(8) == 0);
+    CHECK(list.row_world_rect(4).y == 80.0f); // 4*20
+}
+
+TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable",
+          "[tk][listview][incremental]")
+{
+    Stage st;
+    ListView list;
+    CountingAdapter ad;
+    ad.heights.assign(20, 20.0f);
+    for (int i = 0; i < 20; ++i)
+        ad.keys.push_back("k" + std::to_string(i));
+    ad.fwd = 1;
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    list.scroll_to_index(10, /*align_top=*/true);
+    list.arrange(lc, {0, 0, 200, 100});
+    const float anchored_y = list.row_world_rect(10).y; // key "k10" at top
+
+    // Insert a 40px row above the anchor, preserving the user's position.
+    list.preserve_top_through(
+        [&]
+        {
+            ad.heights.insert(ad.heights.begin() + 5, 40.0f);
+            ad.keys.insert(ad.keys.begin() + 5, "new");
+            ad.reset_measures();
+            list.insert_row(5);
+        });
+    list.arrange(lc, {0, 0, 200, 100});
+
+    // "k10" is now at index 11 and must sit at the same screen Y.
+    CHECK(list.row_world_rect(11).y == anchored_y);
+}
+
+TEST_CASE("ListView::invalidate_data still re-measures every row",
+          "[tk][listview][incremental]")
+{
+    Stage st;
+    ListView list;
+    CountingAdapter ad;
+    ad.heights.assign(8, 20.0f);
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    ad.reset_measures();
+
+    list.invalidate_data();
+    list.arrange(lc, {0, 0, 200, 100});
+
+    for (std::size_t i = 0; i < 8; ++i)
+        CHECK(ad.measure_of(i) == 1);
 }
