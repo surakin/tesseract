@@ -72,7 +72,7 @@ if(TESSERACT_UI STREQUAL "macos")
     # 11.0 = Big Sur. Earliest macOS that ships every Apple Silicon
     # frameworks we use (NSTrackingArea modes, NSTextField improvements,
     # CGImageSource APIs as we call them). Override at preset level.
-    if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
         set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "" FORCE)
     endif()
     # The CommandLineTools install ships a stale libc++ (version 8000, pre-C++20)
@@ -148,6 +148,10 @@ if(APPLE)
         "-framework CoreFoundation"
         "-framework SystemConfiguration"
     )
+    # Pin Cargo's C/asm objects to the same macOS deployment target as CMake so
+    # the linker doesn't warn about version mismatches in libtesseract_sdk_ffi.a.
+    corrosion_set_env_vars(tesseract_sdk_ffi
+        MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
 endif()
 
 # audiopus_sys emits cargo:rustc-link-lib=opus but Corrosion may place it
