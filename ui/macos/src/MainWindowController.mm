@@ -3547,6 +3547,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                         }
                                         return true;
                                     }
+                                    case tk::NativeTextArea::NavKey::Left:
+                                    case tk::NativeTextArea::NavKey::Right:
                                     case tk::NativeTextArea::NavKey::ShiftTab:
                                         return false;
                                     case tk::NativeTextArea::NavKey::Escape:
