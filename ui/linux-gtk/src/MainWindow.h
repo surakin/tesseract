@@ -175,6 +175,11 @@ private:
     // while a native entry / text view holds focus.
     static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
                                               gpointer user_data);
+    // Global-scope Alt+Left / Alt+Right shortcut callbacks — room history nav.
+    static gboolean on_nav_back_shortcut_(GtkWidget*, GVariant*,
+                                          gpointer user_data);
+    static gboolean on_nav_fwd_shortcut_(GtkWidget*, GVariant*,
+                                         gpointer user_data);
     static gboolean on_window_close_request_(GtkWindow* window,
                                              gpointer user_data);
 

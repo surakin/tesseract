@@ -2450,6 +2450,19 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             gtk_callback_action_new(on_quick_switch_shortcut_, this, nullptr));
         gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
                                              shortcut);
+
+        GtkShortcut* back_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_Left, GDK_ALT_MASK),
+            gtk_callback_action_new(on_nav_back_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             back_sc);
+
+        GtkShortcut* fwd_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_Right, GDK_ALT_MASK),
+            gtk_callback_action_new(on_nav_fwd_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             fwd_sc);
+
         gtk_widget_add_controller(window_, sc);
     }
 
@@ -5609,6 +5622,9 @@ bool MainWindow::handle_mention_on_changed_(const std::string& s, int cursor)
                 case tk::NativeTextArea::NavKey::Escape:
                     hide_mention_popup_();
                     return true;
+                default:
+                    // Left/Right: let the caret move.
+                    return false;
                 }
                 mention_popup_widget_->set_selected_index(next);
                 mention_popup_surface_->host().request_repaint();
@@ -5999,6 +6015,20 @@ gboolean MainWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*,
 {
     auto* self = static_cast<MainWindow*>(user_data);
     self->open_quick_switch_();
+    return TRUE;
+}
+
+gboolean MainWindow::on_nav_back_shortcut_(GtkWidget*, GVariant*,
+                                           gpointer user_data)
+{
+    static_cast<MainWindow*>(user_data)->navigate_history_back();
+    return TRUE;
+}
+
+gboolean MainWindow::on_nav_fwd_shortcut_(GtkWidget*, GVariant*,
+                                          gpointer user_data)
+{
+    static_cast<MainWindow*>(user_data)->navigate_history_forward();
     return TRUE;
 }
 
