@@ -196,7 +196,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     surface_->set_on_file_drop_error(
         [this](std::string reason)
         {
-            shell_->show_status_message_(std::move(reason));
+            shell_show_status_message_(std::move(reason));
         });
 
     room_view_->set_post_delayed(
