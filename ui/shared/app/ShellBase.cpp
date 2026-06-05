@@ -3869,8 +3869,51 @@ void ShellBase::paginate_threads_()
     });
 }
 
+void ShellBase::navigate_history_back()
+{
+    if (room_nav_history_.empty() || room_nav_history_cursor_ == 0)
+        return;
+    --room_nav_history_cursor_;
+    room_nav_in_progress_ = true;
+    navigate_to_room_(room_nav_history_[room_nav_history_cursor_]);
+    room_nav_in_progress_ = false;
+}
+
+void ShellBase::navigate_history_forward()
+{
+    if (room_nav_history_.empty() || room_nav_history_cursor_ + 1 >= room_nav_history_.size())
+        return;
+    ++room_nav_history_cursor_;
+    room_nav_in_progress_ = true;
+    navigate_to_room_(room_nav_history_[room_nav_history_cursor_]);
+    room_nav_in_progress_ = false;
+}
+
 void ShellBase::after_active_room_changed_()
 {
+    // Navigation history for Alt+Left / Alt+Right. Must be first so it
+    // executes in tests (no client_) and before any early return.
+    if (!current_room_id_.empty() && !room_nav_in_progress_)
+    {
+        // Truncate any forward entries the user had navigated back into.
+        if (!room_nav_history_.empty())
+        {
+            room_nav_history_.erase(
+                room_nav_history_.begin() +
+                    static_cast<std::ptrdiff_t>(room_nav_history_cursor_) + 1,
+                room_nav_history_.end());
+        }
+        room_nav_history_.push_back(current_room_id_);
+        room_nav_history_cursor_ = room_nav_history_.size() - 1;
+        // Evict oldest entry when cap is reached.
+        if (room_nav_history_.size() > kNavHistoryMax)
+        {
+            room_nav_history_.erase(room_nav_history_.begin());
+            if (room_nav_history_cursor_ > 0)
+                --room_nav_history_cursor_;
+        }
+    }
+
     // Drop the room we just left: cancel its still-pending timeline media
     // downloads (full-size images, thumbnails) so the room we're switching to
     // gets the semaphore slots instead of queueing behind the old room's flood.

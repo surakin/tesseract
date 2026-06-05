@@ -106,6 +106,11 @@ public:
     // the main window alongside the pop-out.
     void tab_popout_room(const std::string& room_id);
 
+    // Navigate to the previous/next room in the global visit history.
+    // To be wired to Alt+Left / Alt+Right (Cmd+[ / Cmd+] on macOS).
+    void navigate_history_back();
+    void navigate_history_forward();
+
     // Wire room_view_->on_open_dm and room_view_->on_has_dm.
     // Call once per shell after main_app_ and room_view_ are set.
     void setup_dm_callbacks();
@@ -260,6 +265,12 @@ protected:
     // switcher's "Recent" strip. In-memory only (not persisted across restarts).
     std::vector<std::string> recent_room_ids_;
     static constexpr std::size_t kRecentRoomsMax = 8;
+    // Navigation history for Alt+Left / Alt+Right back-forward traversal.
+    // Separate from recent_room_ids_ (MRU). In-memory only.
+    std::vector<std::string> room_nav_history_;
+    std::size_t              room_nav_history_cursor_ = 0;
+    bool                     room_nav_in_progress_    = false;
+    static constexpr std::size_t kNavHistoryMax = 100;
     // Tracks the invite currently shown in the InviteCard so the action
     // callbacks (on_accept / on_decline / on_block) can target the right room.
     struct InviteContext { std::string room_id; std::string inviter_id; };
