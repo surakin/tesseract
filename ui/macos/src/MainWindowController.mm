@@ -423,6 +423,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_openSettings;
 - (void)_openQuickSwitch;
 - (void)_closeQuickSwitch;
+- (void)_navigateHistoryBack;
+- (void)_navigateHistoryForward;
 - (void)loginViewDidCancel:(LoginView*)view;
 - (void)_openAccountPicker;
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress;
@@ -3989,6 +3991,24 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                  [s _openQuickSwitch];
                                                  return (NSEvent*)nil;
                                              }
+                                             // ⌘[ → navigate room history back.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagCommand) &&
+                                                 [event.charactersIgnoringModifiers
+                                                     isEqualToString:@"["])
+                                             {
+                                                 [s _navigateHistoryBack];
+                                                 return (NSEvent*)nil;
+                                             }
+                                             // ⌘] → navigate room history forward.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagCommand) &&
+                                                 [event.charactersIgnoringModifiers
+                                                     isEqualToString:@"]"])
+                                             {
+                                                 [s _navigateHistoryForward];
+                                                 return (NSEvent*)nil;
+                                             }
                                              if (event.keyCode == 53)
                                              { // Escape
                                                  // Quick switcher is topmost.
@@ -5867,6 +5887,18 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         _roomListView->set_search_text(_pendingSearchText);
     }
+}
+
+- (void)_navigateHistoryBack
+{
+    if (_shell)
+        _shell->navigate_history_back();
+}
+
+- (void)_navigateHistoryForward
+{
+    if (_shell)
+        _shell->navigate_history_forward();
 }
 
 - (void)_openQuickSwitch

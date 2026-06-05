@@ -941,9 +941,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             self->open_quick_switch_();
         }
         if (LOWORD(wParam) == IDC_NAV_BACK)
+        {
             self->navigate_history_back();
+        }
         if (LOWORD(wParam) == IDC_NAV_FWD)
+        {
             self->navigate_history_forward();
+        }
         return 0;
 
     case WM_ERASEBKGND:
