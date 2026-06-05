@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-04**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-05**.
 
 > **Pop-out room windows.**
 > Ctrl/⌘+click a room tab to pop the room out into its own native window (the
@@ -16,6 +16,19 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-04
 > tray navigation) raises the existing window via
 > `ShellBase::focus_secondary_window_` instead of re-opening the room.
 > Verified on **Win32**; the other shells mirror the same shared logic.
+
+<!-- -->
+
+> **Room navigation history (Alt+Left / Alt+Right; Cmd+[ / Cmd+] on macOS).**
+> Back and forward navigation through the session's room visit history, like
+> browser navigation. `ShellBase` maintains a `room_nav_history_` vector (capped
+> at 100 entries) with a cursor; every organic room visit appends an entry and a
+> new forward visit truncates any forward branch. `navigate_history_back()` /
+> `navigate_history_forward()` are called under a `room_nav_in_progress_` guard
+> so the history is not re-entered mid-navigation. Shortcuts are application-
+> scoped on all four shells — they fire even while the compose box holds focus —
+> with macOS using Cmd+[ / Cmd+] to avoid conflicting with the Option+arrow
+> word-navigation shortcut. 10 new Catch2 tests.
 
 <!-- -->
 
@@ -310,7 +323,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 181 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 659 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 672 |
 
 ## Platforms
 

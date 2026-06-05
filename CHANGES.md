@@ -3,6 +3,28 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased
+
+### 2026-06-05
+
+- feat(shell): room navigation history — Alt+Left / Alt+Right (Cmd+[ / Cmd+]
+  on macOS) traverse a per-session back-forward history of visited rooms, like
+  browser navigation. `ShellBase` maintains a `room_nav_history_` vector (capped
+  at 100 entries) with a cursor; `after_active_room_changed_` appends on every
+  organic room visit; a `room_nav_in_progress_` guard prevents re-entrant
+  history appends during a back/forward step. Shortcuts wired on all four
+  shells: Qt6 (`QShortcut` / `ApplicationShortcut`), GTK4
+  (`GtkShortcutController` / `GTK_SHORTCUT_SCOPE_GLOBAL`), Win32 (accelerator
+  table + `WM_COMMAND`), macOS (`NSEvent` local monitor). 10 new Catch2 tests.
+- fix(shell): rooms visited during rapid back/forward navigation could get
+  permanently stuck showing no content — even after clicking them in the room
+  list — until the app restarted. The subscribe worker that loads a room's
+  timeline only cleared `pagination_[room].in_flight` when the room was still
+  the active one on return; navigating away mid-flight left `in_flight = true`
+  forever, causing every subsequent `onRoomSelected` to bail out immediately.
+  Fixed on all four shells (Qt6, GTK4, Win32, macOS) by always clearing
+  `in_flight` when the worker completes, regardless of current room.
+
 ## v0.1.8 — 2026-06-03
 
 Changes since v0.1.7:
