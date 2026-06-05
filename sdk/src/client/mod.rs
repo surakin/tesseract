@@ -2058,17 +2058,15 @@ mod tests {
     }
 
     #[test]
-    fn accept_invite_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
-        let r = c.accept_invite("!room:example.com");
-        assert!(!r.ok);
+    fn accept_invite_async_does_not_panic_when_not_logged_in() {
+        let c = ClientFfi::new();
+        c.accept_invite_async(0, "!room:example.com");
     }
 
     #[test]
-    fn decline_invite_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
-        let r = c.decline_invite("!room:example.com");
-        assert!(!r.ok);
+    fn decline_invite_async_does_not_panic_when_not_logged_in() {
+        let c = ClientFfi::new();
+        c.decline_invite_async("!room:example.com");
     }
 
     #[test]
