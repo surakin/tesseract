@@ -1810,6 +1810,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this, [this] { openQuickSwitch_(); });
     }
+    // Alt+Left / Alt+Right: navigate room history back / forward.
+    // ApplicationShortcut so these fire while the compose box holds focus.
+    {
+        auto* sc = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_Left), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this] { navigate_history_back(); });
+    }
+    {
+        auto* sc = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_Right), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this] { navigate_history_forward(); });
+    }
 
     mainAppSurface_->set_on_layout(
         [this]
@@ -5540,6 +5554,9 @@ bool MainWindow::handle_mention_on_changed_(const std::string& s, int cursor)
                 case tk::NativeTextArea::NavKey::Escape:
                     hide_mention_popup_();
                     return true;
+                default:
+                    // Left/Right: let the caret move.
+                    return false;
                 }
                 mention_popup_widget_->set_selected_index(next);
                 mention_popup_surface_->update();
