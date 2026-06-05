@@ -572,6 +572,8 @@ private:
     static constexpr int IDM_ADD_ACCOUNT = 121;
     static constexpr int IDM_QUIT = 122;
     static constexpr int IDC_QUICK_SWITCH = 130;
+    static constexpr int IDC_NAV_BACK = 131;
+    static constexpr int IDC_NAV_FWD  = 132;
 
     // Application accelerator table (Ctrl+K → quick switcher). Built in
     // on_create, applied by pre_translate_message so the shortcut fires even

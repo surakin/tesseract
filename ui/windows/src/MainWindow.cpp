@@ -940,6 +940,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             self->open_quick_switch_();
         }
+        if (LOWORD(wParam) == IDC_NAV_BACK)
+            self->navigate_history_back();
+        if (LOWORD(wParam) == IDC_NAV_FWD)
+            self->navigate_history_forward();
         return 0;
 
     case WM_ERASEBKGND:
@@ -1342,11 +1346,17 @@ void MainWindow::on_create(HWND hwnd)
     // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
     // plain key handler only fires when the canvas has focus.
     {
-        ACCEL acc{};
-        acc.fVirt = FCONTROL | FVIRTKEY;
-        acc.key = 'K';
-        acc.cmd = IDC_QUICK_SWITCH;
-        accel_ = CreateAcceleratorTableW(&acc, 1);
+        ACCEL accs[3]{};
+        accs[0].fVirt = FCONTROL | FVIRTKEY;
+        accs[0].key   = 'K';
+        accs[0].cmd   = IDC_QUICK_SWITCH;
+        accs[1].fVirt = FALT | FVIRTKEY;
+        accs[1].key   = VK_LEFT;
+        accs[1].cmd   = IDC_NAV_BACK;
+        accs[2].fVirt = FALT | FVIRTKEY;
+        accs[2].key   = VK_RIGHT;
+        accs[2].cmd   = IDC_NAV_FWD;
+        accel_ = CreateAcceleratorTableW(accs, 3);
     }
 
     Gdiplus::GdiplusStartupInput gsi;
