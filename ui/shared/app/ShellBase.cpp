@@ -3873,6 +3873,9 @@ void ShellBase::navigate_history_back()
 {
     if (room_nav_history_.empty() || room_nav_history_cursor_ == 0)
         return;
+    // Block if the previous switch hasn't finished loading yet.
+    if (view_displayed_room_id_ != current_room_id_)
+        return;
     --room_nav_history_cursor_;
     room_nav_in_progress_ = true;
     navigate_to_room_(room_nav_history_[room_nav_history_cursor_]);
@@ -3882,6 +3885,9 @@ void ShellBase::navigate_history_back()
 void ShellBase::navigate_history_forward()
 {
     if (room_nav_history_.empty() || room_nav_history_cursor_ + 1 >= room_nav_history_.size())
+        return;
+    // Block if the previous switch hasn't finished loading yet.
+    if (view_displayed_room_id_ != current_room_id_)
         return;
     ++room_nav_history_cursor_;
     room_nav_in_progress_ = true;
