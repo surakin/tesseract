@@ -347,7 +347,14 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float chat_w = w - kSidebarW - kSepW;
     float chat_y = y;
 
-    if (verif_visible_)
+    // The banner must never show while the initial key-setup overlay is open
+    // (its backdrop is dimmed, not opaque, so the banner would peek through).
+    // set_visible() here also keeps pointer dispatch / hit_test consistent.
+    const bool show_verif =
+        verif_visible_ &&
+        !(encryption_setup_ && encryption_setup_->visible());
+    if (verif_banner_) verif_banner_->set_visible(show_verif);
+    if (show_verif)
     {
         // VerificationBanner is taller when showing the emoji grid.
         const float verif_h =
@@ -450,7 +457,11 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
                          pal.separator);
 
     // Chat panel.
-    if (verif_visible_ && verif_banner_)
+    // Recompute from live overlay state (not the flag set during arrange()) so
+    // a repaint without an intervening relayout still hides the banner while
+    // the key-setup overlay is open.
+    if (verif_visible_ && verif_banner_ &&
+        !(encryption_setup_ && encryption_setup_->visible()))
     {
         verif_banner_->paint(ctx);
     }
