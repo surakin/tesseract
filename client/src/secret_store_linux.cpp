@@ -5,7 +5,7 @@ namespace
 {
 
 const SecretSchema kSchema = {
-    "lan.westeros.tesseract.session",
+    "im.gnomos.tesseract.session",
     SECRET_SCHEMA_NONE,
     {{"user-id", SECRET_SCHEMA_ATTRIBUTE_STRING},
      {nullptr, SECRET_SCHEMA_ATTRIBUTE_STRING}}
