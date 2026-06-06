@@ -31,31 +31,41 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 - Markdown formatting (send and receive), with syntax-highlighted code blocks
 - Custom emoji and reactions (image packs, MSC2545)
 - Threads
-- Mentions with autocomplete and rich pills
+- Pinned messages (pin / unpin, with power-level checks)
+- Mentions with `@` autocomplete and rich pills; `:emoji:` shortcode autocomplete
 - Read receipts (public and private), typing indicators, fully-read markers
 - Day separators and new-message markers
+- Automatic decryption retry as keys arrive — no permanent "unable to decrypt" placeholders
 
 ### Media
 
 - Images, video, voice messages, audio, and files — send and receive
+- GIF search and send via `/gif` (animated preview strip in the picker; works in encrypted rooms)
+- Animated GIF / WebP / APNG in the timeline
 - Animated stickers, including bridged stickers
 - Media captions
+- Send images by clipboard paste or drag-and-drop
+- Thumbnail-first loading, with an optional automatic full-media fetch
 - Zoomable / pannable image viewer
 - Inline audio player with voice-message waveforms
+- Download any file, image, or video
 - URL previews
 
 ### Rooms & navigation
 
 - Room list with Favorites, DMs, Rooms, and Spaces (tag-aware)
+- Sticky, collapsible section headers
 - Space and subspace navigation
 - Open multiple rooms in tabs and/or separate windows
+- Back / forward room history (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable)
 - Jump-to-date with a calendar picker (if supported by server)
 - Unread indicators and last-message previews (including media)
 - Auto-scroll to the most-recent unread room when new messages arrive (optional)
 - Direct messages
 - Ctrl+K quick switcher
-- Slash commands (/me, /shrug, /slap, /myroomnick, /myroomavatar, /join, /leave, /invite)
+- Room search (filter by name)
+- Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif)
 - Room tags (favorite, low priority)
 
 ### Security & privacy
@@ -68,6 +78,7 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 - Device & session management
 - MSC4278 media preview controls
 - Cryptographic identity reset
+- Clear-cache action (leaves the crypto/session store intact)
 
 ### Notifications
 
@@ -79,7 +90,10 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 ### Platform integration
 
 - System tray with unread/mention indicator and minimize-to-tray (clicking the icon jumps to the first unread room)
-- Session restore (last open room)
+- Multi-account, with profile editing (display name and avatar)
+- Single-instance behavior (relaunching restores the running window)
+- Session restore (all open room tabs and the active account)
+- In-flight request indicator in the status bar
 - Light / dark / system themes
 
 ## Minimum OS requirements
@@ -117,11 +131,7 @@ The app is mostly complete and can be used for existing accounts and new account
 
 Also I don't speak as many languages as I would like to, so translations are a bit lagging behind. I'll do something about that, when I learn how. Stay tuned.
 
-I also have to admit that I have the same design talents as a brick, so even if I made my best effort to make it look good, I'm sure there is a lot of room for improvement.
-
-<!-- One honest paragraph. Solo project? Say so. How actively maintained?
-     What's the support expectation? What's NOT promised? Setting this
-     explicitly attracts the right users and filters out the wrong ones. -->
+Disclaimer: I have the same design talents as a brick, so even if I made my best effort to make it look good, I'm sure there is a lot of room for improvement.
 
 ---
 
@@ -130,12 +140,6 @@ I also have to admit that I have the same design talents as a brick, so even if 
 I'm open to any kind of contribution, with only one caveat: UI parity. I did my best for the app to look more or less the same in all the platforms and I want to keep that.
 
 If you don't care about UI parity or are interested in only one platform, you're welcome to fork it and make it yours! That's the beauty of open source, isn't it?
-
-<!-- Decide your stance before publishing:
-     - PRs welcome on any frontend? Or core-only with community-owned shells?
-     - The shared-core/thin-shell design means a contributor could own one
-       frontend without touching the core — say if that's how you'd want it.
-     - Link a CONTRIBUTING.md if you write one. -->
 
 ---
 

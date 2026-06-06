@@ -32,7 +32,7 @@ version) are noted where relevant.
 - `m.notice` and `m.emote` (`/me`) handled distinctly from regular messages
 - Decryption retry as keys arrive (no permanent "unable to decrypt" placeholders)
 - Pinned messages — full support (pin/unpin) with power-level checks
-- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`; extensible)
+- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`; extensible)
 - Media captions (MSC2530)
 
 ## Media
@@ -110,7 +110,7 @@ version) are noted where relevant.
 - Markdown input
 - Emoji shortcode autocomplete popup
 - User mention (`@`) autocomplete
-- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/gif`; popup autocomplete)
+- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`; popup autocomplete)
 - Send on Enter, newline on Shift+Enter
 
 ---
