@@ -624,285 +624,153 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         room_text_area_->set_mention_colors(
             main_app_surface_->theme().palette.accent,
             main_app_surface_->theme().palette.text_on_accent);
+        // All four composer popups (gif > slash > shortcode > mention) are
+        // driven through the shared ComposePopups dispatch; the controllers are
+        // created just below (slash/shortcode/mention) and in the GIF block.
         room_text_area_->set_on_changed(
             [this](const std::string& s)
             {
                 handle_compose_text_changed_(s);
                 room_view_->set_current_text(s);
-
-                // ── GIF picker (/gif <query>) ───────────────────────────────────
-                if (gif_controller_ && gif_controller_->on_text_changed(s))
-                {
-                    if (slash_popup_visible_())     hide_slash_popup_();
-                    if (shortcode_popup_visible_()) hide_shortcode_popup_();
-                    if (mention_popup_visible_())   hide_mention_popup_();
-                    return;
-                }
-
-                // ── Slash-command popup ─────────────────────────────────────────
-                int cursor = room_text_area_->cursor_byte_pos();
-
-                {
-                    auto m = slash_engine_.find_prefix(s, cursor);
-                    if (m.has_value())
-                    {
-                        auto items = slash_engine_.lookup(m->prefix);
-                        if (items.empty())
-                        {
-                            hide_slash_popup_();
-                        }
-                        else
-                        {
-                            // Only hide other popovers if they are actually
-                            // visible — these hide functions reset
-                            // set_on_popup_nav(nullptr), and calling them
-                            // unconditionally on every text-change tick kills
-                            // the slash popup's nav handler.
-                            if (shortcode_popup_visible_()) hide_shortcode_popup_();
-                            if (mention_popup_visible_())   hide_mention_popup_();
-                            show_slash_popup_(items,
-                                             room_text_area_->cursor_rect());
-                            // Reinstall the nav handler unconditionally on every
-                            // tick: hide_*_popup_ calls above (when they did
-                            // fire) wipe it, and even when they didn't,
-                            // installing unconditionally matches what
-                            // handle_mention_on_changed_ does and avoids the
-                            // "first keystroke kills nav" bug.
-                            room_text_area_->set_on_popup_nav(
-                                [this](tk::NativeTextArea::NavKey nk) -> bool
-                                {
-                                    if (!slash_popup_visible_())
-                                    {
-                                        return false;
-                                    }
-                                    int cur =
-                                        slash_popup_widget_->selected_index();
-                                    int n =
-                                        slash_popup_widget_->visible_rows();
-                                    if (n <= 0)
-                                    {
-                                        return true;
-                                    }
-                                    int next = cur;
-                                    switch (nk)
-                                    {
-                                    case tk::NativeTextArea::NavKey::Up:
-                                        next = std::max(0, cur - 1);
-                                        break;
-                                    case tk::NativeTextArea::NavKey::Down:
-                                        next = std::min(n - 1, cur + 1);
-                                        break;
-                                    case tk::NativeTextArea::NavKey::Tab:
-                                    {
-                                        int sel =
-                                            slash_popup_widget_
-                                                ->selected_index();
-                                        if (sel >= 0 &&
-                                            sel < slash_popup_widget_
-                                                      ->visible_rows() &&
-                                            slash_popup_widget_->on_accepted)
-                                        {
-                                            slash_popup_widget_->on_accepted(
-                                                slash_popup_widget_
-                                                    ->suggestion_at(sel));
-                                        }
-                                        else
-                                        {
-                                            hide_slash_popup_();
-                                        }
-                                        return true;
-                                    }
-                                    case tk::NativeTextArea::NavKey::ShiftTab:
-                                        return false;
-                                    case tk::NativeTextArea::NavKey::Escape:
-                                        hide_slash_popup_();
-                                        return true;
-                                    default:
-                                        // Left/Right: let the caret move.
-                                        return false;
-                                    }
-                                    slash_popup_widget_->set_selected_index(
-                                        next);
-                                    slash_popup_surface_->host()
-                                        .request_repaint();
-                                    return true;
-                                });
-                        }
-                        return;
-                    }
-                    if (slash_popup_visible_())
-                    {
-                        hide_slash_popup_();
-                    }
-                }
-
-                // ── Shortcode detection ─────────────────────────────────────────
-
-                auto complete = shortcode_engine_.find_complete(s, cursor);
-                if (complete)
-                {
-                    auto hits = shortcode_engine_.lookup(complete->prefix,
-                                                         cached_emoticons_, 1);
-                    std::string r =
-                        (!hits.empty() && !hits.front().glyph.empty())
-                            ? hits.front().glyph
-                            : ":" + complete->prefix + ":";
-                    room_text_area_->replace_range(complete->start,
-                                                   complete->end, r);
-                    hide_shortcode_popup_();
-                    hide_mention_popup_();
-                    return;
-                }
-
-                auto prefix_match = shortcode_engine_.find_prefix(s, cursor);
-                if (prefix_match && prefix_match->prefix.size() >= 2)
-                {
-                    shortcode_current_suggestions_ = shortcode_engine_.lookup(
-                        prefix_match->prefix, cached_emoticons_);
-                    if (!shortcode_current_suggestions_.empty())
-                    {
-                        hide_mention_popup_();
-                        shortcode_active_match_ = *prefix_match;
-                        for (const auto& sugg : shortcode_current_suggestions_)
-                        {
-                            if (!sugg.emoticon.url.empty())
-                            {
-                                ensure_media_image_(sugg.emoticon.url, 28, 28);
-                            }
-                        }
-                        show_shortcode_popup_(shortcode_current_suggestions_,
-                                              room_text_area_->cursor_rect());
-                        // Reinstall the nav handler unconditionally on every
-                        // tick: the hide_mention_popup_() call above wipes it
-                        // via set_on_popup_nav(nullptr), so guarding the
-                        // install behind "first show only" leaves nav dead
-                        // after the second keystroke (Up/Down stop working).
-                        {
-                            room_text_area_->set_on_popup_nav(
-                                [this](tk::NativeTextArea::NavKey nk) -> bool
-                                {
-                                    if (!shortcode_popup_visible_())
-                                    {
-                                        return false;
-                                    }
-                                    int cur = shortcode_popup_widget_
-                                                  ->selected_index();
-                                    int n =
-                                        shortcode_popup_widget_->visible_rows();
-                                    if (n <= 0)
-                                    {
-                                        return true;
-                                    }
-                                    int next = cur;
-                                    switch (nk)
-                                    {
-                                    case tk::NativeTextArea::NavKey::Up:
-                                        next = std::max(0, cur - 1);
-                                        break;
-                                    case tk::NativeTextArea::NavKey::Down:
-                                        next = std::min(n - 1, cur + 1);
-                                        break;
-                                    case tk::NativeTextArea::NavKey::Tab:
-                                    {
-                                        int sel = shortcode_popup_widget_
-                                                      ->selected_index();
-                                        if (sel >= 0 &&
-                                            sel <
-                                                (int)
-                                                    shortcode_current_suggestions_
-                                                        .size())
-                                        {
-                                            auto& s =
-                                                shortcode_current_suggestions_
-                                                    [sel];
-                                            std::string r =
-                                                s.glyph.empty()
-                                                    ? ":" + s.shortcode + ":"
-                                                    : s.glyph;
-                                            room_text_area_->replace_range(
-                                                shortcode_active_match_.start,
-                                                shortcode_active_match_.end, r);
-                                        }
-                                        hide_shortcode_popup_();
-                                        return true;
-                                    }
-                                    case tk::NativeTextArea::NavKey::ShiftTab:
-                                        return false;
-                                    case tk::NativeTextArea::NavKey::Escape:
-                                        hide_shortcode_popup_();
-                                        return true;
-                                    default:
-                                        // Left/Right: let the caret move.
-                                        return false;
-                                    }
-                                    shortcode_popup_widget_->set_selected_index(
-                                        next);
-                                    shortcode_popup_surface_->host()
-                                        .request_repaint();
-                                    return true;
-                                });
-                        }
-                        return;
-                    }
-                }
-                // ── @mention popup ──────────────────────────────────────────
-                if (handle_mention_on_changed_(s, cursor))
-                {
-                    return;
-                }
-                hide_shortcode_popup_();
-                hide_mention_popup_();
-                // ── End shortcode detection ─────────────────────────────────────
+                tesseract::views::dispatch_compose_text_changed(
+                    s, room_text_area_->cursor_byte_pos(),
+                    gif_controller_.get(), slash_controller_.get(),
+                    shortcode_controller_.get(), mention_controller_.get());
             });
         room_text_area_->set_on_submit(
             [this]
             {
-                if (gif_controller_ && gif_controller_->on_submit())
+                if (tesseract::views::dispatch_compose_submit(
+                        gif_controller_.get(), slash_controller_.get(),
+                        shortcode_controller_.get(),
+                        mention_controller_.get()))
                 {
                     return;
                 }
-                if (slash_popup_visible_())
-                {
-                    int sel = slash_popup_widget_->selected_index();
-                    if (sel >= 0 && sel < slash_popup_widget_->visible_rows() &&
-                        slash_popup_widget_->on_accepted)
-                    {
-                        slash_popup_widget_->on_accepted(
-                            slash_popup_widget_->suggestion_at(sel));
-                        return;
-                    }
-                    hide_slash_popup_();
-                }
-                if (mention_popup_visible_())
-                {
-                    int sel = mention_popup_widget_->selected_index();
-                    if (sel >= 0 &&
-                        sel < (int)mention_current_candidates_.size())
-                    {
-                        accept_mention_(mention_current_candidates_[sel]);
-                        return;
-                    }
-                    hide_mention_popup_();
-                }
-                if (shortcode_popup_visible_())
-                {
-                    int sel = shortcode_popup_widget_->selected_index();
-                    if (sel >= 0 &&
-                        sel < (int)shortcode_current_suggestions_.size())
-                    {
-                        auto& s = shortcode_current_suggestions_[sel];
-                        std::string r =
-                            s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
-                        room_text_area_->replace_range(
-                            shortcode_active_match_.start,
-                            shortcode_active_match_.end, r);
-                        hide_shortcode_popup_();
-                        return;
-                    }
-                    hide_shortcode_popup_();
-                }
                 on_send_clicked();
             });
+        room_text_area_->set_on_popup_nav(
+            [this](tk::NativeTextArea::NavKey nk) -> bool
+            {
+                return tesseract::views::dispatch_compose_nav(
+                    nk, gif_controller_.get(), slash_controller_.get(),
+                    shortcode_controller_.get(), mention_controller_.get());
+            });
+
+        // ── /command autocomplete popup ──────────────────────────────────
+        slash_popover_ = gtk_popover_new();
+        gtk_widget_set_parent(slash_popover_, main_app_surface_->widget());
+        gtk_popover_set_position(GTK_POPOVER(slash_popover_), GTK_POS_TOP);
+        gtk_popover_set_has_arrow(GTK_POPOVER(slash_popover_), FALSE);
+        // autohide=FALSE: a modal popover takes the Wayland keyboard grab and
+        // kills composer input while open. Non-autohide keeps the keyboard with
+        // the composer; dismissed by the controller on text change / Esc.
+        gtk_popover_set_autohide(GTK_POPOVER(slash_popover_), FALSE);
+        slash_popup_surface_ =
+            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
+        {
+            auto w = std::make_unique<tesseract::views::SlashCommandPopup>();
+            slash_popup_widget_ = w.get();
+            slash_popup_surface_->set_root(std::move(w));
+            gtk_popover_set_child(GTK_POPOVER(slash_popover_),
+                                  slash_popup_surface_->widget());
+        }
+        {
+            tesseract::views::SlashCommandController::Hooks sh;
+            sh.show = [this](tk::Rect cursor, int rows)
+            { show_slash_popup_(cursor, rows); };
+            sh.hide = [this] { hide_slash_popup_(); };
+            sh.repaint = [this]
+            {
+                if (slash_popup_surface_)
+                    slash_popup_surface_->host().request_repaint();
+            };
+            sh.room_id = [this] { return current_room_id_; };
+            sh.client = [this]() -> tesseract::Client* { return client_; };
+            sh.clear_composer = [this] { room_view_->clear_compose_text(); };
+            slash_controller_ =
+                std::make_unique<tesseract::views::SlashCommandController>(
+                    room_text_area_.get(), slash_popup_widget_, std::move(sh));
+        }
+
+        // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────
+        shortcode_popover_ = gtk_popover_new();
+        gtk_widget_set_parent(shortcode_popover_, main_app_surface_->widget());
+        gtk_popover_set_position(GTK_POPOVER(shortcode_popover_), GTK_POS_TOP);
+        gtk_popover_set_has_arrow(GTK_POPOVER(shortcode_popover_), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(shortcode_popover_), FALSE);
+        shortcode_popup_surface_ =
+            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
+        {
+            auto w = std::make_unique<tesseract::views::ShortcodePopup>();
+            shortcode_popup_widget_ = w.get();
+            shortcode_popup_widget_->set_image_provider(
+                make_static_image_provider_());
+            shortcode_popup_surface_->set_root(std::move(w));
+            gtk_popover_set_child(GTK_POPOVER(shortcode_popover_),
+                                  shortcode_popup_surface_->widget());
+        }
+        {
+            tesseract::views::ShortcodeController::Hooks sh;
+            sh.show = [this](tk::Rect cursor, int rows)
+            { show_shortcode_popup_(cursor, rows); };
+            sh.hide = [this] { hide_shortcode_popup_(); };
+            sh.repaint = [this]
+            {
+                if (shortcode_popup_surface_)
+                    shortcode_popup_surface_->host().request_repaint();
+            };
+            sh.emoticons =
+                [this]() -> const std::vector<tesseract::ImagePackImage>&
+            { return cached_emoticons_; };
+            sh.fetch_image = [this](const std::string& url)
+            { ensure_media_image_(url, 28, 28); };
+            shortcode_controller_ =
+                std::make_unique<tesseract::views::ShortcodeController>(
+                    room_text_area_.get(), shortcode_popup_widget_,
+                    std::move(sh));
+        }
+
+        // ── @mention autocomplete popup ───────────────────────────────────
+        mention_popover_ = gtk_popover_new();
+        gtk_widget_set_parent(mention_popover_, main_app_surface_->widget());
+        gtk_popover_set_position(GTK_POPOVER(mention_popover_), GTK_POS_TOP);
+        gtk_popover_set_has_arrow(GTK_POPOVER(mention_popover_), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(mention_popover_), FALSE);
+        mention_popup_surface_ =
+            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
+        {
+            auto w = std::make_unique<tesseract::views::MentionPopup>();
+            mention_popup_widget_ = w.get();
+            mention_popup_widget_->set_image_provider(
+                make_avatar_image_provider_());
+            mention_popup_surface_->set_root(std::move(w));
+            gtk_popover_set_child(GTK_POPOVER(mention_popover_),
+                                  mention_popup_surface_->widget());
+        }
+        {
+            tesseract::views::MentionController::Hooks mh;
+            mh.show = [this](tk::Rect cursor, int rows)
+            { show_mention_popup_(cursor, rows); };
+            mh.hide = [this] { hide_mention_popup_(); };
+            mh.repaint = [this]
+            {
+                if (mention_popup_surface_)
+                    mention_popup_surface_->host().request_repaint();
+            };
+            mh.room_id = [this] { return current_room_id_; };
+            mh.client = [this]() -> tesseract::Client* { return client_; };
+            mh.fetch_avatar = [this](const std::string& mxc)
+            { ensure_user_avatar_(mxc); };
+            mh.run_async = [this](std::function<void()> fn)
+            { run_async_(std::move(fn)); };
+            mh.post_to_ui = [this](std::function<void()> fn)
+            { post_to_ui_(std::move(fn)); };
+            mention_controller_ =
+                std::make_unique<tesseract::views::MentionController>(
+                    room_text_area_.get(), client_, mention_popup_widget_,
+                    std::move(mh));
+        }
 
         // ── GIF picker (/gif <query>) ────────────────────────────────────────
         gif_popover_ = gtk_popover_new();
@@ -3318,8 +3186,13 @@ void MainWindow::on_room_selected(const std::string& room_id)
         }
     }
 
-    hide_slash_popup_();
-    hide_shortcode_popup_();
+    // Route through the controllers so their visible_ state stays in sync.
+    if (slash_controller_)
+        slash_controller_->hide();
+    if (shortcode_controller_)
+        shortcode_controller_->hide();
+    if (mention_controller_)
+        mention_controller_->hide();
     handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id &&
         room_subscription_refs_.count(current_room_id_) == 0)
@@ -5361,58 +5234,17 @@ void MainWindow::do_logout()
 // shared tesseract::views::ShortcodePopup suggestion list.
 // ---------------------------------------------------------------------------
 
-void MainWindow::show_shortcode_popup_(
-    const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
-    tk::Rect cursor_local)
+void MainWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!shortcode_popover_)
+    // Widget + controller created eagerly in the constructor; this positions
+    // the already-populated popover at the caret.
+    if (!shortcode_popover_ || !shortcode_popup_surface_)
     {
-        shortcode_popover_ = gtk_popover_new();
-        gtk_widget_set_parent(shortcode_popover_, main_app_surface_->widget());
-        gtk_popover_set_position(GTK_POPOVER(shortcode_popover_), GTK_POS_TOP);
-        gtk_popover_set_has_arrow(GTK_POPOVER(shortcode_popover_), FALSE);
-        // autohide=FALSE: an autohide popover is modal and (on Wayland) takes
-        // an xdg_popup keyboard grab, killing composer input while it is open.
-        // Non-autohide keeps the keyboard with the composer; the popup is
-        // dismissed on text change / Escape / accept and nav is forwarded.
-        gtk_popover_set_autohide(GTK_POPOVER(shortcode_popover_), FALSE);
-
-        shortcode_popup_surface_ =
-            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
-
-        auto popup_widget =
-            std::make_unique<tesseract::views::ShortcodePopup>();
-        shortcode_popup_widget_ = popup_widget.get();
-        shortcode_popup_surface_->set_root(std::move(popup_widget));
-
-        shortcode_popup_widget_->on_accepted =
-            [this](tesseract::views::ShortcodeSuggestion s)
-        {
-            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
-            room_text_area_->replace_range(shortcode_active_match_.start,
-                                           shortcode_active_match_.end,
-                                           std::move(r));
-            hide_shortcode_popup_();
-        };
-        shortcode_popup_widget_->on_dismissed = [this]
-        {
-            hide_shortcode_popup_();
-        };
-        shortcode_popup_widget_->set_image_provider(
-            make_static_image_provider_());
-
-        GtkWidget* surface_widget = shortcode_popup_surface_->widget();
-        gtk_popover_set_child(GTK_POPOVER(shortcode_popover_), surface_widget);
+        return;
     }
-
-    shortcode_popup_widget_->set_suggestions(suggestions);
-
-    int rows = std::min((int)suggestions.size(),
-                        (int)tesseract::views::ShortcodePopup::kMaxRows);
     int w = int(tesseract::views::ShortcodePopup::kWidth);
     int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
     gtk_widget_set_size_request(shortcode_popup_surface_->widget(), w, h);
-
     GdkRectangle rect{int(cursor_local.x), int(cursor_local.y),
                       int(cursor_local.w), int(cursor_local.h)};
     gtk_popover_set_pointing_to(GTK_POPOVER(shortcode_popover_), &rect);
@@ -5425,79 +5257,19 @@ void MainWindow::hide_shortcode_popup_()
     {
         gtk_popover_popdown(GTK_POPOVER(shortcode_popover_));
     }
-    if (room_text_area_)
-    {
-        room_text_area_->set_on_popup_nav(nullptr);
-    }
 }
 
 // ── Slash-command popup ────────────────────────────────────────────────────
 
-void MainWindow::show_slash_popup_(
-    const std::vector<tesseract::views::SlashCommandSuggestion>& items,
-    tk::Rect cursor_local)
+void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!slash_popover_)
+    if (!slash_popover_ || !slash_popup_surface_)
     {
-        slash_popover_ = gtk_popover_new();
-        gtk_widget_set_parent(slash_popover_, main_app_surface_->widget());
-        gtk_popover_set_position(GTK_POPOVER(slash_popover_), GTK_POS_TOP);
-        gtk_popover_set_has_arrow(GTK_POPOVER(slash_popover_), FALSE);
-        // Non-autohide so the composer keeps the keyboard (see shortcode popup).
-        gtk_popover_set_autohide(GTK_POPOVER(slash_popover_), FALSE);
-
-        slash_popup_surface_ =
-            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
-
-        auto popup_widget =
-            std::make_unique<tesseract::views::SlashCommandPopup>();
-        slash_popup_widget_ = popup_widget.get();
-        slash_popup_surface_->set_root(std::move(popup_widget));
-
-        slash_popup_widget_->on_accepted =
-            [this](tesseract::views::SlashCommandSuggestion s)
-        {
-            hide_slash_popup_();
-            if (!room_text_area_) return;
-            if (!client_ || current_room_id_.empty())
-            {
-                return;
-            }
-            if (s.args_hint.empty())
-            {
-                std::string body = "/" + s.name;
-                (void)tesseract::dispatch_compose_send(
-                    *client_, current_room_id_, body, std::string{});
-                room_text_area_->set_text("");
-                room_view_->clear_compose_text();
-            }
-            else
-            {
-                // Use replace_range (not set_text) so the caret lands after
-                // the trailing space and shared composer state stays in sync.
-                std::string body = "/" + s.name + " ";
-                room_text_area_->replace_range(
-                    0, static_cast<int>(room_text_area_->text().size()), body);
-            }
-        };
-        slash_popup_widget_->on_dismissed = [this]
-        {
-            hide_slash_popup_();
-        };
-
-        GtkWidget* surface_widget = slash_popup_surface_->widget();
-        gtk_popover_set_child(GTK_POPOVER(slash_popover_), surface_widget);
+        return;
     }
-
-    slash_popup_widget_->set_suggestions(items);
-    slash_popup_widget_->set_selected_index(0);
-
-    int rows = std::min((int)items.size(),
-                        (int)tesseract::views::SlashCommandPopup::kMaxRows);
     int w = int(tesseract::views::SlashCommandPopup::kWidth);
     int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
     gtk_widget_set_size_request(slash_popup_surface_->widget(), w, h);
-
     GdkRectangle rect{int(cursor_local.x), int(cursor_local.y),
                       int(cursor_local.w), int(cursor_local.h)};
     gtk_popover_set_pointing_to(GTK_POPOVER(slash_popover_), &rect);
@@ -5509,10 +5281,6 @@ void MainWindow::hide_slash_popup_()
     if (slash_popover_)
     {
         gtk_popover_popdown(GTK_POPOVER(slash_popover_));
-    }
-    if (room_text_area_)
-    {
-        room_text_area_->set_on_popup_nav(nullptr);
     }
 }
 
@@ -5542,10 +5310,6 @@ void MainWindow::show_gif_popup_()
     GdkRectangle rect{int(cb.x), int(cb.y), int(cb.w), int(cb.h)};
     gtk_popover_set_pointing_to(GTK_POPOVER(gif_popover_), &rect);
     gtk_popover_popup(GTK_POPOVER(gif_popover_));
-
-    room_text_area_->set_on_popup_nav(
-        [this](tk::NativeTextArea::NavKey nk) -> bool
-        { return gif_controller_ && gif_controller_->on_nav(nk); });
 }
 
 void MainWindow::hide_gif_popup_()
@@ -5553,10 +5317,6 @@ void MainWindow::hide_gif_popup_()
     if (gif_popover_)
     {
         gtk_popover_popdown(GTK_POPOVER(gif_popover_));
-    }
-    if (room_text_area_)
-    {
-        room_text_area_->set_on_popup_nav(nullptr);
     }
 }
 
@@ -5589,158 +5349,15 @@ void MainWindow::handle_gif_search_failed_ui_(std::uint64_t request_id,
 
 // ── @mention popup ─────────────────────────────────────────────────────────
 
-bool MainWindow::handle_mention_on_changed_(const std::string& s, int cursor)
+void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
 {
-    auto m = mention_engine_.find_prefix(s, cursor);
-    if (!m)
+    if (!mention_popover_ || !mention_popup_surface_)
     {
-        return false;
+        return;
     }
-    // Member list must be fetched off the UI thread (get_room_members blocks).
-    // When the cache is stale, kick off an async fetch and re-run once it lands
-    // — the popup appears on the next tick rather than stalling input.
-    if (cached_members_room_ != current_room_id_)
-    {
-        if (members_fetching_room_ != current_room_id_ && client_)
-        {
-            members_fetching_room_ = current_room_id_;
-            auto* c = client_;
-            std::string rid = current_room_id_;
-            run_async_(
-                [this, c, rid]
-                {
-                    auto members = c->get_room_members(rid);
-                    post_to_ui_(
-                        [this, rid, members = std::move(members)]() mutable
-                        {
-                            cached_room_members_ = std::move(members);
-                            cached_members_room_ = rid;
-                            members_fetching_room_.clear();
-                            if (room_text_area_)
-                            {
-                                handle_mention_on_changed_(
-                                    room_text_area_->text(),
-                                    room_text_area_->cursor_byte_pos());
-                            }
-                        });
-                });
-        }
-        return false;
-    }
-    mention_current_candidates_ =
-        mention_engine_.lookup(m->prefix, cached_room_members_, 8, true);
-    if (mention_current_candidates_.empty())
-    {
-        return false;
-    }
-    mention_active_match_ = *m;
-    hide_shortcode_popup_(); // clears popup_nav_ — must reinstall below
-    show_mention_popup_(mention_current_candidates_,
-                        room_text_area_->cursor_rect());
-    // Reinstall every time: hide_shortcode_popup_() above (and a prior
-    // keystroke) clear popup_nav_, so a conditional install would leave nav
-    // dead after the first character following the popup appearing.
-    {
-        room_text_area_->set_on_popup_nav(
-            [this](tk::NativeTextArea::NavKey nk) -> bool
-            {
-                if (!mention_popup_visible_())
-                {
-                    return false;
-                }
-                int cur = mention_popup_widget_->selected_index();
-                int n = mention_popup_widget_->visible_rows();
-                if (n <= 0)
-                {
-                    return true;
-                }
-                int next = cur;
-                switch (nk)
-                {
-                case tk::NativeTextArea::NavKey::Up:
-                    next = std::max(0, cur - 1);
-                    break;
-                case tk::NativeTextArea::NavKey::Down:
-                    next = std::min(n - 1, cur + 1);
-                    break;
-                case tk::NativeTextArea::NavKey::Tab:
-                {
-                    int sel = mention_popup_widget_->selected_index();
-                    if (sel >= 0 &&
-                        sel < (int)mention_current_candidates_.size())
-                    {
-                        accept_mention_(mention_current_candidates_[sel]);
-                    }
-                    else
-                    {
-                        hide_mention_popup_();
-                    }
-                    return true;
-                }
-                case tk::NativeTextArea::NavKey::ShiftTab:
-                    return false;
-                case tk::NativeTextArea::NavKey::Escape:
-                    hide_mention_popup_();
-                    return true;
-                default:
-                    // Left/Right: let the caret move.
-                    return false;
-                }
-                mention_popup_widget_->set_selected_index(next);
-                mention_popup_surface_->host().request_repaint();
-                return true;
-            });
-    }
-    return true;
-}
-
-void MainWindow::accept_mention_(const tesseract::views::MentionCandidate& c)
-{
-    if (room_text_area_)
-    {
-        room_text_area_->insert_mention(mention_active_match_.start,
-                                        mention_active_match_.end, c.user_id,
-                                        c.display_name, c.is_room);
-    }
-    hide_mention_popup_();
-}
-
-void MainWindow::show_mention_popup_(
-    const std::vector<tesseract::views::MentionCandidate>& candidates,
-    tk::Rect cursor_local)
-{
-    if (!mention_popover_)
-    {
-        mention_popover_ = gtk_popover_new();
-        gtk_widget_set_parent(mention_popover_, main_app_surface_->widget());
-        gtk_popover_set_position(GTK_POPOVER(mention_popover_), GTK_POS_TOP);
-        gtk_popover_set_has_arrow(GTK_POPOVER(mention_popover_), FALSE);
-        // Non-autohide so the composer keeps the keyboard (see shortcode popup).
-        gtk_popover_set_autohide(GTK_POPOVER(mention_popover_), FALSE);
-
-        mention_popup_surface_ =
-            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
-
-        auto popup_widget = std::make_unique<tesseract::views::MentionPopup>();
-        mention_popup_widget_ = popup_widget.get();
-        mention_popup_surface_->set_root(std::move(popup_widget));
-
-        mention_popup_widget_->on_accepted =
-            [this](tesseract::views::MentionCandidate c) { accept_mention_(c); };
-        mention_popup_widget_->on_dismissed = [this] { hide_mention_popup_(); };
-
-        GtkWidget* surface_widget = mention_popup_surface_->widget();
-        gtk_popover_set_child(GTK_POPOVER(mention_popover_), surface_widget);
-    }
-
-    mention_popup_widget_->set_candidates(candidates);
-
-    int rows = std::min((int)candidates.size(),
-                        (int)tesseract::views::MentionPopup::kMaxRows);
     int w = int(tesseract::views::MentionPopup::kWidth);
     int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
     gtk_widget_set_size_request(mention_popup_surface_->widget(), w, h);
-
     GdkRectangle rect{int(cursor_local.x), int(cursor_local.y),
                       int(cursor_local.w), int(cursor_local.h)};
     gtk_popover_set_pointing_to(GTK_POPOVER(mention_popover_), &rect);
@@ -5752,10 +5369,6 @@ void MainWindow::hide_mention_popup_()
     if (mention_popover_)
     {
         gtk_popover_popdown(GTK_POPOVER(mention_popover_));
-    }
-    if (room_text_area_)
-    {
-        room_text_area_->set_on_popup_nav(nullptr);
     }
 }
 

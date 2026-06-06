@@ -25,13 +25,14 @@
 #include "LinuxUpConnectorQt.h"
 #include "LinuxQtTrayIcon.h"
 #include "views/AccountPicker.h"
+#include "views/ComposePopups.h"
 #include "views/format.h"
 #include "views/MainAppWidget.h"
-#include "views/ShortcodeEngine.h"
-#include "views/ShortcodePopup.h"
-#include "views/MentionEngine.h"
+#include "views/MentionController.h"
 #include "views/MentionPopup.h"
-#include "views/SlashCommandEngine.h"
+#include "views/ShortcodeController.h"
+#include "views/ShortcodePopup.h"
+#include "views/SlashCommandController.h"
 #include "views/SlashCommandPopup.h"
 #include "views/GifController.h"
 #include "views/GifPopup.h"
@@ -406,15 +407,13 @@ private:
     QTimer* presence_tick_timer_ = nullptr;
 
     // ── Slash-command popup ──────────────────────────────────────────────────
-    tesseract::views::SlashCommandEngine  slash_engine_;
-
     QWidget*                              slash_popup_frame_   = nullptr;
     std::unique_ptr<tk::qt6::Surface>     slash_popup_surface_ = nullptr;
     tesseract::views::SlashCommandPopup*  slash_popup_widget_  = nullptr;
+    std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
-    void show_slash_popup_(
-        const std::vector<tesseract::views::SlashCommandSuggestion>& items,
-        tk::Rect cursor_local);
+    // Position the (already-populated) popup at the caret, sized for `rows`.
+    void show_slash_popup_(tk::Rect cursor_local, int rows);
     void hide_slash_popup_();
     bool slash_popup_visible_() const
     {
@@ -452,18 +451,12 @@ private:
                                       std::string message) override;
 
     // ── Shortcode popup ──────────────────────────────────────────────────────
-    tesseract::views::ShortcodeEngine shortcode_engine_;
-    tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::views::ShortcodeSuggestion>
-        shortcode_current_suggestions_;
-
     QWidget* shortcode_popup_frame_ = nullptr;
     std::unique_ptr<tk::qt6::Surface> shortcode_popup_surface_ = nullptr;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
-    void show_shortcode_popup_(
-        const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
-        tk::Rect cursor_rect);
+    void show_shortcode_popup_(tk::Rect cursor_local, int rows);
     void hide_shortcode_popup_();
     bool shortcode_popup_visible_() const
     {
@@ -471,27 +464,23 @@ private:
     }
 
     // ── @mention popup ───────────────────────────────────────────────────────
-    tesseract::views::MentionEngine mention_engine_;
-    tesseract::views::MentionMatch mention_active_match_{};
-    std::vector<tesseract::views::MentionCandidate> mention_current_candidates_;
+    // cached_room_members_ is the room-switch member prefetch used by the
+    // received-mention-pill avatar provider; the MentionController fetches its
+    // own member list independently for autocomplete.
     std::vector<tesseract::RoomMember> cached_room_members_;
     std::string cached_members_room_;
-    std::string members_fetching_room_;
 
     QWidget* mention_popup_frame_ = nullptr;
     std::unique_ptr<tk::qt6::Surface> mention_popup_surface_ = nullptr;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 
-    void show_mention_popup_(
-        const std::vector<tesseract::views::MentionCandidate>& candidates,
-        tk::Rect cursor_rect);
+    void show_mention_popup_(tk::Rect cursor_local, int rows);
     void hide_mention_popup_();
     bool mention_popup_visible_() const
     {
         return mention_popup_frame_ && mention_popup_frame_->isVisible();
     }
-    void accept_mention_(const tesseract::views::MentionCandidate& c);
-    bool handle_mention_on_changed_(const std::string& s, int cursor);
 
     void read_portal_color_scheme_();
 

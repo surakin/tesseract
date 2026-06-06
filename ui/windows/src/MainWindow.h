@@ -33,11 +33,12 @@ using std::min;
 #include "views/MainAppWidget.h"
 #include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
-#include "views/ShortcodeEngine.h"
+#include "views/ComposePopups.h"
+#include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
-#include "views/SlashCommandEngine.h"
+#include "views/SlashCommandController.h"
 #include "views/SlashCommandPopup.h"
 #include "views/GifController.h"
 #include "views/GifPopup.h"
@@ -369,15 +370,12 @@ private:
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
 
     // ── Slash-command popup ───────────────────────────────────────────────
-    tesseract::views::SlashCommandEngine slash_engine_;
-
     HWND                                  slash_popup_hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface>   slash_popup_surface_;
     tesseract::views::SlashCommandPopup*  slash_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
 
-    void show_slash_popup_(
-        const std::vector<tesseract::views::SlashCommandSuggestion>& items,
-        tk::Rect cursor_rect);
+    void show_slash_popup_(tk::Rect cursor_local, int rows);
     void hide_slash_popup_();
     bool slash_popup_visible_() const
     {
@@ -414,18 +412,12 @@ private:
                                       std::string message) override;
 
     // ── Shortcode popup ───────────────────────────────────────────────────
-    tesseract::views::ShortcodeEngine shortcode_engine_;
-    tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::views::ShortcodeSuggestion>
-        shortcode_current_suggestions_;
-
     HWND shortcode_popup_hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> shortcode_popup_surface_;
     tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
 
-    void show_shortcode_popup_(
-        const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
-        tk::Rect cursor_rect);
+    void show_shortcode_popup_(tk::Rect cursor_local, int rows);
     void hide_shortcode_popup_();
     bool shortcode_popup_visible_() const
     {

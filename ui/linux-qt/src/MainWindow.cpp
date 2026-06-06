@@ -1205,6 +1205,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainAppSurface_->theme().palette.accent,
         mainAppSurface_->theme().palette.text_on_accent);
     roomTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
+    // All four composer popups (gif > slash > shortcode > mention) are driven
+    // through the shared ComposePopups dispatch; the controllers are created
+    // just below (slash/shortcode/mention) and in the GIF block further down.
     roomTextArea_->set_on_changed(
         [this](const std::string& s)
         {
@@ -1212,270 +1215,149 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 mainApp_->room_view()->set_current_text(s);
             }
-
-            int cursor = roomTextArea_->cursor_byte_pos();
-
-            // GIF picker: when the composer is a `/gif <query>` command, the
-            // controller debounces a search; the result strip appears later via
-            // handle_gif_results_ui_. Mutually exclusive with the other popups.
-            if (gif_controller_ && gif_controller_->on_text_changed(s))
-            {
-                if (slash_popup_visible_())     hide_slash_popup_();
-                if (shortcode_popup_visible_()) hide_shortcode_popup_();
-                if (mention_popup_visible_())   hide_mention_popup_();
-                return;
-            }
-
-            // Slash-command popup: activate when the composer starts with '/'
-            // and contains only name chars after it (no args yet).
-            {
-                auto m = slash_engine_.find_prefix(s, cursor);
-                if (m.has_value())
-                {
-                    auto items = slash_engine_.lookup(m->prefix);
-                    if (items.empty())
-                    {
-                        hide_slash_popup_();
-                    }
-                    else
-                    {
-                        // Only hide other popovers if they are actually visible —
-                        // these hide functions reset set_on_popup_nav(nullptr), and
-                        // calling them unconditionally on every text-change tick
-                        // kills the slash popup's nav handler.
-                        if (shortcode_popup_visible_()) hide_shortcode_popup_();
-                        if (mention_popup_visible_())   hide_mention_popup_();
-                        show_slash_popup_(items, roomTextArea_->cursor_rect());
-                        // Reinstall the nav handler unconditionally on every tick:
-                        // hide_*_popup_ calls above (when they did fire) wipe it,
-                        // and even when they didn't, installing unconditionally
-                        // matches what handle_mention_on_changed_ does and avoids
-                        // the "first keystroke kills nav" bug.
-                        roomTextArea_->set_on_popup_nav(
-                            [this](tk::NativeTextArea::NavKey nk) -> bool
-                            {
-                                if (!slash_popup_visible_())
-                                {
-                                    return false;
-                                }
-                                int cur =
-                                    slash_popup_widget_->selected_index();
-                                int n = slash_popup_widget_->visible_rows();
-                                if (n <= 0)
-                                {
-                                    return true;
-                                }
-                                int next = cur;
-                                switch (nk)
-                                {
-                                case tk::NativeTextArea::NavKey::Up:
-                                    next = std::max(0, cur - 1);
-                                    break;
-                                case tk::NativeTextArea::NavKey::Down:
-                                    next = std::min(n - 1, cur + 1);
-                                    break;
-                                case tk::NativeTextArea::NavKey::Tab:
-                                {
-                                    int sel =
-                                        slash_popup_widget_->selected_index();
-                                    if (sel >= 0 &&
-                                        sel < slash_popup_widget_->visible_rows() &&
-                                        slash_popup_widget_->on_accepted)
-                                    {
-                                        slash_popup_widget_->on_accepted(
-                                            slash_popup_widget_->suggestion_at(
-                                                sel));
-                                    }
-                                    else
-                                    {
-                                        hide_slash_popup_();
-                                    }
-                                    return true;
-                                }
-                                case tk::NativeTextArea::NavKey::ShiftTab:
-                                    return false;
-                                case tk::NativeTextArea::NavKey::Escape:
-                                    hide_slash_popup_();
-                                    return true;
-                                default:
-                                    // Left/Right: let the caret move.
-                                    return false;
-                                }
-                                slash_popup_widget_->set_selected_index(next);
-                                slash_popup_surface_->update();
-                                return true;
-                            });
-                    }
-                    return;
-                }
-                if (slash_popup_visible_())
-                {
-                    hide_slash_popup_();
-                }
-            }
-
-            // Auto-expand: ":smile:" + space → replace with glyph
-            auto complete = shortcode_engine_.find_complete(s, cursor);
-            if (complete)
-            {
-                auto hits = shortcode_engine_.lookup(complete->prefix,
-                                                     cached_emoticons_, 1);
-                std::string r = (!hits.empty() && !hits.front().glyph.empty())
-                                    ? hits.front().glyph
-                                    : ":" + complete->prefix + ":";
-                roomTextArea_->replace_range(complete->start, complete->end, r);
-                hide_shortcode_popup_();
-                hide_mention_popup_();
-                return;
-            }
-
-            // Popup: ":gri" → show suggestions
-            auto prefix_match = shortcode_engine_.find_prefix(s, cursor);
-            if (prefix_match && prefix_match->prefix.size() >= 2)
-            {
-                shortcode_current_suggestions_ = shortcode_engine_.lookup(
-                    prefix_match->prefix, cached_emoticons_);
-                if (!shortcode_current_suggestions_.empty())
-                {
-                    hide_mention_popup_();
-                    shortcode_active_match_ = *prefix_match;
-                    for (const auto& sugg : shortcode_current_suggestions_)
-                    {
-                        if (!sugg.emoticon.url.empty())
-                        {
-                            ensure_media_image_(sugg.emoticon.url, 28, 28);
-                        }
-                    }
-                    show_shortcode_popup_(shortcode_current_suggestions_,
-                                          roomTextArea_->cursor_rect());
-                    // Reinstall the nav handler unconditionally on every tick:
-                    // the hide_mention_popup_() call above wipes it via
-                    // set_on_popup_nav(nullptr), so guarding the install behind
-                    // "first show only" leaves nav dead after the second
-                    // keystroke (Up/Down stop working).
-                    {
-                        roomTextArea_->set_on_popup_nav(
-                            [this](tk::NativeTextArea::NavKey nk) -> bool
-                            {
-                                if (!shortcode_popup_visible_())
-                                {
-                                    return false;
-                                }
-                                int cur =
-                                    shortcode_popup_widget_->selected_index();
-                                int n = shortcode_popup_widget_->visible_rows();
-                                if (n <= 0)
-                                {
-                                    return true;
-                                }
-                                int next = cur;
-                                switch (nk)
-                                {
-                                case tk::NativeTextArea::NavKey::Up:
-                                    next = std::max(0, cur - 1);
-                                    break;
-                                case tk::NativeTextArea::NavKey::Down:
-                                    next = std::min(n - 1, cur + 1);
-                                    break;
-                                case tk::NativeTextArea::NavKey::Tab:
-                                {
-                                    int sel = shortcode_popup_widget_
-                                                  ->selected_index();
-                                    if (sel >= 0 &&
-                                        sel <
-                                            (int)shortcode_current_suggestions_
-                                                .size())
-                                    {
-                                        auto& s =
-                                            shortcode_current_suggestions_[sel];
-                                        std::string r =
-                                            s.glyph.empty()
-                                                ? ":" + s.shortcode + ":"
-                                                : s.glyph;
-                                        roomTextArea_->replace_range(
-                                            shortcode_active_match_.start,
-                                            shortcode_active_match_.end, r);
-                                    }
-                                    hide_shortcode_popup_();
-                                    return true;
-                                }
-                                case tk::NativeTextArea::NavKey::ShiftTab:
-                                    return false;
-                                case tk::NativeTextArea::NavKey::Escape:
-                                    hide_shortcode_popup_();
-                                    return true;
-                                default:
-                                    // Left/Right: let the caret move.
-                                    return false;
-                                }
-                                shortcode_popup_widget_->set_selected_index(
-                                    next);
-                                shortcode_popup_surface_->update();
-                                return true;
-                            });
-                    }
-                    return;
-                }
-            }
-            // @mention popup
-            if (handle_mention_on_changed_(s, cursor))
-            {
-                return;
-            }
-            hide_shortcode_popup_();
-            hide_mention_popup_();
+            tesseract::views::dispatch_compose_text_changed(
+                s, roomTextArea_->cursor_byte_pos(), gif_controller_.get(),
+                slash_controller_.get(), shortcode_controller_.get(),
+                mention_controller_.get());
         });
     roomTextArea_->set_on_submit(
         [this]
         {
-            // GIF strip: Enter sends the highlighted GIF (consumes the submit).
-            if (gif_controller_ && gif_controller_->on_submit())
+            if (tesseract::views::dispatch_compose_submit(
+                    gif_controller_.get(), slash_controller_.get(),
+                    shortcode_controller_.get(), mention_controller_.get()))
             {
                 return;
             }
-            if (slash_popup_visible_())
-            {
-                int sel = slash_popup_widget_->selected_index();
-                if (sel >= 0 && sel < slash_popup_widget_->visible_rows() &&
-                    slash_popup_widget_->on_accepted)
-                {
-                    slash_popup_widget_->on_accepted(
-                        slash_popup_widget_->suggestion_at(sel));
-                    return;
-                }
-                hide_slash_popup_();
-            }
-            if (mention_popup_visible_())
-            {
-                int sel = mention_popup_widget_->selected_index();
-                if (sel >= 0 &&
-                    sel < (int)mention_current_candidates_.size())
-                {
-                    accept_mention_(mention_current_candidates_[sel]);
-                    return;
-                }
-                hide_mention_popup_();
-            }
-            if (shortcode_popup_visible_())
-            {
-                int sel = shortcode_popup_widget_->selected_index();
-                if (sel >= 0 &&
-                    sel < (int)shortcode_current_suggestions_.size())
-                {
-                    auto& s = shortcode_current_suggestions_[sel];
-                    std::string r =
-                        s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
-                    roomTextArea_->replace_range(shortcode_active_match_.start,
-                                                 shortcode_active_match_.end,
-                                                 r);
-                    hide_shortcode_popup_();
-                    return;
-                }
-                // Nothing selected — dismiss popup and send the message
-                hide_shortcode_popup_();
-            }
             onSendClicked();
         });
+    roomTextArea_->set_on_popup_nav(
+        [this](tk::NativeTextArea::NavKey nk) -> bool
+        {
+            return tesseract::views::dispatch_compose_nav(
+                nk, gif_controller_.get(), slash_controller_.get(),
+                shortcode_controller_.get(), mention_controller_.get());
+        });
+
+    // ── /command autocomplete popup ───────────────────────────────────────
+    slash_popup_frame_ = new QWidget(this);
+    slash_popup_frame_->setFocusPolicy(Qt::NoFocus);
+    slash_popup_surface_ = std::make_unique<tk::qt6::Surface>(
+        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
+        slash_popup_frame_, /*transparent=*/false);
+    slash_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    {
+        auto w = std::make_unique<tesseract::views::SlashCommandPopup>();
+        slash_popup_widget_ = w.get();
+        slash_popup_surface_->set_root(std::move(w));
+        auto* lay = new QVBoxLayout(slash_popup_frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(slash_popup_surface_.get());
+    }
+    slash_popup_frame_->hide();
+    {
+        tesseract::views::SlashCommandController::Hooks sh;
+        sh.show = [this](tk::Rect cursor, int rows)
+        { show_slash_popup_(cursor, rows); };
+        sh.hide = [this] { hide_slash_popup_(); };
+        sh.repaint = [this]
+        {
+            if (slash_popup_surface_)
+                slash_popup_surface_->update();
+        };
+        sh.room_id = [this] { return current_room_id_; };
+        sh.client = [this]() -> tesseract::Client* { return client_; };
+        sh.clear_composer = [this]
+        {
+            if (mainApp_)
+                mainApp_->room_view()->clear_compose_text();
+        };
+        slash_controller_ =
+            std::make_unique<tesseract::views::SlashCommandController>(
+                roomTextArea_.get(), slash_popup_widget_, std::move(sh));
+    }
+
+    // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────────
+    shortcode_popup_frame_ = new QWidget(this);
+    shortcode_popup_frame_->setFocusPolicy(Qt::NoFocus);
+    shortcode_popup_surface_ = std::make_unique<tk::qt6::Surface>(
+        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
+        shortcode_popup_frame_, /*transparent=*/false);
+    shortcode_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    {
+        auto w = std::make_unique<tesseract::views::ShortcodePopup>();
+        shortcode_popup_widget_ = w.get();
+        shortcode_popup_widget_->set_image_provider(
+            make_static_image_provider_());
+        shortcode_popup_surface_->set_root(std::move(w));
+        auto* lay = new QVBoxLayout(shortcode_popup_frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(shortcode_popup_surface_.get());
+    }
+    shortcode_popup_frame_->hide();
+    {
+        tesseract::views::ShortcodeController::Hooks sh;
+        sh.show = [this](tk::Rect cursor, int rows)
+        { show_shortcode_popup_(cursor, rows); };
+        sh.hide = [this] { hide_shortcode_popup_(); };
+        sh.repaint = [this]
+        {
+            if (shortcode_popup_surface_)
+                shortcode_popup_surface_->update();
+        };
+        sh.emoticons = [this]() -> const std::vector<tesseract::ImagePackImage>&
+        { return cached_emoticons_; };
+        sh.fetch_image = [this](const std::string& url)
+        { ensure_media_image_(url, 28, 28); };
+        shortcode_controller_ =
+            std::make_unique<tesseract::views::ShortcodeController>(
+                roomTextArea_.get(), shortcode_popup_widget_, std::move(sh));
+    }
+
+    // ── @mention autocomplete popup ───────────────────────────────────────
+    mention_popup_frame_ = new QWidget(this);
+    mention_popup_frame_->setFocusPolicy(Qt::NoFocus);
+    mention_popup_surface_ = std::make_unique<tk::qt6::Surface>(
+        mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
+        mention_popup_frame_, /*transparent=*/false);
+    mention_popup_surface_->setFocusPolicy(Qt::NoFocus);
+    {
+        auto w = std::make_unique<tesseract::views::MentionPopup>();
+        mention_popup_widget_ = w.get();
+        mention_popup_widget_->set_image_provider(
+            make_avatar_image_provider_());
+        mention_popup_surface_->set_root(std::move(w));
+        auto* lay = new QVBoxLayout(mention_popup_frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(mention_popup_surface_.get());
+    }
+    mention_popup_frame_->hide();
+    {
+        tesseract::views::MentionController::Hooks mh;
+        mh.show = [this](tk::Rect cursor, int rows)
+        { show_mention_popup_(cursor, rows); };
+        mh.hide = [this] { hide_mention_popup_(); };
+        mh.repaint = [this]
+        {
+            if (mention_popup_surface_)
+                mention_popup_surface_->update();
+        };
+        mh.room_id = [this] { return current_room_id_; };
+        mh.client = [this]() -> tesseract::Client* { return client_; };
+        mh.fetch_avatar = [this](const std::string& mxc)
+        { ensure_user_avatar_(mxc); };
+        mh.run_async = [this](std::function<void()> fn)
+        { run_async_(std::move(fn)); };
+        mh.post_to_ui = [this](std::function<void()> fn)
+        { post_to_ui_(std::move(fn)); };
+        mention_controller_ =
+            std::make_unique<tesseract::views::MentionController>(
+                roomTextArea_.get(), client_, mention_popup_widget_,
+                std::move(mh));
+    }
 
     // ── GIF picker (/gif <query>) ────────────────────────────────────────────
     // Eagerly create the strip + controller so the on_changed/on_submit lambdas
@@ -2978,9 +2860,14 @@ void MainWindow::onRoomSelected(const std::string& room_id)
         }
     }
 
-    hide_slash_popup_();
-    hide_shortcode_popup_();
-    hide_mention_popup_();
+    // Route through the controllers so their visible_ state stays in sync with
+    // the hidden frames.
+    if (slash_controller_)
+        slash_controller_->hide();
+    if (shortcode_controller_)
+        shortcode_controller_->hide();
+    if (mention_controller_)
+        mention_controller_->hide();
     handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id &&
         room_subscription_refs_.count(current_room_id_) == 0)
@@ -4315,7 +4202,8 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
         if (!slash_popup_frame_->rect().contains(
                 slash_popup_frame_->mapFromGlobal(global)))
         {
-            hide_slash_popup_();
+            if (slash_controller_)
+                slash_controller_->hide();
         }
     }
     if (shortcode_popup_visible_() && event->type() == QEvent::MouseButtonPress)
@@ -4331,7 +4219,8 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
         if (!shortcode_popup_frame_->rect().contains(
                 shortcode_popup_frame_->mapFromGlobal(global)))
         {
-            hide_shortcode_popup_();
+            if (shortcode_controller_)
+                shortcode_controller_->hide();
         }
     }
     if (mention_popup_visible_() && event->type() == QEvent::MouseButtonPress)
@@ -4341,7 +4230,8 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
         if (!mention_popup_frame_->rect().contains(
                 mention_popup_frame_->mapFromGlobal(global)))
         {
-            hide_mention_popup_();
+            if (mention_controller_)
+                mention_controller_->hide();
         }
     }
     return QMainWindow::eventFilter(obj, event);
@@ -5224,80 +5114,19 @@ void MainWindow::on_portal_setting_changed_(const QString& ns,
 
 // ── Slash-command popup ─────────────────────────────────────────────────────
 
-void MainWindow::show_slash_popup_(
-    const std::vector<tesseract::views::SlashCommandSuggestion>& items,
-    tk::Rect cursor_local)
+void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!slash_popup_frame_)
+    // The widget + controller are created eagerly in the constructor; the
+    // controller has already set the suggestions. This positions the popup at
+    // the caret, clamped to the window, and installs the outside-click filter.
+    if (!slash_popup_frame_ || !slash_popup_surface_ || !mainAppSurface_)
     {
-        // Regular child widget — no separate window, so focus never leaves
-        // the compose text area regardless of window manager behaviour.
-        slash_popup_frame_ = new QWidget(this);
-        slash_popup_frame_->setFocusPolicy(Qt::NoFocus);
-
-        slash_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-            mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
-            slash_popup_frame_,
-            /*transparent=*/false);
-        slash_popup_surface_->setFocusPolicy(Qt::NoFocus);
-
-        auto widget = std::make_unique<tesseract::views::SlashCommandPopup>();
-        slash_popup_widget_ = widget.get();
-        slash_popup_surface_->set_root(std::move(widget));
-
-        slash_popup_widget_->on_accepted =
-            [this](tesseract::views::SlashCommandSuggestion s)
-        {
-            hide_slash_popup_();
-            if (!roomTextArea_) return;
-            if (!client_ || current_room_id_.empty())
-            {
-                // Account torn down while the popup was open — nothing to send.
-                return;
-            }
-            if (s.args_hint.empty())
-            {
-                // No args — send immediately.
-                std::string body = "/" + s.name;
-                (void)tesseract::dispatch_compose_send(
-                    *client_, current_room_id_, body, std::string{});
-                roomTextArea_->set_text("");
-                mainApp_->room_view()->clear_compose_text();
-            }
-            else
-            {
-                // Needs args — autocomplete to `/name ` and leave the
-                // composer open for the user to type arguments. Use
-                // replace_range (not set_text) so the caret lands after the
-                // trailing space and the shared composer state stays in sync.
-                std::string body = "/" + s.name + " ";
-                roomTextArea_->replace_range(
-                    0, static_cast<int>(roomTextArea_->text().size()), body);
-            }
-        };
-        slash_popup_widget_->on_dismissed = [this]
-        {
-            hide_slash_popup_();
-        };
-
-        auto* lay = new QVBoxLayout(slash_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(slash_popup_surface_.get());
+        return;
     }
-
-    slash_popup_widget_->set_suggestions(items);
-    slash_popup_widget_->set_selected_index(0);
-
-    int rows = std::min((int)items.size(),
-                        (int)tesseract::views::SlashCommandPopup::kMaxRows);
     int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
     int w = int(tesseract::views::SlashCommandPopup::kWidth);
-
-    // Map cursor rect from surface-local into main-window coordinates.
     QPoint parent_cursor = mainAppSurface_->mapTo(
         this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-
     QRect work = rect(); // main window bounds — popup is clipped to this
     int x = parent_cursor.x();
     int y_above = parent_cursor.y() - h - 4;
@@ -5305,7 +5134,6 @@ void MainWindow::show_slash_popup_(
     int y = (y_above >= work.top()) ? y_above : y_below;
     x = std::clamp(x, work.left(), work.right() - w);
     y = std::clamp(y, work.top(), work.bottom() - h);
-
     const bool was_hidden = !slash_popup_frame_->isVisible();
     slash_popup_frame_->setGeometry(x, y, w, h);
     slash_popup_surface_->resize(w, h);
@@ -5324,10 +5152,6 @@ void MainWindow::hide_slash_popup_()
     if (slash_popup_frame_)
     {
         slash_popup_frame_->hide();
-    }
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_on_popup_nav(nullptr);
     }
 }
 
@@ -5360,11 +5184,6 @@ void MainWindow::show_gif_popup_()
     gif_popup_frame_->show();
     gif_popup_frame_->raise();
     gif_popup_surface_->relayout();
-
-    // Route ↑/↓/Tab/Esc to the controller while the strip is open.
-    roomTextArea_->set_on_popup_nav(
-        [this](tk::NativeTextArea::NavKey nk) -> bool
-        { return gif_controller_ && gif_controller_->on_nav(nk); });
 }
 
 void MainWindow::hide_gif_popup_()
@@ -5372,10 +5191,6 @@ void MainWindow::hide_gif_popup_()
     if (gif_popup_frame_)
     {
         gif_popup_frame_->hide();
-    }
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_on_popup_nav(nullptr);
     }
 }
 
@@ -5408,61 +5223,17 @@ void MainWindow::handle_gif_search_failed_ui_(std::uint64_t request_id,
 
 // ── Shortcode popup ─────────────────────────────────────────────────────────
 
-void MainWindow::show_shortcode_popup_(
-    const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
-    tk::Rect cursor_local)
+void MainWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
 {
-    if (!shortcode_popup_frame_)
+    if (!shortcode_popup_frame_ || !shortcode_popup_surface_ ||
+        !mainAppSurface_)
     {
-        // Regular child widget — no separate window, so focus never leaves
-        // the compose text area regardless of window manager behaviour.
-        shortcode_popup_frame_ = new QWidget(this);
-        shortcode_popup_frame_->setFocusPolicy(Qt::NoFocus);
-
-        shortcode_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-            mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
-            shortcode_popup_frame_,
-            /*transparent=*/false);
-        shortcode_popup_surface_->setFocusPolicy(Qt::NoFocus);
-
-        auto widget = std::make_unique<tesseract::views::ShortcodePopup>();
-        shortcode_popup_widget_ = widget.get();
-        shortcode_popup_surface_->set_root(std::move(widget));
-
-        shortcode_popup_widget_->on_accepted =
-            [this](tesseract::views::ShortcodeSuggestion s)
-        {
-            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
-            roomTextArea_->replace_range(shortcode_active_match_.start,
-                                         shortcode_active_match_.end,
-                                         std::move(r));
-            hide_shortcode_popup_();
-        };
-        shortcode_popup_widget_->on_dismissed = [this]
-        {
-            hide_shortcode_popup_();
-        };
-        shortcode_popup_widget_->set_image_provider(
-            make_static_image_provider_());
-
-        auto* lay = new QVBoxLayout(shortcode_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(shortcode_popup_surface_.get());
+        return;
     }
-
-    shortcode_popup_widget_->set_suggestions(suggestions);
-
-    int rows = std::min((int)suggestions.size(),
-                        (int)tesseract::views::ShortcodePopup::kMaxRows);
     int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
     int w = int(tesseract::views::ShortcodePopup::kWidth);
-
-    // Map cursor rect from surface-local into main-window coordinates.
-    // The popup is a child of the main window, so we use mapTo(this, ...).
     QPoint parent_cursor = mainAppSurface_->mapTo(
         this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-
     QRect work = rect(); // main window bounds — popup is clipped to this
     int x = parent_cursor.x();
     int y_above = parent_cursor.y() - h - 4;
@@ -5470,7 +5241,6 @@ void MainWindow::show_shortcode_popup_(
     int y = (y_above >= work.top()) ? y_above : y_below;
     x = std::clamp(x, work.left(), work.right() - w);
     y = std::clamp(y, work.top(), work.bottom() - h);
-
     const bool was_hidden = !shortcode_popup_frame_->isVisible();
     shortcode_popup_frame_->setGeometry(x, y, w, h);
     shortcode_popup_surface_->resize(w, h);
@@ -5490,183 +5260,20 @@ void MainWindow::hide_shortcode_popup_()
     {
         shortcode_popup_frame_->hide();
     }
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_on_popup_nav(nullptr);
-    }
 }
 
 // ── @mention popup ─────────────────────────────────────────────────────────
 
-bool MainWindow::handle_mention_on_changed_(const std::string& s, int cursor)
+void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
 {
-    auto m = mention_engine_.find_prefix(s, cursor);
-    if (!m)
+    if (!mention_popup_frame_ || !mention_popup_surface_ || !mainAppSurface_)
     {
-        return false;
+        return;
     }
-    // Member list must be fetched off the UI thread (get_room_members blocks).
-    // When the cache is stale, kick off an async fetch and re-run once it lands
-    // — the popup appears on the next tick rather than stalling input.
-    if (cached_members_room_ != current_room_id_)
-    {
-        if (members_fetching_room_ != current_room_id_ && client_)
-        {
-            members_fetching_room_ = current_room_id_;
-            auto* c = client_;
-            std::string rid = current_room_id_;
-            run_async_(
-                [this, c, rid]
-                {
-                    auto members = c->get_room_members(rid);
-                    post_to_ui_(
-                        [this, rid, members = std::move(members)]() mutable
-                        {
-                            cached_room_members_ = std::move(members);
-                            cached_members_room_ = rid;
-                            members_fetching_room_.clear();
-                            if (roomTextArea_)
-                            {
-                                handle_mention_on_changed_(
-                                    roomTextArea_->text(),
-                                    roomTextArea_->cursor_byte_pos());
-                            }
-                        });
-                });
-        }
-        return false;
-    }
-    mention_current_candidates_ =
-        mention_engine_.lookup(m->prefix, cached_room_members_, 8, true);
-    if (mention_current_candidates_.empty())
-    {
-        return false;
-    }
-    mention_active_match_ = *m;
-    hide_shortcode_popup_(); // clears popup_nav_ — must reinstall below
-    show_mention_popup_(mention_current_candidates_,
-                        roomTextArea_->cursor_rect());
-    // Reinstall every time: hide_shortcode_popup_() above (and a prior
-    // keystroke) clear popup_nav_, so a conditional install would leave nav
-    // dead after the first character following the popup appearing.
-    {
-        roomTextArea_->set_on_popup_nav(
-            [this](tk::NativeTextArea::NavKey nk) -> bool
-            {
-                if (!mention_popup_visible_())
-                {
-                    return false;
-                }
-                int cur = mention_popup_widget_->selected_index();
-                int n = mention_popup_widget_->visible_rows();
-                if (n <= 0)
-                {
-                    return true;
-                }
-                int next = cur;
-                switch (nk)
-                {
-                case tk::NativeTextArea::NavKey::Up:
-                    next = std::max(0, cur - 1);
-                    break;
-                case tk::NativeTextArea::NavKey::Down:
-                    next = std::min(n - 1, cur + 1);
-                    break;
-                case tk::NativeTextArea::NavKey::Tab:
-                {
-                    int sel = mention_popup_widget_->selected_index();
-                    if (sel >= 0 &&
-                        sel < (int)mention_current_candidates_.size())
-                    {
-                        accept_mention_(mention_current_candidates_[sel]);
-                    }
-                    else
-                    {
-                        hide_mention_popup_();
-                    }
-                    return true;
-                }
-                case tk::NativeTextArea::NavKey::ShiftTab:
-                    return false;
-                case tk::NativeTextArea::NavKey::Escape:
-                    hide_mention_popup_();
-                    return true;
-                default:
-                    // Left/Right: let the caret move.
-                    return false;
-                }
-                mention_popup_widget_->set_selected_index(next);
-                mention_popup_surface_->update();
-                return true;
-            });
-    }
-    return true;
-}
-
-void MainWindow::accept_mention_(const tesseract::views::MentionCandidate& c)
-{
-    if (roomTextArea_)
-    {
-        roomTextArea_->insert_mention(mention_active_match_.start,
-                                      mention_active_match_.end, c.user_id,
-                                      c.display_name, c.is_room);
-    }
-    hide_mention_popup_();
-}
-
-void MainWindow::show_mention_popup_(
-    const std::vector<tesseract::views::MentionCandidate>& candidates,
-    tk::Rect cursor_local)
-{
-    if (!mention_popup_frame_)
-    {
-        mention_popup_frame_ = new QWidget(this);
-        mention_popup_frame_->setFocusPolicy(Qt::NoFocus);
-
-        mention_popup_surface_ = std::make_unique<tk::qt6::Surface>(
-            mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
-            mention_popup_frame_,
-            /*transparent=*/false);
-        mention_popup_surface_->setFocusPolicy(Qt::NoFocus);
-
-        auto widget = std::make_unique<tesseract::views::MentionPopup>();
-        mention_popup_widget_ = widget.get();
-        mention_popup_surface_->set_root(std::move(widget));
-
-        mention_popup_widget_->on_accepted =
-            [this](tesseract::views::MentionCandidate c)
-        {
-            accept_mention_(c);
-        };
-        mention_popup_widget_->on_dismissed = [this] { hide_mention_popup_(); };
-        mention_popup_widget_->set_image_provider(
-            make_avatar_image_provider_());
-
-        auto* lay = new QVBoxLayout(mention_popup_frame_);
-        lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(0);
-        lay->addWidget(mention_popup_surface_.get());
-    }
-
-    // Kick off avatar fetches; they appear on a later repaint once decoded.
-    for (const auto& cand : candidates)
-    {
-        if (!cand.is_room && !cand.avatar_url.empty())
-        {
-            ensure_user_avatar_(cand.avatar_url);
-        }
-    }
-
-    mention_popup_widget_->set_candidates(candidates);
-
-    int rows = std::min((int)candidates.size(),
-                        (int)tesseract::views::MentionPopup::kMaxRows);
     int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
     int w = int(tesseract::views::MentionPopup::kWidth);
-
     QPoint parent_cursor = mainAppSurface_->mapTo(
         this, QPoint(int(cursor_local.x), int(cursor_local.y)));
-
     QRect work = rect();
     int x = parent_cursor.x();
     int y_above = parent_cursor.y() - h - 4;
@@ -5674,7 +5281,6 @@ void MainWindow::show_mention_popup_(
     int y = (y_above >= work.top()) ? y_above : y_below;
     x = std::clamp(x, work.left(), work.right() - w);
     y = std::clamp(y, work.top(), work.bottom() - h);
-
     const bool was_hidden = !mention_popup_frame_->isVisible();
     mention_popup_frame_->setGeometry(x, y, w, h);
     mention_popup_surface_->resize(w, h);
@@ -5697,10 +5303,6 @@ void MainWindow::hide_mention_popup_()
     if (mention_popup_frame_)
     {
         mention_popup_frame_->hide();
-    }
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_on_popup_nav(nullptr);
     }
 }
 
