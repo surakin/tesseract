@@ -3930,6 +3930,59 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+// Scroll-to-bottom pill — floats over the bottom-right corner of the
+// message list. Lives in the widget child tree so dispatch_pointer_move
+// naturally routes events to it, preventing hover from leaking to rows
+// painted beneath the pill.
+// ─────────────────────────────────────────────────────────────────────────
+
+struct ScrollPillWidget : tk::Widget
+{
+    bool pressed_ = false;
+    std::function<void()> on_clicked;
+
+    void set_bounds(tk::Rect b) { bounds_ = b; }
+
+    bool on_pointer_move(tk::Point) override { return true; }
+    bool on_pointer_down(tk::Point) override
+    {
+        pressed_ = true;
+        return true;
+    }
+    void on_pointer_up(tk::Point, bool inside) override
+    {
+        bool was = std::exchange(pressed_, false);
+        if (was && inside && on_clicked)
+            on_clicked();
+    }
+    void on_pointer_leave() override { pressed_ = false; }
+    tk::Size measure(tk::LayoutCtx&, tk::Size s) override { return s; }
+    void arrange(tk::LayoutCtx&, tk::Rect b) override { bounds_ = b; }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        constexpr float kSz = 36.0f;
+        auto bg = pressed_ ? ctx.theme.palette.subtle_pressed
+                           : ctx.theme.palette.chrome_bg;
+        ctx.canvas.fill_rounded_rect(bounds_, kSz * 0.5f, bg);
+        ctx.canvas.stroke_rounded_rect(bounds_, kSz * 0.5f,
+                                       ctx.theme.palette.border, 1.0f);
+        tk::TextStyle gs{};
+        gs.role = tk::FontRole::UiSemibold;
+        gs.wrap = false;
+        auto glyph = ctx.factory.build_text("\xE2\x86\x93", gs); // U+2193 ↓
+        if (glyph)
+        {
+            tk::Size sz = glyph->measure();
+            ctx.canvas.draw_text(*glyph,
+                                 {bounds_.x + (kSz - sz.w) * 0.5f,
+                                  bounds_.y + (kSz - sz.h) * 0.5f},
+                                 ctx.theme.palette.text_primary);
+        }
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 
 MessageListView::~MessageListView()
 {
@@ -3957,6 +4010,18 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
             on_message_clicked(messages_[idx].event_id);
         }
     };
+
+    auto pw = std::make_unique<ScrollPillWidget>();
+    scroll_pill_ = pw.get();
+    scroll_pill_->set_visible(false);
+    scroll_pill_->on_clicked = [this]
+    {
+        if (historical_mode_ && on_return_to_live)
+            on_return_to_live();
+        else
+            scroll_to_bottom();
+    };
+    add_child(std::move(pw));
 }
 
 std::optional<MessageListView::StickerHit>
@@ -5590,6 +5655,22 @@ bool MessageListView::on_pointer_move(tk::Point local)
     return true;
 }
 
+tk::Widget* MessageListView::dispatch_pointer_move(tk::Point world, bool* dirty)
+{
+    tk::Widget* result = tk::Widget::dispatch_pointer_move(world, dirty);
+    // If a child widget (the pill) absorbed the event, ListView::on_pointer_move
+    // was skipped — hovered_index_ retains its old value. Clear it so no row
+    // shows the action bar while the mouse is inside the pill.
+    if (result && result != this && hovered_row_index() >= 0)
+    {
+        clear_hover_();
+        reset_hovered_row_geom_();
+        if (dirty)
+            *dirty = true;
+    }
+    return result;
+}
+
 void MessageListView::on_pointer_leave()
 {
     if (gate_blocks_input_())
@@ -5605,7 +5686,6 @@ void MessageListView::on_pointer_leave()
     hovered_row_geom_.abort_button = tk::Rect{};
     hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
-    press_pill_ = false;
     if (map_tooltip_showing_)
     {
         map_tooltip_showing_ = false;
@@ -5735,16 +5815,6 @@ bool MessageListView::on_pointer_down(tk::Point local)
         sel_is_dragging_ = false;
         if (request_repaint_)
             request_repaint_();
-    }
-
-    if (pill_visible_)
-    {
-        tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        if (rect_contains(pill_rect_, world))
-        {
-            press_pill_ = true;
-            return true;
-        }
     }
 
     // Thread-preview chip hit: fires on_thread_preview_clicked(root_event_id)
@@ -6273,27 +6343,6 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         if (inside_self && on_sender_clicked)
         {
             on_sender_clicked(std::move(uid), std::move(name), std::move(aurl));
-        }
-        return;
-    }
-    if (press_pill_)
-    {
-        bool fire = inside_self;
-        press_pill_ = false;
-        if (fire)
-        {
-            tk::Point world{local.x + bounds().x, local.y + bounds().y};
-            if (rect_contains(pill_rect_, world))
-            {
-                if (historical_mode_ && on_return_to_live)
-                {
-                    on_return_to_live();
-                }
-                else
-                {
-                    scroll_to_bottom();
-                }
-            }
         }
         return;
     }
@@ -6938,29 +6987,14 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     // before the chip tooltip so the tooltip (rare, hover-only) wins on
     // any geometric overlap. Click handling lives in on_pointer_*.
     pill_visible_ = should_show_pill();
+    scroll_pill_->set_visible(pill_visible_);
     if (pill_visible_)
     {
         constexpr float kSz = 36.0f, kInsetR = 12.0f, kInsetB = 16.0f;
         tk::Rect v = bounds();
-        pill_rect_ = {v.x + v.w - kSz - kInsetR, v.y + v.h - kSz - kInsetB, kSz,
-                      kSz};
-        auto bg = press_pill_ ? ctx.theme.palette.subtle_pressed
-                              : ctx.theme.palette.chrome_bg;
-        ctx.canvas.fill_rounded_rect(pill_rect_, kSz * 0.5f, bg);
-        ctx.canvas.stroke_rounded_rect(pill_rect_, kSz * 0.5f,
-                                       ctx.theme.palette.border, 1.0f);
-        tk::TextStyle gs{};
-        gs.role = tk::FontRole::UiSemibold;
-        gs.wrap = false;
-        auto glyph = ctx.factory.build_text("\xE2\x86\x93", gs); // U+2193 ↓
-        if (glyph)
-        {
-            tk::Size sz = glyph->measure();
-            ctx.canvas.draw_text(*glyph,
-                                 {pill_rect_.x + (kSz - sz.w) * 0.5f,
-                                  pill_rect_.y + (kSz - sz.h) * 0.5f},
-                                 ctx.theme.palette.text_primary);
-        }
+        pill_rect_ = {v.x + v.w - kSz - kInsetR, v.y + v.h - kSz - kInsetB, kSz, kSz};
+        scroll_pill_->set_bounds(pill_rect_);
+        scroll_pill_->paint(ctx);
     }
     else
     {

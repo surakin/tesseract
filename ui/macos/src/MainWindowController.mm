@@ -7244,12 +7244,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
 
-    // Build an NSDatePicker in graphical calendar mode.
+    // Text-field+stepper style: each component (month/day/year) is a separate
+    // clickable field — the user can click the year and type or spin it directly.
     NSDatePicker* picker =
-        [[NSDatePicker alloc] initWithFrame:NSMakeRect(0, 0, 228, 148)];
-    picker.datePickerStyle = NSDatePickerStyleClockAndCalendar;
+        [[NSDatePicker alloc] initWithFrame:NSMakeRect(0, 0, 228, 28)];
+    picker.datePickerStyle = NSDatePickerStyleTextFieldAndStepper;
     picker.datePickerElements = NSDatePickerElementFlagYearMonthDay;
     picker.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+    picker.dateValue = [NSDate date]; // default to today, not the 2001 reference epoch
 
     // Clamp selection to [1970-01-01, today].
     NSCalendar* utcCal =

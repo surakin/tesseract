@@ -341,6 +341,11 @@ protected:
         update_hover(local);
     }
 
+    void clear_hover_()
+    {
+        hovered_index_ = -1;
+    }
+
     // Returns true when `local` (widget-local coords) is over the scrollbar
     // thumb. Subclasses that override on_pointer_down should test this first
     // so the scrollbar wins over any message-content hit test underneath it.

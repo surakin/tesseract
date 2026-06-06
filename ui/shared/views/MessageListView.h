@@ -30,6 +30,8 @@
 namespace tesseract::views
 {
 
+struct ScrollPillWidget;
+
 struct MessageRowData
 {
     enum class Kind
@@ -551,6 +553,7 @@ public:
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_pointer_move(tk::Point local) override;
+    Widget* dispatch_pointer_move(tk::Point world, bool* dirty = nullptr) override;
     void on_pointer_drag(tk::Point local) override;
     void on_pointer_leave() override;
     bool on_wheel(tk::Point local, float dx, float dy) override;
@@ -935,7 +938,7 @@ private:
     // flag are mutable — same trick as hovered_row_geom_ above.
     mutable tk::Rect pill_rect_{}; // world coords
     mutable bool pill_visible_ = false;
-    bool press_pill_ = false;
+    ScrollPillWidget* scroll_pill_ = nullptr; // borrowed from child
     bool historical_mode_ = false;
 
     bool should_show_pill() const;
