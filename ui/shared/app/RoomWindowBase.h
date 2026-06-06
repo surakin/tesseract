@@ -4,6 +4,7 @@
 #include "views/RoomView.h"
 #include "tk/host.h"
 #include "tk/theme.h"
+#include <tesseract/image_pack.h>
 #include <tesseract/types.h>
 
 #include <functional>
@@ -52,6 +53,20 @@ public:
     void on_message_updated(std::size_t idx, views::MessageRowData row);
     void on_message_removed(std::size_t idx);
     void on_typing_changed(const std::string& text, bool visible);
+
+    // Fan-in for async GIF search results. ShellBase forwards every result to
+    // every open pop-out (the GIF search request_id is process-global, so only
+    // the controller that issued it matches; the rest drop it). Default no-op
+    // for subclasses without a GIF strip; the Qt/GTK/Win32 pop-outs override to
+    // forward into their GifController.
+    virtual void on_gif_results(std::uint64_t /*request_id*/,
+                                std::vector<GifResult> /*results*/)
+    {
+    }
+    virtual void on_gif_search_failed(std::uint64_t /*request_id*/,
+                                      const std::string& /*message*/)
+    {
+    }
 
     // Called by ShellBase::tick_anim_ on every animation frame so this window's
     // animated images (inline media, and any open pickers) advance even when
@@ -155,6 +170,23 @@ protected:
     const tk::Image* shell_avatar_(const std::string& mxc) const;
     const tk::Image* shell_image_(const std::string& mxc) const;
     void shell_show_status_message_(std::string msg, int auto_clear_ms = 4000);
+
+    // The shell's MSC2545 emoticon flat list (ShellBase::cached_emoticons_) —
+    // the shortcode popup's suggestion source, shared across every composer.
+    const std::vector<tesseract::ImagePackImage>& shell_emoticons_() const;
+    // Trigger an async fetch+decode of a media image (e.g. a custom emoticon
+    // thumbnail) into the shell cache so shell_image_() resolves it on a later
+    // repaint. Idempotent. Forwards to ShellBase::ensure_media_image_.
+    void shell_ensure_media_image_(const std::string& url, int w, int h);
+
+    // Render one GIF strip cell via the shell's backend-specific provider; the
+    // pop-out passes a `repaint` that refreshes its own GIF popup surface when
+    // async media lands. Forwards to ShellBase::gif_strip_image_.
+    const tk::Image* shell_gif_strip_image_(const GifResult& result,
+                                            const std::function<void()>& repaint);
+    // Source bytes the GIF strip cached on fetch — reused so a selected GIF
+    // sends without a second download. Forwards to ShellBase.
+    std::vector<std::uint8_t> shell_cached_gif_bytes_(const std::string& url);
 
     // Wire the shell-backed mention-popup hooks shared by every pop-out window:
     // a live client getter (so the controller never holds a stale snapshot), an

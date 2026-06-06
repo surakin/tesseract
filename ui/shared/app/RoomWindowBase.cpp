@@ -909,6 +909,31 @@ const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
     return shell_->thumbnail_cache_.peek(mxc);
 }
 
+const std::vector<tesseract::ImagePackImage>&
+RoomWindowBase::shell_emoticons_() const
+{
+    return shell_->cached_emoticons_;
+}
+
+void RoomWindowBase::shell_ensure_media_image_(const std::string& url, int w,
+                                               int h)
+{
+    shell_->ensure_media_image_(url, w, h);
+}
+
+const tk::Image*
+RoomWindowBase::shell_gif_strip_image_(const GifResult& result,
+                                       const std::function<void()>& repaint)
+{
+    return shell_->gif_strip_image_(result, repaint);
+}
+
+std::vector<std::uint8_t>
+RoomWindowBase::shell_cached_gif_bytes_(const std::string& url)
+{
+    return shell_->cached_gif_source_bytes_(url);
+}
+
 void RoomWindowBase::shell_show_status_message_(std::string msg,
                                                 int auto_clear_ms)
 {

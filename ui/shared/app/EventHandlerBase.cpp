@@ -188,7 +188,13 @@ void EventHandlerBase::on_gif_results(std::uint64_t request_id,
     auto r = std::make_shared<std::vector<GifResult>>(results);
     shell_->post_to_ui_(
         [shell = shell_, request_id, r]() mutable
-        { shell->handle_gif_results_ui_(request_id, std::move(*r)); });
+        {
+            // Fan out to every open pop-out first (copy), then the main window's
+            // own controller (move). request_ids are process-global, so only the
+            // composer that issued the search matches.
+            shell->dispatch_gif_to_secondary_windows_(request_id, *r);
+            shell->handle_gif_results_ui_(request_id, std::move(*r));
+        });
 }
 
 void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
@@ -196,7 +202,10 @@ void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
 {
     shell_->post_to_ui_(
         [shell = shell_, request_id, msg = message]() mutable
-        { shell->handle_gif_search_failed_ui_(request_id, std::move(msg)); });
+        {
+            shell->dispatch_gif_failed_to_secondary_windows_(request_id, msg);
+            shell->handle_gif_search_failed_ui_(request_id, std::move(msg));
+        });
 }
 
 void EventHandlerBase::on_paginate_result(std::uint64_t request_id, bool ok,

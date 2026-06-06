@@ -1500,8 +1500,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     // Strip preview provider: two-stage loading.
     // Stage 1 — preview_url (static JPEG, fast): shown immediately as fallback.
     // Stage 2 — image_url (MP4/WebP/GIF): replaces static once decoded.
-    gif_popup_widget_->set_image_provider(
-        [this](const tesseract::GifResult& result) -> const tk::Image*
+    // Two-stage GIF strip cell provider, parameterised on a `repaint` callback
+    // so the identical body serves the main window's strip and every pop-out's
+    // (each passes a repaint targeting its own popup surface, self-guarded by
+    // that window's liveness token). Stored as a member; pop-outs reach it via
+    // the gif_strip_image_() override.
+    gif_strip_provider_ =
+        [this](const tesseract::GifResult& result,
+               const std::function<void()>& repaint) -> const tk::Image*
         {
             // The strip animates strip_url (WebP/GIF, native decode), keyed in
             // anim_cache_. Serving a cached frame means animated content is on
@@ -1524,7 +1530,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 auto alive = gif_alive_;
                 auto url = result.preview_url;
                 run_async_(
-                    [this, url, alive]
+                    [this, url, alive, repaint]
                     {
                         // Disk-cache the preview too, symmetrically with the
                         // animated source below. Otherwise a GIF whose MP4 is
@@ -1542,7 +1548,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                 media_disk_cache_.store(disk_key, bytes);
                         }
                         post_to_ui_(
-                            [this, url, b = std::move(bytes), alive]() mutable
+                            [this, url, b = std::move(bytes), alive,
+                             repaint]() mutable
                             {
                                 if (!*alive)
                                     return;
@@ -1554,8 +1561,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                     b, int(CW::kCellW) * 2, int(CW::kCellH) * 2);
                                 if (d.still)
                                     gif_previews_[url] = std::move(d.still);
-                                if (gif_popup_surface_)
-                                    gif_popup_surface_->update();
+                                repaint();
                             });
                     });
             }
@@ -1568,7 +1574,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 auto anim_url = result.strip_url;
                 auto anim_mime = result.strip_mime;
                 run_async_(
-                    [this, anim_url, anim_mime, alive]
+                    [this, anim_url, anim_mime, alive, repaint]
                     {
                         // Source bytes: disk cache first, else download and
                         // persist so the send path (accept) reuses them without
@@ -1607,7 +1613,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                             }
                             post_to_ui_(
                                 [this, anim_url, imgs,
-                                 delays = std::move(delays), alive]() mutable
+                                 delays = std::move(delays), alive,
+                                 repaint]() mutable
                                 {
                                     if (!*alive)
                                         return;
@@ -1622,8 +1629,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                             !tk_anim_timer_->isActive())
                                             tk_anim_timer_->start();
                                     }
-                                    if (gif_popup_surface_)
-                                        gif_popup_surface_->update();
+                                    repaint();
                                 });
                         }
                         else
@@ -1636,7 +1642,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                                     int(CW::kCellW) * 2,
                                                     int(CW::kCellH) * 2));
                             post_to_ui_(
-                                [this, anim_url, d, alive]() mutable
+                                [this, anim_url, d, alive, repaint]() mutable
                                 {
                                     if (!*alive)
                                         return;
@@ -1656,8 +1662,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                         gif_previews_[anim_url] =
                                             std::move(d->still);
                                     }
-                                    if (gif_popup_surface_)
-                                        gif_popup_surface_->update();
+                                    repaint();
                                 });
                         }
                     });
@@ -1668,6 +1673,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 it != gif_previews_.end())
                 return it->second.get();
             return nullptr;
+        };
+    // The main window's own strip repaints its own surface.
+    gif_popup_widget_->set_image_provider(
+        [this](const tesseract::GifResult& result) -> const tk::Image*
+        {
+            return gif_strip_provider_(result,
+                                       [this]
+                                       {
+                                           if (gif_popup_surface_)
+                                               gif_popup_surface_->update();
+                                       });
         });
     {
         tesseract::views::GifController::Hooks gh;
@@ -5361,6 +5377,15 @@ void MainWindow::hide_gif_popup_()
     {
         roomTextArea_->set_on_popup_nav(nullptr);
     }
+}
+
+const tk::Image*
+MainWindow::gif_strip_image_(const tesseract::GifResult& result,
+                             const std::function<void()>& repaint)
+{
+    // Shared with every pop-out's GIF strip (RoomWindowBase::shell_gif_strip_image_
+    // → here). The pop-out passes a repaint that refreshes its own popup surface.
+    return gif_strip_provider_ ? gif_strip_provider_(result, repaint) : nullptr;
 }
 
 void MainWindow::handle_gif_results_ui_(std::uint64_t request_id,

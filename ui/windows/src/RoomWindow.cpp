@@ -3,10 +3,13 @@
 #include "TextRenderer.h"
 #include "Theme.h"
 #include "resource.h"
+#include "views/ComposePopups.h"
 
 #include "views/PopoutRoomWidget.h"
 
 #include <tesseract/client.h>
+#include <tesseract/image_pack.h>
+#include <tesseract/settings.h>
 
 #include <commctrl.h>
 
@@ -221,16 +224,19 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 send_typing_notice_(typing);
             }
             room_view_->set_current_text(s);
-            if (mention_controller_)
-            {
-                mention_controller_->on_text_changed(
-                    s, text_area_->cursor_byte_pos());
-            }
+            // Drive all composer popups through the shared priority dispatch
+            // (gif > slash > shortcode > mention).
+            tesseract::views::dispatch_compose_text_changed(
+                s, text_area_->cursor_byte_pos(), gif_controller_.get(),
+                slash_controller_.get(), shortcode_controller_.get(),
+                mention_controller_.get());
         });
     text_area_->set_on_submit(
         [this]
         {
-            if (mention_controller_ && mention_controller_->on_submit())
+            if (tesseract::views::dispatch_compose_submit(
+                    gif_controller_.get(), slash_controller_.get(),
+                    shortcode_controller_.get(), mention_controller_.get()))
             {
                 return;
             }
@@ -241,7 +247,11 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         });
     text_area_->set_on_popup_nav(
         [this](tk::NativeTextArea::NavKey nk) -> bool
-        { return mention_controller_ && mention_controller_->on_nav(nk); });
+        {
+            return tesseract::views::dispatch_compose_nav(
+                nk, gif_controller_.get(), slash_controller_.get(),
+                shortcode_controller_.get(), mention_controller_.get());
+        });
 
     // @mention popup + controller (mirrors the main window).
     {
@@ -277,6 +287,154 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             std::make_unique<tesseract::views::MentionController>(
                 text_area_.get(), shell_client_(), mention_popup_widget_,
                 std::move(hooks));
+    }
+
+    // /command + :shortcode: + /gif composer popups (mirror the main window).
+    {
+        HINSTANCE inst = reinterpret_cast<HINSTANCE>(
+            GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE));
+
+        // ── /command autocomplete popup ───────────────────────────────────
+        slash_popup_hwnd_ = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
+            int(tesseract::views::SlashCommandPopup::kWidth),
+            int(tesseract::views::SlashCommandPopup::kRowHeight), nullptr,
+            nullptr, inst, nullptr);
+        slash_popup_surface_ = std::make_unique<tk::win32::Surface>(
+            inst, slash_popup_hwnd_, surface_->theme());
+        {
+            auto pw = std::make_unique<tesseract::views::SlashCommandPopup>();
+            slash_popup_widget_ = pw.get();
+            slash_popup_surface_->set_root(std::move(pw));
+        }
+        {
+            tesseract::views::SlashCommandController::Hooks sh;
+            sh.show = [this](tk::Rect cursor, int rows)
+            { show_slash_popup_(cursor, rows); };
+            sh.hide = [this]
+            {
+                if (slash_popup_hwnd_)
+                    ShowWindow(slash_popup_hwnd_, SW_HIDE);
+            };
+            sh.repaint = [this]
+            {
+                if (slash_popup_surface_)
+                    slash_popup_surface_->host().request_repaint();
+            };
+            sh.room_id = [this] { return room_id_; };
+            sh.client = [this] { return shell_client_(); };
+            sh.clear_composer = [this]
+            {
+                if (room_view_)
+                    room_view_->clear_compose_text();
+            };
+            slash_controller_ =
+                std::make_unique<tesseract::views::SlashCommandController>(
+                    text_area_.get(), slash_popup_widget_, std::move(sh));
+        }
+
+        // ── :shortcode: emoji/emoticon autocomplete popup ─────────────────
+        shortcode_popup_hwnd_ = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
+            int(tesseract::views::ShortcodePopup::kWidth),
+            int(tesseract::views::ShortcodePopup::kRowHeight), nullptr, nullptr,
+            inst, nullptr);
+        shortcode_popup_surface_ = std::make_unique<tk::win32::Surface>(
+            inst, shortcode_popup_hwnd_, surface_->theme());
+        {
+            auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
+            shortcode_popup_widget_ = pw.get();
+            shortcode_popup_widget_->set_image_provider(
+                [this](const std::string& url) -> const tk::Image*
+                { return shell_image_(url); });
+            shortcode_popup_surface_->set_root(std::move(pw));
+        }
+        {
+            tesseract::views::ShortcodeController::Hooks sh;
+            sh.show = [this](tk::Rect cursor, int rows)
+            { show_shortcode_popup_(cursor, rows); };
+            sh.hide = [this]
+            {
+                if (shortcode_popup_hwnd_)
+                    ShowWindow(shortcode_popup_hwnd_, SW_HIDE);
+            };
+            sh.repaint = [this]
+            {
+                if (shortcode_popup_surface_)
+                    shortcode_popup_surface_->host().request_repaint();
+            };
+            sh.emoticons =
+                [this]() -> const std::vector<tesseract::ImagePackImage>&
+            { return shell_emoticons_(); };
+            sh.fetch_image = [this](const std::string& url)
+            { shell_ensure_media_image_(url, 28, 28); };
+            shortcode_controller_ =
+                std::make_unique<tesseract::views::ShortcodeController>(
+                    text_area_.get(), shortcode_popup_widget_, std::move(sh));
+        }
+
+        // ── /gif inline result strip ──────────────────────────────────────
+        gif_popup_hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                                          L"STATIC", L"", WS_POPUP, 0, 0, 10, 10,
+                                          nullptr, nullptr, inst, nullptr);
+        gif_popup_surface_ = std::make_unique<tk::win32::Surface>(
+            inst, gif_popup_hwnd_, surface_->theme());
+        {
+            auto pw = std::make_unique<tesseract::views::GifPopup>();
+            gif_popup_widget_ = pw.get();
+            // Strip cells render via the shell's shared two-stage provider. The
+            // repaint refreshes THIS pop-out's surface, self-guarded by the
+            // window's liveness token (the shell's fetch may outlive us).
+            gif_popup_widget_->set_image_provider(
+                [this](const tesseract::GifResult& result) -> const tk::Image*
+                {
+                    auto alive = alive_;
+                    return shell_gif_strip_image_(
+                        result,
+                        [this, alive]
+                        {
+                            if (*alive && gif_popup_surface_)
+                                gif_popup_surface_->host().request_repaint();
+                        });
+                });
+            gif_popup_surface_->set_root(std::move(pw));
+        }
+        {
+            tesseract::views::GifController::Hooks gh;
+            gh.show = [this] { show_gif_popup_(); };
+            gh.hide = [this] { hide_gif_popup_(); };
+            gh.repaint = [this]
+            {
+                if (gif_popup_surface_)
+                    gif_popup_surface_->host().request_repaint();
+            };
+            gh.room_id = [this] { return room_id_; };
+            gh.client = [this] { return shell_client_(); };
+            gh.run_async = [this](std::function<void()> fn)
+            { run_async_(std::move(fn)); };
+            gh.post_to_ui = [this](std::function<void()> fn)
+            { post_to_ui_(std::move(fn)); };
+            gh.post_delayed = [this](int ms, std::function<void()> fn)
+            {
+                if (surface_)
+                    surface_->host().post_delayed(ms, std::move(fn));
+            };
+            gh.api_key = []() -> std::string
+            { return tesseract::Settings::instance().gif_api_key; };
+            gh.client_key = []() -> std::string { return "tesseract"; };
+            gh.clear_composer = [this]
+            {
+                if (text_area_)
+                    text_area_->set_text("");
+                if (room_view_)
+                    room_view_->set_current_text({});
+            };
+            gh.get_cached_gif_bytes =
+                [this](const std::string& url) -> std::vector<std::uint8_t>
+            { return shell_cached_gif_bytes_(url); };
+            gif_controller_ = std::make_unique<tesseract::views::GifController>(
+                text_area_.get(), gif_popup_widget_, std::move(gh));
+        }
     }
     text_area_->set_on_height_changed(
         [this](float h)
@@ -702,6 +860,129 @@ void RoomWindow::hide_mention_popup_()
     }
 }
 
+// Shared anchored-popup placement for slash + shortcode (same as the mention
+// popup): cursor_local is already in physical pixels (cursor_rect uses
+// MapWindowPoints), so no DPI scaling here.
+static void place_anchored_popup_(HWND popup_hwnd,
+                                  tk::win32::Surface* popup_surface,
+                                  HWND anchor_hwnd, tk::Rect cursor_local, int w,
+                                  int h)
+{
+    if (!popup_hwnd || !popup_surface || !anchor_hwnd)
+    {
+        return;
+    }
+    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
+    ClientToScreen(anchor_hwnd, &pt);
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(mon, &mi);
+    int x = pt.x;
+    int y_above = pt.y - h - 4;
+    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
+    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
+    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+    SetWindowPos(popup_hwnd, HWND_TOPMOST, x, y, w, h,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    if (HWND s = popup_surface->hwnd())
+    {
+        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    popup_surface->relayout();
+}
+
+void RoomWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
+{
+    if (!slash_popup_hwnd_ || !surface_)
+    {
+        return;
+    }
+    place_anchored_popup_(
+        slash_popup_hwnd_, slash_popup_surface_.get(), surface_->hwnd(),
+        cursor_local, int(tesseract::views::SlashCommandPopup::kWidth),
+        int(rows * tesseract::views::SlashCommandPopup::kRowHeight));
+}
+
+void RoomWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
+{
+    if (!shortcode_popup_hwnd_ || !surface_)
+    {
+        return;
+    }
+    place_anchored_popup_(
+        shortcode_popup_hwnd_, shortcode_popup_surface_.get(), surface_->hwnd(),
+        cursor_local, int(tesseract::views::ShortcodePopup::kWidth),
+        int(rows * tesseract::views::ShortcodePopup::kRowHeight));
+}
+
+void RoomWindow::show_gif_popup_()
+{
+    if (!gif_popup_hwnd_ || !gif_popup_widget_ || !surface_ ||
+        !gif_popup_surface_ || !room_view_)
+    {
+        return;
+    }
+    // Full-width strip just above the compose bar. compose_bar_rect is in
+    // layout (DIP) coords, so scale to physical pixels for this window's DPI.
+    const tk::Rect cb = room_view_->compose_bar_rect();
+    const tk::Size sz = gif_popup_widget_->content_size(cb.w);
+    if (cb.w <= 0.0f || sz.h <= 0.0f)
+    {
+        hide_gif_popup_();
+        return;
+    }
+    const float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
+    const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
+    const int w = int(std::round(cb.w * scale));
+    const int h = int(std::round(sz.h * scale));
+    const int gap = int(std::round(4.f * scale));
+    POINT pt{LONG(std::round(cb.x * scale)), LONG(std::round(cb.y * scale))};
+    ClientToScreen(surface_->hwnd(), &pt);
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(mon, &mi);
+    int x = pt.x;
+    int y = pt.y - h - gap;
+    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
+    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+    SetWindowPos(gif_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    if (HWND s = gif_popup_surface_->hwnd())
+    {
+        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    gif_popup_surface_->relayout();
+}
+
+void RoomWindow::hide_gif_popup_()
+{
+    if (gif_popup_hwnd_)
+    {
+        ShowWindow(gif_popup_hwnd_, SW_HIDE);
+    }
+}
+
+void RoomWindow::on_gif_results(std::uint64_t request_id,
+                                std::vector<tesseract::GifResult> results)
+{
+    if (gif_controller_)
+    {
+        gif_controller_->on_results(request_id, std::move(results));
+    }
+}
+
+void RoomWindow::on_gif_search_failed(std::uint64_t request_id,
+                                      const std::string& message)
+{
+    if (gif_controller_)
+    {
+        gif_controller_->on_search_failed(request_id, message);
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 void RoomWindow::surface_repaint_()
@@ -729,6 +1010,13 @@ void RoomWindow::repaint_anim_frame()
         if (sticker_picker_)
             sticker_picker_->invalidate_image_cache();
         sticker_popup_->repaint();
+    }
+    // Advance the /gif strip's animated cells (frames come from the shared anim
+    // cache; the shell's tick fires this for every window).
+    if (gif_popup_hwnd_ && IsWindowVisible(gif_popup_hwnd_) &&
+        gif_popup_surface_)
+    {
+        gif_popup_surface_->host().request_repaint();
     }
 }
 

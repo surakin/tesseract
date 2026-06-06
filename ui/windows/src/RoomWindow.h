@@ -11,8 +11,14 @@
 #include "app/RoomWindowBase.h"
 #include "tk/host_win32.h"
 #include "views/EmojiPicker.h"
+#include "views/GifController.h"
+#include "views/GifPopup.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
+#include "views/ShortcodeController.h"
+#include "views/ShortcodePopup.h"
+#include "views/SlashCommandController.h"
+#include "views/SlashCommandPopup.h"
 #include "views/StickerPicker.h"
 
 #include <memory>
@@ -50,6 +56,12 @@ public:
 
 protected:
     void surface_repaint_() override;
+    // Fan-in for async GIF search results (forwarded by ShellBase to every
+    // pop-out; only the controller that issued the search matches).
+    void on_gif_results(std::uint64_t request_id,
+                        std::vector<tesseract::GifResult> results) override;
+    void on_gif_search_failed(std::uint64_t request_id,
+                              const std::string& message) override;
     tk::NativeTextArea* compose_text_area_() override
     {
         return text_area_.get();
@@ -66,6 +78,10 @@ private:
     LRESULT handle_msg_(HWND, UINT, WPARAM, LPARAM);
     void show_mention_popup_(tk::Rect cursor_rect, int rows);
     void hide_mention_popup_();
+    void show_slash_popup_(tk::Rect cursor_rect, int rows);
+    void show_shortcode_popup_(tk::Rect cursor_rect, int rows);
+    void show_gif_popup_();
+    void hide_gif_popup_();
 
     // Build the emoji + sticker pickers (lazy, on first use). The emoji picker
     // doubles as the reaction picker via pending_reaction_event_id_.
@@ -90,6 +106,21 @@ private:
     std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
     std::unique_ptr<tesseract::views::MentionController> mention_controller_;
+
+    HWND slash_popup_hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface> slash_popup_surface_;
+    tesseract::views::SlashCommandPopup* slash_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
+
+    HWND shortcode_popup_hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface> shortcode_popup_surface_;
+    tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
+
+    HWND gif_popup_hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface> gif_popup_surface_;
+    tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::GifController> gif_controller_;
 
     // Emoji / sticker pickers (own their own popup windows). The picker
     // widgets are borrowed (owned by the popup's surface). The emoji popup is

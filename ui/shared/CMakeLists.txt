@@ -102,10 +102,14 @@ set(_tk_sources
     views/SlashCommandEngine.cpp
     views/SlashCommandPopup.h
     views/SlashCommandPopup.cpp
+    views/SlashCommandController.h
+    views/SlashCommandController.cpp
     views/PopupMenu.h
     views/PopupMenu.cpp
     views/ShortcodePopup.h
     views/ShortcodePopup.cpp
+    views/ShortcodeController.h
+    views/ShortcodeController.cpp
     views/GifEngine.h
     views/GifEngine.cpp
     views/GifPopup.h
@@ -118,6 +122,7 @@ set(_tk_sources
     views/MentionPopup.cpp
     views/MentionController.h
     views/MentionController.cpp
+    views/ComposePopups.h
     views/JoinRoomView.h
     views/JoinRoomView.cpp
     views/UserProfilePanel.h

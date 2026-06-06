@@ -922,8 +922,14 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         gif_popup_surface_->set_anim_cache(&anim_cache_);
         gtk_popover_set_child(GTK_POPOVER(gif_popover_),
                               gif_popup_surface_->widget());
-        gif_popup_widget_->set_image_provider(
-            [this](const tesseract::GifResult& result) -> const tk::Image*
+        // Two-stage GIF strip cell provider, parameterised on a `repaint`
+        // callback so the identical body serves the main window's strip and
+        // every pop-out's (each passes a repaint targeting its own popup
+        // surface, self-guarded by that window's liveness token). Stored as a
+        // member; pop-outs reach it via the gif_strip_image_() override.
+        gif_strip_provider_ =
+            [this](const tesseract::GifResult& result,
+                   const std::function<void()>& repaint) -> const tk::Image*
             {
                 // The strip animates strip_url (WebP/GIF, native decode), keyed
                 // in anim_cache_. Serving a cached frame means animated content
@@ -946,7 +952,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     auto alive = gif_alive_;
                     auto url = result.preview_url;
                     run_async_(
-                        [this, url, alive]
+                        [this, url, alive, repaint]
                         {
                             // Disk-cache the preview too, symmetrically with the
                             // animated source. Otherwise a GIF whose MP4 is
@@ -963,8 +969,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                     media_disk_cache_.store(disk_key, bytes);
                             }
                             post_to_ui_(
-                                [this, url, b = std::move(bytes),
-                                 alive]() mutable
+                                [this, url, b = std::move(bytes), alive,
+                                 repaint]() mutable
                                 {
                                     if (!*alive)
                                         return;
@@ -977,9 +983,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                         int(CW::kCellH) * 2);
                                     if (d.still)
                                         gif_previews_[url] = std::move(d.still);
-                                    if (gif_popup_surface_)
-                                        gtk_widget_queue_draw(
-                                            gif_popup_surface_->widget());
+                                    repaint();
                                 });
                         });
                 }
@@ -991,7 +995,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     auto anim_url = result.strip_url;
                     auto anim_mime = result.strip_mime;
                     run_async_(
-                        [this, anim_url, anim_mime, alive]
+                        [this, anim_url, anim_mime, alive, repaint]
                         {
                             // Source bytes: disk cache first, else download and
                             // persist so the send path reuses them.
@@ -1049,8 +1053,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                 }
                                 post_to_ui_(
                                     [this, anim_url, imgs,
-                                     delays = std::move(delays),
-                                     alive]() mutable
+                                     delays = std::move(delays), alive,
+                                     repaint]() mutable
                                     {
                                         if (!*alive)
                                             return;
@@ -1063,9 +1067,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                                 g_get_monotonic_time() / 1000);
                                             start_anim_tick_if_needed_();
                                         }
-                                        if (gif_popup_surface_)
-                                            gtk_widget_queue_draw(
-                                                gif_popup_surface_->widget());
+                                        repaint();
                                     });
                             }
                             else
@@ -1077,7 +1079,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                                         int(CW::kCellW) * 2,
                                                         int(CW::kCellH) * 2));
                                 post_to_ui_(
-                                    [this, anim_url, d, alive]() mutable
+                                    [this, anim_url, d, alive, repaint]() mutable
                                     {
                                         if (!*alive)
                                             return;
@@ -1095,9 +1097,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                             gif_previews_[anim_url] =
                                                 std::move(d->still);
                                         }
-                                        if (gif_popup_surface_)
-                                            gtk_widget_queue_draw(
-                                                gif_popup_surface_->widget());
+                                        repaint();
                                     });
                             }
                         });
@@ -1108,6 +1108,19 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     it != gif_previews_.end())
                     return it->second.get();
                 return nullptr;
+            };
+        // The main window's own strip repaints its own surface.
+        gif_popup_widget_->set_image_provider(
+            [this](const tesseract::GifResult& result) -> const tk::Image*
+            {
+                return gif_strip_provider_(result,
+                                           [this]
+                                           {
+                                               if (gif_popup_surface_)
+                                                   gtk_widget_queue_draw(
+                                                       gif_popup_surface_
+                                                           ->widget());
+                                           });
             });
         {
             tesseract::views::GifController::Hooks gh;
@@ -5358,7 +5371,11 @@ void MainWindow::show_shortcode_popup_(
         gtk_widget_set_parent(shortcode_popover_, main_app_surface_->widget());
         gtk_popover_set_position(GTK_POPOVER(shortcode_popover_), GTK_POS_TOP);
         gtk_popover_set_has_arrow(GTK_POPOVER(shortcode_popover_), FALSE);
-        gtk_popover_set_autohide(GTK_POPOVER(shortcode_popover_), TRUE);
+        // autohide=FALSE: an autohide popover is modal and (on Wayland) takes
+        // an xdg_popup keyboard grab, killing composer input while it is open.
+        // Non-autohide keeps the keyboard with the composer; the popup is
+        // dismissed on text change / Escape / accept and nav is forwarded.
+        gtk_popover_set_autohide(GTK_POPOVER(shortcode_popover_), FALSE);
 
         shortcode_popup_surface_ =
             std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
@@ -5426,7 +5443,8 @@ void MainWindow::show_slash_popup_(
         gtk_widget_set_parent(slash_popover_, main_app_surface_->widget());
         gtk_popover_set_position(GTK_POPOVER(slash_popover_), GTK_POS_TOP);
         gtk_popover_set_has_arrow(GTK_POPOVER(slash_popover_), FALSE);
-        gtk_popover_set_autohide(GTK_POPOVER(slash_popover_), TRUE);
+        // Non-autohide so the composer keeps the keyboard (see shortcode popup).
+        gtk_popover_set_autohide(GTK_POPOVER(slash_popover_), FALSE);
 
         slash_popup_surface_ =
             std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
@@ -5540,6 +5558,15 @@ void MainWindow::hide_gif_popup_()
     {
         room_text_area_->set_on_popup_nav(nullptr);
     }
+}
+
+const tk::Image*
+MainWindow::gif_strip_image_(const tesseract::GifResult& result,
+                             const std::function<void()>& repaint)
+{
+    // Shared with every pop-out's GIF strip (RoomWindowBase::shell_gif_strip_image_
+    // → here). The pop-out passes a repaint that refreshes its own popup surface.
+    return gif_strip_provider_ ? gif_strip_provider_(result, repaint) : nullptr;
 }
 
 void MainWindow::handle_gif_results_ui_(std::uint64_t request_id,
@@ -5688,7 +5715,8 @@ void MainWindow::show_mention_popup_(
         gtk_widget_set_parent(mention_popover_, main_app_surface_->widget());
         gtk_popover_set_position(GTK_POPOVER(mention_popover_), GTK_POS_TOP);
         gtk_popover_set_has_arrow(GTK_POPOVER(mention_popover_), FALSE);
-        gtk_popover_set_autohide(GTK_POPOVER(mention_popover_), TRUE);
+        // Non-autohide so the composer keeps the keyboard (see shortcode popup).
+        gtk_popover_set_autohide(GTK_POPOVER(mention_popover_), FALSE);
 
         mention_popup_surface_ =
             std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());

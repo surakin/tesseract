@@ -2507,6 +2507,30 @@ void ShellBase::notify_secondary_media_ready_(const std::string& cache_key,
     }
 }
 
+void ShellBase::dispatch_gif_to_secondary_windows_(
+    std::uint64_t request_id, const std::vector<GifResult>& results)
+{
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        w->on_gif_results(request_id, results); // copy per window
+    }
+}
+
+void ShellBase::dispatch_gif_failed_to_secondary_windows_(
+    std::uint64_t request_id, const std::string& message)
+{
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        w->on_gif_search_failed(request_id, message);
+    }
+}
+
+std::vector<std::uint8_t>
+ShellBase::cached_gif_source_bytes_(const std::string& url) const
+{
+    return media_disk_cache_.load(gif_src_disk_key_(url));
+}
+
 bool ShellBase::tick_anim_()
 {
     // Stop once nothing animated is on-screen — entries linger in the cache

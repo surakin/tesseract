@@ -431,6 +431,15 @@ private:
     std::unordered_set<std::string> gif_preview_inflight_;
     std::unordered_set<std::string> gif_anim_inflight_;
     std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
+    // Two-stage GIF strip cell provider (body parameterised on a repaint
+    // callback). Shared by this window's strip and every pop-out's via the
+    // gif_strip_image_ override.
+    std::function<const tk::Image*(const tesseract::GifResult&,
+                                   const std::function<void()>&)>
+        gif_strip_provider_;
+    const tk::Image*
+    gif_strip_image_(const tesseract::GifResult& result,
+                     const std::function<void()>& repaint) override;
     void show_gif_popup_();
     void hide_gif_popup_();
     bool gif_popup_visible_() const

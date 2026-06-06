@@ -1026,6 +1026,33 @@ protected:
                                               std::string /*message*/)
     {
     }
+    // Forward an async GIF search result/failure to every open pop-out window
+    // (in addition to the main window's own handle_gif_results_ui_). request_ids
+    // are process-global, so only the pop-out whose GifController issued the
+    // search consumes it; the rest drop it. Called by EventHandlerBase on the
+    // UI thread.
+    void dispatch_gif_to_secondary_windows_(
+        std::uint64_t request_id, const std::vector<GifResult>& results);
+    void dispatch_gif_failed_to_secondary_windows_(std::uint64_t request_id,
+                                                    const std::string& message);
+
+    // Render one GIF strip cell. Each shell overrides with its backend-specific
+    // two-stage fetch/decode/animate provider; `repaint` is invoked (on the UI
+    // thread) when an async preview/animation lands so the caller's surface
+    // refreshes. Shared by the shell's own GIF strip and every pop-out's strip
+    // (a pop-out passes a repaint targeting its own popup surface). Default
+    // null = no GIF strip on this shell.
+    virtual const tk::Image*
+    gif_strip_image_(const GifResult& /*result*/,
+                     const std::function<void()>& /*repaint*/)
+    {
+        return nullptr;
+    }
+    // Source bytes the GIF strip persisted to the media disk cache on fetch,
+    // reused by a pop-out's GifController so a selected GIF sends without a
+    // second download. Forwards to media_disk_cache_ via gif_src_disk_key_.
+    std::vector<std::uint8_t>
+    cached_gif_source_bytes_(const std::string& url) const;
     // Completion for paginate_back_async / paginate_forward_async.
     void handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                                     bool reached_start, bool reached_end,
