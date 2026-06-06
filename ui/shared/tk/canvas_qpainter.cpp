@@ -1028,7 +1028,13 @@ public:
             }
             if (sp.code)
             {
-                t = QLatin1String("<code>") + t + QLatin1String("</code>");
+                // white-space:pre-wrap keeps significant whitespace — leading
+                // tabs/spaces and internal runs — that QTextDocument's HTML
+                // parser would otherwise collapse, while still wrapping long
+                // lines inside the bubble. (pre-wrap, not pre, to avoid
+                // horizontal overflow.)
+                t = QLatin1String("<code style=\"white-space:pre-wrap;\">") + t +
+                    QLatin1String("</code>");
             }
             if (sp.strikethrough)
             {
