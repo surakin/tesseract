@@ -8,50 +8,18 @@ Tesseract is a cross-platform desktop Matrix/chat client. The core networking is
 
 ## Build Commands
 
-**Prerequisites (Linux/Qt6):**
+Per-platform prerequisites, the full preset list, the `-DTESSERACT_UI=` override, and build internals (Corrosion, bundled SQLite, rustls, link strategy) live in [docs/BUILD.md](docs/BUILD.md). The day-to-day loop:
 
 ```bash
-sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake sqlite3 libsqlite3-dev golang perl
-# also requires a Rust toolchain: rustup
-# (golang + perl are build-only deps for aws-lc-sys's CMake builder.)
-# qt6-multimedia-dev powers MSC3245 voice-message playback via QMediaPlayer.
-# For GTK4 builds also install: libgtk-4-dev libgstreamer1.0-dev
-#                               libgstreamer-plugins-base1.0-dev
-# (gst-plugins-base provides the opus decoder voice messages use.)
-# (the GTK4 system tray is a pure StatusNotifierItem D-Bus implementation,
-#  so no appindicator/GTK3 package is needed.)
-```
-
-**Prerequisites (macOS / AppKit):**
-
-```bash
-brew install ninja cmake go
-xcode-select --install   # Xcode Command Line Tools
-# Rust toolchain + native macOS targets (pick the one matching the preset):
-#   rustup toolchain install stable
-#   rustup target add aarch64-apple-darwin   # Apple Silicon
-#   rustup target add x86_64-apple-darwin    # Intel
-# (go is a build-only dep for aws-lc-sys's CMake builder; perl ships with macOS.)
-```
-
-**Configure and build:**
-
-```bash
-cmake --preset linux-qt6-debug          # or windows-debug, linux-gtk-debug, linux-qt6-release
+cmake --preset linux-qt6-debug          # full preset list in docs/BUILD.md
 cmake --build build/linux-qt6-debug
 ./build/linux-qt6-debug/ui/linux-qt/tesseract
 
 # macOS (pick the preset matching your CPU):
-cmake --preset macos-appkit-arm64-debug         # or macos-appkit-x86_64-debug
+cmake --preset macos-appkit-arm64-debug
 cmake --build build/macos-appkit-arm64-debug
 open build/macos-appkit-arm64-debug/ui/macos/Tesseract.app
 ```
-
-**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-gtk-release`, `linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`, `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
-
-**Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos` (otherwise auto-detected from platform).
-
-Corrosion (CMake↔Cargo bridge) is fetched automatically via `FetchContent` — no global install needed. SQLite is compiled in-tree via matrix-sdk's `bundled-sqlite` feature; TLS uses rustls (no system OpenSSL).
 
 ## Architecture
 
@@ -95,10 +63,6 @@ ui/
 - `Client::send_message()`, `Client::list_rooms()`, `Client::room_messages()` — core messaging.
 - `IEventHandler::on_session_saved(json)` — called on token refresh; persist the JSON to resume sessions without re-login.
 
-### Link strategy
-
-The three archives (`tesseract_sdk_bridge_cxx`, `tesseract_client`, `tesseract_sdk_ffi-static`) have a circular dependency through the FFI. They are linked with `WHOLE_ARCHIVE` to guarantee all symbols are present regardless of link order.
-
 ## Running Tests
 
 ### Rust unit tests (standalone — no C++ required)
@@ -106,8 +70,6 @@ The three archives (`tesseract_sdk_bridge_cxx`, `tesseract_client`, `tesseract_s
 ```bash
 cargo test -p tesseract-sdk-ffi
 ```
-
-The cxx bridge is excluded from the test build via `#[cfg(not(test))]` so no C++ toolchain is needed.
 
 ### C++ tests via CMake / ctest
 
@@ -117,7 +79,7 @@ cmake --build build/linux-qt6-debug
 ctest --test-dir build/linux-qt6-debug --output-on-failure
 ```
 
-Catch2 is fetched automatically. Each `TEST_CASE` is registered as a separate ctest test. The `tesseract_tests` executable links the full stack (Rust SDK + bridge + client lib) with the same `WHOLE_ARCHIVE` pattern as the UI targets.
+Each Catch2 `TEST_CASE` is registered as a separate ctest test. See [docs/BUILD.md](docs/BUILD.md) for why these need no extra toolchain wiring and how the test executable links the full stack.
 
 ## Key Files
 
@@ -137,10 +99,7 @@ Catch2 is fetched automatically. Each `TEST_CASE` is registered as a separate ct
 | `ui/shared/app/ShellBase.h` | Platform-agnostic shell state + pure-virtual hooks shared by all four shells |
 | `ui/shared/app/EventHandlerBase.h` | `IEventHandler` adapter: marshals SDK callbacks → UI thread → `handle_*_ui_()` virtuals |
 | `ui/shared/app/RoomWindowBase.h` | Base for secondary (popout) room windows; each platform shell provides a concrete subclass |
-| `ui/linux-qt/src/MainWindow.h` | Qt6 shell; `EventBridge` wraps `EventHandlerBase` as a `QObject` for thread marshaling |
-| `ui/linux-gtk/src/MainWindow.h` | GTK4 shell; uses `g_idle_add` for UI-thread dispatch |
-| `ui/windows/src/MainWindow.h` | Win32 shell; uses `PostMessage` for UI-thread dispatch |
-| `ui/macos/src/MainWindowController.mm` | AppKit shell (`NSWindowController` + `NSSplitView`); uses `MacShell : ShellBase` composition |
+| `ui/{linux-qt,linux-gtk,windows}/src/MainWindow.h`, `ui/macos/src/MainWindowController.mm` | Per-platform shells (thin). Each implements `IEventHandler` and marshals to the UI thread via its native primitive — `QueuedConnection` (Qt6), `g_idle_add` (GTK4), `PostMessage` (Win32), `dispatch_async` (macOS, `MacShell : ShellBase` composition) |
 
 ## Roadmap
 
