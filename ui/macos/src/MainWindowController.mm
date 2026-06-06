@@ -27,6 +27,7 @@
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
 #include "views/media_drop.h"
+#include "views/JoinRoomView.h"
 #include "views/SettingsView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
@@ -1628,6 +1629,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Settings name field — positioned via _settingsSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _settingsNameField;
 
+    // Join Room sheet — NSWindow hosting JoinRoomView, presented as a sheet.
+    NSWindow* _joinRoomWindow;
+    std::unique_ptr<tk::macos::Surface> _joinRoomSurface;
+    tesseract::views::JoinRoomView* _joinRoomView; // borrowed from surface root
+    std::unique_ptr<tk::NativeTextField> _joinRoomAliasField;
+    uint32_t _joinRoomGen;
+
     // Borrowed sub-view aliases (set after building _mainAppSurface).
     tesseract::views::RoomListView* _roomListView;      // via _mainApp
     tesseract::views::RoomView* _roomView;              // via _mainApp
@@ -1938,6 +1946,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [s performSelector:@selector(_onRoomScrollDebounce)
                     withObject:nil
                     afterDelay:0.3];
+        };
+
+        _mainApp->room_list_view()->on_join_room_requested = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                [s _openJoinRoomSheet];
+            }
         };
 
         // VerificationBanner callbacks.
@@ -4328,6 +4345,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     s->_settingsNameField->set_rect(r);
             });
     }
+    [self _buildJoinRoomSheet];
+
     NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
     settingsView.translatesAutoresizingMaskIntoConstraints = NO;
     settingsView.hidden = YES;
@@ -5819,6 +5838,168 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [_loginView reset];
     ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = YES;
     _loginView.hidden = NO;
+}
+
+- (void)_buildJoinRoomSheet
+{
+    NSRect frame = NSMakeRect(0, 0,
+                              tesseract::views::JoinRoomView::kPreferredW,
+                              tesseract::views::JoinRoomView::kPreferredH);
+    _joinRoomWindow =
+        [[NSWindow alloc] initWithContentRect:frame
+                                    styleMask:NSWindowStyleMaskTitled |
+                                              NSWindowStyleMaskClosable
+                                      backing:NSBackingStoreBuffered
+                                        defer:NO];
+    _joinRoomWindow.title = TkTr("Join a Room");
+    _joinRoomWindow.releasedWhenClosed = NO;
+
+    _joinRoomSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+    auto jrv = std::make_unique<tesseract::views::JoinRoomView>();
+    _joinRoomView = jrv.get();
+    _joinRoomGen = 0;
+
+    __weak MainWindowController* ws = self;
+
+    _joinRoomView->set_avatar_provider(
+        [ws](const std::string& mxc) -> const tk::Image*
+        {
+            MainWindowController* s = ws;
+            if (!s)
+                return nullptr;
+            return s->_shell->thumbnail_cache_.peek(mxc);
+        });
+
+    _joinRoomView->on_lookup_requested =
+        [ws](const std::string& alias)
+    {
+        MainWindowController* s = ws;
+        if (!s || !s->_shell->client_ || alias.empty())
+            return;
+        s->_joinRoomView->set_state(
+            tesseract::views::JoinRoomView::State::Loading);
+        if (s->_joinRoomSurface)
+            s->_joinRoomSurface->relayout();
+        uint32_t gen = ++s->_joinRoomGen;
+        auto snap = s->_shell->client_;
+        s->_shell->run_async_(
+            [ws, alias, gen, snap]
+            {
+                tesseract::RoomSummary summary = snap->get_room_summary(alias);
+                MainWindowController* ctrl = ws;
+                if (!ctrl)
+                    return;
+                ctrl->_shell->post_to_ui_(
+                    [ws, summary = std::move(summary), gen]
+                    {
+                        MainWindowController* s = ws;
+                        if (!s || !s->_joinRoomView || s->_joinRoomGen != gen)
+                            return;
+                        if (summary.ok())
+                            s->_joinRoomView->set_preview(summary);
+                        else
+                            s->_joinRoomView->set_error("Room not found.");
+                        if (s->_joinRoomSurface)
+                            s->_joinRoomSurface->relayout();
+                    });
+            });
+    };
+
+    _joinRoomView->on_join_requested =
+        [ws](const std::string& room_id_or_alias)
+    {
+        MainWindowController* s = ws;
+        if (!s || !s->_shell->client_ || room_id_or_alias.empty())
+            return;
+        s->_joinRoomView->set_state(
+            tesseract::views::JoinRoomView::State::Joining);
+        if (s->_joinRoomSurface)
+            s->_joinRoomSurface->relayout();
+        uint32_t gen = ++s->_joinRoomGen;
+        auto snap = s->_shell->client_;
+        s->_shell->run_async_(
+            [ws, room_id_or_alias, gen, snap]
+            {
+                std::string canonical_id = snap->join_room(room_id_or_alias);
+                MainWindowController* ctrl = ws;
+                if (!ctrl)
+                    return;
+                ctrl->_shell->post_to_ui_(
+                    [ws, canonical_id, gen]
+                    {
+                        MainWindowController* s = ws;
+                        if (!s || !s->_joinRoomView || s->_joinRoomGen != gen)
+                            return;
+                        if (!canonical_id.empty())
+                        {
+                            if (s->_joinRoomWindow)
+                                [s.window endSheet:s->_joinRoomWindow];
+                            s->_shell->tab_navigate_room(canonical_id);
+                        }
+                        else
+                        {
+                            s->_joinRoomView->set_error("Join failed.");
+                            if (s->_joinRoomSurface)
+                                s->_joinRoomSurface->relayout();
+                        }
+                    });
+            });
+    };
+
+    _joinRoomView->on_cancel = [ws]
+    {
+        MainWindowController* s = ws;
+        if (s && s->_joinRoomWindow)
+            [s.window endSheet:s->_joinRoomWindow];
+    };
+
+    _joinRoomSurface->set_root(std::move(jrv));
+    _joinRoomSurface->set_theme(tk::Theme::light());
+
+    _joinRoomAliasField = _joinRoomSurface->host().make_text_field();
+    _joinRoomAliasField->set_placeholder("#room:server.org");
+    _joinRoomAliasField->set_on_changed(
+        [ws](const std::string& text)
+        {
+            MainWindowController* s = ws;
+            if (s && s->_joinRoomView)
+                s->_joinRoomView->set_alias_text(text);
+        });
+    _joinRoomSurface->set_on_layout(
+        [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_joinRoomView || !s->_joinRoomAliasField)
+                return;
+            s->_joinRoomAliasField->set_rect(
+                s->_joinRoomView->alias_field_rect());
+            s->_joinRoomAliasField->set_visible(
+                s->_joinRoomView->alias_field_visible());
+        });
+
+    NSView* surfaceView =
+        (__bridge NSView*)_joinRoomSurface->view_handle();
+    [_joinRoomWindow setContentView:surfaceView];
+}
+
+- (void)_openJoinRoomSheet
+{
+    if (!_joinRoomWindow)
+        return;
+    ++_joinRoomGen;
+    if (_joinRoomView)
+    {
+        _joinRoomView->set_state(tesseract::views::JoinRoomView::State::Idle);
+        _joinRoomView->set_alias_text("");
+    }
+    if (_joinRoomAliasField)
+        _joinRoomAliasField->set_text("");
+    if (_joinRoomSurface)
+        _joinRoomSurface->relayout();
+
+    [self.window beginSheet:_joinRoomWindow completionHandler:nil];
+    if (_joinRoomAliasField)
+        _joinRoomAliasField->set_focused(true);
 }
 
 - (void)_openSettings
