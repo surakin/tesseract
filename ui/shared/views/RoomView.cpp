@@ -97,6 +97,24 @@ RoomView::RoomView()
     auto user_profile = std::make_unique<UserProfilePanel>();
     user_profile_panel_ = add_child(std::move(user_profile));
 
+    // Overflow popup — added last so it paints and dispatches above all other
+    // children. Remains zero-area (invisible to hit-testing) while closed.
+    auto overflow = std::make_unique<PopupMenu>();
+    overflow_menu_ = add_child(std::move(overflow));
+    overflow_menu_->on_dismissed = [this]
+    {
+        if (message_list_)
+            message_list_->set_hover_locked(false);
+        if (thread_view_ && thread_view_->message_list())
+            thread_view_->message_list()->set_hover_locked(false);
+        overflow_menu_->close();
+    };
+    overflow_menu_->on_layout_changed = [this]
+    {
+        if (on_layout_changed)
+            on_layout_changed();
+    };
+
     wire_internal_callbacks();
 }
 
@@ -128,9 +146,46 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         if (on_set_clipboard) on_set_clipboard(text);
     };
 
-    ml->on_delete_requested = [this](const std::string& event_id)
+    ml->on_more_requested =
+        [this, ml](const std::string& event_id, tk::Rect anchor,
+                   bool can_delete, bool can_pin, bool is_pinned)
     {
-        if (on_delete_requested) on_delete_requested(event_id);
+        // anchor is in world coordinates — PopupMenu::open() takes world coords.
+        std::vector<PopupMenu::Item> items;
+        if (can_delete)
+        {
+            items.push_back({"\xF0\x9F\x97\x91", // 🗑
+                             "Delete message", /*destructive=*/true,
+                             [this, event_id]
+                             {
+                                 if (on_delete_requested)
+                                     on_delete_requested(event_id);
+                             }});
+        }
+        if (can_pin)
+        {
+            items.push_back({"\xF0\x9F\x93\x8C", // 📌
+                             is_pinned ? "Unpin message" : "Pin message",
+                             /*destructive=*/false,
+                             [this, event_id, is_pinned]
+                             {
+                                 if (is_pinned)
+                                 {
+                                     if (on_unpin_requested)
+                                         on_unpin_requested(event_id);
+                                 }
+                                 else
+                                 {
+                                     if (on_pin_requested)
+                                         on_pin_requested(event_id);
+                                 }
+                             }});
+        }
+        if (!items.empty())
+        {
+            ml->set_hover_locked(true);
+            overflow_menu_->open(std::move(items), anchor);
+        }
     };
     ml->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key,
@@ -1208,6 +1263,9 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         room_info_panel_->arrange(ctx, bounds);
     if (user_profile_panel_)
         user_profile_panel_->arrange(ctx, bounds);
+    // Overflow popup: always arranged so it can zero its bounds when closed.
+    if (overflow_menu_)
+        overflow_menu_->arrange(ctx, bounds);
 }
 
 void RoomView::paint(tk::PaintCtx& ctx)
@@ -1253,6 +1311,8 @@ void RoomView::paint(tk::PaintCtx& ctx)
         room_info_panel_->paint(ctx);
     if (user_profile_panel_ && user_profile_panel_->is_open())
         user_profile_panel_->paint(ctx);
+    if (overflow_menu_ && overflow_menu_->is_open())
+        overflow_menu_->paint(ctx);
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -1271,6 +1331,8 @@ tk::Widget* RoomView::active_overlay_panel_() const
         return user_profile_panel_;
     if (room_info_panel_ && room_info_panel_->is_open())
         return room_info_panel_;
+    if (overflow_menu_ && overflow_menu_->is_open())
+        return overflow_menu_;
     return nullptr;
 }
 

@@ -5,6 +5,15 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-06-06
+
+- change(ui): the hover-action pill no longer has an inline delete/redact button.
+  A new `⋯` overflow button opens a `PopupMenu` — a new shared widget added to
+  `tesseract_tk` — that contains "Delete message" (destructive, own messages)
+  and "Pin / Unpin message" (moderators). The action pill stays visible while
+  the popup is open so context is preserved as the user moves the cursor into
+  the menu.
+
 ### 2026-06-05
 
 - perf(ui): incoming messages no longer re-measure or re-shape the whole room.

@@ -430,14 +430,17 @@ public:
                        const std::string& current_body)>
         on_edit_requested;
 
-    // Delete affordance — fires when the user clicks the "🗑" delete button on
-    // a hover row they own. Fires for any non-Redacted own message kind.
-    // The host should call `Client::redact_event(room_id, event_id, "")`.
-    std::function<void(const std::string& event_id)> on_delete_requested;
+    // Overflow-menu affordance — fires when the user clicks the "⋯" more
+    // button. `anchor` is the button rect in world coordinates. `can_delete`
+    // is true for own non-redacted messages; `can_pin` when the room allows
+    // pinning; `is_pinned` when this event is already pinned. The host should
+    // open a PopupMenu and call the appropriate SDK methods on selection.
+    std::function<void(const std::string& event_id, tk::Rect anchor,
+                       bool can_delete, bool can_pin, bool is_pinned)>
+        on_more_requested;
 
-    // Pin / Unpin affordance — fires when the user clicks the pin button on
-    // the hover-action row. Which callback fires is decided at click time
-    // based on whether `event_id` is in `pinned_event_ids_`.
+    // Pin / Unpin affordance — kept for backward-compat wiring; now fired
+    // indirectly via the overflow popup rather than a direct pill button.
     std::function<void(const std::string& event_id)> on_pin_requested;
     std::function<void(const std::string& event_id)> on_unpin_requested;
 
@@ -571,8 +574,7 @@ public:
         tk::Rect reply_button{};  // 0-area when not painted
         tk::Rect thread_button{}; // 0-area when not painted
         tk::Rect edit_button{};   // 0-area when not painted
-        tk::Rect delete_button{}; // 0-area when not painted
-        tk::Rect pin_button{};    // 0-area when not painted
+        tk::Rect more_button{};   // 0-area when not painted
         tk::Rect retry_button{};  // 0-area when not painted
         tk::Rect abort_button{};  // 0-area when not painted
         tk::Rect row_bounds{};
@@ -647,6 +649,10 @@ public:
     bool dimmed() const { return dimmed_; }
 
     void set_thread_button_visible(bool v) { thread_button_visible_ = v; }
+
+    // When true, on_pointer_leave() is suppressed so the hover-action pill
+    // stays visible while an associated popup is open over this widget.
+    void set_hover_locked(bool v) { hover_locked_ = v; }
 
     // Paint a coloured 2px outline around the row whose event_id matches.
     // Pass the empty string to clear the highlight.
@@ -836,18 +842,19 @@ private:
     bool press_edit_btn_ = false;
     std::string press_edit_event_id_;
 
-    // Delete button press state (own non-redacted messages).
-    bool press_delete_btn_ = false;
-    std::string press_delete_event_id_;
+    // More (⋯) button press state. Context captured at press time so the
+    // popup can be opened with the correct items on release.
+    bool press_more_btn_         = false;
+    std::string press_more_event_id_;
+    bool press_more_can_delete_  = false;
+    bool press_more_can_pin_     = false;
+    bool press_more_is_pinned_   = false;
+
+    bool hover_locked_ = false;
 
     // Thread button press state.
     bool press_thread_btn_ = false;
     std::string press_thread_event_id_;
-
-    // Pin / Unpin button press state. The pin-vs-unpin decision happens at
-    // release time based on whether press_pin_event_id_ is in pinned_event_ids_.
-    bool press_pin_btn_ = false;
-    std::string press_pin_event_id_;
 
     // Retry / abort pending-send button press state (own failed messages).
     bool press_retry_btn_ = false;

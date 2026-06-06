@@ -954,8 +954,7 @@ public:
             owner_.hovered_row_geom_.react_button = tk::Rect{};
             owner_.hovered_row_geom_.reply_button = tk::Rect{};
             owner_.hovered_row_geom_.edit_button = tk::Rect{};
-            owner_.hovered_row_geom_.delete_button = tk::Rect{};
-            owner_.hovered_row_geom_.pin_button = tk::Rect{};
+            owner_.hovered_row_geom_.more_button = tk::Rect{};
             owner_.hovered_row_geom_.retry_button = tk::Rect{};
             owner_.hovered_row_geom_.abort_button = tk::Rect{};
         }
@@ -1068,22 +1067,12 @@ public:
                 cells.push_back({static_cache_.edit.get(),
                                  &owner_.hovered_row_geom_.edit_button});
             }
-            if (m.is_own && m.kind != MessageRowData::Kind::Redacted &&
-                m.kind != MessageRowData::Kind::Utd)
-            {
-                cells.push_back({static_cache_.trash.get(),
-                                 &owner_.hovered_row_geom_.delete_button});
-            }
-            if (owner_.can_pin_ &&
+            if ((m.is_own || owner_.can_pin_) &&
                 m.kind != MessageRowData::Kind::Redacted &&
                 m.kind != MessageRowData::Kind::Utd)
             {
-                const bool is_pinned =
-                    owner_.pinned_event_ids_.find(m.event_id) !=
-                    owner_.pinned_event_ids_.end();
-                cells.push_back({is_pinned ? static_cache_.unpin.get()
-                                           : static_cache_.pin.get(),
-                                 &owner_.hovered_row_geom_.pin_button});
+                cells.push_back({static_cache_.more.get(),
+                                 &owner_.hovered_row_geom_.more_button});
             }
 
             if (!cells.empty())
@@ -3849,7 +3838,7 @@ private:
         std::unique_ptr<tk::TextLayout> reply;
         std::unique_ptr<tk::TextLayout> thread_btn;
         std::unique_ptr<tk::TextLayout> edit;
-        std::unique_ptr<tk::TextLayout> trash;
+        std::unique_ptr<tk::TextLayout> more;
         std::unique_ptr<tk::TextLayout> pin;
         std::unique_ptr<tk::TextLayout> unpin;
         // Height of a single line of body text — used to vertically centre the
@@ -3875,7 +3864,7 @@ private:
             reply      = f.build_text("\xE2\x86\xA9", st);     // ↩
             thread_btn = f.build_text("\xF0\x9F\x92\xAC", st); // 💬
             edit       = f.build_text("\xE2\x9C\x8F", st);     // ✏
-            trash      = f.build_text("\xF0\x9F\x97\x91", st); // 🗑
+            more       = f.build_text("\xE2\x8B\xAF", st);     // ⋯
             pin        = f.build_text("\xF0\x9F\x93\x8C", st); // 📌
             // Pushpin with stroke through it (visually distinct "unpin");
             // falls back to a plain pushpin on fonts without U+1F4CC + combining
@@ -3891,7 +3880,7 @@ private:
             reply.reset();
             thread_btn.reset();
             edit.reset();
-            trash.reset();
+            more.reset();
             pin.reset();
             unpin.reset();
         }
@@ -5604,9 +5593,9 @@ bool MessageListView::on_pointer_move(tk::Point local)
 void MessageListView::on_pointer_leave()
 {
     if (gate_blocks_input_())
-    {
         return;
-    }
+    if (hover_locked_)
+        return;
     tk::ListView::on_pointer_leave();
     hovered_row_geom_.row_index = static_cast<std::size_t>(-1);
     hovered_row_geom_.chips.clear();
@@ -5934,33 +5923,22 @@ bool MessageListView::on_pointer_down(tk::Point local)
         }
     }
 
-    // Delete button hit-test.
+    // More (⋯) button hit-test.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        const tk::Rect& db = hovered_row_geom_.delete_button;
-        if (db.w > 0 && rect_contains(db, world))
+        const tk::Rect& mb = hovered_row_geom_.more_button;
+        if (mb.w > 0 && rect_contains(mb, world))
         {
             std::size_t row = hovered_row_geom_.row_index;
             if (row < messages_.size())
             {
-                press_delete_btn_ = true;
-                press_delete_event_id_ = messages_[row].event_id;
-                return true;
-            }
-        }
-    }
-
-    // Pin / Unpin button hit-test.
-    {
-        tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        const tk::Rect& pb = hovered_row_geom_.pin_button;
-        if (pb.w > 0 && rect_contains(pb, world))
-        {
-            std::size_t row = hovered_row_geom_.row_index;
-            if (row < messages_.size())
-            {
-                press_pin_btn_ = true;
-                press_pin_event_id_ = messages_[row].event_id;
+                const auto& m = messages_[row];
+                press_more_btn_        = true;
+                press_more_event_id_   = m.event_id;
+                press_more_can_delete_ = m.is_own;
+                press_more_can_pin_    = can_pin_;
+                press_more_is_pinned_  = pinned_event_ids_.find(m.event_id) !=
+                                         pinned_event_ids_.end();
                 return true;
             }
         }
@@ -6498,56 +6476,30 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         }
         return;
     }
-    if (press_delete_btn_)
+    if (press_more_btn_)
     {
-        bool fire = inside_self && !press_delete_event_id_.empty();
-        std::string ev = std::move(press_delete_event_id_);
-        press_delete_btn_ = false;
-        press_delete_event_id_.clear();
+        bool fire = inside_self && !press_more_event_id_.empty();
+        std::string ev = std::move(press_more_event_id_);
+        press_more_btn_ = false;
+        press_more_event_id_.clear();
         if (fire)
         {
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
-            const tk::Rect& db = hovered_row_geom_.delete_button;
-            if (db.w > 0 && rect_contains(db, world))
+            const tk::Rect& mb = hovered_row_geom_.more_button;
+            if (mb.w > 0 && rect_contains(mb, world))
             {
-                if (on_delete_requested)
+                if (on_more_requested)
                 {
-                    on_delete_requested(ev);
+                    on_more_requested(ev, mb,
+                                      press_more_can_delete_,
+                                      press_more_can_pin_,
+                                      press_more_is_pinned_);
                 }
             }
         }
-        return;
-    }
-    if (press_pin_btn_)
-    {
-        bool fire = inside_self && !press_pin_event_id_.empty();
-        std::string ev = std::move(press_pin_event_id_);
-        press_pin_btn_ = false;
-        press_pin_event_id_.clear();
-        if (fire)
-        {
-            tk::Point world{local.x + bounds().x, local.y + bounds().y};
-            const tk::Rect& pb = hovered_row_geom_.pin_button;
-            if (pb.w > 0 && rect_contains(pb, world))
-            {
-                const bool is_pinned =
-                    pinned_event_ids_.find(ev) != pinned_event_ids_.end();
-                if (is_pinned)
-                {
-                    if (on_unpin_requested)
-                    {
-                        on_unpin_requested(ev);
-                    }
-                }
-                else
-                {
-                    if (on_pin_requested)
-                    {
-                        on_pin_requested(ev);
-                    }
-                }
-            }
-        }
+        press_more_can_delete_ = false;
+        press_more_can_pin_    = false;
+        press_more_is_pinned_  = false;
         return;
     }
     if (press_retry_btn_)

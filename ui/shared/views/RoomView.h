@@ -23,6 +23,7 @@
 #include "ConfirmDialog.h"
 #include "MessageListView.h"
 #include "PinnedBanner.h"
+#include "PopupMenu.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
 #include "ThreadListView.h"
@@ -146,6 +147,10 @@ public:
     ThreadView* thread_view() const
     {
         return thread_view_;
+    }
+    PopupMenu* overflow_menu() const
+    {
+        return overflow_menu_;
     }
     ThreadListView* thread_list_view() const
     {
@@ -409,6 +414,7 @@ private:
     ComposeBar* compose_bar_ = nullptr;
     RoomInfoPanel*    room_info_panel_    = nullptr;
     UserProfilePanel* user_profile_panel_ = nullptr;
+    PopupMenu*        overflow_menu_      = nullptr;
     // Stored so they can be forwarded to the lazily-created thread view.
     MessageListView::ImageProvider stored_avatar_provider_;
     MessageListView::ImageProvider stored_image_provider_;
