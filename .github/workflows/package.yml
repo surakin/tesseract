@@ -207,6 +207,8 @@ jobs:
             ninja-build \
             libgl-dev \
             libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
             golang perl \
             libwayland-dev \
             rpm
@@ -267,6 +269,8 @@ jobs:
             ninja-build \
             libgl-dev \
             libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
             golang perl \
             libwayland-dev \
             patchelf \
