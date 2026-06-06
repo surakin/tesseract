@@ -36,6 +36,12 @@ public:
         // the default for added overlays in GTK4.
         gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), entry_);
 
+        // Every field in the app is a single-line input. The default-theme
+        // GtkEntry is much taller than the slot the cross-platform layout
+        // allocates (the same slot Qt's QLineEdit fills exactly), so default to
+        // the compact style (min-height:0 + tight padding) for all of them.
+        set_compact(true);
+
         changed_id_ = g_signal_connect(
             entry_, "changed", G_CALLBACK(&GtkNativeTextField::on_changed_cb),
             this);
@@ -77,18 +83,19 @@ public:
         {
             return;
         }
-        // Use the entry's natural height and centre it vertically within
-        // the allocated rect rather than stretching to fill it.
-        int nat_h = 0;
-        gtk_widget_measure(entry_, GTK_ORIENTATION_VERTICAL, -1, nullptr,
-                           &nat_h, nullptr, nullptr);
-        int h = nat_h > 0 ? nat_h : static_cast<int>(std::round(r.h));
-        int y = static_cast<int>(std::floor(r.y)) +
-                (static_cast<int>(std::round(r.h)) - h) / 2;
+        // Size the entry to the slot the cross-platform layout allocated —
+        // exactly like the Qt QLineEdit does — rather than to the entry's
+        // measured natural height. GTK's gtk_widget_measure() can report a
+        // stale/inflated minimum here (it lagged the entry's old allocation,
+        // e.g. 145px for a 13px-font single-line entry), and the old code fed
+        // that bogus value into the size request, leaving the field far taller
+        // than its slot. The compact CSS (min-height:0 on the entry + its inner
+        // text node) keeps the entry's real minimum small enough that the slot
+        // height is honoured.
         gtk_widget_set_margin_start(entry_, static_cast<int>(std::floor(r.x)));
-        gtk_widget_set_margin_top(entry_, y);
+        gtk_widget_set_margin_top(entry_, static_cast<int>(std::floor(r.y)));
         gtk_widget_set_size_request(entry_, static_cast<int>(std::round(r.w)),
-                                    h);
+                                    static_cast<int>(std::round(r.h)));
     }
 
     void set_text(std::string text) override
@@ -180,11 +187,19 @@ public:
         {
             css_installed = true;
             GtkCssProvider* css = gtk_css_provider_new();
+            // Reset min-height + padding on BOTH the entry node and its inner
+            // GtkText node: a chunky theme can put the tall min-height on the
+            // inner `text` node, which `entry { min-height:0 }` alone does not
+            // reach (this left the field ~100px tall even with compact applied).
             gtk_css_provider_load_from_string(css,
                 "entry.tesseract-compact {"
                 "  min-height: 0;"
-                "  padding-top: 4px;"
-                "  padding-bottom: 4px;"
+                "  padding: 4px 8px;"
+                "}"
+                "entry.tesseract-compact > text {"
+                "  min-height: 0;"
+                "  margin: 0;"
+                "  padding: 0;"
                 "}");
             gtk_style_context_add_provider_for_display(
                 gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
