@@ -348,7 +348,7 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     // Emoji instead of the system Segoe UI Emoji.  Non-fatal: if this fails,
     // face_out is left null and the fallback still works for canvas rendering.
     {
-        ComPtr<IDWriteFontFamily> emoji_family;
+        ComPtr<IDWriteFontFamily1> emoji_family;
         if (SUCCEEDED(emoji_coll->GetFontFamily(0, &emoji_family)))
         {
             ComPtr<IDWriteFont> emoji_font;

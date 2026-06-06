@@ -15,6 +15,7 @@
 #include <dwrite_2.h>       // IDWriteFactory2::CreateTextFormat
 #include <richedit.h>  // MSFTEDIT_CLASS, RichEdit ES_* flags
 #include <textserv.h>  // ITextHost2, ITextServices2, TXTBIT_*, TXTNS_*
+#include "win32_textserv2_compat.h"  // ITextHost2/ITextServices2 shim for mingw-w64
 #include <imm.h>       // ImmGetContext / ImmReleaseContext
 #include <windowsx.h> // GET_X_LPARAM / GET_Y_LPARAM
 

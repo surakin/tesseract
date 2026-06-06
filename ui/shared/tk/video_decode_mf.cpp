@@ -30,6 +30,14 @@
 #pragma comment(lib, "mf.lib")
 #pragma comment(lib, "shlwapi.lib")
 
+// mingw-w64's <mfidl.h> omits this declaration, though the symbol is exported
+// by the linked mfplat import library. Declare it so the cross-compile builds;
+// the real Windows SDK provides it, so the guard makes this inert there.
+#ifdef __MINGW32__
+extern "C" HRESULT STDAPICALLTYPE
+MFCreateMFByteStreamOnStream(IStream* pStream, IMFByteStream** ppByteStream);
+#endif
+
 namespace tk
 {
 
