@@ -63,6 +63,7 @@ version) are noted where relevant.
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
 - Jump-to-date via a calendar button in the room header (MSC3030; server capability checked)
 - Unread indicators in the room list (badge plus a semibold room title when unread)
+- Auto-scroll the room list to the most-recent unread room when new messages arrive — spaces count when any child room is unread; excludes low-priority/inactive rooms; optional (Appearance setting, default on)
 - Last-message previews, including image and sticker previews
 - Room search (filters by room display name)
 - Direct messages (create / open; reuses existing DM if present)
@@ -99,7 +100,7 @@ version) are noted where relevant.
 - Account
 - Sessions / devices
 - Notifications (per-room)
-- Appearance (light / dark / system theme)
+- Appearance (light / dark / system theme; room-list inactive grouping; auto-scroll to unread rooms)
 - Privacy (presence controls)
 - Media (automatic full-media fetch)
 - About (version, with branded view)

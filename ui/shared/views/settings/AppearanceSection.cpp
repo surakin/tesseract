@@ -300,6 +300,14 @@ AppearanceSection::AppearanceSection()
                 on_inactive_period_changed(std::stoi(value));
             }
         };
+
+        auto autoscroll = std::make_unique<tk::CheckButton>(
+            "Scroll to rooms with new messages", s.autoscroll_unread_rooms);
+        autoscroll_cb_ = rl_group->add_widget(std::move(autoscroll));
+        autoscroll_cb_->on_change = [this](bool v)
+        {
+            if (on_autoscroll_unread_changed) on_autoscroll_unread_changed(v);
+        };
     }
 }
 
@@ -318,6 +326,11 @@ void AppearanceSection::set_group_inactive(bool enabled)
 void AppearanceSection::set_inactive_period(int days)
 {
     if (period_combo_) period_combo_->set_selected_value(std::to_string(days));
+}
+
+void AppearanceSection::set_autoscroll_unread(bool enabled)
+{
+    if (autoscroll_cb_) autoscroll_cb_->set_checked(enabled);
 }
 
 void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)

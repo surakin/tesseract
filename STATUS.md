@@ -1,6 +1,24 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-05**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-06**.
+
+> **Auto-scroll the room list to unread rooms.**
+> When a room receives new messages, the room list scrolls the most-recent
+> unread room into view so it is never hidden below the fold; with several
+> unread rooms the newest wins, and a **space** counts when any of its child
+> rooms is unread (its aggregated child notification count + newest child
+> activity, computed in `ShellBase::apply_space_child_counts_`). Candidates
+> exclude low-priority and Inactive rooms. The scroll is minimal — already-
+> visible rooms aren't disturbed — and only genuinely newer activity re-triggers
+> it (a per-view `last_unread_scroll_ts_` gate), so unrelated updates never yank
+> the user's position. Built on a new deferred
+> `tk::ListView::scroll_to_index_deferred` that applies once row heights are
+> re-measured. The behavior is optional via a new **"Scroll to rooms with new
+> messages"** Appearance checkbox (`Settings::autoscroll_unread_rooms`, default
+> on). All shared code, so every shell (Qt6, GTK4, Win32, macOS) benefits.
+> 9 new Catch2 tests. Verified on **Qt6**.
+
+<!-- -->
 
 > **Faster room switching & message bursts.**
 > The message list no longer rebuilds and re-shapes every row when messages

@@ -837,6 +837,9 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
         list_->invalidate_data();
     }
     set_selected_room(selected_room_id_cache_);
+    // After the section buckets are rebuilt: bring the most-recent unread room
+    // into view if new activity arrived (and the user enabled the behavior).
+    autoscroll_to_unread_();
     if (layout_changed)
         on_scroll();
 }
@@ -891,17 +894,11 @@ void RoomListView::set_presence_provider(PresenceProvider p)
     presence_provider_ = std::move(p);
 }
 
-void RoomListView::set_selected_room(const std::string& room_id)
+int RoomListView::item_index_for_room_(const std::string& id) const
 {
-    selected_room_id_cache_ = room_id;
-    if (!list_)
+    if (id.empty())
     {
-        return;
-    }
-    if (room_id.empty())
-    {
-        list_->set_selected_index(-1);
-        return;
+        return -1;
     }
     for (int i = 0; i < static_cast<int>(items_.size()); ++i)
     {
@@ -913,13 +910,65 @@ void RoomListView::set_selected_room(const std::string& room_id)
         const auto& rooms = section_rooms_[item.section];
         if (item.room_idx >= 0 &&
             item.room_idx < static_cast<int>(rooms.size()) &&
-            rooms[item.room_idx]->id == room_id)
+            rooms[item.room_idx]->id == id)
         {
-            list_->set_selected_index(i);
-            return;
+            return i;
         }
     }
-    list_->set_selected_index(-1);
+    return -1;
+}
+
+void RoomListView::set_selected_room(const std::string& room_id)
+{
+    selected_room_id_cache_ = room_id;
+    if (!list_)
+    {
+        return;
+    }
+    list_->set_selected_index(item_index_for_room_(room_id));
+}
+
+const tesseract::RoomInfo* RoomListView::most_recent_unread_active_() const
+{
+    const tesseract::RoomInfo* best = nullptr;
+    // Favorites/DMs/Rooms first, Spaces last: on equal timestamps a concrete
+    // unread room is preferred over the space that aggregates it.
+    for (int sec : {kSecFavorites, kSecDMs, kSecRooms, kSecSpaces})
+    {
+        for (const auto* r : section_rooms_[sec])
+        {
+            if (r->notification_count == 0 || r->is_low_priority)
+            {
+                continue;
+            }
+            if (!best || r->last_activity_ts > best->last_activity_ts)
+            {
+                best = r;
+            }
+        }
+    }
+    return best;
+}
+
+void RoomListView::autoscroll_to_unread_()
+{
+    if (!list_ || !tesseract::Settings::instance().autoscroll_unread_rooms)
+    {
+        return;
+    }
+    const tesseract::RoomInfo* target = most_recent_unread_active_();
+    if (!target || target->last_activity_ts <= last_unread_scroll_ts_)
+    {
+        return;
+    }
+    last_unread_scroll_ts_ = target->last_activity_ts;
+    int idx = item_index_for_room_(target->id);
+    if (idx >= 0)
+    {
+        // Deferred: set_rooms just marked heights dirty, so row offsets aren't
+        // valid until the next arrange()/paint pass.
+        list_->scroll_to_index_deferred(idx, /*align_top=*/false);
+    }
 }
 
 std::string RoomListView::selected_room_id() const

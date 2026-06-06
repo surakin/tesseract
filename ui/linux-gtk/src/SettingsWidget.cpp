@@ -67,6 +67,11 @@ SettingsWidget::SettingsWidget()
         if (on_inactive_period_changed)
             on_inactive_period_changed(days);
     };
+    settings_view_->on_autoscroll_unread_changed = [this](bool v)
+    {
+        if (on_autoscroll_unread_changed)
+            on_autoscroll_unread_changed(v);
+    };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
     settings_view_->on_hide_content_changed = [](bool e)
@@ -277,6 +282,11 @@ void SettingsWidget::set_group_inactive_pref(bool enabled)
 void SettingsWidget::set_inactive_period_pref(int days)
 {
     settings_view_->set_inactive_period_pref(days);
+}
+
+void SettingsWidget::set_autoscroll_unread_pref(bool enabled)
+{
+    settings_view_->set_autoscroll_unread_pref(enabled);
 }
 
 } // namespace gtk4

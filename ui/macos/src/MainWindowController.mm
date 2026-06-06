@@ -4238,6 +4238,17 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 tesseract::config_dir());
             if (s->_roomListView) s->_roomListView->refresh();
         };
+        _settingsView->on_autoscroll_unread_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return;
+            }
+            tesseract::Settings::instance().autoscroll_unread_rooms = enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+        };
         _settingsView->on_send_presence_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
@@ -6034,6 +6045,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         tesseract::Settings::instance().group_inactive_rooms);
     _settingsView->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
+    _settingsView->set_autoscroll_unread_pref(
+        tesseract::Settings::instance().autoscroll_unread_rooms);
     _settingsView->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
     _settingsView->set_media_previews_pref(

@@ -265,6 +265,15 @@ public:
     void scroll_to_top();
     void scroll_to_bottom();
     void scroll_to_index(int idx, bool align_top = false);
+    // Like scroll_to_index, but deferred until heights are valid. Callers that
+    // mutate data (which marks heights dirty) can't scroll_to_index immediately
+    // because row_offsets_ isn't rebuilt until the next arrange()/paint. Stash
+    // the request here; it is consumed once the rows are re-measured.
+    void scroll_to_index_deferred(int idx, bool align_top = false)
+    {
+        pending_scroll_idx_ = idx;
+        pending_scroll_align_top_ = align_top;
+    }
     float scroll_y() const
     {
         return scroll_y_;
@@ -361,6 +370,8 @@ private:
     void mark_dependency_span_(std::size_t index);
     // Apply the captured scroll anchor after a rebuild (full or partial).
     void consume_scroll_anchor_();
+    // Apply a pending scroll_to_index_deferred() request once heights are valid.
+    void consume_pending_scroll_();
     void clamp_scroll();
     void update_hover(Point local);
     void capture_anchor_();
@@ -397,6 +408,11 @@ private:
     float measured_width_ = 0;
     bool heights_dirty_ = true; // full rebuild pending (subsumes dirty range)
     bool stick_to_bottom_ = false; // re-snap to bottom on heights rebuild
+
+    // Deferred scroll_to_index request (see scroll_to_index_deferred). Applied
+    // by consume_pending_scroll_() once row_offsets_ is valid again, then reset.
+    int  pending_scroll_idx_ = -1;
+    bool pending_scroll_align_top_ = false;
 
     // Accumulated targeted-invalidation range [dirty_lo_, dirty_hi_). Active
     // only when has_dirty_range_ and heights_dirty_ is false. A full rebuild

@@ -221,6 +221,24 @@ TEST_CASE("Settings persist group_inactive_rooms + threshold", "[settings]")
     std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("Settings persist autoscroll_unread_rooms", "[settings]")
+{
+    auto dir = std::filesystem::temp_directory_path() /
+               "tess_settings_autoscroll_test";
+    std::filesystem::remove_all(dir);
+
+    auto& s = tesseract::Settings::instance();
+    s.autoscroll_unread_rooms = false; // default is true
+    s.save_to_disk(dir);
+
+    s.autoscroll_unread_rooms = true;
+    s.load_from_disk(dir);
+    CHECK(s.autoscroll_unread_rooms == false);
+
+    std::filesystem::remove_all(dir);
+    s.autoscroll_unread_rooms = true; // restore default for other tests
+}
+
 TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
 {
     auto dir = make_tmp_dir("section_collapsed");

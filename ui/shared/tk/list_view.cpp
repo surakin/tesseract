@@ -257,6 +257,18 @@ void ListView::scroll_to_index(int idx, bool align_top)
     clamp_scroll();
 }
 
+void ListView::consume_pending_scroll_()
+{
+    if (pending_scroll_idx_ < 0)
+    {
+        return;
+    }
+    const int idx = pending_scroll_idx_;
+    const bool align_top = pending_scroll_align_top_;
+    pending_scroll_idx_ = -1;
+    scroll_to_index(idx, align_top);
+}
+
 float ListView::content_height() const
 {
     return row_offsets_.empty() ? 0.0f : row_offsets_.back();
@@ -377,6 +389,7 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         scroll_y_ = std::max(0.0f, content_height() - bounds.h);
     }
     clamp_scroll();
+    consume_pending_scroll_();
     if (anchored_relayout_pending_)
     {
         anchored_relayout_pending_ = false;
@@ -611,6 +624,7 @@ void ListView::ensure_measured(PaintCtx& ctx)
             scroll_y_ = std::max(0.0f, content_height() - bounds_.h);
         }
         clamp_scroll();
+        consume_pending_scroll_();
     }
 }
 

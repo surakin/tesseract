@@ -31,19 +31,23 @@ public:
     // Silently update the controls without firing the callbacks below.
     void set_group_inactive(bool enabled);
     void set_inactive_period(int days);
+    void set_autoscroll_unread(bool enabled);
 
-    // Fired when the user toggles grouping / changes the period.
+    // Fired when the user toggles grouping / changes the period / toggles
+    // auto-scroll-to-unread.
     std::function<void(bool)> on_group_inactive_changed;
     std::function<void(int)>  on_inactive_period_changed;
+    std::function<void(bool)> on_autoscroll_unread_changed;
 
     // Constrain the period combobox dropdown popup to the page bounds.
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
 
 private:
     class ThemePicker; // defined in AppearanceSection.cpp
-    ThemePicker*     picker_           = nullptr;
-    tk::CheckButton* group_inactive_cb_ = nullptr;
-    tk::ComboBox*    period_combo_      = nullptr;
+    ThemePicker*     picker_             = nullptr;
+    tk::CheckButton* group_inactive_cb_  = nullptr;
+    tk::ComboBox*    period_combo_       = nullptr;
+    tk::CheckButton* autoscroll_cb_      = nullptr;
 };
 
 } // namespace tesseract::views

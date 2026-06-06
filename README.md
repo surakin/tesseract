@@ -52,6 +52,7 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 - Automatic grouping of inactive rooms (configurable)
 - Jump-to-date with a calendar picker (if supported by server)
 - Unread indicators and last-message previews (including media)
+- Auto-scroll to the most-recent unread room when new messages arrive (optional)
 - Direct messages
 - Ctrl+K quick switcher
 - Slash commands (/me, /shrug, /slap, /myroomnick, /myroomavatar, /join, /leave, /invite)

@@ -7,6 +7,19 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-06-06
 
+- feat(ui): the room list auto-scrolls the most-recent unread room into view
+  when new messages arrive, so an unread room is never hidden below the fold.
+  With several unread rooms the newest wins; a space counts when any of its
+  child rooms is unread (`ShellBase::apply_space_child_counts_` now also rolls a
+  space's `last_activity_ts` up to its newest unread child). Low-priority and
+  Inactive rooms are excluded. The scroll is minimal (already-visible rooms
+  aren't disturbed) and only genuinely newer activity re-triggers it (a per-view
+  `last_unread_scroll_ts_` gate), so unrelated room-list updates never yank the
+  scroll position. Implemented on a new deferred
+  `tk::ListView::scroll_to_index_deferred` that applies once row heights are
+  re-measured. Optional via a new "Scroll to rooms with new messages" Appearance
+  checkbox (`Settings::autoscroll_unread_rooms`, default on). All shared code, so
+  every shell (Qt6, GTK4, Win32, macOS) benefits. 9 new Catch2 tests.
 - change(ui): the hover-action pill no longer has an inline delete/redact button.
   A new `⋯` overflow button opens a `PopupMenu` — a new shared widget added to
   `tesseract_tk` — that contains "Delete message" (destructive, own messages)

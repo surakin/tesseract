@@ -62,6 +62,7 @@ public:
     std::function<void(bool)> on_invite_avatars_changed;
     std::function<void(bool)> on_group_inactive_changed;
     std::function<void(int)>  on_inactive_period_changed;
+    std::function<void(bool)> on_autoscroll_unread_changed;
     // Fired after the user changes their own avatar via Settings. The
     // string is the new mxc URL (or empty for removal). MainWindow uses
     // this to update ShellBase::my_avatar_url_ and repaint the sidebar
@@ -71,6 +72,7 @@ public:
 
     void set_group_inactive_pref(bool enabled);
     void set_inactive_period_pref(int days);
+    void set_autoscroll_unread_pref(bool enabled);
 
 private:
     std::unique_ptr<tk::gtk4::Surface> surface_;

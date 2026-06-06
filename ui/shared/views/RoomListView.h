@@ -186,6 +186,21 @@ private:
     // rebuild items_ from those buckets + collapsed_[] state.
     void rebuild_items();
 
+    // Flat items_ index of the room/space with `id`, or -1 if it isn't a
+    // visible row (filtered out, or inside a collapsed section).
+    int item_index_for_room_(const std::string& id) const;
+
+    // The unread "active" room/space with the most recent activity, or null.
+    // Active = notification_count > 0, not low-priority, in the Favorites/DMs/
+    // Rooms/Spaces sections (excludes Inactive). Spaces carry the aggregate of
+    // their children (see ShellBase::apply_space_child_counts_). Used to decide
+    // which row to auto-scroll into view when new messages arrive.
+    const tesseract::RoomInfo* most_recent_unread_active_() const;
+
+    // Auto-scroll the most-recent unread row into view when newer than what we
+    // last scrolled to. Gated on Settings::autoscroll_unread_rooms.
+    void autoscroll_to_unread_();
+
     float search_header_h() const;
 
     // Collapse/expand a section and refresh the flat item list + selection.
@@ -240,6 +255,12 @@ private:
     // Last-known selected room ID, preserved across filter/collapse changes
     // when the selection is temporarily hidden.
     std::string selected_room_id_cache_;
+
+    // Most recent activity timestamp we last auto-scrolled an unread room to.
+    // Only strictly-newer activity re-triggers a scroll, so unrelated room-list
+    // updates don't yank the user's scroll position. Starts at 0 so the first
+    // load with existing unread rooms scrolls the most recent into view.
+    std::uint64_t last_unread_scroll_ts_ = 0;
 };
 
 // Pure room→section classifier. Favorites and Spaces are never grouped; when

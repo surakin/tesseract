@@ -144,6 +144,10 @@ public:
     bool group_inactive_rooms = false;
     int inactive_room_threshold_days = 30;
 
+    // When a room (or a space whose child rooms) receives new messages, scroll
+    // the most-recent unread room into view in the room list. Default on.
+    bool autoscroll_unread_rooms = true;
+
     // Collapsed state of each room-list section; persisted across restarts.
     // Defaults match the hardcoded initial state in RoomListView.
     bool room_section_invites_collapsed   = false;

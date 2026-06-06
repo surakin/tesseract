@@ -1786,10 +1786,17 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
     if (space_children_cache_.empty())
         return;
 
-    std::unordered_map<std::string, std::pair<uint64_t, uint64_t>> counts;
+    struct ChildCounts
+    {
+        uint64_t notification_count;
+        uint64_t highlight_count;
+        uint64_t last_activity_ts;
+    };
+    std::unordered_map<std::string, ChildCounts> counts;
     counts.reserve(rooms_.size());
     for (const auto& r : rooms_)
-        counts[r.id] = {r.notification_count, r.highlight_count};
+        counts[r.id] = {r.notification_count, r.highlight_count,
+                        r.last_activity_ts};
 
     for (auto& r : rooms)
     {
@@ -1798,18 +1805,26 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
         auto it = space_children_cache_.find(r.id);
         if (it == space_children_cache_.end())
             continue;
-        uint64_t nc = 0, hc = 0;
+        uint64_t nc = 0, hc = 0, newest_unread_ts = 0;
         for (const auto& child_id : it->second)
         {
             auto ci = counts.find(child_id);
             if (ci != counts.end())
             {
-                nc += ci->second.first;
-                hc += ci->second.second;
+                nc += ci->second.notification_count;
+                hc += ci->second.highlight_count;
+                // Track the most recent activity among *unread* children so the
+                // room list can treat the space as a recency-ranked unread
+                // candidate (its own last_activity_ts is not meaningful).
+                if (ci->second.notification_count > 0)
+                    newest_unread_ts =
+                        std::max(newest_unread_ts, ci->second.last_activity_ts);
             }
         }
         r.notification_count = nc;
         r.highlight_count    = hc;
+        if (nc > 0)
+            r.last_activity_ts = std::max(r.last_activity_ts, newest_unread_ts);
     }
 }
 

@@ -3361,6 +3361,12 @@ void MainWindow::on_create(HWND hwnd)
             s.save_to_disk(tesseract::config_dir());
             if (room_list_view_) room_list_view_->refresh();
         };
+        settings_view_->on_autoscroll_unread_changed = [](bool enabled)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.autoscroll_unread_rooms = enabled;
+            s.save_to_disk(tesseract::config_dir());
+        };
         settings_view_->on_send_presence_changed = [this](bool enabled)
         {
             handle_send_presence_toggle_(enabled);
@@ -3913,6 +3919,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().group_inactive_rooms);
     settings_view_->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
+    settings_view_->set_autoscroll_unread_pref(
+        tesseract::Settings::instance().autoscroll_unread_rooms);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
     settings_view_->set_media_previews_pref(

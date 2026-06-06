@@ -53,6 +53,10 @@ SettingsView::SettingsView()
     {
         if (on_inactive_period_changed) on_inactive_period_changed(days);
     };
+    appearance->on_autoscroll_unread_changed = [this](bool v)
+    {
+        if (on_autoscroll_unread_changed) on_autoscroll_unread_changed(v);
+    };
     appearance_ = appearance.get();
 
     // Notifications section.
@@ -248,6 +252,11 @@ void SettingsView::set_group_inactive_pref(bool enabled)
 void SettingsView::set_inactive_period_pref(int days)
 {
     if (appearance_) appearance_->set_inactive_period(days);
+}
+
+void SettingsView::set_autoscroll_unread_pref(bool enabled)
+{
+    if (appearance_) appearance_->set_autoscroll_unread(enabled);
 }
 
 void SettingsView::set_notifications_enabled(bool enabled)
