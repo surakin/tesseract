@@ -1,9 +1,16 @@
 #include "MainWindow.h"
 #include "resource.h"
 #include <ole2.h>
-#include <ShObjIdl_core.h>
+// <shobjidl.h> (not the SDK-only <ShObjIdl_core.h> split) so the include
+// resolves on mingw-w64's case-sensitive, single-header layout too; it still
+// declares SetCurrentProcessExplicitAppUserModelID on the Windows SDK.
+#include <shobjidl.h>
+// C++/WinRT is Windows-SDK-only; skip it on the mingw cross-build (COM is
+// initialised with CoInitializeEx below instead of winrt::init_apartment).
+#if !defined(__MINGW32__)
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include <winrt/base.h>
+#endif
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -94,7 +101,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // Required for WinRT toast notifications: associates toasts with this
     // process and initialises the COM apartment for C++/WinRT calls.
     SetCurrentProcessExplicitAppUserModelID(L"io.gnomos.Tesseract");
+#if defined(__MINGW32__)
+    // No C++/WinRT on mingw: initialise the STA COM apartment directly.
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+#else
     winrt::init_apartment(winrt::apartment_type::single_threaded);
+#endif
 
     // Register the AUMID in the current-user registry so the WinRT toast
     // notification infrastructure can resolve it.  Non-packaged (classic Win32)

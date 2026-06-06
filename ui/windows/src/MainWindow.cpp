@@ -37,6 +37,12 @@
 #include <mfobjects.h>
 #include <propvarutil.h>
 
+#if defined(__MINGW32__)
+// mingw-w64's <mfapi.h> omits this prototype even though mfplat.dll exports it.
+extern "C" HRESULT STDAPICALLTYPE MFCreateMFByteStreamOnStream(
+    IStream* pStream, IMFByteStream** ppByteStream);
+#endif
+
 #include <algorithm>
 #include <cstdlib>
 #include <chrono>
@@ -3448,8 +3454,12 @@ void MainWindow::start_login()
         sess->sync_started = true;
 
         // Per-account notifier: click switches to this account then navigates.
-        const std::string uid = sess->user_id;
-        sess->notifier = std::make_unique<win32::Win32Notifier>(hwnd_, uid);
+        // (Named distinctly from the range-for `uid`: a range-for variable
+        // shares the loop-body scope, so reusing the name is a redeclaration
+        // under conforming compilers — MSVC accepted it, GCC/mingw rejects it.)
+        const std::string notifier_uid = sess->user_id;
+        sess->notifier =
+            std::make_unique<win32::Win32Notifier>(hwnd_, notifier_uid);
 
         accounts_.push_back(std::move(sess));
     }

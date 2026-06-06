@@ -1,5 +1,11 @@
 #include "Win32Notifier.h"
 
+// C++/WinRT projection headers are Windows-SDK-only and have no mingw-w64
+// equivalent, so the full WinRT toast path compiles only under MSVC. The mingw
+// cross-build (Wine/CI; the shipping Windows binary is built with MSVC) gets a
+// no-op notifier stub at the bottom of this file instead.
+#if !defined(__MINGW32__)
+
 #include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
 
 #include <winrt/Windows.Foundation.h>
@@ -312,3 +318,33 @@ void Win32Notifier::notify(const tesseract::Notification& n)
 }
 
 } // namespace win32
+
+#else // __MINGW32__ — no C++/WinRT: no-op notifier so the cross-build links.
+
+namespace win32
+{
+
+Win32Notifier::Win32Notifier(HWND hwnd, std::string user_id)
+    : hwnd_(hwnd), user_id_(std::move(user_id))
+{
+}
+
+Win32Notifier::~Win32Notifier() = default;
+
+void Win32Notifier::notify(const tesseract::Notification&)
+{
+    // mingw build: native toast notifications are not available.
+}
+
+std::wstring Win32Notifier::build_toast_xml(const std::string&,
+                                            const std::string&,
+                                            const std::string&,
+                                            const std::wstring&,
+                                            const std::wstring&)
+{
+    return {};
+}
+
+} // namespace win32
+
+#endif // !__MINGW32__
