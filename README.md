@@ -121,7 +121,7 @@ I used Claude to write everything else: a C++/Rust bridge to be able to use the 
 
 If you don't like or trust AI-assisted developed apps, that's fine. I'm not sure I do, but this one I made, reviewed the code, and I'm kinda sure what it's doing inside.
 
-Bottom line, I made this little client, and I barely open element these days, which was sort of the point. The code is open, you can see anything, and any contribution/criticism is welcome.
+Bottom line, I made this little client, and I barely open element these days, which was sort of the point. The code is open, you can see everything, and any positive contribution/criticism is welcome.
 
 ---
 
@@ -151,7 +151,7 @@ Tesseract stands on the work of many open-source projects.
 
 | Library | Purpose | Author / Maintainer |
 | --- | --- | --- |
-| [matrix-sdk](https://github.com/matrix-org/matrix-rust-sdk) (`-base`, `-ui`) | Matrix client, sync, E2E encryption, timeline | The Matrix.org Foundation / Element |
+| [matrix-rust-sdk](https://github.com/matrix-org/matrix-rust-sdk) (`-base`, `-ui`) | Matrix client, sync, E2E encryption, timeline | The Matrix.org Foundation / Element |
 | [ruma](https://github.com/ruma/ruma) | Matrix data types & event (de)serialization | The Ruma project |
 | [cxx](https://github.com/dtolnay/cxx) | Safe Rust ↔ C++ FFI bridge | David Tolnay |
 | [tokio](https://github.com/tokio-rs/tokio) | Async runtime | Tokio project (Carl Lerche et al.) |
@@ -184,7 +184,7 @@ Tesseract stands on the work of many open-source projects.
 
 ## License
 
-Tesseract is licensed under the [GNU Public License v3](./LICENSE)
+Tesseract is licensed under the [GNU General Public License v3](./LICENSE)
 
 ---
 
@@ -207,5 +207,5 @@ Tesseract is licensed under the [GNU Public License v3](./LICENSE)
   GTK 4 is available from Debian 12 / Ubuntu 22.04 onward.
 - **Building from source** requires Rust ≥ 1.75 on every platform (install
   via `rustup` on distros that ship an older toolchain). See
-  [CLAUDE.md](CLAUDE.md) and [PACKAGING.md](PACKAGING.md) for the full
+  [PACKAGING.md](PACKAGING.md) for the full
   build and packaging instructions.
