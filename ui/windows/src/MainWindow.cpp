@@ -2834,15 +2834,14 @@ void MainWindow::on_create(HWND hwnd)
             {
                 SetFocus(hwnd_);
             }
-            ensure_media_image_(src_tok, tesseract::visual::kMaxInlineImageWidth,
-                                tesseract::visual::kMaxInlineImageHeight);
+            ensure_viewer_fullres_(src_tok);
         };
 
         // Avatar click → open the lightbox with the original avatar mxc.
         // Overrides the thumbnail-only wiring from
-        // ShellBase::wire_main_app_widget_ so ensure_media_image_ fetches
-        // the native-resolution bytes into tk_images_; the viewer's
-        // image_provider prefers that over the resized tk_avatars_ entry.
+        // ShellBase::wire_main_app_widget_ so ensure_viewer_fullres_ fetches
+        // the full-resolution bytes into viewer_fullres_; the viewer's
+        // image_provider prefers that over the resized thumbnail entry.
         room_view_->on_avatar_clicked =
             [this](std::string url, std::string name)
         {
@@ -2860,8 +2859,7 @@ void MainWindow::on_create(HWND hwnd)
             {
                 SetFocus(hwnd_);
             }
-            ensure_media_image_(url, tesseract::visual::kMaxInlineImageWidth,
-                                tesseract::visual::kMaxInlineImageHeight);
+            ensure_viewer_fullres_(url);
         };
 
         vid_viewer_->on_save =

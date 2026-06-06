@@ -223,6 +223,7 @@ public:
     using ShellBase::ensure_row_media_;
     using ShellBase::ensure_tile_async;
     using ShellBase::ensure_user_avatar_;
+    using ShellBase::ensure_viewer_fullres_;
     using ShellBase::event_handler_;
     using ShellBase::find_existing_dm_;
     using ShellBase::gif_src_disk_key_;
@@ -2497,18 +2498,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                 hit.natural_w, hit.natural_h);
             s->_mainApp->show_image_viewer(true);
             s->_mainAppSurface->relayout();
-            s->_shell->ensure_media_image_(src_tok,
-                                           tesseract::visual::kMaxInlineImageWidth,
-                                           tesseract::visual::kMaxInlineImageHeight);
+            s->_shell->ensure_viewer_fullres_(src_tok);
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         };
 
         // Avatar click → open the lightbox with the original avatar mxc.
         // Overrides the thumbnail-only wiring from
-        // ShellBase::wire_main_app_widget_ so ensure_media_image_ fetches
-        // the native-resolution bytes into tk_images_; the viewer's
-        // image_provider prefers that over the resized tk_avatars_ entry.
+        // ShellBase::wire_main_app_widget_ so ensure_viewer_fullres_ fetches
+        // the full-resolution bytes into viewer_fullres_; the viewer's
+        // image_provider prefers that over the resized thumbnail entry.
         _mainApp->room_view()->on_avatar_clicked =
             [weakSelf](std::string url, std::string name)
         {
@@ -2520,9 +2519,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             s->_imgViewer->open(url, url, name, 0, 0);
             s->_mainApp->show_image_viewer(true);
             s->_mainAppSurface->relayout();
-            s->_shell->ensure_media_image_(url,
-                                           tesseract::visual::kMaxInlineImageWidth,
-                                           tesseract::visual::kMaxInlineImageHeight);
+            s->_shell->ensure_viewer_fullres_(url);
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         };

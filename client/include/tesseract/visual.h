@@ -54,4 +54,10 @@ inline constexpr int kMaxInlineImageWidth = 320;
 inline constexpr int kMaxInlineImageHeight = 200;
 inline constexpr int kStickerSize = 256;
 
+// Decode bound for the lightbox full-resolution viewer. Large enough that the
+// 8x zoom cap still looks crisp; bounded so a huge source can't trip Qt's
+// 256 MB QImage guard (4096^2 RGBA ~= 64 MB). decode_image_ only downscales
+// when native exceeds this.
+inline constexpr int kViewerFullresMax = 4096;
+
 } // namespace tesseract::visual

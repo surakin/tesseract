@@ -280,12 +280,6 @@ private:
     create_secondary_room_window_(const std::string& room_id) override;
 
 
-    /// Kick a full-resolution fetch for the image viewer (decoded at native
-    /// pixels, not the scaled inline thumbnail size). Idempotent — no-op if
-    /// already cached, animated (anim_cache_ has the original frames), or
-    /// already in flight. Shared by the image-click and avatar-click paths.
-    void ensureViewerFullres_(const std::string& url);
-
     /// Shutdown coordination. `~MainWindow` flips this flag, clears the
     /// pool of queued runnables, and waits (bounded) for in-flight
     /// workers to drain before calling `client_.stop_sync()`. Without
@@ -296,13 +290,6 @@ private:
     /// UI-thread decode can scale them. RoomAvatar / UserAvatar use the
     /// shell-wide constants and don't need pinning.
     std::unordered_map<std::string, std::pair<int, int>> mediaImageSizes_;
-
-    /// Full-resolution images for the image viewer lightbox. Separate from
-    /// tk_images_ which stores inline-scaled (320×200) thumbnails. Keyed by
-    /// the same source URL / MediaSource JSON as tk_images_.
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>>
-        viewerFullresCache_;
-    std::unordered_set<std::string> viewerFullresInFlight_;
 
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;

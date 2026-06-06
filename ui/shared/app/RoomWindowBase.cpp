@@ -958,17 +958,11 @@ void RoomWindowBase::wire_mention_shell_hooks_(
 
 const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
 {
-    if (auto* f = shell_->anim_cache_.current_frame(mxc))
-    {
-        shell_->start_anim_tick_(); // visible animated frame → keep timer alive
-        return f;
-    }
-    // Full-size first (viewer / prefetch), else the inline thumbnail.
-    if (auto* img = shell_->image_cache_.peek(mxc))
-    {
-        return img;
-    }
-    return shell_->thumbnail_cache_.peek(mxc);
+    // Full-resolution lightbox cache first, then anim → image → thumbnail.
+    // Shared with the main-window viewers. viewer_image_lookup_ is non-const
+    // (a hit may restart the anim tick), but shell_ is a mutable pointer so the
+    // const-ness of this accessor is preserved — only *shell_ is mutated.
+    return shell_->viewer_image_lookup_(mxc);
 }
 
 const views::UrlPreviewData*
@@ -1071,8 +1065,7 @@ void RoomWindowBase::ensure_viewer_image_(const std::string& url)
 {
     if (shell_ && !url.empty())
     {
-        shell_->ensure_media_image_(url, visual::kMaxInlineImageWidth,
-                                    visual::kMaxInlineImageHeight);
+        shell_->ensure_viewer_fullres_(url);
     }
 }
 

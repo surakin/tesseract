@@ -371,6 +371,160 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                           MediaKind::MediaImage);
 }
 
+const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
+{
+    // Full-resolution lightbox decode wins when present.
+    if (auto it = viewer_fullres_.find(mxc); it != viewer_fullres_.end())
+    {
+        return it->second.get();
+    }
+    // Otherwise the existing fallthrough: animated frame → inline full-size
+    // image → server thumbnail (mirrors shell_sticker_no_fetch_).
+    if (const auto* f = anim_cache_.current_frame(mxc))
+    {
+        start_anim_tick_(); // visible animated frame → keep the timer running
+        return f;
+    }
+    if (const auto* img = image_cache_.peek(mxc))
+    {
+        return img;
+    }
+    return thumbnail_cache_.peek(mxc);
+}
+
+void ShellBase::ensure_viewer_fullres_(const std::string& url)
+{
+    // Animated sources keep animating from anim_cache_; the viewer already
+    // pulls frames from there, so we don't produce a full-res still for them —
+    // just make sure the animated bytes are fetched into anim_cache_.
+    if (anim_cache_.has(url))
+    {
+        ensure_media_image_(url, 0, 0);
+        return;
+    }
+    const std::string fkey = fullres_key_(url);
+    if (url.empty() || viewer_fullres_.count(url) ||
+        media_decode_failed_.count(fkey) || media_fetch_backed_off_(fkey))
+    {
+        return;
+    }
+    if (!viewer_fullres_in_flight_.insert(fkey).second)
+    {
+        return;
+    }
+    if (!client_)
+    {
+        viewer_fullres_in_flight_.erase(fkey);
+        return;
+    }
+    // io pool: read the namespaced disk cache first. On a miss, issue a
+    // non-blocking SourceFull download (bulk lane, group 0 so a room switch
+    // does not cancel an open lightbox). Decode at the large viewer bound OFF
+    // the UI thread, then store + relayout everywhere.
+    run_async_(
+        [this, url, fkey]() mutable
+        {
+            auto disk = media_disk_cache_.load(fkey);
+            post_to_ui_(
+                [this, url, fkey, disk = std::move(disk)]() mutable
+                {
+                    if (!disk.empty())
+                    {
+                        decode_fullres_and_store_(url, fkey, std::move(disk),
+                                                  /*persist=*/false);
+                        return;
+                    }
+                    if (!client_)
+                    {
+                        viewer_fullres_in_flight_.erase(fkey);
+                        return;
+                    }
+                    auto id = begin_media_req_(
+                        /*group_id=*/0,
+                        [this, url, fkey](std::vector<std::uint8_t>&& net)
+                        {
+                            if (net.empty())
+                            {
+                                viewer_fullres_in_flight_.erase(fkey);
+                                note_media_fetch_failed_(fkey);
+                                return;
+                            }
+                            note_media_fetch_ok_(fkey);
+                            decode_fullres_and_store_(url, fkey, std::move(net),
+                                                      /*persist=*/true);
+                        },
+                        // on_cancel: free the dedup key so a re-open re-requests.
+                        [this, fkey] { viewer_fullres_in_flight_.erase(fkey); });
+                    client_->fetch_media_async(
+                        id, /*group_id=*/0,
+                        tesseract::Client::MediaReqKind::SourceFull, url,
+                        /*w=*/0, /*h=*/0, /*animated=*/false);
+                });
+        });
+}
+
+void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
+                                          std::vector<std::uint8_t> bytes,
+                                          bool persist)
+{
+    run_async_(
+        [this, url, fkey, persist, bytes = std::move(bytes)]() mutable
+        {
+            if (persist)
+            {
+                media_disk_cache_.store(fkey, bytes);
+            }
+            // DecodedImage is move-only (holds unique_ptr<tk::Image>); wrap in a
+            // shared_ptr so the post_to_ui_ std::function lambda stays
+            // copy-constructible (mirrors decode_and_finalize_picker_).
+            auto d = std::make_shared<DecodedImage>(decode_image_(
+                bytes, visual::kViewerFullresMax, visual::kViewerFullresMax));
+            if (d->empty() && persist)
+            {
+                media_disk_cache_.evict(fkey);
+            }
+            post_to_ui_(
+                [this, url, fkey, d]() mutable
+                {
+                    viewer_fullres_in_flight_.erase(fkey);
+                    if (viewer_fullres_.count(url))
+                    {
+                        return;
+                    }
+                    // An unexpectedly-animated decode → defer to the anim path.
+                    if (!d->frames.empty())
+                    {
+                        ensure_media_image_(url, 0, 0);
+                        return;
+                    }
+                    if (!d->still)
+                    {
+                        media_decode_failed_.insert(fkey);
+                        return;
+                    }
+                    // FIFO-evict if at cap (never evict the entry we're adding).
+                    while (viewer_fullres_.size() >= kViewerFullresCacheMax_ &&
+                           !viewer_fullres_order_.empty())
+                    {
+                        const std::string victim = viewer_fullres_order_.front();
+                        viewer_fullres_order_.erase(viewer_fullres_order_.begin());
+                        if (victim != url)
+                        {
+                            viewer_fullres_.erase(victim);
+                            break;
+                        }
+                    }
+                    viewer_fullres_.emplace(url, std::move(d->still));
+                    viewer_fullres_order_.push_back(url);
+                    // Relayout the main surface (its viewer re-fits the larger
+                    // image in arrange and polls the provider) and every pop-out
+                    // (notify_image_ready + relayout).
+                    request_relayout_();
+                    notify_secondary_media_ready_(url, MediaKind::MediaImage);
+                });
+        });
+}
+
 void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
                                         bool animated, std::uint64_t group_id)
 {
@@ -611,7 +765,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     {
         if (url.empty() || !app->image_viewer())
             return;
-        ensure_media_image_(url, 0, 0);
+        ensure_viewer_fullres_(url);
         app->image_viewer()->open(url, url, name, 0, 0);
         app->show_image_viewer(true);
         // Trigger the shell-wired relayout so the surface repaints with the
@@ -689,12 +843,13 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
                                        std::function<void()> on_image_close,
                                        std::function<void()> on_video_close)
 {
-    // shell_sticker_no_fetch_ already falls through anim_cache_ → image_cache_
-    // (full-size) → thumbnail_cache_, so the viewer shows the full image once
-    // the avatar/image click has fetched it and the thumbnail until then.
+    // viewer_image_lookup_ consults the full-res lightbox cache first, then
+    // falls through anim_cache_ → image_cache_ → thumbnail_cache_, so the viewer
+    // shows the full-res image once the avatar/image click has fetched it and
+    // the inline thumbnail until then.
     auto image_lookup = [this](const std::string& mxc) -> const tk::Image*
     {
-        return shell_sticker_no_fetch_(mxc);
+        return viewer_image_lookup_(mxc);
     };
 
     auto* iv = app->image_viewer();

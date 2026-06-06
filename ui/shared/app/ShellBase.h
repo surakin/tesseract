@@ -319,6 +319,19 @@ protected:
     bool media_disk_cache_pruned_ = false;
     bool waveform_store_inited_ = false;
 
+    // ── Full-resolution lightbox cache ─────────────────────────────────────────
+    // Full-res decodes for the image viewer (main window AND pop-out windows,
+    // all four shells). Separate from image_cache_, which on Qt6 holds only the
+    // 320px inline-bound decode. Keyed by the PLAIN source token / avatar mxc —
+    // the same key the viewer overlay looks up via media_url_ — so the viewer
+    // providers can consult it first. Bounded by a simple insertion-order FIFO
+    // cap; the lightbox shows one image at a time and recently-viewed ones are
+    // cheap to re-decode from the namespaced ("fullres:") disk cache.
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> viewer_fullres_;
+    std::vector<std::string> viewer_fullres_order_; // FIFO eviction order
+    std::unordered_set<std::string> viewer_fullres_in_flight_;
+    static constexpr std::size_t kViewerFullresCacheMax_ = 6;
+
     // ── Shared view pointers ──────────────────────────────────────────────────
     // The root MainAppWidget and its RoomView, set once by each shell right
     // after it builds the widget tree and BEFORE sync starts. ShellBase's
@@ -1426,6 +1439,30 @@ protected:
     void ensure_media_image_(const std::string& url, int max_w, int max_h,
                              std::uint64_t group_id = 0);
 
+    // Fetch + decode the full-resolution image for the lightbox viewer into
+    // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
+    // relayout the main surface and every pop-out. Guards on empty / already
+    // cached / animated (animated falls back to ensure_media_image_ so the GIF
+    // keeps animating from anim_cache_) / known-decode-failed / in-flight — the
+    // latter three keyed by fullres_key_(). Uses a DISTINCT disk + in-flight key
+    // namespace (fullres_key_) from the inline ensure_media_image_ path so the
+    // 320px inline entry can never pre-empt the full-res decode. group 0 so a
+    // room switch does not cancel an open lightbox load.
+    void ensure_viewer_fullres_(const std::string& url);
+
+    // Worker-thread decode of full-res viewer bytes at kViewerFullresMax, then
+    // UI-thread store into viewer_fullres_ (FIFO-evicting) + relayout main
+    // surface + every pop-out. `persist` writes the bytes to the namespaced
+    // ("fullres:") disk cache (network path) before decoding.
+    void decode_fullres_and_store_(std::string url, std::string fkey,
+                                   std::vector<std::uint8_t> bytes, bool persist);
+
+    // Shared image-viewer provider: full-res first, then the existing
+    // anim → image → thumbnail fallthrough. Used by both the main-window
+    // viewers (wire_main_app_viewers_) and the pop-out viewers
+    // (RoomWindowBase::shell_image_).
+    const tk::Image* viewer_image_lookup_(const std::string& mxc);
+
     // Shared async media pipeline used by the ensure_* helpers. The network
     // download runs as a non-blocking tokio task (fetch_media_async) so it does
     // NOT pin a worker thread; only the small disk-cache read/write and the
@@ -1459,6 +1496,14 @@ protected:
     static std::string thumb_key(const std::string& key, int w, int h)
     {
         return "t" + std::to_string(w) + "x" + std::to_string(h) + ":" + key;
+    }
+
+    // Disk-cache + in-flight key for the full-resolution viewer fetch.
+    // Namespaced so it never collides with the inline ensure_media_image_
+    // entry (plain url) on media_disk_cache_ or media_fetches_in_flight_.
+    static std::string fullres_key_(const std::string& url)
+    {
+        return "fullres:" + url;
     }
 
     // Disk-cache key for a GIF strip's source bytes (the original MP4/WebP/GIF

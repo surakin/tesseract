@@ -353,30 +353,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 }
             });
 
-        // Qt6-only residual: install a richer image_viewer provider that
-        // also consults viewerFullresCache_ before falling back to the
-        // shared anim_cache_/tk_images_ chain set by wire_main_app_viewers_.
-        mainApp_->image_viewer()->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                if (auto it = viewerFullresCache_.find(url);
-                    it != viewerFullresCache_.end())
-                {
-                    return it->second.get();
-                }
-                if (const auto* f = anim_cache_.current_frame(url))
-                {
-                    start_anim_tick_();
-                    return f;
-                }
-                if (const auto* img = image_cache_.peek(url))
-                {
-                    return img;
-                }
-                // Avatars live in a separate cache — let the viewer find
-                // them so clicking a profile avatar shows the cached image.
-                return thumbnail_cache_.peek(url);
-            });
+        // The image_viewer provider (full-res cache → anim → image → thumbnail)
+        // is installed by the shared wire_main_app_viewers_ above.
 
         // ---- Room view ----
         mainApp_->room_view()->set_shortcode_provider(
@@ -960,14 +938,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             mainApp_->show_image_viewer(true);
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();
-            ensureViewerFullres_(src_tok);
+            ensure_viewer_fullres_(src_tok);
         };
 
         // Avatar click → open the lightbox with the *original* avatar mxc,
         // not the 80×80 thumbnail stored in tk_avatars_. The shared
         // wire_main_app_widget_ already wires a basic on_avatar_clicked
-        // that uses the thumbnail; override here so the Qt6 viewer gets
-        // the full-resolution decode via ensureViewerFullres_.
+        // that uses the thumbnail; override here so focus is grabbed and the
+        // viewer gets the full-resolution decode via ensure_viewer_fullres_.
         mainApp_->room_view()->on_avatar_clicked =
             [this](std::string url, std::string name)
         {
@@ -977,7 +955,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             mainApp_->show_image_viewer(true);
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();
-            ensureViewerFullres_(url);
+            ensure_viewer_fullres_(url);
         };
         mainApp_->image_viewer()->on_save =
             [this](std::string source_url, std::string filename_hint)
@@ -2210,52 +2188,6 @@ void MainWindow::activateOnStartup()
     // Defer by one event-loop tick so the Wayland surface is fully mapped
     // before we attempt activation.
     QTimer::singleShot(0, this, [this, token]() { activateWindowWithToken_(token); });
-}
-
-void MainWindow::ensureViewerFullres_(const std::string& url)
-{
-    if (url.empty() || viewerFullresCache_.count(url) || anim_cache_.has(url))
-    {
-        return;
-    }
-    if (!viewerFullresInFlight_.insert(url).second)
-    {
-        return;
-    }
-    run_async_(
-        [this, url]()
-        {
-            auto bytes = client_->fetch_source_bytes(url);
-            QMetaObject::invokeMethod(
-                this,
-                [this, url, bytes = std::move(bytes)]() mutable
-                {
-                    viewerFullresInFlight_.erase(url);
-                    if (bytes.empty() || viewerFullresCache_.count(url))
-                    {
-                        return;
-                    }
-                    QByteArray qb(
-                        reinterpret_cast<const char*>(bytes.data()),
-                        static_cast<int>(bytes.size()));
-                    QBuffer buf(&qb);
-                    buf.open(QIODevice::ReadOnly);
-                    QImageReader reader(&buf);
-                    reader.setAutoTransform(true);
-                    QImage img;
-                    if (!reader.read(&img))
-                    {
-                        return;
-                    }
-                    viewerFullresCache_.emplace(
-                        url, tk::qt6::make_image(std::move(img)));
-                    if (mainAppSurface_)
-                    {
-                        mainAppSurface_->update();
-                    }
-                },
-                Qt::QueuedConnection);
-        });
 }
 
 // ---------------------------------------------------------------------------

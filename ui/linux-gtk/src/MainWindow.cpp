@@ -1662,7 +1662,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             main_app_->show_image_viewer(true);
             main_app_surface_->relayout();
             gtk_widget_grab_focus(main_app_surface_->widget());
-            ensure_media_image_(src_tok, 320, 200);
+            ensure_viewer_fullres_(src_tok);
         };
 
         // Avatar click → open the lightbox with the original avatar mxc.
@@ -1680,7 +1680,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             main_app_->show_image_viewer(true);
             main_app_surface_->relayout();
             gtk_widget_grab_focus(main_app_surface_->widget());
-            ensure_media_image_(url, 0, 0);
+            ensure_viewer_fullres_(url);
         };
 
         img_viewer_->on_save =
