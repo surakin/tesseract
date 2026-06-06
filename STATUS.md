@@ -1,6 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-06**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-06** (v0.1.9).
+
+> **Sticky, collapsible section headers in the room list.**
+> Section headers (Favorites, DMs, Rooms, Spaces, Inactive) stick to the top
+> of the room list while scrolling their section and are pushed up by the next
+> section's header. The pinned header is fully interactive — click to
+> collapse/expand the section, hover highlight works — via
+> `RoomListView::dispatch_pointer_down/move` overrides that give the overlay
+> priority over the inner `ListView` rows. Room titles render **semibold**
+> (`FontRole::SidebarName`) when the room has unread messages; section-header
+> titles use `text_primary` on a dedicated higher-contrast background
+> (`section_header_bg` / `section_header_hover` palette tokens).
+
+<!-- -->
 
 > **Auto-scroll the room list to unread rooms.**
 > When a room receives new messages, the room list scrolls the most-recent
@@ -64,12 +77,14 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-06
 > autoplaying `m.video` carrying the `fi.mau.gif` vendor hint; E2EE rooms
 > encrypt the MP4 and poster thumbnail via `EncryptedFile`. The Klipy
 > `customer_id` is a SHA-256 hash of the local MXID so no raw identity leaves
-> the device. Preview strip loads a static JPEG immediately, then replaces it
-> with animated WebP/GIF frames decoded off-thread (`decode_image_`); MP4-only
-> results fall back to an off-thread first-frame extractor. Strip sources are
-> persisted to `MediaDiskCache` so re-search skips re-downloading. Send format
-> priority: MP4 → WebP → GIF, so bridges that cannot re-upload WebP receive a
-> `video/mp4`. Shared `GifEngine` / `GifPopup` / `GifController`; wired on all
+> the device. The preview strip animates: a static JPEG thumbnail appears
+> immediately while an animated WebP/GIF (or a first-frame extracted from MP4)
+> is decoded off-thread via the native image backend; once ready it replaces the
+> static thumbnail in place. Strip sources are persisted to `MediaDiskCache` so
+> re-search skips re-downloading. Send format priority: MP4 → WebP → GIF, so
+> bridges receive a `video/mp4` when WebP re-upload is not supported. Room-list
+> last-message preview shows "sent a GIF" for `fi.mau.gif` vendor-hint events
+> from bridges. Shared `GifEngine` / `GifPopup` / `GifController`; wired on all
 > four shells (Qt6, GTK4, Win32, macOS). Unit-tested.
 
 <!-- -->
@@ -186,12 +201,15 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-06
 
 > **Hover action pill.**
 > The per-message hover affordances are consolidated into a single rounded
-> pill of square cells (reply / thread / react / edit / redact / pin)
-> anchored to the top-right of every row, with one shared outline and 1 px
-> dividers. The hovered cell gets a subtle pressed fill. The `+react` chip
-> moves onto the pill for rows with no existing reactions and stays at the
-> end of the reactions strip when reactions are present; redacted and
-> unable-to-decrypt rows suppress it.
+> pill of square cells (reply / thread / react / edit) anchored to the
+> top-right of every row, with one shared outline and 1 px dividers. The
+> hovered cell gets a subtle pressed fill. The `+react` chip moves onto the
+> pill for rows with no existing reactions and stays at the end of the
+> reactions strip when reactions are present; redacted and unable-to-decrypt
+> rows suppress it. Destructive and moderator actions (Delete message, Pin /
+> Unpin) are tucked behind a `⋯` overflow button that opens a `PopupMenu`
+> overlay — a new shared `tesseract_tk` widget — so the pill stays tidy while
+> the popup is open and the action context is preserved.
 
 <!-- -->
 
@@ -358,7 +376,7 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-06
 
 <!-- -->
 
-> **Code-block syntax highlighting.**
+> **Code-block syntax highlighting and tinted backgrounds.**
 > Fenced code blocks in messages now render with syntax colors. A new Rust
 > `highlight_code(code, lang, dark)` FFI (the `syntect` crate, pure-Rust
 > `fancy-regex` engine) tokenizes the block and returns per-run RGB from a
@@ -370,6 +388,10 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-06
 > fields). Unknown or absent languages fall back to plain monospace. Per-span
 > foreground color is honored in all four canvas backends (Qt6 `QPainter`,
 > GTK4 Pango, macOS CoreText, Win32 Direct2D `SetDrawingEffect`).
+> Fenced ` ``` ` blocks also render on a tinted panel (a new `code_bg` palette
+> token — light `0xD9DCE3`, dark `0x2E3138`) drawn as a single rounded rect
+> enclosing the whole block; inline `` `code` `` gets a tight per-run tint,
+> distinguished by the new `code_block` flag on `tk::TextSpan`.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
