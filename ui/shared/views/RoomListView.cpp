@@ -305,7 +305,7 @@ private:
 
             const char*   chevron = collapsed ? "\xE2\x96\xB8" : "\xE2\x96\xBE";
             tk::TextStyle cs{};
-            cs.role              = tk::FontRole::Small;
+            cs.role              = tk::FontRole::UiSemibold;
             cache.chevron_layout = ctx.factory.build_text(chevron, cs);
 
             if (collapsed && section_unread > 0)

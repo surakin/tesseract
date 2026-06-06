@@ -3,7 +3,9 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## Unreleased
+## v0.1.9 — 2026-06-06
+
+Changes since v0.1.8:
 
 ### 2026-06-06
 
@@ -26,6 +28,10 @@ Tagged releases summarize all changes since the previous tag.
   and "Pin / Unpin message" (moderators). The action pill stays visible while
   the popup is open so context is preserved as the user moves the cursor into
   the menu.
+- fix(ui): section header expand/contract chevron enlarged from `FontRole::Small`
+  (8 pt) to `FontRole::UiSemibold` (11 pt semibold) so it is clearly legible
+  inside the 28 pt header row. No HiDPI scaling bug — both the CoreText and
+  DirectWrite backends handle DPI correctly at draw time.
 
 ### 2026-06-05
 
