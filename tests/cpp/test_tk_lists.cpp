@@ -1847,15 +1847,21 @@ TEST_CASE("MessageListView scroll-to-bottom pill: hidden at bottom, "
     st.run(view, {0, 0, 320, 200});
     REQUIRE(view.pill_visible());
 
-    // Click the pill rect → scroll_to_bottom(), pill disappears.
-    tk::Rect r = view.pill_bounds();
+    // Click the pill → scroll_to_bottom(), pill disappears. The pill is a
+    // child ScrollPillWidget, so the click must travel the real dispatch path
+    // (dispatch_pointer_down → captured child → on_pointer_up), exactly as the
+    // host does. Calling MessageListView::on_pointer_* directly would bypass
+    // the child that now owns the click.
+    tk::Rect r = view.pill_bounds(); // world coords
     REQUIRE(r.w > 0.0f);
-    tk::Point local{
-        r.x + r.w * 0.5f - view.bounds().x,
-        r.y + r.h * 0.5f - view.bounds().y,
-    };
-    REQUIRE(view.on_pointer_down(local));
-    view.on_pointer_up(local, /*inside_self=*/true);
+    tk::Point world{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
+    tk::Widget* hit = view.dispatch_pointer_down(world);
+    REQUIRE(hit != nullptr);
+    REQUIRE(hit != &view); // the pill child captured the press, not the list
+    tk::Point ws = hit->world_to_local(world);
+    const bool inside = ws.x >= 0 && ws.y >= 0 && ws.x < hit->bounds().w &&
+                        ws.y < hit->bounds().h;
+    hit->on_pointer_up(ws, inside);
     st.run(view, {0, 0, 320, 200});
     CHECK_FALSE(view.pill_visible());
 }
