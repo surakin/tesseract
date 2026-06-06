@@ -2973,12 +2973,8 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     }
 
     current_room_id_ = room_id;
-    // Prefetch members so mention pills (avatar) and mention clicks (name +
-    // avatar) resolve without needing the room-info panel opened first.
-    if (mainApp_ && mainApp_->room_view()->on_fetch_room_members)
-    {
-        mainApp_->room_view()->on_fetch_room_members(room_id);
-    }
+    // Member prefetch (for mention pills/clicks) now lives in the shared
+    // RoomView::set_room(), so every shell gets it without wiring it here.
     clear_focused_state_(room_id);
     if (!markReadTimer_)
     {

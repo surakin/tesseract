@@ -834,6 +834,11 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     current_room_info_ = info;
     if (on_room_avatar_needed)
         on_room_avatar_needed(info);
+    // Prefetch members on room change so mention pills (avatar) and mention
+    // clicks (display name + avatar) resolve without first opening the
+    // room-info panel. Lives here so every shell gets it for free.
+    if (room_changed && on_fetch_room_members)
+        on_fetch_room_members(info.id);
     if (header_)
     {
         header_->set_room(info);
