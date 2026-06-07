@@ -157,4 +157,12 @@ std::string nsstr(NSString* s)
         _shared->set_status_message(nsstr(message));
 }
 
+- (void)showRestoreError:(NSString*)body
+           retryCallback:(void (^)(void))retryCallback
+{
+    if (!_shared) return;
+    __block void (^cb)(void) = [retryCallback copy];
+    _shared->show_restore_error(nsstr(body), [cb]() { if (cb) cb(); });
+}
+
 @end

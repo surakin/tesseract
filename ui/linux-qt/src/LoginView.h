@@ -30,6 +30,8 @@ public:
     void set_on_begin_oauth(std::function<void()> cb);
     void set_run_async(std::function<void(std::function<void()>)> fn);
     void reset();
+    void show_restore_error(const std::string& body,
+                            std::function<void()> retry_cb);
 
 signals:
     void loginSucceeded();

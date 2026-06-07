@@ -2694,6 +2694,9 @@ void MainWindow::do_login()
     tesseract::SessionStore::migrate_legacy_layout();
 
     auto index = tesseract::SessionStore::load_index();
+    std::string restore_error;
+    bool any_restore_failed = false;
+
     if (!index.user_ids.empty())
     {
         gtk_label_set_text(GTK_LABEL(status_bar_),
@@ -2714,7 +2717,8 @@ void MainWindow::do_login()
             auto res = sess->client->restore_session(*saved);
             if (!res)
             {
-                tesseract::SessionStore::clear_account(uid);
+                restore_error       = res.message;
+                any_restore_failed  = true;
                 continue;
             }
             sess->user_id = sess->client->get_user_id();
@@ -2823,6 +2827,8 @@ void MainWindow::do_login()
     login_view_->reset();
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Not logged in"));
+    if (any_restore_failed)
+        login_view_->show_restore_error(restore_error, [this] { do_login(); });
 }
 
 void MainWindow::on_login_succeeded()

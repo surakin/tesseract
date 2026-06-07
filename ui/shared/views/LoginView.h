@@ -6,6 +6,7 @@
 // callers of success/cancel) are injected via std::function hooks set by
 // the host before calling init_with_field().
 
+#include "AlertDialog.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/host.h"
@@ -177,6 +178,15 @@ public:
     void position_overlay();
 
     // -----------------------------------------------------------------------
+    // Error overlay
+    // -----------------------------------------------------------------------
+
+    /// Show a "Connection Error" alert with Retry and Sign In buttons on top
+    /// of the login form.  Called by the shell when session restore fails due
+    /// to a network error.  `retry_cb` is invoked if the user clicks Retry.
+    void show_restore_error(std::string body, std::function<void()> retry_cb);
+
+    // -----------------------------------------------------------------------
     // Runtime control
     // -----------------------------------------------------------------------
 
@@ -243,6 +253,9 @@ private:
     std::string    homeserver_label_{"matrix.org"};
     DiscoveryState discovery_state_{DiscoveryState::Idle};
     std::string    resolved_base_url_;
+
+    // Alert overlay (owned via add_child, raw pointer borrowed back)
+    AlertDialog* alert_          = nullptr;
 
     // Borrowed widget pointers (owned by card_)
     tk::VBox*   card_            = nullptr;

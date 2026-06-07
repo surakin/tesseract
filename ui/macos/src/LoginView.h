@@ -46,4 +46,9 @@
 /// Display a status message above the form (e.g. "Saved session expired").
 - (void)setStatusMessage:(NSString*)message;
 
+/// Show a "Connection Error" alert overlay on top of the login form with
+/// Retry and Sign In buttons.  `retryCallback` is invoked on Retry.
+- (void)showRestoreError:(NSString*)body
+           retryCallback:(void (^)(void))retryCallback;
+
 @end

@@ -2330,6 +2330,8 @@ void MainWindow::doLogin()
 
     statusBar()->showMessage(tr("Restoring sessions\xe2\x80\xa6"));
 
+    std::string restore_error;
+    bool any_restore_failed = false;
     int target_active = -1;
     for (std::size_t i = 0; i < idx.user_ids.size(); ++i)
     {
@@ -2349,14 +2351,8 @@ void MainWindow::doLogin()
         auto res = session->client->restore_session(*json);
         if (!res)
         {
-            // This account's session is bad — wipe it from disk so the
-            // next launch doesn't keep retrying.
-            tesseract::SessionStore::clear_account(uid);
-            statusBar()->showMessage(
-                tr("Account %1 expired: %2")
-                    .arg(QString::fromStdString(uid),
-                         QString::fromStdString(res.message)),
-                6000);
+            restore_error      = res.message;
+            any_restore_failed = true;
             continue;
         }
         session->display_name = session->client->get_display_name();
@@ -2407,8 +2403,7 @@ void MainWindow::doLogin()
 
     if (accounts_.empty())
     {
-        // Every stored account failed to restore — drop to initial login.
-        tesseract::SessionStore::save_index({});
+        // Every stored account failed to restore — show login view.
         loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
         pending_login_is_add_account_ = false;
         add_account_return_idx_ = -1;
@@ -2434,6 +2429,8 @@ void MainWindow::doLogin()
         loginView_->reset();
         contentStack_->setCurrentWidget(loginView_);
         statusBar()->showMessage(tr("Not logged in"));
+        if (any_restore_failed)
+            loginView_->show_restore_error(restore_error, [this] { doLogin(); });
         return;
     }
 

@@ -103,4 +103,11 @@ void LoginView::set_status_message(const std::string& msg)
         shared_->set_status_message(msg);
 }
 
+void LoginView::show_restore_error(const std::string& body,
+                                   std::function<void()> retry_cb)
+{
+    if (shared_)
+        shared_->show_restore_error(body, std::move(retry_cb));
+}
+
 } // namespace gtk4

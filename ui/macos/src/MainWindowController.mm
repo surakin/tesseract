@@ -5307,6 +5307,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     tesseract::SessionStore::migrate_legacy_layout();
 
     auto index = tesseract::SessionStore::load_index();
+    std::string restore_error;
+    bool any_restore_failed = false;
     for (const auto& uid : index.user_ids)
     {
         auto session_json = tesseract::SessionStore::load_account(uid);
@@ -5319,8 +5321,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         session->client = std::make_unique<tesseract::Client>();
         session->client->set_data_dir(
             tesseract::SessionStore::sdk_store_dir(uid).string());
-        if (!session->client->restore_session(*session_json))
+        auto res = session->client->restore_session(*session_json);
+        if (!res)
         {
+            restore_error      = res.message;
+            any_restore_failed = true;
             continue;
         }
 
@@ -5367,6 +5372,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
         [_loginView reset];
         // _mainAppSurface is already hidden from _buildChrome; login overlay is shown.
         _loginView.hidden = NO;
+        if (any_restore_failed)
+        {
+            NSString* body = [NSString stringWithUTF8String:restore_error.c_str()];
+            __weak MainWindowController* weakSelf = self;
+            [_loginView showRestoreError:body
+                           retryCallback:^{ [weakSelf beginLogin]; }];
+        }
         return;
     }
 

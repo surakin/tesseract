@@ -37,6 +37,8 @@ public:
     void set_run_async(std::function<void(std::function<void()>)> fn);
     void reset();
     void set_status_message(const std::string& msg);
+    void show_restore_error(const std::string& body,
+                            std::function<void()> retry_cb);
 
 private:
     std::unique_ptr<tk::gtk4::Surface> surface_;

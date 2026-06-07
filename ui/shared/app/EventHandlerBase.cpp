@@ -249,6 +249,8 @@ void EventHandlerBase::on_sync_error(const std::string& context,
         [shell = shell_, uid = user_id_, ctx = context, desc = description,
          sl = soft_logout]() mutable
         {
+            if (ctx == "sync_offline" || ctx == "sync_error")
+                shell->handle_offline_ui_();
             shell->handle_sync_error_ui_(std::move(ctx), std::move(uid),
                                          std::move(desc), sl);
         });
@@ -303,7 +305,11 @@ void EventHandlerBase::on_room_list_state(RoomListState state)
             shell->on_room_list_state_ui_();
             shell->on_inflight_ui_();
             if (s == RoomListState::Running)
+            {
                 shell->begin_server_info_fetch_();
+                if (shell->offline_)
+                    shell->handle_online_ui_();
+            }
         });
 }
 

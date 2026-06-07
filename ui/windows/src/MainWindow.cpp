@@ -3417,6 +3417,9 @@ void MainWindow::start_login()
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Restoring session…"));
 
+    std::string restore_error;
+    bool any_restore_failed = false;
+
     for (const auto& uid : index.user_ids)
     {
         auto json = tesseract::SessionStore::load_account(uid);
@@ -3433,7 +3436,8 @@ void MainWindow::start_login()
         auto res = sess->client->restore_session(*json);
         if (!res)
         {
-            tesseract::SessionStore::clear_account(uid);
+            restore_error      = res.message;
+            any_restore_failed = true;
             continue;
         }
         sess->user_id = sess->client->get_user_id();
@@ -3488,6 +3492,9 @@ void MainWindow::start_login()
                 });
             login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
             login_view_->reset();
+            if (any_restore_failed)
+                login_view_->show_restore_error(restore_error,
+                                                [this] { start_login(); });
         }
         show_login_view();
         SendMessageW(hStatus_, SB_SETTEXTW, 0,

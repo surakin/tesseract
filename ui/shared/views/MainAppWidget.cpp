@@ -1,5 +1,6 @@
 #include "MainAppWidget.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <tesseract/visual.h>
@@ -143,6 +144,13 @@ void MainAppWidget::show_verif_banner(bool show)
     {
         verif_banner_->set_visible(show);
     }
+}
+
+void MainAppWidget::set_offline(bool offline)
+{
+    if (offline_visible_ == offline) return;
+    offline_visible_ = offline;
+    offline_layout_.reset();
 }
 
 void MainAppWidget::set_tab_bar_visible(bool visible)
@@ -347,6 +355,16 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float chat_w = w - kSidebarW - kSepW;
     float chat_y = y;
 
+    if (offline_visible_)
+    {
+        offline_banner_rect_ = {chat_x, chat_y, chat_w, kOfflineBannerH};
+        chat_y += kOfflineBannerH;
+    }
+    else
+    {
+        offline_banner_rect_ = {};
+    }
+
     // The banner must never show while the initial key-setup overlay is open
     // (its backdrop is dimmed, not opaque, so the banner would peek through).
     // set_visible() here also keeps pointer dispatch / hit_test consistent.
@@ -455,6 +473,31 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     // 1px vertical separator between sidebar and chat panel.
     ctx.canvas.fill_rect({bounds_.x + kSidebarW, bounds_.y, kSepW, bounds_.h},
                          pal.separator);
+
+    // Offline connectivity banner (top of chat panel, above all chat content).
+    if (offline_visible_ && offline_banner_rect_.w > 0.0f)
+    {
+        constexpr tk::Color kBg{0xFF, 0xB3, 0x00, 0xFF};   // amber
+        constexpr tk::Color kFg{0x33, 0x26, 0x00, 0xFF};   // dark amber text
+        ctx.canvas.fill_rect(offline_banner_rect_, kBg);
+        if (!offline_layout_)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Small;
+            st.max_width = offline_banner_rect_.w - 16.0f;
+            offline_layout_ = ctx.factory.build_text(
+                tk::tr("No internet connection \xe2\x80\x94 reconnecting\xe2\x80\xa6"), st);
+        }
+        if (offline_layout_)
+        {
+            tk::Size ts = offline_layout_->measure();
+            float    tx = offline_banner_rect_.x +
+                          (offline_banner_rect_.w - ts.w) * 0.5f;
+            float    ty = offline_banner_rect_.y +
+                          (offline_banner_rect_.h - ts.h) * 0.5f;
+            ctx.canvas.draw_text(*offline_layout_, {tx, ty}, kFg);
+        }
+    }
 
     // Chat panel.
     // Recompute from live overlay state (not the flag set during arrange()) so

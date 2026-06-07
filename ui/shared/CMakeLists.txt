@@ -131,6 +131,8 @@ set(_tk_sources
     views/InviteCard.cpp
     views/RoomInfoPanel.h
     views/RoomInfoPanel.cpp
+    views/AlertDialog.h
+    views/AlertDialog.cpp
     views/ConfirmDialog.h
     views/ConfirmDialog.cpp
     views/MainAppWidget.h

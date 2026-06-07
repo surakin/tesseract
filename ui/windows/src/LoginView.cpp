@@ -85,6 +85,13 @@ void LoginView::set_status_message(const std::wstring& msg)
     shared_->set_status_message(msg.empty() ? std::string{} : wstring_to_utf8(msg));
 }
 
+void LoginView::show_restore_error(const std::string& body,
+                                   std::function<void()> retry_cb)
+{
+    if (shared_)
+        shared_->show_restore_error(body, std::move(retry_cb));
+}
+
 void LoginView::set_on_begin_oauth(std::function<void()> cb)
 {
     if (shared_)

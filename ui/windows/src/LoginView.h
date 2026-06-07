@@ -41,6 +41,8 @@ public:
     void layout(int w, int h);
     void set_theme(const tk::Theme& t);
     void reset();
+    void show_restore_error(const std::string& body,
+                            std::function<void()> retry_cb);
 
     /// UTF-16 overload kept for Win32 callers passing TCHAR strings.
     void set_status_message(const std::wstring& msg);

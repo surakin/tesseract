@@ -523,6 +523,7 @@ protected:
     BackupState last_backup_state_ = BackupState::Unknown;
     std::uint64_t last_imported_keys_ = 0;
     bool sync_progress_shown_ = false;
+    bool offline_             = false;
     /// Extra in-flight HTTP request count (excludes the sync long-poll).
     std::uint32_t last_inflight_ = 0;
     /// Generation counter for show_status_message_ auto-clear: a late-firing
@@ -1081,6 +1082,14 @@ protected:
                                        bool /*soft_logout*/)
     {
     }
+
+    // Show the offline connectivity banner in the main app widget and schedule
+    // a relayout. Called when the sync service signals a network outage.
+    virtual void handle_offline_ui_();
+
+    // Hide the offline banner. Called when RoomListState transitions back to
+    // Running after having been offline.
+    virtual void handle_online_ui_();
     virtual void handle_backup_progress_ui_(BackupProgress /*progress*/)
     {
     }

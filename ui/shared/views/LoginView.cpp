@@ -1,5 +1,6 @@
 #include "LoginView.h"
 
+#include "AlertDialog.h"
 #include "tk/i18n.h"
 
 #include <algorithm>
@@ -96,6 +97,10 @@ void LoginView::rebuild_tree()
     status_lbl_     = card->add_child(std::move(status));
 
     card_ = add_child(std::move(card));
+
+    auto alert_dlg = std::make_unique<AlertDialog>();
+    alert_dlg->on_layout_changed = [this] { if (relayout_) relayout_(); };
+    alert_ = add_child(std::move(alert_dlg));
 }
 
 // ---------------------------------------------------------------------------
@@ -544,6 +549,8 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         homeserver_field_rect_ = {fr.x - bounds.x,
                                   fr.y - bounds.y - (h - fr.h) * 0.5f, fr.w, h};
     }
+
+    if (alert_) alert_->arrange(ctx, bounds);
 }
 
 void LoginView::paint(tk::PaintCtx& ctx)
@@ -567,6 +574,24 @@ void LoginView::paint(tk::PaintCtx& ctx)
     }
 
     card_->paint(ctx);
+    if (alert_) alert_->paint(ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Error overlay
+// ---------------------------------------------------------------------------
+
+void LoginView::show_restore_error(std::string body, std::function<void()> retry_cb)
+{
+    if (!alert_) return;
+    AlertDialog::Options opts;
+    opts.title           = tk::tr("Connection Error");
+    opts.body            = std::move(body);
+    opts.primary_label   = tk::tr("Retry");
+    opts.secondary_label = tk::tr("Sign In");
+    alert_->open(std::move(opts),
+                 std::move(retry_cb),
+                 [this] { if (alert_) alert_->close(); });
 }
 
 } // namespace tesseract::views

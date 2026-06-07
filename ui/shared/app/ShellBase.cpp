@@ -4211,6 +4211,20 @@ bool ShellBase::read_device_verified_() const
     return client_ ? client_->device_verified() : false;
 }
 
+void ShellBase::handle_offline_ui_()
+{
+    offline_ = true;
+    if (main_app_) main_app_->set_offline(true);
+    request_relayout_();
+}
+
+void ShellBase::handle_online_ui_()
+{
+    offline_ = false;
+    if (main_app_) main_app_->set_offline(false);
+    request_relayout_();
+}
+
 void ShellBase::handle_enable_recovery_progress_ui_(uint8_t  step,
                                                     std::string recovery_key,
                                                     uint32_t backed_up,

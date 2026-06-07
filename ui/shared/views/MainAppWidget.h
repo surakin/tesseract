@@ -143,6 +143,12 @@ public:
     // between 1 and 2 (or vice-versa).
     void set_tab_bar_visible(bool visible);
 
+    // ── Offline connectivity banner ───────────────────────────────────────────
+
+    // Show or hide the "No internet connection" strip at the top of the chat
+    // panel. Called by ShellBase when sync loses/regains network connectivity.
+    void set_offline(bool offline);
+
     // ── Native overlay rects (call from the surface's set_on_layout) ──────
     //
     // While any modal overlay is up (ConfirmDialog at this level, or the
@@ -213,6 +219,13 @@ private:
     QuickSwitcher* quick_switcher_ = nullptr;
 
     bool verif_visible_ = false;
+
+    // Offline connectivity banner state
+    bool     offline_visible_    = false;
+    tk::Rect offline_banner_rect_{};
+    std::unique_ptr<tk::TextLayout> offline_layout_;
+
+    static constexpr float kOfflineBannerH = 32.0f;
 };
 
 } // namespace tesseract::views
