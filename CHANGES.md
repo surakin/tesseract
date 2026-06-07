@@ -7,6 +7,29 @@ Tagged releases summarize all changes since the previous tag.
 
 Changes since v0.1.8:
 
+### 2026-06-07
+
+- fix(ui): when `restore_session()` fails at startup (e.g. no network), the login
+  view now shows a modal `AlertDialog` overlay with title "Connection Error" and
+  Retry / Sign In buttons instead of silently presenting the bare login form.
+  `AlertDialog` is a new shared widget modeled on `ConfirmDialog` but not
+  backdrop-dismissible, with up to two configurable action buttons
+  (`open(Options, primary_cb, secondary_cb)` / `close()` / `is_open()`). Wired on
+  all four shells (Qt6, GTK4, Win32, macOS). The erroneous
+  `SessionStore::clear_account()` call on any restore failure in the GTK4, Qt6, and
+  Win32 shells is removed — session data must survive on disk so Retry can re-attempt
+  the restore; only `handle_auth_error()` (triggered by `sync_auth_error`) should
+  clear accounts. The misleading Qt6 "Account expired" status message and
+  `save_index({})` wipe on the all-fail path are also removed.
+- fix(ui): when sync loses connectivity at runtime (`sync_offline` / `sync_error`
+  callback context), a 32 px amber "No internet connection — reconnecting…" banner
+  appears at the top of the chat panel and auto-hides when `RoomListState` returns
+  to `Running`. `MainAppWidget::set_offline(bool)` drives the banner visibility;
+  `ShellBase` tracks the `offline_` flag and exposes `handle_offline_ui_()` /
+  `handle_online_ui_()` virtual hooks; `EventHandlerBase` wires `sync_offline` /
+  `sync_error` to the former and `RoomListState::Running` (when transitioning from
+  offline) to the latter. All four shells benefit with no per-shell changes.
+
 ### 2026-06-06
 
 - feat(ui): the room list auto-scrolls the most-recent unread room into view

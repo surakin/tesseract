@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-06** (v0.1.9).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-07** (v0.1.9).
 
 > **Sticky, collapsible section headers in the room list.**
 > Section headers (Favorites, DMs, Rooms, Spaces, Inactive) stick to the top
@@ -400,7 +400,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 181 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 672 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 692 |
 
 ## Platforms
 
@@ -427,6 +427,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Identity strip in sidebar** — circular avatar + display name + right-click "Log Out" on every platform.
 - **Single-instance enforcement** — a per-user OS lock prevents two app instances from running concurrently (`QLockFile` on Qt6, `GApplication` uniqueness on GTK4, a named mutex on Win32, `NSRunningApplication` check on macOS); the second launch exits with a notice.
 - **Duplicate account guard** — after OAuth completes the shell checks existing `accounts_` for a matching `user_id` before committing to disk; re-adding the same account discards the temp store and returns to the last active account without side effects.
+- **Startup restore error dialog** — when `restore_session()` fails at launch (network outage, transient server error), the login view displays a modal `AlertDialog` overlay ("Connection Error") with Retry and Sign In buttons instead of silently showing a blank login form. The session files are left untouched so Retry can re-attempt restore once connectivity returns; `SessionStore::clear_account()` is called only by `handle_auth_error()` on a confirmed `sync_auth_error` response. All four shells wired.
 
 ## Sync & rooms
 
@@ -439,6 +440,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Async room actions** — text sends, reactions, pagination, room join/leave/invite-accept/decline, and file uploads converted from blocking C++ worker-thread calls to fire-and-forget `rt.spawn()` tokio tasks delivering results via `IEventHandler` callbacks (`paginate_back_async`, `accept_invite_async`, `send_image_async`, etc.). Blocking wrappers removed.
 - **Kind-aware last-message preview** — each room row's preview uses `formatted_body`'s first plain line for text/notice/emote, shows "\<sender\> sent an image/video/file/voice message" for media kinds, and draws an inline ~28 px thumbnail for sticker last-messages (`RoomListView` `sticker_provider_` backed by the shells' shared image cache; wired on all four platforms).
 - **Tombstoned (upgraded) rooms hidden** from the room list.
+- **Runtime offline banner** — when sync loses connectivity (`sync_offline` / `sync_error`), a 32 px amber "No internet connection — reconnecting…" strip appears at the top of the chat panel; it auto-hides when `RoomListState` returns to `Running`. `ShellBase::offline_` tracks the flag; `EventHandlerBase` wires both transitions; `MainAppWidget::set_offline(bool)` drives the banner. All four shells benefit with no per-shell changes.
 - **Graceful shutdown** — `Drop` on `ClientFfi` calls `stop_sync()`.
 - **Low-power CPU optimisations** — the sync worker no longer fans out into matrix-sdk SQLite queries on every notable update. The room-info watcher coalesces `RoomInfoNotableUpdate` bursts in a 150 ms window and folds their reasons, skipping the image-pack/prefs rebuild when only read-receipt / latest-event / recency bits are set. `sync_room_subscriptions` is diff-aware — a re-selection of the already-open room or a thread toggle that lands in an already-subscribed room is a no-op. The presence polling loop reads a cached DM-counterpart set (refreshed from `RoomInfo.dm_counterpart_user_id` after every room-list rebuild) instead of walking every joined room with a `dm_other_user` lookup per tick, the tick interval is raised from 30 s to 60 s, and the loop is suspended entirely while the window is hidden/minimized/unfocused (re-enabled with an immediate one-shot kick on focus regain via `Client::poll_presence_now`). On low-end laptops these collapse a previously dominant `chunk_large_query_over` hotspot.
 
@@ -456,6 +458,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **`tk::Host`** — per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). `request_repaint`, `post_to_ui`, `make_text_field`, `make_text_area`, `make_audio_player`, `make_audio_capture`, `encode_for_send`.
 - **Native text overlays** — `NativeTextField` (`QLineEdit` / `GtkEntry` / Win32 EDIT / `NSTextField`) and `NativeTextArea` (`QTextEdit` / `GtkTextView` / multi-line EDIT / `NSTextView`) for IME-friendly input. `set_placeholder` is implemented on all four platforms (GTK4 uses a `dim-label` `GtkLabel` overlay child since `GtkTextView` has no native placeholder API).
 - **Shared views** — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `StickerPicker`, `RecoveryBanner`, `ComposeBar` mounted identically on every platform.
+- **`AlertDialog`** — modal overlay widget (not backdrop-dismissible) with a title, body, and up to two configurable action buttons (`open(Options, primary_cb, secondary_cb)` / `close()` / `is_open()`). Used by `LoginView` to surface startup restore errors; available for other blocking error prompts.
 - **Drag-and-drop ingest** — `FileDropHandler` on every Surface; image-data MIME types route to the compose bar's image preview, generic files route to the file chip.
 
 ## Messaging
