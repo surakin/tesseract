@@ -3072,11 +3072,12 @@ void ShellBase::notify_window_active_(bool active)
     // owns — if the user has presence disabled, never re-enable polling here.
     if (client_ && tesseract::Settings::instance().send_presence)
     {
-        client_->set_presence_polling_enabled(active);
-        if (active)
-        {
-            client_->poll_presence_now();
-        }
+        auto* c = client_;
+        run_async_mut_([c, active]() {
+            c->set_presence_polling_enabled(active);
+            if (active)
+                c->poll_presence_now();
+        });
     }
 }
 
@@ -3158,7 +3159,8 @@ void ShellBase::handle_send_presence_toggle_(bool enabled)
 
     if (client_)
     {
-        client_->set_presence_polling_enabled(enabled);
+        auto* c = client_;
+        run_async_mut_([c, enabled]() { c->set_presence_polling_enabled(enabled); });
     }
 
     if (enabled)
