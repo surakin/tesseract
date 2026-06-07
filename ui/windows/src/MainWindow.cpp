@@ -1262,6 +1262,17 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
+    case WM_COPYDATA: {
+        const auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
+        if (cds && cds->dwData == 1 /* matrix URI */ && cds->cbData > 0)
+        {
+            std::string uri(static_cast<const char*>(cds->lpData),
+                            cds->cbData - 1);
+            self->open_matrix_link(uri);
+        }
+        return TRUE;
+    }
+
     default:
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
@@ -1868,10 +1879,7 @@ void MainWindow::on_create(HWND hwnd)
         {
             ensure_tile_async(z, x, y);
         };
-        room_view_->on_link_clicked = [](const std::string& url)
-        {
-            tesseract::Client::open_in_browser(url);
-        };
+        setup_link_clicked_(room_view_);
         room_view_->on_set_clipboard = [this](std::string_view t)
         {
             if (main_app_surface_)
@@ -7386,6 +7394,18 @@ std::wstring MainWindow::show_save_dialog_(const std::wstring& suggested,
 // ---------------------------------------------------------------------------
 // EncryptionSetupOverlay — Win32 wiring
 // ---------------------------------------------------------------------------
+
+void MainWindow::open_join_room_dialog_ui_(const std::string& prefill)
+{
+    open_join_room_dialog();
+    if (!prefill.empty())
+    {
+        if (join_room_shared_)
+            join_room_shared_->set_alias_text(prefill);
+        if (join_room_alias_field_)
+            join_room_alias_field_->set_text(prefill);
+    }
+}
 
 void MainWindow::show_encryption_setup_overlay_(
     tesseract::views::EncryptionSetupOverlay::Mode mode)

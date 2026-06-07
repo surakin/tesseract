@@ -1744,6 +1744,10 @@ pub(super) async fn build_room_info(
         is_encrypted,
         history_visibility,
         pinned_events,
+        canonical_alias: room
+            .canonical_alias()
+            .map(|a| a.to_string())
+            .unwrap_or_default(),
     })
 }
 

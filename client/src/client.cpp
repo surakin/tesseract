@@ -151,6 +151,16 @@ bool Client::open_in_browser(const std::string& url)
 #endif
 }
 
+Client::MatrixLink Client::parse_matrix_link(const std::string& uri)
+{
+    auto r = tesseract_ffi::parse_matrix_link(uri);
+    return MatrixLink{
+        static_cast<MatrixLink::Kind>(r.kind),
+        std::string(r.primary),
+        std::string(r.event_id),
+    };
+}
+
 Result Client::restore_session(const std::string& session_json)
 {
     MUT_FFI;

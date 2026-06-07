@@ -350,9 +350,17 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     {
         send_receipt_(event_id);
     };
-    rv->on_link_clicked = [](const std::string& url)
+    rv->on_link_clicked = [this](const std::string& url)
     {
-        tesseract::Client::open_in_browser(url);
+        if (tesseract::Client::parse_matrix_link(url).kind
+            != tesseract::Client::MatrixLink::Kind::Unknown)
+        {
+            shell_->open_matrix_link(url);
+        }
+        else
+        {
+            tesseract::Client::open_in_browser(url);
+        }
     };
     rv->on_near_top = [this]
     {

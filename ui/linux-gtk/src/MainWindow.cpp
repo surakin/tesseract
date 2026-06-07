@@ -1432,10 +1432,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             pending_reaction_event_id_ = event_id;
             popup_emoji_at_rect(main_app_surface_->widget(), anchor);
         };
-        room_view_->on_link_clicked = [](const std::string& url)
-        {
-            tesseract::Client::open_in_browser(url);
-        };
+        setup_link_clicked_(room_view_);
         room_view_->on_set_clipboard = [this](std::string_view t)
         {
             if (main_app_surface_)
@@ -4930,6 +4927,17 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
 // ---------------------------------------------------------------------------
 // EncryptionSetupOverlay wiring (GTK4 shell)
 // ---------------------------------------------------------------------------
+
+void MainWindow::open_join_room_dialog_ui_(const std::string& prefill)
+{
+    open_join_room_dialog();
+    if (!prefill.empty() && join_room_shared_)
+    {
+        join_room_shared_->set_alias_text(prefill);
+        if (join_room_alias_field_)
+            join_room_alias_field_->set_text(prefill);
+    }
+}
 
 void MainWindow::show_encryption_setup_overlay_(
     tesseract::views::EncryptionSetupOverlay::Mode mode)

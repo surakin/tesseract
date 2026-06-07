@@ -244,6 +244,7 @@ private:
     void on_space_children_cache_ready_ui_() override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void open_join_room_dialog_ui_(const std::string& prefill) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,

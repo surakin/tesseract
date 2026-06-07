@@ -164,6 +164,26 @@ public:
 
     static bool open_in_browser(const std::string& url);
 
+    /// Parsed representation of a `https://matrix.to/#/…` URL or a
+    /// `matrix:` URI (MSC2312).  `kind == Unknown` for unrecognised input.
+    struct MatrixLink
+    {
+        enum class Kind : uint8_t
+        {
+            Unknown   = 0,
+            Room      = 1, // primary = !room:server
+            RoomAlias = 2, // primary = #alias:server
+            User      = 3, // primary = @user:server
+            Event     = 4, // primary = !room:server, event_id = $evt:server
+        };
+        Kind        kind     = Kind::Unknown;
+        std::string primary;
+        std::string event_id;
+    };
+
+    /// Parse a `matrix.to` URL or `matrix:` URI.  Never throws.
+    static MatrixLink parse_matrix_link(const std::string& uri);
+
     Result restore_session(const std::string& session_json);
     std::string export_session() const;
 

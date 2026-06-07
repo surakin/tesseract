@@ -3,6 +3,7 @@
 mod client;
 mod highlight;
 mod image_packs;
+mod matrix_uri;
 mod media_preview;
 mod oauth;
 mod recent_emoji;
@@ -56,6 +57,7 @@ pub mod ffi {
         pub is_low_priority: bool,
         pub is_encrypted: bool,
         pub history_visibility: String,
+        pub canonical_alias: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -246,6 +248,13 @@ pub mod ffi {
         pub latest_body: String,
         pub latest_timestamp: u64,
         pub num_replies: u64,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct MatrixLinkResult {
+        pub kind: u8,
+        pub primary: String,
+        pub event_id: String,
     }
 
     pub struct EventHandlerBridge;

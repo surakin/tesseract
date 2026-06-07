@@ -30,5 +30,16 @@
 
     <!-- Prevent LaunchServices from opening a second instance via Finder/Dock. -->
     <key>LSMultipleInstancesProhibited</key><true/>
+
+    <!-- matrix: URI scheme handler (MSC2312). -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>CFBundleURLName</key><string>Matrix URI</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>matrix</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>

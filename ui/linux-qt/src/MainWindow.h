@@ -87,6 +87,7 @@ public:
     /// launchers) and uses it; falls back to activateWindow() on X11 or when
     /// no token is available.
     void activateOnStartup();
+    void openMatrixLink(const std::string& uri) { open_matrix_link(uri); }
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -226,6 +227,7 @@ private:
                                std::vector<uint8_t> bytes) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void open_join_room_dialog_ui_(const std::string& prefill) override;
 
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;

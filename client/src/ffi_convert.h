@@ -136,6 +136,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
     {
         out.pinned_events.push_back(from_ffi(p));
     }
+    out.canonical_alias = std::string(r.canonical_alias);
     return out;
 }
 

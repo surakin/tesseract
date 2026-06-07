@@ -1856,6 +1856,14 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // One-time encryption setup check — raises the overlay on the first
     // eligible sync tick after login (Disabled → Fresh, Incomplete → Recover).
     check_encryption_setup_();
+
+    // Replay a matrix link that arrived before we were logged in.
+    if (!pending_matrix_link_.empty())
+    {
+        auto uri = std::move(pending_matrix_link_);
+        pending_matrix_link_.clear();
+        open_matrix_link(uri);
+    }
 }
 
 void ShellBase::push_invites_(std::string user_id, std::vector<InviteInfo> invites)
@@ -2099,6 +2107,18 @@ std::string ShellBase::find_existing_dm_(const std::string& user_id) const
     return find_existing_dm(rooms_, user_id);
 }
 
+void ShellBase::setup_link_clicked_(views::RoomView* rv)
+{
+    if (!rv) return;
+    rv->on_link_clicked = [this](const std::string& url)
+    {
+        if (Client::parse_matrix_link(url).kind != Client::MatrixLink::Kind::Unknown)
+            open_matrix_link(url);
+        else
+            Client::open_in_browser(url);
+    };
+}
+
 void ShellBase::setup_dm_callbacks()
 {
     if (!room_view_) return;
@@ -2188,6 +2208,72 @@ const RoomInfo* ShellBase::best_unread_room_() const
             best = &r;
     }
     return best;
+}
+
+void ShellBase::open_matrix_link(const std::string& uri)
+{
+    if (!client_ || rooms_.empty())
+    {
+        // Not yet logged in or rooms haven't arrived yet — replay on first update.
+        pending_matrix_link_ = uri;
+        return;
+    }
+    pending_matrix_link_.clear();
+
+    auto link = Client::parse_matrix_link(uri);
+    using Kind = Client::MatrixLink::Kind;
+
+    switch (link.kind)
+    {
+    case Kind::User:
+        if (room_view_)
+            room_view_->open_user_profile(link.primary);
+        break;
+
+    case Kind::Room:
+    {
+        auto it = std::find_if(rooms_.begin(), rooms_.end(),
+                               [&](const RoomInfo& r) { return r.id == link.primary; });
+        if (it != rooms_.end())
+            tab_navigate_room(link.primary);
+        else
+            open_join_room_dialog_ui_(link.primary);
+        break;
+    }
+
+    case Kind::RoomAlias:
+    {
+        auto it = std::find_if(rooms_.begin(), rooms_.end(),
+                               [&](const RoomInfo& r)
+                               { return r.canonical_alias == link.primary; });
+        if (it != rooms_.end())
+            tab_navigate_room(it->id);
+        else
+            open_join_room_dialog_ui_(link.primary);
+        break;
+    }
+
+    case Kind::Event:
+    {
+        auto it = std::find_if(rooms_.begin(), rooms_.end(),
+                               [&](const RoomInfo& r) { return r.id == link.primary; });
+        if (it != rooms_.end())
+        {
+            tab_navigate_room(link.primary);
+            if (room_view_ && !link.event_id.empty())
+                room_view_->scroll_to_event_id(link.event_id);
+        }
+        else
+        {
+            open_join_room_dialog_ui_(link.primary);
+        }
+        break;
+    }
+
+    default:
+        // Not a matrix link — ignore.
+        break;
+    }
 }
 
 void ShellBase::navigate_tray_unread_()

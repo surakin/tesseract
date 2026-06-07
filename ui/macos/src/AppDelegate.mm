@@ -137,6 +137,14 @@
     NSApp.mainMenu = mainMenu;
 }
 
+- (BOOL)application:(NSApplication*)app
+            openURL:(NSURL*)url
+            options:(NSDictionary<NSApplicationOpenURLOptionKey, id>*)options
+{
+    [_windowController openMatrixLink:[url absoluteString]];
+    return YES;
+}
+
 - (void)applicationWillTerminate:(NSNotification*)note
 {
     [_windowController stopSync];

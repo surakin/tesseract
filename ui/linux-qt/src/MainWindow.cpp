@@ -461,10 +461,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 mainAppSurface_->relayout();
             }
         };
-        mainApp_->room_view()->on_link_clicked = [](const std::string& url)
-        {
-            tesseract::Client::open_in_browser(url);
-        };
+        setup_link_clicked_(mainApp_->room_view());
         mainApp_->room_view()->on_set_clipboard = [this](std::string_view t)
         {
             if (mainAppSurface_)
@@ -2175,8 +2172,20 @@ void MainWindow::onActivateRequested()
         return;
     auto doActivate = [this, sock]()
     {
-        const QString token = QString::fromUtf8(sock->readAll()).trimmed();
+        // Protocol: newline-delimited.
+        //   Line 1: XDG_ACTIVATION_TOKEN (may be empty)
+        //   Line 2: matrix: URI to navigate to (optional)
+        const QByteArray all = sock->readAll();
+        const int nl = all.indexOf('\n');
+        const QString token =
+            (nl >= 0 ? all.left(nl) : all).trimmed();
         activateWindowWithToken_(token);
+        if (nl >= 0)
+        {
+            const QString uri = QString::fromUtf8(all.mid(nl + 1)).trimmed();
+            if (!uri.isEmpty())
+                openMatrixLink(uri.toStdString());
+        }
         sock->deleteLater();
     };
     // If data is already buffered (fast sender), read immediately.
@@ -4951,6 +4960,12 @@ void MainWindow::show_encryption_setup_overlay_(
 
     mainApp_->show_encryption_setup(true);
     mainAppSurface_->relayout();
+}
+
+void MainWindow::open_join_room_dialog_ui_(const std::string& prefill)
+{
+    if (joinRoomDialog_)
+        joinRoomDialog_->openDialogWithPrefill(prefill);
 }
 
 void MainWindow::handle_verification_request_ui_(std::string flow_id,

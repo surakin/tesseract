@@ -115,6 +115,17 @@ public:
     // Call once per shell after main_app_ and room_view_ are set.
     void setup_dm_callbacks();
 
+    // Wire room_view_->on_link_clicked to intercept matrix: / matrix.to links
+    // in-app and send everything else to the system browser.
+    // Call once per shell after room_view_ is set.
+    void setup_link_clicked_(views::RoomView* rv);
+
+    // Navigate to the target described by a `https://matrix.to/#/…` URL or a
+    // `matrix:` URI (MSC2312).  Safe to call from the UI thread at any time,
+    // including before login completes — in that case the URI is stored and
+    // replayed once the first rooms-update arrives.
+    void open_matrix_link(const std::string& uri);
+
     // ── Debounce ──────────────────────────────────────────────────────────────
     // Independent debounce channels. Each slot tracks its own generation so
     // concurrent debounced actions don't cancel one another.
@@ -237,6 +248,8 @@ protected:
     std::filesystem::path pending_login_temp_dir_;
     bool pending_login_is_add_account_ = false;
     int add_account_return_idx_ = -1;
+    // URI from open_matrix_link() deferred until the first rooms-update.
+    std::string pending_matrix_link_;
 
     // ── Active-account identity ───────────────────────────────────────────────
     std::string my_user_id_;
@@ -759,6 +772,10 @@ protected:
     // Qt6/GTK4/Win32: delegates to navigate_to_room(id).
     // macOS (MacShell): delegates to tab_navigate_room(id).
     virtual void navigate_to_room_(const std::string& room_id) = 0;
+
+    // Open the platform join-room dialog pre-filled with `prefill` (a room ID
+    // or alias).  Default no-op — shells that have a join dialog override this.
+    virtual void open_join_room_dialog_ui_(const std::string& /*prefill*/) {}
 
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;

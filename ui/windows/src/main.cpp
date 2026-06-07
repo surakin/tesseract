@@ -13,8 +13,10 @@
 #endif
 #include <filesystem>
 #include <fstream>
+#include <shellapi.h>
 #include <stdexcept>
 #include "tk/i18n.h"
+#include <tesseract/client.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -68,6 +70,31 @@ std::wstring write_toast_icon_png(HINSTANCE hInstance)
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     LPWSTR /*lpCmdLine*/, int nCmdShow)
 {
+    // Parse command-line arguments to detect a matrix: URI.
+    std::string startup_uri;
+    {
+        int nArgs = 0;
+        LPWSTR* szArgList = CommandLineToArgvW(GetCommandLineW(), &nArgs);
+        if (szArgList && nArgs >= 2)
+        {
+            int len = WideCharToMultiByte(CP_UTF8, 0, szArgList[1], -1,
+                                          nullptr, 0, nullptr, nullptr);
+            if (len > 1)
+            {
+                std::string arg(static_cast<std::size_t>(len - 1), '\0');
+                WideCharToMultiByte(CP_UTF8, 0, szArgList[1], -1,
+                                    arg.data(), len, nullptr, nullptr);
+                if (tesseract::Client::parse_matrix_link(arg).kind
+                    != tesseract::Client::MatrixLink::Kind::Unknown)
+                {
+                    startup_uri = std::move(arg);
+                }
+            }
+        }
+        if (szArgList)
+            LocalFree(szArgList);
+    }
+
     // Single-instance guard: if another process already holds this mutex,
     // find its main window, bring it to the foreground, and exit.
     HANDLE single_inst_mutex =
@@ -81,12 +108,54 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                 ShowWindow(existing, SW_RESTORE);
             }
             SetForegroundWindow(existing);
+            if (!startup_uri.empty())
+            {
+                COPYDATASTRUCT cds{};
+                cds.dwData = 1; // matrix URI
+                cds.cbData = static_cast<DWORD>(startup_uri.size() + 1);
+                cds.lpData = startup_uri.data();
+                SendMessageW(existing, WM_COPYDATA,
+                             reinterpret_cast<WPARAM>(nullptr),
+                             reinterpret_cast<LPARAM>(&cds));
+            }
         }
         if (single_inst_mutex)
         {
             CloseHandle(single_inst_mutex);
         }
         return 0;
+    }
+
+    // Register matrix: URI scheme handler under HKCU (no admin required).
+    {
+        wchar_t exe_path[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+        std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" \"%1\"";
+
+        HKEY key = nullptr;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\matrix",
+                            0, nullptr, REG_OPTION_NON_VOLATILE,
+                            KEY_SET_VALUE | KEY_CREATE_SUB_KEY, nullptr,
+                            &key, nullptr) == ERROR_SUCCESS)
+        {
+            const wchar_t desc[] = L"URL:matrix Protocol";
+            RegSetValueExW(key, nullptr, 0, REG_SZ,
+                           reinterpret_cast<const BYTE*>(desc), sizeof(desc));
+            RegSetValueExW(key, L"URL Protocol", 0, REG_SZ,
+                           reinterpret_cast<const BYTE*>(L""), sizeof(wchar_t));
+            HKEY cmd_key = nullptr;
+            if (RegCreateKeyExW(key, L"shell\\open\\command", 0, nullptr,
+                                REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr,
+                                &cmd_key, nullptr) == ERROR_SUCCESS)
+            {
+                RegSetValueExW(cmd_key, nullptr, 0, REG_SZ,
+                               reinterpret_cast<const BYTE*>(cmd.c_str()),
+                               static_cast<DWORD>((cmd.size() + 1) *
+                                                  sizeof(wchar_t)));
+                RegCloseKey(cmd_key);
+            }
+            RegCloseKey(key);
+        }
     }
 
     // OLE init on the UI thread — required for OLE drag-and-drop (the
@@ -197,6 +266,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         win32::MainWindow window(hInstance);
         if (window.create(nCmdShow))
         {
+            if (!startup_uri.empty())
+            {
+                window.open_matrix_link(startup_uri);
+            }
+
             MSG msg{};
             while (GetMessageW(&msg, nullptr, 0, 0) > 0)
             {

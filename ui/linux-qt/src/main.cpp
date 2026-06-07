@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "MainWindow.h"
 #include "tk/i18n.h"
+#include <tesseract/client.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -35,6 +36,15 @@ int main(int argc, char* argv[])
         {
             const char* tok = std::getenv("XDG_ACTIVATION_TOKEN");
             sock.write(QByteArray(tok ? tok : "").append('\n'));
+            if (argc >= 2)
+            {
+                std::string arg = argv[1];
+                if (tesseract::Client::parse_matrix_link(arg).kind
+                    != tesseract::Client::MatrixLink::Kind::Unknown)
+                {
+                    sock.write(QByteArray::fromStdString(arg).append('\n'));
+                }
+            }
             sock.flush();
             sock.waitForBytesWritten(200);
         }
@@ -64,6 +74,16 @@ int main(int argc, char* argv[])
     qt6::MainWindow window;
     window.show();
     window.activateOnStartup();
+
+    if (argc >= 2)
+    {
+        std::string arg = argv[1];
+        if (tesseract::Client::parse_matrix_link(arg).kind
+            != tesseract::Client::MatrixLink::Kind::Unknown)
+        {
+            window.openMatrixLink(arg);
+        }
+    }
 
     return app.exec();
 

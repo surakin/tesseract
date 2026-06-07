@@ -421,6 +421,9 @@ struct RoomInfo
     /// cache (sender + body snippet + timestamp), sorted newest-first so the
     /// pinned-events banner can render without a separate fetch.
     std::vector<PinnedEvent> pinned_events;
+    /// Canonical alias of the room (`#alias:server`), empty when none is set.
+    /// Read from local state — no network round-trip.
+    std::string canonical_alias;
 
     /// Effective avatar mxc to render for this room: the room's own avatar
     /// when set, otherwise the DM-counterpart fallback. May be empty (caller

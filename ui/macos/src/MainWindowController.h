@@ -25,4 +25,7 @@
 /// AppDelegate's "Insert Emoji" menu item.
 - (void)showEmojiPicker:(id)sender;
 
+/// Navigate to the target described by a matrix.to or matrix: URI.
+- (void)openMatrixLink:(NSString*)uri;
+
 @end

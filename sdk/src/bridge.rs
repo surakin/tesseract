@@ -28,6 +28,10 @@ pub fn highlight_code(code: &str, lang: &str, dark: bool) -> Vec<ffi::HighlightS
     super::highlight::highlight_code(code, lang, dark)
 }
 
+pub fn parse_matrix_link(uri: &str) -> ffi::MatrixLinkResult {
+    super::matrix_uri::parse_matrix_link(uri)
+}
+
 #[cxx::bridge(namespace = "tesseract_ffi")]
 pub mod ffi {
     // -------------------------------------------------------------------------
@@ -92,6 +96,9 @@ pub mod ffi {
         /// `body_preview` is `(image)` / `(file)` / etc. for non-text events
         /// and `(unavailable)` when the id cannot be resolved.
         pinned_events: Vec<PinnedEvent>,
+        /// Canonical alias of the room (`#alias:server`), or empty when none
+        /// is set.  Read from local state — no network round-trip.
+        canonical_alias: String,
     }
 
     /// One entry from `m.room.pinned_events` resolved for the banner UI.
@@ -526,6 +533,18 @@ pub mod ffi {
         join_rule: String,
     }
 
+    /// Result of `parse_matrix_link`.  `kind` values:
+    ///   0 = unknown / not a matrix link
+    ///   1 = room ID  (`!room:server`)
+    ///   2 = room alias (`#alias:server`)
+    ///   3 = user  (`@user:server`)
+    ///   4 = event (`!room:server` + `$event:server`)
+    struct MatrixLinkResult {
+        kind: u8,
+        primary: String,
+        event_id: String,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -851,6 +870,14 @@ pub mod ffi {
         /// runs whose concatenated text equals `code`; an empty vec means the
         /// language was not recognized and the caller should render plain text.
         fn highlight_code(code: &str, lang: &str, dark: bool) -> Vec<HighlightSpan>;
+
+        // ----- Matrix URI / matrix.to link parsing -----
+
+        /// Parse a `https://matrix.to/#/…` URL or a `matrix:` URI (MSC2312)
+        /// into a structured result.  Returns `kind == 0` for unrecognised
+        /// input.  Both `?via=` and `?action=join` query params are stripped.
+        /// Percent-encoded path components are decoded.
+        fn parse_matrix_link(uri: &str) -> MatrixLinkResult;
 
         // ----- Data directory -----
 
@@ -1986,6 +2013,7 @@ impl Clone for ffi::RoomInfo {
             is_encrypted: self.is_encrypted,
             history_visibility: self.history_visibility.clone(),
             pinned_events: self.pinned_events.clone(),
+            canonical_alias: self.canonical_alias.clone(),
         }
     }
 }

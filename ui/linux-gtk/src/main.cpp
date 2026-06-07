@@ -56,8 +56,22 @@ int main(int argc, char** argv)
     }
     tk::set_locale(i18n_dir, lang);
 
+    // Check for a matrix: URI on the command line before GApplication takes over argv.
+    static std::string startup_uri;
+    if (argc >= 2)
+    {
+        std::string arg = argv[1];
+        if (tesseract::Client::parse_matrix_link(arg).kind
+            != tesseract::Client::MatrixLink::Kind::Unknown)
+        {
+            startup_uri = arg;
+            // Remove the URI from argv so GApplication doesn't treat it as a file.
+            argc = 1;
+        }
+    }
+
     GtkApplication* app =
-        gtk_application_new("org.tesseract.gtk", G_APPLICATION_DEFAULT_FLAGS);
+        gtk_application_new("org.tesseract.gtk", G_APPLICATION_HANDLES_OPEN);
 
     std::unique_ptr<gtk4::MainWindow> window;
 
@@ -71,10 +85,35 @@ int main(int argc, char** argv)
                 if (!win)
                 {
                     win = std::make_unique<gtk4::MainWindow>(app);
+                    if (!startup_uri.empty())
+                    {
+                        win->open_matrix_link(startup_uri);
+                        startup_uri.clear();
+                    }
                 }
                 else
                 {
                     win->present(); // second-instance launch raises the existing window
+                }
+            }),
+        &window);
+
+    // Handles matrix: URIs dispatched via D-Bus activation (xdg-open / second instance).
+    g_signal_connect(
+        app, "open",
+        G_CALLBACK(
+            +[](GApplication*, GFile** files, gint n_files, const gchar*, gpointer data)
+            {
+                auto& win =
+                    *static_cast<std::unique_ptr<gtk4::MainWindow>*>(data);
+                if (n_files > 0 && win)
+                {
+                    char* uri = g_file_get_uri(files[0]);
+                    if (uri)
+                    {
+                        win->open_matrix_link(std::string(uri));
+                        g_free(uri);
+                    }
                 }
             }),
         &window);

@@ -29,6 +29,9 @@ public:
     /// Open (or bring to front) the dialog, resetting to Idle state.
     void openDialog();
 
+    /// Open the dialog pre-filled with `prefill` (room ID or alias).
+    void openDialogWithPrefill(const std::string& prefill);
+
     /// Re-skin the dialog surface when the theme preference changes.
     void set_theme(const tk::Theme& t);
 

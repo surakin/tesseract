@@ -642,6 +642,11 @@ void RoomView::show_room_info()
     if (repaint_requester_) repaint_requester_();
 }
 
+void RoomView::open_user_profile(const std::string& user_id)
+{
+    show_user_profile(user_id, "", "");
+}
+
 void RoomView::show_user_profile(std::string user_id, std::string display_name,
                                   std::string avatar_url)
 {

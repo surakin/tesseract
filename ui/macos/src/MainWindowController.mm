@@ -185,6 +185,7 @@ protected:
     {
         tab_navigate_room(room_id);
     }
+    void open_join_room_dialog_ui_(const std::string& prefill) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -565,6 +566,13 @@ namespace
 {
 
 // ── MacShell method implementations ──────────────────────────────────────
+
+void MacShell::open_join_room_dialog_ui_(const std::string& prefill)
+{
+    NSString* ns = prefill.empty() ? nil
+                                   : [NSString stringWithUTF8String:prefill.c_str()];
+    [ctrl_ _openJoinRoomSheetWithPrefill:ns];
+}
 
 void MacShell::post_to_ui_(std::function<void()> fn)
 {
@@ -2680,10 +2688,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     });
                 });
         };
-        _mainApp->room_view()->on_link_clicked = [](const std::string& url)
-        {
-            tesseract::Client::open_in_browser(url);
-        };
+        _shell->setup_link_clicked_(_mainApp->room_view());
         {
             __weak MainWindowController* weakSelf = self;
             _mainApp->room_view()->on_set_clipboard = [weakSelf](std::string_view t)
@@ -4607,6 +4612,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _shell->mut_pool_.drain();
 }
 
+- (void)openMatrixLink:(NSString*)uri
+{
+    if (uri && _shell)
+    {
+        _shell->open_matrix_link([uri UTF8String]);
+    }
+}
+
 - (void)showEmojiPicker:(id)sender
 {
     if (!_mainAppSurface)
@@ -6098,6 +6111,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_openJoinRoomSheet
 {
+    [self _openJoinRoomSheetWithPrefill:nil];
+}
+
+- (void)_openJoinRoomSheetWithPrefill:(NSString*)prefill
+{
     if (!_joinRoomWindow)
         return;
     ++_joinRoomGen;
@@ -6112,6 +6130,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _joinRoomSurface->relayout();
 
     [self.window beginSheet:_joinRoomWindow completionHandler:nil];
+
+    if (prefill.length > 0)
+    {
+        std::string s([prefill UTF8String]);
+        if (_joinRoomView)
+            _joinRoomView->set_alias_text(s);
+        if (_joinRoomAliasField)
+            _joinRoomAliasField->set_text(s);
+    }
+
     if (_joinRoomAliasField)
         _joinRoomAliasField->set_focused(true);
 }

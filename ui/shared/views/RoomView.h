@@ -123,6 +123,10 @@ public:
     // Scroll to the row matching event_id. Returns true when found.
     bool scroll_to_event_id(const std::string& id);
 
+    // Open the user-profile panel for user_id without a room-member context
+    // (display_name and avatar_url may be empty; the panel fills them in).
+    void open_user_profile(const std::string& user_id);
+
     // ── Direct accessors for shell integration ───────────────────────────
 
     // Needed by the shell for: emoji/sticker picker anchor (popupAt),

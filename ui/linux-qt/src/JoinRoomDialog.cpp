@@ -199,6 +199,18 @@ void JoinRoomDialog::openDialog()
     }
 }
 
+void JoinRoomDialog::openDialogWithPrefill(const std::string& prefill)
+{
+    openDialog();
+    if (!prefill.empty())
+    {
+        if (shared_)
+            shared_->set_alias_text(prefill);
+        if (alias_field_)
+            alias_field_->set_text(prefill);
+    }
+}
+
 void JoinRoomDialog::showEvent(QShowEvent* e)
 {
     QDialog::showEvent(e);
