@@ -131,10 +131,19 @@ add_custom_command(TARGET tesseract_macos POST_BUILD
     VERBATIM
 )
 
+# Re-sign after install. CMake's bundle install rewrites build-dir rpaths via
+# install_name_tool, which invalidates the POST_BUILD ad-hoc signature. Without
+# a re-sign here the DMG ships a broken signature that the Apple Silicon kernel
+# rejects at launch.
 if(TESSERACT_MAC_CODESIGN_IDENTITY)
     install(CODE "
-        execute_process(COMMAND codesign --force --options runtime --timestamp
+        execute_process(COMMAND codesign --force --deep --options runtime --timestamp
             --sign \"${TESSERACT_MAC_CODESIGN_IDENTITY}\"
+            \"\${CMAKE_INSTALL_PREFIX}/Tesseract.app\")
+    " COMPONENT Application)
+else()
+    install(CODE "
+        execute_process(COMMAND codesign --force --deep --sign \"-\"
             \"\${CMAKE_INSTALL_PREFIX}/Tesseract.app\")
     " COMPONENT Application)
 endif()
