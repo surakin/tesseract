@@ -230,21 +230,43 @@ endif()
 # Embed Lucide SVG icons as C byte arrays (rasterized + tinted at runtime by
 # nanosvg). All app icons live under ui/icons/lucide/lucide-<name>.svg and are
 # exposed to the shared views as static constexpr k*Svg arrays in icons.h.
-set(_ci "#pragma once\n#include <cstdint>\n\n")
-foreach(_entry
-        "laugh|kEmojiSvg" "sticker|kStickerSvg" "mic|kMicSvg" "stop|kVoiceStopSvg"
-        "reply|kReplySvg" "thread|kThreadSvg" "edit|kEditSvg" "more|kMoreSvg"
-        "redact|kRedactSvg" "pin|kPinSvg" "download|kDownloadSvg" "close|kCloseSvg"
-        "play|kPlaySvg" "join|kJoinSvg" "jump-to-date|kJumpToDateSvg"
-        "threadlist|kThreadListSvg")
-    string(REPLACE "|" ";" _pair "${_entry}")
-    list(GET _pair 0 _name)
-    list(GET _pair 1 _var)
-    file(READ "${CMAKE_SOURCE_DIR}/ui/icons/lucide/lucide-${_name}.svg" _hex HEX)
-    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1, " _bytes "${_hex}")
-    string(APPEND _ci "static constexpr std::uint8_t ${_var}[] = { ${_bytes}};\n")
-endforeach()
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/icons.h" "${_ci}")
+# icons.h is regenerated at build time whenever any source SVG changes.
+set(_lucide_dir "${CMAKE_SOURCE_DIR}/ui/icons/lucide")
+set(_icons_h   "${CMAKE_CURRENT_BINARY_DIR}/icons.h")
+set(_gen_script "${CMAKE_SOURCE_DIR}/cmake/generate_icons.cmake")
+
+set(_icon_svgs
+    "${_lucide_dir}/lucide-laugh.svg"
+    "${_lucide_dir}/lucide-sticker.svg"
+    "${_lucide_dir}/lucide-mic.svg"
+    "${_lucide_dir}/lucide-stop.svg"
+    "${_lucide_dir}/lucide-reply.svg"
+    "${_lucide_dir}/lucide-thread.svg"
+    "${_lucide_dir}/lucide-edit.svg"
+    "${_lucide_dir}/lucide-more.svg"
+    "${_lucide_dir}/lucide-redact.svg"
+    "${_lucide_dir}/lucide-pin.svg"
+    "${_lucide_dir}/lucide-download.svg"
+    "${_lucide_dir}/lucide-close.svg"
+    "${_lucide_dir}/lucide-play.svg"
+    "${_lucide_dir}/lucide-join.svg"
+    "${_lucide_dir}/lucide-jump-to-date.svg"
+    "${_lucide_dir}/lucide-threadlist.svg"
+)
+
+add_custom_command(
+    OUTPUT  "${_icons_h}"
+    COMMAND "${CMAKE_COMMAND}"
+            "-DLUCIDE_DIR=${_lucide_dir}"
+            "-DICONS_H_OUT=${_icons_h}"
+            -P "${_gen_script}"
+    DEPENDS ${_icon_svgs} "${_gen_script}"
+    COMMENT "Generating icons.h from Lucide SVGs"
+    VERBATIM
+)
+
+add_custom_target(tesseract_icons DEPENDS "${_icons_h}")
+add_dependencies(tesseract_tk tesseract_icons)
 
 target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
