@@ -3,9 +3,9 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.1.9 — 2026-06-06
+## v0.1.10 — 2026-06-07
 
-Changes since v0.1.8:
+Changes since v0.1.9:
 
 ### 2026-06-07
 
@@ -29,6 +29,17 @@ Changes since v0.1.8:
   `handle_online_ui_()` virtual hooks; `EventHandlerBase` wires `sync_offline` /
   `sync_error` to the former and `RoomListState::Running` (when transitioning from
   offline) to the latter. All four shells benefit with no per-shell changes.
+- fix(build/macos): the macOS DMG no longer ships a broken code signature. CMake's
+  bundle install step rewrites build-dir rpaths via `install_name_tool`, which
+  invalidates the `POST_BUILD` ad-hoc signature. An `install(CODE)` re-sign step
+  now runs unconditionally after the rpath rewriting — ad-hoc (`-`) when no
+  `TESSERACT_MAC_CODESIGN_IDENTITY` is configured (CI builds), real identity with
+  `--options runtime --timestamp` when one is set. `--deep` is also added to the
+  real-identity install path (was already present in the build-dir signing step).
+
+## v0.1.9 — 2026-06-06
+
+Changes since v0.1.8:
 
 ### 2026-06-06
 

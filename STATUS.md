@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-07** (v0.1.9).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-07** (v0.1.10).
 
 > **Sticky, collapsible section headers in the room list.**
 > Section headers (Favorites, DMs, Rooms, Spaces, Inactive) stick to the top
