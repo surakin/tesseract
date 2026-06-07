@@ -138,6 +138,24 @@ public:
     MediaPreviews media_previews = MediaPreviews::On;
     bool          invite_avatars = true;
 
+    // ── Window geometry ───────────────────────────────────────────────────
+    // Persisted locally (not synced) so windows reopen at the same position
+    // and size. valid=false means "no saved geometry; use platform default".
+    struct WindowGeometry
+    {
+        int  x = 0, y = 0, w = 0, h = 0;
+        bool valid = false;
+    };
+
+    struct PopoutEntry
+    {
+        std::string    room_id;
+        WindowGeometry geometry;
+    };
+
+    WindowGeometry           main_window_geometry;
+    std::vector<PopoutEntry> popout_windows;
+
     // ── Room list ─────────────────────────────────────────────────────
     // Group rooms with no activity for `inactive_room_threshold_days` into a
     // separate "Inactive" room-list section (DMs + Rooms only). Default off.

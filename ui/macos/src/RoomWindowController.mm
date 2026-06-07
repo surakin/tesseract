@@ -50,6 +50,9 @@ public:
         schedule_self_close_();
     }
 
+    // Expose protected RoomWindowBase members to ObjC++ callers.
+    using tesseract::RoomWindowBase::save_popout_geometry_;
+
     // Called by -keyDown: when Escape is pressed.
     bool on_escape_key()
     {
@@ -125,7 +128,29 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
                                                     defer:NO];
     NSString* title = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
     [win setTitle:title];
-    [win center];
+
+    // Apply saved geometry, or centre the default-sized window.
+    {
+        auto saved = get_saved_popout_geometry_(800, 600);
+        if (saved.valid)
+        {
+            NSArray<NSScreen*>* screens = [NSScreen screens];
+            const CGFloat primaryTop =
+                screens.count > 0
+                    ? ([[screens firstObject] frame].origin.y +
+                       [[screens firstObject] frame].size.height)
+                    : 768.0;
+            NSRect f = NSMakeRect(saved.x,
+                                  primaryTop - saved.y - saved.h,
+                                  saved.w,
+                                  saved.h);
+            [win setFrame:f display:NO];
+        }
+        else
+        {
+            [win center];
+        }
+    }
 
     surface_ = std::make_unique<tk::macos::Surface>(tk::Theme::light());
     NSView* surfaceView = (__bridge NSView*)surface_->view_handle();
@@ -627,6 +652,33 @@ void MacRoomWindow::surface_repaint_()
 @implementation RoomWindowController
 
 @synthesize cppWindow = _cppWindow;
+
+// Helper: save this popout window's geometry (top-left coords) to Settings.
+- (void)_savePopoutGeometry
+{
+    if (!_cppWindow) return;
+    NSRect f = self.window.frame;
+    NSArray<NSScreen*>* screens = [NSScreen screens];
+    if (!screens.count) return;
+    const CGFloat primaryTop =
+        [[screens firstObject] frame].origin.y +
+        [[screens firstObject] frame].size.height;
+    _cppWindow->save_popout_geometry_(
+        static_cast<int>(f.origin.x),
+        static_cast<int>(primaryTop - f.origin.y - f.size.height),
+        static_cast<int>(f.size.width),
+        static_cast<int>(f.size.height));
+}
+
+- (void)windowDidEndLiveResize:(NSNotification*)notification
+{
+    [self _savePopoutGeometry];
+}
+
+- (void)windowDidMove:(NSNotification*)notification
+{
+    [self _savePopoutGeometry];
+}
 
 - (void)windowWillClose:(NSNotification*)notification
 {

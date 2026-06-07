@@ -30,8 +30,37 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     {
         gtk_window_set_application(window_, parent_shell_->application());
     }
-    gtk_window_set_default_size(window_, 800, 600);
     gtk_window_set_title(window_, room_id.c_str());
+
+    // Apply saved size (GTK4/Wayland: position is compositor-managed).
+    {
+        const auto saved = get_saved_popout_geometry_(800, 600);
+        gtk_window_set_default_size(window_,
+                                    saved.valid ? saved.w : 800,
+                                    saved.valid ? saved.h : 600);
+    }
+
+    // Save popout window size to Settings whenever the user resizes it.
+    g_signal_connect(
+        window_, "notify::default-width",
+        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                   {
+                       auto* self = static_cast<RoomWindow*>(data);
+                       const int w = gtk_window_get_width(self->window_);
+                       const int h = gtk_window_get_height(self->window_);
+                       self->save_popout_geometry_(0, 0, w, h);
+                   }),
+        this);
+    g_signal_connect(
+        window_, "notify::default-height",
+        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                   {
+                       auto* self = static_cast<RoomWindow*>(data);
+                       const int w = gtk_window_get_width(self->window_);
+                       const int h = gtk_window_get_height(self->window_);
+                       self->save_popout_geometry_(0, 0, w, h);
+                   }),
+        this);
 
     surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     gtk_window_set_child(window_, surface_->widget());

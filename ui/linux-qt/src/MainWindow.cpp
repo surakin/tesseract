@@ -151,6 +151,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
+    // Apply saved window geometry, or use the platform default.
+    {
+        const auto geom = clamp_to_screens_(
+            tesseract::Settings::instance().main_window_geometry,
+            1100, 768, get_screen_work_areas_());
+        if (geom.valid)
+            setGeometry(geom.x, geom.y, geom.w, geom.h);
+        else
+            resize(1100, 768);
+    }
+
     {
         auto main_app_owner =
             std::make_unique<tesseract::views::MainAppWidget>();
@@ -2270,6 +2281,35 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
 void MainWindow::resizeEvent(QResizeEvent* ev)
 {
     QMainWindow::resizeEvent(ev);
+    auto& g = tesseract::Settings::instance().main_window_geometry;
+    const QRect r = geometry();
+    g.x = r.x(); g.y = r.y(); g.w = r.width(); g.h = r.height();
+    g.valid = (g.w > 0 && g.h > 0);
+    save_settings_debounced_();
+}
+
+void MainWindow::moveEvent(QMoveEvent* ev)
+{
+    QMainWindow::moveEvent(ev);
+    auto& g = tesseract::Settings::instance().main_window_geometry;
+    const QRect r = geometry();
+    g.x = r.x(); g.y = r.y(); g.w = r.width(); g.h = r.height();
+    g.valid = (g.w > 0 && g.h > 0);
+    save_settings_debounced_();
+}
+
+std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
+{
+    std::vector<tk::Rect> result;
+    for (QScreen* s : QGuiApplication::screens())
+    {
+        const QRect r = s->availableGeometry();
+        result.push_back({static_cast<float>(r.x()),
+                          static_cast<float>(r.y()),
+                          static_cast<float>(r.width()),
+                          static_cast<float>(r.height())});
+    }
+    return result;
 }
 
 void MainWindow::changeEvent(QEvent* ev)
@@ -4553,6 +4593,8 @@ void MainWindow::switchActiveAccount(int new_idx)
         if (it != pending_restore_rooms_.end())
             std::rotate(pending_restore_rooms_.begin(), it, it + 1);
     }
+    pending_restore_popouts_.clear();
+    populate_pending_restore_popouts_();
 
     if (settings_controller_)
     {

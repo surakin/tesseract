@@ -5,6 +5,7 @@
 #include "tk/host.h"
 #include "tk/theme.h"
 #include <tesseract/image_pack.h>
+#include <tesseract/settings.h>
 #include <tesseract/types.h>
 
 #include <functional>
@@ -144,6 +145,21 @@ protected:
     // thread. Call from WM_DESTROY (Win32) or the platform destroy callback
     // so the C++ object is deleted safely outside its own message handler.
     void schedule_self_close_();
+
+    // Look up the saved geometry for this room's popout from Settings,
+    // validated against available screens. Returns {valid=false} when there
+    // is no saved entry — callers should fall back to their platform default.
+    // Intended for use in the subclass constructor, after shell_ is set.
+    Settings::WindowGeometry get_saved_popout_geometry_(int default_w,
+                                                        int default_h) const;
+
+    // Write the current native window position/size into Settings and
+    // schedule a debounced save. Call from resize/move callbacks.
+    void save_popout_geometry_(int x, int y, int w, int h);
+
+    // Remove this room's entry from Settings::popout_windows and save.
+    // Called automatically by the destructor; also callable on explicit close.
+    void remove_popout_from_settings_();
 
     // SDK operation helpers — forward to shell_->client_ (accessible via
     // friend class ShellBase). All must be called on the UI thread.

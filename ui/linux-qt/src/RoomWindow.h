@@ -3,6 +3,7 @@
 #include <memory>
 #include "app/RoomWindowBase.h"
 #include "tk/host_qt.h"
+class QMoveEvent;
 #include "views/GifController.h"
 #include "views/GifPopup.h"
 #include "views/MentionController.h"
@@ -40,6 +41,7 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent* ev) override;
+    void moveEvent(QMoveEvent* ev) override;
     void closeEvent(QCloseEvent* ev) override;
     void keyPressEvent(QKeyEvent* ev) override;
 

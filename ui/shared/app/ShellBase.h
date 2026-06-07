@@ -121,6 +121,7 @@ public:
     enum class DebounceSlot
     {
         RoomSearch,
+        SaveSettings,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -285,6 +286,14 @@ protected:
     /// Rooms to restore on next on_rooms_updated_: [0] is the active tab,
     /// [1..N] are background tabs. Cleared once fully consumed.
     std::vector<std::string> pending_restore_rooms_;
+    /// Pop-out room IDs to reopen after the room list becomes available.
+    /// Populated from Settings::popout_windows at session restore time.
+    std::vector<std::string> pending_restore_popouts_;
+
+    // Populate pending_restore_popouts_ from Settings::popout_windows, once
+    // per session restore (idempotent: no-op when already populated).
+    // Platform shells call this right after setting pending_restore_rooms_.
+    void populate_pending_restore_popouts_();
     std::vector<std::string> space_stack_;
 
     // ── Thread panel state ────────────────────────────────────────────────────
@@ -1415,6 +1424,30 @@ protected:
     {
         return nullptr;
     }
+
+    // Returns the available work areas for all connected screens (usable area
+    // excluding dock/taskbar) in a top-left-origin coordinate space.
+    // Used by clamp_to_screens_() to validate saved window geometry.
+    // Platform shells override this; the default returns an empty list, which
+    // causes clamp_to_screens_() to fall back to platform-native centering.
+    virtual std::vector<tk::Rect> get_screen_work_areas_() const
+    {
+        return {};
+    }
+
+    // Validate saved geometry against available screens. If the title-bar area
+    // ({saved.x, saved.y, saved.w, 50}) doesn't intersect any screen work area,
+    // the window is re-centred on screens[0] with the saved (or default) size
+    // clamped to 90% of the screen. Returns a geometry with valid=false when
+    // saved.valid is false (caller uses its own platform default).
+    static Settings::WindowGeometry clamp_to_screens_(
+        const Settings::WindowGeometry& saved,
+        int default_w, int default_h,
+        const std::vector<tk::Rect>& screens);
+
+    // Debounce a Settings::save_to_disk() call by 500 ms so rapid window
+    // resize/move events don't flood the file with tiny writes.
+    void save_settings_debounced_();
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 

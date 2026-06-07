@@ -47,6 +47,74 @@ void ShellBase::cancel_debounce_(DebounceSlot slot)
     ++debounce_gen_[static_cast<int>(slot)];
 }
 
+void ShellBase::populate_pending_restore_popouts_()
+{
+    if (!pending_restore_popouts_.empty())
+        return;
+    for (const auto& e : Settings::instance().popout_windows)
+        if (!e.room_id.empty())
+            pending_restore_popouts_.push_back(e.room_id);
+}
+
+void ShellBase::save_settings_debounced_()
+{
+    debounce_(DebounceSlot::SaveSettings, 500,
+              []() {
+                  tesseract::Settings::instance().save_to_disk(
+                      tesseract::config_dir());
+              });
+}
+
+Settings::WindowGeometry ShellBase::clamp_to_screens_(
+    const Settings::WindowGeometry& saved,
+    int default_w,
+    int default_h,
+    const std::vector<tk::Rect>& screens)
+{
+    if (!saved.valid)
+        return {};
+
+    // Check whether the title-bar strip overlaps any screen work area.
+    const float kTitleH = 50.f;
+    const float sx = static_cast<float>(saved.x);
+    const float sy = static_cast<float>(saved.y);
+    const float sw = static_cast<float>(saved.w);
+    bool on_screen = false;
+    for (const auto& s : screens)
+    {
+        const float ox = std::max(sx, s.x);
+        const float oy = std::max(sy, s.y);
+        const float ow = std::min(sx + sw, s.x + s.w) - ox;
+        const float oh = std::min(sy + kTitleH, s.y + s.h) - oy;
+        if (ow > 0.f && oh > 0.f)
+        {
+            on_screen = true;
+            break;
+        }
+    }
+    if (on_screen)
+        return saved;
+
+    // Re-centre on the first available screen with the saved size.
+    const tk::Rect fallback{0.f, 0.f,
+                            static_cast<float>(default_w),
+                            static_cast<float>(default_h)};
+    const tk::Rect& primary = screens.empty() ? fallback : screens[0];
+    const int w = saved.w > 0
+                      ? std::min(saved.w, static_cast<int>(primary.w * 0.9f))
+                      : std::min(default_w, static_cast<int>(primary.w * 0.9f));
+    const int h = saved.h > 0
+                      ? std::min(saved.h, static_cast<int>(primary.h * 0.9f))
+                      : std::min(default_h, static_cast<int>(primary.h * 0.9f));
+    Settings::WindowGeometry result;
+    result.x     = static_cast<int>(primary.x) + (static_cast<int>(primary.w) - w) / 2;
+    result.y     = static_cast<int>(primary.y) + (static_cast<int>(primary.h) - h) / 2;
+    result.w     = w;
+    result.h     = h;
+    result.valid = true;
+    return result;
+}
+
 void ShellBase::show_status_message_(std::string msg, int auto_clear_ms)
 {
     const std::uint32_t gen = ++status_msg_gen_;
@@ -2437,6 +2505,22 @@ void ShellBase::open_room_in_new_window(const std::string& room_id)
         // would otherwise be stuck on its constructor's default theme.
         w->apply_theme(current_theme_);
         owned_secondary_windows_.emplace_back(w);
+
+        // Record that this room is now open as a popout so it can be
+        // restored on the next launch. Geometry is written by the window
+        // itself on resize/move; initialise with valid=false so the first
+        // save_popout_geometry_() call writes real coordinates.
+        auto& pops = Settings::instance().popout_windows;
+        auto pit = std::find_if(pops.begin(), pops.end(),
+                                [&room_id](const Settings::PopoutEntry& e)
+                                { return e.room_id == room_id; });
+        if (pit == pops.end())
+        {
+            Settings::PopoutEntry e;
+            e.room_id = room_id;
+            pops.push_back(std::move(e));
+            save_settings_debounced_();
+        }
     }
 }
 
@@ -2557,6 +2641,10 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
             if (it != pending_restore_rooms_.end())
                 std::rotate(pending_restore_rooms_.begin(), it, it + 1);
         }
+        // Populate popouts-to-restore from local settings (device-local, not
+        // synced). Only do this on the first account-prefs arrival so that a
+        // manual pop-out/close during a session doesn't re-queue stale entries.
+        populate_pending_restore_popouts_();
     }
 }
 
@@ -3503,6 +3591,26 @@ bool ShellBase::try_restore_tab_session_(
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     after_active_room_changed_();
     on_tab_state_changed_ui_();
+
+    // Restore pop-out windows saved from the previous session. Only rooms
+    // that are now in the room list are opened; rooms not yet known are kept
+    // in pending_restore_popouts_ and retried on the next rooms update.
+    if (!pending_restore_popouts_.empty())
+    {
+        std::vector<std::string> still_pending;
+        for (const auto& id : pending_restore_popouts_)
+        {
+            bool known = std::any_of(rooms_.begin(), rooms_.end(),
+                                     [&id](const RoomInfo& r)
+                                     { return r.id == id; });
+            if (known)
+                open_room_in_new_window(id);
+            else
+                still_pending.push_back(id);
+        }
+        pending_restore_popouts_ = std::move(still_pending);
+    }
+
     return true;
 }
 

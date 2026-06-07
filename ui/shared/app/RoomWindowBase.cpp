@@ -25,6 +25,7 @@ RoomWindowBase::~RoomWindowBase()
     *alive_ = false; // signal any in-flight background lambdas to abort
     if (shell_)
     {
+        remove_popout_from_settings_();
         shell_->unregister_room_window_(this);
         shell_->release_room_subscription_(room_id_);
     }
@@ -716,6 +717,55 @@ void RoomWindowBase::schedule_self_close_()
         {
             shell->release_owned_window_(w);
         });
+}
+
+Settings::WindowGeometry RoomWindowBase::get_saved_popout_geometry_(
+    int default_w, int default_h) const
+{
+    const auto& pops = Settings::instance().popout_windows;
+    auto it = std::find_if(pops.begin(), pops.end(),
+                           [this](const Settings::PopoutEntry& e)
+                           { return e.room_id == room_id_; });
+    if (it == pops.end())
+        return {};
+    return ShellBase::clamp_to_screens_(it->geometry, default_w, default_h,
+                                        shell_->get_screen_work_areas_());
+}
+
+void RoomWindowBase::save_popout_geometry_(int x, int y, int w, int h)
+{
+    auto& pops = Settings::instance().popout_windows;
+    auto it = std::find_if(pops.begin(), pops.end(),
+                           [this](const Settings::PopoutEntry& e)
+                           { return e.room_id == room_id_; });
+    Settings::WindowGeometry geom;
+    geom.x = x; geom.y = y; geom.w = w; geom.h = h;
+    geom.valid = (w > 0 && h > 0);
+    if (it != pops.end())
+        it->geometry = geom;
+    else
+    {
+        Settings::PopoutEntry e;
+        e.room_id  = room_id_;
+        e.geometry = geom;
+        pops.push_back(std::move(e));
+    }
+    if (shell_)
+        shell_->save_settings_debounced_();
+}
+
+void RoomWindowBase::remove_popout_from_settings_()
+{
+    auto& pops = Settings::instance().popout_windows;
+    auto it = std::find_if(pops.begin(), pops.end(),
+                           [this](const Settings::PopoutEntry& e)
+                           { return e.room_id == room_id_; });
+    if (it != pops.end())
+    {
+        pops.erase(it);
+        if (shell_)
+            shell_->save_settings_debounced_();
+    }
 }
 
 void RoomWindowBase::send_message_(const std::string& body)

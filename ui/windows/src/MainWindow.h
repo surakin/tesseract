@@ -555,6 +555,7 @@ private:
                                    const std::string& video_url) override;
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
+    std::vector<tk::Rect> get_screen_work_areas_() const override;
 
     // Extract thumbnail, dimensions, and duration from a dropped file on a
     // background thread; posts result back via post_to_ui_. When `target` is

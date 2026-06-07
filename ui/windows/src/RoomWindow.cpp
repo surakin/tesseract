@@ -93,11 +93,16 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         class_registered_ = true;
     }
 
+    const auto saved = get_saved_popout_geometry_(800, 600);
     hwnd_ = CreateWindowExW(
         0, kClassName,
         utf8_to_wstr(room_id).c_str(), // title filled in by set_room
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, nullptr,
-        nullptr, hInst, this);
+        WS_OVERLAPPEDWINDOW,
+        saved.valid ? saved.x : CW_USEDEFAULT,
+        saved.valid ? saved.y : CW_USEDEFAULT,
+        saved.valid ? saved.w : 800,
+        saved.valid ? saved.h : 600,
+        nullptr, nullptr, hInst, this);
 
     if (!hwnd_)
     {
@@ -1072,8 +1077,21 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
             surface_->relayout();
+            RECT wrc{};
+            GetWindowRect(hwnd, &wrc);
+            save_popout_geometry_(wrc.left, wrc.top,
+                                  wrc.right - wrc.left, wrc.bottom - wrc.top);
         }
         return 0;
+
+    case WM_MOVE:
+    {
+        RECT wrc{};
+        GetWindowRect(hwnd, &wrc);
+        save_popout_geometry_(wrc.left, wrc.top,
+                              wrc.right - wrc.left, wrc.bottom - wrc.top);
+        return 0;
+    }
 
     case WM_PAINT:
     {

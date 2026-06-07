@@ -334,6 +334,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
 
     window_ = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
+    // Size is applied after Settings load (see below); fall back to 1100×768.
     gtk_window_set_default_size(GTK_WINDOW(window_), 1100, 768);
 
 #ifdef TESSERACT_ICON_SEARCH_PATH
@@ -433,6 +434,40 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                         "login");
 
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    // Apply saved window size (GTK4/Wayland: position is compositor-managed).
+    {
+        const auto& saved = tesseract::Settings::instance().main_window_geometry;
+        if (saved.valid && saved.w > 0 && saved.h > 0)
+            gtk_window_set_default_size(GTK_WINDOW(window_), saved.w, saved.h);
+    }
+
+    // Save window size to Settings on every resize (debounced 500 ms).
+    // GTK4 fires notify::default-width/-height as the user resizes the window.
+    g_signal_connect(
+        window_, "notify::default-width",
+        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                   {
+                       auto* self = static_cast<MainWindow*>(data);
+                       auto& g    = tesseract::Settings::instance().main_window_geometry;
+                       g.w        = gtk_window_get_width(GTK_WINDOW(self->window_));
+                       g.h        = gtk_window_get_height(GTK_WINDOW(self->window_));
+                       g.valid    = (g.w > 0 && g.h > 0);
+                       self->save_settings_debounced_();
+                   }),
+        this);
+    g_signal_connect(
+        window_, "notify::default-height",
+        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                   {
+                       auto* self = static_cast<MainWindow*>(data);
+                       auto& g    = tesseract::Settings::instance().main_window_geometry;
+                       g.w        = gtk_window_get_width(GTK_WINDOW(self->window_));
+                       g.h        = gtk_window_get_height(GTK_WINDOW(self->window_));
+                       g.valid    = (g.w > 0 && g.h > 0);
+                       self->save_settings_debounced_();
+                   }),
+        this);
 
     // Single surface hosting the full main-app widget tree.
     main_app_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
@@ -6049,6 +6084,8 @@ void MainWindow::switch_active_account(int new_idx)
         if (it != pending_restore_rooms_.end())
             std::rotate(pending_restore_rooms_.begin(), it, it + 1);
     }
+    pending_restore_popouts_.clear();
+    populate_pending_restore_popouts_();
 
     if (settings_controller_)
     {
@@ -6644,6 +6681,29 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     {
         room_view_->set_current_text(draft);
     }
+}
+
+std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
+{
+    std::vector<tk::Rect> result;
+    GdkDisplay* display = gdk_display_get_default();
+    if (!display)
+        return result;
+    GListModel* monitors = gdk_display_get_monitors(display);
+    const guint n = g_list_model_get_n_items(monitors);
+    for (guint i = 0; i < n; ++i)
+    {
+        GdkMonitor* mon = GDK_MONITOR(g_list_model_get_item(monitors, i));
+        if (!mon) continue;
+        GdkRectangle geom{};
+        gdk_monitor_get_geometry(mon, &geom);
+        result.push_back({static_cast<float>(geom.x),
+                          static_cast<float>(geom.y),
+                          static_cast<float>(geom.width),
+                          static_cast<float>(geom.height)});
+        g_object_unref(mon);
+    }
+    return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

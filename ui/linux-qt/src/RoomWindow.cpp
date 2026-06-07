@@ -31,7 +31,14 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 {
     setAttribute(Qt::WA_DeleteOnClose,
                  false); // we manage lifetime via unique_ptr
-    resize(800, 600);
+    // Apply saved geometry or fall back to the default size.
+    {
+        const auto geom = get_saved_popout_geometry_(800, 600);
+        if (geom.valid)
+            setGeometry(geom.x, geom.y, geom.w, geom.h);
+        else
+            resize(800, 600);
+    }
 
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
     auto* layout = new QVBoxLayout(this);
@@ -693,6 +700,15 @@ void RoomWindow::resizeEvent(QResizeEvent* ev)
         surface_->relayout();
         surface_->update();
     }
+    const QRect r = geometry();
+    save_popout_geometry_(r.x(), r.y(), r.width(), r.height());
+}
+
+void RoomWindow::moveEvent(QMoveEvent* ev)
+{
+    QWidget::moveEvent(ev);
+    const QRect r = geometry();
+    save_popout_geometry_(r.x(), r.y(), r.width(), r.height());
 }
 
 void RoomWindow::closeEvent(QCloseEvent* ev)

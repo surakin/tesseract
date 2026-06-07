@@ -255,6 +255,10 @@ public:
     using ShellBase::pending_login_is_add_account_;
     using ShellBase::pending_login_temp_dir_;
     using ShellBase::pending_restore_rooms_;
+    using ShellBase::pending_restore_popouts_;
+    using ShellBase::populate_pending_restore_popouts_;
+    using ShellBase::save_settings_debounced_;
+    using ShellBase::clamp_to_screens_;
     using ShellBase::try_restore_tab_session_;
     using ShellBase::per_account_rooms_;
     using ShellBase::per_account_invites_;
@@ -318,6 +322,29 @@ public:
     void update_typing_bar(const std::string& text, bool visible)
     {
         update_typing_bar_(text, visible);
+    }
+
+    std::vector<tk::Rect> get_screen_work_areas_() const override
+    {
+        std::vector<tk::Rect> result;
+        NSArray<NSScreen*>* screens = [NSScreen screens];
+        if (!screens.count) return result;
+        // y-flip reference: top of screen 0 in Cocoa coords = origin.y + height.
+        // We store geometry in top-left-origin coords (y=0 at top of primary).
+        const CGFloat primaryTop =
+            [[screens firstObject] frame].origin.y +
+            [[screens firstObject] frame].size.height;
+        for (NSScreen* s in screens)
+        {
+            NSRect vf = s.visibleFrame; // excludes menu bar + dock
+            tk::Rect r;
+            r.x = static_cast<float>(vf.origin.x);
+            r.y = static_cast<float>(primaryTop - vf.origin.y - vf.size.height);
+            r.w = static_cast<float>(vf.size.width);
+            r.h = static_cast<float>(vf.size.height);
+            result.push_back(r);
+        }
+        return result;
     }
 
     // Extract thumbnail, dimensions, and duration from a dropped file on a
@@ -1742,6 +1769,41 @@ void MacShell::set_compose_draft_(const std::string& draft)
     window.delegate = self;
     // Load saved settings before _buildChrome wires the main app widget.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    // Apply saved window geometry, or centre the default-sized window.
+    {
+        const auto& saved = tesseract::Settings::instance().main_window_geometry;
+        if (saved.valid)
+        {
+            // Convert stored top-left coords to Cocoa bottom-left.
+            NSArray<NSScreen*>* screens = [NSScreen screens];
+            const CGFloat primaryTop =
+                screens.count > 0
+                    ? ([[screens firstObject] frame].origin.y +
+                       [[screens firstObject] frame].size.height)
+                    : 768.0;
+            NSRect f = NSMakeRect(saved.x,
+                                  primaryTop - saved.y - saved.h,
+                                  saved.w,
+                                  saved.h);
+            // Validate with clamp_to_screens_: re-centre if off-screen.
+            auto clamped = _shell->clamp_to_screens_(
+                saved, 1100, 768, _shell->get_screen_work_areas_());
+            if (clamped.valid)
+            {
+                f = NSMakeRect(clamped.x,
+                               primaryTop - clamped.y - clamped.h,
+                               clamped.w,
+                               clamped.h);
+            }
+            [window setFrame:f display:NO];
+        }
+        else
+        {
+            [window center];
+        }
+    }
+
     [self _buildChrome];
     // Apply the loaded theme to all surfaces created by _buildChrome.
     _shell->apply_current_theme_();
@@ -1753,6 +1815,36 @@ void MacShell::set_compose_draft_(const std::string& draft)
                context:nil];
 
     return self;
+}
+
+// Save main window geometry to Settings (debounced) on resize or move.
+// Uses top-left-origin coords: y=0 at the top of the primary display.
+- (void)_saveWindowGeometry
+{
+    if (!_shell) return;
+    NSRect f = self.window.frame;
+    NSArray<NSScreen*>* screens = [NSScreen screens];
+    if (!screens.count) return;
+    const CGFloat primaryTop =
+        [[screens firstObject] frame].origin.y +
+        [[screens firstObject] frame].size.height;
+    auto& g = tesseract::Settings::instance().main_window_geometry;
+    g.x     = static_cast<int>(f.origin.x);
+    g.y     = static_cast<int>(primaryTop - f.origin.y - f.size.height);
+    g.w     = static_cast<int>(f.size.width);
+    g.h     = static_cast<int>(f.size.height);
+    g.valid = (g.w > 0 && g.h > 0);
+    _shell->save_settings_debounced_();
+}
+
+- (void)windowDidEndLiveResize:(NSNotification*)notification
+{
+    [self _saveWindowGeometry];
+}
+
+- (void)windowDidMove:(NSNotification*)notification
+{
+    [self _saveWindowGeometry];
 }
 
 // Intercept the red traffic-light / Cmd-W. If the tray icon is up, hide the
@@ -5716,6 +5808,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         if (it != _shell->pending_restore_rooms_.end())
             std::rotate(_shell->pending_restore_rooms_.begin(), it, it + 1);
     }
+    _shell->pending_restore_popouts_.clear();
+    _shell->populate_pending_restore_popouts_();
 
     auto idxData = tesseract::SessionStore::load_index();
     idxData.active_user_id = _shell->my_user_id_;

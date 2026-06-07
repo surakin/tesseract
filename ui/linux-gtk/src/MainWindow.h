@@ -123,6 +123,7 @@ private:
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
+    std::vector<tk::Rect> get_screen_work_areas_() const override;
 
     // user_id identifies which account's snapshot this is (for caching).
     void push_rooms(std::string user_id,

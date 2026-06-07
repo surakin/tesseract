@@ -1,5 +1,6 @@
 #pragma once
 #include <QMainWindow>
+class QMoveEvent;
 #include <QHash>
 #include <QLabel>
 #include <QPixmap>
@@ -91,8 +92,10 @@ protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
     void keyPressEvent(QKeyEvent* ev) override;
     void resizeEvent(QResizeEvent* ev) override;
+    void moveEvent(QMoveEvent* ev) override;
     void closeEvent(QCloseEvent* ev) override;
     void changeEvent(QEvent* ev) override;
+    std::vector<tk::Rect> get_screen_work_areas_() const override;
 
 private slots:
     void onLoginSucceeded();

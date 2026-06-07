@@ -895,6 +895,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         if (wParam != SIZE_MINIMIZED)
         {
             self->on_size(LOWORD(lParam), HIWORD(lParam));
+            RECT wrc{};
+            GetWindowRect(hwnd, &wrc);
+            auto& g = tesseract::Settings::instance().main_window_geometry;
+            g.x = wrc.left; g.y = wrc.top;
+            g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+            g.valid = true;
+            self->save_settings_debounced_();
         }
         return 0;
 
@@ -916,6 +923,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         int dy = wrc.top  - self->picker_track_pos_.y;
         self->picker_track_pos_ = {wrc.left, wrc.top};
         self->reposition_visible_pickers_(dx, dy);
+        auto& g = tesseract::Settings::instance().main_window_geometry;
+        g.x = wrc.left; g.y = wrc.top;
+        g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+        g.valid = true;
+        self->save_settings_debounced_();
         return 0;
     }
 
@@ -1341,9 +1353,24 @@ bool MainWindow::create(int nCmdShow)
     {
         return false;
     }
-    // Scale the bootstrap size to logical dimensions at the current display DPI.
-    SetWindowPos(hwnd_, nullptr, 0, 0, dip_to_phys(1024.f), dip_to_phys(768.f),
-                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    // WM_CREATE fires synchronously inside CreateWindowExW, which calls
+    // on_create() → load_from_disk(), so saved geometry is available here.
+    {
+        const auto geom = clamp_to_screens_(
+            tesseract::Settings::instance().main_window_geometry,
+            1024, 768, get_screen_work_areas_());
+        if (geom.valid)
+        {
+            SetWindowPos(hwnd_, nullptr, geom.x, geom.y, geom.w, geom.h,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        else
+        {
+            SetWindowPos(hwnd_, nullptr, 0, 0, dip_to_phys(1024.f),
+                         dip_to_phys(768.f),
+                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
     ShowWindow(hwnd_, nCmdShow);
     UpdateWindow(hwnd_);
     return true;
@@ -5681,6 +5708,8 @@ void MainWindow::switch_active_account(int new_idx)
         if (it != pending_restore_rooms_.end())
             std::rotate(pending_restore_rooms_.begin(), it, it + 1);
     }
+    pending_restore_popouts_.clear();
+    populate_pending_restore_popouts_();
 
     if (settings_controller_)
         settings_controller_->set_client(client_);
@@ -7383,6 +7412,29 @@ void MainWindow::show_encryption_setup_overlay_(
     main_app_->show_encryption_setup(true);
     if (main_app_surface_)
         main_app_surface_->relayout();
+}
+
+std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
+{
+    std::vector<tk::Rect> result;
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR hmon, HDC, LPRECT, LPARAM data) -> BOOL {
+            auto* r = reinterpret_cast<std::vector<tk::Rect>*>(data);
+            MONITORINFO mi{};
+            mi.cbSize = sizeof(mi);
+            if (GetMonitorInfoW(hmon, &mi))
+            {
+                r->push_back(tk::Rect{
+                    static_cast<float>(mi.rcWork.left),
+                    static_cast<float>(mi.rcWork.top),
+                    static_cast<float>(mi.rcWork.right  - mi.rcWork.left),
+                    static_cast<float>(mi.rcWork.bottom - mi.rcWork.top)});
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&result));
+    return result;
 }
 
 } // namespace win32

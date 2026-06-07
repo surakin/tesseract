@@ -50,6 +50,34 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     room_section_spaces_collapsed    = j.value("room_section_spaces_collapsed",    false);
     room_section_inactive_collapsed  = j.value("room_section_inactive_collapsed",  true);
 
+    if (j.contains("main_window") && j["main_window"].is_object())
+    {
+        const auto& mw = j["main_window"];
+        main_window_geometry.x     = mw.value("x", 0);
+        main_window_geometry.y     = mw.value("y", 0);
+        main_window_geometry.w     = mw.value("w", 0);
+        main_window_geometry.h     = mw.value("h", 0);
+        main_window_geometry.valid = (main_window_geometry.w > 0 && main_window_geometry.h > 0);
+    }
+
+    popout_windows.clear();
+    if (j.contains("popout_windows") && j["popout_windows"].is_array())
+    {
+        for (const auto& pw : j["popout_windows"])
+        {
+            if (!pw.is_object()) continue;
+            PopoutEntry e;
+            e.room_id      = pw.value("room_id", std::string{});
+            e.geometry.x   = pw.value("x", 0);
+            e.geometry.y   = pw.value("y", 0);
+            e.geometry.w   = pw.value("w", 0);
+            e.geometry.h   = pw.value("h", 0);
+            e.geometry.valid = (!e.room_id.empty() && e.geometry.w > 0 && e.geometry.h > 0);
+            if (!e.room_id.empty())
+                popout_windows.push_back(std::move(e));
+        }
+    }
+
     auto lang = j.value("language", std::string{});
     if (!lang.empty())
     {
@@ -91,13 +119,39 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"room_section_spaces_collapsed",    room_section_spaces_collapsed},
         {"room_section_inactive_collapsed",  room_section_inactive_collapsed},
     };
+    j["language"]    = language;
+    j["gif_api_key"] = gif_api_key;
+
+    if (main_window_geometry.valid)
+    {
+        j["main_window"] = {
+            {"x", main_window_geometry.x},
+            {"y", main_window_geometry.y},
+            {"w", main_window_geometry.w},
+            {"h", main_window_geometry.h},
+        };
+    }
+
+    {
+        nlohmann::json pws = nlohmann::json::array();
+        for (const auto& e : popout_windows)
+        {
+            if (e.room_id.empty()) continue;
+            nlohmann::json pw;
+            pw["room_id"] = e.room_id;
+            pw["x"]       = e.geometry.x;
+            pw["y"]       = e.geometry.y;
+            pw["w"]       = e.geometry.w;
+            pw["h"]       = e.geometry.h;
+            pws.push_back(std::move(pw));
+        }
+        j["popout_windows"] = std::move(pws);
+    }
 
     auto path = config_dir / "app_settings.json";
     std::ofstream f(path, std::ios::trunc);
     if (!f.is_open())
         return;
-    j["language"] = language;
-    j["gif_api_key"] = gif_api_key;
     f << j.dump(4) << '\n';
 }
 
