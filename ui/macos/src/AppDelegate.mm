@@ -137,12 +137,10 @@
     NSApp.mainMenu = mainMenu;
 }
 
-- (BOOL)application:(NSApplication*)app
-            openURL:(NSURL*)url
-            options:(NSDictionary<NSApplicationOpenURLOptionKey, id>*)options
+- (void)application:(NSApplication*)app openURLs:(NSArray<NSURL*>*)urls
 {
-    [_windowController openMatrixLink:[url absoluteString]];
-    return YES;
+    for (NSURL* url in urls)
+        [_windowController openMatrixLink:[url absoluteString]];
 }
 
 - (void)applicationWillTerminate:(NSNotification*)note

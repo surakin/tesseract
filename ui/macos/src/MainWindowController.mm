@@ -560,6 +560,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutShortcodePopupIfVisible;
 - (void)_relayoutSlashPopupIfVisible;
 - (void)_relayoutAccountPickerIfVisible;
+- (void)_openJoinRoomSheetWithPrefill:(NSString*)prefill;
 @end
 
 namespace
