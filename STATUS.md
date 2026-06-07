@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-07** (v0.1.10).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-08** (v0.8.0).
 
 > **Unified Lucide icon set.**
 > The composer (emoji / sticker / mic / stop), message hover-action bar
@@ -16,6 +16,26 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-07
 > DPI scale **or** tint changes, so icons stay crisp on HiDPI and recolor
 > correctly on light/dark theme switches. `PopupMenu::Item` gained an optional
 > `svg_icon`. All shared code (`ui/shared/`), so every shell benefits.
+
+<!-- -->
+
+> **`matrix.to` and `matrix:` URI navigation (MSC2312).**
+> Clicking a `matrix.to` or `matrix:` link in a message body navigates
+> within the app instead of opening the browser. A link to a joined room
+> navigates directly (resolved via the new `RoomInfo::canonical_alias`
+> field); an unknown room opens the join dialog pre-filled with the alias
+> or room ID. User links open the profile panel; event links scroll to
+> the target event. All four platforms register as the OS handler for the
+> `matrix:` URI scheme: Linux via `tesseract.desktop`
+> (`MimeType=x-scheme-handler/matrix` + `%U`; Qt6 forwards via
+> `QLocalServer`, GTK4 via `G_APPLICATION_HANDLES_OPEN`); Windows via
+> `HKCU\Software\Classes\matrix` written at launch (no admin rights),
+> with `WM_COPYDATA` single-instance forwarding; macOS via
+> `CFBundleURLTypes` in `Info.plist` and `application:openURL:options:`
+> in `AppDelegate`. `sdk/src/matrix_uri.rs` (19 Rust unit tests) parses
+> both URI formats via ruma validators. `ShellBase::open_matrix_link()`
+> owns the shared navigation and defers links received before login via
+> `pending_matrix_link_`.
 
 <!-- -->
 
@@ -416,7 +436,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 181 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 200 |
 | C++ Catch2 tests via ctest (Qt6 preset) | 692 |
 
 ## Platforms

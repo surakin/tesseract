@@ -3,6 +3,62 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.0 — 2026-06-07
+
+Changes since v0.1.10:
+
+### 2026-06-07
+
+- feat(ui): replace Unicode glyphs and hand-drawn shapes with a unified
+  Lucide SVG icon set throughout the shared UI layer. 16 monochrome Lucide
+  line icons (ISC) embedded under `ui/icons/lucide/` and rasterized via
+  nanosvg at runtime. Replaced sites: composer bar (emoji, sticker, mic,
+  stop), message hover-action bar (react, reply, thread, edit, more) and its
+  overflow menu (delete, pin), image and video viewers (close, download),
+  voice/audio/inline-video play buttons, room-list join (+) button, and
+  room-header jump-to-date and thread-list buttons. A new `tk::IconCache`
+  (`svg.h`/`svg.cpp`) holds each rasterized icon and re-rasterizes only when
+  the DPI scale or tint changes, so icons stay crisp on HiDPI and recolor
+  correctly on light/dark theme switches via a new `rasterize_svg(..., Color
+  tint)` overload. `PopupMenu::Item` gained an optional `svg_icon` field.
+- build: `icons.h` is now regenerated automatically at build time whenever
+  any source SVG under `ui/icons/lucide/` changes, without requiring a CMake
+  reconfigure. Generation logic moved to `cmake/generate_icons.cmake`
+  (invoked via `add_custom_command` with each SVG as a `DEPENDS` input);
+  `tesseract_tk` depends on a new `tesseract_icons` target so every
+  translation unit that includes `icons.h` gets an up-to-date header.
+- fix(windows): premultiply alpha in `create_image_rgba` before uploading to
+  Direct2D. The upload format is `GUID_WICPixelFormat32bppPBGRA`
+  (premultiplied), but the path had done only a bare RGBA→BGRA channel swap,
+  so transparent pixels from the SVG tinting path retained non-zero RGB and
+  rendered as a visible coloured rectangle behind every Lucide icon on
+  Windows. Fixed by applying `(channel × a + 127) / 255` premultiplication
+  to match Cairo and CoreGraphics.
+- fix(macos): correct the macOS URI-scheme handler broken on the x86_64
+  build by the matrix.to commit: the `application:openURL:options:` signature
+  (iOS-only) is replaced with the correct macOS 10.13+ `application:openURLs:`
+  delegate method; a forward declaration for `_openJoinRoomSheetWithPrefill:`
+  is added to the private class extension so it is visible before
+  `@implementation`.
+- feat(links): clicking a `matrix.to` or `matrix:` URI in a message body now
+  navigates within the app instead of opening the browser (MSC2312). A room
+  link for a joined room navigates directly via the new
+  `RoomInfo::canonical_alias` field; an unknown room opens the join dialog
+  pre-filled with the alias or room ID. User links open the profile panel;
+  event links scroll to the target event. OS-level `matrix:` scheme
+  registration on all four platforms: Linux — `tesseract.desktop` gains
+  `MimeType=x-scheme-handler/matrix` and `%U`; Qt6 forwards URIs via
+  `QLocalServer`, GTK4 via `G_APPLICATION_HANDLES_OPEN`; Windows — writes
+  `HKCU\Software\Classes\matrix` at launch (no admin rights), `WM_COPYDATA`
+  forwards to the running instance; macOS — `CFBundleURLTypes` in
+  `Info.plist`, `application:openURL:options:` in `AppDelegate`. New
+  `sdk/src/matrix_uri.rs` (19 Rust unit tests) parses both URI formats via
+  ruma validators; `ShellBase::open_matrix_link()` owns the shared navigation
+  and defers URIs received before login completes via `pending_matrix_link_`;
+  `ShellBase::setup_link_clicked_()` replaces the four per-shell hardcoded
+  `open_in_browser` lambdas so in-app links are intercepted before the
+  browser fallback.
+
 ## v0.1.10 — 2026-06-07
 
 Changes since v0.1.9:
