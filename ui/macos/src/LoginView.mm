@@ -161,7 +161,7 @@ std::string nsstr(NSString* s)
            retryCallback:(void (^)(void))retryCallback
 {
     if (!_shared) return;
-    __block void (^cb)(void) = [retryCallback copy];
+    void (^cb)(void) = [retryCallback copy];
     _shared->show_restore_error(nsstr(body), [cb]() { if (cb) cb(); });
 }
 
