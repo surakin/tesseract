@@ -1,6 +1,6 @@
 # Maintainer: Marco Antonio Alvarez <surakus@pm.me>
 pkgname=tesseract-matrix-git
-pkgver=r1172.0463ab3
+pkgver=r1283.6c76191d
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
 arch=('x86_64' 'aarch64')
@@ -62,7 +62,7 @@ package() {
     # Point the launcher at the renamed binary/icon. StartupWMClass tracks the
     # Qt build's WM_CLASS, which derives from the executable basename (argv[0]).
     sed -i \
-        -e 's/^Exec=tesseract$/Exec=tesseract-matrix/' \
+        -e 's/^Exec=tesseract %U$/Exec=tesseract-matrix %U/' \
         -e 's/^Icon=tesseract$/Icon=tesseract-matrix/' \
         -e 's/^StartupWMClass=tesseract$/StartupWMClass=tesseract-matrix/' \
         "$_appdir/tesseract-matrix.desktop"
