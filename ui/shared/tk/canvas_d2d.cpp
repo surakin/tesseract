@@ -1640,15 +1640,19 @@ public:
         {
             return nullptr;
         }
-        // WIC expects BGRA premultiplied; convert RGBA→BGRA (alpha is 255 from blurhash).
+        // Premultiply + swizzle straight RGBA → premultiplied BGRA for WIC.
         const int n = w * h * 4;
         std::vector<std::uint8_t> bgra(static_cast<size_t>(n));
         for (int i = 0; i < w * h; ++i)
         {
-            bgra[static_cast<size_t>(i * 4 + 0)] = pixels[i * 4 + 2]; // B
-            bgra[static_cast<size_t>(i * 4 + 1)] = pixels[i * 4 + 1]; // G
-            bgra[static_cast<size_t>(i * 4 + 2)] = pixels[i * 4 + 0]; // R
-            bgra[static_cast<size_t>(i * 4 + 3)] = pixels[i * 4 + 3]; // A
+            const unsigned a = pixels[i * 4 + 3];
+            bgra[static_cast<size_t>(i * 4 + 0)] =
+                static_cast<std::uint8_t>((pixels[i * 4 + 2] * a + 127) / 255); // B
+            bgra[static_cast<size_t>(i * 4 + 1)] =
+                static_cast<std::uint8_t>((pixels[i * 4 + 1] * a + 127) / 255); // G
+            bgra[static_cast<size_t>(i * 4 + 2)] =
+                static_cast<std::uint8_t>((pixels[i * 4 + 0] * a + 127) / 255); // R
+            bgra[static_cast<size_t>(i * 4 + 3)] = static_cast<std::uint8_t>(a);
         }
         ComPtr<IWICBitmap> bitmap;
         if (FAILED(backend_.wic->CreateBitmapFromMemory(
