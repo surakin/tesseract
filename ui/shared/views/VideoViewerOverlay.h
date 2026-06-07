@@ -106,6 +106,13 @@ private:
     tk::Rect close_btn_{};
     tk::Rect save_btn_{};
 
+    // Lucide close/download/play icons, rasterized + tinted; re-rasterized when
+    // the canvas DPI scale changes. play_icon_ is tinted to the control colour.
+    std::unique_ptr<tk::Image> close_icon_;
+    std::unique_ptr<tk::Image> save_icon_;
+    std::unique_ptr<tk::Image> play_icon_;
+    float icon_scale_ = 0.0f;
+
     bool has_error_ = false;
 
     bool press_play_ = false;

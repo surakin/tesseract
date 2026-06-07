@@ -123,6 +123,12 @@ private:
     tk::Rect close_btn_{};  // × button in top-right corner
     tk::Rect save_btn_{};   // ⬇ button left of close button
 
+    // Lucide close/download icons, rasterized + tinted white; re-rasterized
+    // when the canvas DPI scale changes.
+    std::unique_ptr<tk::Image> close_icon_;
+    std::unique_ptr<tk::Image> save_icon_;
+    float icon_scale_ = 0.0f;
+
     bool press_close_ = false;
     bool press_save_ = false;
     bool press_outside_ = false;

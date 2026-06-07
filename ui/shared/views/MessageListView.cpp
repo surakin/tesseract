@@ -3,7 +3,9 @@
 #include "map_tiles.h"
 #include "media_utils.h"
 
+#include "icons.h"
 #include "tk/i18n.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -1038,9 +1040,16 @@ public:
             // delete, can_pin_ for pin, thread visibility + MSC3440 for
             // thread). react is the leftmost cell on any row that can accept
             // reactions; reply is unconditional.
+            // Lucide line icons, tinted to the secondary text colour so they
+            // read as quiet affordances and adapt to the theme. Each cell holds
+            // its IconCache + svg; the icon is drawn (centred) once the cell
+            // rect is known below.
+            constexpr float kActionIconPx = 16.0f;
+            const tk::Color action_tint = ctx.theme.palette.text_secondary;
             struct ActionCell
             {
-                const tk::TextLayout* glyph;
+                tk::IconCache* cache;
+                std::span<const std::uint8_t> svg;
                 tk::Rect* geom_out;
             };
             std::vector<ActionCell> cells;
@@ -1048,30 +1057,30 @@ public:
             if (m.kind != MessageRowData::Kind::Redacted &&
                 m.kind != MessageRowData::Kind::Utd)
             {
-                cells.push_back({static_cache_.react.get(),
+                cells.push_back({&ic_react_, kEmojiSvg,
                                  &owner_.hovered_row_geom_.react_button});
             }
-            cells.push_back({static_cache_.reply.get(),
-                             &owner_.hovered_row_geom_.reply_button});
+            cells.push_back(
+                {&ic_reply_, kReplySvg, &owner_.hovered_row_geom_.reply_button});
             const bool can_thread =
                 m.is_thread_root ||
                 (m.in_reply_to_id.empty() && m.thread_root_id.empty());
             if (m.kind != MessageRowData::Kind::Redacted &&
                 owner_.thread_button_visible_ && can_thread)
             {
-                cells.push_back({static_cache_.thread_btn.get(),
+                cells.push_back({&ic_thread_, kThreadSvg,
                                  &owner_.hovered_row_geom_.thread_button});
             }
             if (m.is_own && m.kind == MessageRowData::Kind::Text)
             {
-                cells.push_back({static_cache_.edit.get(),
+                cells.push_back({&ic_edit_, kEditSvg,
                                  &owner_.hovered_row_geom_.edit_button});
             }
             if ((m.is_own || owner_.can_pin_) &&
                 m.kind != MessageRowData::Kind::Redacted &&
                 m.kind != MessageRowData::Kind::Utd)
             {
-                cells.push_back({static_cache_.more.get(),
+                cells.push_back({&ic_more_, kMoreSvg,
                                  &owner_.hovered_row_geom_.more_button});
             }
 
@@ -1129,21 +1138,10 @@ public:
                             cell_rect, ctx.theme.palette.subtle_pressed);
                     }
 
-                    if (cells[i].glyph)
-                    {
-                        tk::Size sz = cells[i].glyph->measure();
-                        float gx = cell_rect.x + (cell_rect.w - sz.w) * 0.5f;
-                        // Centre by ascent() — colour-emoji glyphs occupy
-                        // only the ascent region; using full line-height
-                        // pushes them visually high.
-                        float gy = cell_rect.y +
-                                   (cell_rect.h -
-                                    cells[i].glyph->ascent()) *
-                                       0.5f;
-                        ctx.canvas.draw_text(
-                            *cells[i].glyph, {gx, gy},
-                            ctx.theme.palette.text_secondary);
-                    }
+                    if (cells[i].cache)
+                        cells[i].cache->draw(ctx.canvas, ctx.factory,
+                                             cells[i].svg, cell_rect,
+                                             kActionIconPx, action_tint);
                     *cells[i].geom_out = cell_rect;
                 }
 
@@ -3388,28 +3386,9 @@ private:
         }
         else
         {
-            // Play triangle (▶): stacked horizontal rects, symmetric about
-            // the vertical centre so it actually points right.  Row widths
-            // are maximum at the midpoint and taper to near-zero at the top
-            // and bottom, forming the two slanted edges of the triangle.
-            // The horizontal left edge (flat face) is aligned to tri_x;
-            // tri_x is shifted so the visual centroid (1/3 from the base)
-            // sits at the button centre.
-            const float tri_h = btn_d * 0.50f;
-            const float tri_w = btn_d * 0.38f;
-            const float tri_x = btn_x + btn_d * 0.5f - tri_w / 3.0f;
-            const float tri_y = btn_y + (btn_d - tri_h) * 0.5f;
-            const int steps = 8;
-            for (int i = 0; i < steps; ++i)
-            {
-                const float t =
-                    (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
-                const float row_h = tri_h / static_cast<float>(steps);
-                const float row_w = tri_w * (1.0f - 2.0f * std::abs(t - 0.5f));
-                const float ry = tri_y + i * row_h;
-                ctx.canvas.fill_rect({tri_x, ry, std::max(1.0f, row_w), row_h},
-                                     glyph_col);
-            }
+            // Play glyph (▶): Lucide play icon, tinted to the on-accent colour.
+            ic_play_voice_.draw(ctx.canvas, ctx.factory, kPlaySvg, btn_rect,
+                                btn_d * 0.55f, glyph_col);
         }
 
         // Right-justified duration label. When this row is the active one
@@ -3611,21 +3590,9 @@ private:
         }
         else
         {
-            const float tri_h = btn_d * 0.50f;
-            const float tri_w = btn_d * 0.38f;
-            const float tri_x = btn_x + btn_d * 0.5f - tri_w / 3.0f;
-            const float tri_y = btn_y + (btn_d - tri_h) * 0.5f;
-            const int steps = 8;
-            for (int i = 0; i < steps; ++i)
-            {
-                const float t =
-                    (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
-                const float row_h = tri_h / static_cast<float>(steps);
-                const float row_w = tri_w * (1.0f - 2.0f * std::abs(t - 0.5f));
-                const float ry = tri_y + i * row_h;
-                ctx.canvas.fill_rect({tri_x, ry, std::max(1.0f, row_w), row_h},
-                                     glyph_col);
-            }
+            // Play glyph (▶): Lucide play icon, tinted to the on-accent colour.
+            ic_play_audio_.draw(ctx.canvas, ctx.factory, kPlaySvg, btn_rect,
+                                btn_d * 0.55f, glyph_col);
         }
 
         // Duration / elapsed time label — right-justified in row 1.
@@ -3786,23 +3753,9 @@ private:
             ctx.canvas.fill_rounded_rect(disc, kDiscD * 0.5f,
                                          tk::Color{0, 0, 0, 120});
 
-            // Play triangle (▶): same symmetric stacked-rect approach as
-            // the voice card — centroid-shifted so the glyph is centred.
-            const float tri_h = kDiscD * 0.45f;
-            const float tri_w = kDiscD * 0.35f;
-            const float tri_x = disc.x + kDiscD * 0.5f - tri_w / 3.0f;
-            const float tri_y = disc.y + (kDiscD - tri_h) * 0.5f;
-            constexpr int steps = 8;
-            for (int i = 0; i < steps; ++i)
-            {
-                const float t =
-                    (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
-                const float row_h = tri_h / static_cast<float>(steps);
-                const float row_w = tri_w * (1.0f - 2.0f * std::abs(t - 0.5f));
-                ctx.canvas.fill_rect(
-                    {tri_x, tri_y + i * row_h, std::max(1.0f, row_w), row_h},
-                    tk::Color{255, 255, 255, 230});
-            }
+            // Play glyph (▶): Lucide play icon, near-white over the dark disc.
+            ic_play_video_.draw(ctx.canvas, ctx.factory, kPlaySvg, disc,
+                                kDiscD * 0.5f, tk::Color{255, 255, 255, 230});
         }
 
         // Duration badge at bottom-right — omitted for animated or hide_controls clips.
@@ -3830,17 +3783,12 @@ private:
 
     // ── Layout caches ───────────────────────────────────────────────────────
 
-    // Glyphs that never change across rows — built once on first paint.
+    // Glyphs that never change across rows — built once on first paint. The
+    // hover-bar action icons moved to SVG (see ic_* CachedIcon members); only
+    // the reaction "+" chip remains a text glyph here.
     struct StaticLayouts
     {
         std::unique_ptr<tk::TextLayout> plus;
-        std::unique_ptr<tk::TextLayout> react;
-        std::unique_ptr<tk::TextLayout> reply;
-        std::unique_ptr<tk::TextLayout> thread_btn;
-        std::unique_ptr<tk::TextLayout> edit;
-        std::unique_ptr<tk::TextLayout> more;
-        std::unique_ptr<tk::TextLayout> pin;
-        std::unique_ptr<tk::TextLayout> unpin;
         // Height of a single line of body text — used to vertically centre the
         // gutter timestamp against the message line on continuation rows.
         float body_line_h = 0.0f;
@@ -3860,29 +3808,10 @@ private:
             tk::TextStyle st{};
             st.role = tk::FontRole::Title;
             plus       = f.build_text("+", st);
-            react      = f.build_text("\xF0\x9F\x99\x82", st); // 🙂
-            reply      = f.build_text("\xE2\x86\xA9", st);     // ↩
-            thread_btn = f.build_text("\xF0\x9F\x92\xAC", st); // 💬
-            edit       = f.build_text("\xE2\x9C\x8F", st);     // ✏
-            more       = f.build_text("\xE2\x8B\xAF", st);     // ⋯
-            pin        = f.build_text("\xF0\x9F\x93\x8C", st); // 📌
-            // Pushpin with stroke through it (visually distinct "unpin");
-            // falls back to a plain pushpin on fonts without U+1F4CC + combining
-            // stroke. Render together as "📌" with a leading "✕" prefix would
-            // be noisy, so we use the same glyph for both — the hover tooltip
-            // (set by the host) is what disambiguates Pin vs Unpin.
-            unpin      = f.build_text("\xF0\x9F\x93\x8C", st); // 📌
         }
         void clear()
         {
             plus.reset();
-            react.reset();
-            reply.reset();
-            thread_btn.reset();
-            edit.reset();
-            more.reset();
-            pin.reset();
-            unpin.reset();
         }
     };
 
@@ -3925,6 +3854,13 @@ private:
 
     mutable StaticLayouts static_cache_;
     mutable std::vector<RowLayoutCache> layout_cache_;
+
+    // Hover-bar action icons (tinted text_secondary) + play glyphs for the
+    // voice / audio / inline-video cards (tinted per their disc colour). Each
+    // tk::IconCache is tint-aware, so they recolor on theme switch and stay
+    // crisp across DPI.
+    mutable tk::IconCache ic_react_, ic_reply_, ic_thread_, ic_edit_, ic_more_;
+    mutable tk::IconCache ic_play_voice_, ic_play_audio_, ic_play_video_;
 
     MessageListView& owner_;
 };

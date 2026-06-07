@@ -10,6 +10,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -91,11 +92,6 @@ public:
     std::function<void()> on_hide_tooltip;
 
 private:
-    // Draws a vector calendar icon centred in `button`, tinted with `tint`.
-    void draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
-                            tk::Color tint);
-    // Draws a vector "threads" (stacked replies) icon centred in `button`.
-    void draw_threads_icon(tk::Canvas& canvas, tk::Rect button, tk::Color tint);
     // Draws a vector padlock icon in `rect` (10×12 logical px), tinted with `tint`.
     void draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint);
 
@@ -108,6 +104,11 @@ private:
     // glyph centred inside each button's bounds (see paint()).
     tk::Button* calendar_btn_ = nullptr;
     tk::Button* threads_btn_ = nullptr;
+
+    // Lucide jump-to-date / threads icons for calendar_btn_ / threads_btn_,
+    // tinted text_primary (tint-aware so they recolor on theme switch).
+    tk::IconCache calendar_icon_;
+    tk::IconCache threads_icon_;
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.

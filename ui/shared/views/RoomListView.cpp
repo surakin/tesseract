@@ -1,6 +1,8 @@
 #include "RoomListView.h"
 
+#include "icons.h"
 #include "tk/i18n.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -1423,21 +1425,11 @@ void RoomListView::paint(tk::PaintCtx& ctx)
                 ctx.canvas.fill_rounded_rect(join_room_rect_, 4.0f,
                                              ctx.theme.palette.sidebar_hover);
             }
-            tk::TextStyle xs{};
-            xs.role = tk::FontRole::UiSemibold;
-            auto plus_lo = ctx.factory.build_text(std::string("+"), xs);
-            if (plus_lo)
-            {
-                tk::Size sz = plus_lo->measure();
-                tk::Color col = press_join_room_
-                                    ? ctx.theme.palette.text_primary
-                                    : ctx.theme.palette.accent;
-                ctx.canvas.draw_text(
-                    *plus_lo,
-                    {join_room_rect_.x + (join_room_rect_.w - sz.w) * 0.5f,
-                     join_room_rect_.y + (join_room_rect_.h - sz.h) * 0.5f},
-                    col);
-            }
+            // Lucide join (+) icon, tinted accent (or text_primary when pressed).
+            join_icon_.draw(ctx.canvas, ctx.factory, kJoinSvg, join_room_rect_,
+                            18.0f,
+                            press_join_room_ ? ctx.theme.palette.text_primary
+                                             : ctx.theme.palette.accent);
         }
     }
     if (list_ && list_->visible())

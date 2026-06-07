@@ -227,17 +227,24 @@ if(EXISTS "${_icon_png}")
     target_compile_definitions(tesseract_tk PRIVATE TESSERACT_HAS_BRAND_ICON=1)
 endif()
 
-# Embed compose-bar SVG icons as C byte arrays (rasterized at runtime by nanosvg).
+# Embed Lucide SVG icons as C byte arrays (rasterized + tinted at runtime by
+# nanosvg). All app icons live under ui/icons/lucide/lucide-<name>.svg and are
+# exposed to the shared views as static constexpr k*Svg arrays in icons.h.
 set(_ci "#pragma once\n#include <cstdint>\n\n")
-foreach(_entry "emoji|kEmojiSvg" "sticker|kStickerSvg" "voice|kVoiceSvg" "voice-stop|kVoiceStopSvg")
+foreach(_entry
+        "laugh|kEmojiSvg" "sticker|kStickerSvg" "mic|kMicSvg" "stop|kVoiceStopSvg"
+        "reply|kReplySvg" "thread|kThreadSvg" "edit|kEditSvg" "more|kMoreSvg"
+        "redact|kRedactSvg" "pin|kPinSvg" "download|kDownloadSvg" "close|kCloseSvg"
+        "play|kPlaySvg" "join|kJoinSvg" "jump-to-date|kJumpToDateSvg"
+        "threadlist|kThreadListSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)
-    file(READ "${CMAKE_SOURCE_DIR}/ui/icons/${_name}.svg" _hex HEX)
+    file(READ "${CMAKE_SOURCE_DIR}/ui/icons/lucide/lucide-${_name}.svg" _hex HEX)
     string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1, " _bytes "${_hex}")
     string(APPEND _ci "static constexpr std::uint8_t ${_var}[] = { ${_bytes}};\n")
 endforeach()
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/compose_icons.h" "${_ci}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/icons.h" "${_ci}")
 
 target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 

@@ -1,8 +1,10 @@
 #include "views/PopupMenu.h"
 #include "tk/canvas.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 #include "views/media_utils.h"
 #include <algorithm>
+#include <cmath>
 
 namespace tesseract::views
 {
@@ -11,6 +13,8 @@ void PopupMenu::open(std::vector<Item> items, tk::Rect anchor_world)
 {
     items_        = std::move(items);
     anchor_world_ = anchor_world;
+    icon_cache_.clear();
+    icon_cache_.resize(items_.size()); // null entries; rebuilt lazily in paint()
     open_         = true;
     hovered_index_  = -1;
     pressed_index_  = -1;
@@ -71,6 +75,16 @@ void PopupMenu::paint(tk::PaintCtx& ctx)
     const auto& pal = ctx.theme.palette;
     const int n = int(items_.size());
 
+    // Invalidate rasterized icons when the DPI scale changes so they stay crisp.
+    const float scale = ctx.canvas.scale_factor();
+    if (scale != icon_scale_)
+    {
+        icon_scale_ = scale;
+        for (auto& ic : icon_cache_)
+            ic.reset();
+    }
+    constexpr float kMenuIconPx = 18.0f;
+
     // Offset local menu_rect to world coords for drawing (canvas is world-space).
     const float wx = bounds_.x + menu_rect_.x;
     const float wy = bounds_.y + menu_rect_.y;
@@ -101,10 +115,26 @@ void PopupMenu::paint(tk::PaintCtx& ctx)
             items_[std::size_t(i)].destructive ? pal.destructive
                                                : pal.text_primary;
 
-        // Icon glyph (left-aligned, centred vertically by ascent like the pill).
+        // Icon (left-aligned, vertically centred). Prefer an SVG icon tinted to
+        // the row colour; fall back to the Unicode glyph.
         const auto& item = items_[std::size_t(i)];
         float label_x = row.x + kTextXNoIcon;
-        if (!item.glyph.empty())
+        if (!item.svg_icon.empty())
+        {
+            auto& cached = icon_cache_[std::size_t(i)];
+            if (!cached)
+                cached = tk::rasterize_svg(
+                    ctx.factory, item.svg_icon,
+                    std::max(1, int(std::lround(kMenuIconPx * scale))),
+                    text_col);
+            if (cached)
+                ctx.canvas.draw_image(
+                    *cached,
+                    {row.x + kGlyphX, row.y + (row.h - kMenuIconPx) * 0.5f,
+                     kMenuIconPx, kMenuIconPx});
+            label_x = row.x + kTextX;
+        }
+        else if (!item.glyph.empty())
         {
             auto gl = ctx.factory.build_text(item.glyph, glyph_st);
             if (gl)

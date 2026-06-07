@@ -1,6 +1,9 @@
 #pragma once
 #include "tk/widget.h"
+#include <cstdint>
 #include <functional>
+#include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -32,6 +35,10 @@ public:
     struct Item
     {
         std::string glyph;        // Unicode icon character(s); empty = no icon
+        // Optional SVG icon (embedded k*Svg byte span). When non-empty it is
+        // rasterized + tinted and drawn instead of `glyph`. Points at static
+        // data, so the span stays valid for the menu's lifetime.
+        std::span<const std::uint8_t> svg_icon{};
         std::string label;
         bool destructive = false; // draws label in pal.destructive colour
         std::function<void()> on_selected;
@@ -73,6 +80,11 @@ private:
     int  hovered_index_  = -1;
     int  pressed_index_  = -1;
     bool press_backdrop_ = false;
+
+    // Per-item rasterized SVG icons (Item::svg_icon), tinted to the row colour.
+    // Rebuilt when items change (open) or the canvas DPI scale changes.
+    std::vector<std::unique_ptr<tk::Image>> icon_cache_;
+    float icon_scale_ = -1.0f;
 
     // Item rect in LOCAL coords (recomputed in arrange, used by paint + row_at).
     tk::Rect item_rect(int i) const

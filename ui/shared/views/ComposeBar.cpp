@@ -1,6 +1,6 @@
 #include "ComposeBar.h"
 
-#include "compose_icons.h"
+#include "icons.h"
 #include "format.h"
 #include "tk/i18n.h"
 #include "tk/svg.h"
@@ -404,8 +404,6 @@ void ComposeBar::set_recording(bool recording)
                 std::chrono::steady_clock::now().time_since_epoch()).count());
     }
     elapsed_layout_.reset();
-    mic_icon_.reset();      // icon switches between mic and stop on state change
-    mic_stop_icon_.reset();
     // Fire on_size_changed so the host relayouts and updates the NativeTextArea
     // visibility (hidden while recording, restored when done).
     if (on_size_changed)
@@ -1288,47 +1286,36 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Paint SVG icons centred inside Icon-variant buttons.
-    // Icons are rasterized at physical-pixel resolution so they stay crisp on
-    // HiDPI displays.  Cache is invalidated whenever the canvas scale changes
-    // (e.g. window moved to a different-DPI monitor).
-    constexpr int kIconPx = 24; // logical size: fits inside 40×40 btn w/ 8 px margin
-    const float icon_scale = ctx.canvas.scale_factor();
-    const int icon_phys_px = static_cast<int>(std::round(kIconPx * icon_scale));
-    if (icon_scale != icon_scale_)
+    // Paint SVG icons centred inside Icon-variant buttons. Monochrome Lucide
+    // line icons are tinted to the button text colour so they match the
+    // surrounding chrome and adapt to the active theme; hovered icons brighten
+    // to text_primary like the attachment remove button above. IconCache keeps
+    // them crisp across DPI and recolors on hover / theme change.
+    constexpr float kIconPx = 24.0f; // fits inside 40×40 btn w/ 8 px margin
+    auto btn_tint = [&](tk::Button* b)
     {
-        icon_scale_ = icon_scale;
-        emoji_icon_.reset();
-        sticker_icon_.reset();
-        mic_icon_.reset();
-        mic_stop_icon_.reset();
-    }
-    auto paint_icon = [&](tk::Rect rect,
-                          std::unique_ptr<tk::Image>& cache,
-                          std::span<const std::uint8_t> svg_bytes)
+        return (b && b->hovered()) ? ctx.theme.palette.text_primary
+                                   : ctx.theme.palette.text_secondary;
+    };
+    auto paint_icon = [&](tk::Rect rect, tk::IconCache& cache,
+                          std::span<const std::uint8_t> svg, tk::Color tint)
     {
-        if (rect.empty())
-            return;
-        if (!cache)
-            cache = tk::rasterize_svg(ctx.factory, svg_bytes, icon_phys_px);
-        if (!cache)
-            return;
-        float x = rect.x + (rect.w - kIconPx) * 0.5f;
-        float y = rect.y + (rect.h - kIconPx) * 0.5f;
-        ctx.canvas.draw_image(*cache, {x, y, static_cast<float>(kIconPx),
-                                       static_cast<float>(kIconPx)});
+        if (!rect.empty())
+            cache.draw(ctx.canvas, ctx.factory, svg, rect, kIconPx, tint);
     };
 
     if (emoji_btn_ && !recording_)
-        paint_icon(emoji_rect_, emoji_icon_, kEmojiSvg);
+        paint_icon(emoji_rect_, emoji_icon_, kEmojiSvg, btn_tint(emoji_btn_));
     if (sticker_btn_ && !recording_)
-        paint_icon(sticker_rect_, sticker_icon_, kStickerSvg);
+        paint_icon(sticker_rect_, sticker_icon_, kStickerSvg,
+                   btn_tint(sticker_btn_));
     if (mic_btn_ && mic_available_)
     {
         if (recording_)
-            paint_icon(mic_btn_rect_, mic_stop_icon_, kVoiceStopSvg);
+            paint_icon(mic_btn_rect_, mic_stop_icon_, kVoiceStopSvg,
+                       btn_tint(mic_btn_));
         else
-            paint_icon(mic_btn_rect_, mic_icon_, kVoiceSvg);
+            paint_icon(mic_btn_rect_, mic_icon_, kMicSvg, btn_tint(mic_btn_));
     }
 }
 

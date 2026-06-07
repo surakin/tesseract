@@ -20,6 +20,7 @@
 
 #include "tk/canvas.h"
 #include "tk/list_view.h"
+#include "tk/svg.h"
 
 #include <tesseract/types.h>
 
@@ -247,6 +248,10 @@ private:
     bool search_field_visible_ = false;
     bool press_search_clear_ = false;
     bool press_join_room_ = false;
+
+    // Lucide join (+) icon, tinted accent / text_primary (pressed); the cache is
+    // tint-aware so it recolors on press and on theme switch.
+    tk::IconCache join_icon_;
     // Sticky-header interaction: section pressed on the pinned header (-1 =
     // none), and whether the pointer is currently over the pinned header.
     int  press_sticky_section_ = -1;

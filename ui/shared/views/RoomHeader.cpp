@@ -1,6 +1,8 @@
 #include "RoomHeader.h"
 
 #include "html_spans.h"
+#include "icons.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -495,11 +497,13 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     // Calendar / jump-to-date button — only shown when MSC3030 is supported.
     // The Icon-variant button paints its own hover/press background (positioned
     // in arrange()); we draw the vector glyph centred inside its bounds.
+    constexpr float kHeaderIconPx = 18.0f;
     if (calendar_btn_ && calendar_btn_->visible())
     {
         calendar_btn_->paint(ctx);
-        draw_calendar_icon(ctx.canvas, calendar_btn_->bounds(),
-                           ctx.theme.palette.text_primary);
+        calendar_icon_.draw(ctx.canvas, ctx.factory, kJumpToDateSvg,
+                            calendar_btn_->bounds(), kHeaderIconPx,
+                            ctx.theme.palette.text_primary);
     }
 
     // Threads button — shown only when the SDK reports the room has at least
@@ -508,57 +512,10 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     if (threads_btn_ && threads_btn_->visible())
     {
         threads_btn_->paint(ctx);
-        draw_threads_icon(ctx.canvas, threads_btn_->bounds(),
-                          ctx.theme.palette.text_primary);
+        threads_icon_.draw(ctx.canvas, ctx.factory, kThreadListSvg,
+                           threads_btn_->bounds(), kHeaderIconPx,
+                           ctx.theme.palette.text_primary);
     }
-}
-
-void RoomHeader::draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
-                                    tk::Color tint)
-{
-    // 16x16 icon box, pixel-snapped and centred in the button rect so the
-    // 1.5 px strokes stay crisp on every backend.
-    const float ox = std::floor(button.x + (button.w - 16.0f) * 0.5f);
-    const float oy = std::floor(button.y + (button.h - 16.0f) * 0.5f);
-
-    // Calendar body: outline rounded rect, leaving 2 px at the top so the
-    // binding tabs straddle its edge.
-    const tk::Rect body{ox, oy + 2.0f, 16.0f, 14.0f};
-    canvas.stroke_rounded_rect(body, 2.5f, tint, 1.5f);
-
-    // Two binding tabs straddling the top edge of the body.
-    canvas.fill_rounded_rect({ox + 3.0f, oy, 2.5f, 4.0f}, 1.0f, tint);
-    canvas.fill_rounded_rect({ox + 10.5f, oy, 2.5f, 4.0f}, 1.0f, tint);
-
-    // Header / day-grid divider rule.
-    canvas.fill_rect({ox + 1.5f, oy + 6.0f, 13.0f, 1.5f}, tint);
-
-    // 2x3 day-grid dots, faint so they read as texture, not noise.
-    const tk::Color dot =
-        tint.with_alpha(static_cast<std::uint8_t>(tint.a * 0.55f));
-    for (int row = 0; row < 2; ++row)
-    {
-        for (int col = 0; col < 3; ++col)
-        {
-            const float cx = ox + 4.0f + static_cast<float>(col) * 4.0f;
-            const float cy = oy + 10.0f + static_cast<float>(row) * 3.0f;
-            canvas.fill_rect({cx - 0.8f, cy - 0.8f, 1.6f, 1.6f}, dot);
-        }
-    }
-}
-
-void RoomHeader::draw_threads_icon(tk::Canvas& canvas, tk::Rect button,
-                                   tk::Color tint)
-{
-    // 16x16 icon box, pixel-snapped and centred. The glyph is three stacked
-    // horizontal bars of decreasing length — reads as a thread / reply stack.
-    const float ox = std::floor(button.x + (button.w - 16.0f) * 0.5f);
-    const float oy = std::floor(button.y + (button.h - 16.0f) * 0.5f);
-
-    // Three bars of widths 12, 10, 8 px, each 2 px tall with 3 px gaps.
-    canvas.fill_rounded_rect({ox + 2.0f, oy + 2.0f, 12.0f, 2.0f}, 1.0f, tint);
-    canvas.fill_rounded_rect({ox + 2.0f, oy + 7.0f, 10.0f, 2.0f}, 1.0f, tint);
-    canvas.fill_rounded_rect({ox + 2.0f, oy + 12.0f, 8.0f, 2.0f}, 1.0f, tint);
 }
 
 void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,

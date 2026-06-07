@@ -1,5 +1,7 @@
 #include "RoomView.h"
 
+#include "icons.h"
+
 #include <algorithm>
 #include <memory>
 #include <unordered_set>
@@ -154,7 +156,8 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         std::vector<PopupMenu::Item> items;
         if (can_delete)
         {
-            items.push_back({"\xF0\x9F\x97\x91", // 🗑
+            items.push_back({"", // SVG icon below
+                             kRedactSvg,
                              "Delete message", /*destructive=*/true,
                              [this, event_id]
                              {
@@ -164,7 +167,8 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         }
         if (can_pin)
         {
-            items.push_back({"\xF0\x9F\x93\x8C", // 📌
+            items.push_back({"", // SVG icon below
+                             kPinSvg,
                              is_pinned ? "Unpin message" : "Pin message",
                              /*destructive=*/false,
                              [this, event_id, is_pinned]

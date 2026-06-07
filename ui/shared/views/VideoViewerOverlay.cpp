@@ -1,6 +1,8 @@
 #include "VideoViewerOverlay.h"
+#include "icons.h"
 #include "media_utils.h"
 
+#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -225,6 +227,30 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
     const tk::Rect b = bounds();
     auto& cv = ctx.canvas;
 
+    // Lucide icons are rasterized at physical-pixel resolution and tinted; the
+    // cache is invalidated whenever the canvas DPI scale changes.
+    const float icon_scale = cv.scale_factor();
+    if (icon_scale != icon_scale_)
+    {
+        icon_scale_ = icon_scale;
+        close_icon_.reset();
+        save_icon_.reset();
+        play_icon_.reset();
+    }
+    auto draw_icon = [&](tk::Rect box, float logical_px,
+                         std::unique_ptr<tk::Image>& cache,
+                         std::span<const std::uint8_t> svg, tk::Color tint)
+    {
+        if (!cache)
+            cache = tk::rasterize_svg(
+                ctx.factory, svg,
+                std::max(1, int(std::lround(logical_px * icon_scale))), tint);
+        if (cache)
+            cv.draw_image(*cache, {box.x + (box.w - logical_px) * 0.5f,
+                                   box.y + (box.h - logical_px) * 0.5f,
+                                   logical_px, logical_px});
+    };
+
     // Dark backdrop
     cv.fill_rect(b, tk::Color::rgba(0, 0, 0, 210));
 
@@ -345,24 +371,9 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         }
         else
         {
-            // Play triangle (▶): symmetric stacked rects, widest at the vertical
-            // centre, tapering to near-zero at top and bottom.  tri_x is shifted
-            // by tri_w/3 so the visual centroid sits at the button centre.
-            const float tri_h = kPlayBtnD * 0.50f;
-            const float tri_w = kPlayBtnD * 0.38f;
-            const float tri_x = play_btn_.x + kPlayBtnD * 0.5f - tri_w / 3.0f;
-            const float tri_y = play_btn_.y + (kPlayBtnD - tri_h) * 0.5f;
-            constexpr int steps = 8;
-            for (int i = 0; i < steps; ++i)
-            {
-                const float t =
-                    (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
-                const float row_h = tri_h / static_cast<float>(steps);
-                const float row_w = tri_w * (1.0f - 2.0f * std::abs(t - 0.5f));
-                cv.fill_rect(
-                    {tri_x, tri_y + i * row_h, std::max(1.0f, row_w), row_h},
-                    glyph_col);
-            }
+            // Play glyph (▶): Lucide play icon, tinted to the control colour.
+            draw_icon(play_btn_, kPlayBtnD * 0.5f, play_icon_, kPlaySvg,
+                      glyph_col);
         }
 
         // Speed pill
@@ -434,39 +445,16 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
     } // end if (!hide_controls_)
 
     // × close button — always visible so the user can dismiss the overlay.
+    constexpr float kBtnIconPx = 20.0f;
+    const tk::Color icon_tint = tk::Color::rgba(255, 255, 255, 220);
     cv.fill_rounded_rect(close_btn_, kCloseBtnS * 0.5f,
                          tk::Color::rgba(255, 255, 255, 30));
-    {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::UiSemibold;
-        st.max_width = kCloseBtnS;
-        auto lo = ctx.factory.build_text("\xC3\x97", st); // UTF-8 ×
-        if (lo)
-        {
-            tk::Size sz = lo->measure();
-            cv.draw_text(*lo,
-                         {close_btn_.x + (close_btn_.w - sz.w) * 0.5f,
-                          close_btn_.y + (close_btn_.h - sz.h) * 0.5f},
-                         tk::Color::rgba(255, 255, 255, 220));
-        }
-    }
+    draw_icon(close_btn_, kBtnIconPx, close_icon_, kCloseSvg, icon_tint);
 
     // ⬇ save button
     cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f,
                          tk::Color{0, 0, 0, 160});
-    {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        st.max_width = kCloseBtnS;
-        auto lo = ctx.factory.build_text("\xe2\xac\x87", st); // UTF-8 ⬇
-        if (lo)
-        {
-            auto sz = lo->measure();
-            float tx = save_btn_.x + (save_btn_.w - sz.w) * 0.5f;
-            float ty = save_btn_.y + (save_btn_.h - sz.h) * 0.5f;
-            cv.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 220));
-        }
-    }
+    draw_icon(save_btn_, kBtnIconPx, save_icon_, kDownloadSvg, icon_tint);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────

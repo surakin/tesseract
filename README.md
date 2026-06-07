@@ -174,6 +174,7 @@ Tesseract stands on the work of many open-source projects.
 | Win32 / Direct2D | Windows | Microsoft |
 | AppKit / CoreGraphics / CoreText | macOS | Apple |
 | [nanosvg](https://github.com/memononen/nanosvg) (vendored) | SVG icon rasterization | Mikko Mononen (incl. AntiGrain code by Maxim Shemanarev) |
+| [Lucide](https://lucide.dev/) (ISC) | UI icon set | The Lucide Contributors (community fork of Feather) |
 | [nlohmann/json](https://github.com/nlohmann/json) | C++ JSON parsing | Niels Lohmann |
 | [Catch2](https://github.com/catchorg/Catch2) | C++ unit test framework | Martin Hořeňovský et al. |
 | [Corrosion](https://github.com/corrosion-rs/corrosion) | CMake ↔ Cargo bridge | The Corrosion project |

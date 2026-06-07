@@ -1,6 +1,8 @@
 #include "ImageViewerOverlay.h"
+#include "icons.h"
 #include "media_utils.h"
 
+#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -269,39 +271,38 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
         }
     }
 
+    // Close / download buttons — Lucide icons tinted white. Re-rasterized when
+    // the canvas DPI scale changes so they stay crisp.
+    constexpr float kIconPx = 20.0f;
+    const float icon_scale = cv.scale_factor();
+    if (icon_scale != icon_scale_)
+    {
+        icon_scale_ = icon_scale;
+        close_icon_.reset();
+        save_icon_.reset();
+    }
+    const int icon_phys = std::max(1, int(std::lround(kIconPx * icon_scale)));
+    auto draw_btn_icon = [&](tk::Rect btn, std::unique_ptr<tk::Image>& cache,
+                             std::span<const std::uint8_t> svg)
+    {
+        if (!cache)
+            cache = tk::rasterize_svg(ctx.factory, svg, icon_phys,
+                                      tk::Color::rgba(255, 255, 255, 220));
+        if (cache)
+            cv.draw_image(*cache, {btn.x + (btn.w - kIconPx) * 0.5f,
+                                   btn.y + (btn.h - kIconPx) * 0.5f, kIconPx,
+                                   kIconPx});
+    };
+
     // × close button
     cv.fill_rounded_rect(close_btn_, kCloseBtnS * 0.5f,
                          tk::Color::rgba(255, 255, 255, 30));
-    {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::UiSemibold;
-        st.max_width = kCloseBtnS;
-        auto lo = ctx.factory.build_text("\xC3\x97", st); // UTF-8 ×
-        if (lo)
-        {
-            tk::Size sz = lo->measure();
-            float tx = close_btn_.x + (close_btn_.w - sz.w) * 0.5f;
-            float ty = close_btn_.y + (close_btn_.h - sz.h) * 0.5f;
-            cv.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 220));
-        }
-    }
+    draw_btn_icon(close_btn_, close_icon_, kCloseSvg);
 
     // ⬇ save button
     cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f,
                          tk::Color{0, 0, 0, 160});
-    {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        st.max_width = kCloseBtnS;
-        auto lo = ctx.factory.build_text("\xe2\xac\x87", st); // UTF-8 ⬇
-        if (lo)
-        {
-            auto sz = lo->measure();
-            float tx = save_btn_.x + (save_btn_.w - sz.w) * 0.5f;
-            float ty = save_btn_.y + (save_btn_.h - sz.h) * 0.5f;
-            cv.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 220));
-        }
-    }
+    draw_btn_icon(save_btn_, save_icon_, kDownloadSvg);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────

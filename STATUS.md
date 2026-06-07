@@ -2,6 +2,23 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-06-07** (v0.1.10).
 
+> **Unified Lucide icon set.**
+> The composer (emoji / sticker / mic / stop), message hover-action bar
+> (react / reply / thread / edit / more) and its overflow menu (delete / pin),
+> the image & video viewers (close / download / play), the voice / audio /
+> inline-video play glyphs, the room-list join (+) button, and the room-header
+> jump-to-date & threads buttons all render from monochrome
+> [Lucide](https://lucide.dev) SVGs instead of Unicode glyphs or hand-drawn
+> shapes. Icons are embedded at build time (`ui/icons/lucide/` → generated
+> `icons.h`), rasterized by nanosvg, and **tinted** to each context's theme
+> colour via a new `tk::rasterize_svg(..., Color tint)` overload. A reusable
+> `tk::IconCache` holds each rasterized icon and re-rasterizes only when the
+> DPI scale **or** tint changes, so icons stay crisp on HiDPI and recolor
+> correctly on light/dark theme switches. `PopupMenu::Item` gained an optional
+> `svg_icon`. All shared code (`ui/shared/`), so every shell benefits.
+
+<!-- -->
+
 > **Sticky, collapsible section headers in the room list.**
 > Section headers (Favorites, DMs, Rooms, Spaces, Inactive) stick to the top
 > of the room list while scrolling their section and are pushed up by the next

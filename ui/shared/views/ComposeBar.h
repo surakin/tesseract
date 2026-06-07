@@ -15,6 +15,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <cstdint>
@@ -393,14 +394,12 @@ private:
     tk::Button* mic_btn_ = nullptr;     // borrowed; hidden when no mic device
     tk::Button* send_btn_ = nullptr;    // borrowed
     tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
-    // Cached SVG icons for the emoji, sticker, and mic buttons — rasterized
-    // lazily on first paint via tk::rasterize_svg() at icon_scale_ DPI scale.
-    // Invalidated when the canvas scale factor changes (e.g. monitor move).
-    float icon_scale_ = 0.f;
-    std::unique_ptr<tk::Image> emoji_icon_;
-    std::unique_ptr<tk::Image> sticker_icon_;
-    std::unique_ptr<tk::Image> mic_icon_;
-    std::unique_ptr<tk::Image> mic_stop_icon_;
+    // Cached SVG icons for the emoji, sticker, and mic buttons — tint-aware so
+    // they recolor on hover and on theme switch, and stay crisp across DPI.
+    tk::IconCache emoji_icon_;
+    tk::IconCache sticker_icon_;
+    tk::IconCache mic_icon_;
+    tk::IconCache mic_stop_icon_;
     // × glyph for the remove-attachment button (Body size, hover-tinted).
     std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};
