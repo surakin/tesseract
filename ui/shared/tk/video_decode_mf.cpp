@@ -12,8 +12,12 @@
 
 // Keep NOMINMAX / WIN32_LEAN_AND_MEAN consistent with the rest of the Win32
 // targets (set by the toolkit's CMake definitions).
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
@@ -47,6 +51,63 @@ constexpr int kMaxFrames = 300;
 
 // Common GPU row-alignment values used by Media Foundation decoders.
 static const UINT kAligns[] = {64u, 128u, 256u, 512u, 1024u, 2048u, 4096u};
+
+static VideoFrame rotate_bgra(VideoFrame src, UINT32 deg)
+{
+    if (deg == 0 || src.w <= 0 || src.h <= 0)
+        return src;
+    const int sw = src.w, sh = src.h;
+    VideoFrame out;
+    out.delay_ms = src.delay_ms;
+    if (deg == 180)
+    {
+        out.w = sw;
+        out.h = sh;
+        out.bgra.resize(src.bgra.size());
+        for (int y = 0; y < sh; ++y)
+            for (int x = 0; x < sw; ++x)
+            {
+                const auto* s =
+                    src.bgra.data() +
+                    (static_cast<std::size_t>(y) * sw + x) * 4;
+                auto* d =
+                    out.bgra.data() +
+                    (static_cast<std::size_t>(sh - 1 - y) * sw +
+                     (sw - 1 - x)) * 4;
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+            }
+    }
+    else // 90 or 270
+    {
+        out.w = sh; // dimensions swap
+        out.h = sw;
+        out.bgra.resize(static_cast<std::size_t>(out.w) * out.h * 4);
+        for (int sy = 0; sy < sh; ++sy)
+            for (int sx = 0; sx < sw; ++sx)
+            {
+                const auto* s =
+                    src.bgra.data() +
+                    (static_cast<std::size_t>(sy) * sw + sx) * 4;
+                int dx, dy;
+                if (deg == 90)
+                {
+                    dx = sh - 1 - sy;
+                    dy = sx;
+                }
+                else // 270
+                {
+                    dx = sy;
+                    dy = sw - 1 - sx;
+                }
+                auto* d =
+                    out.bgra.data() +
+                    (static_cast<std::size_t>(dy) * out.w + dx) * 4;
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+            }
+    }
+    return out;
+}
+
 } // namespace
 
 DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
@@ -143,6 +204,22 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         MFShutdown();
         cleanup_com();
         return result;
+    }
+
+    // Query rotation metadata. The attribute lives on the native source type;
+    // fall back to the output type in case the decoder propagates it there.
+    UINT32 rotation_deg = 0;
+    {
+        Microsoft::WRL::ComPtr<IMFMediaType> native_type;
+        if (SUCCEEDED(reader->GetNativeMediaType(
+                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                0, native_type.GetAddressOf())))
+        {
+            native_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
+        }
+        if (rotation_deg == 0)
+            actual_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
+        rotation_deg %= 360;
     }
 
     // Default stride from the media type (signed: negative → bottom-up buffer).
@@ -296,6 +373,9 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
 
         if (locked_2d) buf2d->Unlock2D();
         else           buf->Unlock();
+
+        if (rotation_deg != 0)
+            f = rotate_bgra(std::move(f), rotation_deg);
 
         // Scale to the preview cell size so the cached frames stay small.
         result.frames.push_back(downscale_bgra(std::move(f), max_w, max_h));

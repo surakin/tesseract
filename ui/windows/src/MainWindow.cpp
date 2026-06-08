@@ -2904,8 +2904,8 @@ void MainWindow::on_create(HWND hwnd)
             auto slash = mime_type.find('/');
             if (slash != std::string::npos)
                 ext = "." + mime_type.substr(slash + 1);
-            std::wstring suggested(("video" + ext).begin(),
-                                   ("video" + ext).end());
+            const std::string suggested_u8 = "video" + ext;
+            std::wstring suggested(suggested_u8.begin(), suggested_u8.end());
             std::wstring path = show_save_dialog_(
                 suggested,
                 L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");

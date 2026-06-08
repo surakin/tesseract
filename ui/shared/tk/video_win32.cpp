@@ -72,6 +72,61 @@ void ensure_mf_started()
                    });
 }
 
+// Rotate a tightly-packed BGRA pixel buffer in place, updating w and h.
+// deg must be 90, 180, or 270; any other value is a no-op.
+static void rotate_pixels_inplace(std::vector<uint8_t>& pixels,
+                                  UINT32& w, UINT32& h, UINT32 deg)
+{
+    if (deg == 0 || w == 0 || h == 0)
+        return;
+    const UINT32 sw = w, sh = h;
+    if (deg == 180)
+    {
+        std::vector<uint8_t> out(pixels.size());
+        for (UINT32 y = 0; y < sh; ++y)
+            for (UINT32 x = 0; x < sw; ++x)
+            {
+                const uint8_t* s =
+                    pixels.data() +
+                    (static_cast<size_t>(y) * sw + x) * 4;
+                uint8_t* d =
+                    out.data() +
+                    (static_cast<size_t>(sh - 1 - y) * sw +
+                     (sw - 1 - x)) * 4;
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+            }
+        pixels = std::move(out);
+    }
+    else // 90 or 270
+    {
+        w = sh; h = sw; // dimensions swap
+        std::vector<uint8_t> out(static_cast<size_t>(w) * h * 4);
+        for (UINT32 sy = 0; sy < sh; ++sy)
+            for (UINT32 sx = 0; sx < sw; ++sx)
+            {
+                const uint8_t* s =
+                    pixels.data() +
+                    (static_cast<size_t>(sy) * sw + sx) * 4;
+                UINT32 dx, dy;
+                if (deg == 90)
+                {
+                    dx = sh - 1 - sy;
+                    dy = sx;
+                }
+                else // 270
+                {
+                    dx = sy;
+                    dy = sw - 1 - sx;
+                }
+                uint8_t* d =
+                    out.data() +
+                    (static_cast<size_t>(dy) * w + dx) * 4;
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+            }
+        pixels = std::move(out);
+    }
+}
+
 std::wstring mime_to_url(std::string_view mime)
 {
     std::string ext;
@@ -295,6 +350,11 @@ public:
     {
         if (engine_)
         {
+            if (engine_->IsEnded())
+            {
+                engine_->SetCurrentTime(0.0);
+                start_decode_thread();
+            }
             engine_->SetPlaybackRate(static_cast<double>(rate_));
             engine_->Play();
         }
@@ -567,6 +627,22 @@ private:
             return;
         }
 
+        // Query rotation metadata. The attribute lives on the native source
+        // type; fall back to the output type in case the decoder propagates it.
+        UINT32 rotation_deg = 0;
+        {
+            Microsoft::WRL::ComPtr<IMFMediaType> native_type;
+            if (SUCCEEDED(reader->GetNativeMediaType(
+                    static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                    0, native_type.GetAddressOf())))
+            {
+                native_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
+            }
+            if (rotation_deg == 0)
+                actual_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
+            rotation_deg %= 360;
+        }
+
         // Media Foundation pads each row to a stride that the decoder picks for
         // alignment, which is often larger than frame_w*4 (e.g. a 200px-wide
         // video aligns to 208px → 832-byte rows, not the 800 a packed buffer
@@ -780,9 +856,16 @@ private:
 
             if (backend_)
             {
+                // Apply stream rotation. disp_w/disp_h track the post-rotation
+                // dimensions; frame_w/frame_h stay fixed for the next iteration's
+                // buffer allocation.
+                UINT32 disp_w = frame_w, disp_h = frame_h;
+                if (rotation_deg != 0)
+                    rotate_pixels_inplace(pixels, disp_w, disp_h, rotation_deg);
+
                 auto img = tk::d2d::make_image_from_bgra(
-                    *backend_, pixels.data(), static_cast<int>(frame_w),
-                    static_cast<int>(frame_h));
+                    *backend_, pixels.data(), static_cast<int>(disp_w),
+                    static_cast<int>(disp_h));
                 if (img)
                 {
                     {
