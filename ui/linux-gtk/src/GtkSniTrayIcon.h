@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 // Pure-D-Bus StatusNotifierItem tray for the GTK4 shell.
 //
@@ -26,6 +27,12 @@ public:
     }
     void set_tooltip(const std::string& text) override;
     void set_unread(bool has_unread, bool has_highlight) override;
+
+    // Rebuild the context menu. `window_items` is a list of (label, callback)
+    // pairs — one per open main window — prepended before the Quit action.
+    // Emits LayoutUpdated so the host re-queries. Call from the UI thread only.
+    void rebuild_menu(
+        std::vector<std::pair<std::string, std::function<void()>>> window_items);
 
     // Opaque; defined in the .cpp. Public so the file-local GDBus vtable
     // callbacks (which receive it as user_data) can name the type.

@@ -434,7 +434,7 @@ void EventHandlerBase::on_verification_state_changed(bool is_verified)
         [shell = shell_, uid = user_id_, v = is_verified]()
         {
             // Always persist the state so switch_active_account can restore it.
-            for (auto& a : shell->accounts_)
+            for (const auto& a : shell->account_manager_.accounts())
             {
                 if (a->user_id == uid)
                 {
@@ -443,10 +443,7 @@ void EventHandlerBase::on_verification_state_changed(bool is_verified)
                 }
             }
             // Only touch the live UI when this is the active account.
-            if (shell->active_account_index_ >= 0 &&
-                shell->active_account_index_ <
-                    static_cast<int>(shell->accounts_.size()) &&
-                shell->accounts_[shell->active_account_index_]->user_id == uid)
+            if (shell->active_account_ && shell->active_account_->user_id == uid)
             {
                 shell->handle_verification_state_ui_(v);
             }

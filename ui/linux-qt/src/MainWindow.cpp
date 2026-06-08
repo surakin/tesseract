@@ -1,4 +1,7 @@
 #include "MainWindow.h"
+#include "LinuxNotifier.h"
+#include "LinuxUpConnectorQt.h"
+#include "views/ComposePopups.h"
 #include "LoginView.h"
 #include "views/BrandView.h"
 #include "views/media_drop.h"
@@ -81,6 +84,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <unistd.h>
 #include <unordered_set>
@@ -99,7 +103,9 @@ namespace qt6
 // MainWindow constructor
 // ---------------------------------------------------------------------------
 
-MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
+MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* parent)
+    : QMainWindow(parent)
+    , ShellBase(account_manager)
 {
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
     qRegisterMetaType<tesseract::BackupProgress>();
@@ -133,7 +139,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     contentStack_->addWidget(mainAppSurface_);
     // Let the animation timer repaint only the rects where animated images are
     // drawn (see onMessageAnimTick_) instead of the whole surface.
-    mainAppSurface_->set_anim_cache(&anim_cache_);
+    mainAppSurface_->set_anim_cache(&account_manager_.anim_cache());
 
     // Feed pointer / wheel events into the PresenceTracker so we stay "Online"
     // while the user is engaging with the app. Focus + timer ticks are wired
@@ -271,7 +277,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         // ---- User info strip ----
         mainApp_->user_info()->on_primary = [this](tk::Point world)
         {
-            if (accounts_.size() < 2)
+            if (account_manager_.accounts().size() < 2)
             {
                 return;
             }
@@ -386,7 +392,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     if (m.avatar_url.empty())
                         return nullptr;
                     ensure_user_avatar_(m.avatar_url);
-                    return thumbnail_cache_.peek(m.avatar_url);
+                    return account_manager_.thumbnail_cache().peek(m.avatar_url);
                 }
                 return nullptr;
             });
@@ -1355,7 +1361,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
         gif_popup_frame_, /*transparent=*/false);
     gif_popup_surface_->setFocusPolicy(Qt::NoFocus);
-    gif_popup_surface_->set_anim_cache(&anim_cache_);
+    gif_popup_surface_->set_anim_cache(&account_manager_.anim_cache());
     {
         auto w = std::make_unique<tesseract::views::GifPopup>();
         gif_popup_widget_ = w.get();
@@ -1378,10 +1384,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                const std::function<void()>& repaint) -> const tk::Image*
         {
             // The strip animates strip_url (WebP/GIF, native decode), keyed in
-            // anim_cache_. Serving a cached frame means animated content is on
+            // anim_cache. Serving a cached frame means animated content is on
             // screen, so make sure the tick timer is running: re-shown searches
             // take this path without re-fetching, skipping the fetch-path start.
-            if (const tk::Image* f = anim_cache_.current_frame(result.strip_url))
+            if (const tk::Image* f = account_manager_.anim_cache().current_frame(result.strip_url))
             {
                 start_anim_tick_();
                 return f;
@@ -1408,12 +1414,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                         // thumbnail first.
                         const std::string disk_key = gif_src_disk_key_(url);
                         std::vector<std::uint8_t> bytes =
-                            media_disk_cache_.load(disk_key);
+                            account_manager_.media_disk_cache().load(disk_key);
                         if (bytes.empty() && client_)
                         {
                             bytes = client_->fetch_url_bytes(url);
                             if (!bytes.empty())
-                                media_disk_cache_.store(disk_key, bytes);
+                                account_manager_.media_disk_cache().store(disk_key, bytes);
                         }
                         post_to_ui_(
                             [this, url, b = std::move(bytes), alive,
@@ -1449,12 +1455,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                         // a second round-trip.
                         const std::string disk_key = gif_src_disk_key_(anim_url);
                         std::vector<std::uint8_t> bytes =
-                            media_disk_cache_.load(disk_key);
+                            account_manager_.media_disk_cache().load(disk_key);
                         if (bytes.empty() && client_)
                         {
                             bytes = client_->fetch_url_bytes(anim_url);
                             if (!bytes.empty())
-                                media_disk_cache_.store(disk_key, bytes);
+                                account_manager_.media_disk_cache().store(disk_key, bytes);
                         }
                         using CW = tesseract::views::GifPopup;
                         if (!bytes.empty() && anim_mime == "video/mp4")
@@ -1489,7 +1495,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                     gif_anim_inflight_.erase(anim_url);
                                     if (!imgs->empty())
                                     {
-                                        anim_cache_.store(
+                                        account_manager_.anim_cache().store(
                                             anim_url, std::move(*imgs),
                                             std::move(delays),
                                             QDateTime::currentMSecsSinceEpoch());
@@ -1517,7 +1523,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                     gif_anim_inflight_.erase(anim_url);
                                     if (!d->frames.empty())
                                     {
-                                        anim_cache_.store(
+                                        account_manager_.anim_cache().store(
                                             anim_url, std::move(d->frames),
                                             std::move(d->delays_ms),
                                             QDateTime::currentMSecsSinceEpoch());
@@ -1588,7 +1594,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             // The strip persisted the source bytes to the disk cache on fetch;
             // reuse them so a selected GIF sends without a second download.
-            return media_disk_cache_.load(gif_src_disk_key_(url));
+            return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
         };
         gif_controller_ = std::make_unique<tesseract::views::GifController>(
             roomTextArea_.get(), gif_popup_widget_, std::move(gh));
@@ -2006,17 +2012,25 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
     setupLocalServer_();
+
+    account_manager_.register_window(this);
+    broadcast_rebuild_tray_();
 }
 
 MainWindow::~MainWindow()
 {
+    // unregister_window is called in closeEvent (before quit) so it is not
+    // repeated here; broadcast_rebuild_tray_ is still needed to refresh any
+    // remaining windows' tray menus after this window's C++ resources are freed.
+    broadcast_rebuild_tray_();
+
     // Signal Rust's cancellation channel first so any worker thread
     // currently blocked inside a `block_on(tokio::select! { stop_rx })`
     // FFI call returns immediately.  drain() can then join all threads
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& a : accounts_)
+    for (auto& a : account_manager_.accounts())
     {
         if (a && a->client)
             a->client->stop_sync();
@@ -2037,7 +2051,8 @@ MainWindow::~MainWindow()
     loginView_ = nullptr;
 
     pending_login_client_.reset();
-    accounts_.clear();
+    // AccountManager owns the sessions — they are cleaned up when
+    // account_manager_ is destroyed by the caller.
 }
 
 #ifdef HAVE_XDG_ACTIVATION
@@ -2381,7 +2396,7 @@ void MainWindow::doLogin()
 
     std::string restore_error;
     bool any_restore_failed = false;
-    int target_active = -1;
+    std::string target_active_uid;
     for (std::size_t i = 0; i < idx.user_ids.size(); ++i)
     {
         const auto& uid = idx.user_ids[i];
@@ -2412,7 +2427,7 @@ void MainWindow::doLogin()
             session->open_rooms = prefs.open_rooms;
         }
 
-        auto bridge = std::make_unique<EventBridge>(this, this);
+        auto bridge = std::make_unique<EventBridge>(this);
         bridge->set_user_id(uid);
         session->client->start_sync(bridge.get());
         session->sync_started = true;
@@ -2422,14 +2437,7 @@ void MainWindow::doLogin()
         session->notifier = std::make_unique<LinuxNotifierQt>(
             [this, uid](std::string room_id, std::string token)
             {
-                for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-                {
-                    if (accounts_[i]->user_id == uid)
-                    {
-                        switchActiveAccount(i);
-                        break;
-                    }
-                }
+                switchActiveAccount(uid);
                 pending_wayland_token_ = QString::fromStdString(token);
                 navigate_to_room(std::move(room_id));
             });
@@ -2445,12 +2453,12 @@ void MainWindow::doLogin()
 
         if (uid == idx.active_user_id)
         {
-            target_active = static_cast<int>(accounts_.size());
+            target_active_uid = uid;
         }
-        accounts_.push_back(std::move(session));
+        account_manager_.add_account(std::move(session));
     }
 
-    if (accounts_.empty())
+    if (account_manager_.accounts().empty())
     {
         // Every stored account failed to restore — show login view.
         loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
@@ -2483,16 +2491,13 @@ void MainWindow::doLogin()
         return;
     }
 
-    if (target_active < 0)
+    if (target_active_uid.empty() && !account_manager_.accounts().empty())
     {
-        target_active = 0;
+        target_active_uid = account_manager_.accounts()[0]->user_id;
     }
-    switchActiveAccount(target_active);
+    switchActiveAccount(target_active_uid);
     auto* active_up_connector =
-        (active_account_index_ >= 0 &&
-         active_account_index_ < static_cast<int>(accounts_.size()))
-            ? accounts_[active_account_index_]->up_connector.get()
-            : nullptr;
+        active_account_ ? active_account_->up_connector.get() : nullptr;
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
@@ -2563,28 +2568,25 @@ void MainWindow::onLoginSucceeded()
     // If an account with the same user_id is already signed in (the user
     // added an account they're already logged into), refuse rather than
     // colliding on disk.
-    for (auto& a : accounts_)
+    if (account_manager_.find(user_id))
     {
-        if (a->user_id == user_id)
+        statusBar()->showMessage(tr("Already signed in as %1")
+                                     .arg(QString::fromStdString(user_id)),
+                                 4000);
+        loginView_->set_client(nullptr);
+        pending_login_client_.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(pending_login_temp_dir_, ec);
+        // Restore previous active account's UI.
+        const int back = add_account_return_idx_;
+        if (back >= 0 && back < static_cast<int>(account_manager_.accounts().size()))
         {
-            statusBar()->showMessage(tr("Already signed in as %1")
-                                         .arg(QString::fromStdString(user_id)),
-                                     4000);
-            loginView_->set_client(nullptr);
-            pending_login_client_.reset();
-            std::error_code ec;
-            std::filesystem::remove_all(pending_login_temp_dir_, ec);
-            // Restore previous active account's UI.
-            if (add_account_return_idx_ >= 0 &&
-                add_account_return_idx_ < static_cast<int>(accounts_.size()))
-            {
-                switchActiveAccount(add_account_return_idx_);
-                contentStack_->setCurrentWidget(mainAppSurface_);
-            }
-            pending_login_is_add_account_ = false;
-            add_account_return_idx_ = -1;
-            return;
+            switchActiveAccount(account_manager_.accounts()[back]->user_id);
+            contentStack_->setCurrentWidget(mainAppSurface_);
         }
+        pending_login_is_add_account_ = false;
+        add_account_return_idx_ = -1;
+        return;
     }
 
     // Snapshot the session blob before we drop the in-flight Client —
@@ -2664,7 +2666,7 @@ void MainWindow::onLoginSucceeded()
         session->open_rooms = prefs.open_rooms;
     }
 
-    auto bridge = std::make_unique<EventBridge>(this, this);
+    auto bridge = std::make_unique<EventBridge>(this);
     bridge->set_user_id(user_id);
     session->client->start_sync(bridge.get());
     session->sync_started = true;
@@ -2674,14 +2676,7 @@ void MainWindow::onLoginSucceeded()
     session->notifier = std::make_unique<LinuxNotifierQt>(
         [this, uid = user_id](std::string room_id, std::string token)
         {
-            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-            {
-                if (accounts_[i]->user_id == uid)
-                {
-                    switchActiveAccount(i);
-                    break;
-                }
-            }
+            switchActiveAccount(uid);
             pending_wayland_token_ = QString::fromStdString(token);
             navigate_to_room(std::move(room_id));
         });
@@ -2697,24 +2692,20 @@ void MainWindow::onLoginSucceeded()
         session->up_connector = std::move(up);
     }
 
-    int new_idx = static_cast<int>(accounts_.size());
-    accounts_.push_back(std::move(session));
+    account_manager_.add_account(std::move(session));
 
     // Update the on-disk index. Active = the account we just added.
     tesseract::SessionStore::AccountIndex idx;
     idx.active_user_id = user_id;
-    for (auto& a : accounts_)
+    for (auto& a : account_manager_.accounts())
     {
         idx.user_ids.push_back(a->user_id);
     }
     tesseract::SessionStore::save_index(idx);
 
-    switchActiveAccount(new_idx);
+    switchActiveAccount(user_id);
     auto* new_account_up_connector =
-        (active_account_index_ >= 0 &&
-         active_account_index_ < static_cast<int>(accounts_.size()))
-            ? accounts_[active_account_index_]->up_connector.get()
-            : nullptr;
+        active_account_ ? active_account_->up_connector.get() : nullptr;
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
@@ -2778,9 +2769,9 @@ void MainWindow::onLoginCancelled()
     int back = add_account_return_idx_;
     pending_login_is_add_account_ = false;
     add_account_return_idx_ = -1;
-    if (back >= 0 && back < static_cast<int>(accounts_.size()))
+    if (back >= 0 && back < static_cast<int>(account_manager_.accounts().size()))
     {
-        switchActiveAccount(back);
+        switchActiveAccount(account_manager_.accounts()[back]->user_id);
         contentStack_->setCurrentWidget(mainAppSurface_);
     }
 }
@@ -2793,7 +2784,13 @@ void MainWindow::closeEvent(QCloseEvent* ev)
         hide();
         return;
     }
-    QMainWindow::closeEvent(ev);
+    if (active_account_ &&
+        account_manager_.dedicated_window(active_account_->user_id) == this)
+        account_manager_.clear_dedicated(active_account_->user_id);
+    account_manager_.unregister_window(this);
+    if (account_manager_.window_count() == 0)
+        QApplication::quit();
+    ev->accept();
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id)
@@ -3185,7 +3182,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     if (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar)
     {
-        if (thumbnail_cache_.contains(cache_key))
+        if (account_manager_.thumbnail_cache().contains(cache_key))
         {
             return;
         }
@@ -3215,7 +3212,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             img = img.scaled(kAvatarCacheSize, kAvatarCacheSize,
                              Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
-        thumbnail_cache_.store(cache_key, tk::qt6::make_image(std::move(img)));
+        account_manager_.thumbnail_cache().store(cache_key, tk::qt6::make_image(std::move(img)));
         if (mainAppSurface_)
         {
             mainAppSurface_->update();
@@ -3235,7 +3232,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
 
     if (kind == MediaKind::Tile)
     {
-        if (image_cache_.contains(cache_key))
+        if (account_manager_.image_cache().contains(cache_key))
         {
             return;
         }
@@ -3245,7 +3242,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             return;
         }
-        image_cache_.store(cache_key, tk::qt6::make_image(std::move(img)));
+        account_manager_.image_cache().store(cache_key, tk::qt6::make_image(std::move(img)));
         if (mainApp_)
         {
             mainApp_->room_view()->message_list()->invalidate_data();
@@ -3264,8 +3261,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // ensure_picker_image_; pickers already use this pattern so all paths are
     // now consistent.
     const bool is_thumb = (kind == MediaKind::MediaThumbnail);
-    if ((is_thumb ? thumbnail_cache_ : image_cache_).contains(cache_key) ||
-        anim_cache_.has(cache_key))
+    if ((is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache()).contains(cache_key) ||
+        account_manager_.anim_cache().has(cache_key))
     {
         mediaImageSizes_.erase(cache_key);
         return;
@@ -3288,13 +3285,15 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 [this, cache_key, kind, is_thumb, d]() mutable
                 {
                     auto& still_cache =
-                        is_thumb ? thumbnail_cache_ : image_cache_;
+                        is_thumb ? account_manager_.thumbnail_cache()
+                                 : account_manager_.image_cache();
                     if (still_cache.contains(cache_key) ||
-                        anim_cache_.has(cache_key))
+                        account_manager_.anim_cache().has(cache_key))
                         return;
                     if (!d->frames.empty())
                     {
-                        anim_cache_.store(cache_key, std::move(d->frames),
+                        account_manager_.anim_cache().store(
+                                          cache_key, std::move(d->frames),
                                           std::move(d->delays_ms),
                                           QDateTime::currentMSecsSinceEpoch());
                         if (tk_anim_timer_ && !tk_anim_timer_->isActive())
@@ -3656,7 +3655,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 [this, eid, bytes = std::move(bytes)]() mutable
                 {
                     const std::string key = "thumb::" + eid;
-                    if (image_cache_.contains(key))
+                    if (account_manager_.image_cache().contains(key))
                     {
                         return;
                     }
@@ -3679,7 +3678,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                             }
                             player->stop();
                             player->deleteLater();
-                            if (image_cache_.contains(key))
+                            if (account_manager_.image_cache().contains(key))
                             {
                                 return;
                             }
@@ -3746,13 +3745,13 @@ void MainWindow::repaint_anim_frame_()
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (image_cache_.contains(key))
+    if (account_manager_.image_cache().contains(key))
     {
         return;
     }
     QImage img(w, h, QImage::Format_RGBA8888);
     std::memcpy(img.bits(), rgba.data(), rgba.size());
-    image_cache_.store(key, tk::qt6::make_image(std::move(img)));
+    account_manager_.image_cache().store(key, tk::qt6::make_image(std::move(img)));
     if (mainAppSurface_)
     {
         mainAppSurface_->update();
@@ -4136,12 +4135,9 @@ void MainWindow::openSettings()
                 [this](const QString& new_mxc)
                 {
                     my_avatar_url_ = new_mxc.toStdString();
-                    if (active_account_index_ >= 0 &&
-                        active_account_index_ <
-                            static_cast<int>(accounts_.size()))
+                    if (active_account_)
                     {
-                        accounts_[active_account_index_]->avatar_url =
-                            my_avatar_url_;
+                        active_account_->avatar_url = my_avatar_url_;
                     }
                     populateUserStrip();
                 });
@@ -4154,7 +4150,7 @@ void MainWindow::openSettings()
     settingsWidget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return thumbnail_cache_.peek(mxc); },
+        { return account_manager_.thumbnail_cache().peek(mxc); },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
 
@@ -4227,15 +4223,8 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                                        std::string description,
                                        bool soft_logout)
 {
-    tesseract::AccountSession* affected = nullptr;
-    for (auto& a : accounts_)
-    {
-        if (a->user_id == user_id)
-        {
-            affected = a.get();
-            break;
-        }
-    }
+    auto affected_session = account_manager_.find(user_id);
+    tesseract::AccountSession* affected = affected_session.get();
 
     if (context == "sync_reconnect")
     {
@@ -4248,9 +4237,9 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                 5000, this,
                 [this, uid = affected->user_id]()
                 {
-                    for (auto& a : accounts_)
+                    if (auto a = account_manager_.find(uid))
                     {
-                        if (a->user_id == uid && !a->sync_started && a->client)
+                        if (!a->sync_started && a->client)
                         {
                             a->sync_started = true;
                             a->client->start_sync(a->bridge.get());
@@ -4273,10 +4262,9 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                     affected->display_name =
                         affected->client->get_display_name();
                     affected->avatar_url = affected->client->get_avatar_url();
-                    if (affected ==
-                        accounts_[std::max(0, active_account_index_)].get())
+                    if (active_account_ && affected == active_account_.get())
                     {
-                        switchActiveAccount(active_account_index_);
+                        switchActiveAccount(affected->user_id);
                     }
                     affected->client->start_sync(affected->bridge.get());
                     statusBar()->showMessage(tr("Reconnected"));
@@ -4344,15 +4332,12 @@ void MainWindow::handle_notification_ui_(
     bool win_visible = isVisible() && !isMinimized();
     bool win_focused = isActiveWindow();
 
-    for (auto& sess : accounts_)
+    auto sess = account_manager_.find(user_id);
+    if (sess)
     {
-        if (sess->user_id != user_id)
-        {
-            continue;
-        }
         // Suppress only when the user is actively focused on this exact room.
-        if (win_focused && active_account_index_ >= 0 &&
-            accounts_[active_account_index_]->user_id == user_id &&
+        if (win_focused && active_account_ &&
+            active_account_->user_id == user_id &&
             current_room_id_ == room_id)
         {
             return;
@@ -4411,7 +4396,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = thumbnail_cache_.peek(av_mxc);
+                    avatar = account_manager_.thumbnail_cache().peek(av_mxc);
                 }
                 break;
             }
@@ -4553,13 +4538,14 @@ void MainWindow::on_restore_status_ui_()
 // Multi-account orchestration
 // ---------------------------------------------------------------------------
 
-void MainWindow::switchActiveAccount(int new_idx)
+void MainWindow::switchActiveAccount(const std::string& user_id)
 {
-    if (new_idx < 0 || new_idx >= static_cast<int>(accounts_.size()))
+    auto new_session = account_manager_.find(user_id);
+    if (!new_session)
     {
         return;
     }
-    if (new_idx == active_account_index_ && client_)
+    if (new_session == active_account_ && client_)
     {
         return;
     }
@@ -4582,10 +4568,11 @@ void MainWindow::switchActiveAccount(int new_idx)
     reply_details_requested_.clear();
     clearMessages();
 
-    const int old_idx = active_account_index_;
+    // Save outgoing account's banner state before switching.
+    auto old_account = active_account_;
     reset_server_info_();
-    active_account_index_ = new_idx;
-    auto& s = *accounts_[new_idx];
+    active_account_ = new_session;
+    auto& s = *active_account_;
     client_ = s.client.get();
     event_handler_ =
         s.bridge.get(); // keep ShellBase's non-owning alias in sync
@@ -4667,16 +4654,16 @@ void MainWindow::switchActiveAccount(int new_idx)
     // Persist the active selection.
     tesseract::SessionStore::AccountIndex idx;
     idx.active_user_id = s.user_id;
-    for (auto& a : accounts_)
+    for (auto& a : account_manager_.accounts())
     {
         idx.user_ids.push_back(a->user_id);
     }
     tesseract::SessionStore::save_index(idx);
 
     // Save banner state for the outgoing account, then load for the incoming.
-    if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
+    if (old_account)
     {
-        accounts_[old_idx]->verification_banner_dismissed = verification_banner_dismissed_;
+        old_account->verification_banner_dismissed = verification_banner_dismissed_;
     }
     if (mainApp_)
     {
@@ -4691,7 +4678,21 @@ void MainWindow::switchActiveAccount(int new_idx)
 
 void MainWindow::beginAddAccount()
 {
-    add_account_return_idx_ = active_account_index_;
+    // Record the current active account's position in the accounts list so
+    // Cancel can return to it. -1 means no active account.
+    const auto& accs = account_manager_.accounts();
+    add_account_return_idx_ = -1;
+    if (active_account_)
+    {
+        for (int i = 0; i < static_cast<int>(accs.size()); ++i)
+        {
+            if (accs[i]->user_id == active_account_->user_id)
+            {
+                add_account_return_idx_ = i;
+                break;
+            }
+        }
+    }
     pending_login_is_add_account_ = true;
 
     // Create a fresh client for the OAuth round-trip. The user_id won't
@@ -4724,12 +4725,12 @@ void MainWindow::beginAddAccount()
 
 void MainWindow::logoutActiveAccount()
 {
-    if (active_account_index_ < 0)
+    if (!active_account_)
     {
         return;
     }
-    auto& a = *accounts_[active_account_index_];
-    const std::string uid = a.user_id;
+    const std::string uid = active_account_->user_id;
+    auto& a = *active_account_;
 
     if (a.up_connector)
     {
@@ -4746,9 +4747,9 @@ void MainWindow::logoutActiveAccount()
     // when the only account with unreads was the one we just signed out.
     notify_tray_unread_();
 
-    // Remove this account from the live vector.
-    accounts_.erase(accounts_.begin() + active_account_index_);
-    active_account_index_ = -1;
+    // Remove this account from AccountManager and clear active state.
+    account_manager_.remove_account(uid);
+    active_account_.reset();
     client_ = nullptr;
     event_handler_ = nullptr;
 
@@ -4771,7 +4772,7 @@ void MainWindow::logoutActiveAccount()
     }
     verification_banner_dismissed_ = false;
 
-    if (accounts_.empty())
+    if (account_manager_.accounts().empty())
     {
         // No accounts left → back to initial login.
         tesseract::SessionStore::save_index({});
@@ -4804,9 +4805,8 @@ void MainWindow::logoutActiveAccount()
         return;
     }
 
-    // Otherwise switch to the next account (or the first one if we
-    // removed the last in the vector). Update the on-disk active pointer.
-    switchActiveAccount(0);
+    // Otherwise switch to the next account (the first remaining one).
+    switchActiveAccount(account_manager_.accounts()[0]->user_id);
     statusBar()->showMessage(
         tr("Signed out of %1").arg(QString::fromStdString(uid)), 3000);
 }
@@ -4818,15 +4818,17 @@ void MainWindow::rebuildAccountPicker()
         return;
     }
     std::vector<tesseract::views::AccountEntry> entries;
-    entries.reserve(accounts_.size());
-    for (std::size_t i = 0; i < accounts_.size(); ++i)
+    const auto& accs = account_manager_.accounts();
+    entries.reserve(accs.size());
+    for (const auto& sp : accs)
     {
-        const auto& a = *accounts_[i];
+        const auto& a = *sp;
+        const bool is_active = active_account_ && a.user_id == active_account_->user_id;
         entries.push_back({
             a.user_id,
             a.display_name,
             a.avatar_url,
-            static_cast<int>(i) == active_account_index_,
+            is_active,
         });
         if (!a.avatar_url.empty())
         {
@@ -4868,7 +4870,11 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
         accountPicker_->set_image_provider(make_avatar_image_provider_());
         accountPicker_->on_select = [this](const std::string& uid)
         {
-            onAccountSelected(uid);
+            if (accountPickerPopover_)
+            {
+                accountPickerPopover_->hide();
+            }
+            on_account_picker_select_(uid);
         };
         accountPickerSurface_->set_root(std::move(picker_owner));
         lay->addWidget(accountPickerSurface_);
@@ -4877,7 +4883,7 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
 
     constexpr int kPickerWidth = 260;
     constexpr int kRowHeight = 56;
-    const int rows = static_cast<int>(accounts_.size());
+    const int rows = static_cast<int>(account_manager_.accounts().size());
     const int height = std::max(kRowHeight, rows * kRowHeight) + 2;
     accountPickerPopover_->resize(kPickerWidth, height);
 
@@ -4896,14 +4902,10 @@ void MainWindow::onAccountSelected(const std::string& user_id)
     {
         accountPickerPopover_->hide();
     }
-    for (std::size_t i = 0; i < accounts_.size(); ++i)
+    if (account_manager_.find(user_id))
     {
-        if (accounts_[i]->user_id == user_id)
-        {
-            switchActiveAccount(static_cast<int>(i));
-            contentStack_->setCurrentWidget(mainAppSurface_);
-            return;
-        }
+        switchActiveAccount(user_id);
+        contentStack_->setCurrentWidget(mainAppSurface_);
     }
 }
 
@@ -5373,6 +5375,60 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     {
         mainAppSurface_->relayout();
     }
+}
+
+void MainWindow::raise_and_activate_()
+{
+    raise();
+    activateWindow();
+}
+
+void MainWindow::rebuild_tray_()
+{
+    if (!tray_ || !tray_->is_available())
+        return;
+
+    std::vector<std::pair<std::string, std::function<void()>>> items;
+    for (tesseract::ShellBase* win : account_manager_.all_windows())
+    {
+        std::string label;
+        auto acc = win->active_account();
+        if (acc)
+        {
+            label = acc->display_name.empty()
+                        ? acc->user_id
+                        : acc->display_name + " (" + acc->user_id + ")";
+        }
+        else
+        {
+            label = "Tesseract";
+        }
+        items.emplace_back(std::move(label),
+                           [win] { win->raise_and_activate_(); });
+    }
+    tray_->rebuild_menu(std::move(items));
+}
+
+bool MainWindow::is_ctrl_held_() const
+{
+    return QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier);
+}
+
+void MainWindow::switch_active_account_(const std::string& user_id)
+{
+    switchActiveAccount(user_id);
+}
+
+void MainWindow::spawn_main_window_(
+    std::shared_ptr<tesseract::AccountSession> account)
+{
+    auto* win = new qt6::MainWindow(account_manager_);
+    win->setAttribute(Qt::WA_DeleteOnClose);
+    win->set_initial_account(account);
+    account_manager_.set_dedicated(account->user_id, win);
+    win->show();
+    win->raise();
+    win->activateWindow();
 }
 
 } // namespace qt6

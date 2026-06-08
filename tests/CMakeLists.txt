@@ -15,6 +15,7 @@ FetchContent_MakeAvailable(Catch2)
 # C++ test executable
 # ---------------------------------------------------------------------------
 add_executable(tesseract_tests
+    cpp/test_account_manager.cpp
     cpp/test_session_store.cpp
     cpp/test_types.cpp
     cpp/test_paths.cpp

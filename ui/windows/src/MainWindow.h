@@ -22,6 +22,7 @@ using std::min;
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
+#include "app/AccountManager.h"
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
 #include "tk/anim_image_cache.h"
@@ -106,7 +107,7 @@ class MainWindow : public tesseract::ShellBase
 public:
     static bool register_class(HINSTANCE hInst);
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
-    explicit MainWindow(HINSTANCE hInst);
+    explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst);
     ~MainWindow();
 
     bool create(int nCmdShow);
@@ -249,7 +250,7 @@ private:
     void on_backup_progress(tesseract::BackupProgress* progress);
     void on_room_list_state(tesseract::RoomListState state);
     void refresh_sync_status();
-    void switch_active_account(int new_idx);
+    void switch_active_account(const std::string& user_id);
     void begin_add_account();
     void logout_active_account();
     void on_login_cancelled();
@@ -466,7 +467,7 @@ private:
 
     bool verif_banner_visible_ = false;
 
-    // Multi-account state: accounts_, active_account_index_, client_,
+    // Multi-account state: account_manager_ (ref), active_account_, client_,
     // event_handler_, per_account_rooms_, pending_login_client_,
     // pending_login_temp_dir_, pending_login_is_add_account_,
     // add_account_return_idx_ are inherited from tesseract::ShellBase.
@@ -541,6 +542,12 @@ private:
     void set_compose_draft_(const std::string&) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
+    void raise_and_activate_() override;
+    void rebuild_tray_() override;
+    bool is_ctrl_held_() const override;
+    void switch_active_account_(const std::string& user_id) override;
+    void spawn_main_window_(
+        std::shared_ptr<tesseract::AccountSession> account) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,

@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 class LinuxQtTrayIcon final : public QObject, public tesseract::ITrayIcon
 {
@@ -24,6 +25,12 @@ public:
     }
     void set_tooltip(const std::string& text) override;
     void set_unread(bool has_unread, bool has_highlight) override;
+
+    // Rebuild the context menu. `window_items` is a list of (label, callback)
+    // pairs — one per open main window — prepended before the Quit action.
+    // Call from the UI thread only.
+    void rebuild_menu(
+        std::vector<std::pair<std::string, std::function<void()>>> window_items);
 
 private:
     std::function<void()> on_show_;

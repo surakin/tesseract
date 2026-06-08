@@ -12,8 +12,11 @@
 @property(nonatomic, strong) NSImage* baseImage;
 @property(nonatomic, copy) void (^onShow)(void);
 @property(nonatomic, copy) void (^onQuit)(void);
+// Per-window activate blocks indexed by NSMenuItem.tag.
+@property(nonatomic, strong) NSMutableArray<void (^)(void)>* windowCallbacks;
 - (void)showApp:(id)sender;
 - (void)quitApp:(id)sender;
+- (void)activateWindow:(id)sender;
 - (void)buttonClicked:(id)sender;
 @end
 
@@ -32,6 +35,18 @@
     if (self.onQuit)
     {
         self.onQuit();
+    }
+}
+- (void)activateWindow:(id)sender
+{
+    NSMenuItem* item = (NSMenuItem*)sender;
+    NSInteger tag = item.tag;
+    if (self.windowCallbacks && tag >= 0 &&
+        tag < (NSInteger)self.windowCallbacks.count)
+    {
+        void (^cb)(void) = self.windowCallbacks[tag];
+        if (cb)
+            cb();
     }
 }
 - (void)buttonClicked:(id)sender
@@ -191,4 +206,39 @@ void MacOSTrayIcon::set_unread(bool has_unread, bool has_highlight)
     // template mode so macOS doesn't strip the dot's colour.
     [out setTemplate:NO];
     bridge_.statusItem.button.image = out;
+}
+
+void MacOSTrayIcon::rebuild_menu(
+    std::vector<std::pair<std::string, std::function<void()>>> window_items)
+{
+    if (!bridge_)
+        return;
+
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+
+    // Populate per-window items with their callbacks stored on the bridge.
+    NSMutableArray<void (^)(void)>* cbs =
+        [NSMutableArray arrayWithCapacity:(NSUInteger)window_items.size()];
+    for (NSInteger i = 0; i < (NSInteger)window_items.size(); ++i)
+    {
+        auto& [label, cb] = window_items[static_cast<std::size_t>(i)];
+        NSString* title = [NSString stringWithUTF8String:label.c_str()];
+        NSMenuItem* item = [menu addItemWithTitle:title
+                                           action:@selector(activateWindow:)
+                                    keyEquivalent:@""];
+        item.target = bridge_;
+        item.tag    = i;
+        [cbs addObject:[cb = std::move(cb)] { cb(); }];
+    }
+    bridge_.windowCallbacks = cbs;
+
+    if (!window_items.empty())
+        [menu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* quitItem = [menu addItemWithTitle:TkTr("Quit")
+                                           action:@selector(quitApp:)
+                                    keyEquivalent:@""];
+    quitItem.target = bridge_;
+
+    bridge_.menu_ = menu;
 }

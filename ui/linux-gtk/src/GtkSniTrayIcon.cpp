@@ -86,8 +86,10 @@ const char* kMenuXml = R"XML(
   </interface>
 </node>)XML";
 
-constexpr gint32 kMenuShowId = 1;
-constexpr gint32 kMenuQuitId = 2;
+constexpr gint32 kMenuShowId  = 1;
+constexpr gint32 kMenuQuitId  = 2;
+// Window-item IDs start here; items are numbered sequentially.
+constexpr gint32 kMenuWinBase = 10;
 
 bool status_notifier_host_present()
 {
@@ -303,6 +305,11 @@ struct GtkSniTrayIcon::Impl
 
     std::string tooltip = "Tesseract";
 
+    // Per-window menu items, rebuilt by GtkSniTrayIcon::rebuild_menu().
+    // Each entry holds (label, activate-callback).
+    std::vector<std::pair<std::string, std::function<void()>>> window_items;
+    guint32 menu_revision = 1;
+
     ~Impl()
     {
         if (conn && sni_reg_id)
@@ -396,8 +403,25 @@ void menu_method(GDBusConnection*, const char*, const char*, const char*,
     {
         GVariantBuilder root_children;
         g_variant_builder_init(&root_children, G_VARIANT_TYPE("av"));
-        g_variant_builder_add(&root_children, "v",
-                              make_menu_item(kMenuShowId, "Show Tesseract"));
+        for (std::size_t i = 0; i < impl->window_items.size(); ++i)
+        {
+            gint32 id = kMenuWinBase + static_cast<gint32>(i);
+            g_variant_builder_add(&root_children, "v",
+                                  make_menu_item(id, impl->window_items[i].first.c_str()));
+        }
+        if (!impl->window_items.empty())
+        {
+            // Separator before Quit.
+            GVariantBuilder sep_props;
+            g_variant_builder_init(&sep_props, G_VARIANT_TYPE("a{sv}"));
+            g_variant_builder_add(&sep_props, "{sv}", "type",
+                                  g_variant_new_string("separator"));
+            GVariantBuilder sep_children;
+            g_variant_builder_init(&sep_children, G_VARIANT_TYPE("av"));
+            g_variant_builder_add(
+                &root_children, "v",
+                g_variant_new("(ia{sv}av)", -1, &sep_props, &sep_children));
+        }
         g_variant_builder_add(&root_children, "v",
                               make_menu_item(kMenuQuitId, "Quit"));
         GVariantBuilder root_props;
@@ -409,30 +433,30 @@ void menu_method(GDBusConnection*, const char*, const char*, const char*,
         // `@` inserts the already-built `root` GVariant; without it the format
         // parser would try to construct the inner tuple from varargs.
         g_dbus_method_invocation_return_value(
-            invocation, g_variant_new("(u@(ia{sv}av))", 1u, root));
+            invocation,
+            g_variant_new("(u@(ia{sv}av))", impl->menu_revision, root));
         return;
     }
     if (g_strcmp0(method, "GetGroupProperties") == 0)
     {
         GVariantBuilder out;
         g_variant_builder_init(&out, G_VARIANT_TYPE("a(ia{sv})"));
-        const struct
-        {
-            gint32 id;
-            const char* label;
-        } items[] = {{kMenuShowId, "Show Tesseract"}, {kMenuQuitId, "Quit"}};
-        for (const auto& it : items)
+        auto add_item = [&](gint32 id, const char* label)
         {
             GVariantBuilder props;
             g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
             g_variant_builder_add(&props, "{sv}", "label",
-                                  g_variant_new_string(it.label));
+                                  g_variant_new_string(label));
             g_variant_builder_add(&props, "{sv}", "enabled",
                                   g_variant_new_boolean(TRUE));
             g_variant_builder_add(&props, "{sv}", "visible",
                                   g_variant_new_boolean(TRUE));
-            g_variant_builder_add(&out, "(ia{sv})", it.id, &props);
-        }
+            g_variant_builder_add(&out, "(ia{sv})", id, &props);
+        };
+        for (std::size_t i = 0; i < impl->window_items.size(); ++i)
+            add_item(kMenuWinBase + static_cast<gint32>(i),
+                     impl->window_items[i].first.c_str());
+        add_item(kMenuQuitId, "Quit");
         g_dbus_method_invocation_return_value(invocation,
                                               g_variant_new("(a(ia{sv}))", &out));
         return;
@@ -448,10 +472,19 @@ void menu_method(GDBusConnection*, const char*, const char*, const char*,
             g_variant_unref(data);
         if (g_strcmp0(event_id, "clicked") == 0)
         {
-            if (id == kMenuShowId && impl->on_show)
-                impl->on_show();
-            else if (id == kMenuQuitId && impl->on_quit)
+            if (id == kMenuQuitId && impl->on_quit)
+            {
                 impl->on_quit();
+            }
+            else if (id >= kMenuWinBase)
+            {
+                std::size_t idx = static_cast<std::size_t>(id - kMenuWinBase);
+                if (idx < impl->window_items.size() &&
+                    impl->window_items[idx].second)
+                {
+                    impl->window_items[idx].second();
+                }
+            }
         }
         g_dbus_method_invocation_return_value(invocation, nullptr);
         return;
@@ -584,6 +617,18 @@ void GtkSniTrayIcon::set_tooltip(const std::string& text)
         return;
     impl_->tooltip = text;
     impl_->emit("org.kde.StatusNotifierItem", "NewToolTip", nullptr);
+}
+
+void GtkSniTrayIcon::rebuild_menu(
+    std::vector<std::pair<std::string, std::function<void()>>> window_items)
+{
+    if (!available_)
+        return;
+    impl_->window_items = std::move(window_items);
+    impl_->menu_revision++;
+    // Tell the host the layout changed so it re-queries GetLayout.
+    impl_->emit("com.canonical.dbusmenu", "LayoutUpdated",
+                g_variant_new("(ui)", impl_->menu_revision, 0));
 }
 
 void GtkSniTrayIcon::set_unread(bool has_unread, bool has_highlight)

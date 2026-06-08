@@ -6,26 +6,23 @@
 #include <tesseract/event_handler.h>
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
-#include "LinuxNotifier.h"
-#include "LinuxUpConnectorGtk.h"
 #include "GtkSniTrayIcon.h"
 
+#include "app/AccountManager.h"
 #include "app/EventHandlerBase.h"
 #include "app/SettingsController.h"
 #include "app/ShellBase.h"
-#include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_gtk.h"
 #include "views/AccountPicker.h"
+#include "views/ComposePopups.h"
 #include "views/EmojiPicker.h"
-#include "views/format.h"
 #include "views/ImageViewerOverlay.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/MainAppWidget.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
-#include "views/ComposePopups.h"
 #include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
 #include "views/GifController.h"
@@ -35,9 +32,6 @@
 #include "views/SlashCommandController.h"
 #include "views/SlashCommandPopup.h"
 
-#include <atomic>
-#include <condition_variable>
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -57,7 +51,7 @@ class SettingsWidget;
 class MainWindow : public tesseract::ShellBase
 {
 public:
-    explicit MainWindow(GtkApplication* app);
+    explicit MainWindow(tesseract::AccountManager& account_manager, GtkApplication* app);
     ~MainWindow();
 
     GtkWidget* widget() const
@@ -197,7 +191,7 @@ private:
     void start_tray_if_needed_();
 
     // Multi-account management.
-    void switch_active_account(int new_idx);
+    void switch_active_account(const std::string& user_id);
     void begin_add_account();
     void logout_active_account();
     void on_login_cancelled();
@@ -282,6 +276,12 @@ private:
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
+    void raise_and_activate_() override;
+    void rebuild_tray_() override;
+    bool is_ctrl_held_() const override;
+    void switch_active_account_(const std::string& user_id) override;
+    void spawn_main_window_(
+        std::shared_ptr<tesseract::AccountSession> account) override;
 
     void start_anim_tick_if_needed_();
     void invalidate_anim_consumers_();

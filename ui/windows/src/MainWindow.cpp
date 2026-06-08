@@ -857,7 +857,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_DESTROY:
         self->on_destroy();
-        PostQuitMessage(0);
+        if (self->active_account_ &&
+            self->account_manager_.dedicated_window(
+                self->active_account_->user_id) == self)
+            self->account_manager_.clear_dedicated(self->active_account_->user_id);
+        self->account_manager_.unregister_window(self);
+        if (self->account_manager_.window_count() == 0)
+            PostQuitMessage(0);
         return 0;
 
     case WM_ACTIVATE:
@@ -1059,14 +1065,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         }
         SetForegroundWindow(hwnd);
         // Switch to the account that owns this notification before navigating.
-        for (int i = 0; i < static_cast<int>(self->accounts_.size()); ++i)
-        {
-            if (self->accounts_[i]->user_id == payload->user_id)
-            {
-                self->switch_active_account(i);
-                break;
-            }
-        }
+        self->switch_active_account(payload->user_id);
         self->navigate_to_room(payload->room_id);
         delete payload;
         return 0;
@@ -1320,14 +1319,24 @@ bool MainWindow::register_class(HINSTANCE hInst)
     return RegisterClassExW(&wc) != 0;
 }
 
-MainWindow::MainWindow(HINSTANCE hInst) : hInst_(hInst)
+MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst)
+    : ShellBase(account_manager)
+    , hInst_(hInst)
 {
     set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
+
+    account_manager_.register_window(this);
+    broadcast_rebuild_tray_();
 }
 
 MainWindow::~MainWindow()
 {
-    for (auto& s : accounts_)
+    // unregister_window is called in WM_DESTROY (before PostQuitMessage) so
+    // it is not repeated here.  broadcast_rebuild_tray_ is still needed to
+    // refresh any remaining windows after this C++ shell is freed.
+    broadcast_rebuild_tray_();
+
+    for (auto& s : account_manager_.accounts())
     {
         if (s && s->client)
         {
@@ -2349,7 +2358,7 @@ void MainWindow::on_create(HWND hwnd)
             gif_popup_widget_ = w.get();
             gif_popup_surface_->set_root(std::move(w));
         }
-        gif_popup_surface_->set_anim_cache(&anim_cache_);
+        gif_popup_surface_->set_anim_cache(&account_manager_.anim_cache());
         // Two-stage GIF strip cell provider, parameterised on a `repaint`
         // callback so the identical body serves the main window's strip and
         // every pop-out's (each passes a repaint targeting its own popup
@@ -2363,7 +2372,7 @@ void MainWindow::on_create(HWND hwnd)
                 // in anim_cache_. Serving a cached frame means animated content
                 // is on screen, so ensure the tick timer runs: re-shown searches
                 // take this path without re-fetching.
-                if (const tk::Image* f = anim_cache_.current_frame(result.strip_url))
+                if (const tk::Image* f = account_manager_.anim_cache().current_frame(result.strip_url))
                 {
                     start_anim_tick_();
                     return f;
@@ -2389,12 +2398,12 @@ void MainWindow::on_create(HWND hwnd)
                             // the video appears instead of the thumbnail first.
                             const std::string disk_key = gif_src_disk_key_(url);
                             std::vector<std::uint8_t> bytes =
-                                media_disk_cache_.load(disk_key);
+                                account_manager_.media_disk_cache().load(disk_key);
                             if (bytes.empty() && client_)
                             {
                                 bytes = client_->fetch_url_bytes(url);
                                 if (!bytes.empty())
-                                    media_disk_cache_.store(disk_key, bytes);
+                                    account_manager_.media_disk_cache().store(disk_key, bytes);
                             }
                             post_to_ui_(
                                 [this, url, b = std::move(bytes), alive,
@@ -2430,12 +2439,12 @@ void MainWindow::on_create(HWND hwnd)
                             const std::string disk_key =
                                 gif_src_disk_key_(anim_url);
                             std::vector<std::uint8_t> bytes =
-                                media_disk_cache_.load(disk_key);
+                                account_manager_.media_disk_cache().load(disk_key);
                             if (bytes.empty() && client_)
                             {
                                 bytes = client_->fetch_url_bytes(anim_url);
                                 if (!bytes.empty())
-                                    media_disk_cache_.store(disk_key, bytes);
+                                    account_manager_.media_disk_cache().store(disk_key, bytes);
                             }
                             using CW = tesseract::views::GifPopup;
                             if (!bytes.empty() && anim_mime == "video/mp4")
@@ -2475,7 +2484,7 @@ void MainWindow::on_create(HWND hwnd)
                                         }
                                         if (!imgs.empty())
                                         {
-                                            anim_cache_.store(
+                                            account_manager_.anim_cache().store(
                                                 anim_url, std::move(imgs),
                                                 std::move(delays),
                                                 static_cast<std::int64_t>(
@@ -2501,7 +2510,7 @@ void MainWindow::on_create(HWND hwnd)
                                         gif_anim_inflight_.erase(anim_url);
                                         if (!d->frames.empty())
                                         {
-                                            anim_cache_.store(
+                                            account_manager_.anim_cache().store(
                                                 anim_url, std::move(d->frames),
                                                 std::move(d->delays_ms),
                                                 static_cast<std::int64_t>(
@@ -2570,7 +2579,7 @@ void MainWindow::on_create(HWND hwnd)
                 [this](const std::string& url) -> std::vector<std::uint8_t>
             {
                 // Reuse the source bytes the strip persisted to disk on fetch.
-                return media_disk_cache_.load(gif_src_disk_key_(url));
+                return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
             };
             gif_controller_ = std::make_unique<tesseract::views::GifController>(
                 room_text_area_.get(), gif_popup_widget_, std::move(gh));
@@ -3377,7 +3386,7 @@ void MainWindow::on_destroy()
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& s : accounts_)
+    for (auto& s : account_manager_.accounts())
     {
         if (s && s->client)
             s->client->stop_sync();
@@ -3499,10 +3508,10 @@ void MainWindow::start_login()
         sess->notifier =
             std::make_unique<win32::Win32Notifier>(hwnd_, notifier_uid);
 
-        accounts_.push_back(std::move(sess));
+        account_manager_.add_account(std::move(sess));
     }
 
-    if (accounts_.empty())
+    if (account_manager_.accounts().empty())
     {
         pending_login_temp_dir_.clear();
         pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -3538,19 +3547,16 @@ void MainWindow::start_login()
         return;
     }
 
-    int active_idx = 0;
-    if (!index.active_user_id.empty())
+    std::string active_uid;
+    if (!index.active_user_id.empty() && account_manager_.find(index.active_user_id))
     {
-        for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-        {
-            if (accounts_[i]->user_id == index.active_user_id)
-            {
-                active_idx = i;
-                break;
-            }
-        }
+        active_uid = index.active_user_id;
     }
-    switch_active_account(active_idx);
+    else if (!account_manager_.accounts().empty())
+    {
+        active_uid = account_manager_.accounts()[0]->user_id;
+    }
+    switch_active_account(active_uid);
 
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
@@ -3602,10 +3608,9 @@ void MainWindow::start_login()
     settings_controller_->on_avatar_changed = [this](std::string mxc)
     {
         my_avatar_url_ = mxc;
-        if (active_account_index_ >= 0 &&
-            active_account_index_ < static_cast<int>(accounts_.size()))
+        if (active_account_)
         {
-            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+            active_account_->avatar_url = my_avatar_url_;
         }
         settings_view_->set_avatar_url(mxc);
         settings_surface_->relayout();
@@ -3626,33 +3631,30 @@ void MainWindow::on_login_succeeded()
     std::string user_id = pending_login_client_->get_user_id();
 
     // Reject if this account is already signed in.
-    for (const auto& a : accounts_)
+    if (account_manager_.find(user_id))
     {
-        if (a->user_id == user_id)
+        if (login_view_)
         {
-            if (login_view_)
-            {
-                login_view_->set_client(nullptr);
-            }
-            pending_login_client_.reset();
-            std::error_code ec;
-            std::filesystem::remove_all(pending_login_temp_dir_, ec);
-            pending_login_temp_dir_.clear();
-            if (login_view_)
-            {
-                login_view_->set_status_message(
-                    L"Already signed in as " +
-                    std::wstring(user_id.begin(), user_id.end()));
-            }
-            pending_login_is_add_account_ = false;
-            if (add_account_return_idx_ >= 0 &&
-                add_account_return_idx_ < static_cast<int>(accounts_.size()))
-            {
-                switch_active_account(add_account_return_idx_);
-            }
-            add_account_return_idx_ = -1;
-            return;
+            login_view_->set_client(nullptr);
         }
+        pending_login_client_.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(pending_login_temp_dir_, ec);
+        pending_login_temp_dir_.clear();
+        if (login_view_)
+        {
+            login_view_->set_status_message(
+                L"Already signed in as " +
+                std::wstring(user_id.begin(), user_id.end()));
+        }
+        pending_login_is_add_account_ = false;
+        if (add_account_return_idx_ >= 0 &&
+            add_account_return_idx_ < static_cast<int>(account_manager_.accounts().size()))
+        {
+            switch_active_account(account_manager_.accounts()[add_account_return_idx_]->user_id);
+        }
+        add_account_return_idx_ = -1;
+        return;
     }
 
     std::string json = pending_login_client_->export_session();
@@ -3719,8 +3721,7 @@ void MainWindow::on_login_succeeded()
     const std::string new_uid = sess->user_id;
     sess->notifier = std::make_unique<win32::Win32Notifier>(hwnd_, new_uid);
 
-    int new_idx = static_cast<int>(accounts_.size());
-    accounts_.push_back(std::move(sess));
+    account_manager_.add_account(std::move(sess));
 
     // Persist updated index.
     auto idx = tesseract::SessionStore::load_index();
@@ -3729,7 +3730,7 @@ void MainWindow::on_login_succeeded()
     tesseract::SessionStore::save_index(idx);
     tesseract::SessionStore::save_account(user_id, json);
 
-    switch_active_account(new_idx);
+    switch_active_account(user_id);
 
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
@@ -3781,10 +3782,9 @@ void MainWindow::on_login_succeeded()
     settings_controller_->on_avatar_changed = [this](std::string mxc)
     {
         my_avatar_url_ = mxc;
-        if (active_account_index_ >= 0 &&
-            active_account_index_ < static_cast<int>(accounts_.size()))
+        if (active_account_)
         {
-            accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+            active_account_->avatar_url = my_avatar_url_;
         }
         settings_view_->set_avatar_url(mxc);
         settings_surface_->relayout();
@@ -3930,21 +3930,12 @@ void MainWindow::show_main_content()
 
 void MainWindow::on_reconnect(const std::string& user_id)
 {
-    int idx = -1;
-    for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-    {
-        if (accounts_[i]->user_id == user_id)
-        {
-            idx = i;
-            break;
-        }
-    }
-    if (idx < 0)
+    auto sess = account_manager_.find(user_id);
+    if (!sess)
     {
         return;
     }
 
-    auto& sess = accounts_[idx];
     sess->client->stop_sync();
 
     auto json = tesseract::SessionStore::load_account(user_id);
@@ -3953,12 +3944,13 @@ void MainWindow::on_reconnect(const std::string& user_id)
         auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
         bridge->set_user_id(user_id);
         sess->bridge = std::move(bridge);
-        if (idx == active_account_index_)
+        const bool is_active = active_account_ && active_account_->user_id == user_id;
+        if (is_active)
         {
             event_handler_ = sess->bridge.get();
         }
         sess->client->start_sync(sess->bridge.get());
-        if (idx == active_account_index_)
+        if (is_active)
         {
             SendMessageW(hStatus_, SB_SETTEXTW, 0,
                          reinterpret_cast<LPARAM>(L"Reconnected"));
@@ -3966,7 +3958,7 @@ void MainWindow::on_reconnect(const std::string& user_id)
     }
     else
     {
-        if (idx == active_account_index_)
+        if (active_account_ && active_account_->user_id == user_id)
         {
             logout_active_account();
         }
@@ -3975,43 +3967,37 @@ void MainWindow::on_reconnect(const std::string& user_id)
 
 void MainWindow::on_auth_error(const std::string& user_id, bool soft_logout)
 {
-    int idx = -1;
-    for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-    {
-        if (accounts_[i]->user_id == user_id)
-        {
-            idx = i;
-            break;
-        }
-    }
-    if (idx < 0)
+    auto sess = account_manager_.find(user_id);
+    if (!sess)
     {
         return;
     }
 
+    const bool is_active = active_account_ && active_account_->user_id == user_id;
+
     if (soft_logout)
     {
         auto json = tesseract::SessionStore::load_account(user_id);
-        if (json && accounts_[idx]->client->restore_session(*json))
+        if (json && sess->client->restore_session(*json))
         {
             auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
             bridge->set_user_id(user_id);
-            accounts_[idx]->bridge = std::move(bridge);
-            if (idx == active_account_index_)
+            sess->bridge = std::move(bridge);
+            if (is_active)
             {
-                event_handler_ = accounts_[idx]->bridge.get();
-                my_user_id_ = accounts_[idx]->client->get_user_id();
-                my_display_name_ = accounts_[idx]->client->get_display_name();
-                my_avatar_url_ = accounts_[idx]->client->get_avatar_url();
+                event_handler_ = sess->bridge.get();
+                my_user_id_ = sess->client->get_user_id();
+                my_display_name_ = sess->client->get_display_name();
+                my_avatar_url_ = sess->client->get_avatar_url();
                 populate_user_strip();
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
                              reinterpret_cast<LPARAM>(L"Reconnected"));
             }
-            accounts_[idx]->client->start_sync(accounts_[idx]->bridge.get());
+            sess->client->start_sync(sess->bridge.get());
             return;
         }
     }
-    if (idx == active_account_index_)
+    if (is_active)
     {
         SendMessageW(
             hStatus_, SB_SETTEXTW, 0,
@@ -4020,20 +4006,17 @@ void MainWindow::on_auth_error(const std::string& user_id, bool soft_logout)
     }
     else
     {
-        accounts_[idx]->client->stop_sync();
+        sess->client->stop_sync();
         tesseract::SessionStore::clear_account(user_id);
-        accounts_.erase(accounts_.begin() + idx);
-        if (idx < active_account_index_)
-        {
-            --active_account_index_;
-        }
+        account_manager_.remove_account(user_id);
+
         auto index = tesseract::SessionStore::load_index();
         index.user_ids.erase(
             std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
             index.user_ids.end());
-        if (index.active_user_id == user_id && active_account_index_ >= 0)
+        if (index.active_user_id == user_id && active_account_)
         {
-            index.active_user_id = accounts_[active_account_index_]->user_id;
+            index.active_user_id = active_account_->user_id;
         }
         tesseract::SessionStore::save_index(index);
     }
@@ -4060,15 +4043,15 @@ void MainWindow::on_tesseract_notify(const NotificationPayload* p)
     bool win_visible = IsWindowVisible(hwnd_) && !IsIconic(hwnd_);
     bool win_focused = (GetForegroundWindow() == hwnd_);
 
-    for (auto& sess : accounts_)
+    for (auto& sess : account_manager_.accounts())
     {
         if (sess->user_id != p->user_id)
         {
             continue;
         }
         // Already watching this exact room — suppress silently.
-        if (win_focused && active_account_index_ >= 0 &&
-            accounts_[active_account_index_]->user_id == p->user_id &&
+        if (win_focused && active_account_ &&
+            active_account_->user_id == p->user_id &&
             current_room_id_ == p->room_id)
         {
             return;
@@ -4922,7 +4905,7 @@ void MainWindow::try_load_animation(const std::string& url,
     {
         return;
     }
-    if (anim_cache_.has(url))
+    if (account_manager_.anim_cache().has(url))
     {
         return;
     }
@@ -4941,10 +4924,10 @@ void MainWindow::try_load_animation(const std::string& url,
         imgs.push_back(std::move(af.image));
         delays.push_back(af.delay_ms);
     }
-    anim_cache_.store(url, std::move(imgs), std::move(delays),
+    account_manager_.anim_cache().store(url, std::move(imgs), std::move(delays),
                       static_cast<std::int64_t>(GetTickCount64()));
     // Drop any static-cache leftover from a prior probe.
-    image_cache_.evict(url);
+    account_manager_.image_cache().evict(url);
 
     if (!anim_timer_running_ && hwnd_)
     {
@@ -5058,14 +5041,14 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     case MediaKind::RoomAvatar:
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            thumbnail_cache_.store(cache_key, std::move(img));
+            account_manager_.thumbnail_cache().store(cache_key, std::move(img));
         }
         main_app_surface_->relayout();
         break;
     case MediaKind::UserAvatar:
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            thumbnail_cache_.store(cache_key, std::move(img));
+            account_manager_.thumbnail_cache().store(cache_key, std::move(img));
         }
         if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
             account_picker_surface_)
@@ -5083,8 +5066,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         // Decode off the UI thread — WIC factory is free-threaded (see
         // host_win32.h). decode_image_ handles both animated and still images.
         const bool is_thumb = (kind == MediaKind::MediaThumbnail);
-        if ((is_thumb ? thumbnail_cache_ : image_cache_).contains(cache_key) ||
-            anim_cache_.has(cache_key))
+        if ((is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache()).contains(cache_key) ||
+            account_manager_.anim_cache().has(cache_key))
             return;
         run_async_(
             [this, cache_key, kind, is_thumb, invalidate_hwnd,
@@ -5097,18 +5080,18 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                      d]() mutable
                     {
                         auto& still_cache =
-                            is_thumb ? thumbnail_cache_ : image_cache_;
+                            is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
                         if (still_cache.contains(cache_key) ||
-                            anim_cache_.has(cache_key))
+                            account_manager_.anim_cache().has(cache_key))
                             return;
                         if (!d->frames.empty())
                         {
-                            anim_cache_.store(
+                            account_manager_.anim_cache().store(
                                 cache_key, std::move(d->frames),
                                 std::move(d->delays_ms),
                                 static_cast<std::int64_t>(GetTickCount64()));
                             start_anim_tick_();
-                            image_cache_.evict(cache_key);
+                            account_manager_.image_cache().evict(cache_key);
                         }
                         else if (d->still)
                         {
@@ -5118,7 +5101,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         else
                         {
                             if (!is_thumb)
-                                media_disk_cache_.evict(cache_key);
+                                account_manager_.media_disk_cache().evict(cache_key);
                             return;
                         }
                         if (room_view_)
@@ -5136,13 +5119,13 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
     case MediaKind::Tile:
-        if (image_cache_.contains(cache_key))
+        if (account_manager_.image_cache().contains(cache_key))
         {
             return;
         }
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
-            image_cache_.store(cache_key, std::move(img));
+            account_manager_.image_cache().store(cache_key, std::move(img));
             if (room_view_)
             {
                 room_view_->message_list()->invalidate_data();
@@ -5540,7 +5523,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (image_cache_.contains(key) || !main_app_surface_)
+    if (account_manager_.image_cache().contains(key) || !main_app_surface_)
     {
         return;
     }
@@ -5550,7 +5533,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
     {
         return;
     }
-    image_cache_.store(key, std::move(img));
+    account_manager_.image_cache().store(key, std::move(img));
     if (HWND ms = main_app_surface_->hwnd())
     {
         InvalidateRect(ms, nullptr, FALSE);
@@ -5697,16 +5680,27 @@ void MainWindow::populate_user_strip()
 // Multi-account: switch / add / logout / cancel / picker
 // ---------------------------------------------------------------------------
 
-void MainWindow::switch_active_account(int new_idx)
+void MainWindow::switch_active_account(const std::string& user_id)
 {
-    if (new_idx < 0 || new_idx >= static_cast<int>(accounts_.size()))
+    auto new_session = account_manager_.find(user_id);
+    if (!new_session)
     {
         return;
     }
-    const int old_idx = active_account_index_;
+    if (new_session == active_account_ && client_)
+    {
+        return;
+    }
+
+    // Save banner state for the outgoing account.
+    if (active_account_)
+    {
+        active_account_->verification_banner_dismissed = verification_banner_dismissed_;
+    }
+
     reset_server_info_();
-    active_account_index_ = new_idx;
-    auto& sess = accounts_[new_idx];
+    active_account_ = new_session;
+    auto& sess = active_account_;
 
     client_ = sess->client.get();
     event_handler_ = sess->bridge.get();
@@ -5772,12 +5766,6 @@ void MainWindow::switch_active_account(int new_idx)
         room_view_->set_messages({});
     }
 
-    // Save banner state for the outgoing account, then load for the incoming.
-    if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
-    {
-        accounts_[old_idx]->verification_banner_dismissed =
-            verification_banner_dismissed_;
-    }
     verification_banner_dismissed_ = sess->verification_banner_dismissed;
     if (main_app_)
     {
@@ -5856,7 +5844,21 @@ void MainWindow::switch_active_account(int new_idx)
 
 void MainWindow::begin_add_account()
 {
-    add_account_return_idx_ = active_account_index_;
+    // Record the current active account's position in the accounts list so
+    // Cancel can return to it. -1 means no active account.
+    const auto& accs = account_manager_.accounts();
+    add_account_return_idx_ = -1;
+    if (active_account_)
+    {
+        for (int i = 0; i < static_cast<int>(accs.size()); ++i)
+        {
+            if (accs[i]->user_id == active_account_->user_id)
+            {
+                add_account_return_idx_ = i;
+                break;
+            }
+        }
+    }
     pending_login_is_add_account_ = true;
     pending_login_temp_dir_.clear();
     pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -5900,10 +5902,11 @@ void MainWindow::on_login_cancelled()
     }
     pending_login_is_add_account_ = false;
 
+    const auto& accs = account_manager_.accounts();
     if (add_account_return_idx_ >= 0 &&
-        add_account_return_idx_ < static_cast<int>(accounts_.size()))
+        add_account_return_idx_ < static_cast<int>(accs.size()))
     {
-        switch_active_account(add_account_return_idx_);
+        switch_active_account(accs[add_account_return_idx_]->user_id);
     }
     else
     {
@@ -5914,17 +5917,20 @@ void MainWindow::on_login_cancelled()
 
 void MainWindow::logout_active_account()
 {
-    if (active_account_index_ < 0 ||
-        active_account_index_ >= static_cast<int>(accounts_.size()))
+    if (!active_account_)
     {
         return;
     }
 
-    std::string uid = accounts_[active_account_index_]->user_id;
+    std::string uid = active_account_->user_id;
     notify_presence_logout_();
-    accounts_[active_account_index_]->client->logout();
-    accounts_[active_account_index_]->client->stop_sync();
-    accounts_.erase(accounts_.begin() + active_account_index_);
+    active_account_->client->logout();
+    active_account_->client->stop_sync();
+    active_account_.reset();
+    account_manager_.remove_account(uid);
+
+    client_ = nullptr;
+    event_handler_ = nullptr;
 
     tesseract::SessionStore::clear_account(uid);
     per_account_rooms_.erase(uid);
@@ -5963,11 +5969,8 @@ void MainWindow::logout_active_account()
         main_app_surface_->relayout();
     }
 
-    if (accounts_.empty())
+    if (account_manager_.accounts().empty())
     {
-        client_ = nullptr;
-        event_handler_ = nullptr;
-        active_account_index_ = -1;
         index.active_user_id.clear();
         tesseract::SessionStore::save_index(index);
 
@@ -6005,12 +6008,10 @@ void MainWindow::logout_active_account()
     }
     else
     {
-        int next = std::min(active_account_index_,
-                            static_cast<int>(accounts_.size()) - 1);
-        active_account_index_ = -1; // force re-bind
-        index.active_user_id = accounts_[next]->user_id;
+        const auto& next_acc = account_manager_.accounts().front();
+        index.active_user_id = next_acc->user_id;
         tesseract::SessionStore::save_index(index);
-        switch_active_account(next);
+        switch_active_account(next_acc->user_id);
         SendMessageW(hStatus_, SB_SETTEXTW, 0,
                      reinterpret_cast<LPARAM>(L"Signed out"));
     }
@@ -6035,7 +6036,7 @@ void MainWindow::rebuild_account_picker()
         }
         constexpr int kPickerW = 260;
         constexpr int kRowH = 56;
-        int kPickerH = kRowH * static_cast<int>(accounts_.size());
+        int kPickerH = kRowH * static_cast<int>(account_manager_.accounts().size());
         hAccountPicker_ = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"TesseractAccountPicker", L"",
             WS_POPUP | WS_BORDER, 0, 0, kPickerW, kPickerH, hwnd_, nullptr,
@@ -6056,21 +6057,14 @@ void MainWindow::rebuild_account_picker()
             {
                 ShowWindow(hAccountPicker_, SW_HIDE);
             }
-            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-            {
-                if (accounts_[i]->user_id == uid)
-                {
-                    switch_active_account(i);
-                    break;
-                }
-            }
+            on_account_picker_select_(uid);
         };
         account_picker_surface_->set_root(std::move(picker));
         if (HWND s = account_picker_surface_->hwnd())
         {
             constexpr int kPickerW = 260;
             constexpr int kRowH = 56;
-            int kPickerH = kRowH * static_cast<int>(accounts_.size());
+            int kPickerH = kRowH * static_cast<int>(account_manager_.accounts().size());
             SetWindowPos(s, nullptr, 0, 0, kPickerW, kPickerH,
                          SWP_NOZORDER | SWP_NOACTIVATE);
         }
@@ -6078,7 +6072,7 @@ void MainWindow::rebuild_account_picker()
 
     // Rebuild entries.
     std::vector<tesseract::views::AccountEntry> entries;
-    for (const auto& s : accounts_)
+    for (const auto& s : account_manager_.accounts())
     {
         entries.push_back({s->user_id, s->display_name, s->avatar_url,
                            s->user_id == my_user_id_});
@@ -6099,7 +6093,7 @@ void MainWindow::rebuild_account_picker()
 
 void MainWindow::open_account_picker()
 {
-    if (accounts_.size() < 2)
+    if (account_manager_.accounts().size() < 2)
     {
         return;
     }
@@ -6111,7 +6105,7 @@ void MainWindow::open_account_picker()
 
     constexpr int kPickerW = 260;
     constexpr int kRowH = 56;
-    int kPickerH = kRowH * static_cast<int>(accounts_.size());
+    int kPickerH = kRowH * static_cast<int>(account_manager_.accounts().size());
 
     // Anchor to the bottom-left of the main app surface (where the user strip lives).
     RECT sr{};
@@ -7245,7 +7239,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = thumbnail_cache_.peek(av_mxc);
+                    avatar = account_manager_.thumbnail_cache().peek(av_mxc);
                 }
                 break;
             }
@@ -7470,6 +7464,57 @@ std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
         },
         reinterpret_cast<LPARAM>(&result));
     return result;
+}
+
+void MainWindow::raise_and_activate_()
+{
+    if (hwnd_)
+        SetForegroundWindow(hwnd_);
+}
+
+void MainWindow::rebuild_tray_()
+{
+    if (!tray_ || !tray_->is_available())
+        return;
+
+    std::vector<std::pair<std::string, std::function<void()>>> items;
+    for (tesseract::ShellBase* win : account_manager_.all_windows())
+    {
+        std::string label;
+        auto acc = win->active_account();
+        if (acc)
+        {
+            label = acc->display_name.empty()
+                        ? acc->user_id
+                        : acc->display_name + " (" + acc->user_id + ")";
+        }
+        else
+        {
+            label = "Tesseract";
+        }
+        items.emplace_back(std::move(label),
+                           [win] { win->raise_and_activate_(); });
+    }
+    tray_->rebuild_menu(std::move(items));
+}
+
+bool MainWindow::is_ctrl_held_() const
+{
+    return (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+}
+
+void MainWindow::switch_active_account_(const std::string& user_id)
+{
+    switch_active_account(user_id);
+}
+
+void MainWindow::spawn_main_window_(
+    std::shared_ptr<tesseract::AccountSession> account)
+{
+    auto* win = new win32::MainWindow(account_manager_, hInst_);
+    win->set_initial_account(account);
+    account_manager_.set_dedicated(account->user_id, win);
+    win->raise_and_activate_();
 }
 
 } // namespace win32

@@ -6,6 +6,7 @@
 #include <linux/limits.h>
 
 #include "MainWindow.h"
+#include "app/AccountManager.h"
 #include "tk/i18n.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -73,18 +74,25 @@ int main(int argc, char** argv)
     GtkApplication* app =
         gtk_application_new("org.tesseract.gtk", G_APPLICATION_HANDLES_OPEN);
 
+    tesseract::AccountManager account_manager;
     std::unique_ptr<gtk4::MainWindow> window;
+
+    struct ActivateData {
+        tesseract::AccountManager* account_manager;
+        std::unique_ptr<gtk4::MainWindow>* window;
+    };
+    ActivateData activate_data{&account_manager, &window};
 
     g_signal_connect(
         app, "activate",
         G_CALLBACK(
             +[](GtkApplication* app, gpointer data)
             {
-                auto& win =
-                    *static_cast<std::unique_ptr<gtk4::MainWindow>*>(data);
+                auto& d = *static_cast<ActivateData*>(data);
+                auto& win = *d.window;
                 if (!win)
                 {
-                    win = std::make_unique<gtk4::MainWindow>(app);
+                    win = std::make_unique<gtk4::MainWindow>(*d.account_manager, app);
                     if (!startup_uri.empty())
                     {
                         win->open_matrix_link(startup_uri);
@@ -96,7 +104,7 @@ int main(int argc, char** argv)
                     win->present(); // second-instance launch raises the existing window
                 }
             }),
-        &window);
+        &activate_data);
 
     // Handles matrix: URIs dispatched via D-Bus activation (xdg-open / second instance).
     g_signal_connect(
@@ -104,8 +112,7 @@ int main(int argc, char** argv)
         G_CALLBACK(
             +[](GApplication*, GFile** files, gint n_files, const gchar*, gpointer data)
             {
-                auto& win =
-                    *static_cast<std::unique_ptr<gtk4::MainWindow>*>(data);
+                auto& win = *static_cast<ActivateData*>(data)->window;
                 if (n_files > 0 && win)
                 {
                     char* uri = g_file_get_uri(files[0]);
@@ -116,7 +123,7 @@ int main(int argc, char** argv)
                     }
                 }
             }),
-        &window);
+        &activate_data);
 
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);

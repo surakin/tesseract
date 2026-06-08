@@ -150,6 +150,7 @@ public:
     struct PopoutEntry
     {
         std::string    room_id;
+        std::string    user_id;   // empty = pre-migration entry (restore for any account)
         WindowGeometry geometry;
     };
 

@@ -15,19 +15,15 @@ class QMoveEvent;
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
+#include "app/AccountManager.h"
 #include "app/EventHandlerBase.h"
 #include "app/SettingsController.h"
 #include "app/ShellBase.h"
-#include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_qt.h"
-#include "LinuxNotifier.h"
-#include "LinuxUpConnectorQt.h"
 #include "LinuxQtTrayIcon.h"
 #include "views/AccountPicker.h"
-#include "views/ComposePopups.h"
-#include "views/format.h"
 #include "views/MainAppWidget.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
@@ -38,7 +34,6 @@ class QMoveEvent;
 #include "views/GifController.h"
 #include "views/GifPopup.h"
 
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -79,7 +74,7 @@ class MainWindow final : public QMainWindow, public tesseract::ShellBase
 {
     Q_OBJECT
 public:
-    explicit MainWindow(QWidget* parent = nullptr);
+    explicit MainWindow(tesseract::AccountManager& account_manager, QWidget* parent = nullptr);
     ~MainWindow() override;
 
     /// Call once after show() to bring the window to the foreground on launch.
@@ -160,11 +155,11 @@ private:
 
     // ---- Multi-account orchestration ----
 
-    /// Detach the room/message/compose surfaces from `accounts_[old]` (if
-    /// any) and rebind them to `accounts_[new_idx]`. Single chokepoint for
-    /// foreground swaps; called by both the picker and the post-login
-    /// flow. Rewrites `accounts.json::active_user_id`.
-    void switchActiveAccount(int new_idx);
+    /// Detach the room/message/compose surfaces from the current active account
+    /// (if any) and rebind them to the account identified by `user_id`. Single
+    /// chokepoint for foreground swaps; called by both the picker and the
+    /// post-login flow. Rewrites `accounts.json::active_user_id`.
+    void switchActiveAccount(const std::string& user_id);
 
     /// Right-click → "Add Account…" path. Records the current active index
     /// in `add_account_return_idx_`, sets `loginView_` to
@@ -180,10 +175,10 @@ private:
     void logoutActiveAccount();
 
     /// Left-click on the avatar opens the AccountPicker popover. No-op
-    /// when `accounts_.size() < 2`.
+    /// when fewer than 2 accounts are signed in.
     void openAccountPicker(const QPoint& global_anchor);
 
-    /// Refresh the `AccountPicker` row set from `accounts_`. Called after
+    /// Refresh the `AccountPicker` row set from `account_manager_`. Called after
     /// add/logout/switch so the popover reflects current state next open.
     void rebuildAccountPicker();
 
@@ -283,6 +278,12 @@ private:
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
+    void raise_and_activate_() override;
+    void rebuild_tray_() override;
+    bool is_ctrl_held_() const override;
+    void switch_active_account_(const std::string& user_id) override;
+    void spawn_main_window_(
+        std::shared_ptr<tesseract::AccountSession> account) override;
 
 
     /// Shutdown coordination. `~MainWindow` flips this flag, clears the
@@ -371,16 +372,16 @@ private:
 
     // ---- Multi-account state ----
     //
-    // Every signed-in account lives in `accounts_` as its own `AccountSession`
-    // (its own `tesseract::Client`, its own `EventBridge`). All accounts
-    // start sync at restore/login time and keep syncing in the background
-    // so notifications fire regardless of which one is foreground. UI
-    // surfaces (room list / message list / compose) are
-    // bound only to the active account; handle_*_ui_() methods filter by
+    // Every signed-in account lives in `account_manager_` (inherited from
+    // ShellBase) as its own `AccountSession` (its own `tesseract::Client`,
+    // its own `EventBridge`). All accounts start sync at restore/login time
+    // and keep syncing in the background so notifications fire regardless of
+    // which one is foreground. UI surfaces (room list / message list / compose)
+    // are bound only to `active_account_`; handle_*_ui_() methods filter by
     // user_id to ignore traffic from inactive accounts (their `RoomInfo`
     // snapshots are cached in `per_account_rooms_` so a fast
-    // switch_active_account doesn't have to wait for the next push).
-    // NOTE: accounts_, active_account_index_, per_account_rooms_,
+    // switchActiveAccount doesn't have to wait for the next push).
+    // NOTE: account_manager_, active_account_, per_account_rooms_,
     // pending_login_client_, pending_login_temp_dir_, add_account_return_idx_,
     // pending_login_is_add_account_, client_ are all inherited from ShellBase.
     // handle_*_ui_() callbacks identify the originating account via the

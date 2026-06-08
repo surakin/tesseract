@@ -58,6 +58,7 @@
 
 #include <tesseract/account_session.h>
 
+#include "app/AccountManager.h"
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
 #include "app/SettingsController.h"
@@ -98,8 +99,12 @@ class MacShell final : public tesseract::ShellBase
 public:
     // ctrl_ is non-owning: MacShell is owned by MainWindowController itself
     // (via _shell), so ctrl_ is always valid for MacShell's lifetime.
-    explicit MacShell(MainWindowController* ctrl) : ctrl_(ctrl)
+    explicit MacShell(tesseract::AccountManager& account_manager,
+                      MainWindowController* ctrl)
+        : ShellBase(account_manager), ctrl_(ctrl)
     {
+        account_manager_.register_window(this);
+        broadcast_rebuild_tray_();
     }
 
 public:
@@ -174,6 +179,12 @@ protected:
     void apply_theme_ui_(const tk::Theme& t) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
+    void raise_and_activate_() override;
+    void rebuild_tray_() override;
+    bool is_ctrl_held_() const override;
+    void switch_active_account_(const std::string& user_id) override;
+    void spawn_main_window_(
+        std::shared_ptr<tesseract::AccountSession> account) override;
 
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;
@@ -190,12 +201,11 @@ protected:
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
 public:
-    using ShellBase::accounts_;
-    using ShellBase::active_account_index_;
+    using ShellBase::account_manager_;
+    using ShellBase::active_account_;
     using ShellBase::active_tab_idx_;
     using ShellBase::active_verification_flow_id_;
     using ShellBase::add_account_return_idx_;
-    using ShellBase::anim_cache_;
     using ShellBase::apply_current_theme_;
     using ShellBase::begin_crypto_identity_reset_;
     using ShellBase::begin_focused_subscription_;
@@ -244,7 +254,7 @@ public:
     using ShellBase::navigate_tray_unread_;
     using ShellBase::focus_tray_unread_popout_;
     using ShellBase::maybe_send_read_receipt_;
-    using ShellBase::media_disk_cache_;
+    // media_disk_cache_ is accessed via account_manager_.media_disk_cache()
     using ShellBase::media_fetches_in_flight_;
     using ShellBase::my_avatar_url_;
     using ShellBase::my_display_name_;
@@ -303,8 +313,6 @@ public:
     using ShellBase::ThreadPanel;
     using ShellBase::thread_panel_;
     using ShellBase::tick_anim_;
-    using ShellBase::thumbnail_cache_;
-    using ShellBase::image_cache_;
     using ShellBase::url_preview_data_;
     using ShellBase::verification_banner_dismissed_;
     using ShellBase::video_thumb_in_flight_;
@@ -318,6 +326,7 @@ public:
     using ShellBase::reset_server_info_;
     using ShellBase::server_info_;
     using ShellBase::show_status_message_;
+    using ShellBase::on_account_picker_select_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -429,6 +438,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 @interface MainWindowController () <
     LoginViewDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate>
+// Provides C++ access to the MacShell from spawn_main_window_() (same .mm file).
+@property (readonly, nonatomic) MacShell* shell;
 - (void)handleTimelineReset:(NSString*)roomId
                    snapshot:(std::vector<tesseract::Event*>)snapshot;
 - (void)handleMessageInserted:(NSString*)roomId
@@ -446,7 +457,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleSyncErrorContext:(NSString*)ctx
                    description:(NSString*)desc
                     softLogout:(BOOL)soft;
-- (void)_switchActiveAccount:(int)idx;
+- (void)_switchActiveAccount:(const std::string&)user_id;
 - (void)_buildSettingsController;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
@@ -539,6 +550,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_setStatusLabelText:(NSString*)text;
 - (void)_onInflightChanged;
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
+- (void)_rebuildTrayMenu;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
@@ -561,6 +573,9 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutSlashPopupIfVisible;
 - (void)_relayoutAccountPickerIfVisible;
 - (void)_openJoinRoomSheetWithPrefill:(NSString*)prefill;
+// Designated init for spawned (secondary) windows that share an existing
+// AccountManager instead of owning their own.
+- (instancetype)_initWithSharedAccountManager:(tesseract::AccountManager*)mgr;
 @end
 
 namespace
@@ -718,8 +733,8 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         // repaint on the UI thread once the decode completes.
         const bool is_thumb = (kind == MediaKind::MediaThumbnail);
         tk::PixmapCache& still_cache =
-            is_thumb ? thumbnail_cache_ : image_cache_;
-        if (still_cache.contains(key) || anim_cache_.has(key))
+            is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
+        if (still_cache.contains(key) || account_manager_.anim_cache().has(key))
             return;
         run_async_(
             [this, key, kind, is_thumb,
@@ -733,8 +748,9 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                         MainWindowController* c = ctrl_;
                         if (!c) return;
                         tk::PixmapCache& sc =
-                            is_thumb ? thumbnail_cache_ : image_cache_;
-                        if (sc.contains(key) || anim_cache_.has(key))
+                            is_thumb ? account_manager_.thumbnail_cache()
+                                     : account_manager_.image_cache();
+                        if (sc.contains(key) || account_manager_.anim_cache().has(key))
                             return;
                         if (!d->frames.empty())
                         {
@@ -742,8 +758,9 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                                 static_cast<std::int64_t>(
                                     [[NSDate date] timeIntervalSince1970] *
                                     1000.0);
-                            anim_cache_.store(key, std::move(d->frames),
-                                              std::move(d->delays_ms), now);
+                            account_manager_.anim_cache().store(
+                                key, std::move(d->frames),
+                                std::move(d->delays_ms), now);
                             start_anim_tick_();
                         }
                         else if (d->still)
@@ -765,7 +782,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     }
     if (kind == MediaKind::Tile)
     {
-        if (image_cache_.contains(key))
+        if (account_manager_.image_cache().contains(key))
         {
             return;
         }
@@ -787,7 +804,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         {
             return;
         }
-        image_cache_.store(key, tk::cg::make_image(img));
+        account_manager_.image_cache().store(key, tk::cg::make_image(img));
         CGImageRelease(img);
         if (room_view_)
         {
@@ -797,7 +814,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         notify_secondary_media_ready_(key, kind);
         return;
     }
-    if (bytes.empty() || thumbnail_cache_.contains(key))
+    if (bytes.empty() || account_manager_.thumbnail_cache().contains(key))
     {
         return;
     }
@@ -819,7 +836,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         return;
     }
-    thumbnail_cache_.store(key, tk::cg::make_image(img));
+    account_manager_.thumbnail_cache().store(key, tk::cg::make_image(img));
     CGImageRelease(img);
     if (kind == MediaKind::RoomAvatar)
     {
@@ -886,11 +903,12 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             post_to_ui_(
                 [this, key, img_holder]() mutable
                 {
-                    if (image_cache_.contains(key))
+                    if (account_manager_.image_cache().contains(key))
                     {
                         return;
                     }
-                    image_cache_.store(key, std::move(*img_holder));
+                    account_manager_.image_cache().store(
+                        key, std::move(*img_holder));
                     MainWindowController* c2 = ctrl_;
                     if (c2)
                     {
@@ -1045,7 +1063,7 @@ void MacShell::extract_drop_media_(std::uint32_t pending_gen,
 void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
                                  std::vector<uint8_t> rgba)
 {
-    if (image_cache_.contains(key))
+    if (account_manager_.image_cache().contains(key))
     {
         return;
     }
@@ -1063,7 +1081,7 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
     {
         return;
     }
-    image_cache_.store(key, tk::cg::make_image(img));
+    account_manager_.image_cache().store(key, tk::cg::make_image(img));
     CGImageRelease(img);
     MainWindowController* c = ctrl_;
     if (c)
@@ -1517,6 +1535,45 @@ MacShell::create_secondary_room_window_(const std::string& room_id)
     return tesseract::make_mac_room_window(this, room_id);
 }
 
+void MacShell::raise_and_activate_()
+{
+    if (ctrl_ && ctrl_.window)
+    {
+        [ctrl_.window makeKeyAndOrderFront:nil];
+        [NSApp activateIgnoringOtherApps:YES];
+    }
+}
+
+void MacShell::rebuild_tray_()
+{
+    if (ctrl_)
+        [ctrl_ _rebuildTrayMenu];
+}
+
+bool MacShell::is_ctrl_held_() const
+{
+    return ([NSEvent modifierFlags] & NSEventModifierFlagCommand) != 0;
+}
+
+void MacShell::switch_active_account_(const std::string& user_id)
+{
+    if (ctrl_)
+    {
+        [ctrl_ _switchActiveAccount:user_id];
+    }
+}
+
+void MacShell::spawn_main_window_(
+    std::shared_ptr<tesseract::AccountSession> account)
+{
+    MainWindowController* ctrl =
+        [[MainWindowController alloc]
+            _initWithSharedAccountManager:&account_manager_];
+    ctrl.shell->set_initial_account(account);
+    account_manager_.set_dedicated(account->user_id, ctrl.shell);
+    [ctrl showWindow:nil];
+}
+
 tk::ThemeMode MacShell::os_color_scheme_() const
 {
     NSAppearanceName name = NSApp.effectiveAppearance.name;
@@ -1564,7 +1621,7 @@ void MacShell::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = thumbnail_cache_.peek(av_mxc);
+                    avatar = account_manager_.thumbnail_cache().peek(av_mxc);
                 }
                 break;
             }
@@ -1735,6 +1792,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::string _ctxStickerBody;
     std::string _ctxStickerInfoJson;
 
+    // Account manager — owns all AccountSession objects and shared media caches.
+    // For the primary window this is a value (owned). For windows spawned via
+    // spawn_main_window_(), _sharedAccountManager points to the primary's manager
+    // and _accountManager is unused; MacShell is constructed from the pointer.
+    tesseract::AccountManager  _accountManager;
+    tesseract::AccountManager* _sharedAccountManager = nullptr; // non-owning
+
     // Account picker popover (left-click on user strip).
     NSPopover* _accountPickerPopover;
     std::unique_ptr<tk::macos::Surface> _accountPickerSurface;
@@ -1749,6 +1813,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Dock-bounce token; 0 = no request in flight.
     NSInteger _attentionRequestToken;
 }
+
+- (MacShell*)shell
+{
+    return _shell.get();
+}
+
 
 - (instancetype)init
 {
@@ -1772,7 +1842,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return nil;
     }
 
-    _shell = std::make_unique<MacShell>(self);
+    tesseract::AccountManager& mgr =
+        _sharedAccountManager ? *_sharedAccountManager : _accountManager;
+    _shell = std::make_unique<MacShell>(mgr, self);
     _shell->set_screen_lock_(std::make_unique<mac::MacScreenLock>());
     _accountPickerShared = nullptr;
     window.delegate = self;
@@ -1826,6 +1898,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
     return self;
 }
 
+// Spawned-window init: shares an existing AccountManager rather than owning one.
+// Sets _sharedAccountManager before calling the designated -init so that
+// the MacShell constructor receives the shared manager reference.
+- (instancetype)_initWithSharedAccountManager:(tesseract::AccountManager*)mgr
+{
+    _sharedAccountManager = mgr;
+    return [self init];
+}
+
 // Save main window geometry to Settings (debounced) on resize or move.
 // Uses top-left-origin coords: y=0 at the top of the primary display.
 - (void)_saveWindowGeometry
@@ -1864,12 +1945,19 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (_tray && _tray->is_available())
     {
         [sender orderOut:nil];
+        return NO;
     }
-    else
+    if (_shell->active_account_ &&
+        _shell->account_manager_.dedicated_window(_shell->active_account_->user_id) ==
+            _shell.get())
+        _shell->account_manager_.clear_dedicated(_shell->active_account_->user_id);
+    _shell->account_manager_.unregister_window(_shell.get());
+    if (_shell->account_manager_.window_count() == 0)
     {
         [NSApp terminate:nil];
+        return NO; // terminate is async; don't let the window close prematurely
     }
-    return NO;
+    return YES; // spawned window: allow normal close + dealloc
 }
 
 - (void)_buildChrome
@@ -1881,7 +1969,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _mainAppSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
     // Let the animation timer repaint only the rects where animated images are
     // drawn (see _animTick) instead of the whole surface.
-    _mainAppSurface->set_anim_cache(&_shell->anim_cache_);
+    _mainAppSurface->set_anim_cache(&_shell->account_manager_.anim_cache());
     // Feed pointer / wheel events into the PresenceTracker.
     _mainAppSurface->host().set_on_user_activity(
         [shell = _shell.get()] { if (shell) shell->notify_user_activity_(); });
@@ -3203,7 +3291,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     MainWindowController* c = mc;
                     if (!c || !c->_shell)
                         return nullptr;
-                    return c->_shell->thumbnail_cache_.peek(mxc);
+                    return c->_shell->account_manager_.thumbnail_cache().peek(mxc);
                 });
             _mentionController =
                 std::make_unique<tesseract::views::MentionController>(
@@ -3228,7 +3316,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             auto gw = std::make_unique<tesseract::views::GifPopup>();
             _gifPopupWidget = gw.get();
             _gifPopupSurface->set_root(std::move(gw));
-            _gifPopupSurface->set_anim_cache(&_shell->anim_cache_);
+            _gifPopupSurface->set_anim_cache(&_shell->account_manager_.anim_cache());
             [_gifPanel setContentView:(__bridge NSView*)
                                           _gifPopupSurface->view_handle()];
             _gifAlive = std::make_shared<bool>(true);
@@ -3246,7 +3334,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     // content is on screen, so ensure the tick timer runs:
                     // re-shown searches take this path without re-fetching.
                     if (const tk::Image* f =
-                            shell->anim_cache_.current_frame(result.strip_url))
+                            shell->account_manager_.anim_cache().current_frame(
+                                result.strip_url))
                     {
                         [c _startAnimTickIfNeeded];
                         return f;
@@ -3274,12 +3363,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                 const std::string disk_key =
                                     shell->gif_src_disk_key_(url);
                                 std::vector<std::uint8_t> bytes =
-                                    shell->media_disk_cache_.load(disk_key);
+                                    shell->account_manager_.media_disk_cache().load(disk_key);
                                 if (bytes.empty() && shell->client_)
                                 {
                                     bytes = shell->client_->fetch_url_bytes(url);
                                     if (!bytes.empty())
-                                        shell->media_disk_cache_.store(
+                                        shell->account_manager_.media_disk_cache().store(
                                             disk_key, bytes);
                                 }
                                 shell->post_to_ui_(
@@ -3332,13 +3421,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                 const std::string disk_key =
                                     shell->gif_src_disk_key_(anim_url);
                                 std::vector<std::uint8_t> bytes =
-                                    shell->media_disk_cache_.load(disk_key);
+                                    shell->account_manager_.media_disk_cache().load(disk_key);
                                 if (bytes.empty() && shell->client_)
                                 {
                                     bytes = shell->client_->fetch_url_bytes(
                                         anim_url);
                                     if (!bytes.empty())
-                                        shell->media_disk_cache_.store(
+                                        shell->account_manager_.media_disk_cache().store(
                                             disk_key, bytes);
                                 }
                                 using CW = tesseract::views::GifPopup;
@@ -3428,7 +3517,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                         [[NSDate date]
                                                             timeIntervalSince1970] *
                                                         1000.0);
-                                                shell->anim_cache_.store(
+                                                shell->account_manager_.anim_cache().store(
                                                     anim_url,
                                                     std::move(*imgs),
                                                     std::move(delays), now);
@@ -3466,7 +3555,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                         [[NSDate date]
                                                             timeIntervalSince1970] *
                                                         1000.0);
-                                                shell->anim_cache_.store(
+                                                shell->account_manager_.anim_cache().store(
                                                     anim_url,
                                                     std::move(d->frames),
                                                     std::move(d->delays_ms),
@@ -3547,7 +3636,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 if (!c)
                     return {};
                 // Reuse the source bytes the strip persisted to disk on fetch.
-                return c->_shell->media_disk_cache_.load(
+                return c->_shell->account_manager_.media_disk_cache().load(
                     c->_shell->gif_src_disk_key_(url));
             };
             _gifController = std::make_unique<tesseract::views::GifController>(
@@ -4507,6 +4596,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)dealloc
 {
+    if (_shell)
+    {
+        // unregister_window was already called in windowShouldClose: so we
+        // do not repeat it here.  broadcast_rebuild_tray_ is still needed to
+        // refresh any remaining windows' tray menus after this shell is freed.
+        _shell->broadcast_rebuild_tray_();
+    }
+
     [NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
     [self stopSync];
     if (_escapeMonitor)
@@ -4604,7 +4701,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& acc : _shell->accounts_)
+    for (auto& acc : _shell->account_manager_.accounts())
     {
         if (acc->sync_started)
             acc->client->stop_sync();
@@ -4640,7 +4737,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              {
                                  return nullptr;
                              }
-                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
                                      cache_key))
                              {
                                  [s _startAnimTickIfNeeded];
@@ -4648,7 +4745,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              }
                              {
                                  if (const auto* img =
-                                         s->_shell->image_cache_.peek(cache_key))
+                                         s->_shell->account_manager_.image_cache().peek(cache_key))
                                      return img;
                              }
                              [s _ensureEmojiImageAsync:cache_key];
@@ -4810,7 +4907,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return nullptr;
                 }
-                return c->_shell->image_cache_.peek(url);
+                return c->_shell->account_manager_.image_cache().peek(url);
             });
 
         NSView* popupView =
@@ -5168,7 +5265,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              {
                                  return nullptr;
                              }
-                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
                                      cache_key))
                              {
                                  [s _startAnimTickIfNeeded];
@@ -5176,7 +5273,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              }
                              {
                                  if (const auto* img =
-                                         s->_shell->image_cache_.peek(cache_key))
+                                         s->_shell->account_manager_.image_cache().peek(cache_key))
                                      return img;
                              }
                              [s _ensureEmojiImageAsync:cache_key];
@@ -5450,10 +5547,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
         session->sync_started = true;
         session->client->start_sync(session->bridge.get());
 
-        _shell->accounts_.push_back(std::move(session));
+        _shell->account_manager_.add_account(std::move(session));
     }
 
-    if (_shell->accounts_.empty())
+    if (_shell->account_manager_.accounts().empty())
     {
         _shell->pending_login_temp_dir_.clear();
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -5488,16 +5585,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
 
-    int firstActive = 0;
-    for (int i = 0; i < (int)_shell->accounts_.size(); ++i)
+    std::string firstActiveUid = index.active_user_id;
+    if (firstActiveUid.empty() &&
+        !_shell->account_manager_.accounts().empty())
     {
-        if (_shell->accounts_[i]->user_id == index.active_user_id)
-        {
-            firstActive = i;
-            break;
-        }
+        firstActiveUid = _shell->account_manager_.accounts().front()->user_id;
     }
-    [self _switchActiveAccount:firstActive];
+    [self _switchActiveAccount:firstActiveUid];
     [self _buildSettingsController];
 }
 
@@ -5673,12 +5767,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = ws;
             if (!s) return;
             s->_shell->my_avatar_url_ = mxc;
-            if (s->_shell->active_account_index_ >= 0 &&
-                s->_shell->active_account_index_ <
-                    static_cast<int>(s->_shell->accounts_.size()))
+            if (s->_shell->active_account_)
             {
-                s->_shell->accounts_[s->_shell->active_account_index_]
-                    ->avatar_url = s->_shell->my_avatar_url_;
+                s->_shell->active_account_->avatar_url =
+                    s->_shell->my_avatar_url_;
             }
             s->_settingsView->set_avatar_url(mxc);
             if (s->_settingsSurface) s->_settingsSurface->relayout();
@@ -5697,24 +5789,22 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::string newUserId = _shell->pending_login_client_->get_user_id();
 
     // Reject if this account is already signed in.
-    for (const auto& a : _shell->accounts_)
+    if (_shell->account_manager_.find(newUserId))
     {
-        if (a->user_id == newUserId)
+        [_loginView setClient:nullptr];
+        _shell->pending_login_client_.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
+        _shell->pending_login_temp_dir_.clear();
+        _shell->pending_login_is_add_account_ = false;
+        const auto& accs = _shell->account_manager_.accounts();
+        int returnIdx = _shell->add_account_return_idx_;
+        _shell->add_account_return_idx_ = -1;
+        if (returnIdx >= 0 && returnIdx < (int)accs.size())
         {
-            [_loginView setClient:nullptr];
-            _shell->pending_login_client_.reset();
-            std::error_code ec;
-            std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
-            _shell->pending_login_temp_dir_.clear();
-            _shell->pending_login_is_add_account_ = false;
-            int returnIdx = _shell->add_account_return_idx_;
-            _shell->add_account_return_idx_ = -1;
-            if (returnIdx >= 0 && returnIdx < (int)_shell->accounts_.size())
-            {
-                [self _switchActiveAccount:returnIdx];
-            }
-            return;
+            [self _switchActiveAccount:accs[returnIdx]->user_id];
         }
+        return;
     }
 
     std::string sessionJson = _shell->pending_login_client_->export_session();
@@ -5766,12 +5856,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
     idxData.active_user_id = newUserId;
     tesseract::SessionStore::save_index(idxData);
 
-    int newIdx = (int)_shell->accounts_.size();
-    _shell->accounts_.push_back(std::move(session));
+    std::string switchToUid = session->user_id;
+    _shell->account_manager_.add_account(std::move(session));
     _shell->pending_login_is_add_account_ = false;
     _shell->add_account_return_idx_ = -1;
 
-    [self _switchActiveAccount:newIdx];
+    [self _switchActiveAccount:switchToUid];
     [self _buildSettingsController];
 }
 
@@ -5786,20 +5876,37 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _shell->pending_login_temp_dir_.clear();
     }
     _shell->pending_login_is_add_account_ = false;
+    const auto& accs = _shell->account_manager_.accounts();
     int returnIdx = _shell->add_account_return_idx_;
     _shell->add_account_return_idx_ = -1;
-    if (returnIdx >= 0 && returnIdx < (int)_shell->accounts_.size())
+    if (returnIdx >= 0 && returnIdx < (int)accs.size())
     {
-        [self _switchActiveAccount:returnIdx];
+        [self _switchActiveAccount:accs[returnIdx]->user_id];
     }
 }
 
-- (void)_switchActiveAccount:(int)idx
+- (void)_switchActiveAccount:(const std::string&)user_id
 {
-    const int old_idx = _shell->active_account_index_;
+    auto new_session = _shell->account_manager_.find(user_id);
+    if (!new_session)
+    {
+        return;
+    }
+    if (new_session == _shell->active_account_ && _shell->client_)
+    {
+        return;
+    }
+
+    // Save banner state for the outgoing account.
+    if (_shell->active_account_)
+    {
+        _shell->active_account_->verification_banner_dismissed =
+            _shell->verification_banner_dismissed_;
+    }
+
     _shell->reset_server_info_();
-    _shell->active_account_index_ = idx;
-    auto* session = _shell->accounts_[idx].get();
+    _shell->active_account_ = new_session;
+    auto* session = new_session.get();
     _shell->client_ = session->client.get();
     _shell->event_handler_ = session->bridge.get();
 
@@ -5864,12 +5971,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     [self _populateUserStrip];
 
-    // Save banner state for the outgoing account, then load for the incoming.
-    if (old_idx >= 0 && old_idx < static_cast<int>(_shell->accounts_.size()))
-    {
-        _shell->accounts_[old_idx]->verification_banner_dismissed =
-            _shell->verification_banner_dismissed_;
-    }
     if (_mainApp)
     {
         _mainApp->show_verif_banner(false);
@@ -5941,8 +6042,22 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_beginAddAccount
 {
+    // Record the current active account's position in the accounts list so
+    // Cancel can return to it. -1 means no active account.
+    const auto& accs = _shell->account_manager_.accounts();
+    _shell->add_account_return_idx_ = -1;
+    if (_shell->active_account_)
+    {
+        for (int i = 0; i < static_cast<int>(accs.size()); ++i)
+        {
+            if (accs[i]->user_id == _shell->active_account_->user_id)
+            {
+                _shell->add_account_return_idx_ = i;
+                break;
+            }
+        }
+    }
     _shell->pending_login_is_add_account_ = true;
-    _shell->add_account_return_idx_ = _shell->active_account_index_;
     _shell->pending_login_temp_dir_.clear();
     _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
     [_loginView setClient:_shell->pending_login_client_.get()];
@@ -5995,7 +6110,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = ws;
             if (!s)
                 return nullptr;
-            return s->_shell->thumbnail_cache_.peek(mxc);
+            return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
         });
 
     _joinRoomView->on_lookup_requested =
@@ -6162,7 +6277,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return nullptr;
             }
-            return s->_shell->thumbnail_cache_.peek(mxc);
+            return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
         });
     _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
     _settingsView->set_notifications_enabled(
@@ -6314,15 +6429,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            for (int i = 0; i < (int)s->_shell->accounts_.size(); ++i)
-            {
-                if (s->_shell->accounts_[i]->user_id == uid)
-                {
-                    [s->_accountPickerPopover close];
-                    [s _switchActiveAccount:i];
-                    break;
-                }
-            }
+            [s->_accountPickerPopover close];
+            s->_shell->on_account_picker_select_(uid);
         };
         _accountPickerShared->set_image_provider(
             [weakSelf](const std::string& mxc) -> const tk::Image*
@@ -6332,7 +6440,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return nullptr;
                 }
-                return s->_shell->thumbnail_cache_.peek(mxc);
+                return s->_shell->account_manager_.thumbnail_cache().peek(mxc);
             });
         _accountPickerSurface->set_root(std::move(picker));
 
@@ -6352,24 +6460,25 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 
     std::vector<tesseract::views::AccountEntry> entries;
-    for (int i = 0; i < (int)_shell->accounts_.size(); ++i)
+    for (const auto& s : _shell->account_manager_.accounts())
     {
-        auto& acc = *_shell->accounts_[i];
         tesseract::views::AccountEntry e;
-        e.user_id = acc.user_id;
-        e.display_name = acc.display_name;
-        e.avatar_url = acc.avatar_url;
-        e.active = (i == _shell->active_account_index_);
+        e.user_id = s->user_id;
+        e.display_name = s->display_name;
+        e.avatar_url = s->avatar_url;
+        e.active = (_shell->active_account_ &&
+                    s->user_id == _shell->active_account_->user_id);
         entries.push_back(std::move(e));
-        if (!acc.avatar_url.empty())
+        if (!s->avatar_url.empty())
         {
-            _shell->ensure_user_avatar_(acc.avatar_url);
+            _shell->ensure_user_avatar_(s->avatar_url);
         }
     }
     _accountPickerShared->set_entries(std::move(entries));
 
     CGFloat rowH = 48.0f;
-    NSSize sz = NSMakeSize(220, rowH * (CGFloat)_shell->accounts_.size());
+    NSSize sz =
+        NSMakeSize(220, rowH * (CGFloat)_shell->account_manager_.accounts().size());
     _accountPickerPopover.contentSize = sz;
     _accountPickerSurface->relayout();
 
@@ -6388,12 +6497,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_logoutActiveAccount
 {
-    if (_shell->active_account_index_ < 0 ||
-        _shell->active_account_index_ >= (int)_shell->accounts_.size())
+    if (!_shell->active_account_)
     {
         return;
     }
-    auto* session = _shell->accounts_[_shell->active_account_index_].get();
+    auto* session = _shell->active_account_.get();
     std::string uid = session->user_id;
 
     if (!_shell->current_room_id_.empty())
@@ -6417,19 +6525,19 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // surviving accounts) immediately; without this the indicator can stick
     // when the only account with unreads was the one we just signed out.
     _shell->notify_tray_unread_();
-    _shell->accounts_.erase(_shell->accounts_.begin() +
-                            _shell->active_account_index_);
+    _shell->active_account_.reset();
+    _shell->account_manager_.remove_account(uid);
+
+    _shell->client_ = nullptr;
+    _shell->event_handler_ = nullptr;
 
     auto idxData = tesseract::SessionStore::load_index();
     auto& ids = idxData.user_ids;
     ids.erase(std::remove(ids.begin(), ids.end(), uid), ids.end());
     _shell->reset_server_info_();
 
-    if (_shell->accounts_.empty())
+    if (_shell->account_manager_.accounts().empty())
     {
-        _shell->active_account_index_ = -1;
-        _shell->client_ = nullptr;
-        _shell->event_handler_ = nullptr;
         idxData.active_user_id.clear();
         tesseract::SessionStore::save_index(idxData);
 
@@ -6476,11 +6584,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     else
     {
-        int newIdx = std::min(_shell->active_account_index_,
-                              (int)_shell->accounts_.size() - 1);
-        idxData.active_user_id = _shell->accounts_[newIdx]->user_id;
+        const auto& next_acc = _shell->account_manager_.accounts().front();
+        idxData.active_user_id = next_acc->user_id;
         tesseract::SessionStore::save_index(idxData);
-        [self _switchActiveAccount:newIdx];
+        [self _switchActiveAccount:next_acc->user_id];
     }
 }
 
@@ -6535,9 +6642,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     BOOL winFocused = self.window.isKeyWindow;
 
     // Already watching this exact room — suppress silently.
-    if (winFocused && _shell->active_account_index_ >= 0 &&
-        (int)_shell->accounts_.size() > _shell->active_account_index_ &&
-        _shell->accounts_[_shell->active_account_index_]->user_id == userId &&
+    if (winFocused && _shell->active_account_ &&
+        _shell->active_account_->user_id == userId &&
         _shell->current_room_id_ == roomId)
     {
         return;
@@ -6640,9 +6746,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     NSString* rid = info[@"room_id"];
     NSString* uid = info[@"user_id"];
     BOOL activeAccount =
-        uid && _shell->active_account_index_ >= 0 &&
-        (int)_shell->accounts_.size() > _shell->active_account_index_ &&
-        _shell->accounts_[_shell->active_account_index_]->user_id ==
+        uid && _shell->active_account_ &&
+        _shell->active_account_->user_id ==
             std::string(uid.UTF8String ?: "");
     if (self.window.isKeyWindow && activeAccount && rid &&
         _shell->current_room_id_ == std::string(rid.UTF8String ?: ""))
@@ -6674,14 +6779,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (uid)
     {
         std::string target_uid(uid.UTF8String ?: "");
-        for (int i = 0; i < (int)_shell->accounts_.size(); ++i)
-        {
-            if (_shell->accounts_[i]->user_id == target_uid)
-            {
-                [self _switchActiveAccount:i];
-                break;
-            }
-        }
+        [self _switchActiveAccount:target_uid];
     }
     if (rid)
     {
@@ -6784,10 +6882,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
 {
     if ([ctx isEqualToString:@"sync_auth_error"])
     {
-        if (soft && _shell->client_ && _shell->active_account_index_ >= 0)
+        if (soft && _shell->client_ && _shell->active_account_)
         {
-            std::string uid =
-                _shell->accounts_[_shell->active_account_index_]->user_id;
+            std::string uid = _shell->active_account_->user_id;
             if (auto saved = tesseract::SessionStore::load_account(uid))
             {
                 if (_shell->client_->restore_session(*saved))
@@ -7133,6 +7230,32 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         _tray->set_unread(hasUnread, hasHighlight);
     }
+}
+
+- (void)_rebuildTrayMenu
+{
+    if (!_tray || !_tray->is_available())
+        return;
+
+    std::vector<std::pair<std::string, std::function<void()>>> items;
+    for (tesseract::ShellBase* win : _shell->account_manager_.all_windows())
+    {
+        std::string label;
+        auto acc = win->active_account();
+        if (acc)
+        {
+            label = acc->display_name.empty()
+                        ? acc->user_id
+                        : acc->display_name + " (" + acc->user_id + ")";
+        }
+        else
+        {
+            label = "Tesseract";
+        }
+        items.emplace_back(std::move(label),
+                           [win] { win->raise_and_activate_(); });
+    }
+    _tray->rebuild_menu(std::move(items));
 }
 
 - (void)_refreshRoomList
@@ -7526,9 +7649,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Inline thumbnails land in thumbnail_cache_; full-size media in
     // image_cache_. Animated frames always go to anim_cache_.
     tk::PixmapCache& still_cache =
-        thumb ? _shell->thumbnail_cache_ : _shell->image_cache_;
+        thumb ? _shell->account_manager_.thumbnail_cache()
+              : _shell->account_manager_.image_cache();
     if (bytes.empty() || still_cache.contains(key) ||
-        _shell->anim_cache_.has(key))
+        _shell->account_manager_.anim_cache().has(key))
     {
         return;
     }
@@ -7537,8 +7661,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         const std::int64_t now = static_cast<std::int64_t>(
             [[NSDate date] timeIntervalSince1970] * 1000.0);
-        _shell->anim_cache_.store(key, std::move(d.frames),
-                                  std::move(d.delays_ms), now);
+        _shell->account_manager_.anim_cache().store(
+            key, std::move(d.frames), std::move(d.delays_ms), now);
         [self _startAnimTickIfNeeded];
     }
     else if (d.still)
@@ -7549,7 +7673,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_startAnimTickIfNeeded
 {
-    if (_animTimer || _shell->anim_cache_.empty())
+    if (_animTimer || _shell->account_manager_.anim_cache().empty())
     {
         return;
     }
@@ -7619,7 +7743,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              {
                                  return nullptr;
                              }
-                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
                                      cache_key))
                              {
                                  [s _startAnimTickIfNeeded];
@@ -7627,7 +7751,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              }
                              {
                                  if (const auto* img =
-                                         s->_shell->image_cache_.peek(cache_key))
+                                         s->_shell->account_manager_.image_cache().peek(cache_key))
                                      return img;
                              }
                              [s _ensureStickerImageAsync:cache_key];
@@ -7683,7 +7807,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              {
                                  return nullptr;
                              }
-                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                             if (auto* f = s->_shell->account_manager_.anim_cache().current_frame(
                                      cache_key))
                              {
                                  [s _startAnimTickIfNeeded];
@@ -7691,7 +7815,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                              }
                              {
                                  if (const auto* img =
-                                         s->_shell->image_cache_.peek(cache_key))
+                                         s->_shell->account_manager_.image_cache().peek(cache_key))
                                      return img;
                              }
                              [s _ensureStickerImageAsync:cache_key];

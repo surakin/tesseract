@@ -14,8 +14,12 @@ namespace
 // A ShellBase test double that queues UI-thread callbacks (rather than running
 // them inline) and counts synchronous relayout passes, so a test can observe
 // that schedule_relayout_ coalesces a burst of requests into a single pass.
-struct CoalesceShell : ShellBase
+struct WithAccountManager { tesseract::AccountManager am_; };
+
+struct CoalesceShell : WithAccountManager, ShellBase
 {
+    CoalesceShell() : ShellBase(am_) {}
+
     std::vector<std::function<void()>> queue;
     int relayout_calls = 0;
 
@@ -48,6 +52,10 @@ struct CoalesceShell : ShellBase
         std::function<void(std::vector<uint8_t>, std::string)>) override {}
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode) override {}
+    void raise_and_activate_() override {}
+    bool is_ctrl_held_() const override { return false; }
+    void switch_active_account_(const std::string&) override {}
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
     void apply_thread_messages_(
         const std::string&,
         std::vector<tesseract::views::MessageRowData>, bool) override {}

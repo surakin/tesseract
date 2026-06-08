@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "app/AccountManager.h"
 #include "resource.h"
 #include <ole2.h>
 // <shobjidl.h> (not the SDK-only <ShObjIdl_core.h> split) so the include
@@ -263,7 +264,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     int exit_code = 1;
     if (win32::MainWindow::register_class(hInstance))
     {
-        win32::MainWindow window(hInstance);
+        tesseract::AccountManager account_manager;
+        win32::MainWindow window(account_manager, hInstance);
         if (window.create(nCmdShow))
         {
             if (!startup_uri.empty())
