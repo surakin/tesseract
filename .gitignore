@@ -21,6 +21,7 @@ compile_commands.json
 *.exe
 *.kate-swp
 .DS_Store
+NEXT.md
 
 # Downloaded at configure time by ui/windows/CMakeLists.txt
 ui/windows/fonts/
