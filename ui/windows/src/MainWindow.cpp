@@ -3155,6 +3155,7 @@ void MainWindow::on_create(HWND hwnd)
         SendMessageW(hStatusTip_, TTM_ADDTOOLW, 0,
                      reinterpret_cast<LPARAM>(&ti));
     }
+    SendMessageW(hStatusTip_, TTM_SETMAXTIPWIDTH, 0, 500);
     // Store the tooltip HWND as a property so status_bar_wnd_proc can relay.
     if (hStatus_ && hStatusTip_)
         SetPropW(hStatus_, L"StatusTip", hStatusTip_);
