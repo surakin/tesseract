@@ -4322,6 +4322,15 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     const bool animated = msg.kind == MessageRowData::Kind::Video &&
                           (msg.video_autoplay || msg.video_gif);
 
+    // Buffer front-inserts during back-pagination so they can be flushed as
+    // one batch when set_paginating(false) is called. Animated rows (autoplay
+    // / gif video) need start_inline_video() and take the normal path.
+    if (index == 0 && paginating_ && !animated)
+    {
+        pending_prepends_.push_back(std::move(msg));
+        return;
+    }
+
     // Suppress the read marker while the SDK catches up to the new position.
     // update_message() clears this flag when it delivers the updated marker.
     using Kind = MessageRowData::Kind;
@@ -5668,6 +5677,81 @@ void MessageListView::set_historical_mode(bool historical)
     invalidate_data();
 }
 
+void MessageListView::set_paginating(bool paginating)
+{
+    if (paginating_ == paginating)
+        return;
+    paginating_ = paginating;
+    if (paginating)
+    {
+        paginate_start_ = std::chrono::steady_clock::now();
+    }
+    else
+    {
+        flush_pending_prepends_();
+    }
+    if (request_repaint_)
+        request_repaint_();
+}
+
+void MessageListView::flush_pending_prepends_()
+{
+    if (pending_prepends_.empty())
+        return;
+    // Insert N cache slots at position 0, one per queued message.
+    // Calling insert_layout_cache_at(0) N times shifts the existing
+    // slots to positions N..N+old, matching the bulk vector insert below.
+    for (std::size_t i = 0; i < pending_prepends_.size(); ++i)
+        adapter_->insert_layout_cache_at(0);
+    // pending_prepends_[0] = first PushFront received (most recent of the
+    // batch); rbegin..rend inserts oldest-first so messages_[0] ends up
+    // being the oldest paginated event, matching chronological order.
+    preserve_top_through(
+        [&]
+        {
+            messages_.insert(messages_.begin(),
+                             pending_prepends_.rbegin(),
+                             pending_prepends_.rend());
+            for (std::size_t i = 0; i < pending_prepends_.size(); ++i)
+                try_acquire_image_(messages_[i]);
+            invalidate_data();
+        });
+    pending_prepends_.clear();
+}
+
+void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx)
+{
+    const auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - paginate_start_)
+            .count();
+    const float phase =
+        static_cast<float>(elapsed_ms % 1000) / 1000.0f;
+
+    constexpr float kRadius = 10.0f;
+    constexpr float kDotR   = 2.5f;
+    constexpr int   kN      = 8;
+    const float scx = bounds_.x + bounds_.w * 0.5f;
+    const float scy = bounds_.y + 20.0f;
+
+    const auto& pal = ctx.theme.palette;
+    for (int i = 0; i < kN; ++i)
+    {
+        const float angle =
+            (static_cast<float>(i) / kN + phase) * 2.0f * 3.14159265f;
+        const float dx    = std::cos(angle) * kRadius;
+        const float dy    = std::sin(angle) * kRadius;
+        const float t     = static_cast<float>(i) / kN;
+        const auto  alpha = static_cast<std::uint8_t>(40.0f + 215.0f * t);
+        ctx.canvas.fill_rounded_rect({scx + dx - kDotR, scy + dy - kDotR,
+                                      kDotR * 2.0f, kDotR * 2.0f},
+                                     kDotR,
+                                     pal.text_muted.with_alpha(alpha));
+    }
+    if (request_repaint_)
+        request_repaint_();
+}
+
 int MessageListView::message_index_of(const std::string& event_id) const
 {
     for (int i = 0; i < static_cast<int>(messages_.size()); ++i)
@@ -6840,6 +6924,15 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     }
 
     tk::ListView::paint(ctx);
+
+    // Back-pagination spinner: 8-dot rotating indicator at the top of the
+    // viewport while a back-paginate request is in flight.
+    if (paginating_)
+    {
+        ctx.canvas.push_clip_rect(bounds_);
+        draw_pagination_spinner_(ctx);
+        ctx.canvas.pop_clip();
+    }
 
     // Focused-thread dim. Painted above rows / below scroll-pill + hover
     // tooltips. When highlighted_event_id_ is set we punch the matching row

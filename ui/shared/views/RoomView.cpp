@@ -818,6 +818,14 @@ void RoomView::set_historical_mode(bool historical)
     }
 }
 
+void RoomView::set_paginating(bool paginating)
+{
+    if (message_list_)
+    {
+        message_list_->set_paginating(paginating);
+    }
+}
+
 bool RoomView::scroll_to_event_id(const std::string& id)
 {
     return message_list_ && message_list_->scroll_to_event_id(id);

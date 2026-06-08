@@ -17,6 +17,7 @@
 
 #include <tesseract/types.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -635,6 +636,12 @@ public:
     // a surface repaint for the change to take effect immediately.
     void set_historical_mode(bool historical);
 
+    // Show/hide the back-pagination spinner. Pass true when a back-paginate
+    // request is in flight, false when it completes. While true, incoming
+    // index-0 inserts (non-animated) are buffered and flushed as a single
+    // batch on the false transition to reduce per-insertion layout churn.
+    void set_paginating(bool paginating);
+
     // Fired when the user clicks the scroll-to-bottom pill while in
     // historical mode.
     std::function<void()> on_return_to_live;
@@ -739,6 +746,16 @@ private:
     // painting the ReadMarker row; cleared when update_message receives a
     // ReadMarker row (SDK confirmed the new position).
     bool suppress_read_marker_ = false;
+
+    // Back-pagination in-flight state. While true, index-0 non-animated
+    // inserts are buffered in pending_prepends_ and flushed atomically when
+    // set_paginating(false) is called. A spinner is drawn at the top of the
+    // viewport during this window.
+    bool paginating_ = false;
+    std::chrono::steady_clock::time_point paginate_start_;
+    std::vector<MessageRowData> pending_prepends_;
+    void draw_pagination_spinner_(tk::PaintCtx& ctx);
+    void flush_pending_prepends_();
 
     // Room-switch display gate. Armed by set_messages(.., room_switch=true);
     // evaluated on the first paint (heights are guaranteed measured there);

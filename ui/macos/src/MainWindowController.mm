@@ -7370,6 +7370,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
     state.in_flight = true;
+    if (_shell->room_view_)
+        _shell->room_view_->set_paginating(true);
 
     // Run the blocking paginate call on a background queue; marshal the
     // result back to the main thread.

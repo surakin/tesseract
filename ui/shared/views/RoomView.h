@@ -120,6 +120,9 @@ public:
     // fires on_return_to_live instead of scrolling to the bottom).
     void set_historical_mode(bool historical);
 
+    // Show/hide the back-pagination spinner (delegates to MessageListView).
+    void set_paginating(bool paginating);
+
     // Scroll to the row matching event_id. Returns true when found.
     bool scroll_to_event_id(const std::string& id);
 

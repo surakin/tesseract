@@ -2979,6 +2979,8 @@ void MainWindow::requestMoreHistory(const std::string& room_id)
         return;
     }
     state.in_flight = true;
+    if (room_view_)
+        room_view_->set_paginating(true);
 
     // Run the blocking SDK call off the UI thread; bounce the result back
     // via a queued connection. `client_` is thread-safe (Rust runtime
@@ -2987,6 +2989,8 @@ void MainWindow::requestMoreHistory(const std::string& room_id)
     if (!c)
     {
         state.in_flight = false;
+        if (room_view_)
+            room_view_->set_paginating(false);
         return;
     }
     run_async_(

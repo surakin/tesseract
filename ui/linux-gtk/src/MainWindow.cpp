@@ -3368,6 +3368,8 @@ void MainWindow::request_more_history(const std::string& room_id)
         return;
     }
     state.in_flight = true;
+    if (room_view_)
+        room_view_->set_paginating(true);
 
     // Worker thread: invoke the blocking SDK call, marshal the result
     // back via g_idle_add on the main loop.
