@@ -1797,7 +1797,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // spawn_main_window_(), _sharedAccountManager points to the primary's manager
     // and _accountManager is unused; MacShell is constructed from the pointer.
     tesseract::AccountManager  _accountManager;
-    tesseract::AccountManager* _sharedAccountManager = nullptr; // non-owning
+    tesseract::AccountManager* _sharedAccountManager; // non-owning
 
     // Account picker popover (left-click on user strip).
     NSPopover* _accountPickerPopover;
