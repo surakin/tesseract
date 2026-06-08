@@ -2087,12 +2087,73 @@ std::unique_ptr<Image> decode_image(Backend& b,
         return nullptr;
     }
 
+    // Read EXIF orientation tag (274). Try the JPEG IFD path first, then the
+    // TIFF/PNG path. Missing or unreadable metadata leaves the transform as the
+    // identity (Rotate0) and the rotator is skipped entirely.
+    WICBitmapTransformOptions exif_transform = WICBitmapTransformRotate0;
+    {
+        ComPtr<IWICMetadataQueryReader> meta;
+        if (SUCCEEDED(frame->GetMetadataQueryReader(meta.GetAddressOf())))
+        {
+            auto try_path = [&](const wchar_t* path) -> bool
+            {
+                PROPVARIANT pv;
+                PropVariantInit(&pv);
+                bool found = false;
+                if (SUCCEEDED(meta->GetMetadataByName(path, &pv)) &&
+                    pv.vt == VT_UI2)
+                {
+                    found = true;
+                    switch (pv.uiVal)
+                    {
+                    case 2: exif_transform = WICBitmapTransformFlipHorizontal; break;
+                    case 3: exif_transform = WICBitmapTransformRotate180; break;
+                    case 4: exif_transform = WICBitmapTransformFlipVertical; break;
+                    case 5:
+                        exif_transform = static_cast<WICBitmapTransformOptions>(
+                            WICBitmapTransformRotate90 |
+                            WICBitmapTransformFlipHorizontal);
+                        break;
+                    case 6: exif_transform = WICBitmapTransformRotate90; break;
+                    case 7:
+                        exif_transform = static_cast<WICBitmapTransformOptions>(
+                            WICBitmapTransformRotate270 |
+                            WICBitmapTransformFlipHorizontal);
+                        break;
+                    case 8: exif_transform = WICBitmapTransformRotate270; break;
+                    default: break; // 1 = normal; unknown values are ignored
+                    }
+                }
+                PropVariantClear(&pv);
+                return found;
+            };
+            if (!try_path(L"/app1/ifd/{ushort=274}"))
+                try_path(L"/ifd/{ushort=274}");
+        }
+    }
+
+    // When a non-identity orientation is present, interpose an
+    // IWICBitmapFlipRotator between the frame and the format converter.
+    // The rotator implements IWICBitmapSource, so it drops in transparently;
+    // GetSize() on the rotated source already returns post-rotation dimensions.
+    ComPtr<IWICBitmapFlipRotator> rotator;
+    IWICBitmapSource* decode_source = frame.Get();
+    if (exif_transform != WICBitmapTransformRotate0)
+    {
+        if (SUCCEEDED(impl.wic->CreateBitmapFlipRotator(
+                rotator.GetAddressOf())) &&
+            SUCCEEDED(rotator->Initialize(frame.Get(), exif_transform)))
+        {
+            decode_source = rotator.Get();
+        }
+    }
+
     ComPtr<IWICFormatConverter> converter;
     if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
     {
         return nullptr;
     }
-    if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+    if (FAILED(converter->Initialize(decode_source, GUID_WICPixelFormat32bppPBGRA,
                                      WICBitmapDitherTypeNone, nullptr, 0.0f,
                                      WICBitmapPaletteTypeMedianCut)))
     {

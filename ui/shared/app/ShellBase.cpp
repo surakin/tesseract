@@ -2293,6 +2293,11 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
     auto& state = pagination_[room_id];
     state.in_flight = false;
     state.reached_start = reached_start;
+    if (room_id == current_room_id_ && room_view_)
+    {
+        room_view_->set_paginating(false);
+        schedule_relayout_(); // flush_pending_prepends_ may have armed the scroll anchor
+    }
 }
 
 void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
@@ -2311,6 +2316,11 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
         state.in_flight = false;
         if (ok)
             state.reached_start = reached_start;
+        if (room_id == current_room_id_ && room_view_)
+        {
+            room_view_->set_paginating(false);
+            schedule_relayout_();
+        }
     }
     else
     {

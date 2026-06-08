@@ -754,7 +754,11 @@ public:
         const float s = dip_scale();
         int rh = static_cast<int>(std::round(r.h * s));
         int nh = static_cast<int>(std::round(natural_height() * s));
-        int h  = (nh > 0 && nh < rh) ? nh : rh;
+        // Keep one physical pixel of clearance at the top and bottom so
+        // the parent surface's card border stroke is never covered.
+        const int border_px = std::max(2, static_cast<int>(std::ceil(s)));
+        const int max_h = std::max(1, rh - 2 * border_px);
+        int h  = (nh > 0 && nh <= max_h) ? nh : max_h;
         int y  = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
         SetWindowPos(hwnd_, nullptr,
                      static_cast<int>(std::floor(r.x * s)), y,
@@ -1930,7 +1934,11 @@ public:
         const float s  = dip_scale();
         const int rh   = static_cast<int>(std::round(r.h * s));
         const int nh   = static_cast<int>(std::round(natural_height() * s));
-        const int h    = (nh > 0 && nh < rh) ? nh : rh;
+        // Keep one physical pixel of clearance at the top and bottom so
+        // the parent surface's card border stroke is never covered.
+        const int border_px = std::max(2, static_cast<int>(std::ceil(s)));
+        const int max_h = std::max(1, rh - 2 * border_px);
+        const int h    = (nh > 0 && nh <= max_h) ? nh : max_h;
         const int y    = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
         SetWindowPos(hwnd_, nullptr,
                      static_cast<int>(std::floor(r.x * s)), y,
@@ -2513,6 +2521,18 @@ private:
                 ->TxSendMessage(WM_GETTEXT,
                     static_cast<WPARAM>(tlen + 1),
                     reinterpret_cast<LPARAM>(tw.data()), &tlen);
+        // WM_GETTEXT converts the internal '\r' paragraph separators to
+        // '\r\n'; strip the extra '\n' so IDWriteTextLayout character
+        // positions match EM_GETSEL / EM_SETSEL offsets exactly.
+        {
+            std::wstring::size_type w = 0;
+            for (std::wstring::size_type r = 0; r < tw.size(); ++r) {
+                if (tw[r] == L'\n' && w > 0 && tw[w - 1] == L'\r')
+                    continue;
+                tw[w++] = tw[r];
+            }
+            tw.resize(w);
+        }
         if (out_text_len) *out_text_len = static_cast<UINT32>(tw.size());
 
         ComPtr<IDWriteTextLayout> layout;
@@ -2759,6 +2779,65 @@ private:
                 if (!self->in_paint_)
                     InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
+            }
+            // 5b. Up / Down — same broken EM_POSFROMCHAR root cause as
+            //     Home / End: MSFTEDIT cannot compute the correct cross-line
+            //     target in D2D windowless mode.  Use IDWriteTextLayout to
+            //     find the character position one visual line above / below
+            //     the caret and push it back through EM_SETSEL.
+            if (wParam == VK_UP || wParam == VK_DOWN)
+            {
+                const bool is_up    = (wParam == VK_UP);
+                const bool is_shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+
+                DWORD sel_start = 0, sel_end = 0;
+                {
+                    LRESULT lr2 = 0;
+                    self->text_svc_->TxSendMessage(EM_GETSEL,
+                        reinterpret_cast<WPARAM>(&sel_start),
+                        reinterpret_cast<LPARAM>(&sel_end), &lr2);
+                }
+
+                UINT32 tlen = 0;
+                auto layout = self->build_text_layout(nullptr, nullptr, &tlen);
+                if (layout && tlen > 0)
+                {
+                    float cx = 0.f, cy = 0.f;
+                    DWRITE_HIT_TEST_METRICS chtm{};
+                    layout->HitTestTextPosition(
+                        std::min<UINT32>(sel_end, tlen),
+                        FALSE, &cx, &cy, &chtm);
+
+                    const float half_h   = chtm.height > 0.f
+                        ? chtm.height * 0.5f : 8.f;
+                    const float target_y = is_up
+                        ? (cy - half_h)
+                        : (cy + chtm.height + half_h);
+
+                    BOOL trailing = FALSE, inside = FALSE;
+                    DWRITE_HIT_TEST_METRICS htm{};
+                    layout->HitTestPoint(cx, target_y,
+                        &trailing, &inside, &htm);
+
+                    const UINT32 new_pos = std::min<UINT32>(
+                        htm.textPosition + (trailing ? 1u : 0u), tlen);
+                    // Mirror Home/End shift-anchor convention:
+                    // Shift+Up keeps the far end fixed; Shift+Down the near.
+                    const UINT32 anchor = is_shift
+                        ? (is_up
+                            ? std::max<UINT32>(sel_start, sel_end)
+                            : std::min<UINT32>(sel_start, sel_end))
+                        : new_pos;
+
+                    LRESULT lr2 = 0;
+                    self->text_svc_->TxSendMessage(EM_SETSEL,
+                        static_cast<WPARAM>(anchor),
+                        static_cast<LPARAM>(new_pos), &lr2);
+                    if (!self->in_paint_)
+                        InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                }
+                // layout unavailable or empty text → fall through
             }
             // Fall through to text services.
             if (self->text_svc_)

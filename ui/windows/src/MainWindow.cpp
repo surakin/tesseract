@@ -2904,8 +2904,8 @@ void MainWindow::on_create(HWND hwnd)
             auto slash = mime_type.find('/');
             if (slash != std::string::npos)
                 ext = "." + mime_type.substr(slash + 1);
-            std::wstring suggested(("video" + ext).begin(),
-                                   ("video" + ext).end());
+            const std::string suggested_u8 = "video" + ext;
+            std::wstring suggested(suggested_u8.begin(), suggested_u8.end());
             std::wstring path = show_save_dialog_(
                 suggested,
                 L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");
@@ -3155,6 +3155,7 @@ void MainWindow::on_create(HWND hwnd)
         SendMessageW(hStatusTip_, TTM_ADDTOOLW, 0,
                      reinterpret_cast<LPARAM>(&ti));
     }
+    SendMessageW(hStatusTip_, TTM_SETMAXTIPWIDTH, 0, 500);
     // Store the tooltip HWND as a property so status_bar_wnd_proc can relay.
     if (hStatus_ && hStatusTip_)
         SetPropW(hStatus_, L"StatusTip", hStatusTip_);
@@ -4160,9 +4161,16 @@ void MainWindow::close_quick_switch_()
     {
         main_app_surface_->relayout();
     }
-    // Restore focus to the main window so subsequent keys (Esc, navigation)
-    // reach the wnd_proc rather than the now-hidden field.
-    SetFocus(hwnd_);
+    // Restore focus: prefer the compose bar when a room is open, otherwise
+    // fall back to the main window so Esc / nav keys reach wnd_proc.
+    if (room_text_area_ && room_text_area_->visible())
+    {
+        room_text_area_->set_focused(true);
+    }
+    else
+    {
+        SetFocus(hwnd_);
+    }
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id)
@@ -4309,6 +4317,8 @@ void MainWindow::request_more_history(const std::string& room_id)
         return;
     }
     state.in_flight = true;
+    if (room_view_)
+        room_view_->set_paginating(true);
 
     HWND hwnd = hwnd_;
     tesseract::Client* cl = client_;
@@ -7268,6 +7278,11 @@ void MainWindow::on_tab_state_changed_ui_()
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
+    }
+
+    if (room_text_area_ && room_text_area_->visible())
+    {
+        room_text_area_->set_focused(true);
     }
 }
 
