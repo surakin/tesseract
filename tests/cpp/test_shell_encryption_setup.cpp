@@ -3,16 +3,18 @@
 #include "app/ShellBase.h"
 #include "views/EncryptionSetupOverlay.h"
 
-#include <memory>
-
 using tesseract::ShellBase;
 using tesseract::views::EncryptionSetupOverlay;
 
 namespace
 {
 
-struct TestShell : ShellBase
+struct WithAccountManager { tesseract::AccountManager am_; };
+
+struct TestShell : WithAccountManager, ShellBase
 {
+    TestShell() : ShellBase(am_) {}
+
     // ── ShellBase pure virtuals ───────────────────────────────────────────
     void post_to_ui_(std::function<void()> fn) override { fn(); }
     void post_to_ui_after_(int, std::function<void()> fn) override { fn(); }
@@ -32,6 +34,12 @@ struct TestShell : ShellBase
     void navigate_to_room_(const std::string&) override {}
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)>) override {}
+
+    // ── New pure virtuals (Task 11) ───────────────────────────────────────
+    void raise_and_activate_() override {}
+    bool is_ctrl_held_() const override { return false; }
+    void switch_active_account_(const std::string&) override {}
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
 
     // ── New pure virtual under test ───────────────────────────────────────
     EncryptionSetupOverlay::Mode last_mode_{};

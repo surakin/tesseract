@@ -9,12 +9,10 @@
 #include <tesseract/types.h>
 #include <tesseract/visual.h>
 #include <tesseract/waveform_cache.h>
+#include "app/AccountManager.h"
 #include "app/PresenceTracker.h"
-#include "tk/anim_image_cache.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
-#include "tk/media_disk_cache.h"
-#include "tk/pixmap_cache.h"
 #include "tk/theme.h"
 #include "app/RoomWindowBase.h"
 #include "views/EncryptionSetupOverlay.h"
@@ -73,7 +71,32 @@ class ShellBase
     friend class RoomWindowBase;
 
 public:
+    explicit ShellBase(AccountManager& account_manager);
     virtual ~ShellBase();
+
+    // Bring this window to the foreground and give it keyboard focus.
+    // Platform implementations: Qt6 = raise()+activateWindow(), GTK4 = gtk_window_present(),
+    // Win32 = SetForegroundWindow(), macOS = makeKeyAndOrderFront:.
+    virtual void raise_and_activate_() = 0;
+
+    // Rebuild the system-tray context menu so it lists one item per open main
+    // window before the Quit action. Called whenever the window registry
+    // changes. Default is a no-op (e.g. a shell that has no tray).
+    virtual void rebuild_tray_() {}
+
+    // Broadcast rebuild_tray_() to every window currently in the
+    // AccountManager registry. Call this (on a real ShellBase pointer) after
+    // register_window / unregister_window so every window's tray reflects the
+    // updated set.
+    void broadcast_rebuild_tray_();
+
+    // Returns the active account for this window.
+    std::shared_ptr<tesseract::AccountSession> active_account() const { return active_account_; }
+
+    // Pre-set active_account_ for a newly-spawned window before any
+    // account-dependent initialization runs. Called by spawn_main_window_()
+    // implementations immediately after constructing the window.
+    void set_initial_account(std::shared_ptr<tesseract::AccountSession> account);
 
     // Open room_id in a new native window. If a secondary window for that room
     // is already open, it is raised instead of duplicated. The platform shell
@@ -230,8 +253,8 @@ protected:
     void after_active_room_changed_();
 
     // ── Multi-account ─────────────────────────────────────────────────────────
-    std::vector<std::unique_ptr<AccountSession>> accounts_;
-    int active_account_index_ = -1;
+    AccountManager& account_manager_;
+    std::shared_ptr<AccountSession> active_account_;
     Client* client_ = nullptr;               // non-owning alias
     IEventHandler* event_handler_ = nullptr; // non-owning alias
 
@@ -333,11 +356,6 @@ protected:
     // (they are protected while painted by peek() refreshing their TTL). A long
     // TTL keeps them resident across idle periods so returning to a static
     // window does not flash blank avatars; the byte budget still bounds memory.
-    tk::PixmapCache thumbnail_cache_{48u * 1024u * 1024u,
-                                     std::chrono::minutes{30}};
-    tk::PixmapCache image_cache_{64u * 1024u * 1024u};
-    tk::AnimImageCache anim_cache_;
-    tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     bool media_disk_cache_pruned_ = false;
     bool waveform_store_inited_ = false;
 
@@ -736,6 +754,26 @@ protected:
     void set_theme_preference_(tesseract::Settings::ThemePreference pref);
 
     // ── Abstract platform hooks ───────────────────────────────────────────────
+
+    // Returns true if the platform modifier key for "open in new window" is held.
+    // Qt6 = Ctrl, GTK4 = Ctrl, Win32 = Ctrl, macOS = Command (⌘).
+    virtual bool is_ctrl_held_() const = 0;
+
+    // Switch the active account to `user_id`. Called by on_account_picker_select_
+    // after the dedicated-window check. Each platform overrides with its own
+    // account-switch logic (switchActiveAccount / switch_active_account / etc.).
+    virtual void switch_active_account_(const std::string& user_id) = 0;
+
+    // Spawn a new main window pre-assigned to `account`. Called by
+    // on_account_picker_select_ on Ctrl+click when no dedicated window exists
+    // for the uid yet. The new window registers itself, calls set_initial_account,
+    // and calls account_manager_.set_dedicated() in its construction sequence.
+    virtual void spawn_main_window_(
+        std::shared_ptr<tesseract::AccountSession> account) = 0;
+
+    // Central picker routing. Each platform's on_select lambda delegates here.
+    // Ctrl+click → spawn_main_window_; plain click → switch_active_account_.
+    void on_account_picker_select_(const std::string& uid);
 
     // Post fn() onto the UI thread.
     // GTK4: g_idle_add   Qt6: QueuedConnection   Win32: PostMessage   macOS: dispatch_async
@@ -1598,7 +1636,7 @@ protected:
     make_avatar_image_provider_()
     {
         return [this](const std::string& mxc) -> const tk::Image*
-        { return thumbnail_cache_.peek(mxc); };
+        { return account_manager_.thumbnail_cache().peek(mxc); };
     }
 
     // Static-image lookup: image_cache_ only (used by the shortcode popup).
@@ -1606,7 +1644,7 @@ protected:
     make_static_image_provider_()
     {
         return [this](const std::string& url) -> const tk::Image*
-        { return image_cache_.peek(url); };
+        { return account_manager_.image_cache().peek(url); };
     }
 
     // Emoji / sticker picker lookup: animated frame → static → kick an async
@@ -1618,12 +1656,12 @@ protected:
         return [this, is_sticker](const std::string& cache_key,
                                   const std::string&) -> const tk::Image*
         {
-            if (const auto* f = anim_cache_.current_frame(cache_key))
+            if (const auto* f = account_manager_.anim_cache().current_frame(cache_key))
             {
                 start_anim_tick_();
                 return f;
             }
-            if (const auto* img = image_cache_.peek(cache_key))
+            if (const auto* img = account_manager_.image_cache().peek(cache_key))
             {
                 return img;
             }

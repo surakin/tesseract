@@ -1,4 +1,6 @@
 #include "MainWindow.h"
+#include "LinuxNotifier.h"
+#include "LinuxUpConnectorGtk.h"
 #include "LoginView.h"
 #include "views/BrandView.h"
 #include "SettingsWidget.h"
@@ -12,7 +14,6 @@
 #include "views/text_util.h"
 
 #include <cairo.h>
-#include <thread>
 
 #include <tesseract/emoji.h>
 #include <tesseract/mentions.h>
@@ -22,7 +23,6 @@
 #include <tesseract/settings.h>
 
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -328,7 +328,9 @@ void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
 // MainWindow
 // ---------------------------------------------------------------------------
 
-MainWindow::MainWindow(GtkApplication* app) : app_(app)
+MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplication* app)
+    : ShellBase(account_manager)
+    , app_(app)
 {
     set_screen_lock_(std::make_unique<LinuxScreenLockGtk>());
 
@@ -450,8 +452,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                    {
                        auto* self = static_cast<MainWindow*>(data);
                        auto& g    = tesseract::Settings::instance().main_window_geometry;
-                       g.w        = gtk_window_get_width(GTK_WINDOW(self->window_));
-                       g.h        = gtk_window_get_height(GTK_WINDOW(self->window_));
+                       g.w        = gtk_widget_get_width(GTK_WIDGET(self->window_));
+                       g.h        = gtk_widget_get_height(GTK_WIDGET(self->window_));
                        g.valid    = (g.w > 0 && g.h > 0);
                        self->save_settings_debounced_();
                    }),
@@ -462,8 +464,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                    {
                        auto* self = static_cast<MainWindow*>(data);
                        auto& g    = tesseract::Settings::instance().main_window_geometry;
-                       g.w        = gtk_window_get_width(GTK_WINDOW(self->window_));
-                       g.h        = gtk_window_get_height(GTK_WINDOW(self->window_));
+                       g.w        = gtk_widget_get_width(GTK_WIDGET(self->window_));
+                       g.h        = gtk_widget_get_height(GTK_WIDGET(self->window_));
                        g.valid    = (g.w > 0 && g.h > 0);
                        self->save_settings_debounced_();
                    }),
@@ -822,7 +824,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             gif_popup_widget_ = w.get();
             gif_popup_surface_->set_root(std::move(w));
         }
-        gif_popup_surface_->set_anim_cache(&anim_cache_);
+        gif_popup_surface_->set_anim_cache(&account_manager_.anim_cache());
         gtk_popover_set_child(GTK_POPOVER(gif_popover_),
                               gif_popup_surface_->widget());
         // Two-stage GIF strip cell provider, parameterised on a `repaint`
@@ -838,7 +840,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 // in anim_cache_. Serving a cached frame means animated content
                 // is on screen, so ensure the tick timer runs: re-shown searches
                 // take this path without re-fetching.
-                if (const tk::Image* f = anim_cache_.current_frame(result.strip_url))
+                if (const tk::Image* f = account_manager_.anim_cache().current_frame(result.strip_url))
                 {
                     start_anim_tick_if_needed_();
                     return f;
@@ -864,12 +866,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                             // the video appears instead of the thumbnail first.
                             const std::string disk_key = gif_src_disk_key_(url);
                             std::vector<std::uint8_t> bytes =
-                                media_disk_cache_.load(disk_key);
+                                account_manager_.media_disk_cache().load(disk_key);
                             if (bytes.empty() && client_)
                             {
                                 bytes = client_->fetch_url_bytes(url);
                                 if (!bytes.empty())
-                                    media_disk_cache_.store(disk_key, bytes);
+                                    account_manager_.media_disk_cache().store(disk_key, bytes);
                             }
                             post_to_ui_(
                                 [this, url, b = std::move(bytes), alive,
@@ -905,12 +907,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                             const std::string disk_key =
                                 gif_src_disk_key_(anim_url);
                             std::vector<std::uint8_t> bytes =
-                                media_disk_cache_.load(disk_key);
+                                account_manager_.media_disk_cache().load(disk_key);
                             if (bytes.empty() && client_)
                             {
                                 bytes = client_->fetch_url_bytes(anim_url);
                                 if (!bytes.empty())
-                                    media_disk_cache_.store(disk_key, bytes);
+                                    account_manager_.media_disk_cache().store(disk_key, bytes);
                             }
                             using CW = tesseract::views::GifPopup;
                             if (!bytes.empty() && anim_mime == "video/mp4")
@@ -964,7 +966,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                         gif_anim_inflight_.erase(anim_url);
                                         if (!imgs->empty())
                                         {
-                                            anim_cache_.store(
+                                            account_manager_.anim_cache().store(
                                                 anim_url, std::move(*imgs),
                                                 std::move(delays),
                                                 g_get_monotonic_time() / 1000);
@@ -989,7 +991,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                         gif_anim_inflight_.erase(anim_url);
                                         if (!d->frames.empty())
                                         {
-                                            anim_cache_.store(
+                                            account_manager_.anim_cache().store(
                                                 anim_url, std::move(d->frames),
                                                 std::move(d->delays_ms),
                                                 g_get_monotonic_time() / 1000);
@@ -1059,7 +1061,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 [this](const std::string& url) -> std::vector<std::uint8_t>
             {
                 // Reuse the source bytes the strip persisted to disk on fetch.
-                return media_disk_cache_.load(gif_src_disk_key_(url));
+                return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
             };
             gif_controller_ = std::make_unique<tesseract::views::GifController>(
                 room_text_area_.get(), gif_popup_widget_, std::move(gh));
@@ -2361,11 +2363,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             [this](std::string new_mxc)
         {
             my_avatar_url_ = new_mxc;
-            if (active_account_index_ >= 0 &&
-                active_account_index_ <
-                    static_cast<int>(accounts_.size()))
+            if (active_account_)
             {
-                accounts_[active_account_index_]->avatar_url = my_avatar_url_;
+                active_account_->avatar_url = my_avatar_url_;
             }
             populate_user_strip();
         };
@@ -2513,6 +2513,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             },
             lctx);
     }
+
+    account_manager_.register_window(this);
+    broadcast_rebuild_tray_();
 }
 
 void MainWindow::start_tray_if_needed_()
@@ -2561,7 +2564,21 @@ gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/,
         gtk_widget_set_visible(self->window_, FALSE);
         return TRUE; // stop default destruction
     }
-    return FALSE;
+    if (self->active_account_ &&
+        self->account_manager_.dedicated_window(self->active_account_->user_id) == self)
+        self->account_manager_.clear_dedicated(self->active_account_->user_id);
+    self->account_manager_.unregister_window(self);
+    if (self->account_manager_.window_count() == 0)
+    {
+        g_application_quit(G_APPLICATION(self->app_));
+    }
+    else
+    {
+        // Spawned window: free C++ resources now; GTK will destroy the widget
+        // after this handler returns FALSE.
+        delete self;
+    }
+    return FALSE; // let GTK destroy the GtkWidget
 }
 
 tk::ThemeMode MainWindow::os_color_scheme_() const
@@ -2660,6 +2677,11 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
 
 MainWindow::~MainWindow()
 {
+    // unregister_window is called in on_window_close_request_ so it is not
+    // repeated here.  broadcast_rebuild_tray_ is still needed to refresh any
+    // remaining windows' tray menus after this C++ shell is freed.
+    broadcast_rebuild_tray_();
+
     // Invalidate all outstanding g_idle_add / g_timeout_add payloads that
     // captured a weak_ptr<bool> from alive_.  Setting the flag before
     // draining workers ensures no idle fires on a half-destroyed `this`.
@@ -2703,7 +2725,7 @@ MainWindow::~MainWindow()
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& sess : accounts_)
+    for (auto& sess : account_manager_.accounts())
     {
         if (sess->sync_started)
             sess->client->stop_sync();
@@ -2716,7 +2738,6 @@ MainWindow::~MainWindow()
     // pending_login_client_ and the accounts vector.
     login_view_.reset();
     pending_login_client_.reset();
-    accounts_.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -2773,14 +2794,7 @@ void MainWindow::do_login()
             sess->notifier = std::make_unique<LinuxNotifierGtk>(
                 [this, notif_uid](std::string room_id, std::string token)
                 {
-                    for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-                    {
-                        if (accounts_[i]->user_id == notif_uid)
-                        {
-                            switch_active_account(i);
-                            break;
-                        }
-                    }
+                    switch_active_account(notif_uid);
                     // Set xdg_activation_v1 token (non-empty on modern Wayland)
                     // before gtk_window_present so the compositor grants focus.
                     if (!token.empty())
@@ -2798,32 +2812,36 @@ void MainWindow::do_login()
                 sess->up_connector = std::move(up);
             }
 
-            int idx = static_cast<int>(accounts_.size());
+            const std::string sess_uid = sess->user_id;
+            account_manager_.add_account(std::move(sess));
             if (uid == index.active_user_id)
             {
-                first_active = idx;
+                first_active = static_cast<int>(account_manager_.accounts().size()) - 1;
             }
-            accounts_.push_back(std::move(sess));
         }
 
-        if (!accounts_.empty())
+        if (!account_manager_.accounts().empty())
         {
-            if (first_active < 0)
+            std::string target_uid;
+            if (first_active >= 0)
             {
-                first_active = 0;
+                target_uid = account_manager_.accounts()[first_active]->user_id;
             }
-            switch_active_account(first_active);
+            else
+            {
+                target_uid = account_manager_.accounts()[0]->user_id;
+            }
+            switch_active_account(target_uid);
             settings_controller_ = std::make_unique<tesseract::SettingsController>(
                 client_,
                 [this](auto fn) { post_to_ui_(std::move(fn)); },
                 [this](auto fn) { run_async_(std::move(fn)); },
                 [this](auto cb) { pick_image_file_(std::move(cb)); });
             wire_key_dialog_callbacks_();
-            if (active_account_index_ >= 0 &&
-                active_account_index_ < static_cast<int>(accounts_.size()))
+            if (active_account_)
             {
                 settings_controller_->set_up_connector(
-                    accounts_[active_account_index_]->up_connector.get());
+                    active_account_->up_connector.get());
             }
             if (settings_widget_)
                 settings_widget_->set_controller(settings_controller_.get(),
@@ -2869,26 +2887,24 @@ void MainWindow::on_login_succeeded()
     std::string uid = pending_login_client_->get_user_id();
 
     // Reject if this account is already signed in.
-    for (const auto& a : accounts_)
+    if (account_manager_.find(uid))
     {
-        if (a->user_id == uid)
+        login_view_->set_client(nullptr);
+        pending_login_client_.reset();
+        std::filesystem::remove_all(pending_login_temp_dir_);
+        pending_login_temp_dir_.clear();
+        gtk_label_set_text(GTK_LABEL(status_bar_),
+                           ("Already signed in as " + uid).c_str());
+        if (pending_login_is_add_account_ && add_account_return_idx_ >= 0 &&
+            add_account_return_idx_ < static_cast<int>(account_manager_.accounts().size()))
         {
-            login_view_->set_client(nullptr);
-            pending_login_client_.reset();
-            std::filesystem::remove_all(pending_login_temp_dir_);
-            pending_login_temp_dir_.clear();
-            gtk_label_set_text(GTK_LABEL(status_bar_),
-                               ("Already signed in as " + uid).c_str());
-            if (pending_login_is_add_account_ && add_account_return_idx_ >= 0)
-            {
-                switch_active_account(add_account_return_idx_);
-                gtk_stack_set_visible_child_name(GTK_STACK(content_stack_),
-                                                 "main");
-            }
-            pending_login_is_add_account_ = false;
-            add_account_return_idx_ = -1;
-            return;
+            switch_active_account(account_manager_.accounts()[add_account_return_idx_]->user_id);
+            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_),
+                                             "main");
         }
+        pending_login_is_add_account_ = false;
+        add_account_return_idx_ = -1;
+        return;
     }
 
     std::string exported = pending_login_client_->export_session();
@@ -2944,14 +2960,7 @@ void MainWindow::on_login_succeeded()
     sess->notifier = std::make_unique<LinuxNotifierGtk>(
         [this, notif_uid](std::string room_id, std::string token)
         {
-            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-            {
-                if (accounts_[i]->user_id == notif_uid)
-                {
-                    switch_active_account(i);
-                    break;
-                }
-            }
+            switch_active_account(notif_uid);
             if (!token.empty())
             {
                 gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
@@ -2966,8 +2975,7 @@ void MainWindow::on_login_succeeded()
         sess->up_connector = std::move(up);
     }
 
-    int new_idx = static_cast<int>(accounts_.size());
-    accounts_.push_back(std::move(sess));
+    account_manager_.add_account(std::move(sess));
 
     // Update accounts.json index.
     auto index = tesseract::SessionStore::load_index();
@@ -2979,7 +2987,7 @@ void MainWindow::on_login_succeeded()
     index.active_user_id = uid;
     tesseract::SessionStore::save_index(index);
 
-    switch_active_account(new_idx);
+    switch_active_account(uid);
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
@@ -3050,11 +3058,10 @@ void MainWindow::on_login_succeeded()
             g_object_unref(dlg);
         });
     wire_key_dialog_callbacks_();
-    if (active_account_index_ >= 0 &&
-        active_account_index_ < static_cast<int>(accounts_.size()))
+    if (active_account_)
     {
         settings_controller_->set_up_connector(
-            accounts_[active_account_index_]->up_connector.get());
+            active_account_->up_connector.get());
     }
     if (settings_widget_)
         settings_widget_->set_controller(settings_controller_.get(),
@@ -3608,7 +3615,7 @@ void MainWindow::handle_reconnect(const std::string& user_id)
 {
     gtk_label_set_text(GTK_LABEL(status_bar_),
                        _("Sync error: reconnecting\xe2\x80\xa6"));
-    for (auto& sess : accounts_)
+    for (auto& sess : account_manager_.accounts())
     {
         if (sess->user_id == user_id && sess->client)
         {
@@ -3634,7 +3641,7 @@ void MainWindow::handle_reconnect(const std::string& user_id)
             auto* d = static_cast<DelayData*>(data);
             if (auto a = d->alive.lock(); a && *a)
             {
-                for (auto& s : d->w->accounts_)
+                for (auto& s : d->w->account_manager_.accounts())
                 {
                     if (s->user_id == d->uid && !s->sync_started && s->client)
                     {
@@ -3651,9 +3658,9 @@ void MainWindow::handle_reconnect(const std::string& user_id)
 
 void MainWindow::handle_auth_error(bool soft_logout)
 {
-    if (soft_logout && active_account_index_ >= 0)
+    if (soft_logout && active_account_)
     {
-        const std::string& uid = accounts_[active_account_index_]->user_id;
+        const std::string& uid = active_account_->user_id;
         if (auto saved = tesseract::SessionStore::load_account(uid))
         {
             gtk_label_set_text(GTK_LABEL(status_bar_),
@@ -3670,10 +3677,9 @@ void MainWindow::handle_auth_error(bool soft_logout)
             }
         }
     }
-    if (active_account_index_ >= 0)
+    if (active_account_)
     {
-        tesseract::SessionStore::clear_account(
-            accounts_[active_account_index_]->user_id);
+        tesseract::SessionStore::clear_account(active_account_->user_id);
     }
     if (client_)
     {
@@ -3915,7 +3921,7 @@ void MainWindow::start_anim_tick_if_needed_()
     {
         return;
     }
-    if (anim_cache_.empty())
+    if (account_manager_.anim_cache().empty())
     {
         return;
     }
@@ -4188,9 +4194,9 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                            kind == MediaKind::MediaThumbnail);
 
     // Already decoded? Cheap early-out on the UI thread.
-    if (anim_cache_.has(cache_key) ||
-        (uses_thumb_cache ? thumbnail_cache_.contains(cache_key)
-                          : image_cache_.contains(cache_key)))
+    if (account_manager_.anim_cache().has(cache_key) ||
+        (uses_thumb_cache ? account_manager_.thumbnail_cache().contains(cache_key)
+                          : account_manager_.image_cache().contains(cache_key)))
     {
         return;
     }
@@ -4214,10 +4220,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                          frames_raw = std::move(anim->frames),
                          delays = std::move(anim->delays_ms)]() mutable
                         {
-                            if (anim_cache_.has(cache_key) ||
+                            if (account_manager_.anim_cache().has(cache_key) ||
                                 (uses_thumb_cache
-                                     ? thumbnail_cache_.contains(cache_key)
-                                     : image_cache_.contains(cache_key)))
+                                     ? account_manager_.thumbnail_cache().contains(cache_key)
+                                     : account_manager_.image_cache().contains(cache_key)))
                             {
                                 for (cairo_surface_t* s : frames_raw)
                                     cairo_surface_destroy(s);
@@ -4235,7 +4241,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                 return;
                             }
                             const gint64 now_ms = g_get_monotonic_time() / 1000;
-                            anim_cache_.store(cache_key, std::move(frames),
+                            account_manager_.anim_cache().store(cache_key, std::move(frames),
                                               std::move(delays), now_ms);
                             start_anim_tick_if_needed_();
                             if (room_view_)
@@ -4261,10 +4267,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 [this, cache_key, kind, is_avatar, uses_thumb_cache, surface]()
                 {
                     const bool present =
-                        anim_cache_.has(cache_key) ||
+                        account_manager_.anim_cache().has(cache_key) ||
                         (uses_thumb_cache
-                             ? thumbnail_cache_.contains(cache_key)
-                             : image_cache_.contains(cache_key));
+                             ? account_manager_.thumbnail_cache().contains(cache_key)
+                             : account_manager_.image_cache().contains(cache_key));
                     if (present)
                     {
                         cairo_surface_destroy(surface);
@@ -4274,7 +4280,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     cairo_surface_destroy(surface);
                     if (uses_thumb_cache)
                     {
-                        thumbnail_cache_.store(cache_key, std::move(img));
+                        account_manager_.thumbnail_cache().store(cache_key, std::move(img));
                         if (kind == MediaKind::MediaThumbnail && room_view_)
                         {
                             room_view_->notify_image_ready(cache_key);
@@ -4282,7 +4288,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     }
                     else
                     {
-                        image_cache_.store(cache_key, std::move(img));
+                        account_manager_.image_cache().store(cache_key, std::move(img));
                         if (kind == MediaKind::Tile && room_view_)
                         {
                             room_view_->message_list()->invalidate_data();
@@ -4847,7 +4853,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                     auto* c = static_cast<Ctx*>(p);
                     if (auto a = c->alive.lock(); a && *a)
                     {
-                        if (!c->self->image_cache_.contains(c->key))
+                        if (!c->self->account_manager_.image_cache().contains(c->key))
                         {
                             // Create an owned cairo surface and blit the BGRA pixels in.
                             cairo_surface_t* surf = cairo_image_surface_create(
@@ -4868,7 +4874,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                                         static_cast<std::size_t>(src_stride));
                                 }
                                 cairo_surface_mark_dirty(surf);
-                                c->self->image_cache_.store(
+                                c->self->account_manager_.image_cache().store(
                                     c->key, tk::cairo_pango::make_image(surf));
                                 cairo_surface_destroy(surf);
                                 if (c->self->main_app_surface_)
@@ -4892,7 +4898,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                    std::vector<uint8_t> rgba)
 {
-    if (image_cache_.contains(key))
+    if (account_manager_.image_cache().contains(key))
     {
         return;
     }
@@ -4918,7 +4924,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
         }
     }
     cairo_surface_mark_dirty(surf);
-    image_cache_.store(key, tk::cairo_pango::make_image(surf));
+    account_manager_.image_cache().store(key, tk::cairo_pango::make_image(surf));
     cairo_surface_destroy(surf);
     if (main_app_surface_)
     {
@@ -4995,15 +5001,15 @@ void MainWindow::handle_notification(const std::string& user_id,
     bool win_visible = gtk_widget_get_visible(GTK_WIDGET(window_)) &&
                        !(state & GDK_TOPLEVEL_STATE_MINIMIZED);
 
-    for (auto& sess : accounts_)
+    for (auto& sess : account_manager_.accounts())
     {
         if (sess->user_id != user_id)
         {
             continue;
         }
         // Already watching this exact room — suppress silently.
-        if (win_focused && active_account_index_ >= 0 &&
-            accounts_[active_account_index_]->user_id == user_id &&
+        if (win_focused && active_account_ &&
+            active_account_->user_id == user_id &&
             current_room_id_ == room_id)
         {
             return;
@@ -5196,7 +5202,7 @@ void MainWindow::populate_user_strip()
     ui->set_avatar_url(my_avatar_url_);
     ui->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
-        { return thumbnail_cache_.peek(mxc); });
+        { return account_manager_.thumbnail_cache().peek(mxc); });
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
@@ -5249,7 +5255,7 @@ void MainWindow::open_settings_()
     settings_widget_->populate(
         my_display_name_, my_user_id_, my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
-        { return thumbnail_cache_.peek(mxc); },
+        { return account_manager_.thumbnail_cache().peek(mxc); },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
     settings_widget_->set_group_inactive_pref(
@@ -6054,8 +6060,18 @@ void MainWindow::emoticon_selected(const tesseract::ImagePackImage& img)
 // Multi-account management
 // ---------------------------------------------------------------------------
 
-void MainWindow::switch_active_account(int new_idx)
+void MainWindow::switch_active_account(const std::string& user_id)
 {
+    auto new_session = account_manager_.find(user_id);
+    if (!new_session)
+    {
+        return;
+    }
+    if (new_session == active_account_ && client_)
+    {
+        return;
+    }
+
     // Unsubscribe the previous account's open room and drop per-account,
     // room-id-keyed state so it can't bleed into the next account.
     if (client_ && !current_room_id_.empty() &&
@@ -6071,10 +6087,15 @@ void MainWindow::switch_active_account(int new_idx)
     reply_details_requested_.clear();
     clear_messages();
 
-    const int old_idx = active_account_index_;
+    // Save banner state for the outgoing account.
+    if (active_account_)
+    {
+        active_account_->verification_banner_dismissed = verification_banner_dismissed_;
+    }
+
     reset_server_info_();
-    active_account_index_ = new_idx;
-    auto& sess = *accounts_[new_idx];
+    active_account_ = new_session;
+    auto& sess = *active_account_;
 
     client_ = sess.client.get();
     event_handler_ = sess.bridge.get();
@@ -6144,11 +6165,6 @@ void MainWindow::switch_active_account(int new_idx)
     index.active_user_id = my_user_id_;
     tesseract::SessionStore::save_index(index);
 
-    // Save banner state for the outgoing account, then load for the incoming.
-    if (old_idx >= 0 && old_idx < static_cast<int>(accounts_.size()))
-    {
-        accounts_[old_idx]->verification_banner_dismissed = verification_banner_dismissed_;
-    }
     if (main_app_)
     {
         main_app_->show_verif_banner(false);
@@ -6165,7 +6181,21 @@ void MainWindow::switch_active_account(int new_idx)
 
 void MainWindow::begin_add_account()
 {
-    add_account_return_idx_ = active_account_index_;
+    // Remember the index of the currently active account so we can return to it
+    // if the user cancels or adds an account that's already signed in.
+    add_account_return_idx_ = -1;
+    if (active_account_)
+    {
+        const auto& accs = account_manager_.accounts();
+        for (int i = 0; i < static_cast<int>(accs.size()); ++i)
+        {
+            if (accs[i].get() == active_account_.get())
+            {
+                add_account_return_idx_ = i;
+                break;
+            }
+        }
+    }
     pending_login_is_add_account_ = true;
     pending_login_temp_dir_.clear();
     pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -6192,15 +6222,13 @@ void MainWindow::begin_add_account()
 
 void MainWindow::logout_active_account()
 {
-    if (active_account_index_ < 0)
+    if (!active_account_)
     {
         return;
     }
 
-    auto& sess = *accounts_[active_account_index_];
-    // Copy before the accounts_.erase() below: `sess` dangles afterward but
-    // the user id is still needed to prune accounts.json.
-    const std::string logged_out_uid = sess.user_id;
+    const std::string logged_out_uid = active_account_->user_id;
+    auto& sess = *active_account_;
 
     if (!current_room_id_.empty())
     {
@@ -6219,12 +6247,15 @@ void MainWindow::logout_active_account()
     auto res = client_->logout();
     client_->stop_sync();
 
-    tesseract::SessionStore::clear_account(sess.user_id);
+    tesseract::SessionStore::clear_account(logged_out_uid);
     per_account_rooms_.erase(logged_out_uid);
     per_account_invites_.erase(logged_out_uid);
 
-    // Remove from the accounts vector.
-    accounts_.erase(accounts_.begin() + active_account_index_);
+    // Remove from AccountManager.
+    account_manager_.remove_account(logged_out_uid);
+    active_account_.reset();
+    client_ = nullptr;
+    event_handler_ = nullptr;
 
     // Reset UI state.
     clear_messages();
@@ -6232,6 +6263,9 @@ void MainWindow::logout_active_account()
     invites_.clear();
     current_invite_.reset();
     space_stack_.clear();
+    my_user_id_.clear();
+    my_display_name_.clear();
+    my_avatar_url_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
     reset_server_info_();
@@ -6251,18 +6285,10 @@ void MainWindow::logout_active_account()
         res ? _("Signed out")
             : (std::string(_("Sign out failed: ")) + res.message).c_str());
 
-    if (accounts_.empty())
+    if (account_manager_.accounts().empty())
     {
-        client_ = nullptr;
-        event_handler_ = nullptr;
-        active_account_index_ = -1;
-        my_user_id_.clear();
-        my_display_name_.clear();
-        my_avatar_url_.clear();
-
         // Update accounts.json.
-        tesseract::SessionStore::AccountIndex idx;
-        tesseract::SessionStore::save_index(idx);
+        tesseract::SessionStore::save_index({});
 
         pending_login_temp_dir_.clear();
         pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -6289,12 +6315,8 @@ void MainWindow::logout_active_account()
     }
     else
     {
-        // Switch to the closest remaining account.
-        int next = std::min(static_cast<int>(accounts_.size()) - 1,
-                            active_account_index_);
-        active_account_index_ =
-            -1; // reset so switch_active_account does full rebind
-        switch_active_account(next);
+        // Switch to the first remaining account.
+        switch_active_account(account_manager_.accounts()[0]->user_id);
 
         auto idx = tesseract::SessionStore::load_index();
         idx.active_user_id = my_user_id_;
@@ -6316,9 +6338,10 @@ void MainWindow::on_login_cancelled()
         pending_login_temp_dir_.clear();
     }
 
-    if (pending_login_is_add_account_ && add_account_return_idx_ >= 0)
+    if (pending_login_is_add_account_ && add_account_return_idx_ >= 0 &&
+        add_account_return_idx_ < static_cast<int>(account_manager_.accounts().size()))
     {
-        switch_active_account(add_account_return_idx_);
+        switch_active_account(account_manager_.accounts()[add_account_return_idx_]->user_id);
         gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     }
     pending_login_is_add_account_ = false;
@@ -6332,8 +6355,9 @@ void MainWindow::rebuild_account_picker()
         return;
     }
     std::vector<tesseract::views::AccountEntry> entries;
-    entries.reserve(accounts_.size());
-    for (const auto& sess : accounts_)
+    const auto& accs = account_manager_.accounts();
+    entries.reserve(accs.size());
+    for (const auto& sess : accs)
     {
         tesseract::views::AccountEntry e;
         e.user_id = sess->user_id;
@@ -6355,7 +6379,7 @@ void MainWindow::rebuild_account_picker()
 
 void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
 {
-    if (accounts_.size() < 2)
+    if (account_manager_.accounts().size() < 2)
     {
         return;
     }
@@ -6374,15 +6398,7 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
             {
                 gtk_popover_popdown(GTK_POPOVER(account_picker_popover_));
             }
-            // Find the index of this account.
-            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
-            {
-                if (accounts_[i]->user_id == uid)
-                {
-                    switch_active_account(i);
-                    break;
-                }
-            }
+            on_account_picker_select_(uid);
         };
         account_picker_surface_->set_root(std::move(picker));
 
@@ -6399,7 +6415,7 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
         // Size to fit rows.
         const int row_h = 48;
         gtk_widget_set_size_request(account_picker_surface_->widget(), 240,
-                                    row_h * static_cast<int>(accounts_.size()));
+                                    row_h * static_cast<int>(account_manager_.accounts().size()));
     }
 
     rebuild_account_picker();
@@ -6618,7 +6634,7 @@ void MainWindow::on_tab_state_changed_ui_()
                 const std::string& av_mxc = r.effective_avatar_url();
                 if (!av_mxc.empty())
                 {
-                    avatar = thumbnail_cache_.peek(av_mxc);
+                    avatar = account_manager_.thumbnail_cache().peek(av_mxc);
                 }
                 break;
             }
@@ -6714,6 +6730,63 @@ std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
         g_object_unref(mon);
     }
     return result;
+}
+
+void MainWindow::raise_and_activate_()
+{
+    if (window_)
+        gtk_window_present(GTK_WINDOW(window_));
+}
+
+void MainWindow::rebuild_tray_()
+{
+    if (!tray_ || !tray_->is_available())
+        return;
+
+    std::vector<std::pair<std::string, std::function<void()>>> items;
+    for (tesseract::ShellBase* win : account_manager_.all_windows())
+    {
+        std::string label;
+        auto acc = win->active_account();
+        if (acc)
+        {
+            label = acc->display_name.empty()
+                        ? acc->user_id
+                        : acc->display_name + " (" + acc->user_id + ")";
+        }
+        else
+        {
+            label = "Tesseract";
+        }
+        items.emplace_back(std::move(label),
+                           [win] { win->raise_and_activate_(); });
+    }
+    tray_->rebuild_menu(std::move(items));
+}
+
+bool MainWindow::is_ctrl_held_() const
+{
+    GdkDisplay* disp = gdk_display_get_default();
+    GdkSeat*    seat = disp ? gdk_display_get_default_seat(disp) : nullptr;
+    GdkDevice*  kbd  = seat ? gdk_seat_get_keyboard(seat) : nullptr;
+    if (!kbd)
+        return false;
+    GdkModifierType mods = gdk_device_get_modifier_state(kbd);
+    return (mods & GDK_CONTROL_MASK) != 0;
+}
+
+void MainWindow::switch_active_account_(const std::string& user_id)
+{
+    switch_active_account(user_id);
+}
+
+void MainWindow::spawn_main_window_(
+    std::shared_ptr<tesseract::AccountSession> account)
+{
+    auto* win = new gtk4::MainWindow(account_manager_, app_);
+    win->set_initial_account(account);
+    account_manager_.set_dedicated(account->user_id, win);
+    gtk_window_present(GTK_WINDOW(win->widget()));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

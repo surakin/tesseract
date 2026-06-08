@@ -10,6 +10,8 @@ cmake_minimum_required(VERSION 3.25)
 set(_tk_sources
     app/ShellBase.h
     app/ShellBase.cpp
+    app/AccountManager.h
+    app/AccountManager.cpp
     app/EventHandlerBase.h
     app/EventHandlerBase.cpp
     app/RoomWindowBase.h

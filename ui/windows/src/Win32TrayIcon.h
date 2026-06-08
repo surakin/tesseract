@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace win32
 {
@@ -34,6 +35,11 @@ public:
     void set_tooltip(const std::string& text) override;
     void set_unread(bool has_unread, bool has_highlight) override;
 
+    // Rebuild the per-window items shown before the Quit action.
+    // `window_items` is a list of (UTF-8 label, callback) pairs.
+    void rebuild_menu(
+        std::vector<std::pair<std::string, std::function<void()>>> window_items);
+
 private:
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
     void on_tray_message(WPARAM, LPARAM);
@@ -44,8 +50,9 @@ private:
     // copy of base_icon_).
     HICON make_overlay_icon_(UINT32 dot_color_argb) const;
 
-    static constexpr int kMenuShowId = 1001;
     static constexpr int kMenuQuitId = 1002;
+    // Window-item command IDs start here (one per entry in window_items_).
+    static constexpr int kMenuWinBase = 2000;
     static constexpr UINT kIconId = 1;
     static constexpr const wchar_t* CLASS_NAME = L"TesseractTrayWnd";
     static bool class_registered_;
@@ -64,6 +71,9 @@ private:
     std::function<void()> on_toggle_;
     std::function<void()> on_quit_;
     bool added_ = false;
+
+    // Per-window menu items, rebuilt by rebuild_menu().
+    std::vector<std::pair<std::string, std::function<void()>>> window_items_;
 };
 
 } // namespace win32

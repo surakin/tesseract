@@ -68,20 +68,25 @@ LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             break;
         }
-        switch (LOWORD(wParam))
         {
-        case kMenuShowId:
-            if (self->on_show_)
+            const int cmd = static_cast<int>(LOWORD(wParam));
+            if (cmd == kMenuQuitId)
             {
-                self->on_show_();
+                if (self->on_quit_)
+                    self->on_quit_();
+                return 0;
             }
-            return 0;
-        case kMenuQuitId:
-            if (self->on_quit_)
+            if (cmd >= kMenuWinBase)
             {
-                self->on_quit_();
+                const std::size_t idx =
+                    static_cast<std::size_t>(cmd - kMenuWinBase);
+                if (idx < self->window_items_.size() &&
+                    self->window_items_[idx].second)
+                {
+                    self->window_items_[idx].second();
+                }
+                return 0;
             }
-            return 0;
         }
         break;
     }
@@ -375,8 +380,14 @@ void Win32TrayIcon::show_menu()
     {
         return;
     }
-    AppendMenuW(menu, MF_STRING, kMenuShowId, L"Show App");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    for (std::size_t i = 0; i < window_items_.size(); ++i)
+    {
+        const int id = kMenuWinBase + static_cast<int>(i);
+        std::wstring wlabel = widen_capped(window_items_[i].first, 256);
+        AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(id), wlabel.c_str());
+    }
+    if (!window_items_.empty())
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuQuitId, L"Quit");
 
     POINT pt;
@@ -388,6 +399,12 @@ void Win32TrayIcon::show_menu()
                      pt.x, pt.y, hwnd_, nullptr);
     PostMessageW(hwnd_, WM_NULL, 0, 0); // dismiss-fix per MSDN
     DestroyMenu(menu);
+}
+
+void Win32TrayIcon::rebuild_menu(
+    std::vector<std::pair<std::string, std::function<void()>>> window_items)
+{
+    window_items_ = std::move(window_items);
 }
 
 } // namespace win32

@@ -52,8 +52,17 @@ void ShellBase::populate_pending_restore_popouts_()
     if (!pending_restore_popouts_.empty())
         return;
     for (const auto& e : Settings::instance().popout_windows)
-        if (!e.room_id.empty())
-            pending_restore_popouts_.push_back(e.room_id);
+    {
+        if (e.room_id.empty())
+            continue;
+        // Skip entries that explicitly belong to a different account.
+        // An empty user_id means the entry predates the multi-account field
+        // (pre-migration data) and should be restored for the active account.
+        if (!e.user_id.empty() && active_account_ &&
+            e.user_id != active_account_->user_id)
+            continue;
+        pending_restore_popouts_.push_back(e.room_id);
+    }
 }
 
 void ShellBase::save_settings_debounced_()
@@ -234,7 +243,7 @@ void ShellBase::fetch_media_pipeline_(
          animated, out_kind]() mutable
         {
             // io pool: only the (fast, local) disk-cache read happens here.
-            auto disk = media_disk_cache_.load(disk_key);
+            auto disk = account_manager_.media_disk_cache().load(disk_key);
             post_to_ui_(
                 [this, cache_key, disk_key, inflight_key, group_id, kind,
                  source, w, h, animated, out_kind,
@@ -283,7 +292,7 @@ void ShellBase::fetch_media_pipeline_(
                                 [this, cache_key, disk_key, out_kind,
                                  net = std::move(net)]() mutable
                                 {
-                                    media_disk_cache_.store(disk_key, net);
+                                    account_manager_.media_disk_cache().store(disk_key, net);
                                     post_to_ui_(
                                         [this, cache_key, out_kind,
                                          net = std::move(net)]() mutable
@@ -350,7 +359,7 @@ ShellBase::voice_bytes_or_fetch_(const std::string& token,
 
 void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 {
-    // Must be called on the UI thread — accesses thumbnail_cache_ and
+    // Must be called on the UI thread — accesses account_manager_.thumbnail_cache() and
     // media_fetches_in_flight_ without synchronization.
     const bool use_room_endpoint = !r.avatar_url.empty();
     const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
@@ -359,13 +368,13 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     {
         return;
     }
-    // When the user opts into prefetching full media, warm image_cache_ with
+    // When the user opts into prefetching full media, warm account_manager_.image_cache() with
     // the full-size avatar so opening it in the viewer is instant. Idempotent.
     if (tesseract::Settings::instance().prefetch_full_media)
     {
         ensure_media_image_(mxc, 0, 0);
     }
-    if (thumbnail_cache_.contains(mxc))
+    if (account_manager_.thumbnail_cache().contains(mxc))
     {
         return;
     }
@@ -401,7 +410,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
     {
         ensure_media_image_(mxc, 0, 0);
     }
-    if (thumbnail_cache_.contains(mxc))
+    if (account_manager_.thumbnail_cache().contains(mxc))
     {
         return;
     }
@@ -422,7 +431,7 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
 void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                     int /*max_h*/, std::uint64_t group_id)
 {
-    if (url.empty() || image_cache_.contains(url) || anim_cache_.has(url) ||
+    if (url.empty() || account_manager_.image_cache().contains(url) || account_manager_.anim_cache().has(url) ||
         media_decode_failed_.count(url) || media_fetch_backed_off_(url))
     {
         return;
@@ -448,24 +457,24 @@ const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
     }
     // Otherwise the existing fallthrough: animated frame → inline full-size
     // image → server thumbnail (mirrors shell_sticker_no_fetch_).
-    if (const auto* f = anim_cache_.current_frame(mxc))
+    if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    if (const auto* img = image_cache_.peek(mxc))
+    if (const auto* img = account_manager_.image_cache().peek(mxc))
     {
         return img;
     }
-    return thumbnail_cache_.peek(mxc);
+    return account_manager_.thumbnail_cache().peek(mxc);
 }
 
 void ShellBase::ensure_viewer_fullres_(const std::string& url)
 {
-    // Animated sources keep animating from anim_cache_; the viewer already
+    // Animated sources keep animating from account_manager_.anim_cache(); the viewer already
     // pulls frames from there, so we don't produce a full-res still for them —
-    // just make sure the animated bytes are fetched into anim_cache_.
-    if (anim_cache_.has(url))
+    // just make sure the animated bytes are fetched into account_manager_.anim_cache().
+    if (account_manager_.anim_cache().has(url))
     {
         ensure_media_image_(url, 0, 0);
         return;
@@ -492,7 +501,7 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
     run_async_(
         [this, url, fkey]() mutable
         {
-            auto disk = media_disk_cache_.load(fkey);
+            auto disk = account_manager_.media_disk_cache().load(fkey);
             post_to_ui_(
                 [this, url, fkey, disk = std::move(disk)]() mutable
                 {
@@ -540,7 +549,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
         {
             if (persist)
             {
-                media_disk_cache_.store(fkey, bytes);
+                account_manager_.media_disk_cache().store(fkey, bytes);
             }
             // DecodedImage is move-only (holds unique_ptr<tk::Image>); wrap in a
             // shared_ptr so the post_to_ui_ std::function lambda stays
@@ -549,7 +558,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                 bytes, visual::kViewerFullresMax, visual::kViewerFullresMax));
             if (d->empty() && persist)
             {
-                media_disk_cache_.evict(fkey);
+                account_manager_.media_disk_cache().evict(fkey);
             }
             post_to_ui_(
                 [this, url, fkey, d]() mutable
@@ -596,8 +605,8 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
 void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
                                         bool animated, std::uint64_t group_id)
 {
-    if (url.empty() || image_cache_.contains(url) ||
-        thumbnail_cache_.contains(url) || anim_cache_.has(url) ||
+    if (url.empty() || account_manager_.image_cache().contains(url) ||
+        account_manager_.thumbnail_cache().contains(url) || account_manager_.anim_cache().has(url) ||
         media_decode_failed_.count(url) || media_fetch_backed_off_(url))
     {
         return;
@@ -616,12 +625,12 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
 
 const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
 {
-    if (const auto* f = anim_cache_.current_frame(mxc))
+    if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
-    if (const auto* img = image_cache_.peek(mxc))
+    if (const auto* img = account_manager_.image_cache().peek(mxc))
     {
         return img;
     }
@@ -631,18 +640,18 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
 
 const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc)
 {
-    if (const auto* f = anim_cache_.current_frame(mxc))
+    if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
     // Prefer the full-size image (viewer / prefetch_full_media) when present,
     // otherwise fall back to the inline thumbnail.
-    if (const auto* img = image_cache_.peek(mxc))
+    if (const auto* img = account_manager_.image_cache().peek(mxc))
     {
         return img;
     }
-    return thumbnail_cache_.peek(mxc);
+    return account_manager_.thumbnail_cache().peek(mxc);
 }
 
 void ShellBase::set_room_notification_mode_(const std::string& room_id,
@@ -676,7 +685,7 @@ void ShellBase::set_room_low_priority_(const std::string& room_id, bool value)
 void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 {
     auto avatar_lookup = [this](const std::string& mxc) -> const tk::Image*
-    { return thumbnail_cache_.peek(mxc); };
+    { return account_manager_.thumbnail_cache().peek(mxc); };
 
     app->set_avatar_provider(avatar_lookup);
     app->room_list_view()->set_avatar_provider(avatar_lookup);
@@ -770,14 +779,14 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
-            if (const auto* f = anim_cache_.current_frame(mxc))
+            if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
             {
                 start_anim_tick_();
                 return f;
             }
-            if (const auto* img = image_cache_.peek(mxc))
+            if (const auto* img = account_manager_.image_cache().peek(mxc))
                 return img;
-            if (const auto* img = thumbnail_cache_.peek(mxc))
+            if (const auto* img = account_manager_.thumbnail_cache().peek(mxc))
                 return img;
             // Cache miss after eviction — re-fetch. Deduplicated by the
             // in-flight set; uses the disk cache when bytes were previously
@@ -794,9 +803,9 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->set_image_acquirer(
         [this](const std::string& mxc) -> tk::ImageRef
         {
-            if (auto ref = image_cache_.acquire(mxc))
+            if (auto ref = account_manager_.image_cache().acquire(mxc))
                 return ref;
-            return thumbnail_cache_.acquire(mxc);
+            return account_manager_.thumbnail_cache().acquire(mxc);
         });
     app->room_view()->set_preview_provider(
         [this](const std::string& url) -> const views::UrlPreviewData*
@@ -807,8 +816,8 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 return nullptr;
             }
             if (!it->second.image_mxc.empty() &&
-                !image_cache_.contains(it->second.image_mxc) &&
-                !anim_cache_.has(it->second.image_mxc))
+                !account_manager_.image_cache().contains(it->second.image_mxc) &&
+                !account_manager_.anim_cache().has(it->second.image_mxc))
             {
                 ensure_media_image_(it->second.image_mxc, 64, 64);
             }
@@ -825,7 +834,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->room_info_panel()->set_presence_provider(presence_lookup);
 
     // Avatar click in UserProfilePanel → open the image viewer. The list only
-    // holds an ≤80px thumbnail, so kick a full-size fetch into image_cache_;
+    // holds an ≤80px thumbnail, so kick a full-size fetch into account_manager_.image_cache();
     // the viewer's image_provider returns the thumbnail instantly and swaps to
     // full-res when it arrives.
     app->room_view()->on_avatar_clicked =
@@ -912,7 +921,7 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
                                        std::function<void()> on_video_close)
 {
     // viewer_image_lookup_ consults the full-res lightbox cache first, then
-    // falls through anim_cache_ → image_cache_ → thumbnail_cache_, so the viewer
+    // falls through account_manager_.anim_cache() → account_manager_.image_cache() → account_manager_.thumbnail_cache(), so the viewer
     // shows the full-res image once the avatar/image click has fetched it and
     // the inline thumbnail until then.
     auto image_lookup = [this](const std::string& mxc) -> const tk::Image*
@@ -962,14 +971,14 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
         {
             if (persist)
             {
-                media_disk_cache_.store(url, bytes);
+                account_manager_.media_disk_cache().store(url, bytes);
             }
             auto d = std::make_shared<DecodedImage>(
                 decode_image_(bytes, visual::kMaxInlineImageWidth,
                               visual::kMaxInlineImageHeight));
             if (d->empty())
             {
-                media_disk_cache_.evict(url);
+                account_manager_.media_disk_cache().evict(url);
             }
             post_to_ui_(
                 [this, url, is_sticker, d]() mutable
@@ -981,7 +990,7 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
 
 void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
 {
-    if (url.empty() || image_cache_.contains(url) || anim_cache_.has(url))
+    if (url.empty() || account_manager_.image_cache().contains(url) || account_manager_.anim_cache().has(url))
     {
         return;
     }
@@ -997,7 +1006,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
     run_async_(
         [this, url, is_sticker]() mutable
         {
-            auto disk = media_disk_cache_.load(url);
+            auto disk = account_manager_.media_disk_cache().load(url);
             post_to_ui_(
                 [this, url, is_sticker, disk = std::move(disk)]() mutable
                 {
@@ -1043,19 +1052,19 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 {
     (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
         .erase(url);
-    if (image_cache_.contains(url) || anim_cache_.has(url))
+    if (account_manager_.image_cache().contains(url) || account_manager_.anim_cache().has(url))
     {
         return;
     }
     if (!d.frames.empty())
     {
-        anim_cache_.store(url, std::move(d.frames), std::move(d.delays_ms),
+        account_manager_.anim_cache().store(url, std::move(d.frames), std::move(d.delays_ms),
                           monotonic_ms_());
         start_anim_tick_();
     }
     else if (d.still)
     {
-        image_cache_.store(url, std::move(d.still));
+        account_manager_.image_cache().store(url, std::move(d.still));
     }
     else
     {
@@ -1067,7 +1076,7 @@ void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
 void ShellBase::ensure_tile_async(int z, int x, int y)
 {
     const std::string key = tesseract::views::tile_cache_key({z, x, y});
-    if (image_cache_.contains(key) || tile_fetch_failed_.count(key))
+    if (account_manager_.image_cache().contains(key) || tile_fetch_failed_.count(key))
     {
         return;
     }
@@ -1198,7 +1207,7 @@ void ShellBase::ensure_blurhash_image_(const std::string& event_id,
                                        int media_h)
 {
     const std::string key = "blurhash::" + event_id;
-    if (image_cache_.contains(key) || !blurhash_attempted_.insert(key).second)
+    if (account_manager_.image_cache().contains(key) || !blurhash_attempted_.insert(key).second)
     {
         return;
     }
@@ -1231,7 +1240,7 @@ void ShellBase::ensure_row_media_(const Event& ev)
         run_async_(
             [this]()
             {
-                media_disk_cache_.prune();
+                account_manager_.media_disk_cache().prune();
             });
     }
     if (!waveform_store_inited_)
@@ -1682,8 +1691,8 @@ void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
                                                         std::string /*json*/)
 {
     // Only the active account's config drives the UI.
-    if (active_account_index_ < 0 || !client_ ||
-        accounts_[active_account_index_]->user_id != user_id)
+    if (!active_account_ || !client_ ||
+        active_account_->user_id != user_id)
     {
         return;
     }
@@ -2486,6 +2495,17 @@ void ShellBase::push_room_list_state_(RoomListState state)
 
 // ── Secondary window registry ─────────────────────────────────────────────────
 
+ShellBase::ShellBase(AccountManager& account_manager)
+    : account_manager_(account_manager)
+{
+}
+
+void ShellBase::broadcast_rebuild_tray_()
+{
+    for (ShellBase* win : account_manager_.all_windows())
+        win->rebuild_tray_();
+}
+
 ShellBase::~ShellBase()
 {
     // Tear down pop-out windows while the registries they unregister from are
@@ -2614,6 +2634,7 @@ void ShellBase::open_room_in_new_window(const std::string& room_id)
         {
             Settings::PopoutEntry e;
             e.room_id = room_id;
+            e.user_id = active_account_ ? active_account_->user_id : std::string{};
             pops.push_back(std::move(e));
             save_settings_debounced_();
         }
@@ -2719,8 +2740,7 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
                                                  std::string json)
 {
     // Only the active account's prefs set the pending restore rooms.
-    if (active_account_index_ < 0 ||
-        accounts_[active_account_index_]->user_id != user_id)
+    if (!active_account_ || active_account_->user_id != user_id)
     {
         return;
     }
@@ -2867,7 +2887,7 @@ void ShellBase::dispatch_gif_failed_to_secondary_windows_(
 std::vector<std::uint8_t>
 ShellBase::cached_gif_source_bytes_(const std::string& url) const
 {
-    return media_disk_cache_.load(gif_src_disk_key_(url));
+    return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
 }
 
 bool ShellBase::tick_anim_()
@@ -2875,12 +2895,12 @@ bool ShellBase::tick_anim_()
     // Stop once nothing animated is on-screen — entries linger in the cache
     // after scrolling away / switching rooms, so checking emptiness would keep
     // the 60 Hz timer (and its repaints) running forever.
-    if (!anim_cache_.any_visible())
+    if (!account_manager_.anim_cache().any_visible())
     {
         stop_anim_tick_();
         return false;
     }
-    if (anim_cache_.advance(monotonic_ms_()))
+    if (account_manager_.anim_cache().advance(monotonic_ms_()))
     {
         repaint_anim_frame_();
         // Pop-out windows have their own surfaces (and pickers) the shell's
@@ -3271,9 +3291,9 @@ void ShellBase::notify_presence_tick_()
     // images that scrolled off / rooms switched away from: drop expired,
     // unreferenced entries and trim over-budget. Runs even when presence
     // tracking is off, so it must precede the tracker guard.
-    image_cache_.sweep();
-    thumbnail_cache_.sweep();
-    anim_cache_.sweep();
+    account_manager_.image_cache().sweep();
+    account_manager_.thumbnail_cache().sweep();
+    account_manager_.anim_cache().sweep();
 
     if (presence_tracker_)
     {
@@ -3834,16 +3854,16 @@ void ShellBase::compute_cache_sizes_(
         post_to_ui_([this, cb, local, sdk]
         {
             const uint64_t memory =
-                static_cast<uint64_t>(image_cache_.current_bytes()) +
-                thumbnail_cache_.current_bytes() + anim_cache_.current_bytes();
+                static_cast<uint64_t>(account_manager_.image_cache().current_bytes()) +
+                account_manager_.thumbnail_cache().current_bytes() + account_manager_.anim_cache().current_bytes();
             const uint64_t mem_hits =
-                image_cache_.hits() + thumbnail_cache_.hits() +
-                anim_cache_.hits();
+                account_manager_.image_cache().hits() + account_manager_.thumbnail_cache().hits() +
+                account_manager_.anim_cache().hits();
             const uint64_t mem_misses =
-                image_cache_.misses() + thumbnail_cache_.misses() +
-                anim_cache_.misses();
-            const uint64_t disk_hits   = media_disk_cache_.hits();
-            const uint64_t disk_misses = media_disk_cache_.misses();
+                account_manager_.image_cache().misses() + account_manager_.thumbnail_cache().misses() +
+                account_manager_.anim_cache().misses();
+            const uint64_t disk_hits   = account_manager_.media_disk_cache().hits();
+            const uint64_t disk_misses = account_manager_.media_disk_cache().misses();
             cb(local, sdk, memory, mem_hits, mem_misses, disk_hits, disk_misses);
         });
     });
@@ -3862,7 +3882,7 @@ void ShellBase::clear_all_caches_(
         std::error_code ec;
 
         // Media disk cache — clear() removes all files and recreates the dir.
-        media_disk_cache_.clear();
+        account_manager_.media_disk_cache().clear();
 
         // Waveform SQLite — best-effort (locked on Windows if WAL is open).
         fs::remove(tesseract::cache_dir() / "waveforms.db", ec);
@@ -3872,9 +3892,9 @@ void ShellBase::clear_all_caches_(
         // fresh sync).
         post_to_ui_([this]
         {
-            thumbnail_cache_.clear();
-            image_cache_.clear();
-            anim_cache_ = tk::AnimImageCache{};
+            account_manager_.thumbnail_cache().clear();
+            account_manager_.image_cache().clear();
+            account_manager_.anim_cache() = tk::AnimImageCache{};
             media_decode_failed_.clear();
             media_fetch_failed_.clear();
             voice_bytes_cache_.clear();
@@ -4604,6 +4624,28 @@ void ShellBase::handle_crypto_reset_result_ui_(bool ok, std::string message)
     else
         o->report_reset_error(message);
     request_relayout_();
+}
+
+void ShellBase::set_initial_account(std::shared_ptr<AccountSession> account)
+{
+    active_account_ = std::move(account);
+}
+
+void ShellBase::on_account_picker_select_(const std::string& uid)
+{
+    if (auto* win = account_manager_.dedicated_window(uid))
+    {
+        win->raise_and_activate_();
+        return;
+    }
+    if (is_ctrl_held_())
+    {
+        auto session = account_manager_.find(uid);
+        if (session)
+            spawn_main_window_(session);
+        return;
+    }
+    switch_active_account_(uid);
 }
 
 } // namespace tesseract

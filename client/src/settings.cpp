@@ -68,6 +68,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
             if (!pw.is_object()) continue;
             PopoutEntry e;
             e.room_id      = pw.value("room_id", std::string{});
+            e.user_id      = pw.value("user_id", std::string{});
             e.geometry.x   = pw.value("x", 0);
             e.geometry.y   = pw.value("y", 0);
             e.geometry.w   = pw.value("w", 0);
@@ -139,6 +140,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
             if (e.room_id.empty()) continue;
             nlohmann::json pw;
             pw["room_id"] = e.room_id;
+            pw["user_id"] = e.user_id;
             pw["x"]       = e.geometry.x;
             pw["y"]       = e.geometry.y;
             pw["w"]       = e.geometry.w;

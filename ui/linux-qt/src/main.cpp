@@ -9,6 +9,7 @@
 #include <sys/file.h>
 #include <unistd.h>
 #include "MainWindow.h"
+#include "app/AccountManager.h"
 #include "tk/i18n.h"
 #include <tesseract/client.h>
 #include <tesseract/paths.h>
@@ -71,7 +72,8 @@ int main(int argc, char* argv[])
     app.setOrganizationName("tesseract");
     app.setWindowIcon(QIcon(":/icons/tesseract.svg"));
 
-    qt6::MainWindow window;
+    tesseract::AccountManager account_manager;
+    qt6::MainWindow window{account_manager};
     window.show();
     window.activateOnStartup();
 

@@ -10,8 +10,12 @@ using tesseract::ShellBase;
 namespace
 {
 
-struct TestShell : ShellBase
+struct WithAccountManager { tesseract::AccountManager am_; };
+
+struct TestShell : WithAccountManager, ShellBase
 {
+    TestShell() : ShellBase(am_) {}
+
     void post_to_ui_(std::function<void()> fn) override { fn(); }
     void post_to_ui_after_(int, std::function<void()> fn) override { fn(); }
     void request_relayout_() override {}
@@ -35,6 +39,10 @@ struct TestShell : ShellBase
         std::function<void(std::vector<uint8_t>, std::string)>) override {}
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode) override {}
+    void raise_and_activate_() override {}
+    bool is_ctrl_held_() const override { return false; }
+    void switch_active_account_(const std::string&) override {}
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
     void apply_thread_messages_(
         const std::string&,
         std::vector<tesseract::views::MessageRowData>, bool) override {}

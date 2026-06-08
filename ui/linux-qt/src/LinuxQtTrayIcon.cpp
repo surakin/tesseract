@@ -82,6 +82,30 @@ void LinuxQtTrayIcon::set_tooltip(const std::string& text)
     }
 }
 
+void LinuxQtTrayIcon::rebuild_menu(
+    std::vector<std::pair<std::string, std::function<void()>>> window_items)
+{
+    if (!tray_)
+        return;
+
+    auto new_menu = std::make_unique<QMenu>();
+    for (auto& [label, cb] : window_items)
+    {
+        QAction* act = new_menu->addAction(QString::fromStdString(label));
+        QObject::connect(act, &QAction::triggered, this,
+                         [fn = std::move(cb)] { fn(); });
+    }
+    if (!window_items.empty())
+        new_menu->addSeparator();
+
+    QAction* quit_action = new_menu->addAction(QObject::tr("Quit"));
+    QObject::connect(quit_action, &QAction::triggered, this,
+                     [this] { if (on_quit_) on_quit_(); });
+
+    tray_->setContextMenu(new_menu.get());
+    menu_ = std::move(new_menu);
+}
+
 void LinuxQtTrayIcon::set_unread(bool has_unread, bool has_highlight)
 {
     if (!tray_ || base_pixmap_.isNull())
