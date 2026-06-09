@@ -2116,13 +2116,15 @@ private:
                     // entry exists only for link/selection hit-testing. Tag it
                     // with a fresh LRU tick so the shared cache's eviction does
                     // not reclaim a still-visible row's layout.
-                    LinkLayout& le = owner_.link_layout_cache_[m.event_id];
-                    le.layout = std::move(layout);
-                    le.origin = {x, y};
-                    le.plain = spans_to_plain(spans);
-                    le.spans.clear();
-                    le.keyed = false;
-                    le.lru = ++owner_.layout_lru_clock_;
+                    owner_.link_cache_.put_unkeyed(
+                        m.event_id,
+                        [&](LinkLayout& le)
+                        {
+                            le.layout = std::move(layout);
+                            le.origin = {x, y};
+                            le.plain = spans_to_plain(spans);
+                            le.spans.clear();
+                        });
                 }
             }
             if (m.is_edited)
@@ -2666,11 +2668,6 @@ private:
         return result;
     }
 
-    // Maximum number of shaped body layouts retained by the shared cache.
-    // Generously covers any plausible viewport's worth of visible rows so
-    // scrolling stays a cache hit, while bounding memory when a room with
-    // thousands of messages is fully measured.
-    static constexpr std::size_t kBodyCacheCap = 128;
 
     // Hash the inputs that determine a body's shaped text (so an edit or a
     // formatting change invalidates the cached layout).
@@ -2682,99 +2679,68 @@ private:
         return h;
     }
 
-    // Drop least-recently-used cache entries until the cache is back within
-    // kBodyCacheCap, never evicting `keep` (the entry we just produced).
-    void evict_body_cache_if_needed(const std::string& keep) const
-    {
-        auto& cache = owner_.link_layout_cache_;
-        while (cache.size() > kBodyCacheCap)
-        {
-            auto victim = cache.end();
-            std::uint64_t lo = std::numeric_limits<std::uint64_t>::max();
-            for (auto it = cache.begin(); it != cache.end(); ++it)
-            {
-                if (it->first == keep)
-                    continue;
-                if (it->second.lru < lo)
-                {
-                    lo = it->second.lru;
-                    victim = it;
-                }
-            }
-            if (victim == cache.end())
-                break;
-            cache.erase(victim);
-        }
-    }
-
     // Build-or-reuse the shaped body layout for a message. Both the measure
     // and paint paths funnel through here so a body is shaped at most once per
     // (content, width, theme, spoiler) state and shared across repaints. The
-    // returned entry is owned by link_layout_cache_ (also used for link/
-    // selection hit-testing); callers must not move its layout out.
+    // returned entry is owned by link_cache_ (also used for link/selection
+    // hit-testing); callers must not move its layout out.
+    //
+    // The cache (validity-key check, LRU bump + eviction, max size) lives in
+    // LinkLayoutCache; this method supplies the build pipeline as the builder
+    // callback so the span machinery stays on the view.
     LinkLayout& body_layout_for(const MessageRowData& m, tk::CanvasFactory& f,
                                 float w, bool dark, bool revealed) const
     {
-        LinkLayout& slot = owner_.link_layout_cache_[m.event_id];
-        const std::size_t h = hash_body(m);
-        if (slot.layout && slot.keyed && slot.key_w == w &&
-            slot.key_dark == dark && slot.key_revealed == revealed &&
-            slot.key_hash == h)
-        {
-            slot.lru = ++owner_.layout_lru_clock_;
-            return slot;
-        }
-
-        const bool eo = is_emoji_only(m.body);
-        slot.layout.reset();
-        slot.spans.clear();
-        slot.plain.clear();
-
-        if (!m.formatted_body.empty())
-        {
-            auto spans = prepare_spans(m, revealed, dark);
-            if (!spans.empty())
+        LinkLayoutCache::Key key{w, dark, revealed, hash_body(m)};
+        return owner_.link_cache_.get_or_build(
+            m.event_id, key,
+            [&](LinkLayout& slot)
             {
-                slot.layout = f.build_rich_text(spans, body_style(w, eo));
-                if (slot.layout)
-                {
-                    slot.plain = spans_to_plain(spans);
-                    slot.spans = std::move(spans);
-                }
-            }
-        }
-        // Plain text: autolink bare URLs so they render as a rich-text layout.
-        if (!slot.layout && !eo && !m.body.empty())
-        {
-            auto link_spans = autolink_plain_to_spans(m.body);
-            if (!link_spans.empty())
-            {
-                slot.layout = f.build_rich_text(link_spans, body_style(w, eo));
-                if (slot.layout)
-                {
-                    slot.plain = m.body;
-                    slot.spans = std::move(link_spans);
-                }
-            }
-        }
-        // Plain text with no URLs — a flat layout so selection still works.
-        if (!slot.layout)
-        {
-            std::string plain_text =
-                m.body.empty() ? std::string("(empty message)") : m.body;
-            slot.layout = f.build_text(plain_text, body_style(w, eo));
-            slot.plain = std::move(plain_text);
-            slot.spans.clear();
-        }
+                const bool eo = is_emoji_only(m.body);
+                slot.layout.reset();
+                slot.spans.clear();
+                slot.plain.clear();
 
-        slot.key_w = w;
-        slot.key_dark = dark;
-        slot.key_revealed = revealed;
-        slot.key_hash = h;
-        slot.keyed = true;
-        slot.lru = ++owner_.layout_lru_clock_;
-        evict_body_cache_if_needed(m.event_id);
-        return slot;
+                if (!m.formatted_body.empty())
+                {
+                    auto spans = prepare_spans(m, revealed, dark);
+                    if (!spans.empty())
+                    {
+                        slot.layout =
+                            f.build_rich_text(spans, body_style(w, eo));
+                        if (slot.layout)
+                        {
+                            slot.plain = spans_to_plain(spans);
+                            slot.spans = std::move(spans);
+                        }
+                    }
+                }
+                // Plain text: autolink bare URLs so they render as rich text.
+                if (!slot.layout && !eo && !m.body.empty())
+                {
+                    auto link_spans = autolink_plain_to_spans(m.body);
+                    if (!link_spans.empty())
+                    {
+                        slot.layout =
+                            f.build_rich_text(link_spans, body_style(w, eo));
+                        if (slot.layout)
+                        {
+                            slot.plain = m.body;
+                            slot.spans = std::move(link_spans);
+                        }
+                    }
+                }
+                // Plain text with no URLs — flat layout so selection works.
+                if (!slot.layout)
+                {
+                    std::string plain_text =
+                        m.body.empty() ? std::string("(empty message)")
+                                       : m.body;
+                    slot.layout = f.build_text(plain_text, body_style(w, eo));
+                    slot.plain = std::move(plain_text);
+                    slot.spans.clear();
+                }
+            });
     }
 
     // Measure height for a text message body — uses the shared body layout
@@ -3523,7 +3489,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
 
     video_playlist_.clear();
     spoilers_.clear();
-    link_layout_cache_.clear();
+    link_cache_.clear();
     adapter_->clear_layout_cache();
     suppress_read_marker_ = false;
     sel_.reset();
@@ -3751,7 +3717,7 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     // be cached under msg.event_id).
     if (old_eid != msg.event_id)
     {
-        link_layout_cache_.erase(old_eid);
+        link_cache_.invalidate(old_eid);
     }
     if (now_animated && !video_playlist_.has(msg.event_id))
     {
@@ -4269,12 +4235,12 @@ void MessageListView::on_pointer_drag(tk::Point local)
                 m.kind == MessageRowData::Kind::Notice ||
                 m.kind == MessageRowData::Kind::Emote)
             {
-                auto it = link_layout_cache_.find(m.event_id);
-                if (it != link_layout_cache_.end() && it->second.layout)
+                const LinkLayout* le = link_cache_.peek(m.event_id);
+                if (le)
                 {
-                    tk::Point ll{world.x - it->second.origin.x,
-                                 world.y - it->second.origin.y};
-                    int idx = it->second.layout->char_index_at(ll);
+                    tk::Point ll{world.x - le->origin.x,
+                                 world.y - le->origin.y};
+                    int idx = le->layout->char_index_at(ll);
                     if (idx >= 0)
                     {
                         bool changed = (sel_->head_event_id != m.event_id ||
@@ -4434,12 +4400,12 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 }
             }
             // Inline hyperlink (overrides map sentinel when a link is found).
-            auto it = link_layout_cache_.find(m.event_id);
-            if (it != link_layout_cache_.end() && it->second.layout)
+            const LinkLayout* le = link_cache_.peek(m.event_id);
+            if (le)
             {
-                tk::Point ll{world.x - it->second.origin.x,
-                             world.y - it->second.origin.y};
-                std::string lurl = it->second.layout->link_at(ll);
+                tk::Point ll{world.x - le->origin.x,
+                             world.y - le->origin.y};
+                std::string lurl = le->layout->link_at(ll);
                 if (!lurl.empty())
                 {
                     new_link_url = std::move(lurl);
@@ -4703,14 +4669,14 @@ void MessageListView::copy_selection()
     for (int i = ord->lo_idx; i <= ord->hi_idx; ++i)
     {
         const auto& m = messages_[static_cast<std::size_t>(i)];
-        auto it = link_layout_cache_.find(m.event_id);
-        if (it == link_layout_cache_.end() || !it->second.layout)
+        const LinkLayout* le = link_cache_.peek(m.event_id);
+        if (!le)
             continue;
         int lo_b = (i == ord->lo_idx) ? ord->lo_byte : 0;
         int hi_b = (i == ord->hi_idx)
                        ? ord->hi_byte
-                       : static_cast<int>(it->second.plain.size());
-        std::string seg = it->second.layout->text_range(lo_b, hi_b);
+                       : static_cast<int>(le->plain.size());
+        std::string seg = le->layout->text_range(lo_b, hi_b);
         if (!result.empty() && result.back() != '\n')
             result += '\n';
         result += std::move(seg);
@@ -5006,12 +4972,12 @@ bool MessageListView::on_pointer_down(tk::Point local)
         if (row < messages_.size())
         {
             const auto& m = messages_[row];
-            auto it = link_layout_cache_.find(m.event_id);
-            if (it != link_layout_cache_.end() && it->second.layout)
+            const LinkLayout* le = link_cache_.peek(m.event_id);
+            if (le)
             {
-                tk::Point ll{world.x - it->second.origin.x,
-                             world.y - it->second.origin.y};
-                press_link_url_ = it->second.layout->link_at(ll);
+                tk::Point ll{world.x - le->origin.x,
+                             world.y - le->origin.y};
+                press_link_url_ = le->layout->link_at(ll);
                 if (!press_link_url_.empty())
                 {
                     return true;
@@ -5147,12 +5113,12 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 m.kind == MessageRowData::Kind::Emote)
             {
                 tk::Point world{local.x + bounds().x, local.y + bounds().y};
-                auto it = link_layout_cache_.find(m.event_id);
-                if (it != link_layout_cache_.end() && it->second.layout)
+                const LinkLayout* le = link_cache_.peek(m.event_id);
+                if (le)
                 {
-                    tk::Point ll{world.x - it->second.origin.x,
-                                 world.y - it->second.origin.y};
-                    int idx = it->second.layout->char_index_at(ll);
+                    tk::Point ll{world.x - le->origin.x,
+                                 world.y - le->origin.y};
+                    int idx = le->layout->char_index_at(ll);
                     if (idx >= 0)
                     {
                         // Multi-click detection.
@@ -5166,7 +5132,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                         last_down_time_ms_ = now_ms;
                         last_down_pt_ = world;
 
-                        const std::string& plain = it->second.plain;
+                        const std::string& plain = le->plain;
                         if (click_count_ >= 3)
                         {
                             auto [lo, hi] = line_range_in_text(plain, idx);

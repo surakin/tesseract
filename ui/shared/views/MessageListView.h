@@ -13,6 +13,7 @@
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 #include "tk/video.h"
+#include "views/LinkLayoutCache.h"
 #include "views/LocationMapPanner.h"
 #include "views/ReadReceiptTracker.h"
 #include "views/RoomSwitchGateKeeper.h"
@@ -712,7 +713,7 @@ public:
     // Exposed so tests can assert the cache stays memory-bounded.
     std::size_t body_layout_cache_size_for_test() const
     {
-        return link_layout_cache_.size();
+        return link_cache_.size();
     }
 
 private:
@@ -905,25 +906,12 @@ private:
     // hyperlink/selection hit-testing — so the body is not re-shaped on every
     // repaint. `keyed` entries carry a validity key (width / theme / spoiler /
     // content hash); a mismatch rebuilds. The cache is memory-bounded by LRU
-    // (see Adapter::evict_body_cache_if_needed) and cleared when messages_ is
-    // replaced. Emote rows write here too (keyed=false) purely for hit-testing.
-    struct LinkLayout
-    {
-        std::unique_ptr<tk::TextLayout> layout;
-        tk::Point origin{}; // world-space draw origin
-        std::string plain;  // concatenated span text for clipboard
-        std::vector<tk::TextSpan> spans; // rich spans for background drawing
-                                         // (empty => plain build_text path)
-        // Validity key (only meaningful when `keyed`).
-        float key_w = -1.0f;
-        bool key_dark = false;
-        bool key_revealed = false;
-        std::size_t key_hash = 0;
-        bool keyed = false;       // produced by body_layout_for (reusable)
-        std::uint64_t lru = 0;    // last-touch tick for LRU eviction
-    };
-    mutable std::unordered_map<std::string, LinkLayout> link_layout_cache_;
-    mutable std::uint64_t layout_lru_clock_ = 0;
+    // (see LinkLayoutCache) and cleared when messages_ is replaced. Emote rows
+    // write here too (keyed=false) purely for hit-testing. The LinkLayout type,
+    // the LRU clock, the validity-key check and eviction all live in the
+    // collaborator; the span-build pipeline stays on this view and is injected
+    // via the get_or_build builder callback.
+    mutable LinkLayoutCache link_cache_;
     std::string press_link_url_;
     std::string hover_link_url_;
 
