@@ -57,45 +57,7 @@ impl ClientFfi {
         {
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
-            self.spawn_tracked(async move {
-                let mut changes = client_clone.subscribe_to_session_changes();
-                loop {
-                    match changes.recv().await {
-                        Ok(SessionChange::TokensRefreshed) => {
-                            let Some(full) = client_clone.oauth().full_session() else {
-                                continue;
-                            };
-                            let persisted = PersistedSession {
-                                client_id: full.client_id,
-                                user: full.user,
-                            };
-                            let Ok(json) = serde_json::to_string(&persisted) else {
-                                continue;
-                            };
-                            {
-                                let guard = h.lock();
-                                guard.on_session_refreshed(&json);
-                            }
-                        }
-                        Ok(SessionChange::UnknownToken(data)) => {
-                            // Stop SyncService before it can reach State::Error and
-                            // wipe the SQLite data directory while a fresh login is
-                            // already in progress.
-                            let _ = stop_tx_auth.send(true);
-                            {
-                                let guard = h.lock();
-                                guard.on_error(
-                                    "sync_auth_error",
-                                    "Session token is no longer valid; please log in again.",
-                                    data.soft_logout,
-                                );
-                            }
-                            break;
-                        }
-                        Err(_) => break,
-                    }
-                }
-            });
+            self.spawn_tracked(watch_session_changes(h, client_clone, stop_tx_auth));
         }
 
         // Wall-clock start of this sync session, used by the notification
@@ -110,7 +72,6 @@ impl ClientFfi {
         // Global notification handler — fires for every room on every sync
         // response, without requiring a per-room subscribe_room call.
         {
-            use matrix_sdk::ruma::events::room::message::MessageType;
             use matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent;
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
@@ -118,37 +79,7 @@ impl ClientFfi {
                 move |ev: OriginalSyncMessageLikeEvent<RoomMessageEventContent>, room: Room| {
                     let h = Arc::clone(&h);
                     let client_clone = client_clone.clone();
-                    async move {
-                        let (body, msg_type_str) = match &ev.content.msgtype {
-                            MessageType::Text(t) => (t.body.trim().to_owned(), "m.text"),
-                            MessageType::Image(i) => (i.body.trim().to_owned(), "m.image"),
-                            MessageType::File(f) => (f.body.trim().to_owned(), "m.file"),
-                            MessageType::Audio(a) => (a.body.trim().to_owned(), "m.audio"),
-                            MessageType::Video(v) => (v.body.trim().to_owned(), "m.video"),
-                            _ => return,
-                        };
-                        if body.is_empty() {
-                            return;
-                        }
-                        // Image messages carry a preview picture; other msgtypes get none.
-                        let preview_source = match &ev.content.msgtype {
-                            MessageType::Image(i) => Some(i.source.clone()),
-                            _ => None,
-                        };
-                        media::emit_notification(
-                            &client_clone,
-                            room,
-                            &ev.sender,
-                            &body,
-                            msg_type_str,
-                            ev.event_id.as_str(),
-                            ev.origin_server_ts.get().into(),
-                            session_start_ms,
-                            preview_source,
-                            &h,
-                        )
-                        .await;
-                    }
+                    handle_message_notification(ev, room, client_clone, h, session_start_ms)
                 },
             ));
         }
@@ -158,8 +89,7 @@ impl ClientFfi {
         // to the message handler above — without this, sticker messages never
         // notify at all.
         {
-            use matrix_sdk::ruma::events::room::MediaSource;
-            use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
+            use matrix_sdk::ruma::events::sticker::StickerEventContent;
             use matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent;
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
@@ -167,34 +97,7 @@ impl ClientFfi {
                 move |ev: OriginalSyncMessageLikeEvent<StickerEventContent>, room: Room| {
                     let h = Arc::clone(&h);
                     let client_clone = client_clone.clone();
-                    async move {
-                        let body = ev.content.body.trim().to_owned();
-                        if body.is_empty() {
-                            return;
-                        }
-                        let preview_source = match &ev.content.source {
-                            StickerMediaSource::Plain(uri) => {
-                                Some(MediaSource::Plain(uri.clone()))
-                            }
-                            StickerMediaSource::Encrypted(f) => {
-                                Some(MediaSource::Encrypted(f.clone()))
-                            }
-                            _ => None,
-                        };
-                        media::emit_notification(
-                            &client_clone,
-                            room,
-                            &ev.sender,
-                            &body,
-                            "m.sticker",
-                            ev.event_id.as_str(),
-                            ev.origin_server_ts.get().into(),
-                            session_start_ms,
-                            preview_source,
-                            &h,
-                        )
-                        .await;
-                    }
+                    handle_sticker_notification(ev, room, client_clone, h, session_start_ms)
                 },
             ));
         }
@@ -210,26 +113,7 @@ impl ClientFfi {
                 move |ev: SyncTypingEvent, room: Room| {
                     let h = Arc::clone(&h);
                     let me = me.clone();
-                    async move {
-                        let rid = room.room_id().to_string();
-                        let mut uids: Vec<String> = Vec::new();
-                        for u in ev.content.user_ids.iter() {
-                            if me.as_deref() == Some(u.as_ref()) {
-                                continue;
-                            }
-                            // Prefer the cached room-member display name so the
-                            // typing strip shows a readable name rather than an
-                            // opaque localpart (e.g. "@78fa3bcde:hs"). Falls
-                            // back to the localpart when no member profile is
-                            // cached (no extra network round-trip).
-                            let name = super::member_display_name_local(&room, u).await;
-                            uids.push(name);
-                        }
-                        {
-                            let g = h.lock();
-                            g.on_typing_changed(&rid, &uids);
-                        }
-                    }
+                    handle_typing_notification(ev, room, h, me)
                 },
             ));
         }
@@ -242,40 +126,18 @@ impl ClientFfi {
         {
             let h = Arc::clone(&handler);
             let client_p = client.clone();
-            let mut stop_rx_presence = stop_rx.clone();
+            let stop_rx_presence = stop_rx.clone();
             let presence_enabled_p = std::sync::Arc::clone(&self.presence_polling_enabled);
             let dm_counterparts = Arc::clone(&self.dm_counterparts);
             let forbidden_presence = Arc::clone(&self.forbidden_presence);
-            self.spawn_tracked(async move {
-                // 60s tick: matrix-sdk delivers presence EDUs through the
-                // sync stream for free; this polling loop is a fallback for
-                // servers that omit them for non-following users. The cache
-                // population (in the room-list rebuild path) means the very
-                // first tick reads no users until build_room_infos has
-                // finished its initial sweep — that's fine, presence is
-                // not load-bearing for the first frame.
-                let mut interval =
-                    tokio::time::interval(tokio::time::Duration::from_secs(60));
-                interval.set_missed_tick_behavior(
-                    tokio::time::MissedTickBehavior::Skip,
-                );
-                loop {
-                    tokio::select! {
-                        _ = stop_rx_presence.changed() => break,
-                        _ = interval.tick() => {}
-                    }
-                    if !presence_enabled_p.load(std::sync::atomic::Ordering::Relaxed) {
-                        continue;
-                    }
-                    poll_presence_once(
-                        &client_p,
-                        &h,
-                        &dm_counterparts,
-                        &forbidden_presence,
-                    )
-                    .await;
-                }
-            });
+            self.spawn_tracked(watch_presence(
+                h,
+                client_p,
+                stop_rx_presence,
+                presence_enabled_p,
+                dm_counterparts,
+                forbidden_presence,
+            ));
         }
 
         // Build SyncService. `with_offline_mode` lets matrix-sdk-ui handle
@@ -341,39 +203,6 @@ impl ClientFfi {
             }
             let previews = Arc::clone(&self.backfill_previews);
             let dm_counterparts_w = Arc::clone(&self.dm_counterparts);
-
-            // Refresh the cached DM-counterpart set from the cache values. The
-            // presence polling task reads this snapshot directly so it never
-            // has to walk joined_rooms itself.
-            fn refresh_dm_counterparts(
-                cache_w: &parking_lot::RwLock<std::collections::HashSet<String>>,
-                cache: &std::collections::HashMap<OwnedRoomId, crate::ffi::RoomInfo>,
-            ) {
-                let new_set: std::collections::HashSet<String> = cache
-                    .values()
-                    .map(|r| r.dm_counterpart_user_id.clone())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                *cache_w.write() = new_set;
-            }
-
-            // Snapshot helper: clone the cache values into a Vec, apply
-            // backfill previews, sort, and push to the UI thread.
-            fn emit_snapshot(
-                cache: &std::collections::HashMap<OwnedRoomId, crate::ffi::RoomInfo>,
-                previews: &Mutex<
-                    std::collections::HashMap<String, crate::client::backfill::BackfillPreview>,
-                >,
-                h: &Arc<Mutex<SendHandler>>,
-            ) {
-                let mut snapshot: Vec<crate::ffi::RoomInfo> = cache.values().cloned().collect();
-                apply_backfill_previews(&mut snapshot, previews);
-                super::sort_room_infos(&mut snapshot);
-                {
-                    let guard = h.lock();
-                    guard.on_rooms_updated(&snapshot);
-                }
-            }
 
             self.spawn_tracked(async move {
                 use matrix_sdk::RoomState;
@@ -675,31 +504,9 @@ impl ClientFfi {
             let client_clone = client.clone();
             let state_code = Arc::clone(&self.backup_state_code);
             let imported = Arc::clone(&self.imported_keys);
-            let mut stop_rx = stop_rx.clone();
+            let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(async move {
-                use futures_util::StreamExt;
-                let mut rec_stream = client_clone.encryption().recovery().state_stream();
-                loop {
-                    tokio::select! {
-                        _ = stop_rx.changed() => {
-                            if *stop_rx.borrow() { break; }
-                        }
-                        Some(_state) = rec_stream.next() => {
-                            // Re-emit a snapshot; the UI re-queries needs_recovery().
-                            {
-                                let guard = h.lock();
-                                guard.on_backup_progress(&BackupProgress {
-                                    state:         state_code.load(Ordering::Relaxed),
-                                    imported_keys: imported.load(Ordering::Relaxed),
-                                    total_keys:    0,
-                                });
-                            }
-                        }
-                        else => break,
-                    }
-                }
-            });
+            self.spawn_tracked(watch_recovery_state(h, client_clone, state_code, imported, stop_rx));
         }
 
         // Backup-state watcher (Step 6).
@@ -715,48 +522,9 @@ impl ClientFfi {
             let client_clone = client.clone();
             let state_code = Arc::clone(&self.backup_state_code);
             let imported = Arc::clone(&self.imported_keys);
-            let mut stop_rx = stop_rx.clone();
+            let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(async move {
-                use futures_util::StreamExt;
-                let mut state_stream = client_clone.encryption().backups().state_stream();
-
-                // Emit an initial snapshot so a UI that opens before the
-                // first state change still has a starting value.
-                {
-                    let s = backup_state_code(client_clone.encryption().backups().state());
-                    state_code.store(s, Ordering::Relaxed);
-                    {
-                        let guard = h.lock();
-                        guard.on_backup_progress(&BackupProgress {
-                            state: s,
-                            imported_keys: imported.load(Ordering::Relaxed),
-                            total_keys: 0,
-                        });
-                    }
-                }
-
-                loop {
-                    tokio::select! {
-                        _ = stop_rx.changed() => {
-                            if *stop_rx.borrow() { break; }
-                        }
-                        Some(Ok(state)) = state_stream.next() => {
-                            let s = backup_state_code(state);
-                            state_code.store(s, Ordering::Relaxed);
-                            {
-                                let guard = h.lock();
-                                guard.on_backup_progress(&BackupProgress {
-                                    state:         s,
-                                    imported_keys: imported.load(Ordering::Relaxed),
-                                    total_keys:    0,
-                                });
-                            }
-                        }
-                        else => break,
-                    }
-                }
-            });
+            self.spawn_tracked(watch_backup_state(h, client_clone, state_code, imported, stop_rx));
         }
 
         // Imported-room-keys watcher (Step 6).
@@ -775,50 +543,9 @@ impl ClientFfi {
             let client_clone = client.clone();
             let state_code = Arc::clone(&self.backup_state_code);
             let imported = Arc::clone(&self.imported_keys);
-            let mut stop_rx = stop_rx.clone();
+            let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(async move {
-                use futures_util::StreamExt;
-
-                let keys_stream = loop {
-                    if *stop_rx.borrow() {
-                        return;
-                    }
-                    if let Some(s) = client_clone.encryption().room_keys_received_stream().await {
-                        break s;
-                    }
-                    tokio::select! {
-                        _ = stop_rx.changed() => {
-                            if *stop_rx.borrow() { return; }
-                        }
-                        _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
-                    }
-                };
-                let mut keys_stream = Box::pin(keys_stream);
-
-                loop {
-                    tokio::select! {
-                        _ = stop_rx.changed() => {
-                            if *stop_rx.borrow() { break; }
-                        }
-                        Some(batch) = keys_stream.next() => {
-                            if let Ok(keys) = batch {
-                                let n = imported.fetch_add(keys.len() as u64, Ordering::Relaxed)
-                                    + keys.len() as u64;
-                                {
-                                    let guard = h.lock();
-                                    guard.on_backup_progress(&BackupProgress {
-                                        state:         state_code.load(Ordering::Relaxed),
-                                        imported_keys: n,
-                                        total_keys:    0,
-                                    });
-                                }
-                            }
-                        }
-                        else => break,
-                    }
-                }
-            });
+            self.spawn_tracked(watch_imported_keys(h, client_clone, state_code, imported, stop_rx));
         }
 
         // RoomListService state watcher.
@@ -836,37 +563,9 @@ impl ClientFfi {
         {
             let h = Arc::clone(&handler);
             let svc_clone = Arc::clone(&sync_service);
-            let mut stop_rx = stop_rx.clone();
+            let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(async move {
-                let rls = svc_clone.room_list_service();
-                let mut state_rx = rls.state();
-
-                // Initial snapshot.
-                {
-                    let s = room_list_state_code(&state_rx.next_now());
-                    {
-                        let guard = h.lock();
-                        guard.on_room_list_state(s);
-                    }
-                }
-
-                loop {
-                    tokio::select! {
-                        _ = stop_rx.changed() => {
-                            if *stop_rx.borrow() { break; }
-                        }
-                        Some(state) = state_rx.next() => {
-                            let s = room_list_state_code(&state);
-                            {
-                                let guard = h.lock();
-                                guard.on_room_list_state(s);
-                            }
-                        }
-                        else => break,
-                    }
-                }
-            });
+            self.spawn_tracked(watch_room_list_state(h, svc_clone, stop_rx));
         }
 
         // Verification state watcher.
@@ -878,37 +577,9 @@ impl ClientFfi {
         {
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
-            let mut stop_rx = stop_rx.clone();
+            let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(async move {
-                use matrix_sdk::encryption::VerificationState;
-                let mut state_rx = client_clone.encryption().verification_state();
-
-                // Initial snapshot.
-                {
-                    let s = matches!(state_rx.next_now(), VerificationState::Verified);
-                    {
-                        let guard = h.lock();
-                        guard.on_verification_state_changed(s);
-                    }
-                }
-
-                loop {
-                    tokio::select! {
-                        _ = stop_rx.changed() => {
-                            if *stop_rx.borrow() { break; }
-                        }
-                        Some(state) = state_rx.next() => {
-                            let verified = matches!(state, VerificationState::Verified);
-                            {
-                                let guard = h.lock();
-                                guard.on_verification_state_changed(verified);
-                            }
-                        }
-                        else => break,
-                    }
-                }
-            });
+            self.spawn_tracked(watch_verification_state(h, client_clone, stop_rx));
         }
 
         // Incoming verification request handler.
@@ -1291,4 +962,428 @@ async fn poll_presence_once(
         });
     }
     futures_util::future::join_all(futs).await;
+}
+
+// ---------------------------------------------------------------------------
+// start_sync watcher / handler helpers (extracted, behavior-preserving)
+//
+// Each of these is the body of a task spawned by `start_sync`, lifted to
+// module scope so the registration routine reads as a sequence of named
+// spawns. They take exactly the state the inline body captured.
+// ---------------------------------------------------------------------------
+
+/// Refresh the cached DM-counterpart set from the room cache values. The
+/// presence polling task reads this snapshot directly so it never has to
+/// walk joined_rooms itself.
+fn refresh_dm_counterparts(
+    cache_w: &parking_lot::RwLock<std::collections::HashSet<String>>,
+    cache: &std::collections::HashMap<OwnedRoomId, crate::ffi::RoomInfo>,
+) {
+    let new_set: std::collections::HashSet<String> = cache
+        .values()
+        .map(|r| r.dm_counterpart_user_id.clone())
+        .filter(|s| !s.is_empty())
+        .collect();
+    *cache_w.write() = new_set;
+}
+
+/// Snapshot helper: clone the cache values into a Vec, apply backfill
+/// previews, sort, and push to the UI thread.
+fn emit_snapshot(
+    cache: &std::collections::HashMap<OwnedRoomId, crate::ffi::RoomInfo>,
+    previews: &Mutex<std::collections::HashMap<String, crate::client::backfill::BackfillPreview>>,
+    h: &Arc<Mutex<SendHandler>>,
+) {
+    let mut snapshot: Vec<crate::ffi::RoomInfo> = cache.values().cloned().collect();
+    apply_backfill_previews(&mut snapshot, previews);
+    super::sort_room_infos(&mut snapshot);
+    {
+        let guard = h.lock();
+        guard.on_rooms_updated(&snapshot);
+    }
+}
+
+/// Session-refresh watcher: persist refreshed OAuth tokens and surface an
+/// auth error (stopping SyncService) when the token is no longer valid.
+async fn watch_session_changes(
+    h: Arc<Mutex<SendHandler>>,
+    client: Client,
+    stop_tx_auth: watch::Sender<bool>,
+) {
+    let mut changes = client.subscribe_to_session_changes();
+    loop {
+        match changes.recv().await {
+            Ok(SessionChange::TokensRefreshed) => {
+                let Some(full) = client.oauth().full_session() else {
+                    continue;
+                };
+                let persisted = PersistedSession {
+                    client_id: full.client_id,
+                    user: full.user,
+                };
+                let Ok(json) = serde_json::to_string(&persisted) else {
+                    continue;
+                };
+                {
+                    let guard = h.lock();
+                    guard.on_session_refreshed(&json);
+                }
+            }
+            Ok(SessionChange::UnknownToken(data)) => {
+                // Stop SyncService before it can reach State::Error and
+                // wipe the SQLite data directory while a fresh login is
+                // already in progress.
+                let _ = stop_tx_auth.send(true);
+                {
+                    let guard = h.lock();
+                    guard.on_error(
+                        "sync_auth_error",
+                        "Session token is no longer valid; please log in again.",
+                        data.soft_logout,
+                    );
+                }
+                break;
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+/// Notification-handler body for `m.room.message` events. Lifted out of the
+/// `add_event_handler` closure; the closure clones the captured state per
+/// invocation and forwards it here along with the event/room.
+async fn handle_message_notification(
+    ev: matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent<RoomMessageEventContent>,
+    room: Room,
+    client: Client,
+    h: Arc<Mutex<SendHandler>>,
+    session_start_ms: u64,
+) {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    let (body, msg_type_str) = match &ev.content.msgtype {
+        MessageType::Text(t) => (t.body.trim().to_owned(), "m.text"),
+        MessageType::Image(i) => (i.body.trim().to_owned(), "m.image"),
+        MessageType::File(f) => (f.body.trim().to_owned(), "m.file"),
+        MessageType::Audio(a) => (a.body.trim().to_owned(), "m.audio"),
+        MessageType::Video(v) => (v.body.trim().to_owned(), "m.video"),
+        _ => return,
+    };
+    if body.is_empty() {
+        return;
+    }
+    // Image messages carry a preview picture; other msgtypes get none.
+    let preview_source = match &ev.content.msgtype {
+        MessageType::Image(i) => Some(i.source.clone()),
+        _ => None,
+    };
+    media::emit_notification(
+        &client,
+        room,
+        &ev.sender,
+        &body,
+        msg_type_str,
+        ev.event_id.as_str(),
+        ev.origin_server_ts.get().into(),
+        session_start_ms,
+        preview_source,
+        &h,
+    )
+    .await;
+}
+
+/// Notification-handler body for `m.sticker` events.
+async fn handle_sticker_notification(
+    ev: matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent<
+        matrix_sdk::ruma::events::sticker::StickerEventContent,
+    >,
+    room: Room,
+    client: Client,
+    h: Arc<Mutex<SendHandler>>,
+    session_start_ms: u64,
+) {
+    use matrix_sdk::ruma::events::room::MediaSource;
+    use matrix_sdk::ruma::events::sticker::StickerMediaSource;
+    let body = ev.content.body.trim().to_owned();
+    if body.is_empty() {
+        return;
+    }
+    let preview_source = match &ev.content.source {
+        StickerMediaSource::Plain(uri) => Some(MediaSource::Plain(uri.clone())),
+        StickerMediaSource::Encrypted(f) => Some(MediaSource::Encrypted(f.clone())),
+        _ => None,
+    };
+    media::emit_notification(
+        &client,
+        room,
+        &ev.sender,
+        &body,
+        "m.sticker",
+        ev.event_id.as_str(),
+        ev.origin_server_ts.get().into(),
+        session_start_ms,
+        preview_source,
+        &h,
+    )
+    .await;
+}
+
+/// Typing-notification handler body. Filters out self and resolves cached
+/// member display names for the typing strip.
+async fn handle_typing_notification(
+    ev: matrix_sdk::ruma::events::typing::SyncTypingEvent,
+    room: Room,
+    h: Arc<Mutex<SendHandler>>,
+    me: Option<matrix_sdk::ruma::OwnedUserId>,
+) {
+    let rid = room.room_id().to_string();
+    let mut uids: Vec<String> = Vec::new();
+    for u in ev.content.user_ids.iter() {
+        if me.as_deref() == Some(u.as_ref()) {
+            continue;
+        }
+        // Prefer the cached room-member display name so the typing strip
+        // shows a readable name rather than an opaque localpart (e.g.
+        // "@78fa3bcde:hs"). Falls back to the localpart when no member
+        // profile is cached (no extra network round-trip).
+        let name = super::member_display_name_local(&room, u).await;
+        uids.push(name);
+    }
+    {
+        let g = h.lock();
+        g.on_typing_changed(&rid, &uids);
+    }
+}
+
+/// Presence polling loop: every 60s, when enabled, run one DM presence pass.
+async fn watch_presence(
+    h: Arc<Mutex<SendHandler>>,
+    client: Client,
+    mut stop_rx_presence: watch::Receiver<bool>,
+    presence_enabled: Arc<std::sync::atomic::AtomicBool>,
+    dm_counterparts: Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
+    forbidden_presence: Arc<Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>>,
+) {
+    // 60s tick: matrix-sdk delivers presence EDUs through the sync stream
+    // for free; this polling loop is a fallback for servers that omit them
+    // for non-following users. The cache population (in the room-list
+    // rebuild path) means the very first tick reads no users until
+    // build_room_infos has finished its initial sweep — that's fine,
+    // presence is not load-bearing for the first frame.
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            _ = stop_rx_presence.changed() => break,
+            _ = interval.tick() => {}
+        }
+        if !presence_enabled.load(std::sync::atomic::Ordering::Relaxed) {
+            continue;
+        }
+        poll_presence_once(&client, &h, &dm_counterparts, &forbidden_presence).await;
+    }
+}
+
+/// Recovery-state watcher: re-emit a backup-progress snapshot on every
+/// `Recovery::state_stream()` transition so the UI re-queries needs_recovery().
+async fn watch_recovery_state(
+    h: Arc<Mutex<SendHandler>>,
+    client: Client,
+    state_code: Arc<std::sync::atomic::AtomicU8>,
+    imported: Arc<std::sync::atomic::AtomicU64>,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    use futures_util::StreamExt;
+    let mut rec_stream = client.encryption().recovery().state_stream();
+    loop {
+        tokio::select! {
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
+            Some(_state) = rec_stream.next() => {
+                // Re-emit a snapshot; the UI re-queries needs_recovery().
+                {
+                    let guard = h.lock();
+                    guard.on_backup_progress(&BackupProgress {
+                        state:         state_code.load(Ordering::Relaxed),
+                        imported_keys: imported.load(Ordering::Relaxed),
+                        total_keys:    0,
+                    });
+                }
+            }
+            else => break,
+        }
+    }
+}
+
+/// Backup-state watcher: emit an initial snapshot, then an
+/// `on_backup_progress` on every `Backups::state_stream()` transition.
+async fn watch_backup_state(
+    h: Arc<Mutex<SendHandler>>,
+    client: Client,
+    state_code: Arc<std::sync::atomic::AtomicU8>,
+    imported: Arc<std::sync::atomic::AtomicU64>,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    use futures_util::StreamExt;
+    let mut state_stream = client.encryption().backups().state_stream();
+
+    // Emit an initial snapshot so a UI that opens before the first state
+    // change still has a starting value.
+    {
+        let s = backup_state_code(client.encryption().backups().state());
+        state_code.store(s, Ordering::Relaxed);
+        {
+            let guard = h.lock();
+            guard.on_backup_progress(&BackupProgress {
+                state: s,
+                imported_keys: imported.load(Ordering::Relaxed),
+                total_keys: 0,
+            });
+        }
+    }
+
+    loop {
+        tokio::select! {
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
+            Some(Ok(state)) = state_stream.next() => {
+                let s = backup_state_code(state);
+                state_code.store(s, Ordering::Relaxed);
+                {
+                    let guard = h.lock();
+                    guard.on_backup_progress(&BackupProgress {
+                        state:         s,
+                        imported_keys: imported.load(Ordering::Relaxed),
+                        total_keys:    0,
+                    });
+                }
+            }
+            else => break,
+        }
+    }
+}
+
+/// Imported-room-keys watcher: poll until `room_keys_received_stream()` is
+/// available, then forward each batch's key count into `imported` and re-emit
+/// an `on_backup_progress` so the UI updates live.
+async fn watch_imported_keys(
+    h: Arc<Mutex<SendHandler>>,
+    client: Client,
+    state_code: Arc<std::sync::atomic::AtomicU8>,
+    imported: Arc<std::sync::atomic::AtomicU64>,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    use futures_util::StreamExt;
+
+    let keys_stream = loop {
+        if *stop_rx.borrow() {
+            return;
+        }
+        if let Some(s) = client.encryption().room_keys_received_stream().await {
+            break s;
+        }
+        tokio::select! {
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { return; }
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+        }
+    };
+    let mut keys_stream = Box::pin(keys_stream);
+
+    loop {
+        tokio::select! {
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
+            Some(batch) = keys_stream.next() => {
+                if let Ok(keys) = batch {
+                    let n = imported.fetch_add(keys.len() as u64, Ordering::Relaxed)
+                        + keys.len() as u64;
+                    {
+                        let guard = h.lock();
+                        guard.on_backup_progress(&BackupProgress {
+                            state:         state_code.load(Ordering::Relaxed),
+                            imported_keys: n,
+                            total_keys:    0,
+                        });
+                    }
+                }
+            }
+            else => break,
+        }
+    }
+}
+
+/// RoomListService state watcher: emit an initial snapshot, then surface each
+/// sliding-sync phase transition via `on_room_list_state`.
+async fn watch_room_list_state(
+    h: Arc<Mutex<SendHandler>>,
+    svc: Arc<SyncService>,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    let rls = svc.room_list_service();
+    let mut state_rx = rls.state();
+
+    // Initial snapshot.
+    {
+        let s = room_list_state_code(&state_rx.next_now());
+        {
+            let guard = h.lock();
+            guard.on_room_list_state(s);
+        }
+    }
+
+    loop {
+        tokio::select! {
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
+            Some(state) = state_rx.next() => {
+                let s = room_list_state_code(&state);
+                {
+                    let guard = h.lock();
+                    guard.on_room_list_state(s);
+                }
+            }
+            else => break,
+        }
+    }
+}
+
+/// Verification-state watcher: emit an initial snapshot, then notify the UI
+/// whenever the cross-signing verified status of this account changes.
+async fn watch_verification_state(
+    h: Arc<Mutex<SendHandler>>,
+    client: Client,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    use matrix_sdk::encryption::VerificationState;
+    let mut state_rx = client.encryption().verification_state();
+
+    // Initial snapshot.
+    {
+        let s = matches!(state_rx.next_now(), VerificationState::Verified);
+        {
+            let guard = h.lock();
+            guard.on_verification_state_changed(s);
+        }
+    }
+
+    loop {
+        tokio::select! {
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
+            Some(state) = state_rx.next() => {
+                let verified = matches!(state, VerificationState::Verified);
+                {
+                    let guard = h.lock();
+                    guard.on_verification_state_changed(verified);
+                }
+            }
+            else => break,
+        }
+    }
 }
