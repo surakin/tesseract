@@ -46,6 +46,15 @@ bool SecretStore::save(const std::string& user_id, const std::string& json)
     cred.CredentialBlobSize = static_cast<DWORD>(json.size());
     cred.CredentialBlob     =
         reinterpret_cast<LPBYTE>(const_cast<char*>(json.data()));
+    // CRED_PERSIST_LOCAL_MACHINE: persists across the user's logon sessions on
+    // this machine but does NOT roam via domain/Azure AD profiles (that would
+    // be CRED_PERSIST_ENTERPRISE).  Despite the "machine" in the flag name,
+    // CRED_TYPE_GENERIC credentials are stored per-user: the blob is DPAPI-
+    // encrypted under the user's profile and is inaccessible to other Windows
+    // users on the same machine (and, because DPAPI's machine key is device-
+    // specific, undecryptable on a different machine).  This is the intended
+    // analog of the macOS kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    // scope: persistent, device-local, and bound to the individual user.
     cred.Persist            = CRED_PERSIST_LOCAL_MACHINE;
     return CredWriteW(&cred, 0) == TRUE;
 }
