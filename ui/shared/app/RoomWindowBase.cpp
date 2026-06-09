@@ -706,7 +706,6 @@ void RoomWindowBase::repaint_anim_frame()
 
 void RoomWindowBase::on_typing_changed(const std::string& text, bool visible)
 {
-    typing_bar_visible_ = visible;
     if (room_view_)
     {
         room_view_->set_typing_text(text);

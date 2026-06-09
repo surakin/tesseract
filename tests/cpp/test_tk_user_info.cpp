@@ -54,24 +54,6 @@ TEST_CASE("UserInfo natural height shows the Matrix ID line by default",
     CHECK(sz.h <= 56.0f);
 }
 
-TEST_CASE("UserInfo shrinks when the user_id line is hidden",
-          "[tk][view][user_info]")
-{
-    Stage st;
-    UserInfo info;
-    info.set_display_name("Alice");
-    info.set_user_id("@alice:example.org");
-    info.set_show_user_id(false);
-
-    auto lc = st.layout_ctx();
-    auto two_line = info.measure(lc, {320.0f, 0.0f});
-
-    info.set_show_user_id(true);
-    auto with_id = info.measure(lc, {320.0f, 0.0f});
-
-    CHECK(two_line.h <= with_id.h);
-}
-
 TEST_CASE("UserInfo paints without crashing when no image_provider is wired",
           "[tk][view][user_info]")
 {

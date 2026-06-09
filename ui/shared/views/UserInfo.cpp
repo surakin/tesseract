@@ -68,21 +68,6 @@ void UserInfo::set_active_indicator(bool on)
     active_indicator_ = on;
 }
 
-void UserInfo::set_show_user_id(bool on)
-{
-    if (show_user_id_ == on)
-    {
-        return;
-    }
-    show_user_id_ = on;
-    invalidate_text();
-}
-
-void UserInfo::set_avatar_size(float d)
-{
-    avatar_size_ = std::max(16.0f, d);
-}
-
 void UserInfo::invalidate_text()
 {
     name_layout_.reset();
@@ -109,7 +94,7 @@ tk::Size UserInfo::measure(tk::LayoutCtx&, tk::Size constraints)
     constexpr float kNameH = 18.0f;
     constexpr float kIdH = 14.0f;
 
-    const float text_col_h = show_user_id_ ? kNameH + kLineGap + kIdH : kNameH;
+    const float text_col_h = kNameH + kLineGap + kIdH;
     const float h = std::max(avatar_size_, text_col_h) + 2 * kPadY;
     return {w, h};
 }
@@ -201,7 +186,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         st.max_width = text_w;
         name_layout_ = ctx.factory.build_text(display_name_, st);
     }
-    if (!uid_layout_ && show_user_id_ && !user_id_.empty())
+    if (!uid_layout_ && !user_id_.empty())
     {
         tk::TextStyle st;
         st.role = tk::FontRole::SidebarPreview;
@@ -217,8 +202,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         name_layout_ ? name_layout_->measure() : tk::Size{};
     const tk::Size uid_sz = uid_layout_ ? uid_layout_->measure() : tk::Size{};
     const float col_h =
-        show_user_id_ ? name_sz.h + (uid_sz.h > 0 ? kLineGap + uid_sz.h : 0)
-                      : name_sz.h;
+        name_sz.h + (uid_sz.h > 0 ? kLineGap + uid_sz.h : 0);
     const float col_top = bounds_.y + (bounds_.h - col_h) * 0.5f;
 
     if (name_layout_)

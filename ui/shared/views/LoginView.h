@@ -68,12 +68,6 @@ public:
 
     void set_status(std::string message, std::optional<tk::Color> colour = {});
 
-    void set_homeserver_label(std::string url);
-    const std::string& homeserver_label() const
-    {
-        return homeserver_label_;
-    }
-
     enum class DiscoveryState
     {
         Idle,
@@ -250,7 +244,6 @@ private:
     // Visual state
     State          state_          = State::Form;
     Mode           mode_           = Mode::Initial;
-    std::string    homeserver_label_{"matrix.org"};
     DiscoveryState discovery_state_{DiscoveryState::Idle};
     std::string    resolved_base_url_;
 

@@ -42,7 +42,6 @@ public:
     GtkAudioPlayer()
     {
         ensure_gst_init();
-        pipeline_ = gst_element_factory_make("playbin", "tk_audio_player");
     }
 
     ~GtkAudioPlayer() override
@@ -52,22 +51,11 @@ public:
         {
             g_source_remove(bus_watch_id_);
         }
-        if (pipeline_)
-        {
-            gst_element_set_state(pipeline_, GST_STATE_NULL);
-            gst_object_unref(pipeline_);
-        }
     }
 
     void play(const std::uint8_t* data, std::size_t size,
               std::string_view /*mime*/) override
     {
-        if (!pipeline_)
-        {
-            return;
-        }
-        gst_element_set_state(pipeline_, GST_STATE_NULL);
-
         bytes_.assign(data, data + size);
         // mem:// URIs aren't a standard GStreamer scheme; build a giostream
         // source on the fly instead. playbin can consume a `giostreamsrc`
@@ -333,7 +321,6 @@ private:
         return TRUE;
     }
 
-    GstElement* pipeline_ = nullptr; // unused (kept for symmetry)
     GstElement* current_pipeline_ = nullptr;
     std::vector<std::uint8_t> bytes_;
     bool playing_ = false;

@@ -42,14 +42,6 @@ public:
         return active_indicator_;
     }
 
-    // Two-line layout (default) vs single-line. False collapses the Matrix
-    // ID and centres the display name beside the avatar.
-    void set_show_user_id(bool on);
-
-    // Avatar disc diameter. Defaults to 32 px to match the existing sidebar
-    // user-strip / account row size.
-    void set_avatar_size(float diameter);
-
     const std::string& display_name() const
     {
         return display_name_;
@@ -93,7 +85,6 @@ private:
     std::string display_name_;
     std::string user_id_;
     std::string avatar_url_;
-    bool show_user_id_ = true;
     bool active_indicator_ = false;
     float avatar_size_ = 32.0f;
     ImageProvider image_provider_;

@@ -246,10 +246,6 @@ public:
     {
         return near_bottom_threshold_px_;
     }
-    void reset_near_bottom_latch()
-    {
-        was_near_bottom_ = false;
-    }
 
     // Run `mutate` (which is expected to change the adapter's row count
     // and call `invalidate_data`) while preserving the user's visual

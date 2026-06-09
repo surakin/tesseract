@@ -292,31 +292,4 @@ private:
     std::vector<std::unique_ptr<Widget>> children_;
 };
 
-// Convenience for widgets that simply paint a coloured background.
-class FillBackground : public Widget
-{
-public:
-    explicit FillBackground(Color c) : colour_(c)
-    {
-    }
-    Size measure(LayoutCtx&, Size constraints) override
-    {
-        return constraints;
-    }
-    void paint(PaintCtx& ctx) override
-    {
-        ctx.canvas.fill_rect(bounds_, colour_);
-        for (auto& ch : children())
-        {
-            if (ch->visible())
-            {
-                ch->paint(ctx);
-            }
-        }
-    }
-
-private:
-    Color colour_;
-};
-
 } // namespace tk

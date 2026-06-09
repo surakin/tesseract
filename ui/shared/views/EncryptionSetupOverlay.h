@@ -102,8 +102,6 @@ public:
         recovery_key_.clear();
         error_msg_.clear();
         progress_label_.clear();
-        passphrase_input_.clear();
-        key_input_.clear();
         key_saved_checked_   = false;
         passphrase_mode_     = false;
         // Clear all callbacks so the caller can re-wire fresh ones.
@@ -128,8 +126,6 @@ public:
     void simulate_select_passphrase_mode();
     void simulate_check_key_saved();
     void simulate_sas_link();
-    void set_passphrase_input(std::string v) { passphrase_input_ = std::move(v); }
-    void set_key_input(std::string v)        { key_input_ = std::move(v); }
 
 private:
     void     advance_step_(Step next);
@@ -143,8 +139,6 @@ private:
     std::string recovery_key_;
     std::string error_msg_;
     std::string progress_label_;
-    std::string passphrase_input_;
-    std::string key_input_;
     bool        key_saved_checked_  = false;
     bool        passphrase_mode_    = false;
 

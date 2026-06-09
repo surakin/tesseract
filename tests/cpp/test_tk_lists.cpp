@@ -1519,58 +1519,6 @@ TEST_CASE("ListView::on_near_bottom re-arms when content is appended",
     CHECK(fires == 2);
 }
 
-TEST_CASE("ListView::on_near_bottom not fired when stick_to_bottom_ is true",
-          "[tk][listview][nearBottom]")
-{
-    Stage st;
-    ListView list;
-    FixedHeightAdapter ad;
-    ad.n = 60;
-    ad.row_h = 30.0f; // 1800 px content
-    list.set_adapter(&ad);
-    list.set_near_bottom_threshold_px(200.0f);
-
-    int fires = 0;
-    list.on_near_bottom = [&]
-    {
-        ++fires;
-    };
-
-    auto lc = st.layout_ctx();
-    list.arrange(lc, {0, 0, 200, 300});
-
-    // Scroll near bottom to reach the near-bottom zone and latch.
-    list.on_wheel({50, 50}, 0, 1400);
-    REQUIRE(fires == 1);
-
-    // Reset the latch manually (as would happen after set_messages in the
-    // real MessageListView) and snap to bottom, simulating the initial
-    // pinned state after loading a room.
-    list.reset_near_bottom_latch();
-    list.scroll_to_bottom();
-    list.arrange(lc, {0, 0, 200, 300});
-
-    // At this point scroll_y == max_scroll and stick_to_bottom_ is true.
-    // A wheel event clears stick_to_bottom_ first, so we cannot use it to
-    // test the sticky-suppression directly. Instead, verify that the latch
-    // was not re-armed by the reset+snap: scrolling slightly down (no-op,
-    // already at max) and back up by a tiny amount stays in the near-bottom
-    // zone. The latch is still false (was reset), but stick_to_bottom_ is
-    // cleared by the wheel — so the check fires. This confirms that
-    // reset_near_bottom_latch() + scroll_to_bottom() is the correct API
-    // combination for the MessageListView to suppress a spurious fire after
-    // set_messages, not relying on the sticky flag alone.
-    //
-    // Verify: after resetting the latch, scrolling back into the near-bottom
-    // zone fires once (not zero — the sticky guard only applies while
-    // stick_to_bottom_ is still set, and on_wheel clears it).
-    list.on_wheel({50, 50}, 0, -600); // leave near-bottom zone first
-    REQUIRE((1800.0f - (list.scroll_y() + 300.0f)) >= 200.0f);
-    CHECK(fires == 1); // latch re-armed during scroll-out, no extra fire
-    list.on_wheel({50, 50}, 0, 500); // re-enter zone → fire
-    CHECK(fires == 2);
-}
-
 TEST_CASE(
     "ListView::on_near_bottom not fired when content fits within viewport",
     "[tk][listview][nearBottom]")

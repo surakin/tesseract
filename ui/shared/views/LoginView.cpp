@@ -148,11 +148,6 @@ void LoginView::set_status(std::string message, std::optional<tk::Color> colour)
     }
 }
 
-void LoginView::set_homeserver_label(std::string url)
-{
-    homeserver_label_ = std::move(url);
-}
-
 void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
 {
     discovery_state_ = s;

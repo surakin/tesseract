@@ -341,7 +341,6 @@ protected:
     bool threads_reached_start_ = false;
     bool threads_paginating_    = false; // in-flight guard for paginate_threads_()
     bool compose_typing_active_ = false;
-    bool typing_bar_visible_ = false;
     bool relayout_scheduled_ = false; // a coalesced relayout flush is pending
 
     // ── Image caches ──────────────────────────────────────────────────────────
@@ -1198,15 +1197,9 @@ protected:
     virtual void handle_account_prefs_updated_ui_(std::string user_id,
                                                   std::string json);
     // MSC4278: re-read the global media-preview config into the Settings
-    // mirror (active account only) and refresh gating + room list. Each shell
-    // overrides on_media_preview_config_applied_() to refresh its settings UI.
+    // mirror (active account only) and refresh gating + room list.
     virtual void handle_media_preview_config_updated_ui_(std::string user_id,
                                                          std::string json);
-    // Hook fired after the Settings mirror is updated from account-data, so a
-    // shell can sync any open settings picker. Default no-op.
-    virtual void on_media_preview_config_applied_()
-    {
-    }
     virtual void
     handle_notification_ui_(std::string /*user_id*/, std::string /*room_id*/,
                             std::string /*room_name*/, std::string /*sender*/,
@@ -1628,13 +1621,8 @@ protected:
     // Sticker / animated-media lookup: anim_cache_ → tk_images_ fallback.
     // shell_sticker_ kicks an ensure_media_image_(mxc, 64, 64) fetch on miss
     // (used by RoomListView's sticker_provider, where the row hasn't yet
-    // pre-warmed the cache). shell_sticker_no_fetch_ is the pure-lookup
-    // variant (used by RoomView's image_provider, where ensure_row_media_
-    // has already kicked the fetch).
+    // pre-warmed the cache).
     const tk::Image* shell_sticker_(const std::string& mxc);
-    // Non-const: an animated hit restarts the frame-tick timer (so a GIF that
-    // scrolled back into view resumes after the timer idled).
-    const tk::Image* shell_sticker_no_fetch_(const std::string& mxc);
 
     // Provider-lambda factories. Each shell wires these onto its native
     // pickers / dialogs / popups instead of re-spelling the identical lookup

@@ -153,9 +153,7 @@ void EncryptionSetupOverlay::fire_primary_()
 
         case Step::ChooseMethod:
         {
-            std::string pass = passphrase_mode_
-                ? (get_passphrase ? get_passphrase() : passphrase_input_)
-                : "";
+            std::string pass = passphrase_mode_ ? get_passphrase() : "";
             advance_step_(Step::Progress);
             if (on_enable_recovery)
                 on_enable_recovery(std::move(pass));
@@ -164,7 +162,7 @@ void EncryptionSetupOverlay::fire_primary_()
 
         case Step::EnterKey:
             {
-                std::string key = get_key_input ? get_key_input() : key_input_;
+                std::string key = get_key_input();
                 if (key.empty()) return;
                 advance_step_(Step::Progress);
                 if (on_recover)
@@ -442,8 +440,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             sas_link_             = {cx, by, sw, kBtnH};
             paint_link(ctx, sas_link_, sas);
 
-            const std::string key =
-                get_key_input ? get_key_input() : key_input_;
+            const std::string key = get_key_input();
             primary_enabled_ = !key.empty();
             float vw = button_width(ctx, "Verify");
             place_primary({card.x + card.w - kCardPad - vw, by, vw, kBtnH},

@@ -456,7 +456,7 @@ const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
         return it->second.get();
     }
     // Otherwise the existing fallthrough: animated frame → inline full-size
-    // image → server thumbnail (mirrors shell_sticker_no_fetch_).
+    // image → server thumbnail.
     if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
     {
         start_anim_tick_(); // visible animated frame → keep the timer running
@@ -636,22 +636,6 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
     }
     ensure_media_image_(mxc, 64, 64);
     return nullptr;
-}
-
-const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc)
-{
-    if (const auto* f = account_manager_.anim_cache().current_frame(mxc))
-    {
-        start_anim_tick_(); // visible animated frame → keep the timer running
-        return f;
-    }
-    // Prefer the full-size image (viewer / prefetch_full_media) when present,
-    // otherwise fall back to the inline thumbnail.
-    if (const auto* img = account_manager_.image_cache().peek(mxc))
-    {
-        return img;
-    }
-    return account_manager_.thumbnail_cache().peek(mxc);
 }
 
 void ShellBase::set_room_notification_mode_(const std::string& room_id,
@@ -1700,9 +1684,6 @@ void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
     auto& s = tesseract::Settings::instance();
     s.media_previews = mode_to_settings_(cfg.media_previews);
     s.invite_avatars = cfg.invite_avatars;
-
-    // Refresh any open settings UI in the shell.
-    on_media_preview_config_applied_();
 
     // Fetch media that just became allowed in the open room.
     if (room_view_ && should_auto_preview_(current_room_id_))
@@ -3197,7 +3178,6 @@ void ShellBase::handle_typing_changed_ui_(std::string room_id,
     const bool visible = !names.empty();
     if (room_id == current_room_id_)
     {
-        typing_bar_visible_ = visible;
         update_typing_bar_(text, visible);
     }
     dispatch_to_secondary_windows_(room_id,

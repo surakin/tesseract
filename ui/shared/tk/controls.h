@@ -261,41 +261,6 @@ private:
     Size label_size_{};
 };
 
-// A button with a persistent on/off state. Renders an accent-filled pill when
-// `checked`, an outlined pill when not. Icon is a Unicode glyph in the label
-// (matching tk::Button convention). Fires `on_change(new_state)` on user click;
-// `set_checked()` is programmatic and silent.
-class ToggleButton : public Widget
-{
-public:
-    explicit ToggleButton(std::string label, bool checked = false)
-        : label_(std::move(label)), checked_(checked) { }
-
-    ToggleButton& set_label(std::string l) { label_ = std::move(l); cached_.reset(); return *this; }
-    void set_checked(bool c) { checked_ = c; }
-    bool checked() const { return checked_; }
-    void set_enabled(bool e) { enabled_ = e; }
-    bool enabled() const { return enabled_; }
-
-    std::function<void(bool)> on_change; // fires with the new state on user click
-
-    Size measure(LayoutCtx&, Size constraints) override;
-    void paint(PaintCtx&) override;
-    bool on_pointer_down(Point local) override;
-    void on_pointer_up(Point local, bool inside_self) override;
-    bool on_pointer_move(Point local) override;
-    void on_pointer_leave() override;
-
-private:
-    std::string                 label_;
-    bool                        checked_ = false;
-    bool                        enabled_ = true;
-    bool                        hovered_ = false;
-    bool                        pressed_ = false;
-    std::unique_ptr<TextLayout> cached_;
-    Size                        cached_size_{};
-};
-
 // A label + sliding on/off switch (settings-style). The whole row is the hit
 // target: clicking anywhere toggles. Track is accent-filled when on, muted when
 // off, with a knob that slides between the two ends. Fires `on_change(new_state)`

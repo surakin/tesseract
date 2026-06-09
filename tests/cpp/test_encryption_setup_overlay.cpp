@@ -83,7 +83,7 @@ TEST_CASE("Fresh: ChooseMethod Continue fires on_enable_recovery (passphrase mod
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action(); // → ChooseMethod
     ov.simulate_select_passphrase_mode();
-    ov.set_passphrase_input("s3cr3t");
+    ov.get_passphrase = [] { return std::string("s3cr3t"); };
     std::string fired_passphrase;
     ov.on_enable_recovery = [&](std::string p) { fired_passphrase = p; };
     ov.simulate_primary_action();
@@ -131,7 +131,7 @@ TEST_CASE("Fresh: passphrase mode skips ShowKey → Done directly",
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
     ov.simulate_select_passphrase_mode();
-    ov.set_passphrase_input("s3cr3t");
+    ov.get_passphrase = [] { return std::string("s3cr3t"); };
     ov.simulate_primary_action();
     ov.advance_progress(4, "", 0, 0); // Done, empty key → passphrase mode
     CHECK(ov.step() == EncryptionSetupOverlay::Step::Done);
@@ -176,7 +176,7 @@ TEST_CASE("Recover: EnterKey Verify fires on_recover with key",
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action(); // → EnterKey
-    ov.set_key_input("my-recovery-key");
+    ov.get_key_input = [] { return std::string("my-recovery-key"); };
     std::string fired_key;
     ov.on_recover = [&](std::string k) { fired_key = k; };
     ov.simulate_primary_action(); // Verify
@@ -203,7 +203,7 @@ TEST_CASE("Recover: Progress Done → Done step", "[encryption][overlay]")
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
-    ov.set_key_input("key");
+    ov.get_key_input = [] { return std::string("key"); };
     ov.simulate_primary_action();
     ov.advance_progress(4, "", 0, 0);
     CHECK(ov.step() == EncryptionSetupOverlay::Step::Done);
@@ -216,7 +216,7 @@ TEST_CASE("Recover: Progress error returns to EnterKey with message",
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
-    ov.set_key_input("key");
+    ov.get_key_input = [] { return std::string("key"); };
     ov.simulate_primary_action();
     ov.advance_progress(5, "bad key", 0, 0);
     CHECK(ov.step() == EncryptionSetupOverlay::Step::EnterKey);
