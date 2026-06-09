@@ -233,85 +233,107 @@ void ShellBase::init_pool_callbacks_()
     }
 }
 
-void ShellBase::fetch_media_pipeline_(
-    std::string cache_key, std::string disk_key, std::string inflight_key,
-    std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
-    std::string source, std::uint32_t w, std::uint32_t h, bool animated,
-    MediaKind out_kind)
+void ShellBase::run_media_fetch_(MediaFetchSpec spec)
 {
+    // Shared across the nested worker/UI continuations; held by shared_ptr so
+    // every (copyable) std::function lambda can capture it without cloning the
+    // callbacks. The Phase-1 alive_-token guarding lives in post_to_ui_alive_.
+    auto s = std::make_shared<MediaFetchSpec>(std::move(spec));
     run_async_(
-        [this, cache_key, disk_key, inflight_key, group_id, kind, source, w, h,
-         animated, out_kind]() mutable
+        [this, s]() mutable
         {
             // io pool: only the (fast, local) disk-cache read happens here.
-            auto disk = account_manager_.media_disk_cache().load(disk_key);
+            auto disk = s->load_disk_();
             post_to_ui_alive_(
-                [this, cache_key, disk_key, inflight_key, group_id, kind,
-                 source, w, h, animated, out_kind,
-                 disk = std::move(disk)]() mutable
+                [this, s, disk = std::move(disk)]() mutable
                 {
                     if (!disk.empty())
                     {
-                        media_fetches_in_flight_.erase(inflight_key);
-                        note_media_fetch_ok_(cache_key);
-                        on_media_bytes_ready_(cache_key, out_kind,
-                                              std::move(disk));
+                        s->erase_inflight_();
+                        s->deliver_(std::move(disk));
                         return;
                     }
                     if (!client_)
                     {
-                        media_fetches_in_flight_.erase(inflight_key);
+                        s->erase_inflight_();
                         return;
                     }
                     // The room may have been switched away during the disk-read
                     // hop above. The pending_media_ entry (and its cancel) only
                     // exists after this point, so cancel_media_group_ couldn't
                     // have caught it yet — suppress the now-stale download here.
-                    if (group_id != 0 && group_id != active_media_group_)
+                    if (s->should_deliver_ && !s->should_deliver_())
                     {
-                        media_fetches_in_flight_.erase(inflight_key);
+                        s->erase_inflight_();
                         return;
                     }
                     // Disk miss → non-blocking network fetch. The completion
                     // runs on the UI thread via on_media_ready → pending_media_.
                     auto id = begin_media_req_(
-                        group_id,
-                        [this, cache_key, disk_key, inflight_key, out_kind](
-                            std::vector<std::uint8_t>&& net)
+                        s->group_id,
+                        [this, s](std::vector<std::uint8_t>&& net)
                         {
-                            media_fetches_in_flight_.erase(inflight_key);
+                            s->erase_inflight_();
                             if (net.empty())
                             {
-                                note_media_fetch_failed_(cache_key);
-                                on_media_bytes_ready_(cache_key, out_kind, {});
+                                s->on_empty_();
                                 return;
                             }
-                            note_media_fetch_ok_(cache_key);
                             // Persist to disk off the UI thread, then deliver —
                             // the buffer moves through (no large-image copy).
                             run_async_(
-                                [this, cache_key, disk_key, out_kind,
-                                 net = std::move(net)]() mutable
+                                [this, s, net = std::move(net)]() mutable
                                 {
-                                    account_manager_.media_disk_cache().store(disk_key, net);
+                                    s->store_disk_(net);
                                     post_to_ui_alive_(
-                                        [this, cache_key, out_kind,
-                                         net = std::move(net)]() mutable
+                                        [s, net = std::move(net)]() mutable
                                         {
-                                            on_media_bytes_ready_(
-                                                cache_key, out_kind,
-                                                std::move(net));
+                                            s->deliver_(std::move(net));
                                         });
                                 });
                         },
                         // on_cancel (room switch): free the dedup key so a
                         // re-entry re-requests this media.
-                        [this, inflight_key]
-                        { media_fetches_in_flight_.erase(inflight_key); });
-                    client_->fetch_media_async(id, group_id, kind, source, w, h,
-                                               animated);
+                        [s] { s->erase_inflight_(); });
+                    s->start_fetch_(id);
                 });
         });
+}
+
+void ShellBase::fetch_media_pipeline_(
+    std::string cache_key, std::string disk_key, std::string inflight_key,
+    std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
+    std::string source, std::uint32_t w, std::uint32_t h, bool animated,
+    MediaKind out_kind)
+{
+    MediaFetchSpec spec;
+    spec.group_id = group_id;
+    spec.load_disk_ = [this, disk_key]
+    { return account_manager_.media_disk_cache().load(disk_key); };
+    spec.store_disk_ = [this, disk_key](const std::vector<std::uint8_t>& b)
+    { account_manager_.media_disk_cache().store(disk_key, b); };
+    spec.erase_inflight_ = [this, inflight_key]
+    { media_fetches_in_flight_.erase(inflight_key); };
+    // Suppress a now-stale download if the room was switched away during the
+    // disk-read hop. Avatars/previews use group 0 (never cancelled) → always
+    // deliver. Only the room-scoped pipeline gates on active_media_group_.
+    spec.should_deliver_ = [this, group_id]
+    { return group_id == 0 || group_id == active_media_group_; };
+    spec.start_fetch_ =
+        [this, group_id, kind, source, w, h, animated](std::uint64_t id)
+    { client_->fetch_media_async(id, group_id, kind, source, w, h, animated); };
+    spec.on_empty_ = [this, cache_key, out_kind]
+    {
+        note_media_fetch_failed_(cache_key);
+        on_media_bytes_ready_(cache_key, out_kind, {});
+    };
+    spec.deliver_ =
+        [this, cache_key, out_kind](std::vector<std::uint8_t>&& bytes)
+    {
+        note_media_fetch_ok_(cache_key);
+        on_media_bytes_ready_(cache_key, out_kind, std::move(bytes));
+    };
+    run_media_fetch_(std::move(spec));
 }
 
 std::vector<std::uint8_t>
@@ -1079,74 +1101,39 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
         tesseract::cache_dir() / "tiles" / std::to_string(z) /
         std::to_string(x) / (std::to_string(y) + ".png");
 
-    // io pool: read the on-disk tile cache. On a miss, fall back to a
-    // non-blocking network fetch (fetch_url_async) so the 30 s tile timeout
-    // never pins a pool thread. Tiles are not room-scoped → group 0.
-    run_async_(
-        [this, key, url, disk_path]()
+    // Read the on-disk tile cache. On a miss, fall back to a non-blocking
+    // network fetch (fetch_url_async) so the 30 s tile timeout never pins a
+    // pool thread. Tiles are not room-scoped → group 0 (always deliver).
+    MediaFetchSpec spec;
+    spec.group_id = 0;
+    spec.load_disk_ = [disk_path]
+    {
+        std::vector<std::uint8_t> bytes;
+        if (std::filesystem::exists(disk_path))
         {
-            std::vector<uint8_t> bytes;
-            if (std::filesystem::exists(disk_path))
-            {
-                std::ifstream f(disk_path, std::ios::binary);
-                bytes.assign(std::istreambuf_iterator<char>(f), {});
-            }
-            post_to_ui_alive_(
-                [this, key, url, disk_path, bytes = std::move(bytes)]() mutable
-                {
-                    if (!bytes.empty())
-                    {
-                        tile_fetches_in_flight_.erase(key);
-                        on_media_bytes_ready_(key, MediaKind::Tile,
-                                              std::move(bytes));
-                        return;
-                    }
-                    if (!client_)
-                    {
-                        tile_fetches_in_flight_.erase(key);
-                        return;
-                    }
-                    auto id = begin_media_req_(
-                        /*group_id=*/0,
-                        [this, key, disk_path](std::vector<std::uint8_t>&& net)
-                        {
-                            tile_fetches_in_flight_.erase(key);
-                            if (net.empty())
-                            {
-                                tile_fetch_failed_.insert(key);
-                                return;
-                            }
-                            // Persist to disk off the UI thread, then deliver.
-                            run_async_(
-                                [this, key, disk_path,
-                                 net = std::move(net)]() mutable
-                                {
-                                    std::error_code ec;
-                                    std::filesystem::create_directories(
-                                        disk_path.parent_path(), ec);
-                                    if (!ec)
-                                    {
-                                        std::ofstream f(disk_path,
-                                                        std::ios::binary);
-                                        f.write(reinterpret_cast<const char*>(
-                                                    net.data()),
-                                                static_cast<std::streamsize>(
-                                                    net.size()));
-                                    }
-                                    post_to_ui_alive_(
-                                        [this, key,
-                                         net = std::move(net)]() mutable
-                                        {
-                                            on_media_bytes_ready_(
-                                                key, MediaKind::Tile,
-                                                std::move(net));
-                                        });
-                                });
-                        },
-                        [this, key] { tile_fetches_in_flight_.erase(key); });
-                    client_->fetch_url_async(id, /*group_id=*/0, url);
-                });
-        });
+            std::ifstream f(disk_path, std::ios::binary);
+            bytes.assign(std::istreambuf_iterator<char>(f), {});
+        }
+        return bytes;
+    };
+    spec.store_disk_ = [disk_path](const std::vector<std::uint8_t>& net)
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(disk_path.parent_path(), ec);
+        if (!ec)
+        {
+            std::ofstream f(disk_path, std::ios::binary);
+            f.write(reinterpret_cast<const char*>(net.data()),
+                    static_cast<std::streamsize>(net.size()));
+        }
+    };
+    spec.erase_inflight_ = [this, key] { tile_fetches_in_flight_.erase(key); };
+    spec.start_fetch_ = [this, url](std::uint64_t id)
+    { client_->fetch_url_async(id, /*group_id=*/0, url); };
+    spec.on_empty_ = [this, key] { tile_fetch_failed_.insert(key); };
+    spec.deliver_ = [this, key](std::vector<std::uint8_t>&& bytes)
+    { on_media_bytes_ready_(key, MediaKind::Tile, std::move(bytes)); };
+    run_media_fetch_(std::move(spec));
 }
 
 void ShellBase::ensure_reply_details_(const std::string& event_id)

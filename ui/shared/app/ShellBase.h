@@ -727,6 +727,42 @@ protected:
         }
     };
 
+    // ── Unified raw-bytes media-fetch pipeline ────────────────────────────────
+    // The variable bits of the disk-load → UI hop → hit-deliver / miss-fetch →
+    // persist → deliver async dance shared by fetch_media_pipeline_ and
+    // ensure_tile_async. Each callback runs on the thread noted below; the
+    // worker-thread ones (load_disk_/store_disk_) execute on the io pool, the
+    // rest on the UI thread (already guarded by post_to_ui_alive_). The helper
+    // owns the alive_-token lifetime guarding for every UI-thread continuation.
+    struct MediaFetchSpec
+    {
+        // Worker thread: read the backing cache for this entry. Empty ⇒ miss.
+        std::function<std::vector<std::uint8_t>()> load_disk_;
+        // Worker thread: persist freshly-fetched bytes before delivery.
+        std::function<void(const std::vector<std::uint8_t>&)> store_disk_;
+        // UI thread: clear the caller's in-flight/dedup key.
+        std::function<void()> erase_inflight_;
+        // UI thread: the cancellation group for this request (0 = never cancel).
+        std::uint64_t group_id = 0;
+        // UI thread: still want this delivery? Returns false ⇒ suppress (stale).
+        // Defaults to always-deliver; only the room-scoped pipeline overrides it.
+        std::function<bool()> should_deliver_;
+        // UI thread: issue the SDK fetch for the allocated request id.
+        std::function<void(std::uint64_t /*req_id*/)> start_fetch_;
+        // UI thread: a miss-fetch returned empty bytes (network failure).
+        std::function<void()> on_empty_;
+        // UI thread: deliver final bytes (hit or post-fetch). The helper has
+        // already erased the in-flight key before calling this.
+        std::function<void(std::vector<std::uint8_t>&&)> deliver_;
+    };
+
+    // Run the shared disk-load → UI hop → hit-deliver / miss-fetch → persist →
+    // deliver state machine described by `spec`. Preserves the Phase-1
+    // alive_-token UI-thread guarding (all continuations route through
+    // post_to_ui_alive_). The caller must have already done the in-memory cache
+    // check and inserted its in-flight key.
+    void run_media_fetch_(MediaFetchSpec spec);
+
     // ── Theme ─────────────────────────────────────────────────────────────────
 
     // Returns the OS-preferred color scheme. Default: Light.
