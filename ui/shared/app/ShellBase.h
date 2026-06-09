@@ -634,12 +634,18 @@ protected:
     std::uint64_t next_paginate_id_ = 1;
 
     // ── Async room actions ────────────────────────────────────────────────────
+    // These two types are public (stateless descriptors) so tests can name them;
+    // MSVC does not honor a derived-class `using` re-export of a protected nested
+    // enum the way GCC/Clang do.
+public:
     enum class RoomActionKind { Accept, Join, Leave };
     struct PendingRoomAction
     {
         std::string room_id;
         RoomActionKind kind;
     };
+
+protected:
     // request_id → action; cleared in handle_room_action_complete_ui_.
     std::unordered_map<std::uint64_t, PendingRoomAction> pending_room_actions_;
     std::uint64_t next_room_action_id_ = 1;
