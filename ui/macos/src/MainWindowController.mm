@@ -202,6 +202,7 @@ public:
     using ShellBase::active_verification_flow_id_;
     using ShellBase::add_account_return_idx_;
     using ShellBase::apply_current_theme_;
+    using ShellBase::arm_pending_login_;
     using ShellBase::begin_crypto_identity_reset_;
     using ShellBase::begin_focused_subscription_;
     using ShellBase::build_rows_;
@@ -5486,18 +5487,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         __weak MainWindowController* weakSelf = self;
         _loginView.onBeginOAuth = ^{
             MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->pending_login_temp_dir_.empty())
+            if (!s)
             {
                 return;
             }
-            auto ms = std::to_string(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch())
-                    .count());
-            s->_shell->pending_login_temp_dir_ =
-                tesseract::SessionStore::account_dir("pending-" + ms);
-            s->_shell->pending_login_client_->set_data_dir(
-                (s->_shell->pending_login_temp_dir_ / "matrix-store").string());
+            s->_shell->arm_pending_login_();
         };
         [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
         [_loginView reset];
@@ -5992,18 +5986,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     __weak MainWindowController* weakSelf = self;
     _loginView.onBeginOAuth = ^{
         MainWindowController* s = weakSelf;
-        if (!s || !s->_shell->pending_login_temp_dir_.empty())
+        if (!s)
         {
             return;
         }
-        auto ms = std::to_string(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch())
-                .count());
-        s->_shell->pending_login_temp_dir_ =
-            tesseract::SessionStore::account_dir("pending-" + ms);
-        s->_shell->pending_login_client_->set_data_dir(
-            (s->_shell->pending_login_temp_dir_ / "matrix-store").string());
+        s->_shell->arm_pending_login_();
     };
     [_loginView setMode:tesseract::views::LoginView::Mode::AddAccount];
     [_loginView reset];
@@ -6492,18 +6479,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         __weak MainWindowController* weakSelf = self;
         _loginView.onBeginOAuth = ^{
             MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->pending_login_temp_dir_.empty())
+            if (!s)
             {
                 return;
             }
-            auto ms = std::to_string(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch())
-                    .count());
-            s->_shell->pending_login_temp_dir_ =
-                tesseract::SessionStore::account_dir("pending-" + ms);
-            s->_shell->pending_login_client_->set_data_dir(
-                (s->_shell->pending_login_temp_dir_ / "matrix-store").string());
+            s->_shell->arm_pending_login_();
         };
         [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
         [_loginView reset];

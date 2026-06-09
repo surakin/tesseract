@@ -98,6 +98,18 @@ public:
     std::vector<std::pair<std::string, std::function<void()>>>
     build_tray_items_() const;
 
+    // Arm the pending-login OAuth flow's temp directory. Installed (via a
+    // shell-native one-liner lambda) as the LoginView's on-begin-oauth
+    // callback: the user_id isn't known until await_oauth completes, so the
+    // OAuth round-trip runs against a per-attempt "pending-<ms>" directory
+    // that finalize-login later renames to accounts/<sanitized-uid>/.
+    //
+    // Idempotent: returns immediately if pending_login_temp_dir_ is already
+    // set. Computes a unique "pending-<ms>" dir under SessionStore::account_dir,
+    // creates it, and points pending_login_client_'s data dir at its
+    // "matrix-store" subdir. Operates on the ShellBase pending_login_* members.
+    void arm_pending_login_();
+
     // Returns the active account for this window.
     std::shared_ptr<tesseract::AccountSession> active_account() const { return active_account_; }
 

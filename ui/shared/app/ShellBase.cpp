@@ -2600,6 +2600,26 @@ ShellBase::build_tray_items_() const
     return items;
 }
 
+void ShellBase::arm_pending_login_()
+{
+    if (!pending_login_temp_dir_.empty())
+    {
+        return;
+    }
+    // The timestamp only needs to make the temp dir name unique for this login
+    // attempt; nothing parses it back, so a portable std::chrono source serves
+    // every platform (no need for QDateTime / per-shell clocks).
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
+    pending_login_temp_dir_ =
+        tesseract::SessionStore::account_dir("pending-" + std::to_string(ms));
+    std::error_code ec;
+    std::filesystem::create_directories(pending_login_temp_dir_, ec);
+    pending_login_client_->set_data_dir(
+        (pending_login_temp_dir_ / "matrix-store").string());
+}
+
 ShellBase::~ShellBase()
 {
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this
