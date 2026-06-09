@@ -180,6 +180,7 @@ protected:
     void rebuild_tray_() override;
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;
+    void refresh_account_ui_after_switch_() override;
     void spawn_main_window_(
         std::shared_ptr<tesseract::AccountSession> account) override;
     std::unique_ptr<tesseract::IEventHandler>
@@ -343,6 +344,7 @@ public:
     using ShellBase::RestoreResult;
     using ShellBase::finalize_login_;
     using ShellBase::FinalizeLoginResult;
+    using ShellBase::switch_active_account_impl_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -462,6 +464,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
 - (void)openJumpToDateDialog;
 - (void)_switchActiveAccount:(const std::string&)user_id;
+- (void)_refreshAccountUIAfterSwitch;
 - (void)_populateUserStrip;
 - (void)_bindSettingsControllerNative;
 - (void)_beginAddAccount;
@@ -1531,6 +1534,14 @@ void MacShell::switch_active_account_(const std::string& user_id)
     if (ctrl_)
     {
         [ctrl_ _switchActiveAccount:user_id];
+    }
+}
+
+void MacShell::refresh_account_ui_after_switch_()
+{
+    if (ctrl_)
+    {
+        [ctrl_ _refreshAccountUIAfterSwitch];
     }
 }
 
@@ -5753,75 +5764,22 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_switchActiveAccount:(const std::string&)user_id
 {
-    auto new_session = _shell->account_manager_.find(user_id);
-    if (!new_session)
+    // Platform-agnostic bookkeeping (unsubscribe previous room, clear
+    // per-account state, swap active_account_ / aliases / identity, compute
+    // pending restores, swap rooms_/invites_ snapshots, persist the index)
+    // lives in ShellBase. Returns false (no-op) when the account isn't found
+    // or is already active with a bound client.
+    if (!_shell->switch_active_account_impl_(user_id))
     {
         return;
     }
-    if (new_session == _shell->active_account_ && _shell->client_)
-    {
-        return;
-    }
+    [self _refreshAccountUIAfterSwitch];
+}
 
-    // Save banner state for the outgoing account.
-    if (_shell->active_account_)
-    {
-        _shell->active_account_->verification_banner_dismissed =
-            _shell->verification_banner_dismissed_;
-    }
-
-    _shell->reset_server_info_();
-    _shell->active_account_ = new_session;
-    auto* session = new_session.get();
-    _shell->client_ = session->client.get();
-    _shell->event_handler_ = session->bridge.get();
-
-    if (_shell->settings_controller_)
-        _shell->settings_controller_->set_client(_shell->client_);
-
-    _shell->my_user_id_ = session->user_id;
-    _shell->my_display_name_ = session->display_name;
-    _shell->my_avatar_url_ = session->avatar_url;
-    _shell->pending_restore_rooms_ = session->open_rooms.empty()
-        ? (session->last_room.empty() ? std::vector<std::string>{}
-                                      : std::vector<std::string>{session->last_room})
-        : session->open_rooms;
-    if (!session->last_room.empty() && !_shell->pending_restore_rooms_.empty() &&
-        _shell->pending_restore_rooms_[0] != session->last_room)
-    {
-        auto it = std::find(_shell->pending_restore_rooms_.begin(),
-                            _shell->pending_restore_rooms_.end(),
-                            session->last_room);
-        if (it != _shell->pending_restore_rooms_.end())
-            std::rotate(_shell->pending_restore_rooms_.begin(), it, it + 1);
-    }
-    _shell->pending_restore_popouts_.clear();
-    _shell->populate_pending_restore_popouts_();
-
-    auto idxData = tesseract::SessionStore::load_index();
-    idxData.active_user_id = _shell->my_user_id_;
-    tesseract::SessionStore::save_index(idxData);
-
-    _shell->current_room_id_.clear();
-    _shell->tabs_.clear();
-    _shell->active_tab_idx_ = 0;
-    _shell->space_stack_.clear();
-
-    auto it = _shell->per_account_rooms_.find(_shell->my_user_id_);
-    _shell->rooms_ = (it != _shell->per_account_rooms_.end())
-                         ? it->second
-                         : std::vector<tesseract::RoomInfo>{};
+- (void)_refreshAccountUIAfterSwitch
+{
     [self _refreshRoomList];
 
-    // Restore the invite snapshot for the incoming account (parallel to rooms_).
-    auto inv_it = _shell->per_account_invites_.find(_shell->my_user_id_);
-    _shell->invites_ = (inv_it != _shell->per_account_invites_.end())
-                           ? inv_it->second
-                           : std::vector<tesseract::InviteInfo>{};
-    _shell->on_invites_updated_();
-
-    // Dismiss any stale InviteCard from the previous account.
-    _shell->current_invite_.reset();
     if (_shell->main_app_)
         _shell->main_app_->show_room();
     if (_roomView)
@@ -5842,9 +5800,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _mainApp->show_verif_banner(false);
         _mainAppSurface->relayout();
     }
-    _shell->verification_banner_dismissed_ = session->verification_banner_dismissed;
 
-    _shell->handle_verification_state_ui_(!session->unverified);
+    _shell->handle_verification_state_ui_(
+        _shell->active_account_ && !_shell->active_account_->unverified);
 
     if (!_tray)
     {

@@ -2816,6 +2816,106 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     return out;
 }
 
+bool ShellBase::switch_active_account_impl_(const std::string& user_id)
+{
+    auto new_session = account_manager_.find(user_id);
+    if (!new_session)
+    {
+        return false;
+    }
+    if (new_session == active_account_ && client_)
+    {
+        return false;
+    }
+
+    // Unsubscribe the previous account's open room so its timeline stops
+    // streaming updates to the message list when we swap surfaces. Skip rooms
+    // that are pinned by a pop-out subscription. Must happen before client_ is
+    // reassigned to the incoming account. (Phase-1.2 fix, now shared so every
+    // shell — Windows included — gets it.)
+    if (client_ && !current_room_id_.empty() &&
+        room_subscription_refs_.count(current_room_id_) == 0)
+    {
+        client_->unsubscribe_room(current_room_id_);
+    }
+
+    // Drop per-account, room-id-keyed state so it can't bleed into the next
+    // account (a room id present in both accounts would otherwise inherit stale
+    // pagination / space-drill / reply-fetch state).
+    current_room_id_.clear();
+    tabs_.clear();
+    active_tab_idx_ = 0;
+    space_stack_.clear();
+    pagination_.clear();
+    reply_details_requested_.clear();
+
+    // Save the outgoing account's banner state before switching.
+    if (active_account_)
+    {
+        active_account_->verification_banner_dismissed =
+            verification_banner_dismissed_;
+    }
+
+    reset_server_info_();
+    active_account_ = new_session;
+    auto& sess = *active_account_;
+
+    client_ = sess.client.get();
+    event_handler_ = sess.bridge.get(); // keep ShellBase's non-owning alias in sync
+
+    my_user_id_ = sess.user_id;
+    my_display_name_ = sess.display_name;
+    my_avatar_url_ = sess.avatar_url;
+    pending_restore_rooms_ = sess.open_rooms.empty()
+        ? (sess.last_room.empty() ? std::vector<std::string>{}
+                                  : std::vector<std::string>{sess.last_room})
+        : sess.open_rooms;
+    // Rotate last_room to [0] so it opens as the active tab.
+    if (!sess.last_room.empty() && !pending_restore_rooms_.empty() &&
+        pending_restore_rooms_[0] != sess.last_room)
+    {
+        auto it = std::find(pending_restore_rooms_.begin(),
+                            pending_restore_rooms_.end(), sess.last_room);
+        if (it != pending_restore_rooms_.end())
+            std::rotate(pending_restore_rooms_.begin(), it, it + 1);
+    }
+    pending_restore_popouts_.clear();
+    populate_pending_restore_popouts_();
+
+    if (settings_controller_)
+    {
+        settings_controller_->set_client(client_);
+        settings_controller_->set_up_connector(sess.up_connector.get());
+    }
+
+    // Use this account's last-known rooms snapshot if cached; otherwise leave
+    // rooms_ empty and wait for the next on_rooms_updated_ callback. The native
+    // room-list refresh happens in refresh_account_ui_after_switch_().
+    auto it = per_account_rooms_.find(my_user_id_);
+    rooms_ = (it != per_account_rooms_.end()) ? it->second
+                                              : std::vector<tesseract::RoomInfo>{};
+
+    // Restore the invite snapshot for the incoming account (parallel to rooms_).
+    auto inv_it = per_account_invites_.find(my_user_id_);
+    invites_ = (inv_it != per_account_invites_.end())
+                   ? inv_it->second
+                   : std::vector<tesseract::InviteInfo>{};
+    on_invites_updated_();
+
+    // Dismiss any stale InviteCard from the previous account.
+    current_invite_.reset();
+
+    // Load the incoming account's banner state.
+    verification_banner_dismissed_ = sess.verification_banner_dismissed;
+
+    // Persist the active selection on disk (active = the new uid).
+    auto index = tesseract::SessionStore::load_index();
+    index.active_user_id = my_user_id_;
+    tesseract::SessionStore::save_index(index);
+
+    return true;
+}
+
 ShellBase::~ShellBase()
 {
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this

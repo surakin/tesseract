@@ -285,6 +285,7 @@ private:
     void rebuild_tray_() override;
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;
+    void refresh_account_ui_after_switch_() override;
     void spawn_main_window_(
         std::shared_ptr<tesseract::AccountSession> account) override;
     std::unique_ptr<tesseract::IEventHandler>

@@ -5310,86 +5310,21 @@ void MainWindow::populate_user_strip()
 
 void MainWindow::switch_active_account(const std::string& user_id)
 {
-    auto new_session = account_manager_.find(user_id);
-    if (!new_session)
+    // Platform-agnostic bookkeeping (unsubscribe previous room — folded in here
+    // so Windows no longer leaks the old account's room subscription — clear
+    // per-account state, swap active_account_ / aliases / identity, compute
+    // pending restores, swap rooms_/invites_ snapshots, persist the index)
+    // lives in ShellBase. Returns false (no-op) when the account isn't found
+    // or is already active with a bound client.
+    if (!switch_active_account_impl_(user_id))
     {
         return;
     }
-    if (new_session == active_account_ && client_)
-    {
-        return;
-    }
+    refresh_account_ui_after_switch_();
+}
 
-    // Save banner state for the outgoing account.
-    if (active_account_)
-    {
-        active_account_->verification_banner_dismissed = verification_banner_dismissed_;
-    }
-
-    // Unsubscribe the previous account's open room so its timeline stops
-    // streaming updates to the message list when we swap surfaces.
-    // Must happen before client_ is reassigned to the incoming account.
-    if (client_ && !current_room_id_.empty() &&
-        room_subscription_refs_.count(current_room_id_) == 0)
-    {
-        client_->unsubscribe_room(current_room_id_);
-    }
-
-    reset_server_info_();
-    active_account_ = new_session;
-    auto& sess = active_account_;
-
-    client_ = sess->client.get();
-    event_handler_ = sess->bridge.get();
-
-    my_user_id_ = sess->user_id;
-    my_display_name_ = sess->display_name;
-    my_avatar_url_ = sess->avatar_url;
-    pending_restore_rooms_ = sess->open_rooms.empty()
-        ? (sess->last_room.empty() ? std::vector<std::string>{}
-                                   : std::vector<std::string>{sess->last_room})
-        : sess->open_rooms;
-    if (!sess->last_room.empty() && !pending_restore_rooms_.empty() &&
-        pending_restore_rooms_[0] != sess->last_room)
-    {
-        auto it = std::find(pending_restore_rooms_.begin(),
-                            pending_restore_rooms_.end(), sess->last_room);
-        if (it != pending_restore_rooms_.end())
-            std::rotate(pending_restore_rooms_.begin(), it, it + 1);
-    }
-    pending_restore_popouts_.clear();
-    populate_pending_restore_popouts_();
-
-    if (settings_controller_)
-        settings_controller_->set_client(client_);
-
-    current_room_id_.clear();
-    tabs_.clear();
-    active_tab_idx_ = 0;
-    space_stack_.clear();
-    pagination_.clear();
-    reply_details_requested_.clear();
-
-    // Swap in cached rooms snapshot if available.
-    auto it = per_account_rooms_.find(sess->user_id);
-    if (it != per_account_rooms_.end())
-    {
-        rooms_ = it->second;
-    }
-    else
-    {
-        rooms_.clear();
-    }
-
-    // Restore the invite snapshot for the incoming account (parallel to rooms_).
-    auto inv_it = per_account_invites_.find(sess->user_id);
-    invites_ = (inv_it != per_account_invites_.end())
-                   ? inv_it->second
-                   : std::vector<tesseract::InviteInfo>{};
-    on_invites_updated_();
-
-    // Dismiss any stale InviteCard from the previous account.
-    current_invite_.reset();
+void MainWindow::refresh_account_ui_after_switch_()
+{
     if (main_app_)
         main_app_->show_room();
 
@@ -5403,7 +5338,6 @@ void MainWindow::switch_active_account(const std::string& user_id)
         room_view_->set_messages({});
     }
 
-    verification_banner_dismissed_ = sess->verification_banner_dismissed;
     if (main_app_)
     {
         main_app_->show_verif_banner(false);
@@ -5417,15 +5351,10 @@ void MainWindow::switch_active_account(const std::string& user_id)
     populate_user_strip();
     refresh_room_list();
 
-    // Update active_user_id on disk.
-    auto idx = tesseract::SessionStore::load_index();
-    idx.active_user_id = sess->user_id;
-    tesseract::SessionStore::save_index(idx);
-
     show_main_content();
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Connected"));
-    handle_verification_state_ui_(!sess->unverified);
+    handle_verification_state_ui_(active_account_ && !active_account_->unverified);
 
     if (!tray_)
     {

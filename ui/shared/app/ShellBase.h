@@ -793,8 +793,42 @@ protected:
 
     // Switch the active account to `user_id`. Called by on_account_picker_select_
     // after the dedicated-window check. Each platform overrides with its own
-    // account-switch logic (switchActiveAccount / switch_active_account / etc.).
+    // account-switch logic (switchActiveAccount / switch_active_account / etc.),
+    // which now defers to switch_active_account_impl_ + refresh_account_ui_after_switch_.
     virtual void switch_active_account_(const std::string& user_id) = 0;
+
+    // Platform-agnostic account-switch bookkeeping, shared by every shell's
+    // switchActiveAccount / switch_active_account / _switchActiveAccount:. Looks
+    // up the target AccountSession; returns false (no-op) if it isn't found or is
+    // already active with a bound client. Otherwise it:
+    //   - unsubscribes the previous account's open room when not pinned
+    //     (room_subscription_refs_.count(current_room_id_) == 0) so the old
+    //     account's timeline stops streaming after the surface swap — folded in
+    //     from the Phase-1.2 fix so ALL shells get it;
+    //   - clears per-account, room-id-keyed state (current_room_id_, tabs_,
+    //     active_tab_idx_, space_stack_, pagination_, reply_details_requested_)
+    //     so it can't bleed into the incoming account;
+    //   - saves the outgoing account's verification-banner state, resets server
+    //     info, swaps active_account_ + the client_ / event_handler_ aliases and
+    //     the my_user_id_ / my_display_name_ / my_avatar_url_ identity;
+    //   - computes pending_restore_rooms_ from open_rooms / last_room (rotating
+    //     last_room to [0]) and populate_pending_restore_popouts_();
+    //   - rebinds settings_controller_ (client + up_connector) when present;
+    //   - swaps the per_account_rooms_ / per_account_invites_ snapshots into
+    //     rooms_ / invites_, fires on_invites_updated_(), drops current_invite_;
+    //   - loads the incoming account's verification_banner_dismissed_;
+    //   - persists the on-disk index (active = the new uid).
+    // It does NOT touch native widgets (user strip, room-list view, message
+    // surface, status bar, tray) — the shell does that in
+    // refresh_account_ui_after_switch_(). UI-thread only.
+    bool switch_active_account_impl_(const std::string& user_id);
+
+    // Native UI refresh after switch_active_account_impl_ has updated all shared
+    // state: each shell repopulates its account-avatar strip, refreshes the
+    // room-list view, shows/restores the active room or tab session in its native
+    // surface, updates the status bar, and (re)binds native pickers / tray. Called
+    // by switch_active_account_ at the tail of a successful switch.
+    virtual void refresh_account_ui_after_switch_() = 0;
 
     // Spawn a new main window pre-assigned to `account`. Called by
     // on_account_picker_select_ on Ctrl+click when no dedicated window exists

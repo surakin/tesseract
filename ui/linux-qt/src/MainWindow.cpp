@@ -4291,67 +4291,21 @@ void MainWindow::on_restore_status_ui_()
 
 void MainWindow::switchActiveAccount(const std::string& user_id)
 {
-    auto new_session = account_manager_.find(user_id);
-    if (!new_session)
+    // All platform-agnostic bookkeeping (unsubscribe previous room, clear
+    // per-account state, swap active_account_ / aliases / identity, compute
+    // pending restores, swap rooms_/invites_ snapshots, persist the index)
+    // lives in ShellBase. Returns false (no-op) when the account isn't found
+    // or is already active with a bound client.
+    if (!switch_active_account_impl_(user_id))
     {
         return;
     }
-    if (new_session == active_account_ && client_)
-    {
-        return;
-    }
+    refresh_account_ui_after_switch_();
+}
 
-    // Unsubscribe the previous account's open room so its timeline stops
-    // streaming updates to the message list when we swap surfaces.
-    if (client_ && !current_room_id_.empty() &&
-        room_subscription_refs_.count(current_room_id_) == 0)
-    {
-        client_->unsubscribe_room(current_room_id_);
-    }
-    current_room_id_.clear();
-    tabs_.clear();
-    active_tab_idx_ = 0;
-    // Per-account, room-id-keyed state must not bleed into the next account
-    // (a room id present in both accounts would otherwise inherit stale
-    // pagination / space-drill / reply-fetch state).
-    space_stack_.clear();
-    pagination_.clear();
-    reply_details_requested_.clear();
+void MainWindow::refresh_account_ui_after_switch_()
+{
     clearMessages();
-
-    // Save outgoing account's banner state before switching.
-    auto old_account = active_account_;
-    reset_server_info_();
-    active_account_ = new_session;
-    auto& s = *active_account_;
-    client_ = s.client.get();
-    event_handler_ =
-        s.bridge.get(); // keep ShellBase's non-owning alias in sync
-
-    my_user_id_ = s.user_id;
-    my_display_name_ = s.display_name;
-    my_avatar_url_ = s.avatar_url;
-    pending_restore_rooms_ = s.open_rooms.empty()
-        ? (s.last_room.empty() ? std::vector<std::string>{}
-                               : std::vector<std::string>{s.last_room})
-        : s.open_rooms;
-    // Rotate last_room to [0] so it opens as the active tab.
-    if (!s.last_room.empty() && !pending_restore_rooms_.empty() &&
-        pending_restore_rooms_[0] != s.last_room)
-    {
-        auto it = std::find(pending_restore_rooms_.begin(),
-                            pending_restore_rooms_.end(), s.last_room);
-        if (it != pending_restore_rooms_.end())
-            std::rotate(pending_restore_rooms_.begin(), it, it + 1);
-    }
-    pending_restore_popouts_.clear();
-    populate_pending_restore_popouts_();
-
-    if (settings_controller_)
-    {
-        settings_controller_->set_client(client_);
-        settings_controller_->set_up_connector(s.up_connector.get());
-    }
 
     populateUserStrip();
     if (emojiPicker_)
@@ -4367,64 +4321,27 @@ void MainWindow::switchActiveAccount(const std::string& user_id)
         joinRoomDialog_->setClient(client_);
     }
 
-    // Use this account's last-known rooms snapshot if we have one
-    // cached; otherwise wait for the next on_rooms_updated callback to
-    // populate the list.
-    auto it = per_account_rooms_.find(s.user_id);
-    if (it != per_account_rooms_.end())
+    refreshRoomList();
+    // Rooms already in cache — try to restore the tab session immediately.
+    // on_rooms_updated_ handles the async case (no cache, rooms_ empty).
+    if (!rooms_.empty() && !pending_restore_rooms_.empty())
     {
-        rooms_ = it->second;
-        refreshRoomList();
-        // Rooms are already in cache — try to restore the tab session
-        // immediately. on_rooms_updated_ handles the async case (no cache).
-        if (!pending_restore_rooms_.empty())
-        {
-            if (try_restore_tab_session_(pending_restore_rooms_,
-                                         pending_restore_rooms_[0]))
-                pending_restore_rooms_.clear();
-        }
-    }
-    else
-    {
-        rooms_.clear();
-        refreshRoomList();
+        if (try_restore_tab_session_(pending_restore_rooms_,
+                                     pending_restore_rooms_[0]))
+            pending_restore_rooms_.clear();
     }
 
-    // Restore the invite snapshot for the incoming account (parallel to rooms_).
-    auto inv_it = per_account_invites_.find(s.user_id);
-    invites_ = (inv_it != per_account_invites_.end())
-                   ? inv_it->second
-                   : std::vector<tesseract::InviteInfo>{};
-    on_invites_updated_();
-
-    // Dismiss any stale InviteCard from the previous account.
-    current_invite_.reset();
     if (main_app_)
         main_app_->show_room();
 
-    // Persist the active selection.
-    tesseract::SessionStore::AccountIndex idx;
-    idx.active_user_id = s.user_id;
-    for (auto& a : account_manager_.accounts())
-    {
-        idx.user_ids.push_back(a->user_id);
-    }
-    tesseract::SessionStore::save_index(idx);
-
-    // Save banner state for the outgoing account, then load for the incoming.
-    if (old_account)
-    {
-        old_account->verification_banner_dismissed = verification_banner_dismissed_;
-    }
     if (mainApp_)
     {
         mainApp_->show_verif_banner(false);
         mainAppSurface_->relayout();
     }
-    verification_banner_dismissed_ = s.verification_banner_dismissed;
 
     rebuildAccountPicker();
-    handle_verification_state_ui_(!s.unverified);
+    handle_verification_state_ui_(active_account_ && !active_account_->unverified);
 }
 
 void MainWindow::beginAddAccount()
