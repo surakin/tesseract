@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
 #if defined(_WIN32)
 #  include <process.h>
 #else
@@ -267,6 +269,91 @@ TEST_CASE("load_index returns empty index when missing",
     auto loaded = tesseract::SessionStore::load_index();
     CHECK(loaded.active_user_id.empty());
     CHECK(loaded.user_ids.empty());
+    // A genuinely absent file is NOT corruption — distinguishing the two is
+    // the whole point: an empty-because-missing index is fine, an
+    // empty-because-truncated index would silently drop every account.
+    CHECK_FALSE(loaded.corrupt);
+}
+
+TEST_CASE("load_index round-trips a valid index without flagging corruption",
+          "[session_store][accounts]")
+{
+    SessionFixture f;
+    tesseract::SessionStore::AccountIndex idx;
+    idx.active_user_id = "@bob:matrix.org";
+    idx.user_ids = {"@alice:example.org", "@bob:matrix.org"};
+    REQUIRE(tesseract::SessionStore::save_index(idx));
+
+    auto loaded = tesseract::SessionStore::load_index();
+    CHECK_FALSE(loaded.corrupt);
+    CHECK(loaded.active_user_id == "@bob:matrix.org");
+    REQUIRE(loaded.user_ids.size() == 2);
+    CHECK(loaded.user_ids[0] == "@alice:example.org");
+    CHECK(loaded.user_ids[1] == "@bob:matrix.org");
+}
+
+TEST_CASE("load_index flags a corrupt accounts.json instead of silently "
+          "returning an empty index",
+          "[session_store][accounts]")
+{
+    SessionFixture f;
+
+    // A truncated index: valid prefix, no closing bracket/brace. The old
+    // hand-rolled scanner returned a perfectly empty AccountIndex here —
+    // indistinguishable from "no accounts" — so every account would silently
+    // be dropped and forced to re-login.
+    const fs::path p = tesseract::data_dir() / "accounts.json";
+    fs::create_directories(p.parent_path());
+    { std::ofstream(p, std::ios::binary) << R"({"user_ids": ["@a:b.com")"; }
+
+    auto loaded = tesseract::SessionStore::load_index();
+    CHECK(loaded.corrupt);
+}
+
+TEST_CASE("save_index does not clobber a corrupt accounts.json on the same run",
+          "[session_store][accounts]")
+{
+    SessionFixture f;
+
+    // Plant a corrupt index on disk.
+    const fs::path p = tesseract::data_dir() / "accounts.json";
+    fs::create_directories(p.parent_path());
+    const std::string corrupt_body = R"({"user_ids": ["@a:b.com")";
+    { std::ofstream(p, std::ios::binary) << corrupt_body; }
+
+    // The startup restore loop observes corruption...
+    auto loaded = tesseract::SessionStore::load_index();
+    REQUIRE(loaded.corrupt);
+
+    // ...and a subsequent save (e.g. of the now-empty in-memory account set)
+    // must NOT silently overwrite the recoverable corrupt file with the empty
+    // set. The corrupt bytes must remain recoverable on disk.
+    tesseract::SessionStore::AccountIndex empty;
+    tesseract::SessionStore::save_index(empty);
+
+    // The original corrupt file is preserved (moved aside, not destroyed):
+    // either accounts.json still holds the corrupt bytes, or they were quarantined.
+    bool recoverable = false;
+    {
+        std::ifstream in(p, std::ios::binary);
+        if (in)
+        {
+            std::string body((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+            if (body == corrupt_body)
+                recoverable = true;
+        }
+    }
+    const fs::path quarantine = tesseract::data_dir() / "accounts.json.corrupt";
+    if (fs::exists(quarantine))
+    {
+        std::ifstream in(quarantine, std::ios::binary);
+        std::string body((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+        if (body == corrupt_body)
+            recoverable = true;
+    }
+    CHECK(recoverable);
 }
 
 // ---------------------------------------------------------------------------

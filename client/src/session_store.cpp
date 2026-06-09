@@ -3,6 +3,9 @@
 #include "tesseract/paths.h"
 #include "json_util.h"
 
+#include <nlohmann/json.hpp>
+
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -65,62 +68,6 @@ static std::string extract_string(std::string_view json, std::string_view key)
         return {};
     }
     return std::string(json.substr(pos, end - pos));
-}
-
-static std::vector<std::string> extract_string_array(std::string_view json,
-                                                     std::string_view key)
-{
-    std::vector<std::string> out;
-
-    std::string needle;
-    needle.reserve(key.size() + 2);
-    needle.push_back('"');
-    needle.append(key);
-    needle.push_back('"');
-
-    auto pos = json.find(needle);
-    if (pos == std::string_view::npos)
-    {
-        return out;
-    }
-    pos += needle.size();
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
-    {
-        ++pos;
-    }
-    if (pos >= json.size() || json[pos] != '[')
-    {
-        return out;
-    }
-    ++pos;
-
-    while (pos < json.size())
-    {
-        while (pos < json.size() &&
-               (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ',' ||
-                json[pos] == '\n' || json[pos] == '\r'))
-        {
-            ++pos;
-        }
-        if (pos >= json.size() || json[pos] == ']')
-        {
-            break;
-        }
-        if (json[pos] != '"')
-        {
-            break; // malformed
-        }
-        ++pos;
-        auto end = json.find('"', pos);
-        if (end == std::string_view::npos)
-        {
-            break;
-        }
-        out.emplace_back(json.substr(pos, end - pos));
-        pos = end + 1;
-    }
-    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,30 +288,88 @@ fs::path SessionStore::sdk_store_dir(const std::string& user_id)
     return account_dir(user_id) / "matrix-store";
 }
 
+// Parse the on-disk index body with nlohmann. Unlike the previous hand-rolled
+// scanner (which returned a silently-empty index on ANY malformation —
+// indistinguishable from "no accounts"), this distinguishes three outcomes:
+//   * empty body            ⇒ empty index, not corrupt   (treated by caller as
+//                                                          file-absent)
+//   * valid JSON object     ⇒ parsed index, not corrupt
+//   * parse error / wrong   ⇒ empty index, corrupt = true
+//     shape
+// The on-disk format is unchanged: a flat object with `active_user_id`
+// (string) + `user_ids` (array of strings).
+static SessionStore::AccountIndex parse_index_body(const std::string& body)
+{
+    SessionStore::AccountIndex idx;
+    if (body.empty())
+    {
+        return idx; // not corrupt — caller treats an empty/absent file as "no
+                    // accounts".
+    }
+
+    try
+    {
+        const auto j = nlohmann::json::parse(body);
+        if (!j.is_object())
+        {
+            idx.corrupt = true;
+            return idx;
+        }
+        if (auto it = j.find("active_user_id");
+            it != j.end() && it->is_string())
+        {
+            idx.active_user_id = it->get<std::string>();
+        }
+        if (auto it = j.find("user_ids"); it != j.end() && it->is_array())
+        {
+            for (const auto& e : *it)
+            {
+                if (e.is_string())
+                {
+                    idx.user_ids.push_back(e.get<std::string>());
+                }
+            }
+        }
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        // Truncated / malformed JSON. Signal corruption so the caller does NOT
+        // mistake a recoverable file for "no accounts" and drop every account.
+        idx = SessionStore::AccountIndex{};
+        idx.corrupt = true;
+    }
+    return idx;
+}
+
 SessionStore::AccountIndex SessionStore::load_index()
 {
     AccountIndex idx;
-    std::error_code ec;
     fs::path p = data_dir() / "accounts.json";
     std::ifstream in(p, std::ios::binary);
     if (!in)
     {
-        return idx;
+        return idx; // file absent ⇒ legitimately no accounts (corrupt == false)
     }
     std::ostringstream buf;
     buf << in.rdbuf();
     if (in.bad())
     {
-        return idx;
-    }
-    const std::string body = buf.str();
-    if (body.empty())
-    {
+        // I/O error reading an existing file: treat like corruption so we don't
+        // silently drop accounts and clobber the file on the next save.
+        idx.corrupt = true;
         return idx;
     }
 
-    idx.active_user_id = extract_string(body, "active_user_id");
-    idx.user_ids = extract_string_array(body, "user_ids");
+    idx = parse_index_body(buf.str());
+    if (idx.corrupt)
+    {
+        std::fprintf(stderr,
+                     "[tesseract] accounts.json at %s is corrupt or unparseable; "
+                     "refusing to treat as 'no accounts'. It will be quarantined "
+                     "to accounts.json.corrupt on the next save rather than "
+                     "overwritten.\n",
+                     p.string().c_str());
+    }
     return idx;
 }
 
@@ -393,7 +398,55 @@ static std::string serialize_index(const SessionStore::AccountIndex& idx)
 
 bool SessionStore::save_index(const AccountIndex& idx)
 {
-    return atomic_write(data_dir() / "accounts.json", serialize_index(idx));
+    const fs::path p = data_dir() / "accounts.json";
+
+    // Invariant: a corrupt (but recoverable) accounts.json must never be
+    // silently overwritten — that would make the data loss permanent. If the
+    // file currently on disk fails to parse, quarantine it to
+    // accounts.json.corrupt before writing the new index, so the original bytes
+    // remain recoverable. This is self-contained: it re-reads what's actually
+    // on disk rather than trusting a stale in-memory flag, so it protects the
+    // invariant regardless of which caller is saving.
+    std::error_code ec;
+    if (fs::exists(p, ec))
+    {
+        std::string existing;
+        {
+            std::ifstream in(p, std::ios::binary);
+            if (in)
+            {
+                std::ostringstream buf;
+                buf << in.rdbuf();
+                if (!in.bad())
+                {
+                    existing = buf.str();
+                }
+            }
+        }
+        if (parse_index_body(existing).corrupt)
+        {
+            const fs::path quarantine = data_dir() / "accounts.json.corrupt";
+            std::error_code qe;
+            // Best-effort: don't overwrite an earlier quarantine, and never let
+            // a quarantine failure block the legitimate new write — but if it
+            // does fail, abort rather than clobber the recoverable original.
+            if (!fs::exists(quarantine, qe))
+            {
+                fs::rename(p, quarantine, qe);
+                if (qe)
+                {
+                    std::fprintf(
+                        stderr,
+                        "[tesseract] failed to quarantine corrupt accounts.json "
+                        "(%s); refusing to overwrite recoverable file.\n",
+                        qe.message().c_str());
+                    return false;
+                }
+            }
+        }
+    }
+
+    return atomic_write(p, serialize_index(idx));
 }
 
 std::optional<std::string>
