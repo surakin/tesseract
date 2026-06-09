@@ -53,19 +53,36 @@ void guard(const char* where, F&& f) noexcept
                      where);
     }
 }
+
+// Every EventHandlerBridge callback repeats the same preamble: run under
+// guard(), snapshot the handler out of the shared slot, and bail if it has
+// been detached. Folding it here means a callback can't forget the null-check,
+// and each body keeps only its argument conversion. `fn` receives the
+// guaranteed-non-null handler. (Index-bearing callbacks still do their own
+// !index_fits() early-return inside `fn`.)
+template <class F>
+void with_handler(const char* where, const std::shared_ptr<HandlerSlot>& slot,
+                  F&& fn) noexcept
+{
+    guard(where,
+          [&]
+          {
+              auto* handler_ = slot->load();
+              if (!handler_)
+              {
+                  return;
+              }
+              fn(handler_);
+          });
+}
 } // namespace
 
 void EventHandlerBridge::on_timeline_reset(
     rust::Str room_id, const rust::Vec<TimelineEvent>& snapshot) const
 {
-    guard("on_timeline_reset",
-          [&]
+    with_handler("on_timeline_reset", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<std::unique_ptr<tesseract::Event>> events;
               events.reserve(snapshot.size());
               for (const auto& ev : snapshot)
@@ -81,11 +98,10 @@ void EventHandlerBridge::on_message_inserted(rust::Str room_id,
                                              std::uint64_t index,
                                              const TimelineEvent& ev) const
 {
-    guard("on_message_inserted",
-          [&]
+    with_handler("on_message_inserted", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_ || !index_fits(index))
+              if (!index_fits(index))
               {
                   return;
               }
@@ -99,11 +115,10 @@ void EventHandlerBridge::on_message_updated(rust::Str room_id,
                                             std::uint64_t index,
                                             const TimelineEvent& ev) const
 {
-    guard("on_message_updated",
-          [&]
+    with_handler("on_message_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_ || !index_fits(index))
+              if (!index_fits(index))
               {
                   return;
               }
@@ -116,11 +131,10 @@ void EventHandlerBridge::on_message_updated(rust::Str room_id,
 void EventHandlerBridge::on_message_removed(rust::Str room_id,
                                             std::uint64_t index) const
 {
-    guard("on_message_removed",
-          [&]
+    with_handler("on_message_removed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_ || !index_fits(index))
+              if (!index_fits(index))
               {
                   return;
               }
@@ -133,14 +147,9 @@ void EventHandlerBridge::on_thread_reset(
     rust::Str room_id, rust::Str thread_root,
     const rust::Vec<TimelineEvent>& snapshot) const
 {
-    guard("on_thread_reset",
-          [&]
+    with_handler("on_thread_reset", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<std::unique_ptr<tesseract::Event>> events;
               events.reserve(snapshot.size());
               for (const auto& ev : snapshot)
@@ -158,11 +167,10 @@ void EventHandlerBridge::on_thread_inserted(rust::Str room_id,
                                             std::uint64_t index,
                                             const TimelineEvent& ev) const
 {
-    guard("on_thread_inserted",
-          [&]
+    with_handler("on_thread_inserted", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_ || !index_fits(index))
+              if (!index_fits(index))
               {
                   return;
               }
@@ -177,11 +185,10 @@ void EventHandlerBridge::on_thread_updated(rust::Str room_id,
                                            std::uint64_t index,
                                            const TimelineEvent& ev) const
 {
-    guard("on_thread_updated",
-          [&]
+    with_handler("on_thread_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_ || !index_fits(index))
+              if (!index_fits(index))
               {
                   return;
               }
@@ -195,11 +202,10 @@ void EventHandlerBridge::on_thread_removed(rust::Str room_id,
                                            rust::Str thread_root,
                                            std::uint64_t index) const
 {
-    guard("on_thread_removed",
-          [&]
+    with_handler("on_thread_removed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_ || !index_fits(index))
+              if (!index_fits(index))
               {
                   return;
               }
@@ -212,14 +218,9 @@ void EventHandlerBridge::on_thread_removed(rust::Str room_id,
 void EventHandlerBridge::on_rooms_updated(
     const rust::Vec<RoomInfo>& rooms) const
 {
-    guard("on_rooms_updated",
-          [&]
+    with_handler("on_rooms_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<tesseract::RoomInfo> cpp_rooms;
               cpp_rooms.reserve(rooms.size());
               for (const auto& r : rooms)
@@ -233,14 +234,9 @@ void EventHandlerBridge::on_rooms_updated(
 void EventHandlerBridge::on_invites_updated(
     const rust::Vec<InviteInfo>& invites) const
 {
-    guard("on_invites_updated",
-          [&]
+    with_handler("on_invites_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<tesseract::InviteInfo> cpp_invites;
               cpp_invites.reserve(invites.size());
               for (const auto& i : invites)
@@ -254,14 +250,9 @@ void EventHandlerBridge::on_invites_updated(
 void EventHandlerBridge::on_error(rust::Str context, rust::Str message,
                                   bool soft_logout) const
 {
-    guard("on_error",
-          [&]
+    with_handler("on_error", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_sync_error(std::string(context),
                                       std::string(message), soft_logout);
           });
@@ -269,14 +260,9 @@ void EventHandlerBridge::on_error(rust::Str context, rust::Str message,
 
 void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const
 {
-    guard("on_session_refreshed",
-          [&]
+    with_handler("on_session_refreshed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_session_saved(std::string(session_json));
           });
 }
@@ -306,14 +292,9 @@ void persist_session(rust::Str user_id, rust::Str session_json)
 void EventHandlerBridge::on_backup_progress(
     const BackupProgress& progress) const
 {
-    guard("on_backup_progress",
-          [&]
+    with_handler("on_backup_progress", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_backup_progress(tesseract::from_ffi(progress));
           });
 }
@@ -323,14 +304,9 @@ void EventHandlerBridge::on_enable_recovery_progress(std::uint8_t step,
                                                      std::uint32_t backed_up,
                                                      std::uint32_t total) const
 {
-    guard("on_enable_recovery_progress",
-          [&]
+    with_handler("on_enable_recovery_progress", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_enable_recovery_progress(
                   step, std::string(recovery_key), backed_up, total);
           });
@@ -338,28 +314,18 @@ void EventHandlerBridge::on_enable_recovery_progress(std::uint8_t step,
 
 void EventHandlerBridge::on_crypto_reset_result(bool ok, rust::Str message) const
 {
-    guard("on_crypto_reset_result",
-          [&]
+    with_handler("on_crypto_reset_result", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_crypto_reset_result(ok, std::string(message));
           });
 }
 
 void EventHandlerBridge::on_room_list_state(std::uint8_t state) const
 {
-    guard("on_room_list_state",
-          [&]
+    with_handler("on_room_list_state", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               // Clamp unknown codes back to Init so the C++ side never sees an
               // out-of-range enum value if the Rust protocol ever adds a state we
               // don't know yet. The exhaustive Rust mapper makes this a defensive
@@ -375,40 +341,27 @@ void EventHandlerBridge::on_room_list_state(std::uint8_t state) const
 
 void EventHandlerBridge::on_inflight_changed(std::uint32_t count) const
 {
-    guard("on_inflight_changed",
-          [&]
+    with_handler("on_inflight_changed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-                  return;
               handler_->on_inflight_changed(count);
           });
 }
 
 void EventHandlerBridge::on_image_packs_updated() const
 {
-    guard("on_image_packs_updated",
-          [&]
+    with_handler("on_image_packs_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_image_packs_updated();
           });
 }
 
 void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
 {
-    guard("on_threads_updated",
-          [&]
+    with_handler("on_threads_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_threads_updated(std::string(room_id));
           });
 }
@@ -416,14 +369,9 @@ void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
 void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
                                         rust::Slice<const uint8_t> bytes) const
 {
-    guard("on_media_ready",
-          [&]
+    with_handler("on_media_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<uint8_t> b(bytes.data(), bytes.data() + bytes.size());
               handler_->on_media_ready(request_id, b);
           });
@@ -432,14 +380,9 @@ void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
 void EventHandlerBridge::on_url_preview_ready(std::uint64_t request_id,
                                               rust::Str preview_json) const
 {
-    guard("on_url_preview_ready",
-          [&]
+    with_handler("on_url_preview_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_url_preview_ready(request_id,
                                              std::string(preview_json));
           });
@@ -448,14 +391,9 @@ void EventHandlerBridge::on_url_preview_ready(std::uint64_t request_id,
 void EventHandlerBridge::on_gif_results(std::uint64_t request_id,
                                         const rust::Vec<GifResult>& results) const
 {
-    guard("on_gif_results",
-          [&]
+    with_handler("on_gif_results", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<tesseract::GifResult> cpp_results;
               cpp_results.reserve(results.size());
               for (const auto& r : results)
@@ -480,14 +418,9 @@ void EventHandlerBridge::on_gif_results(std::uint64_t request_id,
 void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
                                               rust::Str message) const
 {
-    guard("on_gif_search_failed",
-          [&]
+    with_handler("on_gif_search_failed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_gif_search_failed(request_id, std::string(message));
           });
 }
@@ -497,14 +430,9 @@ void EventHandlerBridge::on_paginate_result(std::uint64_t request_id,
                                             bool reached_end,
                                             rust::Str message) const
 {
-    guard("on_paginate_result",
-          [&]
+    with_handler("on_paginate_result", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_paginate_result(request_id, ok, reached_start,
                                            reached_end, std::string(message));
           });
@@ -515,12 +443,9 @@ void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id,
                                                   rust::Str joined_room_id,
                                                   rust::Str message) const
 {
-    guard("on_room_action_complete",
-          [&]
+    with_handler("on_room_action_complete", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-                  return;
               handler_->on_room_action_complete(request_id, ok,
                                                 std::string(joined_room_id),
                                                 std::string(message));
@@ -530,40 +455,27 @@ void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id,
 void EventHandlerBridge::on_upload_complete(std::uint64_t request_id, bool ok,
                                              rust::Str message) const
 {
-    guard("on_upload_complete",
-          [&]
+    with_handler("on_upload_complete", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-                  return;
               handler_->on_upload_complete(request_id, ok, std::string(message));
           });
 }
 
 void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const
 {
-    guard("on_account_prefs_updated",
-          [&]
+    with_handler("on_account_prefs_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_account_prefs_updated(std::string(json));
           });
 }
 
 void EventHandlerBridge::on_media_preview_config_updated(rust::Str json) const
 {
-    guard("on_media_preview_config_updated",
-          [&]
+    with_handler("on_media_preview_config_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_media_preview_config_updated(std::string(json));
           });
 }
@@ -573,14 +485,9 @@ void EventHandlerBridge::on_notification(
     bool is_mention, rust::Slice<const uint8_t> avatar_bytes,
     rust::Slice<const uint8_t> image_bytes) const
 {
-    guard("on_notification",
-          [&]
+    with_handler("on_notification", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<uint8_t> av(avatar_bytes.data(),
                                       avatar_bytes.data() +
                                           avatar_bytes.size());
@@ -597,14 +504,9 @@ void EventHandlerBridge::on_verification_request(rust::Str flow_id,
                                                  rust::Str device_id,
                                                  bool incoming) const
 {
-    guard("on_verification_request",
-          [&]
+    with_handler("on_verification_request", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_verification_request(
                   std::string(flow_id), std::string(user_id),
                   std::string(device_id), incoming);
@@ -614,14 +516,9 @@ void EventHandlerBridge::on_verification_request(rust::Str flow_id,
 void EventHandlerBridge::on_sas_ready(
     rust::Str flow_id, const rust::Vec<VerificationEmoji>& emojis) const
 {
-    guard("on_sas_ready",
-          [&]
+    with_handler("on_sas_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<tesseract::VerificationEmoji> cpp_emojis;
               cpp_emojis.reserve(emojis.size());
               for (const auto& e : emojis)
@@ -636,14 +533,9 @@ void EventHandlerBridge::on_sas_ready(
 
 void EventHandlerBridge::on_verification_done(rust::Str flow_id) const
 {
-    guard("on_verification_done",
-          [&]
+    with_handler("on_verification_done", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_verification_done(std::string(flow_id));
           });
 }
@@ -651,14 +543,9 @@ void EventHandlerBridge::on_verification_done(rust::Str flow_id) const
 void EventHandlerBridge::on_verification_cancelled(rust::Str flow_id,
                                                    rust::Str reason) const
 {
-    guard("on_verification_cancelled",
-          [&]
+    with_handler("on_verification_cancelled", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_verification_cancelled(std::string(flow_id),
                                                   std::string(reason));
           });
@@ -666,14 +553,9 @@ void EventHandlerBridge::on_verification_cancelled(rust::Str flow_id,
 
 void EventHandlerBridge::on_verification_state_changed(bool verified) const
 {
-    guard("on_verification_state_changed",
-          [&]
+    with_handler("on_verification_state_changed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               handler_->on_verification_state_changed(verified);
           });
 }
@@ -681,14 +563,9 @@ void EventHandlerBridge::on_verification_state_changed(bool verified) const
 void EventHandlerBridge::on_typing_changed(
     rust::Str room_id, const rust::Vec<rust::String>& user_ids) const
 {
-    guard("on_typing_changed",
-          [&]
+    with_handler("on_typing_changed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               std::vector<std::string> ids;
               ids.reserve(user_ids.size());
               for (const auto& uid : user_ids)
@@ -702,14 +579,9 @@ void EventHandlerBridge::on_typing_changed(
 void EventHandlerBridge::on_presence_changed(rust::Str user_id,
                                              std::uint8_t state) const
 {
-    guard("on_presence_changed",
-          [&]
+    with_handler("on_presence_changed", slot_,
+          [&](tesseract::IEventHandler* handler_)
           {
-              auto* handler_ = slot_->load();
-              if (!handler_)
-              {
-                  return;
-              }
               tesseract::PresenceState ps;
               switch (state)
               {
