@@ -131,6 +131,8 @@ private:
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
+    void refresh_user_strip_() override;
+    void request_relogin_(const std::string& user_id) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;

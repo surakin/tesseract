@@ -1220,6 +1220,49 @@ protected:
     {
     }
 
+    // Agnostic sync-error state machine, shared by every shell. Reacts to the
+    // SDK sync-error callback's three contexts:
+    //   - "sync_reconnect"   (transient): stop the affected account's sync and
+    //     schedule a delayed restart via schedule_sync_restart_().
+    //   - "sync_auth_error"  + soft_logout: restore the soft-logged-out session
+    //     (refresh-token flow), re-fetch display_name / avatar_url onto the
+    //     AccountSession, re-bind this window's identity strip when the affected
+    //     account is the active one, and restart sync. If the session can't be
+    //     restored (or this isn't a soft logout), clear the stored account, stop
+    //     sync, and ask the shell to relogin via request_relogin_().
+    //   - else: surface `description` in the status bar.
+    // Centralizing this fixes prior per-shell drift (notably macOS, which
+    // skipped the post-refresh display-name/avatar re-fetch + strip re-bind).
+    void handle_sync_error_impl_(std::string context, std::string user_id,
+                                 std::string description, bool soft_logout);
+
+    // Restart the named account's sync if it is registered and not already
+    // syncing. Called by schedule_sync_restart_'s timer body. Concrete and
+    // shared — operates purely on AccountManager + AccountSession.
+    void restart_account_sync_(const std::string& user_id);
+
+    // Delayed sync-restart after a transient reconnect error. The timer itself
+    // is native; the default implementation routes through post_to_ui_after_
+    // (each shell's native one-shot timer) and then restart_account_sync_().
+    // A shell may override to use a different native timer, but should not need
+    // to. delay_ms is the reconnect backoff (~5s).
+    virtual void schedule_sync_restart_(const std::string& user_id,
+                                        int delay_ms);
+
+    // Re-bind this window's identity strip (user-info widget) from the active
+    // account after its profile was re-fetched on a soft-logout recovery. Each
+    // shell repaints its native user strip (Qt/GTK populate_user_strip,
+    // macOS/Win equivalents). Default no-op for windows without a strip.
+    virtual void refresh_user_strip_()
+    {
+    }
+
+    // Drive the shell to its login flow after an unrecoverable auth error
+    // (session expired / soft-logout recovery failed). Each shell maps this to
+    // its existing relogin path (doLogin / do_login / logout_active_account /
+    // _logoutActiveAccount).
+    virtual void request_relogin_(const std::string& user_id) = 0;
+
     // Show the offline connectivity banner in the main app widget and schedule
     // a relayout. Called when the sync service signals a network outage.
     virtual void handle_offline_ui_();

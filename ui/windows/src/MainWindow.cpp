@@ -555,19 +555,42 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                                        std::string description,
                                        bool soft_logout)
 {
-    if (context == "sync_reconnect")
+    // Agnostic state machine lives in ShellBase; this shell only supplies the
+    // native restart timer (post_to_ui_after_), status bar, user strip
+    // (refresh_user_strip_) and relogin (request_relogin_).
+    handle_sync_error_impl_(std::move(context), std::move(user_id),
+                            std::move(description), soft_logout);
+}
+
+void MainWindow::refresh_user_strip_()
+{
+    populate_user_strip();
+}
+
+void MainWindow::request_relogin_(const std::string& user_id)
+{
+    const bool is_active =
+        active_account_ && active_account_->user_id == user_id;
+    if (is_active)
     {
-        on_reconnect(user_id);
+        // ShellBase already showed "Session expired…" and cleared/stopped the
+        // account; drop to the login flow.
+        logout_active_account();
+        return;
     }
-    else if (context == "sync_auth_error")
+    // A non-active account expired: forget it and drop it from the persisted
+    // index so it doesn't reappear on next launch. (ShellBase already cleared
+    // its stored session and stopped its sync.)
+    account_manager_.remove_account(user_id);
+    auto index = tesseract::SessionStore::load_index();
+    index.user_ids.erase(
+        std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
+        index.user_ids.end());
+    if (index.active_user_id == user_id && active_account_)
     {
-        on_auth_error(user_id, soft_logout);
+        index.active_user_id = active_account_->user_id;
     }
-    else
-    {
-        MessageBoxW(hwnd_, utf8_to_wstr(description).c_str(), L"Sync error",
-                    MB_ICONWARNING);
-    }
+    tesseract::SessionStore::save_index(index);
 }
 
 void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
@@ -3840,100 +3863,6 @@ void MainWindow::show_main_content()
     RECT rc;
     GetClientRect(hwnd_, &rc);
     on_size(rc.right, rc.bottom);
-}
-
-void MainWindow::on_reconnect(const std::string& user_id)
-{
-    auto sess = account_manager_.find(user_id);
-    if (!sess)
-    {
-        return;
-    }
-
-    sess->client->stop_sync();
-
-    auto json = tesseract::SessionStore::load_account(user_id);
-    if (json && sess->client->restore_session(*json))
-    {
-        auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
-        bridge->set_user_id(user_id);
-        sess->bridge = std::move(bridge);
-        const bool is_active = active_account_ && active_account_->user_id == user_id;
-        if (is_active)
-        {
-            event_handler_ = sess->bridge.get();
-        }
-        sess->client->start_sync(sess->bridge.get());
-        if (is_active)
-        {
-            SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                         reinterpret_cast<LPARAM>(L"Reconnected"));
-        }
-    }
-    else
-    {
-        if (active_account_ && active_account_->user_id == user_id)
-        {
-            logout_active_account();
-        }
-    }
-}
-
-void MainWindow::on_auth_error(const std::string& user_id, bool soft_logout)
-{
-    auto sess = account_manager_.find(user_id);
-    if (!sess)
-    {
-        return;
-    }
-
-    const bool is_active = active_account_ && active_account_->user_id == user_id;
-
-    if (soft_logout)
-    {
-        auto json = tesseract::SessionStore::load_account(user_id);
-        if (json && sess->client->restore_session(*json))
-        {
-            auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
-            bridge->set_user_id(user_id);
-            sess->bridge = std::move(bridge);
-            if (is_active)
-            {
-                event_handler_ = sess->bridge.get();
-                my_user_id_ = sess->client->get_user_id();
-                my_display_name_ = sess->client->get_display_name();
-                my_avatar_url_ = sess->client->get_avatar_url();
-                populate_user_strip();
-                SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                             reinterpret_cast<LPARAM>(L"Reconnected"));
-            }
-            sess->client->start_sync(sess->bridge.get());
-            return;
-        }
-    }
-    if (is_active)
-    {
-        SendMessageW(
-            hStatus_, SB_SETTEXTW, 0,
-            reinterpret_cast<LPARAM>(L"Session expired; please log in again."));
-        logout_active_account();
-    }
-    else
-    {
-        sess->client->stop_sync();
-        tesseract::SessionStore::clear_account(user_id);
-        account_manager_.remove_account(user_id);
-
-        auto index = tesseract::SessionStore::load_index();
-        index.user_ids.erase(
-            std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
-            index.user_ids.end());
-        if (index.active_user_id == user_id && active_account_)
-        {
-            index.active_user_id = active_account_->user_id;
-        }
-        tesseract::SessionStore::save_index(index);
-    }
 }
 
 // ---------------------------------------------------------------------------

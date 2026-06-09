@@ -41,6 +41,7 @@ struct TestShell : WithAccountManager, ShellBase
     void switch_active_account_(const std::string&) override {}
     void bind_settings_controller_() override {}
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
+    void request_relogin_(const std::string&) override {}
 
     // ── New pure virtual under test ───────────────────────────────────────
     EncryptionSetupOverlay::Mode last_mode_{};

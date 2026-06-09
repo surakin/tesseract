@@ -145,6 +145,8 @@ protected:
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
+    void refresh_user_strip_() override;
+    void request_relogin_(const std::string& user_id) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;
@@ -447,10 +449,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
 - (void)openJumpToDateDialog;
-- (void)handleSyncErrorContext:(NSString*)ctx
-                   description:(NSString*)desc
-                    softLogout:(BOOL)soft;
 - (void)_switchActiveAccount:(const std::string&)user_id;
+- (void)_populateUserStrip;
 - (void)_bindSettingsControllerNative;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
@@ -1308,18 +1308,30 @@ void MacShell::repaint_pickers_()
 // (relayout via request_relayout_ → _relayoutChatSurface) and dispatches to
 // secondary windows. See the MacShell class declaration for the rationale.
 
-void MacShell::handle_sync_error_ui_(std::string context,
-                                     std::string /*user_id*/,
+void MacShell::handle_sync_error_ui_(std::string context, std::string user_id,
                                      std::string description, bool soft_logout)
 {
-    MainWindowController* c = ctrl_;
-    if (!c)
+    // Agnostic state machine lives in ShellBase; this shell only supplies the
+    // native restart timer (post_to_ui_after_), status label, user strip
+    // (refresh_user_strip_) and relogin (request_relogin_).
+    handle_sync_error_impl_(std::move(context), std::move(user_id),
+                            std::move(description), soft_logout);
+}
+
+void MacShell::refresh_user_strip_()
+{
+    if (ctrl_)
     {
-        return;
+        [ctrl_ _populateUserStrip];
     }
-    NSString* ctx = [NSString stringWithUTF8String:context.c_str()] ?: @"";
-    NSString* desc = [NSString stringWithUTF8String:description.c_str()] ?: @"";
-    [c handleSyncErrorContext:ctx description:desc softLogout:soft_logout];
+}
+
+void MacShell::request_relogin_(const std::string& /*user_id*/)
+{
+    if (ctrl_)
+    {
+        [ctrl_ _logoutActiveAccount];
+    }
 }
 
 void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress)
@@ -6713,29 +6725,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
 // updateRoomsForUserId: was the old ObjC EventBridge hook. EventHandlerBase now
 // calls ShellBase::push_rooms_() directly, which invokes on_rooms_updated_()
 // → _refreshRoomList + restore-room logic. No ObjC forwarding needed.
-
-- (void)handleSyncErrorContext:(NSString*)ctx
-                   description:(NSString*)desc
-                    softLogout:(BOOL)soft
-{
-    if ([ctx isEqualToString:@"sync_auth_error"])
-    {
-        if (soft && _shell->client_ && _shell->active_account_)
-        {
-            std::string uid = _shell->active_account_->user_id;
-            if (auto saved = tesseract::SessionStore::load_account(uid))
-            {
-                if (_shell->client_->restore_session(*saved))
-                {
-                    _shell->client_->start_sync(_shell->event_handler_);
-                    return;
-                }
-            }
-        }
-        [self _logoutActiveAccount];
-        [_loginView setStatusMessage:TkTr("Session expired; please log in again.")];
-    }
-}
 
 - (void)handleVerificationState:(BOOL)isVerified
 {

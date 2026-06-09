@@ -42,6 +42,7 @@ struct TestShell : WithAccountManager, ShellBase
     void switch_active_account_(const std::string&) override {}
     void bind_settings_controller_() override {}
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
+    void request_relogin_(const std::string&) override {}
 
     void apply_thread_messages_(const std::string& root,
                                 std::vector<tesseract::views::MessageRowData> rows,

@@ -4191,69 +4191,21 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                                        std::string description,
                                        bool soft_logout)
 {
-    auto affected_session = account_manager_.find(user_id);
-    tesseract::AccountSession* affected = affected_session.get();
+    // Agnostic state machine lives in ShellBase; this shell only supplies the
+    // native restart timer (post_to_ui_after_), status bar, user strip
+    // (refresh_user_strip_) and relogin (request_relogin_).
+    handle_sync_error_impl_(std::move(context), std::move(user_id),
+                            std::move(description), soft_logout);
+}
 
-    if (context == "sync_reconnect")
-    {
-        statusBar()->showMessage(tr("Sync error: reconnecting\xe2\x80\xa6"));
-        if (affected && affected->client)
-        {
-            affected->client->stop_sync();
-            affected->sync_started = false;
-            QTimer::singleShot(
-                5000, this,
-                [this, uid = affected->user_id]()
-                {
-                    if (auto a = account_manager_.find(uid))
-                    {
-                        if (!a->sync_started && a->client)
-                        {
-                            a->sync_started = true;
-                            a->client->start_sync(a->bridge.get());
-                        }
-                    }
-                });
-        }
-    }
-    else if (context == "sync_auth_error")
-    {
-        if (soft_logout && affected)
-        {
-            if (auto saved =
-                    tesseract::SessionStore::load_account(affected->user_id))
-            {
-                statusBar()->showMessage(
-                    tr("Reconnecting session\xe2\x80\xa6"));
-                if (affected->client->restore_session(*saved))
-                {
-                    affected->display_name =
-                        affected->client->get_display_name();
-                    affected->avatar_url = affected->client->get_avatar_url();
-                    if (active_account_ && affected == active_account_.get())
-                    {
-                        switchActiveAccount(affected->user_id);
-                    }
-                    affected->client->start_sync(affected->bridge.get());
-                    statusBar()->showMessage(tr("Reconnected"));
-                    return;
-                }
-            }
-        }
-        if (affected)
-        {
-            tesseract::SessionStore::clear_account(affected->user_id);
-            affected->client->stop_sync();
-        }
-        statusBar()->showMessage(tr("Session expired; please log in again."));
-        doLogin();
-    }
-    else
-    {
-        statusBar()->showMessage(
-            tr("Sync error: %1").arg(QString::fromStdString(description)),
-            8000);
-    }
+void MainWindow::refresh_user_strip_()
+{
+    populateUserStrip();
+}
+
+void MainWindow::request_relogin_(const std::string& /*user_id*/)
+{
+    doLogin();
 }
 
 void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)

@@ -4816,4 +4816,95 @@ void ShellBase::on_account_picker_select_(const std::string& uid)
     switch_active_account_(uid);
 }
 
+// ---------------------------------------------------------------------------
+// Sync-error handling (reconnect / soft-logout recovery / relogin)
+// ---------------------------------------------------------------------------
+
+void ShellBase::restart_account_sync_(const std::string& user_id)
+{
+    auto sess = account_manager_.find(user_id);
+    if (sess && !sess->sync_started && sess->client)
+    {
+        sess->sync_started = true;
+        sess->client->start_sync(sess->bridge.get());
+    }
+}
+
+void ShellBase::schedule_sync_restart_(const std::string& user_id, int delay_ms)
+{
+    // The timer is native (post_to_ui_after_ → QTimer / g_timeout_add /
+    // SetTimer / dispatch_after); the body is the shared restart helper.
+    post_to_ui_after_(delay_ms,
+                      [this, user_id]() { restart_account_sync_(user_id); });
+}
+
+void ShellBase::handle_sync_error_impl_(std::string context,
+                                        std::string user_id,
+                                        std::string description,
+                                        bool soft_logout)
+{
+    auto affected = account_manager_.find(user_id);
+
+    if (context == "sync_reconnect")
+    {
+        show_status_message_("Sync error: reconnecting\xe2\x80\xa6");
+        if (affected && affected->client)
+        {
+            affected->client->stop_sync();
+            affected->sync_started = false;
+            schedule_sync_restart_(affected->user_id, 5000);
+        }
+        return;
+    }
+
+    if (context == "sync_auth_error")
+    {
+        if (soft_logout && affected && affected->client)
+        {
+            if (auto saved =
+                    tesseract::SessionStore::load_account(affected->user_id))
+            {
+                show_status_message_("Reconnecting session\xe2\x80\xa6");
+                if (affected->client->restore_session(*saved))
+                {
+                    // Re-fetch identity onto the AccountSession. This is the
+                    // piece macOS used to skip, leaving a stale display name.
+                    affected->display_name =
+                        affected->client->get_display_name();
+                    affected->avatar_url = affected->client->get_avatar_url();
+                    // Re-bind this window's identity strip when the affected
+                    // account is the one currently shown here.
+                    if (active_account_ && affected == active_account_)
+                    {
+                        my_user_id_ = affected->user_id;
+                        my_display_name_ = affected->display_name;
+                        my_avatar_url_ = affected->avatar_url;
+                        refresh_user_strip_();
+                    }
+                    affected->sync_started = true;
+                    affected->client->start_sync(affected->bridge.get());
+                    show_status_message_("Reconnected");
+                    return;
+                }
+            }
+        }
+        // Unrecoverable: clear the stored account, stop sync, relogin.
+        if (affected)
+        {
+            tesseract::SessionStore::clear_account(affected->user_id);
+            if (affected->client)
+            {
+                affected->client->stop_sync();
+            }
+            affected->sync_started = false;
+        }
+        show_status_message_("Session expired; please log in again.");
+        request_relogin_(user_id);
+        return;
+    }
+
+    // Any other sync error: surface the description.
+    show_status_message_(std::move(description));
+}
+
 } // namespace tesseract

@@ -115,18 +115,21 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                                        std::string description,
                                        bool soft_logout)
 {
-    if (context == "sync_reconnect")
-    {
-        handle_reconnect(user_id);
-    }
-    else if (context == "sync_auth_error")
-    {
-        handle_auth_error(soft_logout);
-    }
-    else
-    {
-        push_error(std::move(description));
-    }
+    // Agnostic state machine lives in ShellBase; this shell only supplies the
+    // native restart timer (post_to_ui_after_), status label, user strip
+    // (refresh_user_strip_) and relogin (request_relogin_).
+    handle_sync_error_impl_(std::move(context), std::move(user_id),
+                            std::move(description), soft_logout);
+}
+
+void MainWindow::refresh_user_strip_()
+{
+    populate_user_strip();
+}
+
+void MainWindow::request_relogin_(const std::string& /*user_id*/)
+{
+    do_login();
 }
 
 void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
@@ -3525,84 +3528,6 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     }
 }
 
-void MainWindow::handle_reconnect(const std::string& user_id)
-{
-    gtk_label_set_text(GTK_LABEL(status_bar_),
-                       _("Sync error: reconnecting\xe2\x80\xa6"));
-    for (auto& sess : account_manager_.accounts())
-    {
-        if (sess->user_id == user_id && sess->client)
-        {
-            sess->client->stop_sync();
-            sess->sync_started = false;
-            break;
-        }
-    }
-    // Restart the affected account's sync after a short delay.  do not
-    // call do_login() (which rebuilds all sessions), as that causes a tight
-    // loop when the server rejects key uploads on every new session.
-    struct DelayData
-    {
-        MainWindow* w;
-        std::string uid;
-        std::weak_ptr<bool> alive;
-    };
-    auto* dd = new DelayData{this, user_id, alive_};
-    g_timeout_add(
-        5000,
-        [](gpointer data) -> gboolean
-        {
-            auto* d = static_cast<DelayData*>(data);
-            if (auto a = d->alive.lock(); a && *a)
-            {
-                for (auto& s : d->w->account_manager_.accounts())
-                {
-                    if (s->user_id == d->uid && !s->sync_started && s->client)
-                    {
-                        s->sync_started = true;
-                        s->client->start_sync(s->bridge.get());
-                    }
-                }
-            }
-            delete d;
-            return G_SOURCE_REMOVE;
-        },
-        dd);
-}
-
-void MainWindow::handle_auth_error(bool soft_logout)
-{
-    if (soft_logout && active_account_)
-    {
-        const std::string& uid = active_account_->user_id;
-        if (auto saved = tesseract::SessionStore::load_account(uid))
-        {
-            gtk_label_set_text(GTK_LABEL(status_bar_),
-                               _("Reconnecting session\xe2\x80\xa6"));
-            if (client_->restore_session(*saved))
-            {
-                my_user_id_ = client_->get_user_id();
-                my_display_name_ = client_->get_display_name();
-                my_avatar_url_ = client_->get_avatar_url();
-                populate_user_strip();
-                client_->start_sync(event_handler_);
-                gtk_label_set_text(GTK_LABEL(status_bar_), _("Reconnected"));
-                return;
-            }
-        }
-    }
-    if (active_account_)
-    {
-        tesseract::SessionStore::clear_account(active_account_->user_id);
-    }
-    if (client_)
-    {
-        client_->stop_sync();
-    }
-    gtk_label_set_text(GTK_LABEL(status_bar_),
-                       _("Session expired; please log in again."));
-    do_login();
-}
 
 void MainWindow::push_error(std::string description)
 {

@@ -132,6 +132,8 @@ public:
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
+    void refresh_user_strip_() override;
+    void request_relogin_(const std::string& user_id) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;
@@ -227,9 +229,7 @@ private:
     // ensure_room_avatar_, ensure_user_avatar_, ensure_media_image_,
     // and ensure_reply_details_ are inherited from tesseract::ShellBase.
 
-    void on_reconnect(const std::string& user_id);
     void on_space_back();
-    void on_auth_error(const std::string& user_id, bool soft_logout);
     void on_backup_progress(tesseract::BackupProgress* progress);
     void on_room_list_state(tesseract::RoomListState state);
     void refresh_sync_status();

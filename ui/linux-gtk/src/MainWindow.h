@@ -92,6 +92,8 @@ private:
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
+    void refresh_user_strip_() override;
+    void request_relogin_(const std::string& user_id) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;
@@ -123,8 +125,6 @@ private:
     void push_rooms(std::string user_id,
                     std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
-    void handle_reconnect(const std::string& user_id);
-    void handle_auth_error(bool soft_logout);
     void push_backup_progress(tesseract::BackupProgress progress);
     void push_room_list_state(tesseract::RoomListState state);
     void push_notification(const std::string& user_id,
