@@ -1565,13 +1565,6 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
-            if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
-            {
-                pick_and_set_room_avatar_(current_room_id_);
-                if (room_text_area_) room_text_area_->set_text("");
-                room_view_->set_current_text({});
-                return;
-            }
             // Build from the composer's mention draft so mentions become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
@@ -1591,9 +1584,9 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
-            auto res = tesseract::dispatch_compose_send(
-                *client_, current_room_id_, msg.body, msg.formatted_body);
-            if (res)
+            auto outcome = dispatch_room_send_(current_room_id_, msg.body,
+                                               msg.formatted_body);
+            if (outcome.handled_as_command || outcome.send_result)
             {
                 if (room_text_area_)
                 {
@@ -1603,7 +1596,8 @@ void MainWindow::on_create(HWND hwnd)
             }
             else
             {
-                MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
+                MessageBoxW(hwnd_,
+                            utf8_to_wstr(outcome.send_result.message).c_str(),
                             L"Send failed", MB_ICONWARNING);
             }
         };

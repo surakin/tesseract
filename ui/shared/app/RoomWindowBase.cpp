@@ -1,6 +1,5 @@
 #include "app/RoomWindowBase.h"
 #include "app/ShellBase.h"
-#include "app/SlashCommands.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
 #include "views/media_drop.h"
@@ -785,37 +784,9 @@ void RoomWindowBase::remove_popout_from_settings_()
 
 void RoomWindowBase::send_message_(const std::string& body)
 {
-    if (body.empty() || room_id_.empty() || !shell_->client_)
-    {
+    if (body.empty())
         return;
-    }
-    if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
-    {
-        shell_->pick_and_set_room_avatar_(room_id_);
-        return;
-    }
-    if (tesseract::is_slash_command_no_arg(body, "leave"))
-    {
-        shell_->leave_room_command_(room_id_);
-        return;
-    }
-    if (auto target = tesseract::parse_slash_arg(body, "join"))
-    {
-        shell_->join_room_command_(*target);
-        return;
-    }
-    if (auto user = tesseract::parse_slash_arg(body, "invite"))
-    {
-        shell_->invite_user_command_(room_id_, *user);
-        return;
-    }
-    auto sess = shell_->active_account();
-    auto rid = room_id_;
-    auto body_copy = body;
-    run_async_mut_([sess, rid, body_copy]() mutable {
-        if (!sess || !sess->client) return;
-        tesseract::dispatch_compose_send(*sess->client, rid, body_copy, "");
-    });
+    send_message_(body, "");
 }
 
 tesseract::Client* RoomWindowBase::shell_client_() const
@@ -826,36 +797,9 @@ tesseract::Client* RoomWindowBase::shell_client_() const
 void RoomWindowBase::send_message_(const std::string& body,
                                    const std::string& formatted_body)
 {
-    if (room_id_.empty() || !shell_->client_)
-        return;
-    if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
-    {
-        shell_->pick_and_set_room_avatar_(room_id_);
-        return; // on_send caller clears the compose bar after we return
-    }
-    if (tesseract::is_slash_command_no_arg(body, "leave"))
-    {
-        shell_->leave_room_command_(room_id_);
-        return;
-    }
-    if (auto target = tesseract::parse_slash_arg(body, "join"))
-    {
-        shell_->join_room_command_(*target);
-        return;
-    }
-    if (auto user = tesseract::parse_slash_arg(body, "invite"))
-    {
-        shell_->invite_user_command_(room_id_, *user);
-        return;
-    }
-    auto sess = shell_->active_account();
-    auto rid = room_id_;
-    auto body_copy = body;
-    auto fmt_copy = formatted_body;
-    run_async_mut_([sess, rid, body_copy, fmt_copy]() mutable {
-        if (!sess || !sess->client) return;
-        tesseract::dispatch_compose_send(*sess->client, rid, body_copy, fmt_copy);
-    });
+    // Slash-command ladder + normal send are centralized in ShellBase; the
+    // on_send caller clears the compose bar after we return.
+    shell_->dispatch_room_send_(room_id_, body, formatted_body);
 }
 
 void RoomWindowBase::send_reply_(const std::string& reply_event_id,

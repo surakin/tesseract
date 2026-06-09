@@ -1847,13 +1847,36 @@ protected:
     void block_invite_async_(const std::string& room_id,
                              const std::string& inviter_id);
 
-    // Slash-command async handlers — called from RoomWindowBase::send_message_
-    // after the command prefix is identified. Each uses run_async_ so the
-    // blocking SDK call doesn't touch the UI thread.
+    // Slash-command async handlers — called from dispatch_room_send_ after the
+    // command prefix is identified. Each enqueues async SDK work, so they must
+    // run on the UI thread.
     void leave_room_command_(const std::string& room_id);
     void join_room_command_(const std::string& room_id_or_alias);
     void invite_user_command_(const std::string& room_id,
                               const std::string& user_id);
+
+    // Result of dispatch_room_send_. When `handled_as_command` is true a slash
+    // command consumed the input (and `send_result` is unset/default); the
+    // caller should clear its composer unconditionally. When false the input
+    // was a normal send and `send_result` carries the dispatch_compose_send
+    // outcome so the caller can clear on success or surface the error.
+    struct RoomSendOutcome
+    {
+        bool handled_as_command = false;
+        tesseract::Result send_result;
+    };
+
+    // Unified slash-command dispatch ladder shared by every composer send path
+    // (the four shells' on_send handlers and RoomWindowBase::send_message_).
+    // Recognizes the no-arg /myroomavatar (native file picker via
+    // pick_and_set_room_avatar_), /leave, /join <room>, /invite <user>; any
+    // other input falls through to dispatch_compose_send (which itself handles
+    // /me, /shrug, /myroomnick, /myroomavatar <uri>, /spoiler and normal text).
+    // Must be called on the UI thread; the command branches enqueue async work
+    // via the existing ShellBase helpers.
+    RoomSendOutcome dispatch_room_send_(const std::string& room_id,
+                                        const std::string& body,
+                                        const std::string& formatted_body);
 
     // Recompute the aggregate from per_account_rooms_ and fire
     // on_tray_unread_changed_ only when the value differs from the last call.

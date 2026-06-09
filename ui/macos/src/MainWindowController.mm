@@ -217,6 +217,8 @@ public:
     using ShellBase::DecodedImage;
     using ShellBase::debounce_;
     using ShellBase::DebounceSlot;
+    using ShellBase::dispatch_room_send_;
+    using ShellBase::RoomSendOutcome;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
     void pick_image_file_(
@@ -2349,13 +2351,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
-            {
-                s->_shell->pick_and_set_room_avatar_(s->_shell->current_room_id_);
-                if (s->_roomTextArea) s->_roomTextArea->set_text("");
-                if (s->_roomView)    s->_roomView->set_current_text({});
-                return;
-            }
             // Build from the composer's mention draft so inline pills become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
@@ -2375,10 +2370,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            auto res = tesseract::dispatch_compose_send(
-                *s->_shell->client_, s->_shell->current_room_id_,
-                msg.body, msg.formatted_body);
-            if (res)
+            auto outcome = s->_shell->dispatch_room_send_(
+                s->_shell->current_room_id_, msg.body, msg.formatted_body);
+            if (outcome.handled_as_command || outcome.send_result)
             {
                 if (s->_roomTextArea)
                 {

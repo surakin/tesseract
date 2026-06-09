@@ -1131,13 +1131,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             {
                 return;
             }
-            if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
-            {
-                pick_and_set_room_avatar_(current_room_id_);
-                if (room_text_area_) room_text_area_->set_text("");
-                room_view_->clear_compose_text();
-                return;
-            }
             // Build from the composer's mention draft so inline pills become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
@@ -1159,9 +1152,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             {
                 return;
             }
-            auto res = tesseract::dispatch_compose_send(
-                *client_, current_room_id_, msg.body, msg.formatted_body);
-            if (res)
+            auto outcome = dispatch_room_send_(current_room_id_, msg.body,
+                                               msg.formatted_body);
+            if (outcome.handled_as_command || outcome.send_result)
             {
                 if (room_text_area_)
                 {

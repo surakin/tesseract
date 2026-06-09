@@ -650,13 +650,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             {
                 return;
             }
-            if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
-            {
-                pick_and_set_room_avatar_(current_room_id_);
-                mainApp_->room_view()->clear_compose_text();
-                if (roomTextArea_) roomTextArea_->set_text("");
-                return;
-            }
             // Build the message from the composer's mention draft so inline
             // pills become matrix.to links + m.mentions. Falls back to the
             // passed-in body when the native area has no draft.
@@ -680,9 +673,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             {
                 return;
             }
-            auto res = tesseract::dispatch_compose_send(
-                *client_, current_room_id_, msg.body, msg.formatted_body);
-            if (res)
+            auto outcome = dispatch_room_send_(current_room_id_, msg.body,
+                                               msg.formatted_body);
+            if (outcome.handled_as_command || outcome.send_result)
             {
                 if (roomTextArea_)
                 {
@@ -692,8 +685,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             }
             else
             {
-                statusBar()->showMessage(QString::fromStdString(res.message),
-                                         4000);
+                statusBar()->showMessage(
+                    QString::fromStdString(outcome.send_result.message), 4000);
             }
         };
         mainApp_->room_view()->on_send_reply =

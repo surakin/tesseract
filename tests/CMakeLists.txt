@@ -72,6 +72,7 @@ add_executable(tesseract_tests
     cpp/test_shell_relayout_coalesce.cpp
     cpp/test_shell_alive_guard.cpp
     cpp/test_shell_message_inserted.cpp
+    cpp/test_shell_dispatch_room_send.cpp
     cpp/test_message_list_pinning.cpp
     cpp/test_tk_pinned_banner.cpp
     cpp/test_tk_message_list_threads.cpp

@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
+#include "app/SlashCommands.h"
 #include "app/media_preview_policy.h"
 #include "tk/blurhash.h"
 #include "tk/host.h"
@@ -1965,6 +1966,51 @@ void ShellBase::invite_user_command_(const std::string& room_id,
     if (room_id.empty() || user_id.empty() || !client_)
         return;
     client_->invite_user_async(room_id, user_id);
+}
+
+ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
+    const std::string& room_id, const std::string& body,
+    const std::string& formatted_body)
+{
+    RoomSendOutcome out;
+    if (room_id.empty() || !client_)
+    {
+        // No active room/client: treat as consumed so callers no-op without
+        // clearing on a failed send result.
+        out.handled_as_command = true;
+        return out;
+    }
+    // Commands that open a native dialog or enqueue async room actions are
+    // intercepted here; everything else falls through to dispatch_compose_send.
+    if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
+    {
+        pick_and_set_room_avatar_(room_id);
+        out.handled_as_command = true;
+        return out;
+    }
+    if (tesseract::is_slash_command_no_arg(body, "leave"))
+    {
+        leave_room_command_(room_id);
+        out.handled_as_command = true;
+        return out;
+    }
+    if (auto target = tesseract::parse_slash_arg(body, "join"))
+    {
+        join_room_command_(*target);
+        out.handled_as_command = true;
+        return out;
+    }
+    if (auto user = tesseract::parse_slash_arg(body, "invite"))
+    {
+        invite_user_command_(room_id, *user);
+        out.handled_as_command = true;
+        return out;
+    }
+    out.handled_as_command = false;
+    out.send_result =
+        tesseract::dispatch_compose_send(*client_, room_id, body,
+                                         formatted_body);
+    return out;
 }
 
 void ShellBase::update_space_children_cache_()
