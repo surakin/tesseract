@@ -232,6 +232,7 @@ private:
                                int max_h) override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
+    void bind_settings_controller_() override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
@@ -356,8 +357,6 @@ private:
     /// xdg_activation_v1_activate() directly (bypassing Qt). Falls back to
     /// activateWindow() on X11 or when xdg-activation-v1 is unavailable.
     void activateWindowWithToken_(const QString& token);
-
-    std::unique_ptr<tesseract::SettingsController> settings_controller_;
 
     QLocalServer* localServer_ = nullptr;
 

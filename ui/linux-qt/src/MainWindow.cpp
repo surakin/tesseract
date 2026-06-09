@@ -2473,17 +2473,7 @@ void MainWindow::doLogin()
 void MainWindow::finishLoginUi_(const std::string& uid)
 {
     switchActiveAccount(uid);
-    auto* active_up_connector =
-        active_account_ ? active_account_->up_connector.get() : nullptr;
-    settings_controller_ = std::make_unique<tesseract::SettingsController>(
-        client_,
-        [this](auto fn) { post_to_ui_(std::move(fn)); },
-        [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb) { pick_image_file_(std::move(cb)); });
-    settings_controller_->set_up_connector(active_up_connector);
-    if (settingsWidget_)
-        settingsWidget_->set_controller(settings_controller_.get(),
-                                        my_display_name_);
+    ensure_settings_controller_();
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
 
@@ -2681,17 +2671,7 @@ void MainWindow::onLoginSucceeded()
     tesseract::SessionStore::save_index(idx);
 
     switchActiveAccount(user_id);
-    auto* new_account_up_connector =
-        active_account_ ? active_account_->up_connector.get() : nullptr;
-    settings_controller_ = std::make_unique<tesseract::SettingsController>(
-        client_,
-        [this](auto fn) { post_to_ui_(std::move(fn)); },
-        [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb) { pick_image_file_(std::move(cb)); });
-    settings_controller_->set_up_connector(new_account_up_connector);
-    if (settingsWidget_)
-        settingsWidget_->set_controller(settings_controller_.get(),
-                                        my_display_name_);
+    ensure_settings_controller_();
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
 
@@ -3297,6 +3277,17 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     notify_secondary_media_ready_(cache_key, kind);
                 });
         });
+}
+
+void MainWindow::bind_settings_controller_()
+{
+    // settings_controller_ is freshly constructed by
+    // ShellBase::ensure_settings_controller_(); bind it to the native widget.
+    // The SettingsWidget installs its own key/file dialog hooks internally,
+    // so there is no separate wire_key_dialog_callbacks_ step on Qt.
+    if (settingsWidget_)
+        settingsWidget_->set_controller(settings_controller_.get(),
+                                        my_display_name_);
 }
 
 void MainWindow::pick_image_file_(

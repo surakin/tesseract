@@ -53,6 +53,7 @@ struct SendShell : WithAccountManager, ShellBase
     void raise_and_activate_() override {}
     bool is_ctrl_held_() const override { return false; }
     void switch_active_account_(const std::string&) override {}
+    void bind_settings_controller_() override {}
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
     void apply_thread_messages_(
         const std::string&,

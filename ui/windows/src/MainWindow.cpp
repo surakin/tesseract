@@ -3527,12 +3527,14 @@ void MainWindow::start_login()
 void MainWindow::finish_login_ui_(const std::string& uid)
 {
     switch_active_account(uid);
+    ensure_settings_controller_();
+}
 
-    settings_controller_ = std::make_unique<tesseract::SettingsController>(
-        client_,
-        [this](auto fn) { post_to_ui_(std::move(fn)); },
-        [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb) { pick_image_file_(std::move(cb)); });
+void MainWindow::bind_settings_controller_()
+{
+    // settings_controller_ is freshly constructed by
+    // ShellBase::ensure_settings_controller_(); install the native key/file
+    // dialog hooks and bind it to the native settings view + name field.
     wire_key_dialog_callbacks_();
 
     if (settings_view_)
@@ -3701,65 +3703,7 @@ void MainWindow::on_login_succeeded()
     tesseract::SessionStore::save_account(user_id, json);
 
     switch_active_account(user_id);
-
-    settings_controller_ = std::make_unique<tesseract::SettingsController>(
-        client_,
-        [this](auto fn) { post_to_ui_(std::move(fn)); },
-        [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb) { pick_image_file_(std::move(cb)); });
-    wire_key_dialog_callbacks_();
-
-    if (settings_view_)
-    {
-        settings_view_->set_request_repaint([this]
-        {
-            if (settings_surface_) settings_surface_->relayout();
-        });
-        settings_view_->set_controller(settings_controller_.get());
-        settings_view_->on_avatar_upload_requested = [this]
-        { if (settings_controller_) settings_controller_->upload_avatar(); };
-        settings_view_->on_avatar_remove_requested = [this]
-        { if (settings_controller_) settings_controller_->remove_avatar(); };
-    }
-
-    settings_name_field_ = settings_surface_->host().make_text_field();
-    settings_name_field_->set_text(my_display_name_);
-    settings_name_field_->set_placeholder("Display name");
-    settings_name_field_->set_visible(false);
-
-    settings_name_field_->set_on_submit(
-        [this]
-        {
-            if (!settings_controller_) return;
-            settings_controller_->set_display_name(
-                settings_name_field_->text());
-            settings_view_->set_name_busy(true);
-            settings_surface_->relayout();
-        });
-
-    settings_controller_->on_name_changed = [this](std::string name)
-    {
-        settings_view_->set_display_name_text(name);
-        if (settings_name_field_) settings_name_field_->set_text(name);
-        settings_surface_->relayout();
-    };
-    settings_controller_->on_name_result = [this](bool ok, std::string error)
-    {
-        settings_view_->set_name_busy(false);
-        if (!ok) settings_view_->set_name_error(std::move(error));
-        settings_surface_->relayout();
-    };
-    settings_controller_->on_avatar_changed = [this](std::string mxc)
-    {
-        my_avatar_url_ = mxc;
-        if (active_account_)
-        {
-            active_account_->avatar_url = my_avatar_url_;
-        }
-        settings_view_->set_avatar_url(mxc);
-        settings_surface_->relayout();
-        populate_user_strip();
-    };
+    ensure_settings_controller_();
 }
 
 void MainWindow::open_settings_()

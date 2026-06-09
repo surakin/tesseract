@@ -2738,20 +2738,7 @@ MainWindow::~MainWindow()
 void MainWindow::finish_login_ui_(const std::string& uid)
 {
     switch_active_account(uid);
-    settings_controller_ = std::make_unique<tesseract::SettingsController>(
-        client_,
-        [this](auto fn) { post_to_ui_(std::move(fn)); },
-        [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb) { pick_image_file_(std::move(cb)); });
-    wire_key_dialog_callbacks_();
-    if (active_account_)
-    {
-        settings_controller_->set_up_connector(
-            active_account_->up_connector.get());
-    }
-    if (settings_widget_)
-        settings_widget_->set_controller(settings_controller_.get(),
-                                         my_display_name_);
+    ensure_settings_controller_();
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     start_tray_if_needed_();
@@ -2981,87 +2968,21 @@ void MainWindow::on_login_succeeded()
     tesseract::SessionStore::save_index(index);
 
     switch_active_account(uid);
-    settings_controller_ = std::make_unique<tesseract::SettingsController>(
-        client_,
-        [this](auto fn) { post_to_ui_(std::move(fn)); },
-        [this](auto fn) { run_async_(std::move(fn)); },
-        [this](auto cb)
-        {
-            GtkFileDialog* dlg = gtk_file_dialog_new();
-            gtk_file_dialog_set_title(dlg, "Select avatar image");
-            GtkFileFilter* filt = gtk_file_filter_new();
-            gtk_file_filter_set_name(filt, "Images");
-            gtk_file_filter_add_mime_type(filt, "image/png");
-            gtk_file_filter_add_mime_type(filt, "image/jpeg");
-            gtk_file_filter_add_mime_type(filt, "image/gif");
-            gtk_file_filter_add_mime_type(filt, "image/webp");
-            GListStore* flist = g_list_store_new(GTK_TYPE_FILE_FILTER);
-            g_list_store_append(flist, filt);
-            g_object_unref(filt);
-            gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(flist));
-            g_object_unref(flist);
-
-            struct AvatarOpenCtx {
-                std::function<void(std::vector<uint8_t>, std::string)> callback;
-                MainWindow* self;
-            };
-            auto* ctx_ptr = new AvatarOpenCtx{std::move(cb), this};
-
-            gtk_file_dialog_open(dlg, GTK_WINDOW(window_), nullptr,
-                +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
-                {
-                    auto* c = static_cast<AvatarOpenCtx*>(data);
-                    GError* err = nullptr;
-                    GFile* file = gtk_file_dialog_open_finish(
-                        GTK_FILE_DIALOG(dialog_obj), res, &err);
-                    if (file)
-                    {
-                        gsize len = 0;
-                        char* raw = nullptr;
-                        GError* load_err = nullptr;
-                        g_file_load_contents(file, nullptr, &raw, &len,
-                                             nullptr, &load_err);
-                        if (!load_err && raw && len > 0)
-                        {
-                            std::vector<uint8_t> bytes(raw, raw + len);
-                            g_free(raw);
-                            char* path = g_file_get_path(file);
-                            std::string mime = "image/jpeg";
-                            if (path)
-                            {
-                                std::string p(path);
-                                if (p.ends_with(".png"))       mime = "image/png";
-                                else if (p.ends_with(".gif"))  mime = "image/gif";
-                                else if (p.ends_with(".webp")) mime = "image/webp";
-                                g_free(path);
-                            }
-                            auto callback = std::move(c->callback);
-                            c->self->post_to_ui_(
-                                [callback = std::move(callback),
-                                 bytes = std::move(bytes), mime]() mutable
-                                { callback(std::move(bytes), mime); });
-                        }
-                        if (load_err) g_error_free(load_err);
-                        g_object_unref(file);
-                    }
-                    if (err) g_error_free(err);
-                    delete c;
-                },
-                ctx_ptr);
-            g_object_unref(dlg);
-        });
-    wire_key_dialog_callbacks_();
-    if (active_account_)
-    {
-        settings_controller_->set_up_connector(
-            active_account_->up_connector.get());
-    }
-    if (settings_widget_)
-        settings_widget_->set_controller(settings_controller_.get(),
-                                         my_display_name_);
+    ensure_settings_controller_();
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     start_tray_if_needed_();
+}
+
+void MainWindow::bind_settings_controller_()
+{
+    // settings_controller_ is freshly constructed by
+    // ShellBase::ensure_settings_controller_(); install the native key/file
+    // dialog hooks and bind it to the native settings widget.
+    wire_key_dialog_callbacks_();
+    if (settings_widget_)
+        settings_widget_->set_controller(settings_controller_.get(),
+                                         my_display_name_);
 }
 
 void MainWindow::wire_key_dialog_callbacks_()

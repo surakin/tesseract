@@ -4529,6 +4529,20 @@ void ShellBase::after_active_room_changed_()
     ensure_room_preview_override_(current_room_id_);
 }
 
+void ShellBase::ensure_settings_controller_()
+{
+    settings_controller_ = std::make_unique<tesseract::SettingsController>(
+        client_,
+        [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); },
+        [this](std::function<void(std::vector<uint8_t>, std::string)> cb)
+        { pick_image_file_(std::move(cb)); });
+    // UnifiedPush up-connector (Linux only); nullptr elsewhere — a no-op.
+    settings_controller_->set_up_connector(
+        active_account_ ? active_account_->up_connector.get() : nullptr);
+    bind_settings_controller_();
+}
+
 void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
 {
     auto* c = client_;

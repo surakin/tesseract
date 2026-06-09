@@ -251,6 +251,7 @@ private:
                                int max_h) override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
+    void bind_settings_controller_() override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
@@ -300,7 +301,6 @@ private:
     std::unique_ptr<tk::gtk4::Surface> branding_surface_;
     std::unique_ptr<LoginView> login_view_;
     std::unique_ptr<SettingsWidget> settings_widget_;
-    std::unique_ptr<tesseract::SettingsController> settings_controller_;
 
     // Single surface hosting the full main-app widget tree.
     // main_app_ / room_view_ live in ShellBase (assigned in the constructor).

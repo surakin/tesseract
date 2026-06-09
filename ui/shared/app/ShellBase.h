@@ -11,6 +11,7 @@
 #include <tesseract/waveform_cache.h>
 #include "app/AccountManager.h"
 #include "app/PresenceTracker.h"
+#include "app/SettingsController.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
 #include "tk/theme.h"
@@ -293,6 +294,11 @@ protected:
     // trigger) when a sync tick produces no net change to the aggregate.
     bool last_tray_unread_    = false;
     bool last_tray_highlight_ = false;
+
+    // Owns the per-account settings controller. Rebuilt on every login /
+    // account switch via ensure_settings_controller_(); the native widget +
+    // dialog-hook binding is delegated to bind_settings_controller_().
+    std::unique_ptr<tesseract::SettingsController> settings_controller_;
 
     std::unique_ptr<Client> pending_login_client_;
     std::filesystem::path pending_login_temp_dir_;
@@ -1009,6 +1015,21 @@ protected:
     // Called from pick_and_set_room_avatar_ and SettingsController.
     virtual void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) = 0;
+
+    // (Re)construct settings_controller_ with the three standard callbacks
+    // (forwarding to post_to_ui_ / run_async_ / pick_image_file_) and wire its
+    // UnifiedPush up-connector from the active account (nullptr on platforms
+    // without UnifiedPush — a no-op there). Then calls bind_settings_controller_
+    // for the native widget + dialog-hook binding. Rebuilds on every call to
+    // match the per-login / per-account-switch behavior of the old inline sites.
+    void ensure_settings_controller_();
+
+    // Native binding hook invoked at the tail of ensure_settings_controller_():
+    // bind settings_controller_ to the shell's native settings widget/view and
+    // install native key/file dialog hooks (passphrase prompt, save/open file
+    // dialogs, export/import result alerts). settings_controller_ is non-null
+    // when this runs.
+    virtual void bind_settings_controller_() = 0;
 
     // Open a file picker, upload the selected image as raw media, and set it
     // as the current user's avatar in `room_id`. No-op if not logged in.

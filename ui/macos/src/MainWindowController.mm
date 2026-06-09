@@ -224,6 +224,7 @@ public:
                                int max_h) override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
+    void bind_settings_controller_() override;
     using ShellBase::emoji_fetches_in_flight_;
     using ShellBase::ensure_media_image_;
     using ShellBase::ensure_picker_image_;
@@ -268,6 +269,8 @@ public:
     using ShellBase::pending_restore_popouts_;
     using ShellBase::populate_pending_restore_popouts_;
     using ShellBase::save_settings_debounced_;
+    using ShellBase::settings_controller_;
+    using ShellBase::ensure_settings_controller_;
     using ShellBase::clamp_to_screens_;
     using ShellBase::try_restore_tab_session_;
     using ShellBase::per_account_rooms_;
@@ -409,8 +412,8 @@ public:
         show_encryption_setup_overlay_(mode);
     }
 
-    // SettingsController — created at login, reset on account switch.
-    std::unique_ptr<tesseract::SettingsController> settings_controller_;
+    // settings_controller_ now lives in ShellBase (created/reset via
+    // ensure_settings_controller_); exposed above via a using-declaration.
 
     // Shortcode engine + transient state (owned here, accessed via _shell->).
     tesseract::views::ShortcodeEngine shortcode_engine_;
@@ -448,7 +451,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                    description:(NSString*)desc
                     softLogout:(BOOL)soft;
 - (void)_switchActiveAccount:(const std::string&)user_id;
-- (void)_buildSettingsController;
+- (void)_bindSettingsControllerNative;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
 - (void)_openSettings;
@@ -1116,6 +1119,15 @@ void MacShell::pick_image_file_(
             callback(std::move(bytes), mime);
         });
     }];
+}
+
+void MacShell::bind_settings_controller_()
+{
+    // settings_controller_ is freshly constructed by
+    // ShellBase::ensure_settings_controller_(); the native AppKit binding
+    // (NSAlert / NSSavePanel / NSOpenPanel dialog hooks + settings view/name
+    // field wiring) lives in the ObjC++ controller method below.
+    [ctrl_ _bindSettingsControllerNative];
 }
 
 // Pure decode — no cache mutation. Safe OFF the main queue: CGImageSource
@@ -5432,7 +5444,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (_shell->is_secondary_window_startup_())
     {
         [self _switchActiveAccount:_shell->active_account_->user_id];
-        [self _buildSettingsController];
+        _shell->ensure_settings_controller_();
         return;
     }
 
@@ -5514,30 +5526,17 @@ void MacShell::set_compose_draft_(const std::string& draft)
         firstActiveUid = _shell->account_manager_.accounts().front()->user_id;
     }
     [self _switchActiveAccount:firstActiveUid];
-    [self _buildSettingsController];
+    _shell->ensure_settings_controller_();
 }
 
-- (void)_buildSettingsController
+// Native (AppKit) binding for settings_controller_. Invoked from
+// MacShell::bind_settings_controller_ at the tail of
+// ShellBase::ensure_settings_controller_, which constructs the controller with
+// the three standard callbacks. This method installs the macOS dialog hooks and
+// wires the settings view + name field.
+- (void)_bindSettingsControllerNative
 {
     __weak MainWindowController* ws = self;
-    _shell->settings_controller_ =
-        std::make_unique<tesseract::SettingsController>(
-            _shell->client_,
-            [ws](auto fn) {
-                MainWindowController* s = ws;
-                if (s)
-                    s->_shell->post_to_ui_(std::move(fn));
-            },
-            [ws](auto fn) {
-                MainWindowController* s = ws;
-                if (s)
-                    s->_shell->run_async_(std::move(fn));
-            },
-            [ws](auto cb) {
-                MainWindowController* s = ws;
-                if (s)
-                    s->_shell->pick_image_file_(std::move(cb));
-            });
 
     // Key export/import dialog hooks.
     _shell->settings_controller_->show_passphrase_prompt =
@@ -5784,7 +5783,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _shell->add_account_return_idx_ = -1;
 
     [self _switchActiveAccount:switchToUid];
-    [self _buildSettingsController];
+    _shell->ensure_settings_controller_();
 }
 
 - (void)loginViewDidCancel:(LoginView*)view
