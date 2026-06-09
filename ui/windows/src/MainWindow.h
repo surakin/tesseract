@@ -530,6 +530,10 @@ private:
     void switch_active_account_(const std::string& user_id) override;
     void spawn_main_window_(
         std::shared_ptr<tesseract::AccountSession> account) override;
+    std::unique_ptr<tesseract::IEventHandler>
+    make_account_bridge_(const std::string& uid) override;
+    void install_account_notifier_(
+        tesseract::AccountSession& session) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,

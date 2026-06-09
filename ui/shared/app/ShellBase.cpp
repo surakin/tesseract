@@ -2620,6 +2620,74 @@ void ShellBase::arm_pending_login_()
         (pending_login_temp_dir_ / "matrix-store").string());
 }
 
+ShellBase::RestoreResult ShellBase::restore_all_accounts_()
+{
+    RestoreResult result;
+
+    // One-shot migration from the legacy single-account layout. Runs once per
+    // install before any Client is constructed; idempotent on every subsequent
+    // launch.
+    tesseract::SessionStore::migrate_legacy_layout();
+
+    // Restore every account on disk, in index order, so notifications fire for
+    // any of them while the user works in the foreground one.
+    auto index = tesseract::SessionStore::load_index();
+
+    for (const auto& uid : index.user_ids)
+    {
+        auto json = tesseract::SessionStore::load_account(uid);
+        if (!json)
+        {
+            continue;
+        }
+
+        auto session    = std::make_unique<tesseract::AccountSession>();
+        session->client = std::make_unique<tesseract::Client>();
+        session->client->set_data_dir(
+            tesseract::SessionStore::sdk_store_dir(uid).string());
+
+        auto res = session->client->restore_session(*json);
+        if (!res)
+        {
+            result.restore_error      = res.message;
+            result.any_restore_failed = true;
+            continue;
+        }
+
+        session->user_id      = session->client->get_user_id();
+        session->display_name = session->client->get_display_name();
+        session->avatar_url   = session->client->get_avatar_url();
+        {
+            auto prefs = tesseract::Prefs::parse(
+                session->client->load_prefs_json());
+            session->last_room  = prefs.last_room;
+            session->open_rooms = prefs.open_rooms;
+        }
+
+        // Per-account event bridge (native type) + background sync.
+        session->bridge = make_account_bridge_(session->user_id);
+        session->client->start_sync(session->bridge.get());
+        session->sync_started = true;
+
+        // Per-account notifier (native) and Linux-only UnifiedPush connector.
+        install_account_notifier_(*session);
+        install_account_up_connector_(*session);
+
+        if (session->user_id == index.active_user_id)
+        {
+            result.active_uid = session->user_id;
+        }
+        account_manager_.add_account(std::move(session));
+    }
+
+    result.any_accounts = !account_manager_.accounts().empty();
+    if (result.active_uid.empty() && result.any_accounts)
+    {
+        result.active_uid = account_manager_.accounts().front()->user_id;
+    }
+    return result;
+}
+
 ShellBase::~ShellBase()
 {
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this

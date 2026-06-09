@@ -807,6 +807,52 @@ protected:
     // Ctrl+click → spawn_main_window_; plain click → switch_active_account_.
     void on_account_picker_select_(const std::string& uid);
 
+    // ── Startup account restore ───────────────────────────────────────────────
+    // Outcome of restore_all_accounts_(): lets each shell decide between the
+    // empty-accounts login fallback and finishing login on the active account
+    // (that decision touches native login_view_ widgets, so it stays in the
+    // shell).
+    struct RestoreResult
+    {
+        bool        any_accounts       = false; // at least one account restored
+        bool        any_restore_failed = false; // ≥1 stored account failed restore
+        std::string restore_error;              // last restore failure message
+        std::string active_uid;                 // uid to make active (empty when none)
+    };
+
+    // Platform-agnostic startup restore loop, shared by every shell's primary-
+    // window startup entry (doLogin / do_login / start_login / beginLogin) AFTER
+    // the is_secondary_window_startup_ gate. Runs the legacy-layout migration,
+    // loads the account index, and for each stored uid: restores the session
+    // (skipping + recording failures), caches display name / avatar / prefs,
+    // builds the per-account event bridge (make_account_bridge_) and starts
+    // sync, then installs the native per-account notifier
+    // (install_account_notifier_) and the Linux-only UnifiedPush connector
+    // (install_account_up_connector_), and adds the account to the manager.
+    // Returns a RestoreResult; the caller does the native empty-fallback /
+    // finish-login decision. UI-thread only.
+    RestoreResult restore_all_accounts_();
+
+    // Build the shell's concrete IEventHandler bridge for `uid`, with set_user_id
+    // already called. The bridge TYPE is native: EventBridge (Qt6, a QObject so
+    // the marshalling QMetaObject::invokeMethod has a receiver), EventHandlerBase
+    // (GTK4 / Win32 / macOS). restore_all_accounts_ then calls start_sync on it.
+    virtual std::unique_ptr<IEventHandler>
+    make_account_bridge_(const std::string& uid) = 0;
+
+    // Build and store the native per-account notifier on session.notifier. The
+    // notifier's on-click closure must capture session.user_id and, when fired,
+    // switch the active account to that uid (switch_active_account_) then
+    // navigate to the clicked room — with any platform focus token handling
+    // (Wayland xdg-activation on Linux). macOS has no in-app notifier, so its
+    // override is a no-op. Called once per account during restore.
+    virtual void install_account_notifier_(AccountSession& session) = 0;
+
+    // Build, start, and store the native per-account UnifiedPush connector on
+    // session.up_connector. Linux-only (registers with the D-Bus distributor);
+    // Win32 / macOS have no UnifiedPush, so the default is a no-op.
+    virtual void install_account_up_connector_(AccountSession& /*session*/) {}
+
     // True when this window's startup should reuse the already-restored,
     // already-syncing accounts from the shared AccountManager instead of
     // re-restoring from disk. A spawned (secondary) window finds the manager

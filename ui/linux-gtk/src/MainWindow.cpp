@@ -2758,96 +2758,17 @@ void MainWindow::do_login()
         return;
     }
 
-    tesseract::SessionStore::migrate_legacy_layout();
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Restoring session\xe2\x80\xa6"));
 
-    auto index = tesseract::SessionStore::load_index();
-    std::string restore_error;
-    bool any_restore_failed = false;
+    // Migrate + restore every stored account (shared loop in ShellBase). The
+    // native per-account notifier / UnifiedPush construction runs through
+    // install_account_notifier_ / install_account_up_connector_ below.
+    auto restore = restore_all_accounts_();
 
-    if (!index.user_ids.empty())
+    if (restore.any_accounts)
     {
-        gtk_label_set_text(GTK_LABEL(status_bar_),
-                           _("Restoring session\xe2\x80\xa6"));
-        int first_active = -1;
-        for (const auto& uid : index.user_ids)
-        {
-            auto saved = tesseract::SessionStore::load_account(uid);
-            if (!saved)
-            {
-                continue;
-            }
-
-            auto sess = std::make_unique<tesseract::AccountSession>();
-            sess->client = std::make_unique<tesseract::Client>();
-            sess->client->set_data_dir(
-                tesseract::SessionStore::sdk_store_dir(uid).string());
-            auto res = sess->client->restore_session(*saved);
-            if (!res)
-            {
-                restore_error       = res.message;
-                any_restore_failed  = true;
-                continue;
-            }
-            sess->user_id = sess->client->get_user_id();
-            sess->display_name = sess->client->get_display_name();
-            sess->avatar_url = sess->client->get_avatar_url();
-            {
-                auto prefs = tesseract::Prefs::parse(sess->client->load_prefs_json());
-                sess->last_room  = prefs.last_room;
-                sess->open_rooms = prefs.open_rooms;
-            }
-
-            auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
-            bridge->set_user_id(sess->user_id);
-            sess->client->start_sync(bridge.get());
-            sess->bridge = std::move(bridge);
-            sess->sync_started = true;
-
-            // Per-account notifier: click switches to this account then navigates.
-            const std::string notif_uid = sess->user_id;
-            sess->notifier = std::make_unique<LinuxNotifierGtk>(
-                [this, notif_uid](std::string room_id, std::string token)
-                {
-                    switch_active_account(notif_uid);
-                    // Set xdg_activation_v1 token (non-empty on modern Wayland)
-                    // before gtk_window_present so the compositor grants focus.
-                    if (!token.empty())
-                    {
-                        gtk_window_set_startup_id(GTK_WINDOW(window_),
-                                                  token.c_str());
-                    }
-                    navigate_to_room(std::move(room_id));
-                });
-
-            // Per-account UnifiedPush connector.
-            {
-                auto up = std::make_unique<LinuxUpConnectorGtk>();
-                up->start(sess->client.get(), sess->user_id);
-                sess->up_connector = std::move(up);
-            }
-
-            const std::string sess_uid = sess->user_id;
-            account_manager_.add_account(std::move(sess));
-            if (uid == index.active_user_id)
-            {
-                first_active = static_cast<int>(account_manager_.accounts().size()) - 1;
-            }
-        }
-
-        if (!account_manager_.accounts().empty())
-        {
-            std::string target_uid;
-            if (first_active >= 0)
-            {
-                target_uid = account_manager_.accounts()[first_active]->user_id;
-            }
-            else
-            {
-                target_uid = account_manager_.accounts()[0]->user_id;
-            }
-            finish_login_ui_(target_uid);
-            return;
-        }
+        finish_login_ui_(restore.active_uid);
+        return;
     }
 
     // No accounts: fresh install or all restores failed → show login view.
@@ -2860,8 +2781,43 @@ void MainWindow::do_login()
     login_view_->reset();
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Not logged in"));
-    if (any_restore_failed)
-        login_view_->show_restore_error(restore_error, [this] { do_login(); });
+    if (restore.any_restore_failed)
+        login_view_->show_restore_error(restore.restore_error,
+                                        [this] { do_login(); });
+}
+
+std::unique_ptr<tesseract::IEventHandler>
+MainWindow::make_account_bridge_(const std::string& uid)
+{
+    auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
+    bridge->set_user_id(uid);
+    return bridge;
+}
+
+void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
+{
+    // Per-account notifier: click switches to this account then navigates.
+    const std::string notif_uid = session.user_id;
+    session.notifier = std::make_unique<LinuxNotifierGtk>(
+        [this, notif_uid](std::string room_id, std::string token)
+        {
+            switch_active_account(notif_uid);
+            // Set xdg_activation_v1 token (non-empty on modern Wayland)
+            // before gtk_window_present so the compositor grants focus.
+            if (!token.empty())
+            {
+                gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
+            }
+            navigate_to_room(std::move(room_id));
+        });
+}
+
+void MainWindow::install_account_up_connector_(tesseract::AccountSession& session)
+{
+    // Per-account UnifiedPush connector.
+    auto up = std::make_unique<LinuxUpConnectorGtk>();
+    up->start(session.client.get(), session.user_id);
+    session.up_connector = std::move(up);
 }
 
 void MainWindow::on_login_succeeded()

@@ -182,6 +182,14 @@ protected:
     void switch_active_account_(const std::string& user_id) override;
     void spawn_main_window_(
         std::shared_ptr<tesseract::AccountSession> account) override;
+    std::unique_ptr<tesseract::IEventHandler>
+    make_account_bridge_(const std::string& uid) override;
+    // macOS has no in-app per-account notifier; the restore loop's call is a
+    // no-op (install_account_up_connector_ likewise relies on the base no-op).
+    void install_account_notifier_(
+        tesseract::AccountSession& /*session*/) override
+    {
+    }
 
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;
@@ -331,6 +339,8 @@ public:
     using ShellBase::server_info_;
     using ShellBase::show_status_message_;
     using ShellBase::on_account_picker_select_;
+    using ShellBase::restore_all_accounts_;
+    using ShellBase::RestoreResult;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -575,6 +585,14 @@ namespace
 {
 
 // ── MacShell method implementations ──────────────────────────────────────
+
+std::unique_ptr<tesseract::IEventHandler>
+MacShell::make_account_bridge_(const std::string& uid)
+{
+    auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
+    bridge->set_user_id(uid);
+    return bridge;
+}
 
 void MacShell::open_join_room_dialog_ui_(const std::string& prefill)
 {
@@ -5460,50 +5478,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
 
-    tesseract::SessionStore::migrate_legacy_layout();
+    // Migrate + restore every stored account (shared loop in ShellBase). macOS
+    // has no in-app notifier or UnifiedPush connector, so install_account_*
+    // are no-ops on MacShell.
+    auto restore = _shell->restore_all_accounts_();
 
-    auto index = tesseract::SessionStore::load_index();
-    std::string restore_error;
-    bool any_restore_failed = false;
-    for (const auto& uid : index.user_ids)
-    {
-        auto session_json = tesseract::SessionStore::load_account(uid);
-        if (!session_json)
-        {
-            continue;
-        }
+    std::string restore_error = restore.restore_error;
+    bool any_restore_failed = restore.any_restore_failed;
 
-        auto session = std::make_unique<tesseract::AccountSession>();
-        session->client = std::make_unique<tesseract::Client>();
-        session->client->set_data_dir(
-            tesseract::SessionStore::sdk_store_dir(uid).string());
-        auto res = session->client->restore_session(*session_json);
-        if (!res)
-        {
-            restore_error      = res.message;
-            any_restore_failed = true;
-            continue;
-        }
-
-        auto* bridge_ptr = new tesseract::EventHandlerBase(_shell.get());
-        bridge_ptr->set_user_id(uid);
-        session->bridge.reset(bridge_ptr);
-
-        session->user_id = session->client->get_user_id();
-        session->display_name = session->client->get_display_name();
-        session->avatar_url = session->client->get_avatar_url();
-        {
-            auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
-            session->last_room  = prefs.last_room;
-            session->open_rooms = prefs.open_rooms;
-        }
-        session->sync_started = true;
-        session->client->start_sync(session->bridge.get());
-
-        _shell->account_manager_.add_account(std::move(session));
-    }
-
-    if (_shell->account_manager_.accounts().empty())
+    if (!restore.any_accounts)
     {
         _shell->pending_login_temp_dir_.clear();
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -5531,13 +5514,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
 
-    std::string firstActiveUid = index.active_user_id;
-    if (firstActiveUid.empty() &&
-        !_shell->account_manager_.accounts().empty())
-    {
-        firstActiveUid = _shell->account_manager_.accounts().front()->user_id;
-    }
-    [self _switchActiveAccount:firstActiveUid];
+    [self _switchActiveAccount:restore.active_uid];
     _shell->ensure_settings_controller_();
 }
 

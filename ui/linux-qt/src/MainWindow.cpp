@@ -2354,100 +2354,16 @@ void MainWindow::doLogin()
         return;
     }
 
-    // One-shot migration from the legacy single-account layout. Runs once
-    // per install before any Client is constructed; idempotent on every
-    // subsequent launch.
-    tesseract::SessionStore::migrate_legacy_layout();
-
-    // Restore every account on disk, in index order, so notifications
-    // fire for any of them while the user works in the foreground one.
-    auto idx = tesseract::SessionStore::load_index();
-
-    if (idx.user_ids.empty())
-    {
-        // Fresh install: no accounts → initial LoginView, no Cancel.
-        loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
-        pending_login_is_add_account_ = false;
-        add_account_return_idx_ = -1;
-        pending_login_temp_dir_.clear();
-        pending_login_client_ = std::make_unique<tesseract::Client>();
-        loginView_->set_client(pending_login_client_.get());
-        loginView_->set_on_begin_oauth([this] { arm_pending_login_(); });
-        loginView_->reset();
-        contentStack_->setCurrentWidget(loginView_);
-        statusBar()->showMessage(tr("Not logged in"));
-        return;
-    }
-
     statusBar()->showMessage(tr("Restoring sessions\xe2\x80\xa6"));
 
-    std::string restore_error;
-    bool any_restore_failed = false;
-    std::string target_active_uid;
-    for (std::size_t i = 0; i < idx.user_ids.size(); ++i)
+    // Migrate + restore every stored account (shared loop in ShellBase). The
+    // native per-account notifier / UnifiedPush construction runs through
+    // install_account_notifier_ / install_account_up_connector_ below.
+    auto restore = restore_all_accounts_();
+
+    if (!restore.any_accounts)
     {
-        const auto& uid = idx.user_ids[i];
-        auto json = tesseract::SessionStore::load_account(uid);
-        if (!json)
-        {
-            continue;
-        }
-
-        auto session = std::make_unique<tesseract::AccountSession>();
-        session->user_id = uid;
-        session->client = std::make_unique<tesseract::Client>();
-        session->client->set_data_dir(
-            tesseract::SessionStore::sdk_store_dir(uid).string());
-
-        auto res = session->client->restore_session(*json);
-        if (!res)
-        {
-            restore_error      = res.message;
-            any_restore_failed = true;
-            continue;
-        }
-        session->display_name = session->client->get_display_name();
-        session->avatar_url = session->client->get_avatar_url();
-        {
-            auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
-            session->last_room  = prefs.last_room;
-            session->open_rooms = prefs.open_rooms;
-        }
-
-        auto bridge = std::make_unique<EventBridge>(this);
-        bridge->set_user_id(uid);
-        session->client->start_sync(bridge.get());
-        session->sync_started = true;
-        session->bridge = std::move(bridge);
-
-        // Per-account notifier: click switches to this account then navigates.
-        session->notifier = std::make_unique<LinuxNotifierQt>(
-            [this, uid](std::string room_id, std::string token)
-            {
-                switchActiveAccount(uid);
-                pending_wayland_token_ = QString::fromStdString(token);
-                navigate_to_room(std::move(room_id));
-            });
-
-        // Per-account UnifiedPush connector (registers with distributor on start).
-        auto up = std::make_unique<LinuxUpConnectorQt>();
-        up->set_run_async(
-            [this](std::function<void()> fn) { run_async_(std::move(fn)); });
-        up->set_post_to_ui(
-            [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
-        up->start(session->client.get(), uid);
-        session->up_connector = std::move(up);
-
-        if (uid == idx.active_user_id)
-        {
-            target_active_uid = uid;
-        }
-        account_manager_.add_account(std::move(session));
-    }
-
-    if (account_manager_.accounts().empty())
-    {
-        // Every stored account failed to restore — show login view.
+        // Fresh install or every stored account failed to restore → login view.
         loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
         pending_login_is_add_account_ = false;
         add_account_return_idx_ = -1;
@@ -2458,16 +2374,46 @@ void MainWindow::doLogin()
         loginView_->reset();
         contentStack_->setCurrentWidget(loginView_);
         statusBar()->showMessage(tr("Not logged in"));
-        if (any_restore_failed)
-            loginView_->show_restore_error(restore_error, [this] { doLogin(); });
+        if (restore.any_restore_failed)
+            loginView_->show_restore_error(restore.restore_error,
+                                           [this] { doLogin(); });
         return;
     }
 
-    if (target_active_uid.empty() && !account_manager_.accounts().empty())
-    {
-        target_active_uid = account_manager_.accounts()[0]->user_id;
-    }
-    finishLoginUi_(target_active_uid);
+    finishLoginUi_(restore.active_uid);
+}
+
+std::unique_ptr<tesseract::IEventHandler>
+MainWindow::make_account_bridge_(const std::string& uid)
+{
+    auto bridge = std::make_unique<EventBridge>(this);
+    bridge->set_user_id(uid);
+    return bridge;
+}
+
+void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
+{
+    // Per-account notifier: click switches to this account then navigates.
+    const std::string uid = session.user_id;
+    session.notifier = std::make_unique<LinuxNotifierQt>(
+        [this, uid](std::string room_id, std::string token)
+        {
+            switchActiveAccount(uid);
+            pending_wayland_token_ = QString::fromStdString(token);
+            navigate_to_room(std::move(room_id));
+        });
+}
+
+void MainWindow::install_account_up_connector_(tesseract::AccountSession& session)
+{
+    // Per-account UnifiedPush connector (registers with distributor on start).
+    auto up = std::make_unique<LinuxUpConnectorQt>();
+    up->set_run_async(
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+    up->set_post_to_ui(
+        [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
+    up->start(session.client.get(), session.user_id);
+    session.up_connector = std::move(up);
 }
 
 void MainWindow::finishLoginUi_(const std::string& uid)

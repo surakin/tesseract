@@ -3460,62 +3460,15 @@ void MainWindow::start_login()
         return;
     }
 
-    tesseract::SessionStore::migrate_legacy_layout();
-    auto index = tesseract::SessionStore::load_index();
-
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Restoring session…"));
 
-    std::string restore_error;
-    bool any_restore_failed = false;
+    // Migrate + restore every stored account (shared loop in ShellBase). The
+    // native per-account notifier construction runs through
+    // install_account_notifier_ below; Win32 has no UnifiedPush connector.
+    auto restore = restore_all_accounts_();
 
-    for (const auto& uid : index.user_ids)
-    {
-        auto json = tesseract::SessionStore::load_account(uid);
-        if (!json)
-        {
-            continue;
-        }
-
-        auto sess = std::make_unique<tesseract::AccountSession>();
-        sess->client = std::make_unique<tesseract::Client>();
-        sess->client->set_data_dir(
-            tesseract::SessionStore::sdk_store_dir(uid).string());
-
-        auto res = sess->client->restore_session(*json);
-        if (!res)
-        {
-            restore_error      = res.message;
-            any_restore_failed = true;
-            continue;
-        }
-        sess->user_id = sess->client->get_user_id();
-        sess->display_name = sess->client->get_display_name();
-        sess->avatar_url = sess->client->get_avatar_url();
-        {
-            auto prefs = tesseract::Prefs::parse(sess->client->load_prefs_json());
-            sess->last_room  = prefs.last_room;
-            sess->open_rooms = prefs.open_rooms;
-        }
-
-        auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
-        bridge->set_user_id(sess->user_id);
-        sess->bridge = std::move(bridge);
-        sess->client->start_sync(sess->bridge.get());
-        sess->sync_started = true;
-
-        // Per-account notifier: click switches to this account then navigates.
-        // (Named distinctly from the range-for `uid`: a range-for variable
-        // shares the loop-body scope, so reusing the name is a redeclaration
-        // under conforming compilers — MSVC accepted it, GCC/mingw rejects it.)
-        const std::string notifier_uid = sess->user_id;
-        sess->notifier =
-            std::make_unique<win32::Win32Notifier>(hwnd_, notifier_uid);
-
-        account_manager_.add_account(std::move(sess));
-    }
-
-    if (account_manager_.accounts().empty())
+    if (!restore.any_accounts)
     {
         pending_login_temp_dir_.clear();
         pending_login_client_ = std::make_unique<tesseract::Client>();
@@ -3525,8 +3478,8 @@ void MainWindow::start_login()
             login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
             login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
             login_view_->reset();
-            if (any_restore_failed)
-                login_view_->show_restore_error(restore_error,
+            if (restore.any_restore_failed)
+                login_view_->show_restore_error(restore.restore_error,
                                                 [this] { start_login(); });
         }
         show_login_view();
@@ -3535,16 +3488,23 @@ void MainWindow::start_login()
         return;
     }
 
-    std::string active_uid;
-    if (!index.active_user_id.empty() && account_manager_.find(index.active_user_id))
-    {
-        active_uid = index.active_user_id;
-    }
-    else if (!account_manager_.accounts().empty())
-    {
-        active_uid = account_manager_.accounts()[0]->user_id;
-    }
-    finish_login_ui_(active_uid);
+    finish_login_ui_(restore.active_uid);
+}
+
+std::unique_ptr<tesseract::IEventHandler>
+MainWindow::make_account_bridge_(const std::string& uid)
+{
+    auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
+    bridge->set_user_id(uid);
+    return bridge;
+}
+
+void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
+{
+    // Per-account notifier: the Win32Notifier routes balloon clicks back
+    // through the message pump, switching account + navigating to the room.
+    session.notifier =
+        std::make_unique<win32::Win32Notifier>(hwnd_, session.user_id);
 }
 
 void MainWindow::finish_login_ui_(const std::string& uid)

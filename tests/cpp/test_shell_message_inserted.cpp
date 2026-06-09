@@ -64,6 +64,12 @@ struct InsertShell : WithAccountManager, ShellBase
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override
     {
     }
+    std::unique_ptr<tesseract::IEventHandler>
+    make_account_bridge_(const std::string&) override
+    {
+        return nullptr;
+    }
+    void install_account_notifier_(tesseract::AccountSession&) override {}
     void apply_thread_messages_(
         const std::string&, std::vector<tesseract::views::MessageRowData>,
         bool) override {}
