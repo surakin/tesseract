@@ -127,7 +127,7 @@ Settings::WindowGeometry ShellBase::clamp_to_screens_(
 void ShellBase::show_status_message_(std::string msg, int auto_clear_ms)
 {
     const std::uint32_t gen = ++status_msg_gen_;
-    post_to_ui_([this, msg = std::move(msg)] { on_show_status_message_ui_(msg); });
+    post_to_ui_alive_([this, msg = std::move(msg)] { on_show_status_message_ui_(msg); });
     post_to_ui_after_(auto_clear_ms,
                       [this, gen]
                       {
@@ -221,7 +221,7 @@ void ShellBase::run_async_mut_(std::function<void()> fn)
 
 void ShellBase::init_pool_callbacks_()
 {
-    auto notify = [this] { post_to_ui_([this] { on_inflight_ui_(); }); };
+    auto notify = [this] { post_to_ui_alive_([this] { on_inflight_ui_(); }); };
     {
         std::lock_guard<std::mutex> lk(pool_.mu_);
         pool_.on_change_ = notify;
@@ -244,7 +244,7 @@ void ShellBase::fetch_media_pipeline_(
         {
             // io pool: only the (fast, local) disk-cache read happens here.
             auto disk = account_manager_.media_disk_cache().load(disk_key);
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, cache_key, disk_key, inflight_key, group_id, kind,
                  source, w, h, animated, out_kind,
                  disk = std::move(disk)]() mutable
@@ -293,7 +293,7 @@ void ShellBase::fetch_media_pipeline_(
                                  net = std::move(net)]() mutable
                                 {
                                     account_manager_.media_disk_cache().store(disk_key, net);
-                                    post_to_ui_(
+                                    post_to_ui_alive_(
                                         [this, cache_key, out_kind,
                                          net = std::move(net)]() mutable
                                         {
@@ -502,7 +502,7 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
         [this, url, fkey]() mutable
         {
             auto disk = account_manager_.media_disk_cache().load(fkey);
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, url, fkey, disk = std::move(disk)]() mutable
                 {
                     if (!disk.empty())
@@ -560,7 +560,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
             {
                 account_manager_.media_disk_cache().evict(fkey);
             }
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, url, fkey, d]() mutable
                 {
                     viewer_fullres_in_flight_.erase(fkey);
@@ -842,7 +842,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         auto* c = client_;
         run_async_([this, app, c, room_id = std::move(room_id)]() mutable {
             auto mode = c->get_room_notification_mode(room_id);
-            post_to_ui_([app, mode = std::move(mode)]() mutable {
+            post_to_ui_alive_([app, mode = std::move(mode)]() mutable {
                 app->room_view()->room_info_panel()->set_notification_mode(
                     std::move(mode));
             });
@@ -964,7 +964,7 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
             {
                 account_manager_.media_disk_cache().evict(url);
             }
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, url, is_sticker, d]() mutable
                 {
                     finalize_picker_image_(url, is_sticker, std::move(*d));
@@ -991,7 +991,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
         [this, url, is_sticker]() mutable
         {
             auto disk = account_manager_.media_disk_cache().load(url);
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, url, is_sticker, disk = std::move(disk)]() mutable
                 {
                     if (!disk.empty())
@@ -1086,7 +1086,7 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
                 std::ifstream f(disk_path, std::ios::binary);
                 bytes.assign(std::istreambuf_iterator<char>(f), {});
             }
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, key, url, disk_path, bytes = std::move(bytes)]() mutable
                 {
                     if (!bytes.empty())
@@ -1128,7 +1128,7 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
                                                 static_cast<std::streamsize>(
                                                     net.size()));
                                     }
-                                    post_to_ui_(
+                                    post_to_ui_alive_(
                                         [this, key,
                                          net = std::move(net)]() mutable
                                         {
@@ -1340,7 +1340,7 @@ void ShellBase::ensure_row_media_(const Event& ev)
                                 }
                                 if (waveform.empty())
                                     return;
-                                post_to_ui_(
+                                post_to_ui_alive_(
                                     [this, room_id, event_id,
                                      waveform = std::move(waveform)]() mutable
                                     {
@@ -1537,7 +1537,7 @@ void ShellBase::ensure_room_preview_override_(const std::string& room_id)
         [this, room_id]()
         {
             auto ov = client_->room_media_preview_override(room_id);
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, room_id, ov = std::move(ov)]() mutable
                 {
                     room_preview_override_in_flight_.erase(room_id);
@@ -1990,7 +1990,7 @@ void ShellBase::update_space_children_cache_()
             {
                 fresh[id] = c->space_children(id);
             }
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, fresh = std::move(fresh)]() mutable
                 {
                     if (fresh != space_children_cache_)
@@ -2150,7 +2150,7 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
     run_async_mut_([this, c, user_id]()
     {
         auto dm_id = c->get_or_create_dm(user_id);
-        post_to_ui_([this, user_id, dm_id = std::move(dm_id)]() mutable
+        post_to_ui_alive_([this, user_id, dm_id = std::move(dm_id)]() mutable
         {
             dm_in_flight_user_ids_.erase(user_id);
             if (!dm_id.empty())
@@ -2458,7 +2458,7 @@ void ShellBase::return_to_live_(const std::string& room_id)
         [this, room_id]()
         {
             client_->subscribe_room(room_id);
-            post_to_ui_(
+            post_to_ui_alive_(
                 [this, room_id]()
                 {
                     auto req_id = next_paginate_id_++;
@@ -2489,6 +2489,10 @@ void ShellBase::broadcast_rebuild_tray_()
 
 ShellBase::~ShellBase()
 {
+    // Signal any UI-thread continuations queued via post_to_ui_alive_ that this
+    // shell is gone; they will no-op rather than dereference freed members.
+    *alive_ = false;
+
     // Tear down pop-out windows while the registries they unregister from are
     // still alive. Members are destroyed in reverse declaration order, so the
     // owned-window vector (declared before secondary_windows_ /
@@ -2902,7 +2906,7 @@ void ShellBase::schedule_relayout_()
         return; // a flush is already queued — fold this request into it
     }
     relayout_scheduled_ = true;
-    post_to_ui_(
+    post_to_ui_alive_(
         [this]
         {
             relayout_scheduled_ = false;
@@ -3831,7 +3835,7 @@ void ShellBase::compute_cache_sizes_(
         }
 
         // Read in-memory cache totals and hit/miss stats on the UI thread.
-        post_to_ui_([this, cb, local, sdk]
+        post_to_ui_alive_([this, cb, local, sdk]
         {
             const uint64_t memory =
                 static_cast<uint64_t>(account_manager_.image_cache().current_bytes()) +
@@ -3871,7 +3875,7 @@ void ShellBase::clear_all_caches_(
         // load/store/prune on another window's worker. Defer it to the UI
         // thread alongside the in-memory clears, then queue the recompute from
         // there so it observes the cleared state.
-        post_to_ui_([this, recalc = std::move(recalc)]() mutable
+        post_to_ui_alive_([this, recalc = std::move(recalc)]() mutable
         {
             account_manager_.media_disk_cache().clear();
             account_manager_.thumbnail_cache().clear();
@@ -4273,7 +4277,7 @@ void ShellBase::paginate_threads_()
     run_async_mut_([this, c, room_id]
     {
         auto r = c->paginate_room_threads(room_id);
-        post_to_ui_([this, c, room = room_id, reached = r.reached_start]
+        post_to_ui_alive_([this, c, room = room_id, reached = r.reached_start]
         {
             if (c != client_ || room != current_room_id_)
                 return;
@@ -4468,7 +4472,7 @@ void ShellBase::wire_encryption_setup_callbacks_(
             auto res = c->recover(key);
             if (!res.ok)
             {
-                post_to_ui_([this, msg = std::string(res.message)]() {
+                post_to_ui_alive_([this, msg = std::string(res.message)]() {
                     if (auto* o =
                             main_app_ ? main_app_->encryption_setup() : nullptr)
                         o->advance_progress(5, msg, 0, 0);
@@ -4569,7 +4573,7 @@ void ShellBase::begin_crypto_identity_reset_()
     auto* c = client_;
     run_async_mut_([this, c]() {
         auto r = c->begin_reset_crypto_identity();
-        post_to_ui_([this, ok = r.ok, needs = r.needs_approval,
+        post_to_ui_alive_([this, ok = r.ok, needs = r.needs_approval,
                      msg = std::string(r.message),
                      url = std::string(r.approval_url)]() {
             auto* o = main_app_ ? main_app_->encryption_setup() : nullptr;

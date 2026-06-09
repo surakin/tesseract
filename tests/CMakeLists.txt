@@ -69,6 +69,7 @@ add_executable(tesseract_tests
     cpp/test_shell_thread_panel.cpp
     cpp/test_shell_nav_history.cpp
     cpp/test_shell_relayout_coalesce.cpp
+    cpp/test_shell_alive_guard.cpp
     cpp/test_shell_message_inserted.cpp
     cpp/test_message_list_pinning.cpp
     cpp/test_tk_pinned_banner.cpp
