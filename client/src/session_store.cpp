@@ -33,41 +33,29 @@ namespace fs = std::filesystem;
 
 
 // ---------------------------------------------------------------------------
-// Tiny JSON scanners (Matrix IDs never contain '"' or '\\', and the file
-// formats we emit are flat objects, so a regex-free scan is enough). Mirrors
-// the style of `Prefs::parse` so the two stay consistent.
+// Read a top-level string field out of a JSON object, returning "" on any
+// parse error, a non-object root, or a missing/non-string field. Used to pull
+// `user_id` out of a legacy session.json during migration.
 // ---------------------------------------------------------------------------
 
 static std::string extract_string(std::string_view json, std::string_view key)
 {
-    std::string needle;
-    needle.reserve(key.size() + 2);
-    needle.push_back('"');
-    needle.append(key);
-    needle.push_back('"');
-
-    auto pos = json.find(needle);
-    if (pos == std::string_view::npos)
+    try
     {
-        return {};
+        auto j = nlohmann::json::parse(json);
+        if (j.is_object())
+        {
+            auto it = j.find(std::string(key));
+            if (it != j.end() && it->is_string())
+            {
+                return it->get<std::string>();
+            }
+        }
     }
-    pos += needle.size();
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
+    catch (const nlohmann::json::exception&)
     {
-        ++pos;
     }
-    if (pos >= json.size() || json[pos] != '"')
-    {
-        return {};
-    }
-    ++pos;
-    auto end = json.find('"', pos);
-    if (end == std::string_view::npos)
-    {
-        return {};
-    }
-    return std::string(json.substr(pos, end - pos));
+    return {};
 }
 
 // ---------------------------------------------------------------------------

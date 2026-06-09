@@ -5,10 +5,10 @@
 // cxx-generated header (produced by corrosion_add_cxxbridge)
 #include "ffi_convert.h"
 
-#include <cctype>
+#include <nlohmann/json.hpp>
+
 #include <cstdlib>
 #include <mutex>
-#include <string_view>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -970,290 +970,125 @@ Result Client::send_gif_video(
 namespace
 {
 
-// Encode a Unicode scalar value as UTF-8 into `out`.
-void append_utf8(std::string& out, unsigned cp)
+// Parse `json` into an nlohmann object, returning an empty object on any parse
+// error or when the top level is not an object. Callers then read fields with
+// the typed accessors below, which all degrade to their defaults on a missing
+// or wrong-typed key — so a malformed blob yields the same all-defaults result
+// the previous hand-rolled scanners produced. nlohmann handles UTF-8 escapes
+// and UTF-16 surrogate pairs internally, so the bespoke decoder is gone.
+nlohmann::json parse_json_obj(const std::string& json)
 {
-    if (cp < 0x80)
+    try
     {
-        out += static_cast<char>(cp);
+        auto j = nlohmann::json::parse(json);
+        if (j.is_object())
+        {
+            return j;
+        }
     }
-    else if (cp < 0x800)
+    catch (const nlohmann::json::exception&)
     {
-        out += static_cast<char>(0xC0 | (cp >> 6));
-        out += static_cast<char>(0x80 | (cp & 0x3F));
     }
-    else if (cp < 0x10000)
-    {
-        out += static_cast<char>(0xE0 | (cp >> 12));
-        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (cp & 0x3F));
-    }
-    else
-    {
-        out += static_cast<char>(0xF0 | (cp >> 18));
-        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        out += static_cast<char>(0x80 | (cp & 0x3F));
-    }
+    return nlohmann::json::object();
 }
 
-bool parse_hex4(std::string_view json, size_t pos, unsigned& code)
+// String field, or "" if absent/non-string.
+std::string js_str(const nlohmann::json& j, const char* key)
 {
-    if (pos + 4 > json.size())
+    auto it = j.find(key);
+    if (it != j.end() && it->is_string())
     {
-        return false;
+        return it->get<std::string>();
     }
-    code = 0;
-    for (int i = 0; i < 4; ++i)
-    {
-        char h = json[pos + static_cast<size_t>(i)];
-        code <<= 4;
-        if (h >= '0' && h <= '9')
-        {
-            code |= static_cast<unsigned>(h - '0');
-        }
-        else if (h >= 'a' && h <= 'f')
-        {
-            code |= static_cast<unsigned>(h - 'a' + 10);
-        }
-        else if (h >= 'A' && h <= 'F')
-        {
-            code |= static_cast<unsigned>(h - 'A' + 10);
-        }
-        else
-        {
-            return false;
-        }
-    }
-    return true;
+    return {};
 }
 
-// Locate `key` as an *object key* and return the index of its value (first
-// non-whitespace char after the `:`), or npos. Only accepts a match whose
-// quoted key is at a structural key position (preceded by `{` or `,`, then
-// followed by `:`), so the key text appearing inside a string *value* no
-// longer produces a false match. The JSON we parse here is flat output from
-// serde_json, so this structural check is sufficient.
-size_t find_value(std::string_view json, std::string_view key)
+// Unsigned field saturated to 32 bits. Accepts either a JSON number or a
+// numeric string (some OpenGraph servers quote og:image:width); a negative or
+// out-of-range value saturates at 0xFFFFFFFF, mirroring the old digit scanner.
+uint32_t js_uint(const nlohmann::json& j, const char* key)
 {
-    std::string needle = "\"";
-    needle += key;
-    needle += "\"";
-    size_t idx = 0;
-    while (true)
-    {
-        auto hit = json.find(needle, idx);
-        if (hit == std::string_view::npos)
-        {
-            return std::string_view::npos;
-        }
-
-        // Preceding non-whitespace char must be `{` or `,`.
-        size_t b = hit;
-        while (b > 0 && (json[b - 1] == ' ' || json[b - 1] == '\t' ||
-                         json[b - 1] == '\n' || json[b - 1] == '\r'))
-        {
-            --b;
-        }
-        bool key_pos = (b == 0) || json[b - 1] == '{' || json[b - 1] == ',';
-
-        if (key_pos)
-        {
-            size_t p = hit + needle.size();
-            while (p < json.size() && (json[p] == ' ' || json[p] == '\t' ||
-                                       json[p] == '\n' || json[p] == '\r'))
-            {
-                ++p;
-            }
-            if (p < json.size() && json[p] == ':')
-            {
-                ++p;
-                while (p < json.size() && (json[p] == ' ' || json[p] == '\t' ||
-                                           json[p] == '\n' || json[p] == '\r'))
-                {
-                    ++p;
-                }
-                return p;
-            }
-        }
-        idx = hit + 1;
-    }
-}
-
-std::string json_string_field(std::string_view json, std::string_view key)
-{
-    size_t pos = find_value(json, key);
-    if (pos == std::string_view::npos)
-    {
-        return {};
-    }
-    if (pos >= json.size() || json[pos] != '"')
-    {
-        return {};
-    }
-    ++pos;
-    std::string out;
-    for (; pos < json.size() && json[pos] != '"'; ++pos)
-    {
-        if (json[pos] == '\\' && pos + 1 < json.size())
-        {
-            ++pos;
-            switch (json[pos])
-            {
-            case '"':
-                out += '"';
-                break;
-            case '\\':
-                out += '\\';
-                break;
-            case '/':
-                out += '/';
-                break;
-            case 'b':
-                out += '\b';
-                break;
-            case 'f':
-                out += '\f';
-                break;
-            case 'n':
-                out += '\n';
-                break;
-            case 'r':
-                out += '\r';
-                break;
-            case 't':
-                out += '\t';
-                break;
-            case 'u':
-            {
-                unsigned code = 0;
-                if (!parse_hex4(json, pos + 1, code))
-                {
-                    break;
-                }
-                pos += 4;
-                // Combine a UTF-16 surrogate pair into one scalar so
-                // supplementary-plane chars (emoji in og:title, …) are
-                // valid UTF-8 instead of ill-formed surrogate halves.
-                if (code >= 0xD800 && code <= 0xDBFF)
-                {
-                    unsigned lo = 0;
-                    if (pos + 6 < json.size() && json[pos + 1] == '\\' &&
-                        json[pos + 2] == 'u' && parse_hex4(json, pos + 3, lo) &&
-                        lo >= 0xDC00 && lo <= 0xDFFF)
-                    {
-                        code =
-                            0x10000 + ((code - 0xD800) << 10) + (lo - 0xDC00);
-                        pos += 6;
-                    }
-                    else
-                    {
-                        code = 0xFFFD; // lone high surrogate
-                    }
-                }
-                else if (code >= 0xDC00 && code <= 0xDFFF)
-                {
-                    code = 0xFFFD; // lone low surrogate
-                }
-                append_utf8(out, code);
-                break;
-            }
-            default:
-                out += json[pos];
-                break;
-            }
-        }
-        else
-        {
-            out += json[pos];
-        }
-    }
-    return out;
-}
-
-uint32_t json_int_field(std::string_view json, std::string_view key)
-{
-    size_t pos = find_value(json, key);
-    if (pos == std::string_view::npos)
+    auto it = j.find(key);
+    if (it == j.end())
     {
         return 0;
     }
     uint64_t v = 0;
-    while (pos < json.size() &&
-           std::isdigit(static_cast<unsigned char>(json[pos])))
+    if (it->is_number_unsigned())
     {
-        v = v * 10 + static_cast<uint64_t>(json[pos++] - '0');
-        if (v >= 0xFFFFFFFFull)
+        v = it->get<uint64_t>();
+    }
+    else if (it->is_number_integer())
+    {
+        auto s = it->get<int64_t>();
+        v = s < 0 ? 0 : static_cast<uint64_t>(s);
+    }
+    else if (it->is_number_float())
+    {
+        double d = it->get<double>();
+        v = d < 0 ? 0 : static_cast<uint64_t>(d);
+    }
+    else if (it->is_string())
+    {
+        for (char c : it->get_ref<const std::string&>())
         {
-            return 0xFFFFFFFFu; // saturate, never wrap
+            if (c < '0' || c > '9')
+                break;
+            v = v * 10 + static_cast<uint64_t>(c - '0');
+            if (v >= 0xFFFFFFFFull)
+                return 0xFFFFFFFFu;
         }
     }
-    return static_cast<uint32_t>(v);
-}
-
-bool json_bool_field(std::string_view json, std::string_view key)
-{
-    size_t pos = find_value(json, key);
-    if (pos == std::string_view::npos)
+    else
     {
-        return false;
+        return 0;
     }
-    return json.substr(pos, 4) == "true";
+    return v >= 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<uint32_t>(v);
 }
 
-// ---------------------------------------------------------------------------
-// ServerInfo JSON helpers
-// ---------------------------------------------------------------------------
+// Bool field, or `default_val` if absent/non-bool.
+bool js_bool(const nlohmann::json& j, const char* key, bool default_val)
+{
+    auto it = j.find(key);
+    if (it != j.end() && it->is_boolean())
+    {
+        return it->get<bool>();
+    }
+    return default_val;
+}
 
+// Parse the `spec_versions` array of "vMAJOR.MINOR" strings.
 std::vector<tesseract::SpecVersion>
-si_parse_spec_versions(std::string_view json)
+si_parse_spec_versions(const nlohmann::json& j)
 {
     std::vector<tesseract::SpecVersion> out;
-    const auto pos0 = find_value(json, "spec_versions");
-    if (pos0 == std::string_view::npos)
-        return out;
-    auto pos = pos0;
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == '\t'))
-        ++pos;
-    if (pos >= json.size() || json[pos] != '[')
-        return out;
-    ++pos;
-    while (pos < json.size())
+    auto it = j.find("spec_versions");
+    if (it == j.end() || !it->is_array())
     {
-        while (pos < json.size() &&
-               (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ',' ||
-                json[pos] == '\n' || json[pos] == '\r'))
-            ++pos;
-        if (pos >= json.size() || json[pos] == ']') break;
-        if (json[pos] != '"') break;
-        ++pos;
-        auto end = json.find('"', pos);
-        if (end == std::string_view::npos) break;
-        auto raw = json.substr(pos, end - pos); // e.g. "v1.6"
-        pos = end + 1;
-        if (raw.size() >= 2 && raw[0] == 'v') {
+        return out;
+    }
+    for (const auto& elem : *it)
+    {
+        if (!elem.is_string())
+            continue;
+        const std::string& raw = elem.get_ref<const std::string&>();
+        if (raw.size() >= 2 && raw[0] == 'v')
+        {
             int major = 0, minor = 0;
             const char* p = raw.data() + 1;
-            while (*p >= '0' && *p <= '9') major = major * 10 + (*p++ - '0');
-            if (*p == '.') { ++p; while (*p >= '0' && *p <= '9') minor = minor * 10 + (*p++ - '0'); }
+            const char* end = raw.data() + raw.size();
+            while (p < end && *p >= '0' && *p <= '9')
+                major = major * 10 + (*p++ - '0');
+            if (p < end && *p == '.')
+            {
+                ++p;
+                while (p < end && *p >= '0' && *p <= '9')
+                    minor = minor * 10 + (*p++ - '0');
+            }
             out.push_back({major, minor});
         }
     }
     return out;
-}
-
-bool si_extract_bool(std::string_view json, std::string_view key,
-                     bool default_val)
-{
-    const auto pos = find_value(json, key);
-    if (pos == std::string_view::npos)
-        return default_val;
-    if (pos + 4 <= json.size() && json.substr(pos, 4) == "true")
-        return true;
-    if (pos + 5 <= json.size() && json.substr(pos, 5) == "false")
-        return false;
-    return default_val;
 }
 
 } // namespace
@@ -1270,19 +1105,20 @@ RoomSummary Client::get_room_summary(const std::string& room_id_or_alias)
     {
         return {};
     }
+    nlohmann::json j = parse_json_obj(json);
     RoomSummary s;
-    s.room_id = json_string_field(json, "room_id");
-    s.canonical_alias = json_string_field(json, "canonical_alias");
-    s.name = json_string_field(json, "name");
-    s.topic = json_string_field(json, "topic");
-    s.avatar_url = json_string_field(json, "avatar_url");
-    s.num_joined_members = json_int_field(json, "num_joined_members");
-    s.join_rule = json_string_field(json, "join_rule");
-    s.world_readable = json_bool_field(json, "world_readable");
-    s.guest_can_join = json_bool_field(json, "guest_can_join");
-    s.encryption = json_string_field(json, "encryption");
-    s.is_space = json_bool_field(json, "is_space");
-    s.membership = json_string_field(json, "membership");
+    s.room_id = js_str(j, "room_id");
+    s.canonical_alias = js_str(j, "canonical_alias");
+    s.name = js_str(j, "name");
+    s.topic = js_str(j, "topic");
+    s.avatar_url = js_str(j, "avatar_url");
+    s.num_joined_members = js_uint(j, "num_joined_members");
+    s.join_rule = js_str(j, "join_rule");
+    s.world_readable = js_bool(j, "world_readable", false);
+    s.guest_can_join = js_bool(j, "guest_can_join", false);
+    s.encryption = js_str(j, "encryption");
+    s.is_space = js_bool(j, "is_space", false);
+    s.membership = js_str(j, "membership");
     return s;
 }
 
@@ -1418,8 +1254,9 @@ Client::discover_homeserver(const std::string& server_name_or_mxid)
     MUT_FFI;
     std::string json =
         std::string(impl_->ffi->discover_homeserver(server_name_or_mxid));
-    std::string base_url = json_string_field(json, "base_url");
-    std::string error = json_string_field(json, "error");
+    nlohmann::json j = parse_json_obj(json);
+    std::string base_url = js_str(j, "base_url");
+    std::string error = js_str(j, "error");
     return DiscoveryResult{error.empty() && !base_url.empty(),
                            std::move(base_url), std::move(error)};
 }
@@ -1432,17 +1269,18 @@ tesseract::ServerInfo tesseract::ServerInfo::from_json(const std::string& json)
 {
     if (json.empty())
         return {};
+    nlohmann::json j = parse_json_obj(json);
     ServerInfo info;
-    info.homeserver_url       = json_string_field(json, "homeserver");
-    info.spec_versions        = si_parse_spec_versions(json);
-    info.supports_msc3030     = si_extract_bool(json, "supports_msc3030", false);
+    info.homeserver_url       = js_str(j, "homeserver");
+    info.spec_versions        = si_parse_spec_versions(j);
+    info.supports_msc3030     = js_bool(j, "supports_msc3030", false);
     // MSC3030 (Jump to Date) was stabilised in spec v1.6.
     for (const auto& sv : info.spec_versions)
         if (sv.at_least(1, 6)) { info.supports_msc3030 = true; break; }
-    info.can_change_password  = si_extract_bool(json, "can_change_password", true);
-    info.can_set_displayname  = si_extract_bool(json, "can_set_displayname", true);
-    info.can_set_avatar       = si_extract_bool(json, "can_set_avatar", true);
-    info.default_room_version = json_string_field(json, "default_room_version");
+    info.can_change_password  = js_bool(j, "can_change_password", true);
+    info.can_set_displayname  = js_bool(j, "can_set_displayname", true);
+    info.can_set_avatar       = js_bool(j, "can_set_avatar", true);
+    info.default_room_version = js_str(j, "default_room_version");
     return info;
 }
 
@@ -1459,12 +1297,13 @@ Client::UrlPreview Client::parse_url_preview(const std::string& json)
         p.failed = true;
         return p;
     }
+    nlohmann::json j = parse_json_obj(json);
     UrlPreview p;
-    p.title = json_string_field(json, "og:title");
-    p.description = json_string_field(json, "og:description");
-    p.image_mxc = json_string_field(json, "og:image");
-    p.image_w = json_int_field(json, "og:image:width");
-    p.image_h = json_int_field(json, "og:image:height");
+    p.title = js_str(j, "og:title");
+    p.description = js_str(j, "og:description");
+    p.image_mxc = js_str(j, "og:image");
+    p.image_w = static_cast<int>(js_uint(j, "og:image:width"));
+    p.image_h = static_cast<int>(js_uint(j, "og:image:height"));
     if (!p.has_content())
     {
         p.failed = true;
