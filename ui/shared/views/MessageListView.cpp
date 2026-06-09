@@ -6234,11 +6234,11 @@ void MessageListView::maybe_notify_receipt_() const
         return;
     }
     auto eid = newest_visible_real_event_id();
-    if (eid.empty() || eid == last_receipt_event_id_)
+    if (!receipt_tracker_.should_fire(eid))
     {
         return;
     }
-    last_receipt_event_id_ = eid;
+    receipt_tracker_.mark(eid);
     on_receipt_needed(eid);
 }
 

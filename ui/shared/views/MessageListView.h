@@ -13,6 +13,7 @@
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 #include "tk/video.h"
+#include "views/ReadReceiptTracker.h"
 #include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
 #include "views/map_tiles.h"
@@ -964,9 +965,11 @@ private:
     bool should_show_pill() const;
 
     // Read receipt viewport tracking. Fires on_receipt_needed at most once
-    // per distinct event_id; last_receipt_event_id_ guards against re-firing
-    // on every paint when the scroll position is unchanged.
-    mutable std::string last_receipt_event_id_;
+    // per distinct event_id; the ReadReceiptTracker guards against re-firing
+    // on every paint when the scroll position is unchanged. The
+    // newest-visible-id computation stays here (it needs visible_range() +
+    // messages_); the tracker owns only the de-dup state.
+    mutable ReadReceiptTracker receipt_tracker_;
     std::string newest_visible_real_event_id() const;
     void maybe_notify_receipt_() const;
 
