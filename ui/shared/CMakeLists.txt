@@ -70,6 +70,8 @@ set(_tk_sources
     views/MessageListView.cpp
     views/TimelineMediaController.h
     views/TimelineMediaController.cpp
+    views/TimelineVideoPlaylist.h
+    views/TimelineVideoPlaylist.cpp
     views/LocationMapPanner.h
     views/LocationMapPanner.cpp
     views/PinnedBanner.h

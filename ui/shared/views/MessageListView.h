@@ -17,6 +17,7 @@
 #include "views/ReadReceiptTracker.h"
 #include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
+#include "views/TimelineVideoPlaylist.h"
 #include "views/map_tiles.h"
 
 #include <tesseract/types.h>
@@ -1012,15 +1013,14 @@ private:
     AudioPressKind press_audio_kind_ = AudioPressKind::None;
     std::string press_audio_event_id_;
 
-    // Inline video playback — at most kMaxInlinePlayers active simultaneously.
-    static constexpr int kMaxInlinePlayers = 10;
-    struct InlinePlayer
-    {
-        std::unique_ptr<tk::VideoPlayer> player;
-    };
-    std::unordered_map<std::string, InlinePlayer> inline_players_;
-    VideoPlayerFactory video_player_factory_;
-    VideoFetchProvider video_fetch_provider_;
+    // Inline auto-play video subsystem (player pool, async byte fetch with its
+    // own liveness sentinel, kMaxInlinePlayers eviction, live-frame draw). The
+    // fullscreen video click/hit-test (video_geom_ / on_video_clicked /
+    // video_hit_at) is a separate concern and stays in this view.
+    TimelineVideoPlaylist video_playlist_;
+    // Build the playlist source descriptor + visibility guard for one row,
+    // then ensure_playing it. Mirrors the historical start_inline_video gate
+    // (skips media_is_hidden_ rows). No-op when the row has no source.
     void start_inline_video(const MessageRowData& m);
 
     // Interactive pan/zoom/tooltip + hit-test geometry for Kind::Location

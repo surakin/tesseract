@@ -3218,14 +3218,8 @@ private:
             return;
         }
         // Live inline player frame takes priority over the static thumbnail.
-        const tk::Image* live_frame = nullptr;
-        {
-            auto it = owner_.inline_players_.find(m.event_id);
-            if (it != owner_.inline_players_.end() && it->second.player)
-            {
-                live_frame = it->second.player->current_frame();
-            }
-        }
+        const tk::Image* live_frame =
+            owner_.video_playlist_.live_frame(m.event_id);
 
         // Thumbnail fallback (or placeholder when neither is available).
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
@@ -3454,9 +3448,10 @@ struct ScrollPillWidget : tk::Widget
 MessageListView::~MessageListView()
 {
     // Invalidate the liveness sentinel BEFORE any member is torn down. Deferred
-    // UI-thread callbacks (post_delayed_ timers, video_fetch_provider_ results,
-    // inline-player on_frame) capture a weak_ptr to `alive_` and check
-    // `*alive_` before touching `this`. Clearing the flag here — rather than
+    // UI-thread callbacks (post_delayed_ timers, async media-fetch results)
+    // capture a weak_ptr to `alive_` and check `*alive_` before touching
+    // `this`. (The inline video players own their own sentinel inside
+    // video_playlist_.) Clearing the flag here — rather than
     // relying on `alive_`'s own destruction at the end of member teardown —
     // closes the window in which a callback could observe a half-destroyed
     // object while earlier-declared members are still being destroyed.
@@ -3591,7 +3586,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
                               { return !m.thread_root_id.empty(); }),
                msgs.end());
 
-    inline_players_.clear();
+    video_playlist_.clear();
     spoilers_.clear();
     link_layout_cache_.clear();
     adapter_->clear_layout_cache();
@@ -3638,7 +3633,8 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     // recently received), up to the cap.
     for (auto it = messages_.rbegin(); it != messages_.rend(); ++it)
     {
-        if (static_cast<int>(inline_players_.size()) >= kMaxInlinePlayers)
+        if (video_playlist_.size() >=
+            TimelineVideoPlaylist::kMaxInlinePlayers)
         {
             break;
         }
@@ -3980,7 +3976,7 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     // could exceed the inline-player cap for the view's lifetime).
     if ((was_animated && !now_animated) || old_eid != msg.event_id)
     {
-        inline_players_.erase(old_eid);
+        video_playlist_.drop(old_eid);
     }
     // On a local-echo -> remote event_id swap, drop the body-layout cache entry
     // keyed by the old id so it doesn't occupy an LRU slot (the new layout will
@@ -3989,7 +3985,7 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     {
         link_layout_cache_.erase(old_eid);
     }
-    if (now_animated && !inline_players_.count(msg.event_id))
+    if (now_animated && !video_playlist_.has(msg.event_id))
     {
         start_inline_video(msg);
     }
@@ -4065,7 +4061,7 @@ void MessageListView::remove_message(std::size_t index)
     {
         return;
     }
-    inline_players_.erase(messages_[index].event_id);
+    video_playlist_.drop(messages_[index].event_id);
     adapter_->erase_layout_cache_at(index);
     preserve_top_through(
         [&]
@@ -4383,6 +4379,8 @@ void MessageListView::set_repaint_requester(
     std::function<void()> request_repaint)
 {
     request_repaint_ = request_repaint;
+    // The inline video players drive their own repaints on each new frame.
+    video_playlist_.set_repaint(request_repaint);
     // The playback controller drives its own repaints (play/pause/scrub/speed
     // and the on_progress tick), so hand it the same requester.
     media_.set_repaint(std::move(request_repaint));
@@ -4390,94 +4388,31 @@ void MessageListView::set_repaint_requester(
 
 void MessageListView::set_video_player_factory(VideoPlayerFactory f)
 {
-    video_player_factory_ = std::move(f);
+    video_playlist_.set_player_factory(std::move(f));
 }
 
 void MessageListView::set_video_fetch_provider(VideoFetchProvider f)
 {
-    video_fetch_provider_ = std::move(f);
+    video_playlist_.set_fetch_provider(std::move(f));
 }
 
 void MessageListView::start_inline_video(const MessageRowData& m)
 {
-    if (!video_player_factory_ || !video_fetch_provider_)
-    {
-        return;
-    }
-    // MSC4278: don't auto-play a clip whose preview is suppressed.
+    // MSC4278: don't auto-play a clip whose preview is suppressed. This guard
+    // depends on view-private visibility state, so it stays here; the playlist
+    // applies the remaining gates (active / already-playing / cap).
     if (media_is_hidden_(m))
     {
         return;
     }
-    if (inline_players_.count(m.event_id))
-    {
-        return;
-    }
-    if (static_cast<int>(inline_players_.size()) >= kMaxInlinePlayers)
-    {
-        return;
-    }
-
-    auto player = video_player_factory_();
-    if (!player)
-    {
-        return;
-    }
-    player->set_loop(m.video_loop);
-    player->set_muted(m.video_no_audio);
-    std::weak_ptr<bool> walive = alive_;
-    player->on_frame = [this, walive]
-    {
-        // Lock the weak_ptr and check the flag instead of expired(): during
-        // ~MessageListView the destructor sets *alive_ = false before alive_
-        // is destroyed, and expired() stays false across that window — a frame
-        // landing there would dereference a half-destroyed `this` via
-        // request_repaint_. Matches every other async hop in this file.
-        auto live = walive.lock();
-        if (!live || !*live)
-        {
-            return;
-        }
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
-    };
-    inline_players_[m.event_id] = {std::move(player)};
-
-    const std::string eid = m.event_id;
-    const std::string src = m.source ? m.source->fetch_token() : std::string{};
-    const std::string mime = m.video_mime;
-    const bool autoplay = m.video_autoplay;
-
-    video_fetch_provider_(
-        src,
-        [this, walive, eid, mime, autoplay](std::vector<std::uint8_t> bytes)
-        {
-            // The view is destroyed on every room switch; the fetch may
-            // still be in flight. Bail if we've been torn down.
-            auto live = walive.lock();
-            if (!live || !*live)
-            {
-                return;
-            }
-            auto it = inline_players_.find(eid);
-            if (it == inline_players_.end() || !it->second.player)
-            {
-                return;
-            }
-            if (bytes.empty())
-            {
-                inline_players_.erase(eid);
-                return;
-            }
-            auto& p = *it->second.player;
-            p.play(bytes.data(), bytes.size(), mime);
-            if (!autoplay)
-            {
-                p.pause();
-            }
-        });
+    VideoSourceInfo info;
+    info.event_id = m.event_id;
+    info.source_token = m.source ? m.source->fetch_token() : std::string{};
+    info.mime = m.video_mime;
+    info.autoplay = m.video_autoplay;
+    info.loop = m.video_loop;
+    info.muted = m.video_no_audio;
+    video_playlist_.ensure_playing(info);
 }
 
 void MessageListView::set_pending_scroll_event_id(const std::string& event_id)
