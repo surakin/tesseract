@@ -1,5 +1,5 @@
 [Desktop Entry]
-Version=0.8.0
+Version=1.5
 Type=Application
 Name=Tesseract
 Comment=Matrix chat client
@@ -9,3 +9,4 @@ Categories=Network;InstantMessaging;Chat;
 MimeType=x-scheme-handler/matrix;
 StartupNotify=true
 StartupWMClass=tesseract
+X-AppImage-Version=@PROJECT_VERSION@

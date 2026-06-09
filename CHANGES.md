@@ -3,6 +3,84 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased
+
+### 2026-06-09
+
+Pre-launch hardening, cross-platform deduplication, and the start of a
+god-object decomposition — driven by a full-tree code review
+(`docs/CODE_REVIEW_2026-06-09.md`). Test suite grew 703 → 734 C++ (Catch2 /
+ctest) and 204 → 208 Rust. Remaining decomposition work is tracked in
+`docs/TODO-phase5-remaining.md`.
+
+- fix(multi-window): Ctrl+click on the account picker re-ran the primary
+  window's full startup in the spawned window, re-restoring every account —
+  so the account picker showed each account twice and the new window opened on
+  the wrong account. Gate startup behind a shared
+  `ShellBase::is_secondary_window_startup_()` predicate (manager already
+  populated + account pinned + no client bound yet); a spawned window now binds
+  the pinned account without touching disk. Added a duplicate-`user_id` guard
+  to `AccountManager::add_account`, and deferred the Win32 `start_login()` to
+  the message loop so `set_initial_account()` lands first.
+- fix(shell): route the Windows and macOS shells through the shared
+  `ShellBase` timeline/message handlers (delete their redundant overrides) —
+  fixes in-thread replies leaking into the main timeline and lost scroll/focus
+  restore on room-switch, which only those two shells exhibited.
+- fix(shell): close a multi-window/logout use-after-free — guard every
+  worker→UI continuation with a `ShellBase::alive_` liveness token, capture the
+  active `AccountSession` (not the raw `Client*`) in worker bodies, and pass the
+  `Client` explicitly to `RoomWindowBase::fetch_source_bytes_`.
+- fix(win): unsubscribe the previous account's open room on account switch
+  (was leaking the subscription, so the old account kept streaming).
+- fix(client): serialize all `Client` FFI access under `ffi_mu` — the
+  unlocked read/async wrappers raced the `&mut self` writers on the worker
+  pools (aliasing UB); the unlocked `list_room_threads` HashMap read was the
+  one provable data race.
+- fix(sdk): switch to `parking_lot` mutexes/rwlocks so a panic while holding a
+  lock can't poison it and cascade a panic across the cxx FFI boundary (UB);
+  cap the notification sender- and room-avatar downloads at `NOTIF_IMAGE_CAP`;
+  return errors instead of `expect()`-panicking on URL parse in OAuth.
+- fix(client): survive a wrong-typed field in `app_settings.json` (catch
+  `json::exception`, fall back to defaults) instead of crashing at startup;
+  detect a corrupt `accounts.json` (quarantine it, don't silently drop every
+  account); offload session persistence off the SDK sync-callback thread.
+- fix(views): clamp invalid numeric HTML entities (surrogates / NUL /
+  > U+10FFFF) to U+FFFD and fix a formatting-stack underflow under the tag-depth
+  cap; route popup click/hover and outside-click dismiss in the GTK4/Win32/macOS
+  `tk::Host` backends (previously Qt-only, so `ComboBox` dropdowns were broken
+  on the other three).
+- fix(win): persist the save-time DPI in `WindowGeometry` and rescale window
+  geometry on restore, so a window saved on a HiDPI display is no longer mis-
+  sized when restored at a different scale (e.g. a Remote Desktop session).
+- refactor(shell): hoist account restore / login-finalize / account-switch /
+  logout / tray aggregation / sync-error handling / slash-command dispatch /
+  settings-controller construction / OAuth temp-dir setup into shared
+  `ShellBase` methods, removing ~1,250 LOC of duplication across the four native
+  shells and a class of drift bugs (e.g. macOS soft-logout showed a stale
+  display name; macOS account-switch leaked per-room state).
+- refactor: extract shared widgets/helpers from the toolkit and views —
+  `ListPopupBase` (Mention/Shortcode/SlashCommand popups), `MediaOverlayBase`
+  (image/video viewers), `ScrollableBase` (ListView/GridView), `TabbedGridPicker`
+  (emoji/sticker pickers), `Host::dispatch_pointer_*` (the four hosts' pointer
+  state machine + popup routing), `media_utils::draw_avatar` (~16 call sites),
+  and shared canvas `FontRole`-weight + `initials_of` helpers.
+- refactor(sdk): collapse the eight near-identical media-send paths via
+  `build_attachment_config`/`do_send_attachment`; replace the 29-element
+  positional `TimelineEvent` tuple with partial-struct construction; decompose
+  the ~1,000-line `start_sync` into named watcher/handler helpers.
+- refactor(client): fold the 36 event-bridge `guard + load + null-check`
+  preambles into a `with_handler` wrapper; parse SDK JSON with `nlohmann`
+  instead of two hand-rolled scanners (incl. bespoke UTF-16 surrogate decoding).
+- refactor(views,app): begin decomposing the `MessageListView` (7219 → 6120
+  LOC) and `ShellBase` god-objects — extract `TimelineMediaController`
+  (voice+audio playback), `SpoilerRevealer`, `ReadReceiptTracker`,
+  `LocationMapPanner` (also clears its geometry each paint, fixing an unbounded
+  `map_rect_geom_` leak), `TimelineVideoPlaylist`, `RoomSwitchGateKeeper`,
+  `UrlPreviewCardDisplay`, `LinkLayoutCache`, and `ThreadPanelController`.
+- chore: remove dead code across every module (blocking-variant `Client` APIs
+  + their FFI bindings, unused widgets/setters/fields/virtuals, a
+  self-silencing Rust import shim) and clear the auto-fixable clippy backlog.
+
 ## v0.8.0 — 2026-06-07
 
 Changes since v0.1.10:

@@ -2,23 +2,25 @@
 
 > The native desktop Matrix client you always wanted.
 
+(If you don't know what Matrix is - not THE matrix, unfortunately, no one can be told what that is - go [here](https://matrix.org/) before reading forward)
+
 ![Brand new account (Qt6)](./screenshots/brand_new_account_qt6.png)
 
-A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https://github.com/matrix-org/matrix-rust-sdk)
+A full featured desktop multiplatform (Linux, Windows, Mac) Matrix client built on the [Matrix Rust SDK](https://github.com/matrix-org/matrix-rust-sdk)
 
 ---
 
 ## Why Tesseract?
 
-- **Truly native client on four platforms: Qt6, GTK4, Windows and macOS.**
+- **Truly native client on four platforms: Linux (Qt6 & GTK4), Windows and macOS.**
 - **Multi account support**
-- **All the details and functionality of the popular chat apps.**
+- **All the fun details and functionality of popular chat apps.**
 
 ---
 
 ## Screenshots
 
-| Linux (GTK4 / Qt6) | Windows | macOS |
+| Linux (Qt6) | Windows | macOS |
 |---|---|---|
 | ![Linux](screenshots/brand_new_account_qt6.png) | ![Windows](screenshots/brand_new_account_windows.png) | ![macOS](screenshots/brand_new_account_macos.png) |
 
@@ -109,7 +111,7 @@ A full featured multiplatform Matrix client built on the [Matrix Rust SDK](https
 
 ## A note on how this was built
 
-I've been a developer for more than 20 years, ran my own homeserver for more than 8, and developed a few things here and there in the matrix ecosystem (Hello, encrypted sticker support on Element X!). I am a bit tired of everything being a bloated web app (with all the respect to the element web guys).
+I've been a developer for more than 20 years, ran my own homeserver for more than 8, and developed a few things here and there in the matrix ecosystem (hello, encrypted sticker support on Element X!). I am also a bit tired of everything being a bloated web app (with all the respect to the element web guys), so I decided it was time to do something about it. I mean, seriously. Does EVERYTHING need to be a browser?
 
 This started as a Claude Code experiment, because eventually I gave up and decided to learn what all this fuss was about, at least to be less worried about being out of a job, if that ever happens. So I thought: what was the app I always wanted to do my way and never had the time and/or energy? Yes! A Matrix client, of course.
 
@@ -128,6 +130,8 @@ Bottom line, I made this little client, and I barely open element these days, wh
 ## Project status
 
 The app is mostly complete and can be used for existing accounts and new accounts. I'm curious to see if there is any interest for it out there. I expect to keep polishing it and updating it as the matrix spec evolves. But I do have a day job, and it's not this one :) So I can't promise things are going to be fixed immediately.
+
+There are a few things missing here and there, but I plan to add them as soon as I can.
 
 Also I don't speak as many languages as I would like to, so translations are a bit lagging behind. I'll do something about that, when I learn how. Stay tuned.
 

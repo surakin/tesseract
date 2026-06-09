@@ -2,6 +2,24 @@
 
 Completed work is in [CHANGES.md](CHANGES.md). What follows is only the pending and in-progress work.
 
+## Code health — god-object decomposition (in progress)
+
+The 2026-06-09 pre-launch pass began breaking up the two largest classes; nine
+collaborators have been extracted so far (`TimelineMediaController`,
+`SpoilerRevealer`, `ReadReceiptTracker`, `LocationMapPanner`,
+`TimelineVideoPlaylist`, `RoomSwitchGateKeeper`, `UrlPreviewCardDisplay`,
+`LinkLayoutCache` from `MessageListView`; `ThreadPanelController` from
+`ShellBase`). Remaining, with seam maps + recipe in
+[`docs/TODO-phase5-remaining.md`](docs/TODO-phase5-remaining.md):
+
+- **`MessageListView` cross-cutting cuts** — `TextSelectionModel`, `ReactionChipUI`,
+  `ActionPillUI` (woven through `paint_row` + the pointer-dispatch switch; smoke-test
+  selection/copy, reactions, and the hover action buttons after each).
+- **`ShellBase MediaController`/`MediaCache`** — the ~1,300-LOC media-fetch pipeline +
+  shared caches; the biggest cut, shell-entangled (flag macOS/Windows for recompile).
+- **`PaginationRegistry` / `SecondaryWindowRegistry` / MSC4278 preview-gating** — smaller
+  ShellBase cuts.
+
 ## Step 5 — UI redesign (in progress)
 
 Done: inline images, stickers, reply-to, message editing, voice messages (receive + send), ComposeBar, read receipts (display + sending, overlay only — never expand rows), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6, GTK4, Win32), Markdown-to-HTML for sent messages, last-message preview in sidebar (regular-weight room name, 1px inter-room separator, compact row sizing), emoji reactions (reaction chips, toggle, `send_reaction` / `redact_reaction` FFI), slash-command popup (`/` autocomplete, `/me` / `/shrug` / `/slap` / `/spoiler`), pinned-message banner + pin/unpin action, hover action pill, tab session restore, threads panel (list + open states, in-panel `ComposeBar`), @mention autocomplete + pills (`m.mentions`), encryption-setup overlay (guided cross-signing wizard). Remaining:

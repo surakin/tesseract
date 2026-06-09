@@ -123,7 +123,7 @@ install(TARGETS tesseract_qt
         RUNTIME DESTINATION bin)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
         DESTINATION share/icons/hicolor/scalable/apps)
-install(FILES "${CMAKE_SOURCE_DIR}/packaging/tesseract.desktop"
+install(FILES "${CMAKE_BINARY_DIR}/packaging/tesseract.desktop"
         DESTINATION share/applications)
 
 # i18n: use the root i18n-extract target (cmake/I18n.cmake) which scans all
