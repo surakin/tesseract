@@ -2916,6 +2916,105 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     return true;
 }
 
+ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
+{
+    LogoutResult out;
+    if (!active_account_)
+    {
+        return out; // logged_out=false → shell does nothing
+    }
+
+    const std::string uid = active_account_->user_id;
+    auto& sess = *active_account_;
+    out.logged_out     = true;
+    out.logged_out_uid = uid;
+
+    // Unsubscribe the current open room unless it's pinned by a pop-out — the
+    // same guard switch_active_account_impl_ uses. Folded in so Qt/Win get it
+    // too (they previously skipped this, leaking a streaming timeline sub).
+    if (client_ && !current_room_id_.empty() &&
+        room_subscription_refs_.count(current_room_id_) == 0)
+    {
+        client_->unsubscribe_room(current_room_id_);
+    }
+    current_room_id_.clear();
+
+    // Tear down the per-account UnifiedPush connector + presence, then sign the
+    // session out of the homeserver. Surface a failure on every shell.
+    if (sess.up_connector)
+    {
+        sess.up_connector->logout();
+    }
+    notify_presence_logout_();
+    const auto res = client_ ? client_->logout() : tesseract::Result{true, {}};
+    out.ok = static_cast<bool>(res);
+    if (!res)
+    {
+        show_status_message_("Sign out failed: " + res.message);
+    }
+
+    // stop_sync BEFORE remove_account (Phase-1 lifetime ordering: in-flight
+    // workers hold the session alive via their captured session + alive_ token,
+    // so no pool drain is needed here).
+    sess.client->stop_sync();
+    sess.sync_started = false;
+
+    tesseract::SessionStore::clear_account(uid);
+    per_account_rooms_.erase(uid);
+    per_account_invites_.erase(uid);
+
+    // Recompute the tray aggregate so the dot clears (or rolls over to the
+    // surviving accounts) immediately; without this the indicator can stick
+    // when the only account with unreads was the one we just signed out.
+    notify_tray_unread_();
+
+    account_manager_.remove_account(uid);
+    active_account_.reset();
+    client_        = nullptr;
+    event_handler_ = nullptr;
+
+    // Reset the agnostic visible state (native widget clearing stays in the
+    // shell: the remaining-account branch repaints via
+    // refresh_account_ui_after_switch_, the empty branch via the login view).
+    space_stack_.clear();
+    my_user_id_.clear();
+    my_display_name_.clear();
+    my_avatar_url_.clear();
+    rooms_.clear();
+    invites_.clear();
+    current_invite_.reset();
+    pagination_.clear();
+    reply_details_requested_.clear();
+    reset_server_info_();
+
+    // Update the on-disk index: drop the logged-out uid.
+    auto index = tesseract::SessionStore::load_index();
+    index.user_ids.erase(
+        std::remove(index.user_ids.begin(), index.user_ids.end(), uid),
+        index.user_ids.end());
+
+    if (account_manager_.accounts().empty())
+    {
+        index.active_user_id.clear();
+        tesseract::SessionStore::save_index(index);
+        out.has_remaining = false;
+        return out;
+    }
+
+    // Other accounts remain → switch to the first survivor via the shared
+    // Task-3.3 path (it persists the index's active_user_id itself). The native
+    // post-switch UI runs inside refresh_account_ui_after_switch_().
+    const std::string next_uid = account_manager_.accounts().front()->user_id;
+    tesseract::SessionStore::save_index(index); // persist the uid removal first
+    if (switch_active_account_impl_(next_uid))
+    {
+        refresh_account_ui_after_switch_();
+    }
+    out.has_remaining = true;
+    out.next_uid      = next_uid;
+    return out;
+}
+
 ShellBase::~ShellBase()
 {
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this

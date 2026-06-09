@@ -4379,57 +4379,33 @@ void MainWindow::beginAddAccount()
 
 void MainWindow::logoutActiveAccount()
 {
-    if (!active_account_)
+    // Platform-agnostic teardown (unsubscribe the room, up_connector/presence
+    // logout, client_->logout() + failure surface, stop_sync, clear account
+    // state, tray refresh, index update, and — when other accounts remain — the
+    // switch to a survivor) lives in ShellBase.
+    const auto result = logout_active_account_impl_();
+    if (!result.logged_out)
     {
         return;
     }
-    const std::string uid = active_account_->user_id;
-    auto& a = *active_account_;
 
-    if (a.up_connector)
+    // Native widget cleanup of the now-empty surface (the remaining-account
+    // branch already repainted via refresh_account_ui_after_switch_).
+    if (!result.has_remaining)
     {
-        a.up_connector->logout();
-    }
-    notify_presence_logout_();
-    a.client->logout();
-    a.client->stop_sync();
-    tesseract::SessionStore::clear_account(uid);
-    per_account_rooms_.erase(uid);
-    per_account_invites_.erase(uid);
-    // Recompute the tray aggregate so the dot clears (or rolls over to the
-    // surviving accounts) immediately; without this the indicator can stick
-    // when the only account with unreads was the one we just signed out.
-    notify_tray_unread_();
-
-    // Remove this account from AccountManager and clear active state.
-    account_manager_.remove_account(uid);
-    active_account_.reset();
-    client_ = nullptr;
-    event_handler_ = nullptr;
-
-    // Reset visible state regardless of where we go next.
-    current_room_id_.clear();
-    space_stack_.clear();
-    my_user_id_.clear();
-    my_display_name_.clear();
-    my_avatar_url_.clear();
-    rooms_.clear();
-    invites_.clear();
-    current_invite_.reset();
-    reset_server_info_();
-    refreshRoomList();
-    clearMessages();
-    if (mainApp_)
-    {
-        mainApp_->clear_content();
-        mainAppSurface_->relayout();
+        refreshRoomList();
+        clearMessages();
+        if (mainApp_)
+        {
+            mainApp_->clear_content();
+            mainAppSurface_->relayout();
+        }
     }
     verification_banner_dismissed_ = false;
 
-    if (account_manager_.accounts().empty())
+    if (!result.has_remaining)
     {
         // No accounts left → back to initial login.
-        tesseract::SessionStore::save_index({});
         loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
         pending_login_is_add_account_ = false;
         add_account_return_idx_ = -1;
@@ -4444,10 +4420,9 @@ void MainWindow::logoutActiveAccount()
         return;
     }
 
-    // Otherwise switch to the next account (the first remaining one).
-    switchActiveAccount(account_manager_.accounts()[0]->user_id);
     statusBar()->showMessage(
-        tr("Signed out of %1").arg(QString::fromStdString(uid)), 3000);
+        tr("Signed out of %1").arg(QString::fromStdString(result.logged_out_uid)),
+        3000);
 }
 
 void MainWindow::rebuildAccountPicker()

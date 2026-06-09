@@ -5865,74 +5865,40 @@ void MainWindow::begin_add_account()
 
 void MainWindow::logout_active_account()
 {
-    if (!active_account_)
+    // Platform-agnostic teardown (unsubscribe the room, up_connector/presence
+    // logout, client_->logout() + failure surface, stop_sync, clear account
+    // state, tray refresh, index update, and — when other accounts remain — the
+    // switch to a survivor) lives in ShellBase.
+    const auto result = logout_active_account_impl_();
+    if (!result.logged_out)
     {
         return;
     }
 
-    const std::string logged_out_uid = active_account_->user_id;
-    auto& sess = *active_account_;
-
-    if (!current_room_id_.empty())
+    // Native widget cleanup of the now-empty surface (the remaining-account
+    // branch already repainted via refresh_account_ui_after_switch_).
+    if (!result.has_remaining)
     {
-        if (room_subscription_refs_.count(current_room_id_) == 0)
+        clear_messages();
+        refresh_room_list();
+        if (main_app_)
         {
-            client_->unsubscribe_room(current_room_id_);
-        }
-        current_room_id_.clear();
-    }
-
-    if (sess.up_connector)
-    {
-        sess.up_connector->logout();
-    }
-    notify_presence_logout_();
-    auto res = client_->logout();
-    client_->stop_sync();
-
-    tesseract::SessionStore::clear_account(logged_out_uid);
-    per_account_rooms_.erase(logged_out_uid);
-    per_account_invites_.erase(logged_out_uid);
-
-    // Remove from AccountManager.
-    account_manager_.remove_account(logged_out_uid);
-    active_account_.reset();
-    client_ = nullptr;
-    event_handler_ = nullptr;
-
-    // Reset UI state.
-    clear_messages();
-    rooms_.clear();
-    invites_.clear();
-    current_invite_.reset();
-    space_stack_.clear();
-    my_user_id_.clear();
-    my_display_name_.clear();
-    my_avatar_url_.clear();
-    pagination_.clear();
-    reply_details_requested_.clear();
-    reset_server_info_();
-    refresh_room_list();
-    if (main_app_)
-    {
-        main_app_->clear_content();
-        if (main_app_surface_)
-        {
-            main_app_surface_->relayout();
+            main_app_->clear_content();
+            if (main_app_surface_)
+            {
+                main_app_surface_->relayout();
+            }
         }
     }
     verification_banner_dismissed_ = false;
 
-    gtk_label_set_text(
-        GTK_LABEL(status_bar_),
-        res ? _("Signed out")
-            : (std::string(_("Sign out failed: ")) + res.message).c_str());
-
-    if (account_manager_.accounts().empty())
+    if (result.ok)
     {
-        // Update accounts.json.
-        tesseract::SessionStore::save_index({});
+        gtk_label_set_text(GTK_LABEL(status_bar_), _("Signed out"));
+    }
 
+    if (!result.has_remaining)
+    {
         pending_login_temp_dir_.clear();
         pending_login_client_ = std::make_unique<tesseract::Client>();
         login_view_->set_client(pending_login_client_.get());
@@ -5940,19 +5906,6 @@ void MainWindow::logout_active_account()
         login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
         login_view_->reset();
         gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
-    }
-    else
-    {
-        // Switch to the first remaining account.
-        switch_active_account(account_manager_.accounts()[0]->user_id);
-
-        auto idx = tesseract::SessionStore::load_index();
-        idx.active_user_id = my_user_id_;
-        // Remove logged-out uid from index.
-        idx.user_ids.erase(std::remove(idx.user_ids.begin(), idx.user_ids.end(),
-                                       logged_out_uid),
-                           idx.user_ids.end());
-        tesseract::SessionStore::save_index(idx);
     }
 }
 

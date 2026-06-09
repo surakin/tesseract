@@ -903,6 +903,54 @@ protected:
     // pending_login_client_ (it is reset here). UI-thread only.
     FinalizeLoginResult finalize_login_();
 
+    // ── Active-account logout ─────────────────────────────────────────────────
+    // Outcome of logout_active_account_impl_(): lets each shell decide between the
+    // empty-accounts native login fallback and the (already-completed) switch to a
+    // surviving account. When `logged_out` is false the call was a no-op (no active
+    // account) and the shell must do nothing. When `has_remaining` is true the impl
+    // has ALREADY switched to `next_uid` (via switch_active_account_impl_ +
+    // refresh_account_ui_after_switch_), so the shell needs no native follow-up
+    // beyond its own status line; when false, no accounts remain and the shell must
+    // show its native login view.
+    struct LogoutResult
+    {
+        bool        logged_out   = false; // an account was actually signed out
+        bool        has_remaining = false; // another account exists + is now active
+        bool        ok            = false; // client_->logout() succeeded
+        std::string logged_out_uid;        // the uid that was signed out
+        std::string next_uid;              // the surviving uid switched to (if any)
+    };
+
+    // Platform-agnostic teardown for each shell's logoutActiveAccount /
+    // logout_active_account / _logoutActiveAccount. Run on the active account; a
+    // no-op (logged_out=false) when there is none. It:
+    //   - captures the active uid;
+    //   - unsubscribes the current open room when not pinned by a pop-out
+    //     (room_subscription_refs_.count(current_room_id_) == 0) — same guard as
+    //     switch_active_account_impl_, folded in so Qt/Win get it too;
+    //   - logs out the UnifiedPush connector (when present) and presence;
+    //   - calls client_->logout() and SURFACES a failure via show_status_message_
+    //     ("Sign out failed: <msg>") — converged so every shell reports it;
+    //   - stop_sync() (BEFORE remove_account, per Phase-1 lifetime ordering);
+    //   - clears the on-disk account (SessionStore::clear_account) and the
+    //     per_account_rooms_ / per_account_invites_ snapshots;
+    //   - refreshes the tray aggregate (notify_tray_unread_) so a stale unread dot
+    //     clears — converged so every shell does it;
+    //   - removes the account from AccountManager, resets active_account_ / the
+    //     client_ / event_handler_ aliases, and the agnostic visible state
+    //     (rooms_/invites_/current_invite_/space_stack_/identity/pagination/…);
+    //   - updates the on-disk index (removes the logged-out uid; clears
+    //     active_user_id when none remain);
+    //   - BRANCHES: if other accounts remain it switches to accounts().front()
+    //     via switch_active_account_impl_ + refresh_account_ui_after_switch_ (the
+    //     shared Task-3.3 path) and returns has_remaining=true / next_uid set;
+    //     otherwise returns has_remaining=false and leaves the native login-view
+    //     swap to the shell.
+    // Does NOT touch native widgets in the empty-accounts branch (login view,
+    // surface visibility) — the shell does that using the returned result.
+    // UI-thread only.
+    LogoutResult logout_active_account_impl_();
+
     // Build the shell's concrete IEventHandler bridge for `uid`, with set_user_id
     // already called. The bridge TYPE is native: EventBridge (Qt6, a QObject so
     // the marshalling QMetaObject::invokeMethod has a receiver), EventHandlerBase

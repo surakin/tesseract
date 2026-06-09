@@ -345,6 +345,8 @@ public:
     using ShellBase::finalize_login_;
     using ShellBase::FinalizeLoginResult;
     using ShellBase::switch_active_account_impl_;
+    using ShellBase::logout_active_account_impl_;
+    using ShellBase::LogoutResult;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -6314,58 +6316,22 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_logoutActiveAccount
 {
-    if (!_shell->active_account_)
+    // Platform-agnostic teardown (unsubscribe the room, up_connector/presence
+    // logout, client_->logout() + failure surface, stop_sync, clear account
+    // state, tray refresh, index update, and — when other accounts remain — the
+    // switch to a survivor via switch_active_account_impl_ +
+    // refresh_account_ui_after_switch_) lives in ShellBase.
+    const auto result = _shell->logout_active_account_impl_();
+    if (!result.logged_out)
     {
         return;
     }
-    auto* session = _shell->active_account_.get();
-    std::string uid = session->user_id;
 
-    if (!_shell->current_room_id_.empty())
+    if (!result.has_remaining)
     {
-        if (_shell->room_subscription_refs_.count(_shell->current_room_id_) ==
-            0)
-        {
-            _shell->client_->unsubscribe_room(_shell->current_room_id_);
-        }
-        _shell->current_room_id_.clear();
-    }
-    _shell->notify_presence_logout_();
-    session->client->logout();
-    session->client->stop_sync();
-    session->sync_started = false;
-
-    tesseract::SessionStore::clear_account(uid);
-    _shell->per_account_rooms_.erase(uid);
-    _shell->per_account_invites_.erase(uid);
-    // Recompute the tray aggregate so the dot clears (or rolls over to the
-    // surviving accounts) immediately; without this the indicator can stick
-    // when the only account with unreads was the one we just signed out.
-    _shell->notify_tray_unread_();
-    _shell->active_account_.reset();
-    _shell->account_manager_.remove_account(uid);
-
-    _shell->client_ = nullptr;
-    _shell->event_handler_ = nullptr;
-
-    auto idxData = tesseract::SessionStore::load_index();
-    auto& ids = idxData.user_ids;
-    ids.erase(std::remove(ids.begin(), ids.end(), uid), ids.end());
-    _shell->reset_server_info_();
-
-    if (_shell->account_manager_.accounts().empty())
-    {
-        idxData.active_user_id.clear();
-        tesseract::SessionStore::save_index(idxData);
-
-        _shell->rooms_.clear();
-        _shell->invites_.clear();
-        _shell->current_invite_.reset();
-        _shell->space_stack_.clear();
+        // No accounts left → native empty-surface cleanup + login view.
         [self _refreshRoomList];
         [self _refreshInviteList];
-        _shell->handle_compose_room_leaving_(_shell->current_room_id_);
-        _shell->current_room_id_.clear();
         if (_roomView)
         {
             _roomView->clear_room();
@@ -6391,13 +6357,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
         [_loginView reset];
         ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = YES;
         _loginView.hidden = NO;
-    }
-    else
-    {
-        const auto& next_acc = _shell->account_manager_.accounts().front();
-        idxData.active_user_id = next_acc->user_id;
-        tesseract::SessionStore::save_index(idxData);
-        [self _switchActiveAccount:next_acc->user_id];
     }
 }
 
