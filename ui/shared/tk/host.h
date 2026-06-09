@@ -29,6 +29,8 @@
 namespace tk
 {
 
+class Button;
+
 // Navigation keys a focused native text control forwards to a popup / list it
 // drives while it keeps keyboard focus — the shortcode / mention popups (via
 // NativeTextArea) and the Ctrl+K quick switcher (via NativeTextField). Lives at
@@ -361,9 +363,43 @@ public:
     // Returns the currently active popup (valid between paint frames).
     Widget* popup() const { return popup_; }
 
+    // ── Shared pointer dispatch ──────────────────────────────────────────────
+    // The pointer state machine (drag/hover tracking, release-inside check) and
+    // the popup input/hover routing live here, once, for all four backends.
+    // Each native host translates its platform event to a world-space `Point`
+    // (and performs any native capture/grab step), then calls these. The shared
+    // logic operates on `input_root_()`, `popup_`, and the tracked-pointer
+    // fields below, calling the virtual `request_repaint()` to schedule redraws.
 protected:
+    // Pointer-down: route into an open popup if the press lands inside it,
+    // otherwise dismiss the popup and hit-test the tree, capturing the pressed
+    // widget so subsequent moves drag it and the matching up fires its click.
+    void dispatch_pointer_down(Point world);
+
+    // Pointer-move: drag the captured widget if one is held; otherwise route
+    // hover into an open popup (when inside it) or update Button / widget hover
+    // tracking against the tree.
+    void dispatch_pointer_move(Point world);
+
+    // Pointer-up: deliver the release to the captured widget with an
+    // inside-its-local-bounds flag, then clear the capture.
+    void dispatch_pointer_up(Point world);
+
+    // Pointer-leave: clear hover state and synthesise a pointer-up outside any
+    // widget so a captured widget can clean up its pressed state.
+    void dispatch_pointer_leave();
+
+    // Hook returning the root widget the dispatch operates on. Each subclass
+    // owns its `root_` (a std::unique_ptr<Widget>) and returns `root_.get()`.
+    virtual Widget* input_root_() const = 0;
+
     Widget* popup_         = nullptr;  // active popup (set after each paint)
     Widget* pending_popup_ = nullptr;  // populated during the current paint
+
+    // Tracked pointer state, shared by the dispatch_pointer_* state machine.
+    Widget* pressed_widget_ = nullptr;  // captured on pointer-down
+    Button* hovered_btn_    = nullptr;  // Button currently under the pointer
+    Widget* hovered_widget_ = nullptr;  // widget currently under the pointer
 
 private:
     std::function<void()> on_user_activity_;

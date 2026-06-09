@@ -27,6 +27,7 @@ set(_tk_sources
     tk/video.h
     tk/canvas.h
     tk/host.h
+    tk/host.cpp
     tk/theme.h
     tk/theme.cpp
     tk/i18n.h

@@ -1119,38 +1119,10 @@ public:
         root_->paint_overlay(ctx);
     }
 
-    // Pointer-event dispatch. We keep simple capture semantics: a
-    // pointer-down on a Button stamps it as the captured widget; the
-    // matching up-on-the-same-button fires its click. This isn't a
-    // generic capture protocol — it's the minimum LoginView needs.
-    void on_pointer_down(Point local)
-    {
-        fire_user_activity_();
-        if (!root_)
-        {
-            return;
-        }
-        if (popup_)
-        {
-            if (popup_->contains_world(local))
-            {
-                if (popup_->on_pointer_down(popup_->world_to_local(local)))
-                {
-                    pressed_widget_ = popup_;
-                    request_repaint();
-                }
-                return;
-            }
-            // Click outside the popup: dismiss it, then let the click through.
-            popup_->on_popup_dismiss();
-            popup_ = nullptr;
-        }
-        pressed_widget_ = root_->dispatch_pointer_down(local);
-        if (pressed_widget_)
-        {
-            request_repaint();
-        }
-    }
+    // Pointer-event entry points. Each translates the native event to a
+    // world-space Point (already done by the Surface) and forwards to the
+    // shared Host::dispatch_pointer_* state machine.
+    void on_pointer_down(Point local) { dispatch_pointer_down(local); }
 
     void on_right_click(Point local)
     {
@@ -1158,115 +1130,11 @@ public:
             root_->dispatch_right_click(local);
     }
 
-    void on_pointer_up(Point local)
-    {
-        if (!pressed_widget_)
-        {
-            return;
-        }
-        Point ws = pressed_widget_->world_to_local(local);
-        bool inside =
-            (ws.x >= 0 && ws.y >= 0 && ws.x < pressed_widget_->bounds().w &&
-             ws.y < pressed_widget_->bounds().h);
-        pressed_widget_->on_pointer_up(ws, inside);
-        pressed_widget_ = nullptr;
-        request_repaint();
-    }
+    void on_pointer_up(Point local) { dispatch_pointer_up(local); }
 
-    void on_pointer_move(Point local)
-    {
-        if (!root_)
-        {
-            return;
-        }
-        // If a widget claimed the last pointer-down, all subsequent
-        // moves go to it as a drag (this is how ListView's scrollbar
-        // thumb tracks a held mouse). Hover updates are suspended for
-        // the duration of the drag.
-        if (pressed_widget_)
-        {
-            Point ws = pressed_widget_->world_to_local(local);
-            pressed_widget_->on_pointer_drag(ws);
-            request_repaint();
-            return;
-        }
-        // When a popup is open, route hover into it while the pointer is
-        // inside it; the normal tree handles everything outside.
-        if (popup_ && popup_->contains_world(local))
-        {
-            // Clear any Button hover state — popup is above buttons.
-            if (hovered_btn_)
-            {
-                hovered_btn_->set_hovered(false);
-                hovered_btn_ = nullptr;
-            }
-            bool widget_changed = (popup_ != hovered_widget_);
-            if (widget_changed)
-            {
-                if (hovered_widget_)
-                    hovered_widget_->on_pointer_leave();
-                hovered_widget_ = popup_;
-            }
-            bool dirty = popup_->on_pointer_move(popup_->world_to_local(local));
-            if (widget_changed || dirty)
-                request_repaint();
-            return;
-        }
+    void on_pointer_move(Point local) { dispatch_pointer_move(local); }
 
-        Widget* hit = root_->hit_test(local);
-        Button* hovered = dynamic_cast<Button*>(hit);
-        bool btn_changed = (hovered != hovered_btn_);
-        if (btn_changed)
-        {
-            if (hovered_btn_)
-            {
-                hovered_btn_->set_hovered(false);
-            }
-            hovered_btn_ = hovered;
-            if (hovered_btn_)
-            {
-                hovered_btn_->set_hovered(true);
-            }
-        }
-        // Non-Button widget-level hover dispatch (chip hover, etc.).
-        bool dirty = false;
-        Widget* moved = root_->dispatch_pointer_move(local, &dirty);
-        bool widget_changed = (moved != hovered_widget_);
-        if (widget_changed)
-        {
-            if (hovered_widget_)
-            {
-                hovered_widget_->on_pointer_leave();
-            }
-            hovered_widget_ = moved;
-        }
-        if (btn_changed || widget_changed || dirty)
-        {
-            request_repaint();
-        }
-    }
-
-    void on_pointer_leave()
-    {
-        if (hovered_btn_)
-        {
-            hovered_btn_->set_hovered(false);
-            hovered_btn_ = nullptr;
-        }
-        if (hovered_widget_)
-        {
-            hovered_widget_->on_pointer_leave();
-            hovered_widget_ = nullptr;
-        }
-        if (pressed_widget_)
-        {
-            // Synthetic pointer-up outside any widget so the captured
-            // widget gets a chance to clean up its pressed state.
-            pressed_widget_->on_pointer_up({-1, -1}, false);
-            pressed_widget_ = nullptr;
-        }
-        request_repaint();
-    }
+    void on_pointer_leave() { dispatch_pointer_leave(); }
 
     void on_wheel(Point local, float dx, float dy)
     {
@@ -1287,6 +1155,9 @@ public:
         surface_ = nullptr;
     }
 
+protected:
+    Widget* input_root_() const override { return root_.get(); }
+
 private:
     Surface* surface_;
     const Theme* theme_;
@@ -1294,9 +1165,6 @@ private:
     bool transparent_ = false;
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
-    Widget* pressed_widget_ = nullptr;
-    Button* hovered_btn_ = nullptr;
-    Widget* hovered_widget_ = nullptr;
     const AnimImageCache* anim_cache_ = nullptr;
     std::vector<Rect> anim_damage_;
 };

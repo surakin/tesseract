@@ -150,6 +150,9 @@ public:
         return drag_active_;
     }
 
+protected:
+    Widget* input_root_() const override { return root_.get(); }
+
 private:
     TKSurfaceView* view_;
     const Theme* theme_;
@@ -157,9 +160,6 @@ private:
     bool transparent_ = false;
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
-    Widget* pressed_widget_ = nullptr;
-    Button* hovered_btn_ = nullptr;
-    Widget* hovered_widget_ = nullptr;
     FileDropHandler on_file_drop_;
     FileDropErrorHandler on_file_drop_error_;
     std::function<void(tk::Point)> on_right_click_;
@@ -1691,136 +1691,24 @@ void Host::on_layout_changed()
 
 void Host::on_pointer_down(NSPoint p)
 {
-    fire_user_activity_();
-    if (!root_)
-    {
-        return;
-    }
-    Point local{static_cast<float>(p.x), static_cast<float>(p.y)};
-    if (popup_)
-    {
-        if (popup_->contains_world(local))
-        {
-            if (popup_->on_pointer_down(popup_->world_to_local(local)))
-            {
-                pressed_widget_ = popup_;
-                request_repaint();
-            }
-            return;
-        }
-        // Click outside the popup: dismiss it, then let the click through.
-        popup_->on_popup_dismiss();
-        popup_ = nullptr;
-    }
-    pressed_widget_ = root_->dispatch_pointer_down(local);
-    if (pressed_widget_)
-    {
-        request_repaint();
-    }
+    dispatch_pointer_down(
+        {static_cast<float>(p.x), static_cast<float>(p.y)});
 }
 
 void Host::on_pointer_up(NSPoint p)
 {
-    if (!pressed_widget_)
-    {
-        return;
-    }
-    Point world{static_cast<float>(p.x), static_cast<float>(p.y)};
-    Point ws = pressed_widget_->world_to_local(world);
-    bool inside =
-        (ws.x >= 0 && ws.y >= 0 && ws.x < pressed_widget_->bounds().w &&
-         ws.y < pressed_widget_->bounds().h);
-    pressed_widget_->on_pointer_up(ws, inside);
-    pressed_widget_ = nullptr;
-    request_repaint();
+    dispatch_pointer_up({static_cast<float>(p.x), static_cast<float>(p.y)});
 }
 
 void Host::on_pointer_move(NSPoint p)
 {
-    if (!root_)
-    {
-        return;
-    }
-    Point local{static_cast<float>(p.x), static_cast<float>(p.y)};
-    if (pressed_widget_)
-    {
-        Point ws = pressed_widget_->world_to_local(local);
-        pressed_widget_->on_pointer_drag(ws);
-        request_repaint();
-        return;
-    }
-    // When a popup is open, route hover into it while the pointer is
-    // inside it; the normal tree handles everything outside.
-    if (popup_ && popup_->contains_world(local))
-    {
-        // Clear any Button hover state — popup is above buttons.
-        if (hovered_btn_)
-        {
-            hovered_btn_->set_hovered(false);
-            hovered_btn_ = nullptr;
-        }
-        bool widget_changed = (popup_ != hovered_widget_);
-        if (widget_changed)
-        {
-            if (hovered_widget_)
-                hovered_widget_->on_pointer_leave();
-            hovered_widget_ = popup_;
-        }
-        bool dirty = popup_->on_pointer_move(popup_->world_to_local(local));
-        if (widget_changed || dirty)
-            request_repaint();
-        return;
-    }
-    Widget* hit = root_->hit_test(local);
-    Button* hovered = dynamic_cast<Button*>(hit);
-    bool btn_changed = (hovered != hovered_btn_);
-    if (btn_changed)
-    {
-        if (hovered_btn_)
-        {
-            hovered_btn_->set_hovered(false);
-        }
-        hovered_btn_ = hovered;
-        if (hovered_btn_)
-        {
-            hovered_btn_->set_hovered(true);
-        }
-    }
-    bool dirty = false;
-    Widget* moved = root_->dispatch_pointer_move(local, &dirty);
-    bool widget_changed = (moved != hovered_widget_);
-    if (widget_changed)
-    {
-        if (hovered_widget_)
-        {
-            hovered_widget_->on_pointer_leave();
-        }
-        hovered_widget_ = moved;
-    }
-    if (btn_changed || widget_changed || dirty)
-    {
-        request_repaint();
-    }
+    dispatch_pointer_move(
+        {static_cast<float>(p.x), static_cast<float>(p.y)});
 }
 
 void Host::on_pointer_leave()
 {
-    if (hovered_btn_)
-    {
-        hovered_btn_->set_hovered(false);
-        hovered_btn_ = nullptr;
-    }
-    if (hovered_widget_)
-    {
-        hovered_widget_->on_pointer_leave();
-        hovered_widget_ = nullptr;
-    }
-    if (pressed_widget_)
-    {
-        pressed_widget_->on_pointer_up({-1, -1}, false);
-        pressed_widget_ = nullptr;
-    }
-    request_repaint();
+    dispatch_pointer_leave();
 }
 
 void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy)

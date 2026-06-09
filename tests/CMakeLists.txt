@@ -91,6 +91,7 @@ add_executable(tesseract_tests
     cpp/test_tk_about_section.cpp
     cpp/test_encryption_setup_overlay.cpp
     cpp/test_shell_encryption_setup.cpp
+    cpp/test_tk_host_pointer.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

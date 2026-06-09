@@ -3612,145 +3612,37 @@ public:
 
     void on_pointer_down(int x, int y)
     {
-        fire_user_activity_();
-        if (!root_)
+        // Native capture step: route subsequent moves/up to this window even
+        // when the pointer leaves it during a drag. Kept here (not in the
+        // shared dispatch) because it is Win32-specific. Gated on root_ to
+        // match the original ordering (no capture when there is no tree).
+        if (root_)
         {
-            return;
+            SetCapture(hwnd_);
         }
-        SetCapture(hwnd_);
-        Point local{phys_to_dip(static_cast<float>(x)),
-                    phys_to_dip(static_cast<float>(y))};
-        if (popup_)
-        {
-            if (popup_->contains_world(local))
-            {
-                if (popup_->on_pointer_down(popup_->world_to_local(local)))
-                {
-                    pressed_widget_ = popup_;
-                    request_repaint();
-                }
-                return;
-            }
-            // Click outside the popup: dismiss it, then let the click through.
-            popup_->on_popup_dismiss();
-            popup_ = nullptr;
-        }
-        pressed_widget_ = root_->dispatch_pointer_down(local);
-        if (pressed_widget_)
-        {
-            request_repaint();
-        }
+        dispatch_pointer_down({phys_to_dip(static_cast<float>(x)),
+                               phys_to_dip(static_cast<float>(y))});
     }
 
     void on_pointer_up(int x, int y)
     {
+        // Release the Win32 capture grabbed in on_pointer_down before running
+        // the shared release logic.
         if (GetCapture() == hwnd_)
         {
             ReleaseCapture();
         }
-        if (!pressed_widget_)
-        {
-            return;
-        }
-        Point world{phys_to_dip(static_cast<float>(x)),
-                    phys_to_dip(static_cast<float>(y))};
-        Point ws = pressed_widget_->world_to_local(world);
-        bool inside =
-            (ws.x >= 0 && ws.y >= 0 && ws.x < pressed_widget_->bounds().w &&
-             ws.y < pressed_widget_->bounds().h);
-        pressed_widget_->on_pointer_up(ws, inside);
-        pressed_widget_ = nullptr;
-        request_repaint();
+        dispatch_pointer_up({phys_to_dip(static_cast<float>(x)),
+                             phys_to_dip(static_cast<float>(y))});
     }
 
     void on_pointer_move(int x, int y)
     {
-        if (!root_)
-        {
-            return;
-        }
-        Point local{phys_to_dip(static_cast<float>(x)),
-                    phys_to_dip(static_cast<float>(y))};
-        if (pressed_widget_)
-        {
-            Point ws = pressed_widget_->world_to_local(local);
-            pressed_widget_->on_pointer_drag(ws);
-            request_repaint();
-            return;
-        }
-        // When a popup is open, route hover into it while the pointer is
-        // inside it; the normal tree handles everything outside.
-        if (popup_ && popup_->contains_world(local))
-        {
-            // Clear any Button hover state — popup is above buttons.
-            if (hovered_btn_)
-            {
-                hovered_btn_->set_hovered(false);
-                hovered_btn_ = nullptr;
-            }
-            bool widget_changed = (popup_ != hovered_widget_);
-            if (widget_changed)
-            {
-                if (hovered_widget_)
-                    hovered_widget_->on_pointer_leave();
-                hovered_widget_ = popup_;
-            }
-            bool dirty = popup_->on_pointer_move(popup_->world_to_local(local));
-            if (widget_changed || dirty)
-                request_repaint();
-            return;
-        }
-        Widget* hit = root_->hit_test(local);
-        Button* hovered = dynamic_cast<Button*>(hit);
-        bool btn_changed = (hovered != hovered_btn_);
-        if (btn_changed)
-        {
-            if (hovered_btn_)
-            {
-                hovered_btn_->set_hovered(false);
-            }
-            hovered_btn_ = hovered;
-            if (hovered_btn_)
-            {
-                hovered_btn_->set_hovered(true);
-            }
-        }
-        bool dirty = false;
-        Widget* moved = root_->dispatch_pointer_move(local, &dirty);
-        bool widget_changed = (moved != hovered_widget_);
-        if (widget_changed)
-        {
-            if (hovered_widget_)
-            {
-                hovered_widget_->on_pointer_leave();
-            }
-            hovered_widget_ = moved;
-        }
-        if (btn_changed || widget_changed || dirty)
-        {
-            request_repaint();
-        }
+        dispatch_pointer_move({phys_to_dip(static_cast<float>(x)),
+                               phys_to_dip(static_cast<float>(y))});
     }
 
-    void on_pointer_leave()
-    {
-        if (hovered_btn_)
-        {
-            hovered_btn_->set_hovered(false);
-            hovered_btn_ = nullptr;
-        }
-        if (hovered_widget_)
-        {
-            hovered_widget_->on_pointer_leave();
-            hovered_widget_ = nullptr;
-        }
-        if (pressed_widget_)
-        {
-            pressed_widget_->on_pointer_up({-1, -1}, false);
-            pressed_widget_ = nullptr;
-        }
-        request_repaint();
-    }
+    void on_pointer_leave() { dispatch_pointer_leave(); }
 
     void on_wheel(int screen_x, int screen_y, int delta_steps)
     {
@@ -3799,6 +3691,9 @@ public:
         SetCursor(newc);
     }
 
+protected:
+    Widget* input_root_() const override { return root_.get(); }
+
 private:
     HWND hwnd_;
     const Theme* theme_;
@@ -3807,9 +3702,6 @@ private:
     std::unique_ptr<CanvasFactory> factory_;
     std::unique_ptr<Widget> root_;
     std::function<void()> on_layout_;
-    Widget* pressed_widget_ = nullptr;
-    Button* hovered_btn_ = nullptr;
-    Widget* hovered_widget_ = nullptr;
     HCURSOR current_cursor_ = LoadCursorW(nullptr, IDC_ARROW);
     const tk::AnimImageCache* anim_cache_ = nullptr;
     std::vector<tk::Rect> anim_damage_;
