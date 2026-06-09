@@ -90,6 +90,14 @@ public:
     // updated set.
     void broadcast_rebuild_tray_();
 
+    // Build the platform-agnostic tray-menu item list: one (label, callback)
+    // entry per open main window, where the label is the window's active
+    // account display name + user id (or "Tesseract" when signed out) and the
+    // callback raises and activates that window. Each shell's rebuild_tray_()
+    // calls this, then pushes the result to its native OS tray.
+    std::vector<std::pair<std::string, std::function<void()>>>
+    build_tray_items_() const;
+
     // Returns the active account for this window.
     std::shared_ptr<tesseract::AccountSession> active_account() const { return active_account_; }
 

@@ -6757,24 +6757,7 @@ void MainWindow::rebuild_tray_()
     if (!tray_ || !tray_->is_available())
         return;
 
-    std::vector<std::pair<std::string, std::function<void()>>> items;
-    for (tesseract::ShellBase* win : account_manager_.all_windows())
-    {
-        std::string label;
-        auto acc = win->active_account();
-        if (acc)
-        {
-            label = acc->display_name.empty()
-                        ? acc->user_id
-                        : acc->display_name + " (" + acc->user_id + ")";
-        }
-        else
-        {
-            label = "Tesseract";
-        }
-        items.emplace_back(std::move(label),
-                           [win] { win->raise_and_activate_(); });
-    }
+    auto items = build_tray_items_();
     tray_->rebuild_menu(std::move(items));
 }
 
