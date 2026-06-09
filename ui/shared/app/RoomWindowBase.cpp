@@ -167,10 +167,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     // ── Per-room notification mode ────────────────────────────────────────
     rv->on_fetch_notification_mode = [this, rv](std::string room_id) {
         if (!shell_->client_) return;
-        auto* c = shell_->client_;
-        run_async_([this, rv, c, room_id = std::move(room_id),
+        auto sess = shell_->active_account();
+        run_async_([this, rv, sess, room_id = std::move(room_id),
                     alive = alive_]() mutable {
-            auto mode = c->get_room_notification_mode(room_id);
+            if (!sess || !sess->client) return;
+            auto mode = sess->client->get_room_notification_mode(room_id);
             post_to_ui_([rv, alive = std::move(alive),
                          mode = std::move(mode)]() mutable {
                 if (!*alive) return;
@@ -195,10 +196,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     // the members to the view so rows paint with pictures.
     rv->on_fetch_room_members = [this, rv](std::string room_id) {
         if (!shell_->client_) return;
-        auto* c = shell_->client_;
-        run_async_([this, rv, c, room_id = std::move(room_id),
+        auto sess = shell_->active_account();
+        run_async_([this, rv, sess, room_id = std::move(room_id),
                     alive = alive_]() mutable {
-            auto members = c->get_room_members(room_id);
+            if (!sess || !sess->client) return;
+            auto members = sess->client->get_room_members(room_id);
             post_to_ui_([this, rv, alive = std::move(alive),
                          members = std::move(members)]() mutable {
                 if (!*alive) return;
@@ -210,18 +212,20 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     };
     rv->on_save_topic = [this](std::string room_id, std::string topic) {
         if (!shell_->client_) return;
-        auto* c = shell_->client_;
-        run_async_mut_([c, room_id = std::move(room_id),
+        auto sess = shell_->active_account();
+        run_async_mut_([sess, room_id = std::move(room_id),
                         topic = std::move(topic)]() mutable {
-            c->set_room_topic(room_id, topic);
+            if (!sess || !sess->client) return;
+            sess->client->set_room_topic(room_id, topic);
         });
     };
     rv->on_leave_room = [this](std::string room_id) {
         if (!shell_->client_) return;
-        auto* c = shell_->client_;
-        run_async_mut_([this, c, room_id = std::move(room_id),
+        auto sess = shell_->active_account();
+        run_async_mut_([this, sess, room_id = std::move(room_id),
                         alive = alive_]() mutable {
-            auto res = c->leave_room(room_id);
+            if (!sess || !sess->client) return;
+            auto res = sess->client->leave_room(room_id);
             post_to_ui_([this, alive = std::move(alive), ok = res.ok]() mutable {
                 if (!*alive || !ok) return;
                 // Leaving from a room's own pop-out closes that pop-out.
@@ -231,9 +235,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     };
     rv->on_ignore_user = [this](std::string user_id) {
         if (!shell_->client_) return;
-        auto* c = shell_->client_;
-        run_async_mut_([c, user_id = std::move(user_id)]() mutable {
-            c->ignore_user(user_id);
+        auto sess = shell_->active_account();
+        run_async_mut_([sess, user_id = std::move(user_id)]() mutable {
+            if (!sess || !sess->client) return;
+            sess->client->ignore_user(user_id);
         });
     };
 
@@ -801,11 +806,12 @@ void RoomWindowBase::send_message_(const std::string& body)
         shell_->invite_user_command_(room_id_, *user);
         return;
     }
-    auto* c = shell_->client_;
+    auto sess = shell_->active_account();
     auto rid = room_id_;
     auto body_copy = body;
-    run_async_mut_([c, rid, body_copy]() mutable {
-        tesseract::dispatch_compose_send(*c, rid, body_copy, "");
+    run_async_mut_([sess, rid, body_copy]() mutable {
+        if (!sess || !sess->client) return;
+        tesseract::dispatch_compose_send(*sess->client, rid, body_copy, "");
     });
 }
 
@@ -839,12 +845,13 @@ void RoomWindowBase::send_message_(const std::string& body,
         shell_->invite_user_command_(room_id_, *user);
         return;
     }
-    auto* c = shell_->client_;
+    auto sess = shell_->active_account();
     auto rid = room_id_;
     auto body_copy = body;
     auto fmt_copy = formatted_body;
-    run_async_mut_([c, rid, body_copy, fmt_copy]() mutable {
-        tesseract::dispatch_compose_send(*c, rid, body_copy, fmt_copy);
+    run_async_mut_([sess, rid, body_copy, fmt_copy]() mutable {
+        if (!sess || !sess->client) return;
+        tesseract::dispatch_compose_send(*sess->client, rid, body_copy, fmt_copy);
     });
 }
 
@@ -855,12 +862,13 @@ void RoomWindowBase::send_reply_(const std::string& reply_event_id,
     {
         return;
     }
-    auto* c = shell_->client_;
+    auto sess = shell_->active_account();
     auto rid = room_id_;
     auto reply_id = reply_event_id;
     auto body_copy = body;
-    run_async_mut_([c, rid, reply_id, body_copy]() mutable {
-        c->send_reply(rid, reply_id, body_copy);
+    run_async_mut_([sess, rid, reply_id, body_copy]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->send_reply(rid, reply_id, body_copy);
     });
 }
 
@@ -871,12 +879,13 @@ void RoomWindowBase::send_edit_(const std::string& event_id,
     {
         return;
     }
-    auto* c = shell_->client_;
+    auto sess = shell_->active_account();
     auto rid = room_id_;
     auto eid = event_id;
     auto body_copy = new_body;
-    run_async_mut_([c, rid, eid, body_copy]() mutable {
-        c->send_edit(rid, eid, body_copy);
+    run_async_mut_([sess, rid, eid, body_copy]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->send_edit(rid, eid, body_copy);
     });
 }
 
@@ -886,11 +895,12 @@ void RoomWindowBase::delete_event_(const std::string& event_id)
     {
         return;
     }
-    auto* c = shell_->client_;
+    auto sess = shell_->active_account();
     auto rid = room_id_;
     auto eid = event_id;
-    run_async_mut_([c, rid, eid]() mutable {
-        c->redact_event(rid, eid);
+    run_async_mut_([sess, rid, eid]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->redact_event(rid, eid);
     });
 }
 
@@ -902,7 +912,7 @@ void RoomWindowBase::toggle_reaction_(const std::string& event_id,
     {
         return;
     }
-    auto* c = shell_->client_;
+    auto sess = shell_->active_account();
     auto rid = room_id_;
     if (!source_mxc.empty())
     {
@@ -917,15 +927,17 @@ void RoomWindowBase::toggle_reaction_(const std::string& event_id,
             sc.empty() ? std::string() : ":" + sc + ":";
         auto mxc = source_mxc;
         auto eid = event_id;
-        run_async_mut_([c, rid, eid, mxc, shortcode]() mutable {
-            c->send_reaction_custom(rid, eid, mxc, shortcode);
+        run_async_mut_([sess, rid, eid, mxc, shortcode]() mutable {
+            if (!sess || !sess->client) return;
+            sess->client->send_reaction_custom(rid, eid, mxc, shortcode);
         });
         return;
     }
     auto eid = event_id;
     auto k = key;
-    run_async_mut_([c, rid, eid, k]() mutable {
-        c->send_reaction(rid, eid, k);
+    run_async_mut_([sess, rid, eid, k]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->send_reaction(rid, eid, k);
     });
 }
 
@@ -1055,9 +1067,10 @@ void RoomWindowBase::request_pagination_back_()
     }
     state.in_flight = true;
     shell_->run_async_(
-        [shell = shell_, room_id = room_id_]
+        [shell = shell_, sess = shell_->active_account(), room_id = room_id_]
         {
-            auto pr = shell->client_->paginate_back_with_status(
+            if (!sess || !sess->client) return;
+            auto pr = sess->client->paginate_back_with_status(
                 room_id, ShellBase::kPaginationBatch);
             shell->post_to_ui_(
                 [shell, room_id, pr]

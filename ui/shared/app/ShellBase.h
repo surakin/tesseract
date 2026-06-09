@@ -1367,9 +1367,10 @@ protected:
         if (server_info_fetch_started_ || !client_)
             return;
         server_info_fetch_started_ = true;
-        auto* c = client_;
-        run_async_([this, c] {
-            auto info = c->get_server_info();
+        auto sess = active_account_;
+        run_async_([this, sess] {
+            if (!sess || !sess->client) return;
+            auto info = sess->client->get_server_info();
             post_to_ui_([this, info = std::move(info)] {
                 server_info_ = std::move(info);
                 on_server_info_ready_ui_();

@@ -642,27 +642,30 @@ void ShellBase::set_room_notification_mode_(const std::string& room_id,
                                              const std::string& mode)
 {
     if (!client_) return;
-    auto* c = client_;
-    run_async_mut_([c, room_id, mode]() {
-        c->set_room_notification_mode(room_id, mode);
+    auto sess = active_account_;
+    run_async_mut_([sess, room_id, mode]() {
+        if (!sess || !sess->client) return;
+        sess->client->set_room_notification_mode(room_id, mode);
     });
 }
 
 void ShellBase::set_room_favourite_(const std::string& room_id, bool value)
 {
     if (!client_) return;
-    auto* c = client_;
-    run_async_mut_([c, room_id, value]() {
-        c->set_room_favourite(room_id, value);
+    auto sess = active_account_;
+    run_async_mut_([sess, room_id, value]() {
+        if (!sess || !sess->client) return;
+        sess->client->set_room_favourite(room_id, value);
     });
 }
 
 void ShellBase::set_room_low_priority_(const std::string& room_id, bool value)
 {
     if (!client_) return;
-    auto* c = client_;
-    run_async_mut_([c, room_id, value]() {
-        c->set_room_low_priority(room_id, value);
+    auto sess = active_account_;
+    run_async_mut_([sess, room_id, value]() {
+        if (!sess || !sess->client) return;
+        sess->client->set_room_low_priority(room_id, value);
     });
 }
 
@@ -839,9 +842,10 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         [this, app](std::string room_id)
     {
         if (!client_) return;
-        auto* c = client_;
-        run_async_([this, app, c, room_id = std::move(room_id)]() mutable {
-            auto mode = c->get_room_notification_mode(room_id);
+        auto sess = active_account_;
+        run_async_([this, app, sess, room_id = std::move(room_id)]() mutable {
+            if (!sess || !sess->client) return;
+            auto mode = sess->client->get_room_notification_mode(room_id);
             post_to_ui_alive_([app, mode = std::move(mode)]() mutable {
                 app->room_view()->room_info_panel()->set_notification_mode(
                     std::move(mode));
@@ -1533,10 +1537,12 @@ void ShellBase::ensure_room_preview_override_(const std::string& room_id)
     {
         return;
     }
+    auto sess = active_account_;
     run_async_mut_(
-        [this, room_id]()
+        [this, sess, room_id]()
         {
-            auto ov = client_->room_media_preview_override(room_id);
+            if (!sess || !sess->client) return;
+            auto ov = sess->client->room_media_preview_override(room_id);
             post_to_ui_alive_(
                 [this, room_id, ov = std::move(ov)]() mutable
                 {
@@ -1981,14 +1987,15 @@ void ShellBase::update_space_children_cache_()
         space_children_cache_.clear();
         return;
     }
-    auto* c = client_;
+    auto sess = active_account_;
     run_async_(
-        [this, c, space_ids = std::move(space_ids)]()
+        [this, sess, space_ids = std::move(space_ids)]()
         {
+            if (!sess || !sess->client) return;
             std::unordered_map<std::string, std::vector<std::string>> fresh;
             for (const auto& id : space_ids)
             {
-                fresh[id] = c->space_children(id);
+                fresh[id] = sess->client->space_children(id);
             }
             post_to_ui_alive_(
                 [this, fresh = std::move(fresh)]() mutable
@@ -2146,10 +2153,11 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
         request_repaint_();
     }
 
-    auto* c = client_;
-    run_async_mut_([this, c, user_id]()
+    auto sess = active_account_;
+    run_async_mut_([this, sess, user_id]()
     {
-        auto dm_id = c->get_or_create_dm(user_id);
+        if (!sess || !sess->client) return;
+        auto dm_id = sess->client->get_or_create_dm(user_id);
         post_to_ui_alive_([this, user_id, dm_id = std::move(dm_id)]() mutable
         {
             dm_in_flight_user_ids_.erase(user_id);
@@ -2403,9 +2411,11 @@ void ShellBase::try_scroll_to_room_event_(const std::string& event_id)
     // every intermediate event and can stall the main thread.
     const auto rid = current_room_id_;
     begin_focused_subscription_(rid, event_id);
-    run_async_mut_([this, rid, event_id]()
+    auto sess = active_account_;
+    run_async_mut_([sess, rid, event_id]()
     {
-        client_->subscribe_room_at(rid, event_id);
+        if (!sess || !sess->client) return;
+        sess->client->subscribe_room_at(rid, event_id);
     });
 }
 
@@ -2454,10 +2464,12 @@ void ShellBase::return_to_live_(const std::string& room_id)
     // subscribe_room is CPU-bound (&mut); keep it on mut_pool_.
     // paginate_back_async fires a tokio task and returns immediately so
     // mut_pool_ is freed before the HTTP round-trip begins.
+    auto sess = active_account_;
     run_async_mut_(
-        [this, room_id]()
+        [this, sess, room_id]()
         {
-            client_->subscribe_room(room_id);
+            if (!sess || !sess->client) return;
+            sess->client->subscribe_room(room_id);
             post_to_ui_alive_(
                 [this, room_id]()
                 {
@@ -2541,12 +2553,13 @@ void ShellBase::acquire_room_subscription_(const std::string& room_id)
     {
         return;
     }
+    auto sess = active_account_;
     run_async_mut_(
-        [this, room_id]
+        [sess, room_id]
         {
-            if (client_)
+            if (sess && sess->client)
             {
-                client_->subscribe_room(room_id);
+                sess->client->subscribe_room(room_id);
             }
         });
 }
@@ -2567,12 +2580,13 @@ void ShellBase::release_room_subscription_(const std::string& room_id)
     {
         return;
     }
+    auto sess = active_account_;
     run_async_mut_(
-        [this, room_id]
+        [sess, room_id]
         {
-            if (client_)
+            if (sess && sess->client)
             {
-                client_->unsubscribe_room(room_id);
+                sess->client->unsubscribe_room(room_id);
             }
         });
 }
@@ -2653,12 +2667,13 @@ void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
         return;
     }
     last = event_id;
+    auto sess = active_account_;
     run_async_mut_(
-        [this, room_id, event_id]()
+        [sess, room_id, event_id]()
         {
-            if (client_)
+            if (sess && sess->client)
             {
-                client_->send_read_receipt(room_id, event_id);
+                sess->client->send_read_receipt(room_id, event_id);
             }
         });
 }
@@ -2693,12 +2708,13 @@ void ShellBase::mark_room_read_(const std::string& room_id)
     }
     on_rooms_updated_();
     notify_tray_unread_();
+    auto sess = active_account_;
     run_async_mut_(
-        [this, room_id]()
+        [sess, room_id]()
         {
-            if (client_)
+            if (sess && sess->client)
             {
-                client_->mark_room_as_read(room_id);
+                sess->client->mark_room_as_read(room_id);
             }
         });
 }
@@ -3260,11 +3276,12 @@ void ShellBase::notify_window_active_(bool active)
     // owns — if the user has presence disabled, never re-enable polling here.
     if (client_ && tesseract::Settings::instance().send_presence)
     {
-        auto* c = client_;
-        run_async_mut_([c, active]() {
-            c->set_presence_polling_enabled(active);
+        auto sess = active_account_;
+        run_async_mut_([sess, active]() {
+            if (!sess || !sess->client) return;
+            sess->client->set_presence_polling_enabled(active);
             if (active)
-                c->poll_presence_now();
+                sess->client->poll_presence_now();
         });
     }
 }
@@ -3323,16 +3340,17 @@ void ShellBase::start_presence_tracking_()
         // Online ↔ Unavailable transitions: send the PUT through run_async_
         // so app shutdown drains it (WorkerPool destructor joins threads
         // before ~ShellBase completes, protecting Client lifetime).
-        // We access client_ inside the worker — same pattern as
-        // ensure_room_avatar_ — so it picks up the currently-active
-        // account, which is what we want.
+        // Capture a strong ref to the account active at dispatch time so the
+        // PUT targets that account's Client (and keeps it alive) even if the
+        // user logs out / switches before the worker runs.
         const auto target = to_client_presence(s);
+        auto sess = active_account_;
         run_async_mut_(
-            [this, target]
+            [sess, target]
             {
-                if (client_)
+                if (sess && sess->client)
                 {
-                    (void) client_->set_presence(target);
+                    (void) sess->client->set_presence(target);
                 }
             });
     };
@@ -3347,8 +3365,11 @@ void ShellBase::handle_send_presence_toggle_(bool enabled)
 
     if (client_)
     {
-        auto* c = client_;
-        run_async_mut_([c, enabled]() { c->set_presence_polling_enabled(enabled); });
+        auto sess = active_account_;
+        run_async_mut_([sess, enabled]() {
+            if (!sess || !sess->client) return;
+            sess->client->set_presence_polling_enabled(enabled);
+        });
     }
 
     if (enabled)
@@ -3758,17 +3779,19 @@ void ShellBase::wire_voice_capture_(
                 clear_text_fn();
 
                 // Encoding (Opus) and upload both block; run off the UI thread.
+                auto sess = active_account_;
                 run_async_mut_(
-                    [this, rid,
+                    [sess, rid,
                      pcm      = std::move(pcm),
                      waveform  = std::move(waveform),
                      duration_ms, caption, reply_id]() mutable
                     {
+                        if (!sess || !sess->client) return;
                         const std::uint64_t est   = duration_ms * 3;
-                        const std::uint64_t limit = client_->media_upload_limit();
+                        const std::uint64_t limit = sess->client->media_upload_limit();
                         if (limit > 0 && est > limit)
                             return;
-                        auto res = client_->send_voice(
+                        auto res = sess->client->send_voice(
                             rid, pcm.data(), pcm.size(),
                             duration_ms, waveform,
                             caption, reply_id);
@@ -4116,13 +4139,14 @@ void ShellBase::on_thread_send_requested(const std::string& body,
 {
     if (!client_ || current_room_id_.empty() || current_thread_root_.empty())
         return;
-    auto* c = client_;
+    auto sess = active_account_;
     auto rid = current_room_id_;
     auto root = current_thread_root_;
     auto body_copy = body;
     auto fmt_copy = formatted_body;
-    run_async_mut_([c, rid, root, body_copy, fmt_copy]() mutable {
-        c->send_thread_message(rid, root, body_copy, fmt_copy);
+    run_async_mut_([sess, rid, root, body_copy, fmt_copy]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->send_thread_message(rid, root, body_copy, fmt_copy);
     });
 }
 
@@ -4134,14 +4158,15 @@ void ShellBase::on_thread_send_reply_requested(
     if (!client_ || current_room_id_.empty() || current_thread_root_.empty() ||
         in_reply_to_event_id.empty())
         return;
-    auto* c = client_;
+    auto sess = active_account_;
     auto rid = current_room_id_;
     auto root = current_thread_root_;
     auto reply_to = in_reply_to_event_id;
     auto body_copy = body;
     auto fmt_copy = formatted_body;
-    run_async_mut_([c, rid, root, reply_to, body_copy, fmt_copy]() mutable {
-        c->send_thread_reply(rid, root, reply_to, body_copy, fmt_copy);
+    run_async_mut_([sess, rid, root, reply_to, body_copy, fmt_copy]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->send_thread_reply(rid, root, reply_to, body_copy, fmt_copy);
     });
 }
 
@@ -4149,11 +4174,12 @@ void ShellBase::on_pin_requested(const std::string& event_id)
 {
     if (!client_ || current_room_id_.empty() || event_id.empty())
         return;
-    auto* c = client_;
+    auto sess = active_account_;
     auto rid = current_room_id_;
     auto eid = event_id;
-    run_async_mut_([c, rid, eid]() mutable {
-        auto r = c->pin_event(rid, eid);
+    run_async_mut_([sess, rid, eid]() mutable {
+        if (!sess || !sess->client) return;
+        auto r = sess->client->pin_event(rid, eid);
         if (!r.ok)
         {
             // TODO: surface this via a transient status mechanism once one exists
@@ -4273,10 +4299,12 @@ void ShellBase::paginate_threads_()
         return;
     threads_paginating_ = true;
     auto* c       = client_;
+    auto  sess    = active_account_;
     auto  room_id = current_room_id_;
-    run_async_mut_([this, c, room_id]
+    run_async_mut_([this, c, sess, room_id]
     {
-        auto r = c->paginate_room_threads(room_id);
+        if (!sess || !sess->client) return;
+        auto r = sess->client->paginate_room_threads(room_id);
         post_to_ui_alive_([this, c, room = room_id, reached = r.reached_start]
         {
             if (c != client_ || room != current_room_id_)
@@ -4393,15 +4421,18 @@ void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
                 return; // cancelled
             if (c != client_)
                 return; // logged out between pick and callback
+            auto sess = active_account_;
             run_async_mut_(
-                [this, c, room_id,
+                [sess, room_id,
                  bytes = std::move(bytes),
                  mime  = std::move(mime)]() mutable
                 {
-                    auto upload = c->upload_media(bytes, mime);
+                    if (!sess || !sess->client)
+                        return;
+                    auto upload = sess->client->upload_media(bytes, mime);
                     if (!upload.ok)
                         return;
-                    c->set_room_avatar(room_id, upload.message);
+                    sess->client->set_room_avatar(room_id, upload.message);
                 });
         });
 }
@@ -4462,14 +4493,18 @@ void ShellBase::wire_encryption_setup_callbacks_(
     };
 
     ov.on_enable_recovery = [this](std::string passphrase) {
-        auto* c = client_;
-        run_async_mut_([c, passphrase]() { c->enable_recovery(passphrase); });
+        auto sess = active_account_;
+        run_async_mut_([sess, passphrase]() {
+            if (!sess || !sess->client) return;
+            sess->client->enable_recovery(passphrase);
+        });
     };
 
     ov.on_recover = [this](std::string key) {
-        auto* c = client_;
-        run_async_mut_([this, c, key]() {
-            auto res = c->recover(key);
+        auto sess = active_account_;
+        run_async_mut_([this, sess, key]() {
+            if (!sess || !sess->client) return;
+            auto res = sess->client->recover(key);
             if (!res.ok)
             {
                 post_to_ui_alive_([this, msg = std::string(res.message)]() {
@@ -4484,8 +4519,11 @@ void ShellBase::wire_encryption_setup_callbacks_(
     ov.on_request_sas = [this]() {
         encryption_setup_dismissed_ = true;
         if (main_app_) main_app_->show_encryption_setup(false);
-        auto* c = client_;
-        run_async_mut_([c]() { c->request_self_verification(); });
+        auto sess = active_account_;
+        run_async_mut_([sess]() {
+            if (!sess || !sess->client) return;
+            sess->client->request_self_verification();
+        });
         request_relayout_();
     };
 
@@ -4560,8 +4598,11 @@ void ShellBase::begin_crypto_identity_reset_()
     // show_encryption_setup_overlay_ → reset() cleared callbacks, so set the
     // cancel hook now (after wiring).
     ov->on_cancel_reset = [this]() {
-        auto* c = client_;
-        run_async_mut_([c]() { c->cancel_reset_crypto_identity(); });
+        auto sess = active_account_;
+        run_async_mut_([sess]() {
+            if (!sess || !sess->client) return;
+            sess->client->cancel_reset_crypto_identity();
+        });
         encryption_setup_dismissed_ = true;
         if (main_app_)
             main_app_->show_encryption_setup(false);
@@ -4570,9 +4611,10 @@ void ShellBase::begin_crypto_identity_reset_()
     ov->begin_reset_wait();
     request_relayout_();
 
-    auto* c = client_;
-    run_async_mut_([this, c]() {
-        auto r = c->begin_reset_crypto_identity();
+    auto sess = active_account_;
+    run_async_mut_([this, sess]() {
+        if (!sess || !sess->client) return;
+        auto r = sess->client->begin_reset_crypto_identity();
         post_to_ui_alive_([this, ok = r.ok, needs = r.needs_approval,
                      msg = std::string(r.message),
                      url = std::string(r.approval_url)]() {
