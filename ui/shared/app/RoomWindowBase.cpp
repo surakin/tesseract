@@ -605,11 +605,14 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             request_relayout();
             std::string src = src_tok;
             std::weak_ptr<bool> alive_weak = alive_;
+            auto sess = shell_->active_account();
             run_async_(
                 [this, src = std::move(src),
-                 alive_weak = std::move(alive_weak)]()
+                 alive_weak = std::move(alive_weak),
+                 sess = std::move(sess)]()
                 {
-                    auto bytes = fetch_source_bytes_(src);
+                    if (!sess || !sess->client) return;
+                    auto bytes = fetch_source_bytes_(sess->client.get(), src);
                     shell_->post_to_ui_(
                         [this, alive_weak, bytes = std::move(bytes)]() mutable
                         {
@@ -1042,16 +1045,19 @@ RoomWindowBase::preview_lookup_(const std::string& url)
 }
 
 std::vector<std::uint8_t>
-RoomWindowBase::fetch_source_bytes_(const std::string& source_json)
+RoomWindowBase::fetch_source_bytes_(tesseract::Client* client,
+                                    const std::string& source_json)
 {
     // Blocking — callers (video-viewer load, save-to-file) already run this on
     // a worker thread. The UI-thread voice-playback path uses the non-blocking
     // voice_bytes_or_fetch_ via set_voice_bytes_provider instead.
-    if (!shell_->client_)
+    // client is the AccountSession-captured Client so it remains valid even if
+    // the account is logged out/switched while the task is in-flight.
+    if (!client)
     {
         return {};
     }
-    return shell_->client_->fetch_source_bytes(source_json);
+    return client->fetch_source_bytes(source_json);
 }
 
 void RoomWindowBase::request_pagination_back_()
@@ -1108,11 +1114,14 @@ void RoomWindowBase::save_source_to_file_(std::string source_json,
                                            std::string dest_path)
 {
     std::weak_ptr<bool> alive_weak = alive_;
+    auto sess = shell_->active_account();
     run_async_(
         [this, src = std::move(source_json), dest = std::move(dest_path),
-         alive_weak = std::move(alive_weak)]()
+         alive_weak = std::move(alive_weak),
+         sess = std::move(sess)]()
         {
-            auto bytes = fetch_source_bytes_(src);
+            if (!sess || !sess->client) return;
+            auto bytes = fetch_source_bytes_(sess->client.get(), src);
             // Inner lambda: file write only — no this capture needed.
             shell_->post_to_ui_(
                 [alive_weak, dest, bytes = std::move(bytes)]() mutable

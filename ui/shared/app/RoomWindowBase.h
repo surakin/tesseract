@@ -212,7 +212,7 @@ protected:
     void wire_mention_shell_hooks_(views::MentionPopup* popup,
                                    views::MentionController::Hooks& hooks);
     std::vector<std::uint8_t>
-    fetch_source_bytes_(const std::string& source_json);
+    fetch_source_bytes_(tesseract::Client* client, const std::string& source_json);
 
     // Kick off an async task on the shell's worker-thread pool. Safe to call
     // from the UI thread; fn runs on a background thread with no UI access.
