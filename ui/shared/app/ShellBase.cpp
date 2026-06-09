@@ -3855,23 +3855,25 @@ void ShellBase::clear_all_caches_(
 {
     if (my_user_id_.empty())
         return;
-    const auto uid = my_user_id_;
-    run_async_([this, uid, recalc = std::move(recompute_callback)]
+    run_async_([this, recalc = std::move(recompute_callback)]() mutable
     {
         namespace fs = std::filesystem;
         std::error_code ec;
 
-        // Media disk cache — clear() removes all files and recreates the dir.
-        account_manager_.media_disk_cache().clear();
-
         // Waveform SQLite — best-effort (locked on Windows if WAL is open).
         fs::remove(tesseract::cache_dir() / "waveforms.db", ec);
 
-        // Clear in-memory image caches, reinit the waveform store, and restart
-        // the SDK (which clears the SDK event cache + state store and starts a
-        // fresh sync).
-        post_to_ui_([this]
+        // The MediaDiskCache is owned by the shared AccountManager and is
+        // touched (load/store/prune/evict) from every window's worker pool.
+        // It has no internal lock — concurrent ops are only safe because each
+        // op is filesystem-atomic on a distinct key; clear() (remove_all +
+        // recreate dir) is *not* in that set and would race a concurrent
+        // load/store/prune on another window's worker. Defer it to the UI
+        // thread alongside the in-memory clears, then queue the recompute from
+        // there so it observes the cleared state.
+        post_to_ui_([this, recalc = std::move(recalc)]() mutable
         {
+            account_manager_.media_disk_cache().clear();
             account_manager_.thumbnail_cache().clear();
             account_manager_.image_cache().clear();
             account_manager_.anim_cache() = tk::AnimImageCache{};
@@ -3881,11 +3883,11 @@ void ShellBase::clear_all_caches_(
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());
             restart_sdk_();
-        });
 
-        // Recompute sizes so the UI reflects the cleared state.
-        if (recalc)
-            compute_cache_sizes_(std::move(recalc));
+            // Recompute sizes so the UI reflects the cleared state.
+            if (recalc)
+                compute_cache_sizes_(std::move(recalc));
+        });
     });
 }
 
