@@ -9,6 +9,15 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/include/tesseract/version.h"
 )
 
+# Generate the Linux .desktop file with the project version substituted in,
+# so X-AppImage-Version never drifts from project(... VERSION ...).  The Qt6
+# and GTK shells install this generated copy (see their CMakeLists).
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/tesseract.desktop.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/packaging/tesseract.desktop"
+    @ONLY
+)
+
 # OBJCXX must be enabled at root scope; enabling it from a subdirectory leaves
 # CMAKE_OBJCXX_COMPILE_OBJECT unset in CMake 4.x.
 if(APPLE)
