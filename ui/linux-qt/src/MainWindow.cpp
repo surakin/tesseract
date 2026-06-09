@@ -2352,6 +2352,15 @@ void MainWindow::changeEvent(QEvent* ev)
 
 void MainWindow::doLogin()
 {
+    // Secondary (spawned) window: the shared AccountManager is already populated
+    // and syncing, and set_initial_account() pinned the account to display. Bind
+    // the UI to it without touching disk, restoring, or re-adding accounts.
+    if (is_secondary_window_startup_())
+    {
+        finishLoginUi_(active_account_->user_id);
+        return;
+    }
+
     // One-shot migration from the legacy single-account layout. Runs once
     // per install before any Client is constructed; idempotent on every
     // subsequent launch.
@@ -2495,7 +2504,12 @@ void MainWindow::doLogin()
     {
         target_active_uid = account_manager_.accounts()[0]->user_id;
     }
-    switchActiveAccount(target_active_uid);
+    finishLoginUi_(target_active_uid);
+}
+
+void MainWindow::finishLoginUi_(const std::string& uid)
+{
+    switchActiveAccount(uid);
     auto* active_up_connector =
         active_account_ ? active_account_->up_connector.get() : nullptr;
     settings_controller_ = std::make_unique<tesseract::SettingsController>(

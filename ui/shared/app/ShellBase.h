@@ -775,6 +775,16 @@ protected:
     // Ctrl+click → spawn_main_window_; plain click → switch_active_account_.
     void on_account_picker_select_(const std::string& uid);
 
+    // True when this window's startup should reuse the already-restored,
+    // already-syncing accounts from the shared AccountManager instead of
+    // re-restoring from disk. A spawned (secondary) window finds the manager
+    // already populated, has a pinned active_account_ (via set_initial_account),
+    // and has not bound a client yet. The first (primary) window finds the
+    // manager empty; the primary re-login path runs with client_ already set.
+    // Platform startup entries (doLogin / do_login / start_login / beginLogin)
+    // check this first and, if true, bind the pinned account without restoring.
+    bool is_secondary_window_startup_() const;
+
     // Post fn() onto the UI thread.
     // GTK4: g_idle_add   Qt6: QueuedConnection   Win32: PostMessage   macOS: dispatch_async
     virtual void post_to_ui_(std::function<void()> fn) = 0;

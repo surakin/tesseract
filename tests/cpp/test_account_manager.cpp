@@ -33,6 +33,23 @@ TEST_CASE("AccountManager - find unknown returns nullptr", "[account_manager]")
     CHECK(mgr.find("@nobody:example.org") == nullptr);
 }
 
+TEST_CASE("AccountManager - add_account ignores a duplicate user_id",
+          "[account_manager]")
+{
+    // A spawned (secondary) window must never re-add an account that the
+    // primary window already restored: doing so duplicates it in every account
+    // picker and starts its sync twice. add_account() keeps the first session.
+    AccountManager mgr;
+    auto first = make_session("@alice:example.org", "Alice");
+    mgr.add_account(first);
+    mgr.add_account(make_session("@alice:example.org", "Alice (dup)"));
+
+    REQUIRE(mgr.accounts().size() == 1);
+    // The original session is retained, not clobbered by the duplicate.
+    CHECK(mgr.find("@alice:example.org") == first);
+    CHECK(mgr.accounts()[0]->display_name == "Alice");
+}
+
 TEST_CASE("AccountManager - remove account", "[account_manager]")
 {
     AccountManager mgr;

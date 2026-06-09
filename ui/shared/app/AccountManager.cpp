@@ -8,6 +8,12 @@ AccountManager::~AccountManager() = default;
 
 void AccountManager::add_account(std::shared_ptr<AccountSession> session)
 {
+    // Guard against double-adds: a secondary window must reuse the existing
+    // live session, never append a second entry for the same user (which would
+    // duplicate it in every account picker and start its sync twice). Keep the
+    // already-registered session.
+    if (session && find(session->user_id))
+        return;
     accounts_.push_back(std::move(session));
 }
 

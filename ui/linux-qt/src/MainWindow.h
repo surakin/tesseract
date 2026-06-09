@@ -114,6 +114,10 @@ signals:
 
 private:
     void doLogin();
+    // Bind the UI to the now-active account `uid` and finish startup
+    // (settings controller, status, main surface, tray). Shared by the cold
+    // restore path and the secondary-window bind path in doLogin().
+    void finishLoginUi_(const std::string& uid);
     void doLogout();
     void openSettings();
     void setupLocalServer_();

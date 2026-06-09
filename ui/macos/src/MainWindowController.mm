@@ -244,6 +244,7 @@ public:
     using ShellBase::apply_media_preview_config_;
     using ShellBase::inflight_dot_color_;
     using ShellBase::inflight_total_;
+    using ShellBase::is_secondary_window_startup_;
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
     using ShellBase::last_inflight_;
@@ -5505,6 +5506,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (_brandingSurface)
     {
         ((__bridge NSView*)_brandingSurface->view_handle()).hidden = YES;
+    }
+
+    // Secondary (spawned) window: the shared AccountManager is already populated
+    // and syncing, and set_initial_account() pinned the account to display. Bind
+    // the UI to it without touching disk, restoring, or re-adding accounts.
+    if (_shell->is_secondary_window_startup_())
+    {
+        [self _switchActiveAccount:_shell->active_account_->user_id];
+        [self _buildSettingsController];
+        return;
     }
 
     tesseract::SessionStore::migrate_legacy_layout();

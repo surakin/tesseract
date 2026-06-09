@@ -2742,8 +2742,39 @@ MainWindow::~MainWindow()
 
 // ---------------------------------------------------------------------------
 
+void MainWindow::finish_login_ui_(const std::string& uid)
+{
+    switch_active_account(uid);
+    settings_controller_ = std::make_unique<tesseract::SettingsController>(
+        client_,
+        [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto fn) { run_async_(std::move(fn)); },
+        [this](auto cb) { pick_image_file_(std::move(cb)); });
+    wire_key_dialog_callbacks_();
+    if (active_account_)
+    {
+        settings_controller_->set_up_connector(
+            active_account_->up_connector.get());
+    }
+    if (settings_widget_)
+        settings_widget_->set_controller(settings_controller_.get(),
+                                         my_display_name_);
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+    start_tray_if_needed_();
+}
+
 void MainWindow::do_login()
 {
+    // Secondary (spawned) window: the shared AccountManager is already populated
+    // and syncing, and set_initial_account() pinned the account to display. Bind
+    // the UI to it without touching disk, restoring, or re-adding accounts.
+    if (is_secondary_window_startup_())
+    {
+        finish_login_ui_(active_account_->user_id);
+        return;
+    }
+
     tesseract::SessionStore::migrate_legacy_layout();
 
     auto index = tesseract::SessionStore::load_index();
@@ -2831,24 +2862,7 @@ void MainWindow::do_login()
             {
                 target_uid = account_manager_.accounts()[0]->user_id;
             }
-            switch_active_account(target_uid);
-            settings_controller_ = std::make_unique<tesseract::SettingsController>(
-                client_,
-                [this](auto fn) { post_to_ui_(std::move(fn)); },
-                [this](auto fn) { run_async_(std::move(fn)); },
-                [this](auto cb) { pick_image_file_(std::move(cb)); });
-            wire_key_dialog_callbacks_();
-            if (active_account_)
-            {
-                settings_controller_->set_up_connector(
-                    active_account_->up_connector.get());
-            }
-            if (settings_widget_)
-                settings_widget_->set_controller(settings_controller_.get(),
-                                                 my_display_name_);
-            gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
-            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
-            start_tray_if_needed_();
+            finish_login_ui_(target_uid);
             return;
         }
     }
