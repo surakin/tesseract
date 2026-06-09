@@ -130,7 +130,7 @@ pub async fn begin(
 
     let redirect_path = "/callback".to_owned();
     let redirect_uri = format!("http://{local_addr}{redirect_path}");
-    let redirect_url = Url::parse(&redirect_uri).expect("redirect URI parse");
+    let redirect_url = Url::parse(&redirect_uri).context("redirect URI parse")?;
 
     // 2. Build the SDK client. `server_name_or_homeserver_url` accepts
     //    either `matrix.org` or `https://matrix.org` and performs
@@ -173,7 +173,7 @@ pub async fn begin(
                 redirect_uris: vec![redirect_url.clone()],
             }],
             // client_uri – purely informational; required to be a valid URL.
-            Localized::new(Url::parse(CLIENT_URI).expect("client_uri"), []),
+            Localized::new(Url::parse(CLIENT_URI).context("client_uri")?, []),
         )
     };
     let raw_metadata = matrix_sdk::ruma::serde::Raw::new(&metadata)
