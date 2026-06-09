@@ -960,20 +960,18 @@ pub mod ffi {
         /// snapshot once it has been converted. Subsequent live changes
         /// arrive as positional `on_message_inserted` /
         /// `on_message_updated` / `on_message_removed` callbacks. Call
-        /// `paginate_back` to load older history.
+        /// `paginate_back_with_status` to load older history.
         fn subscribe_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
 
         /// Unsubscribe from a room's timeline and cancel its background task.
         fn unsubscribe_room(self: &mut ClientFfi, room_id: &str);
 
-        /// Paginate backwards in a subscribed room's timeline. Older items
-        /// arrive as `on_message_inserted` callbacks at the front of the
-        /// timeline (index 0, or wherever the cache grafts them in).
-        fn paginate_back(self: &ClientFfi, room_id: &str, count: u16) -> OpResult;
-
-        /// Like `paginate_back` but also reports whether the timeline has
-        /// reached its first event (no further pagination possible). UIs use
-        /// `reached_start` to latch their scroll-up trigger off.
+        /// Paginate backwards in a subscribed room's timeline, reporting
+        /// whether the timeline has reached its first event (no further
+        /// pagination possible). Older items arrive as `on_message_inserted`
+        /// callbacks at the front of the timeline (index 0, or wherever the
+        /// cache grafts them in). UIs use `reached_start` to latch their
+        /// scroll-up trigger off.
         fn paginate_back_with_status(
             self: &ClientFfi,
             room_id: &str,
@@ -1561,35 +1559,6 @@ pub mod ffi {
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
         fn fetch_source_bytes(self: &ClientFfi, source_json: &str) -> Vec<u8>;
 
-        /// Like `fetch_avatar_bytes` but requests a `size`×`size` server-scaled
-        /// thumbnail instead of the original upload.
-        fn fetch_avatar_thumbnail_bytes(
-            self: &ClientFfi,
-            room_id: &str,
-            size: u32,
-        ) -> Vec<u8>;
-
-        /// Like `fetch_media_bytes` but requests a `w`×`h` server-scaled
-        /// thumbnail. `animated` requests an animated thumbnail where supported.
-        fn fetch_media_thumbnail_bytes(
-            self: &ClientFfi,
-            mxc_url: &str,
-            w: u32,
-            h: u32,
-            animated: bool,
-        ) -> Vec<u8>;
-
-        /// Like `fetch_source_bytes` but requests a `w`×`h` server-scaled
-        /// thumbnail for plain mxc sources. Encrypted sources fall back to the
-        /// full file (servers cannot thumbnail encrypted blobs).
-        fn fetch_source_thumbnail_bytes(
-            self: &ClientFfi,
-            source_json: &str,
-            w: u32,
-            h: u32,
-            animated: bool,
-        ) -> Vec<u8>;
-
         /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
         /// Returns the response body on success, or an empty Vec on any error.
         /// Sets User-Agent to "Tesseract/0.1 (Matrix client)" per OSM tile policy.
@@ -1600,13 +1569,6 @@ pub mod ffi {
         /// with the generous full-download timeout — for fetching a `/gif`
         /// picker MP4 before sending it.
         fn fetch_gif_bytes(self: &ClientFfi, url: &str) -> Vec<u8>;
-
-        /// Fetch OpenGraph preview metadata for an http(s) URL from the
-        /// homeserver's `/_matrix/media/v3/preview_url` endpoint.
-        /// Returns the raw JSON response body on success, or an empty String
-        /// on any failure (not logged in, network error, rate-limit, no data).
-        /// Blocks the calling thread — call only from a worker thread.
-        fn get_url_preview(self: &ClientFfi, url: &str) -> String;
 
         // ----- Async media downloads (non-blocking) -----
 

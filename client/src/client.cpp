@@ -5,7 +5,6 @@
 // cxx-generated header (produced by corrosion_add_cxxbridge)
 #include "ffi_convert.h"
 
-#include <cassert>
 #include <cctype>
 #include <cstdlib>
 #include <mutex>
@@ -219,11 +218,6 @@ std::uint32_t Client::in_flight_count() const
     return impl_->ffi->in_flight_count();
 }
 
-std::vector<RoomInfo> Client::list_rooms() const
-{
-    return ffi_vec<RoomInfo>(impl_->ffi->list_rooms());
-}
-
 std::vector<InviteInfo> Client::list_invites() const
 {
     return ffi_vec<InviteInfo>(impl_->ffi->list_invites());
@@ -262,11 +256,6 @@ void Client::unsubscribe_room(const std::string& room_id)
 {
     MUT_FFI;
     impl_->ffi->unsubscribe_room(room_id);
-}
-
-Result Client::paginate_back(const std::string& room_id, std::uint16_t count)
-{
-    return from_ffi(impl_->ffi->paginate_back(room_id, count));
 }
 
 PaginateResult Client::paginate_back_with_status(const std::string& room_id,
@@ -862,12 +851,14 @@ Result Client::set_presence(PresenceState state)
     return from_ffi(impl_->ffi->set_presence(byte));
 }
 
+// Windows-only: GTK/Qt/macOS shells use fetch_media_async.
 std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
 {
     auto v = impl_->ffi->fetch_avatar_bytes(room_id);
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
+// Windows-only: GTK/Qt/macOS shells use fetch_media_async.
 std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url)
 {
     auto v = impl_->ffi->fetch_media_bytes(mxc_url);
@@ -877,27 +868,6 @@ std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url)
 std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
 {
     auto v = impl_->ffi->fetch_source_bytes(source);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
-std::vector<uint8_t>
-Client::fetch_avatar_thumbnail_bytes(const std::string& room_id, uint32_t size)
-{
-    auto v = impl_->ffi->fetch_avatar_thumbnail_bytes(room_id, size);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
-std::vector<uint8_t> Client::fetch_media_thumbnail_bytes(
-    const std::string& mxc_url, uint32_t w, uint32_t h, bool animated)
-{
-    auto v = impl_->ffi->fetch_media_thumbnail_bytes(mxc_url, w, h, animated);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
-std::vector<uint8_t> Client::fetch_source_thumbnail_bytes(
-    const std::string& source, uint32_t w, uint32_t h, bool animated)
-{
-    auto v = impl_->ffi->fetch_source_thumbnail_bytes(source, w, h, animated);
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
@@ -1475,11 +1445,6 @@ Client::UrlPreview Client::parse_url_preview(const std::string& json)
         p.failed = true;
     }
     return p;
-}
-
-Client::UrlPreview Client::get_url_preview(const std::string& url)
-{
-    return parse_url_preview(std::string(impl_->ffi->get_url_preview(url)));
 }
 
 // ---------------------------------------------------------------------------

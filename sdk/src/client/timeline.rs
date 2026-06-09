@@ -706,15 +706,6 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn paginate_back(&self, room_id: &str, count: u16) -> OpResult {
-        let result = self.paginate_back_with_status(room_id, count);
-        OpResult {
-            ok: result.ok,
-            message: result.message,
-        }
-    }
-
-    #[cfg(not(test))]
     pub fn paginate_back_with_status(&self, room_id: &str, count: u16) -> PaginateResult {
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,

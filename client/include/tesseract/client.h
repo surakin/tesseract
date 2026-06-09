@@ -210,12 +210,6 @@ public:
     std::uint32_t in_flight_count() const;
 
     // ------------------------------------------------------------------
-    // Room list (utility — push pipeline drives UI updates via callbacks)
-    // ------------------------------------------------------------------
-
-    std::vector<RoomInfo> list_rooms() const;
-
-    // ------------------------------------------------------------------
     // Invitations
     // ------------------------------------------------------------------
 
@@ -242,18 +236,15 @@ public:
 
     /// Subscribe to a room's timeline. Emits on_timeline_reset then
     /// on_message for cached items, followed by live on_message callbacks.
-    /// Call paginate_back() immediately after to load message history.
+    /// Call paginate_back_with_status() immediately after to load history.
     Result subscribe_room(const std::string& room_id);
 
     /// Unsubscribe from a room's timeline and cancel its background task.
     void unsubscribe_room(const std::string& room_id);
 
-    /// Paginate backwards in a subscribed room. Older history arrives via
-    /// `IEventHandler::on_message_prepended`.
-    Result paginate_back(const std::string& room_id, std::uint16_t count);
-
-    /// Like `paginate_back` but also reports whether the timeline has
-    /// reached its first event. UIs use `reached_start` to disable the
+    /// Paginate backwards in a subscribed room, reporting whether the timeline
+    /// has reached its first event. Older history arrives via
+    /// `IEventHandler::on_message_prepended`. UIs use `reached_start` to disable the
     /// scroll-up pagination trigger once no more history can be fetched.
     PaginateResult paginate_back_with_status(const std::string& room_id,
                                              std::uint16_t count);
@@ -764,23 +755,6 @@ public:
     /// the leading `mxc://` prefix. Returns an empty vector on any failure.
     std::vector<uint8_t> fetch_source_bytes(const std::string& source);
 
-    /// Like fetch_avatar_bytes but requests a size×size server-scaled
-    /// thumbnail instead of the full upload.
-    std::vector<uint8_t> fetch_avatar_thumbnail_bytes(const std::string& room_id,
-                                                      uint32_t size);
-
-    /// Like fetch_media_bytes but requests a w×h server-scaled thumbnail.
-    /// `animated` requests an animated thumbnail where the server supports it.
-    std::vector<uint8_t> fetch_media_thumbnail_bytes(const std::string& mxc_url,
-                                                     uint32_t w, uint32_t h,
-                                                     bool animated);
-
-    /// Like fetch_source_bytes but requests a w×h server-scaled thumbnail for
-    /// plain mxc sources. Encrypted sources fall back to the full file.
-    std::vector<uint8_t> fetch_source_thumbnail_bytes(const std::string& source,
-                                                      uint32_t w, uint32_t h,
-                                                      bool animated);
-
     /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
     /// Returns an empty vector on any error. Blocks the calling thread.
     /// Capped at 1 MiB — for thumbnails / map tiles, not video.
@@ -820,8 +794,10 @@ public:
     /// registered under `group_id` (e.g. on room switch). No-op for group 0.
     void cancel_media_group(std::uint64_t group_id);
 
-    /// Async counterpart of `get_url_preview`: returns immediately; the result
-    /// arrives via `IEventHandler::on_url_preview_ready(request_id, json)`.
+    /// Fetch OpenGraph preview metadata for an http(s) URL: returns
+    /// immediately; the result arrives via
+    /// `IEventHandler::on_url_preview_ready(request_id, json)`. Parse the JSON
+    /// with `parse_url_preview`.
     void get_url_preview_async(std::uint64_t request_id, std::uint64_t group_id,
                                const std::string& url);
 
@@ -879,14 +855,9 @@ public:
         }
     };
 
-    /// Fetch OpenGraph preview metadata for an http(s) URL from the homeserver.
-    /// Blocks the calling thread — invoke only from a worker thread.
-    /// Returns `UrlPreview{failed=true}` on any error.
-    UrlPreview get_url_preview(const std::string& url);
-
     /// Parse the raw OpenGraph JSON (as delivered by `get_url_preview_async`'s
-    /// `on_url_preview_ready` callback, or returned by the SDK) into a
-    /// UrlPreview. Empty/contentless JSON yields `UrlPreview{failed=true}`.
+    /// `on_url_preview_ready` callback) into a UrlPreview. Empty/contentless
+    /// JSON yields `UrlPreview{failed=true}`.
     static UrlPreview parse_url_preview(const std::string& json);
 
     // ------------------------------------------------------------------
