@@ -152,6 +152,7 @@ pub(super) async fn emit_notification(
         .await
         .ok()
         .flatten()
+        .filter(|b| b.len() <= NOTIF_IMAGE_CAP)
         .unwrap_or_default();
     let avatar = if !room_avatar.is_empty() {
         room_avatar

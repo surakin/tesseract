@@ -1351,12 +1351,32 @@ void MacShell::refresh_user_strip_()
     }
 }
 
-void MacShell::request_relogin_(const std::string& /*user_id*/)
+void MacShell::request_relogin_(const std::string& user_id)
 {
-    if (ctrl_)
+    const bool is_active =
+        active_account_ && active_account_->user_id == user_id;
+    if (is_active)
     {
-        [ctrl_ _logoutActiveAccount];
+        // ShellBase already showed "Session expired…" and cleared/stopped the
+        // account; drop to the login flow.
+        if (ctrl_)
+            [ctrl_ _logoutActiveAccount];
+        return;
     }
+    // A non-active account expired: forget it and drop it from the persisted
+    // index so it doesn't reappear on next launch, without disturbing the
+    // foregrounded account. (ShellBase already cleared its stored session and
+    // stopped its sync.) Mirrors the Windows request_relogin_ behavior.
+    account_manager_.remove_account(user_id);
+    auto index = tesseract::SessionStore::load_index();
+    index.user_ids.erase(
+        std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
+        index.user_ids.end());
+    if (index.active_user_id == user_id && active_account_)
+    {
+        index.active_user_id = active_account_->user_id;
+    }
+    tesseract::SessionStore::save_index(index);
 }
 
 void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress)
