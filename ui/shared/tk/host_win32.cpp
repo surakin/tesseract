@@ -3620,6 +3620,21 @@ public:
         SetCapture(hwnd_);
         Point local{phys_to_dip(static_cast<float>(x)),
                     phys_to_dip(static_cast<float>(y))};
+        if (popup_)
+        {
+            if (popup_->contains_world(local))
+            {
+                if (popup_->on_pointer_down(popup_->world_to_local(local)))
+                {
+                    pressed_widget_ = popup_;
+                    request_repaint();
+                }
+                return;
+            }
+            // Click outside the popup: dismiss it, then let the click through.
+            popup_->on_popup_dismiss();
+            popup_ = nullptr;
+        }
         pressed_widget_ = root_->dispatch_pointer_down(local);
         if (pressed_widget_)
         {
@@ -3661,6 +3676,28 @@ public:
             Point ws = pressed_widget_->world_to_local(local);
             pressed_widget_->on_pointer_drag(ws);
             request_repaint();
+            return;
+        }
+        // When a popup is open, route hover into it while the pointer is
+        // inside it; the normal tree handles everything outside.
+        if (popup_ && popup_->contains_world(local))
+        {
+            // Clear any Button hover state — popup is above buttons.
+            if (hovered_btn_)
+            {
+                hovered_btn_->set_hovered(false);
+                hovered_btn_ = nullptr;
+            }
+            bool widget_changed = (popup_ != hovered_widget_);
+            if (widget_changed)
+            {
+                if (hovered_widget_)
+                    hovered_widget_->on_pointer_leave();
+                hovered_widget_ = popup_;
+            }
+            bool dirty = popup_->on_pointer_move(popup_->world_to_local(local));
+            if (widget_changed || dirty)
+                request_repaint();
             return;
         }
         Widget* hit = root_->hit_test(local);
