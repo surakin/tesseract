@@ -2347,6 +2347,23 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
     {
         std::fprintf(stderr, "[room-action] failed for %s: %s\n",
                      room_id.c_str(), message.c_str());
+        const char* verb = "complete room action";
+        switch (kind)
+        {
+        case RoomActionKind::Accept:
+            verb = "accept invite";
+            break;
+        case RoomActionKind::Join:
+            verb = "join room";
+            break;
+        case RoomActionKind::Leave:
+            verb = "leave room";
+            break;
+        }
+        std::string status = std::string("Couldn't ") + verb;
+        if (!message.empty())
+            status += ": " + message;
+        show_status_message_(std::move(status));
         return;
     }
 
@@ -2366,7 +2383,17 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         }
         else
         {
+            // Deselecting the active room: tear down the thread panel and let
+            // after_active_room_changed_() cancel the leaving room's pending
+            // media downloads, mirroring the canonical deselect path.
+            {
+                auto _tt = compute_thread_transition_(
+                    thread_panel_, thread_panel_prev_, current_thread_root_,
+                    ThreadTrigger::RoomSwitch, {});
+                apply_thread_transition_(_tt);
+            }
             current_room_id_.clear();
+            after_active_room_changed_();
             if (room_view_)
                 room_view_->clear_room();
             request_relayout_();
@@ -2382,6 +2409,10 @@ void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
     if (!ok)
     {
         std::fprintf(stderr, "[upload] failed: %s\n", message.c_str());
+        std::string status = "Upload failed";
+        if (!message.empty())
+            status += ": " + message;
+        show_status_message_(std::move(status));
     }
 }
 
