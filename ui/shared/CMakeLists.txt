@@ -70,6 +70,8 @@ set(_tk_sources
     views/PinnedBanner.cpp
     views/html_spans.h
     views/html_spans.cpp
+    views/TabbedGridPicker.h
+    views/TabbedGridPicker.cpp
     views/EmojiPicker.h
     views/EmojiPicker.cpp
     views/EncryptionSetupOverlay.h

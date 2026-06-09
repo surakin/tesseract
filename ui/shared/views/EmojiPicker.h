@@ -1,26 +1,26 @@
 #pragma once
 
-// Shared emoji picker. A self-contained tk::Widget that paints:
-//   - a search row (the host overlays a NativeTextField on
-//     search_field_rect() so IME / selection stay native)
-//   - a virtualised grid of emoji glyphs
-//   - a bottom tab strip: Frequents + the 8 Unicode categories
+// Shared emoji picker. A TabbedGridPicker whose grid paints Unicode glyphs
+// (and custom MSC2545 emoticon images on pack tabs) and whose tab strip is:
+//   - a Frequents tab (when non-empty)
+//   - the 8 Unicode categories
+//   - one tab per custom emoticon pack
 //
 // The host wires the picker into a popover window of its choice
 // (QFrame popup, NSPanel, WS_POPUP HWND, GtkPopover). Selection fires
 // `on_selected(glyph)`; the picker also calls Client::recent_emoji_bump
 // if a Client is provided so the Frequents tab learns from use.
+//
+// The tab strip, virtualised grid, search-mode switching, image-provider
+// cache, and pointer/hover/press handling live in TabbedGridPicker.
 
-#include "tk/canvas.h"
-#include "tk/list_view.h"
-#include "tk/widget.h"
+#include "TabbedGridPicker.h"
 
 #include <tesseract/emoji.h>
 #include <tesseract/image_pack.h>
 
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -32,7 +32,7 @@ class Client;
 namespace tesseract::views
 {
 
-class EmojiPicker : public tk::Widget
+class EmojiPicker : public TabbedGridPicker
 {
 public:
     EmojiPicker();
@@ -52,25 +52,6 @@ public:
     /// `IEventHandler::on_image_packs_updated`.
     void refresh_emoticon_packs();
 
-    /// Host-supplied image cache (same shape as MessageListView). Used to
-    /// render custom emoticon tabs.
-    using ImageProvider = std::function<const tk::Image*(
-        const std::string& cache_key, const std::string& source_token)>;
-    void set_image_provider(ImageProvider p);
-
-    /// Force a grid repaint after the host's media cache lands new bitmaps.
-    void invalidate_image_cache();
-
-    /// Host hook for the search-row overlay. Bounds in widget-local
-    /// coordinates; valid after the first arrange() pass.
-    tk::Rect search_field_rect() const
-    {
-        return search_rect_;
-    }
-
-    /// Called by the host's NativeTextField on every text change.
-    void set_search_query(std::string query);
-
     /// Fires when the user picks a Unicode glyph.
     std::function<void(const std::string&)> on_selected;
 
@@ -80,18 +61,47 @@ public:
     /// follow-up.
     std::function<void(const tesseract::ImagePackImage&)> on_emoticon_selected;
 
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
-    bool on_pointer_down(tk::Point local) override;
-    void on_pointer_up(tk::Point local, bool inside_self) override;
-    bool on_wheel(tk::Point local, float dx, float dy) override;
-    bool on_pointer_move(tk::Point local) override;
-    void on_pointer_leave() override;
+protected:
+    // Layout config.
+    float cell_size() const override
+    {
+        return 32.0f;
+    }
+    float cell_gap() const override
+    {
+        return 2.0f;
+    }
+    float grid_padding() const override
+    {
+        return 4.0f; // kPadding * 0.5
+    }
+    float tab_height() const override
+    {
+        return 32.0f;
+    }
+    float tab_slot_min() const override
+    {
+        return 24.0f;
+    }
+
+    // Item model.
+    std::size_t item_count() const override;
+    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
+                    bool selected, bool hovered) override;
+    void on_item_activated(int index) override;
+    std::string cell_tooltip(int index) const override;
+
+    // Tab model.
+    int tab_count() const override;
+    int active_tab_index() const override;
+    void paint_tab_content(int index, tk::PaintCtx& ctx, tk::Rect tab) override;
+    void on_tab_clicked(int index) override;
+
+    // Search.
+    void on_search_query_changed(const std::string& query,
+                                 bool cleared) override;
 
 private:
-    class GridAdapter;
-
     enum class Page : std::uint8_t
     {
         Frequents,
@@ -106,15 +116,10 @@ private:
     void switch_to_search();
     void rebuild_current_items();
 
-    // Tab layout. Indexes:
-    //   0          → Frequents
-    //   1..N       → Unicode categories (kCategories)
-    //   N+1..end   → Custom MSC2545 emoticon packs (in custom_packs_ order)
-    int tab_at(tk::Point local) const;
-    tk::Rect tab_strip_rect() const;
-    int builtin_tab_count() const; // 1 + kCategories (constant)
-    int
-    total_tab_count() const; // frequents (if any) + categories + custom packs
+    // Tab layout. Visual indexes:
+    //   0          → Frequents (only when has_frequents_tab())
+    //   foff..     → Unicode categories (kCategories)
+    //   then       → Custom MSC2545 emoticon packs (in custom_packs_ order)
     bool has_frequents_tab() const
     {
         return !frequents_glyphs_.empty();
@@ -125,13 +130,11 @@ private:
     }
 
     tesseract::Client* client_ = nullptr;
-    ImageProvider provider_;
 
     Page page_ = Page::Category;
     tesseract::emoji::Category category_ =
         tesseract::emoji::Category::SmileysPeople;
     int custom_pack_idx_ = -1;
-    std::string query_;
 
     std::vector<std::string> frequents_glyphs_;
     std::vector<std::string> current_glyphs_;        // unicode page items
@@ -140,17 +143,6 @@ private:
         current_emoticons_; // image-cell items
     std::vector<std::string>
         current_shortcodes_; // parallel to current_glyphs_ / current_emoticons_
-    int hovered_grid_cell_ = -1;
-
-    tk::GridView* grid_ = nullptr; // borrowed
-    std::unique_ptr<GridAdapter> grid_adapter_;
-
-    tk::Rect search_rect_{};
-    tk::Rect grid_rect_{};
-    tk::Rect tab_rect_{};
-    int pressed_tab_idx_ = -1;
-    int hovered_tab_idx_ = -1;
-    float tab_scroll_offset_ = 0.0f;
 };
 
 } // namespace tesseract::views
