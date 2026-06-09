@@ -36,8 +36,8 @@ ui/
                   ImageViewerOverlay, VideoViewerOverlay, ShortcodePopup;
                   SettingsView, JoinRoomView, UserInfo;
                   RecoveryBanner, VerificationBanner;
-                  markdown (Markdown→HTML), html_spans (HTML→TextSpan),
-                  map_tiles, media_utils
+                  html_spans (HTML→TextSpan), map_tiles, media_utils
+                  (Markdown→HTML lives in client/src/markdown.cpp, Rust-backed)
   windows/   ← Win32 executable (thin shell)
   macos/     ← AppKit executable (.app bundle, thin shell)
   linux-qt/  ← Qt6 Widgets executable (thin shell)
