@@ -12,6 +12,7 @@
 #include "app/AccountManager.h"
 #include "app/PresenceTracker.h"
 #include "app/SettingsController.h"
+#include "app/ThreadPanelController.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
 #include "tk/theme.h"
@@ -192,39 +193,26 @@ public:
     void cancel_debounce_(DebounceSlot slot);
 
     // ── Thread panel state machine ────────────────────────────────────────────
-    enum class ThreadPanel
-    {
-        Closed,
-        List,
-        Open,
-    };
-
-    enum class ThreadTrigger
-    {
-        ToggleList,      // RoomHeader threads button
-        OpenFromList,    // row click in ThreadListView
-        OpenFromMain,    // preview chip click in MessageListView
-        CloseThread,     // back/close in ThreadView
-        RoomSwitch,      // current_room_id_ about to change
-    };
-
-    struct ThreadTransition
-    {
-        ThreadPanel new_state = ThreadPanel::Closed;
-        ThreadPanel new_prev  = ThreadPanel::Closed;
-        std::string new_root;
-        // Effects (executed in order by the applier):
-        std::vector<std::string> threads_to_unsubscribe;
-        std::vector<std::string> threads_to_subscribe;
-        bool subscribe_room_threads_   = false;
-        bool unsubscribe_room_threads_ = false;
-    };
+    // The panel-mode / trigger enums and the ThreadTransition value type, plus
+    // the pure transition computation and backfill pagination guards, live in
+    // ThreadPanelController. These aliases keep the historical spellings
+    // (ShellBase::ThreadPanel etc.) working for the native shells — which read
+    // thread_panel_ / current_thread_root_ directly and pull ThreadPanel in via
+    // `using` on macOS — and for the thread-transition / thread-panel tests.
+    using ThreadPanel     = ThreadPanelController::ThreadPanel;
+    using ThreadTrigger   = ThreadPanelController::ThreadTrigger;
+    using ThreadTransition = ThreadPanelController::ThreadTransition;
 
     // Pure: returns the next state + the subscription side-effects to apply.
-    // No Client calls, no UI calls — safe to call from tests.
+    // No Client calls, no UI calls — safe to call from tests. Thin forwarder to
+    // ThreadPanelController::compute_transition.
     static ThreadTransition compute_thread_transition_(
         ThreadPanel cur, ThreadPanel prev, const std::string& current_root,
-        ThreadTrigger trigger, const std::string& trigger_root);
+        ThreadTrigger trigger, const std::string& trigger_root)
+    {
+        return ThreadPanelController::compute_transition(cur, prev, current_root,
+                                                         trigger, trigger_root);
+    }
 
     // ── Thread panel public entry points (wired from RoomView callbacks) ──
     // Each computes a transition via compute_thread_transition_() and
@@ -366,13 +354,16 @@ protected:
     std::vector<std::string> space_stack_;
 
     // ── Thread panel state ────────────────────────────────────────────────────
+    // STAY ON ShellBase: the four native shells read thread_panel_ and
+    // current_thread_root_ directly (macOS via `using`). These are written by
+    // apply_thread_transition_ from the controller's computed transition.
     ThreadPanel thread_panel_      = ThreadPanel::Closed;
     ThreadPanel thread_panel_prev_ = ThreadPanel::Closed;
     std::string current_thread_root_;
-    // Set to true once paginate_room_threads() signals reached_start so we
-    // stop firing redundant paginations. Cleared on every room switch.
-    bool threads_reached_start_ = false;
-    bool threads_paginating_    = false; // in-flight guard for paginate_threads_()
+    // Owns the pure transition computation + the thread-list backfill guards
+    // (reached_start / paginating) and the paginate() driver. ShellBase keeps
+    // thread_panel_ / current_thread_root_ above and applies side-effects.
+    ThreadPanelController thread_panel_ctl_;
     bool compose_typing_active_ = false;
     bool relayout_scheduled_ = false; // a coalesced relayout flush is pending
 
@@ -1326,8 +1317,8 @@ protected:
     virtual void apply_threads_list_(std::vector<ThreadInfo> threads);
 
     // Call paginate_room_threads() on the background thread for the active room.
-    // Guards on threads_reached_start_ to stop once the server reports no more
-    // pages. Wired as ThreadListView::on_near_bottom in apply_thread_transition_.
+    // Guards (in thread_panel_ctl_) stop once the server reports no more pages.
+    // Wired as ThreadListView::on_near_bottom in apply_thread_transition_.
     void paginate_threads_();
 
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────

@@ -3630,7 +3630,8 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
     // on_near_bottom only fires on user scroll, so it can't bootstrap the
     // initial fill when the first SDK page fits within the viewport. Drive
     // pagination here instead: each completed page triggers this callback,
-    // which requests the next one — stopping when threads_reached_start_.
+    // which requests the next one — stopping when the controller reports
+    // reached_start.
     if (thread_panel_ == ThreadPanel::List)
         paginate_threads_();
 }
@@ -4453,93 +4454,9 @@ void ShellBase::restart_sdk_()
         client_->start_sync(event_handler_);
 }
 
-// static
-ShellBase::ThreadTransition ShellBase::compute_thread_transition_(
-    ThreadPanel cur, ThreadPanel prev, const std::string& current_root,
-    ThreadTrigger trigger, const std::string& trigger_root)
-{
-    ThreadTransition t;
-    t.new_state = cur;
-    t.new_prev  = prev;
-    t.new_root  = current_root;
-
-    switch (trigger)
-    {
-    case ThreadTrigger::ToggleList:
-        if (cur == ThreadPanel::Closed)
-        {
-            t.new_state = ThreadPanel::List;
-            t.new_prev  = ThreadPanel::Closed;
-            t.new_root.clear();
-            t.subscribe_room_threads_ = true;
-        }
-        else if (cur == ThreadPanel::List)
-        {
-            t.new_state = ThreadPanel::Closed;
-            t.new_prev  = ThreadPanel::Closed;
-            t.new_root.clear();
-            t.unsubscribe_room_threads_ = true;
-        }
-        else // Open
-        {
-            // Toggle while a thread is open: close everything (matches
-            // the spec — main button is a Closed<->List toggle and any
-            // thread sub gets released).
-            t.new_state = ThreadPanel::Closed;
-            t.new_prev  = ThreadPanel::Closed;
-            t.threads_to_unsubscribe.push_back(current_root);
-            t.new_root.clear();
-            if (prev == ThreadPanel::List)
-                t.unsubscribe_room_threads_ = true;
-        }
-        break;
-
-    case ThreadTrigger::OpenFromList:
-        if (cur == ThreadPanel::Open)
-            t.threads_to_unsubscribe.push_back(current_root);
-        t.new_state = ThreadPanel::Open;
-        t.new_prev  = ThreadPanel::List;
-        t.new_root  = trigger_root;
-        t.threads_to_subscribe.push_back(trigger_root);
-        break;
-
-    case ThreadTrigger::OpenFromMain:
-        if (cur == ThreadPanel::Open)
-            t.threads_to_unsubscribe.push_back(current_root);
-        t.new_state = ThreadPanel::Open;
-        t.new_prev  = (cur == ThreadPanel::List) ? ThreadPanel::List
-                                                 : ThreadPanel::Closed;
-        t.new_root  = trigger_root;
-        t.threads_to_subscribe.push_back(trigger_root);
-        break;
-
-    case ThreadTrigger::CloseThread:
-        if (cur != ThreadPanel::Open)
-            break; // no-op
-        t.threads_to_unsubscribe.push_back(current_root);
-        t.new_state = prev;            // back to whatever opened us
-        t.new_prev  = ThreadPanel::Closed;
-        t.new_root.clear();
-        if (prev == ThreadPanel::Closed)
-            t.unsubscribe_room_threads_ = false; // never subscribed
-        break;
-
-    case ThreadTrigger::RoomSwitch:
-        if (cur == ThreadPanel::Open)
-            t.threads_to_unsubscribe.push_back(current_root);
-        // Always release the outgoing room's thread-list subscription. The
-        // shell now keeps a background subscription on the active room (for
-        // the threads-button visibility check) regardless of panel state, so
-        // every room switch must clean it up — even when the panel was closed.
-        // unsubscribe_room_threads is a no-op when no handle exists.
-        t.unsubscribe_room_threads_ = true;
-        t.new_state = ThreadPanel::Closed;
-        t.new_prev  = ThreadPanel::Closed;
-        t.new_root.clear();
-        break;
-    }
-    return t;
-}
+// compute_thread_transition_ is now a thin inline forwarder to
+// ThreadPanelController::compute_transition (see ShellBase.h); the pure switch
+// lives in ThreadPanelController.cpp.
 
 // ── Thread panel applier + public entry points ────────────────────────────
 
@@ -4600,12 +4517,12 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
         if (auto* tlv = room_view_->thread_list_view())
             tlv->scroll_to_bottom();
         // Re-arm backfill on every open: if the service window shrank (e.g.
-        // after a reconnect or room re-entry), threads_reached_start_ would
+        // after a reconnect or room re-entry), reached_start would
         // incorrectly block re-pagination.  The extra paginate_room_threads
         // call is a cheap no-op when the service already has all history.
         // Newest threads sit at the bottom (scroll_to_bottom above pins the
         // view there via stick_to_bottom_); backfill grows the list upward.
-        threads_reached_start_ = false;
+        thread_panel_ctl_.rearm_backfill();
         paginate_threads_();
     }
 }
@@ -4797,28 +4714,29 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
 
 void ShellBase::paginate_threads_()
 {
-    if (!client_ || current_room_id_.empty() || threads_reached_start_ ||
-        threads_paginating_)
-        return;
-    threads_paginating_ = true;
     auto* c       = client_;
     auto  sess    = active_account_;
     auto  room_id = current_room_id_;
-    run_async_mut_([this, c, sess, room_id]
+    // The injected runner performs the background paginate + marshals the
+    // reached_start result back through the controller, which updates its
+    // guards and decides whether to keep backfilling (panel still in List).
+    thread_panel_ctl_.set_run_paginate([this, c, sess, room_id]
     {
-        if (!sess || !sess->client) return;
-        auto r = sess->client->paginate_room_threads(room_id);
-        post_to_ui_alive_([this, c, room = room_id, reached = r.reached_start]
+        run_async_mut_([this, c, sess, room_id]
         {
-            if (c != client_ || room != current_room_id_)
-                return;
-            threads_paginating_ = false;
-            if (reached)
-                threads_reached_start_ = true;
-            else if (thread_panel_ == ThreadPanel::List)
-                paginate_threads_();
+            if (!sess || !sess->client) return;
+            auto r = sess->client->paginate_room_threads(room_id);
+            post_to_ui_alive_([this, c, room = room_id, reached = r.reached_start]
+            {
+                if (c != client_ || room != current_room_id_)
+                    return;
+                if (thread_panel_ctl_.on_paginate_result(
+                        reached, thread_panel_ == ThreadPanel::List))
+                    paginate_threads_();
+            });
         });
     });
+    thread_panel_ctl_.begin_paginate(client_ && !current_room_id_.empty());
 }
 
 void ShellBase::navigate_history_back()
@@ -4890,8 +4808,7 @@ void ShellBase::after_active_room_changed_()
     }
 
     // Each new room starts with an unknown thread history — allow pagination.
-    threads_reached_start_ = false;
-    threads_paginating_    = false;
+    thread_panel_ctl_.reset_backfill();
     // Keep an always-on background subscription on the active room so the
     // threads button reflects whether the room contains threads — long before
     // the user opens the panel. subscribe_room_threads is idempotent (aborts
