@@ -10,6 +10,7 @@
 // per-row Widgets — composing draws inline keeps the per-row cost to a
 // single virtual call plus whatever the adapter chooses to paint.
 
+#include "scrollable_base.h"
 #include "widget.h"
 
 #include <cstddef>
@@ -92,7 +93,7 @@ public:
     }
 };
 
-class GridView : public Widget
+class GridView : public ScrollableBase
 {
 public:
     GridView() = default;
@@ -142,15 +143,7 @@ public:
 private:
     int cols(float available_w) const;
     int rows(int n_cells, int cols_) const;
-    void clamp_scroll();
-    float content_height() const;
-
-    struct ThumbGeom
-    {
-        float track_top, track_h, thumb_h, thumb_top;
-    };
-    ThumbGeom thumb_geom() const;
-    bool thumb_hit(Point) const;
+    float content_height() const override;
 
     GridAdapter* adapter_ = nullptr;
 
@@ -163,14 +156,9 @@ private:
     int selected_index_ = -1;
     int hovered_index_ = -1;
     int pressed_index_ = -1;
-
-    bool scrollbar_drag_ = false;
-    float drag_anchor_y_ = 0;
-
-    float scroll_y_ = 0;
 };
 
-class ListView : public Widget
+class ListView : public ScrollableBase
 {
 public:
     ListView() = default;
@@ -270,10 +258,6 @@ public:
         pending_scroll_idx_ = idx;
         pending_scroll_align_top_ = align_top;
     }
-    float scroll_y() const
-    {
-        return scroll_y_;
-    }
 
     // Fractional scroll position [0,1] (0=top, 1=bottom).
     // Used by the tab system to save/restore position across tab switches.
@@ -282,7 +266,7 @@ public:
 
     // Total content height (sum of all row heights). 0 if no adapter or
     // measure hasn't run yet.
-    float content_height() const;
+    float content_height() const override;
 
     // Index of the row at this widget-local point, or -1 if outside any
     // row (e.g. below the last one when the list is shorter than the
@@ -351,10 +335,9 @@ protected:
         hovered_index_ = -1;
     }
 
-    // Returns true when `local` (widget-local coords) is over the scrollbar
-    // thumb. Subclasses that override on_pointer_down should test this first
-    // so the scrollbar wins over any message-content hit test underneath it.
-    bool thumb_hit(Point local) const;
+    // thumb_hit() is inherited from ScrollableBase (protected). Subclasses that
+    // override on_pointer_down test it first so the scrollbar wins over any
+    // message-content hit test underneath it.
 
 private:
     void rebuild_heights(LayoutCtx&, float width);
@@ -368,7 +351,6 @@ private:
     void consume_scroll_anchor_();
     // Apply a pending scroll_to_index_deferred() request once heights are valid.
     void consume_pending_scroll_();
-    void clamp_scroll();
     void update_hover(Point local);
     void capture_anchor_();
     // Locate the anchored row by its stable key in the rebuilt layout.
@@ -381,11 +363,8 @@ private:
                      const std::function<void()>& callback);
     std::size_t first_visible_row_() const;
 
-    struct ThumbGeom
-    {
-        float track_top, track_h, thumb_h, thumb_top;
-    };
-    ThumbGeom thumb_geom() const;
+    // scroll_y_, the scrollbar drag state, clamp_scroll(), thumb_geom(), and
+    // thumb_hit() are inherited from ScrollableBase.
 
     ListAdapter* adapter_ = nullptr;
 
@@ -393,14 +372,6 @@ private:
     int hovered_index_ = -1;
     int pressed_index_ = -1;
 
-    // Scrollbar drag state. When `scrollbar_drag_` is true, the
-    // pointer-down hit the thumb and `drag_anchor_y_` records the local
-    // y-offset within the thumb that should stay under the cursor for
-    // the duration of the drag.
-    bool scrollbar_drag_ = false;
-    float drag_anchor_y_ = 0;
-
-    float scroll_y_ = 0;
     float measured_width_ = 0;
     bool heights_dirty_ = true; // full rebuild pending (subsumes dirty range)
     bool stick_to_bottom_ = false; // re-snap to bottom on heights rebuild

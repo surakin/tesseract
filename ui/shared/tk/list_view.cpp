@@ -9,10 +9,6 @@ namespace tk
 namespace
 {
 
-constexpr float kScrollbarWidth = 6.0f;
-constexpr float kScrollbarRadius = 3.0f;
-constexpr float kScrollbarMinLen = 24.0f;
-constexpr float kScrollbarInset = 2.0f;
 constexpr int kInvalidIndex = -1;
 
 } // namespace
@@ -552,43 +548,6 @@ void ListView::rebuild_heights(LayoutCtx& ctx, float width)
     row_offsets_[n] = cursor;
 }
 
-ListView::ThumbGeom ListView::thumb_geom() const
-{
-    ThumbGeom g{0, 0, 0, 0};
-    float total = content_height();
-    if (total <= bounds_.h || bounds_.h <= 0)
-    {
-        return g;
-    }
-    g.track_top = bounds_.y + kScrollbarInset;
-    g.track_h = bounds_.h - kScrollbarInset * 2;
-    g.thumb_h = std::max(kScrollbarMinLen, g.track_h * (bounds_.h / total));
-    g.thumb_top =
-        g.track_top + (g.track_h - g.thumb_h) *
-                          (scroll_y_ / std::max(1.0f, total - bounds_.h));
-    return g;
-}
-
-bool ListView::thumb_hit(Point local) const
-{
-    // local is widget-local — convert to world to compare with the
-    // thumb_geom (which is in world coords because bounds_ is world).
-    float world_x = local.x + bounds_.x;
-    float world_y = local.y + bounds_.y;
-    if (content_height() <= bounds_.h)
-    {
-        return false;
-    }
-    float right = bounds_.x + bounds_.w - kScrollbarInset;
-    float left = right - kScrollbarWidth;
-    if (world_x < left || world_x > right)
-    {
-        return false;
-    }
-    ThumbGeom g = thumb_geom();
-    return world_y >= g.thumb_top && world_y < g.thumb_top + g.thumb_h;
-}
-
 void ListView::ensure_measured(PaintCtx& ctx)
 {
     if (!adapter_)
@@ -681,20 +640,7 @@ void ListView::paint(PaintCtx& ctx)
     ctx.canvas.pop_clip();
 
     // Scrollbar overlay — only if content overflows the viewport.
-    float total = content_height();
-    if (total > bounds_.h && bounds_.h > 0)
-    {
-        float track_h = bounds_.h - kScrollbarInset * 2;
-        float thumb_h =
-            std::max(kScrollbarMinLen, track_h * (bounds_.h / total));
-        float thumb_y = bounds_.y + kScrollbarInset +
-                        (track_h - thumb_h) *
-                            (scroll_y_ / std::max(1.0f, total - bounds_.h));
-        Rect thumb{bounds_.x + bounds_.w - kScrollbarWidth - kScrollbarInset,
-                   thumb_y, kScrollbarWidth, thumb_h};
-        Color c = ctx.theme.palette.text_muted.with_alpha(128);
-        ctx.canvas.fill_rounded_rect(thumb, kScrollbarRadius, c);
-    }
+    paint_scrollbar(ctx);
 }
 
 bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy)
@@ -721,12 +667,9 @@ bool ListView::on_pointer_down(Point local)
 {
     // Scrollbar thumb first — it sits on top of the rows visually, so
     // it should win the press regardless of which row is underneath.
-    if (thumb_hit(local))
+    if (scrollbar_on_pointer_down(local))
     {
-        scrollbar_drag_ = true;
         stick_to_bottom_ = false;
-        ThumbGeom g = thumb_geom();
-        drag_anchor_y_ = (local.y + bounds_.y) - g.thumb_top;
         return true;
     }
     if (!adapter_)
@@ -748,30 +691,11 @@ bool ListView::on_pointer_down(Point local)
 
 void ListView::on_pointer_drag(Point local)
 {
-    if (!scrollbar_drag_)
-    {
-        return;
-    }
-    ThumbGeom g = thumb_geom();
-    float total = content_height();
-    float travel = g.track_h - g.thumb_h;
-    if (travel <= 0 || total <= bounds_.h)
-    {
-        return;
-    }
     float prev = scroll_y_;
-    float wanted_thumb_top = (local.y + bounds_.y) - drag_anchor_y_;
-    float t = (wanted_thumb_top - g.track_top) / travel;
-    if (t < 0)
+    if (!scrollbar_on_pointer_drag(local))
     {
-        t = 0;
+        return;
     }
-    if (t > 1)
-    {
-        t = 1;
-    }
-    scroll_y_ = t * (total - bounds_.h);
-    clamp_scroll();
     maybe_fire_near_top();
     maybe_fire_near_bottom();
     if (scroll_y_ != prev && on_scroll)
@@ -782,9 +706,8 @@ void ListView::on_pointer_drag(Point local)
 
 void ListView::on_pointer_up(Point local, bool inside_self)
 {
-    if (scrollbar_drag_)
+    if (scrollbar_on_pointer_up())
     {
-        scrollbar_drag_ = false;
         maybe_fire_near_top();    // check now that the drag guard is lifted
         maybe_fire_near_bottom(); // check now that the drag guard is lifted
         return;                   // drag releases never select a row
@@ -799,19 +722,6 @@ void ListView::on_pointer_up(Point local, bool inside_self)
         }
     }
     pressed_index_ = kInvalidIndex;
-}
-
-void ListView::clamp_scroll()
-{
-    float max_scroll = std::max(0.0f, content_height() - bounds_.h);
-    if (scroll_y_ < 0)
-    {
-        scroll_y_ = 0;
-    }
-    if (scroll_y_ > max_scroll)
-    {
-        scroll_y_ = max_scroll;
-    }
 }
 
 float ListView::scroll_fraction() const
@@ -986,59 +896,6 @@ float GridView::content_height() const
            (r > 0 ? r * cell_h_ + (r - 1) * v_spacing_ : 0);
 }
 
-void GridView::clamp_scroll()
-{
-    if (!adapter_)
-    {
-        scroll_y_ = 0;
-        return;
-    }
-    float max_scroll = std::max(0.0f, content_height() - bounds_.h);
-    if (scroll_y_ < 0)
-    {
-        scroll_y_ = 0;
-    }
-    if (scroll_y_ > max_scroll)
-    {
-        scroll_y_ = max_scroll;
-    }
-}
-
-GridView::ThumbGeom GridView::thumb_geom() const
-{
-    ThumbGeom g{0, 0, 0, 0};
-    float total = content_height();
-    if (total <= bounds_.h || bounds_.h <= 0)
-    {
-        return g;
-    }
-    g.track_top = bounds_.y + kScrollbarInset;
-    g.track_h = bounds_.h - kScrollbarInset * 2;
-    g.thumb_h = std::max(kScrollbarMinLen, g.track_h * (bounds_.h / total));
-    g.thumb_top =
-        g.track_top + (g.track_h - g.thumb_h) *
-                          (scroll_y_ / std::max(1.0f, total - bounds_.h));
-    return g;
-}
-
-bool GridView::thumb_hit(Point local) const
-{
-    float world_x = local.x + bounds_.x;
-    float world_y = local.y + bounds_.y;
-    if (content_height() <= bounds_.h)
-    {
-        return false;
-    }
-    float right = bounds_.x + bounds_.w - kScrollbarInset;
-    float left = right - kScrollbarWidth;
-    if (world_x < left || world_x > right)
-    {
-        return false;
-    }
-    ThumbGeom g = thumb_geom();
-    return world_y >= g.thumb_top && world_y < g.thumb_top + g.thumb_h;
-}
-
 void GridView::paint(PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
@@ -1092,21 +949,7 @@ void GridView::paint(PaintCtx& ctx)
     ctx.canvas.pop_clip();
 
     // Scrollbar overlay — only when content overflows the viewport.
-    float content_h = content_height();
-    if (content_h > bounds_.h && bounds_.h > 0)
-    {
-        float track_h = bounds_.h - kScrollbarInset * 2;
-        float thumb_h =
-            std::max(kScrollbarMinLen, track_h * (bounds_.h / content_h));
-        float thumb_y = bounds_.y + kScrollbarInset +
-                        (track_h - thumb_h) *
-                            (scroll_y_ / std::max(1.0f, content_h - bounds_.h));
-        Rect thumb{bounds_.x + bounds_.w - kScrollbarWidth - kScrollbarInset,
-                   thumb_y, kScrollbarWidth, thumb_h};
-        ctx.canvas.fill_rounded_rect(
-            thumb, kScrollbarRadius,
-            ctx.theme.palette.text_muted.with_alpha(128));
-    }
+    paint_scrollbar(ctx);
 }
 
 bool GridView::on_wheel(Point /*local*/, float /*dx*/, float dy)
@@ -1123,11 +966,8 @@ bool GridView::on_wheel(Point /*local*/, float /*dx*/, float dy)
 
 bool GridView::on_pointer_down(Point local)
 {
-    if (thumb_hit(local))
+    if (scrollbar_on_pointer_down(local))
     {
-        scrollbar_drag_ = true;
-        ThumbGeom g = thumb_geom();
-        drag_anchor_y_ = (local.y + bounds_.y) - g.thumb_top;
         return true;
     }
     if (!adapter_)
@@ -1149,36 +989,13 @@ bool GridView::on_pointer_down(Point local)
 
 void GridView::on_pointer_drag(Point local)
 {
-    if (!scrollbar_drag_)
-    {
-        return;
-    }
-    ThumbGeom g = thumb_geom();
-    float ch = content_height();
-    float travel = g.track_h - g.thumb_h;
-    if (travel <= 0 || ch <= bounds_.h)
-    {
-        return;
-    }
-    float wanted = (local.y + bounds_.y) - drag_anchor_y_;
-    float t = (wanted - g.track_top) / travel;
-    if (t < 0)
-    {
-        t = 0;
-    }
-    if (t > 1)
-    {
-        t = 1;
-    }
-    scroll_y_ = t * (ch - bounds_.h);
-    clamp_scroll();
+    scrollbar_on_pointer_drag(local);
 }
 
 void GridView::on_pointer_up(Point local, bool inside_self)
 {
-    if (scrollbar_drag_)
+    if (scrollbar_on_pointer_up())
     {
-        scrollbar_drag_ = false;
         return;
     }
     int idx = inside_self ? index_at(local) : kInvalidIndex;

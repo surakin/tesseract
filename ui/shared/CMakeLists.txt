@@ -45,6 +45,8 @@ set(_tk_sources
     tk/controls.cpp
     tk/image_view.h
     tk/image_view.cpp
+    tk/scrollable_base.h
+    tk/scrollable_base.cpp
     tk/list_view.h
     tk/list_view.cpp
     tk/tab_bar.h
