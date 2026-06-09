@@ -10,6 +10,7 @@ add_library(tesseract_client STATIC
     src/mentions.cpp
     src/event_handler_bridge.cpp
     src/session_store.cpp
+    src/session_persist_queue.cpp
     src/paths.cpp
     src/emoji.cpp
     src/prefs.cpp

@@ -1,6 +1,6 @@
 #include "tesseract/event_handler_bridge.h"
 #include "ffi_convert.h"
-#include "tesseract/session_store.h"
+#include "session_persist_queue.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -283,16 +283,23 @@ void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const
 
 void persist_session(rust::Str user_id, rust::Str session_json)
 {
-    // Routes matrix-sdk's synchronous save_session_callback to the same
-    // authoritative store load_account() reads on the next launch. Best-effort
-    // and idempotent with the async on_session_refreshed path: whichever runs
-    // last simply rewrites the same blob. guard() keeps any exception from
-    // unwinding across the FFI boundary.
+    // matrix-sdk invokes its save_session_callback synchronously on a runtime
+    // worker/sync thread. The actual write (SessionStore::save_account) does a
+    // credential-store write — which can be slow or even *prompt* — plus an
+    // fsync'd file write, so running it inline can stall Matrix sync. Instead we
+    // copy the (Rust-owned, call-scoped) buffers into owning std::strings and
+    // hand them to a dedicated single-thread writer, returning promptly. The
+    // writer coalesces per user_id (last-write-wins), so the newest token wins
+    // and rapid refreshes can't grow the queue without bound.
+    //
+    // guard() keeps any exception from unwinding across the FFI boundary; the
+    // enqueue itself shouldn't throw, but the singleton's first-use
+    // construction (which spawns the thread) could, and that must not escape.
     guard("persist_session",
           [&]
           {
-              tesseract::SessionStore::save_account(std::string(user_id),
-                                                    std::string(session_json));
+              tesseract::session_persist_queue().enqueue(
+                  std::string(user_id), std::string(session_json));
           });
 }
 
