@@ -210,6 +210,10 @@ private:
     static void on_jump_dialog_destroy_(GtkWidget*, gpointer user_data);
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
+    // Bind the UI to the now-active account `uid` and finish startup (settings
+    // controller, status, main surface, tray). Shared by the cold restore path
+    // and the secondary-window bind path in do_login().
+    void finish_login_ui_(const std::string& uid);
     void do_logout();
     void on_login_succeeded();
     void wire_key_dialog_callbacks_();

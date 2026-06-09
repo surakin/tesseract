@@ -175,6 +175,10 @@ private:
     void on_destroy();
     void on_size(int w, int h);
     void start_login();
+    // Bind the UI to the now-active account `uid` and finish startup (settings
+    // controller + fields). Shared by the cold restore path and the
+    // secondary-window bind path in start_login().
+    void finish_login_ui_(const std::string& uid);
     void on_login_succeeded();
     void show_login_view();
     void show_main_content();

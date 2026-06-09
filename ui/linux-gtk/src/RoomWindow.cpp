@@ -46,8 +46,9 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
                    {
                        auto* self = static_cast<RoomWindow*>(data);
-                       const int w = gtk_window_get_width(self->window_);
-                       const int h = gtk_window_get_height(self->window_);
+                       int w = 0;
+                       int h = 0;
+                       gtk_window_get_default_size(self->window_, &w, &h);
                        self->save_popout_geometry_(0, 0, w, h);
                    }),
         this);
@@ -56,8 +57,9 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
                    {
                        auto* self = static_cast<RoomWindow*>(data);
-                       const int w = gtk_window_get_width(self->window_);
-                       const int h = gtk_window_get_height(self->window_);
+                       int w = 0;
+                       int h = 0;
+                       gtk_window_get_default_size(self->window_, &w, &h);
                        self->save_popout_geometry_(0, 0, w, h);
                    }),
         this);

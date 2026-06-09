@@ -3370,7 +3370,12 @@ void MainWindow::on_create(HWND hwnd)
         picker_track_pos_ = {wrc.left, wrc.top};
     }
 
-    start_login();
+    // Defer login to the message loop. on_create() runs synchronously inside
+    // CreateWindowExW (i.e. inside the constructor), before spawn_main_window_()
+    // can call set_initial_account() on a spawned window. Posting start_login()
+    // lets that pin land first, so a secondary window takes the bind path in
+    // start_login() instead of re-restoring every account from disk.
+    post_to_ui_([this] { start_login(); });
 }
 
 void MainWindow::on_destroy()
@@ -3456,6 +3461,15 @@ void MainWindow::on_size(int w, int h)
 
 void MainWindow::start_login()
 {
+    // Secondary (spawned) window: the shared AccountManager is already populated
+    // and syncing, and set_initial_account() pinned the account to display. Bind
+    // the UI to it without touching disk, restoring, or re-adding accounts.
+    if (is_secondary_window_startup_())
+    {
+        finish_login_ui_(active_account_->user_id);
+        return;
+    }
+
     tesseract::SessionStore::migrate_legacy_layout();
     auto index = tesseract::SessionStore::load_index();
 
@@ -3556,7 +3570,12 @@ void MainWindow::start_login()
     {
         active_uid = account_manager_.accounts()[0]->user_id;
     }
-    switch_active_account(active_uid);
+    finish_login_ui_(active_uid);
+}
+
+void MainWindow::finish_login_ui_(const std::string& uid)
+{
+    switch_active_account(uid);
 
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,

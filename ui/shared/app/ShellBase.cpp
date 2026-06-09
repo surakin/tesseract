@@ -4631,6 +4631,11 @@ void ShellBase::set_initial_account(std::shared_ptr<AccountSession> account)
     active_account_ = std::move(account);
 }
 
+bool ShellBase::is_secondary_window_startup_() const
+{
+    return !account_manager_.accounts().empty() && active_account_ && !client_;
+}
+
 void ShellBase::on_account_picker_select_(const std::string& uid)
 {
     if (auto* win = account_manager_.dedicated_window(uid))
