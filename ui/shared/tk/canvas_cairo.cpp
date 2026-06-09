@@ -30,103 +30,60 @@ PangoFontDescription* desc_for(FontRole role)
     PangoFontDescription* d = pango_font_description_new();
     pango_font_description_set_family(d, "Sans");
     int pt;
-    PangoWeight w;
     switch (role)
     {
     case FontRole::Small:
         pt = s.font_small;
-        w = PANGO_WEIGHT_NORMAL;
         break;
     case FontRole::Body:
         pt = s.font_body;
-        w = PANGO_WEIGHT_NORMAL;
         break;
     case FontRole::SenderName:
         pt = s.font_sender_name;
-        w = PANGO_WEIGHT_SEMIBOLD;
         break;
     case FontRole::Timestamp:
         pt = s.font_timestamp;
-        w = PANGO_WEIGHT_NORMAL;
         break;
     case FontRole::SidebarName:
         pt = s.font_sidebar_name;
-        w = PANGO_WEIGHT_SEMIBOLD;
         break;
     case FontRole::SidebarPreview:
         pt = s.font_sidebar_preview;
-        w = PANGO_WEIGHT_NORMAL;
         break;
     case FontRole::UnreadBadge:
         pt = s.font_unread_badge;
-        w = PANGO_WEIGHT_SEMIBOLD;
         break;
     case FontRole::Title:
         pt = s.font_title;
-        w = PANGO_WEIGHT_SEMIBOLD;
         break;
     case FontRole::UiSemibold:
         pt = s.font_ui_semibold;
-        w = PANGO_WEIGHT_SEMIBOLD;
         break;
     case FontRole::BigEmoji:
         pt = s.font_big_emoji;
-        w = PANGO_WEIGHT_NORMAL;
         break;
     case FontRole::EmojiPickerCell:
         pt = s.font_emoji_picker_cell;
-        w = PANGO_WEIGHT_NORMAL;
         break;
     default:
         pt = s.font_body;
-        w = PANGO_WEIGHT_NORMAL;
         break;
     }
     pango_font_description_set_size(d, pt * PANGO_SCALE);
-    pango_font_description_set_weight(d, w);
+    pango_font_description_set_weight(d, font_role_is_semibold(role)
+                                            ? PANGO_WEIGHT_SEMIBOLD
+                                            : PANGO_WEIGHT_NORMAL);
     return d;
 }
 
-std::string initials_of(std::string_view name)
+// The word-split policy is shared (tk::initials_of); apply Pango/GLib's
+// locale-aware uppercasing to the result before drawing.
+std::string initials_upper(std::string_view name)
 {
-    // UTF-8-aware: skip ahead by full codepoints using g_utf8_next_char.
-    std::string out;
-    bool at_word = true;
-    const char* p = name.data();
-    const char* end = p + name.size();
-    while (p < end)
-    {
-        gunichar cp = g_utf8_get_char_validated(p, end - p);
-        if (cp == (gunichar)-1 || cp == (gunichar)-2)
-        {
-            break;
-        }
-        const char* next = g_utf8_next_char(p);
-        if (g_unichar_isspace(cp))
-        {
-            at_word = true;
-            p = next;
-            continue;
-        }
-        if (at_word)
-        {
-            gunichar upper = g_unichar_toupper(cp);
-            char buf[8];
-            int n = g_unichar_to_utf8(upper, buf);
-            out.append(buf, n);
-            at_word = false;
-            if (g_utf8_strlen(out.c_str(), static_cast<gssize>(out.size())) >=
-                2)
-            {
-                break;
-            }
-        }
-        p = next;
-    }
-    if (out.empty())
-    {
-        out = "?";
-    }
+    std::string base = initials_of(name);
+    char* up = g_utf8_strup(base.c_str(), static_cast<gssize>(base.size()));
+    std::string out(up);
+    g_free(up);
     return out;
 }
 
@@ -468,14 +425,14 @@ public:
         // Build a one-shot Pango layout for the initials. Per-frame cost
         // is small (≤ a handful of avatars on screen) and saves us from
         // caching across resizes.
-        std::string s = initials_of(name);
+        std::string s = initials_upper(name);
         PangoLayout* lay = pango_cairo_create_layout(cr_);
         PangoFontDescription* d = pango_font_description_new();
         pango_font_description_set_weight(d, PANGO_WEIGHT_SEMIBOLD);
         // Pango font sizes use PANGO_SCALE units, with absolute set via
         // set_absolute_size taking device units * PANGO_SCALE.
-        pango_font_description_set_absolute_size(d,
-                                                 diameter * 0.42 * PANGO_SCALE);
+        pango_font_description_set_absolute_size(
+            d, diameter * kAvatarInitialsFontRatio * PANGO_SCALE);
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
         pango_layout_set_text(lay, s.c_str(), static_cast<int>(s.size()));

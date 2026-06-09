@@ -53,84 +53,55 @@ QFont font_for(FontRole role)
 {
     const auto& s = tesseract::Settings::instance();
     QFont f;
+    int pt = s.font_body;
     switch (role)
     {
     case FontRole::Small:
-        f.setPointSize(s.font_small);
-        f.setWeight(QFont::Normal);
+        pt = s.font_small;
         break;
     case FontRole::Body:
-        f.setPointSize(s.font_body);
-        f.setWeight(QFont::Normal);
+        pt = s.font_body;
         break;
     case FontRole::SenderName:
-        f.setPointSize(s.font_sender_name);
-        f.setWeight(QFont::DemiBold);
+        pt = s.font_sender_name;
         break;
     case FontRole::Timestamp:
-        f.setPointSize(s.font_timestamp);
-        f.setWeight(QFont::Normal);
+        pt = s.font_timestamp;
         break;
     case FontRole::SidebarName:
-        f.setPointSize(s.font_sidebar_name);
-        f.setWeight(QFont::DemiBold);
+        pt = s.font_sidebar_name;
         break;
     case FontRole::SidebarPreview:
-        f.setPointSize(s.font_sidebar_preview);
-        f.setWeight(QFont::Normal);
+        pt = s.font_sidebar_preview;
         break;
     case FontRole::UnreadBadge:
-        f.setPointSize(s.font_unread_badge);
-        f.setWeight(QFont::DemiBold);
+        pt = s.font_unread_badge;
         break;
     case FontRole::Title:
-        f.setPointSize(s.font_title);
-        f.setWeight(QFont::DemiBold);
+        pt = s.font_title;
         break;
     case FontRole::UiSemibold:
-        f.setPointSize(s.font_ui_semibold);
-        f.setWeight(QFont::DemiBold);
+        pt = s.font_ui_semibold;
         break;
     case FontRole::BigEmoji:
-        f.setPointSize(s.font_big_emoji);
-        f.setWeight(QFont::Normal);
+        pt = s.font_big_emoji;
         break;
     case FontRole::EmojiPickerCell:
-        f.setPointSize(s.font_emoji_picker_cell);
-        f.setWeight(QFont::Normal);
+        pt = s.font_emoji_picker_cell;
         break;
     }
+    f.setPointSize(pt);
+    f.setWeight(font_role_is_semibold(role) ? QFont::DemiBold : QFont::Normal);
     return f;
 }
 
-// Truncate a UTF-8 string to the first 1–2 letters drawn from word starts.
-// Matches the initials-disc convention in the other backends.
-QString initials_of(QString name)
+// The word-split policy is shared (tk::initials_of); apply Qt's locale-aware
+// uppercasing to the result before drawing.
+QString initials_upper(std::string_view name)
 {
-    QString out;
-    bool at_word = true;
-    for (QChar ch : name)
-    {
-        if (ch.isSpace())
-        {
-            at_word = true;
-            continue;
-        }
-        if (at_word)
-        {
-            out.append(ch.toUpper());
-            at_word = false;
-            if (out.size() == 2)
-            {
-                break;
-            }
-        }
-    }
-    if (out.isEmpty())
-    {
-        out = QStringLiteral("?");
-    }
-    return out;
+    std::string base = initials_of(name);
+    return QString::fromUtf8(base.data(), static_cast<int>(base.size()))
+        .toUpper();
 }
 
 } // namespace
@@ -570,12 +541,11 @@ public:
                        diameter * 0.5);
 
         QFont f;
-        f.setPointSizeF(diameter * 0.36); // matches the D2D ratio after pt↔dip
+        f.setPointSizeF(diameter * kAvatarInitialsFontRatio);
         f.setWeight(QFont::DemiBold);
         p_.setFont(f);
         p_.setPen(to_qcolor(fg));
-        QString s = initials_of(
-            QString::fromUtf8(name.data(), static_cast<int>(name.size())));
+        QString s = initials_upper(name);
         QRectF box(centre.x - diameter * 0.5, centre.y - diameter * 0.5,
                    diameter, diameter);
         p_.drawText(box, Qt::AlignCenter, s);

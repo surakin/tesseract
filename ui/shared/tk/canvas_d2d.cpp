@@ -75,31 +75,14 @@ std::wstring utf8_to_wide(std::string_view s)
 // continuation byte (0b10xxxxxx). Two-letter initials are picked from
 // the first word + the first letter of the next word; otherwise one
 // letter from the first word.
-std::wstring initials_of(std::string_view name)
+// The word-split policy is shared (tk::initials_of); apply Win32's
+// locale-aware uppercasing (towupper) to the result before drawing.
+std::wstring initials_upper(std::string_view name)
 {
-    std::wstring wide = utf8_to_wide(name);
-    std::wstring out;
-    bool at_word = true;
-    for (wchar_t ch : wide)
+    std::wstring out = utf8_to_wide(initials_of(name));
+    for (wchar_t& ch : out)
     {
-        if (ch == L' ' || ch == L'\t' || ch == L'\n')
-        {
-            at_word = true;
-            continue;
-        }
-        if (at_word)
-        {
-            out.push_back(static_cast<wchar_t>(towupper(ch)));
-            at_word = false;
-            if (out.size() == 2)
-            {
-                break;
-            }
-        }
-    }
-    if (out.empty())
-    {
-        out = L"?";
+        ch = static_cast<wchar_t>(towupper(ch));
     }
     return out;
 }
@@ -126,47 +109,47 @@ struct FontDesc
 static FontDesc desc_for(FontRole r)
 {
     const auto& s = tesseract::Settings::instance();
+    // The "semibold for emphasis" rule is shared policy
+    // (tk::font_role_is_semibold); the family + point size stay native (note
+    // Title uses the Display face, the only per-role family difference).
+    const DWRITE_FONT_WEIGHT weight = font_role_is_semibold(r)
+                                          ? DWRITE_FONT_WEIGHT_SEMI_BOLD
+                                          : DWRITE_FONT_WEIGHT_REGULAR;
     switch (r)
     {
     case FontRole::Small:
         return {L"Segoe UI Variable Text", static_cast<float>(s.font_small),
-                DWRITE_FONT_WEIGHT_REGULAR};
+                weight};
     case FontRole::Body:
         return {L"Segoe UI Variable Text", static_cast<float>(s.font_body),
-                DWRITE_FONT_WEIGHT_REGULAR};
+                weight};
     case FontRole::SenderName:
         return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_sender_name),
-                DWRITE_FONT_WEIGHT_SEMI_BOLD};
+                static_cast<float>(s.font_sender_name), weight};
     case FontRole::Timestamp:
         return {L"Segoe UI Variable Text", static_cast<float>(s.font_timestamp),
-                DWRITE_FONT_WEIGHT_REGULAR};
+                weight};
     case FontRole::SidebarName:
         return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_sidebar_name),
-                DWRITE_FONT_WEIGHT_SEMI_BOLD};
+                static_cast<float>(s.font_sidebar_name), weight};
     case FontRole::SidebarPreview:
         return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_sidebar_preview),
-                DWRITE_FONT_WEIGHT_REGULAR};
+                static_cast<float>(s.font_sidebar_preview), weight};
     case FontRole::UnreadBadge:
         return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_unread_badge),
-                DWRITE_FONT_WEIGHT_SEMI_BOLD};
+                static_cast<float>(s.font_unread_badge), weight};
     case FontRole::Title:
         return {L"Segoe UI Variable Display", static_cast<float>(s.font_title),
-                DWRITE_FONT_WEIGHT_SEMI_BOLD};
+                weight};
     case FontRole::UiSemibold:
         return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_ui_semibold),
-                DWRITE_FONT_WEIGHT_SEMI_BOLD};
+                static_cast<float>(s.font_ui_semibold), weight};
     case FontRole::BigEmoji:
         return {L"Segoe UI Variable Text", static_cast<float>(s.font_big_emoji),
-                DWRITE_FONT_WEIGHT_REGULAR};
+                weight};
     case FontRole::EmojiPickerCell:
         return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_emoji_picker_cell),
-                DWRITE_FONT_WEIGHT_REGULAR};
+                static_cast<float>(s.font_emoji_picker_cell), weight};
     }
     return {L"Segoe UI", static_cast<float>(s.font_body),
             DWRITE_FONT_WEIGHT_REGULAR};
@@ -1306,10 +1289,10 @@ public:
             D2D1::Ellipse(to_d2d(centre), diameter * 0.5f, diameter * 0.5f);
         rt_->FillEllipse(e, brush(bg));
 
-        std::wstring initials = initials_of(name);
+        std::wstring initials = initials_upper(name);
         // Pick a font size proportional to the diameter — matches the
         // GDI+ initials-disc code that used to live in MainWindow.cpp.
-        float font_dip = diameter * 0.42f;
+        float font_dip = diameter * kAvatarInitialsFontRatio;
         ComPtr<IDWriteTextFormat> tf;
         HRESULT hr = backend_.dwrite->CreateTextFormat(
             L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,

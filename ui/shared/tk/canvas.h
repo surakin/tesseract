@@ -93,6 +93,37 @@ enum class FontRole
     EmojiPickerCell,    // 17 pt regular — emoji picker grid cells
 };
 
+// ── Shared FontRole + avatar policy (canvas_common.cpp) ────────────────────
+//
+// The FontRole→weight rule ("semibold for emphasis roles") and the avatar
+// initials word-split are identical app policy across every backend. They
+// live here so the four backends share one source of truth and keep only the
+// genuinely-native bits (font face construction, locale-aware uppercasing,
+// glyph drawing). See docs/UI-PARITY.md.
+
+// True for the roles drawn semibold (DemiBold / SEMI_BOLD / emphasized UI
+// font), false for the regular-weight roles. The per-role point size still
+// comes from tesseract::Settings in each backend (and the family may differ
+// per backend, e.g. D2D's Title uses the Display face) — only the weight
+// classification is shared here.
+bool font_role_is_semibold(FontRole role);
+
+// Avatar initials disc: the glyph point size as a fraction of the circle
+// diameter. Shared so the four backends can't drift (Qt previously used
+// 0.36 while the others used 0.42).
+inline constexpr float kAvatarInitialsFontRatio = 0.42f;
+
+// Avatar initials policy: split `name` on whitespace and return the first
+// grapheme of the first word followed by the first grapheme of the second
+// word (1–2 code points total), as UTF-8. Returns "?" when `name` has no
+// non-space content. UTF-8-correct: never splits a multibyte code point.
+//
+// This is the shared *word-split* policy only. The result is left in the
+// source case; each backend applies its own locale-aware uppercasing before
+// drawing (so e.g. Turkish casing stays correct). For the common ASCII case
+// the result is already what gets drawn.
+std::string initials_of(std::string_view name);
+
 enum class TextHAlign
 {
     Leading,

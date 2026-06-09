@@ -186,6 +186,46 @@ TEST_CASE("Canvas::draw_text writes glyphs into the surface", "[tk][canvas]")
     CHECK(found_glyph_pixel);
 }
 
+TEST_CASE("tk::initials_of applies the shared word-split policy",
+          "[tk][canvas][initials]")
+{
+    using tk::initials_of;
+
+    // Single word → first grapheme only.
+    CHECK(initials_of("Alice") == "A");
+    // Two words → first grapheme of each.
+    CHECK(initials_of("Ada Lovelace") == "AL");
+    // Three+ words → still only the first two.
+    CHECK(initials_of("Jean Luc Picard") == "JL");
+    // Empty / whitespace-only → sentinel.
+    CHECK(initials_of("") == "?");
+    CHECK(initials_of("   ") == "?");
+    // Leading @ / # are content, not separators: they ARE the initial.
+    CHECK(initials_of("@neo") == "@");
+    // Shared policy preserves source case (backends uppercase natively), so
+    // "#room name" → '#' (first word's first grapheme) + 'n' (second word's),
+    // unchanged case.
+    CHECK(initials_of("#room name") == "#n");
+
+    // The shared policy preserves source case (backends uppercase natively).
+    // Lowercase input therefore stays lowercase here.
+    CHECK(initials_of("bob smith") == "bs");
+
+    // UTF-8 multibyte: must not split mid-codepoint. "Éric Ñoño" → É + Ñ
+    // (each is 2 UTF-8 bytes); verify exact bytes survive intact.
+    {
+        const std::string r = initials_of("\xC3\x89ric \xC3\x91o\xC3\xB1o");
+        CHECK(r == "\xC3\x89\xC3\x91"); // "ÉÑ"
+    }
+    // A 4-byte code point (emoji) as a single-word name → that whole cluster.
+    {
+        const std::string r = initials_of("\xF0\x9F\x98\x80 face"); // 😀 face
+        CHECK(r == "\xF0\x9F\x98\x80\x66");                          // 😀 + 'f'
+    }
+    // NBSP (U+00A0, C2 A0) is treated as a separator.
+    CHECK(initials_of("Ada\xC2\xA0Lovelace") == "AL");
+}
+
 TEST_CASE("Canvas::draw_initials_circle fills bg and draws letter",
           "[tk][canvas]")
 {

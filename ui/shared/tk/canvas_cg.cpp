@@ -123,32 +123,35 @@ struct FontDesc
 FontDesc desc_for(FontRole role)
 {
     const auto& s = tesseract::Settings::instance();
+    // The "semibold for emphasis" rule is shared policy
+    // (tk::font_role_is_semibold); only the per-role point size is native.
+    const bool bold = font_role_is_semibold(role);
     switch (role)
     {
     case FontRole::Small:
-        return {static_cast<CGFloat>(s.font_small), false};
+        return {static_cast<CGFloat>(s.font_small), bold};
     case FontRole::Body:
-        return {static_cast<CGFloat>(s.font_body), false};
+        return {static_cast<CGFloat>(s.font_body), bold};
     case FontRole::SenderName:
-        return {static_cast<CGFloat>(s.font_sender_name), true};
+        return {static_cast<CGFloat>(s.font_sender_name), bold};
     case FontRole::Timestamp:
-        return {static_cast<CGFloat>(s.font_timestamp), false};
+        return {static_cast<CGFloat>(s.font_timestamp), bold};
     case FontRole::SidebarName:
-        return {static_cast<CGFloat>(s.font_sidebar_name), true};
+        return {static_cast<CGFloat>(s.font_sidebar_name), bold};
     case FontRole::SidebarPreview:
-        return {static_cast<CGFloat>(s.font_sidebar_preview), false};
+        return {static_cast<CGFloat>(s.font_sidebar_preview), bold};
     case FontRole::UnreadBadge:
-        return {static_cast<CGFloat>(s.font_unread_badge), true};
+        return {static_cast<CGFloat>(s.font_unread_badge), bold};
     case FontRole::Title:
-        return {static_cast<CGFloat>(s.font_title), true};
+        return {static_cast<CGFloat>(s.font_title), bold};
     case FontRole::UiSemibold:
-        return {static_cast<CGFloat>(s.font_ui_semibold), true};
+        return {static_cast<CGFloat>(s.font_ui_semibold), bold};
     case FontRole::BigEmoji:
-        return {static_cast<CGFloat>(s.font_big_emoji), false};
+        return {static_cast<CGFloat>(s.font_big_emoji), bold};
     case FontRole::EmojiPickerCell:
-        return {static_cast<CGFloat>(s.font_emoji_picker_cell), false};
+        return {static_cast<CGFloat>(s.font_emoji_picker_cell), bold};
     }
-    return {static_cast<CGFloat>(s.font_body), false};
+    return {static_cast<CGFloat>(s.font_body), bold};
 }
 
 CTFontRef create_font(FontRole role)
@@ -239,66 +242,29 @@ CFAttributedStringRef build_attr_string(std::string_view utf8, CTFontRef font,
                                     attrs.get());
 }
 
-std::string initials_of(std::string_view name)
+// The word-split policy is shared (tk::initials_of), which converges away the
+// old fragile `>= 8` byte bound. Apply CoreText's locale-aware uppercasing to
+// the result before drawing.
+std::string initials_upper(std::string_view name)
 {
-    CFRetained<CFStringRef> s{cfstr_from_utf8(name)};
+    std::string base = initials_of(name);
+    CFRetained<CFStringRef> s{cfstr_from_utf8(base)};
     if (!s.get())
     {
-        return "?";
+        return base;
     }
+    CFRetained<CFMutableStringRef> upper{
+        CFStringCreateMutableCopy(kCFAllocatorDefault, 0, s.get())};
+    CFStringUppercase(upper.get(), nullptr);
 
-    CFIndex len = CFStringGetLength(s.get());
-    std::string out;
-    bool at_word = true;
-    CFIndex i = 0;
-    while (i < len)
-    {
-        // Walk one composed character at a time — CFStringGetRangeOfComposedCharactersAtIndex
-        // returns a UTF-16 range covering surrogate pairs + combining marks.
-        CFRange range = CFStringGetRangeOfComposedCharactersAtIndex(s.get(), i);
-        if (range.length <= 0)
-        {
-            break;
-        }
-
-        // Extract the substring and check whether the first char is whitespace.
-        CFRetained<CFStringRef> sub{
-            CFStringCreateWithSubstring(kCFAllocatorDefault, s.get(), range)};
-        UniChar first = CFStringGetCharacterAtIndex(sub.get(), 0);
-        if (first == ' ' || first == '\t' || first == '\n')
-        {
-            at_word = true;
-            i += range.length;
-            continue;
-        }
-        if (at_word)
-        {
-            CFRetained<CFMutableStringRef> upper{
-                CFStringCreateMutableCopy(kCFAllocatorDefault, 0, sub.get())};
-            CFStringUppercase(upper.get(), nullptr);
-
-            CFIndex used = 0;
-            UInt8 buf[16];
-            CFStringGetBytes(
-                upper.get(), CFRangeMake(0, CFStringGetLength(upper.get())),
-                kCFStringEncodingUTF8, 0, false, buf, sizeof(buf), &used);
-            out.append(reinterpret_cast<const char*>(buf),
-                       static_cast<size_t>(used));
-            at_word = false;
-            // Stop once we have two grapheme starts (≤ 8 UTF-8 bytes each is plenty).
-            // Counting CFString length of `out` is fiddly; this byte bound
-            // is generous and only matters for unusually wide emoji clusters.
-            if (out.size() >= 8)
-            {
-                break;
-            }
-        }
-        i += range.length;
-    }
-    if (out.empty())
-    {
-        out = "?";
-    }
+    CFIndex used = 0;
+    CFIndex ulen = CFStringGetLength(upper.get());
+    CFStringGetBytes(upper.get(), CFRangeMake(0, ulen), kCFStringEncodingUTF8,
+                     0, false, nullptr, 0, &used);
+    std::string out(static_cast<size_t>(used), '\0');
+    CFStringGetBytes(upper.get(), CFRangeMake(0, ulen), kCFStringEncodingUTF8,
+                     0, false, reinterpret_cast<UInt8*>(out.data()),
+                     static_cast<CFIndex>(out.size()), nullptr);
     return out;
 }
 
@@ -938,9 +904,10 @@ public:
                                                     centre.y - diameter * 0.5f,
                                                     diameter, diameter));
 
-        std::string initials = initials_of(name);
+        std::string initials = initials_upper(name);
         CFRetained<CTFontRef> font{CTFontCreateUIFontForLanguage(
-            kCTFontUIFontEmphasizedSystem, diameter * 0.42, nullptr)};
+            kCTFontUIFontEmphasizedSystem,
+            diameter * kAvatarInitialsFontRatio, nullptr)};
         CFRetained<CFAttributedStringRef> attr{
             build_attr_string(initials, font.get(), kCTTextAlignmentCenter)};
         if (!attr.get())

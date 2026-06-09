@@ -26,6 +26,7 @@ set(_tk_sources
     tk/audio_capture.h
     tk/video.h
     tk/canvas.h
+    tk/canvas_common.cpp
     tk/host.h
     tk/host.cpp
     tk/theme.h
