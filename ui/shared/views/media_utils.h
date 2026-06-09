@@ -26,4 +26,30 @@ inline bool rect_contains(const tk::Rect& r, tk::Point p)
     return p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
 }
 
+// Draw a circular avatar into the disc centred at `centre` with the given
+// `diameter`. When `img` is non-null it is centre-fit and clipped to the
+// circle (exactly as `Canvas::draw_circle_image`); otherwise an initials
+// disc is drawn from `initials_name` with the supplied background/foreground
+// colours (exactly as `Canvas::draw_initials_circle`).
+//
+// Image resolution stays at the call site because it diverges widely
+// (lazy-fetch on miss, MSC4278 invite-avatar gating, presence lookups, the
+// name source picked for the initials fallback). This helper centralises only
+// the invariant image-or-initials draw that was copy-pasted across ~10 views.
+inline void draw_avatar(tk::Canvas& canvas, const tk::Image* img,
+                        tk::Point centre, float diameter,
+                        std::string_view initials_name, tk::Color initials_bg,
+                        tk::Color initials_fg)
+{
+    if (img)
+    {
+        canvas.draw_circle_image(*img, centre, diameter);
+    }
+    else
+    {
+        canvas.draw_initials_circle(initials_name, centre, diameter,
+                                    initials_bg, initials_fg);
+    }
+}
+
 } // namespace tesseract::views

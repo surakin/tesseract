@@ -1,5 +1,6 @@
 #include "QuickSwitcher.h"
 
+#include "media_utils.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -108,18 +109,9 @@ public:
             }
         }
 
-        if (avatar)
-        {
-            ctx.canvas.draw_circle_image(*avatar, {avatar_cx, avatar_cy},
-                                         kAvatarSize);
-        }
-        else
-        {
-            ctx.canvas.draw_initials_circle(
-                room.name, {avatar_cx, avatar_cy}, kAvatarSize,
-                ctx.theme.palette.avatar_initials_bg,
-                ctx.theme.palette.avatar_initials_text);
-        }
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+                    room.name, ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
 
         // Room name — single line, ellipsised to the row width.
         const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
@@ -440,16 +432,8 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
             if (!avatar && on_room_avatar_needed)
                 on_room_avatar_needed(room);
         }
-        if (avatar)
-        {
-            ctx.canvas.draw_circle_image(*avatar, {acx, acy}, kRecentAvatar);
-        }
-        else
-        {
-            ctx.canvas.draw_initials_circle(room.name, {acx, acy}, kRecentAvatar,
-                                            pal.avatar_initials_bg,
-                                            pal.avatar_initials_text);
-        }
+        draw_avatar(ctx.canvas, avatar, {acx, acy}, kRecentAvatar, room.name,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
 
         // Name label below the avatar (centred, single line, ellipsised).
         tk::TextStyle ls{};

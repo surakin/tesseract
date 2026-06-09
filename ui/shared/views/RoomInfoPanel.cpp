@@ -435,17 +435,12 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     {
         av_img = image_provider_(avatar_url_);
     }
-    if (av_img)
-    {
-        cv.draw_circle_image(*av_img, av_centre, kAvatarD);
-    }
-    else
     {
         std::string_view disp =
             display_name_.empty() ? std::string_view("?")
                                   : std::string_view(display_name_);
-        cv.draw_initials_circle(disp, av_centre, kAvatarD,
-                                pal.accent, tk::Color{255, 255, 255, 255});
+        draw_avatar(cv, av_img, av_centre, kAvatarD, disp, pal.accent,
+                    tk::Color{255, 255, 255, 255});
     }
 
     // 6. Room name (Title, centred, ellipsis)
@@ -650,19 +645,13 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         {
             mem_img = image_provider_(mem.avatar_url);
         }
-        if (mem_img)
-        {
-            cv.draw_circle_image(*mem_img, sm_centre, kAvatarSmall);
-        }
-        else
         {
             std::string_view disp_sv =
                 mem.display_name.empty()
                     ? std::string_view("?")
                     : std::string_view(mem.display_name);
-            cv.draw_initials_circle(disp_sv, sm_centre, kAvatarSmall,
-                                    pal.avatar_initials_bg,
-                                    pal.avatar_initials_text);
+            draw_avatar(cv, mem_img, sm_centre, kAvatarSmall, disp_sv,
+                        pal.avatar_initials_bg, pal.avatar_initials_text);
         }
 
         // Presence dot — bottom-right of member avatar.

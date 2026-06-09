@@ -1,6 +1,7 @@
 #include "views/MentionPopup.h"
 #include "tk/canvas.h"
 #include "tk/theme.h"
+#include "views/media_utils.h"
 
 namespace tesseract::views
 {
@@ -28,22 +29,18 @@ void MentionPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
             ? image_provider_(c.avatar_url)
             : nullptr;
     tk::Point center{av.x + kAvatar * 0.5f, av.y + kAvatar * 0.5f};
-    if (avatar_img)
+    if (c.is_room && !avatar_img)
     {
-        ctx.canvas.draw_circle_image(*avatar_img, center, kAvatar);
-    }
-    else if (c.is_room)
-    {
-        ctx.canvas.draw_initials_circle("#", center, kAvatar, pal.accent,
-                                        pal.text_on_accent);
+        // Accent disc for @room.
+        draw_avatar(ctx.canvas, nullptr, center, kAvatar, "#", pal.accent,
+                    pal.text_on_accent);
     }
     else
     {
         const std::string& nm =
             !c.display_name.empty() ? c.display_name : c.user_id;
-        ctx.canvas.draw_initials_circle(nm, center, kAvatar,
-                                        pal.avatar_initials_bg,
-                                        pal.avatar_initials_text);
+        draw_avatar(ctx.canvas, avatar_img, center, kAvatar, nm,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
     }
 
     float text_x = av.x + av.w + 10.0f;

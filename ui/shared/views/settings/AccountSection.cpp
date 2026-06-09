@@ -4,6 +4,7 @@
 #include "tk/layout.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
+#include "views/media_utils.h"
 
 #include <algorithm>
 #include <memory>
@@ -262,20 +263,14 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
     const tk::Image* img = (image_provider_ && !avatar_url_.empty())
                                ? image_provider_(avatar_url_)
                                : nullptr;
-    if (img)
-    {
-        ctx.canvas.draw_circle_image(*img, centre, kAvatarDiameter);
-    }
-    else
     {
         std::string_view name_source = display_name_.empty()
             ? (user_id_.empty() ? ""
                                 : std::string_view{user_id_}.substr(
                                       user_id_.front() == '@' ? 1 : 0))
             : std::string_view{display_name_};
-        ctx.canvas.draw_initials_circle(name_source, centre, kAvatarDiameter,
-                                        pal.avatar_initials_bg,
-                                        pal.avatar_initials_text);
+        draw_avatar(ctx.canvas, img, centre, kAvatarDiameter, name_source,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
     }
 
     if (avatar_editable_)

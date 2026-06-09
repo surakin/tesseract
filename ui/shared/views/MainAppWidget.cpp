@@ -1,5 +1,6 @@
 #include "MainAppWidget.h"
 
+#include "media_utils.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -434,24 +435,16 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
         const tk::Point avatar_centre{
             bounds_.x + kPad + kBtnW + kPad + kNavAvatarSize * 0.5f,
             bounds_.y + kSpaceNavH * 0.5f};
-        if (avatar_provider_ && !avatar_url_.empty())
+        const bool has_provider = avatar_provider_ && !avatar_url_.empty();
+        const tk::Image* space_img =
+            has_provider ? avatar_provider_(avatar_url_) : nullptr;
+        // When a provider+url is present we always draw (image, else initials);
+        // otherwise the initials disc is drawn only when a name exists.
+        if (has_provider || !space_name_.empty())
         {
-            if (const tk::Image* img = avatar_provider_(avatar_url_))
-            {
-                ctx.canvas.draw_circle_image(*img, avatar_centre, kNavAvatarSize);
-            }
-            else
-            {
-                ctx.canvas.draw_initials_circle(
-                    space_name_, avatar_centre, kNavAvatarSize,
-                    pal.avatar_initials_bg, pal.avatar_initials_text);
-            }
-        }
-        else if (!space_name_.empty())
-        {
-            ctx.canvas.draw_initials_circle(
-                space_name_, avatar_centre, kNavAvatarSize,
-                pal.avatar_initials_bg, pal.avatar_initials_text);
+            draw_avatar(ctx.canvas, space_img, avatar_centre, kNavAvatarSize,
+                        space_name_, pal.avatar_initials_bg,
+                        pal.avatar_initials_text);
         }
         // Back button painted last so it renders above the label and avatar.
         if (nav_back_btn_)

@@ -1,4 +1,5 @@
 #include "InviteCard.h"
+#include "media_utils.h"
 
 #include "tk/theme.h"
 
@@ -203,18 +204,12 @@ void InviteCard::paint(tk::PaintCtx& ctx)
         av_img = image_provider_(av_mxc);
     }
 
-    if (av_img)
-    {
-        cv.draw_circle_image(*av_img, av_centre, av_d);
-    }
-    else
     {
         std::string_view disp = fallback_name.empty()
                                     ? std::string_view("?")
                                     : std::string_view(fallback_name);
-        cv.draw_initials_circle(disp, av_centre, av_d,
-                                pal.accent,
-                                tk::Color{255, 255, 255, 255});
+        draw_avatar(cv, av_img, av_centre, av_d, disp, pal.accent,
+                    tk::Color{255, 255, 255, 255});
     }
 
     cy += av_d + kGap;

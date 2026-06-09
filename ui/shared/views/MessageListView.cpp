@@ -980,19 +980,10 @@ public:
             {
                 avatar = owner_.avatar_provider_(m.sender_avatar_url);
             }
-            if (avatar)
-            {
-                ctx.canvas.draw_circle_image(*avatar, {avatar_cx, avatar_cy},
-                                             kAvatarSize);
-            }
-            else
-            {
-                ctx.canvas.draw_initials_circle(
-                    m.sender_name.empty() ? m.sender : m.sender_name,
-                    {avatar_cx, avatar_cy}, kAvatarSize,
-                    ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
-            }
+            draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+                        m.sender_name.empty() ? m.sender : m.sender_name,
+                        ctx.theme.palette.avatar_initials_bg,
+                        ctx.theme.palette.avatar_initials_text);
 
             // Sender name — vertically centered against the avatar disc.
             float sender_y = bounds.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
@@ -1389,18 +1380,11 @@ public:
                 {
                     img = owner_.avatar_provider_(rr.avatar_url);
                 }
-                if (img)
-                {
-                    ctx.canvas.draw_circle_image(*img, centre, kReceiptSize);
-                }
-                else
-                {
-                    ctx.canvas.draw_initials_circle(
-                        rr.display_name.empty() ? rr.user_id : rr.display_name,
-                        centre, kReceiptSize,
-                        ctx.theme.palette.avatar_initials_bg,
-                        ctx.theme.palette.avatar_initials_text);
-                }
+                draw_avatar(ctx.canvas, img, centre, kReceiptSize,
+                            rr.display_name.empty() ? rr.user_id
+                                                    : rr.display_name,
+                            ctx.theme.palette.avatar_initials_bg,
+                            ctx.theme.palette.avatar_initials_text);
             }
 
             // "+N" overflow pill — anchored just to the left of the

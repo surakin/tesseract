@@ -2,6 +2,7 @@
 
 #include "html_spans.h"
 #include "icons.h"
+#include "media_utils.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 
@@ -446,27 +447,12 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     // Avatar — circle-cropped image or initials disc.
     const tk::Point avatar_centre{bounds_.x + kPadX + kAvatarSize * 0.5f,
                                   bounds_.y + kHeight * 0.5f};
-    if (avatar_provider_ && !avatar_url_.empty())
-    {
-        if (const tk::Image* img = avatar_provider_(avatar_url_))
-        {
-            ctx.canvas.draw_circle_image(*img, avatar_centre, kAvatarSize);
-        }
-        else
-        {
-            ctx.canvas.draw_initials_circle(
-                display_name_, avatar_centre, kAvatarSize,
-                ctx.theme.palette.avatar_initials_bg,
+    const tk::Image* avatar_img =
+        (avatar_provider_ && !avatar_url_.empty()) ? avatar_provider_(avatar_url_)
+                                                   : nullptr;
+    draw_avatar(ctx.canvas, avatar_img, avatar_centre, kAvatarSize,
+                display_name_, ctx.theme.palette.avatar_initials_bg,
                 ctx.theme.palette.avatar_initials_text);
-        }
-    }
-    else
-    {
-        ctx.canvas.draw_initials_circle(display_name_, avatar_centre,
-                                        kAvatarSize,
-                                        ctx.theme.palette.avatar_initials_bg,
-                                        ctx.theme.palette.avatar_initials_text);
-    }
 
     if (name_label_)
     {

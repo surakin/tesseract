@@ -1,6 +1,7 @@
 #include "RoomListView.h"
 
 #include "icons.h"
+#include "media_utils.h"
 #include "tk/i18n.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
@@ -391,18 +392,9 @@ private:
                 owner_.on_room_avatar_needed(room);
         }
 
-        if (avatar)
-        {
-            ctx.canvas.draw_circle_image(*avatar, {avatar_cx, avatar_cy},
-                                         kAvatarSize);
-        }
-        else
-        {
-            ctx.canvas.draw_initials_circle(
-                room.name, {avatar_cx, avatar_cy}, kAvatarSize,
-                ctx.theme.palette.avatar_initials_bg,
-                ctx.theme.palette.avatar_initials_text);
-        }
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+                    room.name, ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
 
         // Presence dot — bottom-right of avatar, DM rooms only.
         if (!room.dm_counterpart_user_id.empty() && owner_.presence_provider_)
@@ -665,18 +657,9 @@ private:
             avatar = owner_.avatar_provider_(av_mxc);
         }
 
-        if (avatar)
-        {
-            ctx.canvas.draw_circle_image(*avatar, {avatar_cx, avatar_cy},
-                                         kAvatarSize);
-        }
-        else
-        {
-            ctx.canvas.draw_initials_circle(
-                initials_name, {avatar_cx, avatar_cy}, kAvatarSize,
-                ctx.theme.palette.avatar_initials_bg,
-                ctx.theme.palette.avatar_initials_text);
-        }
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+                    initials_name, ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
 
         // Text column geometry (no badge reserved).
         float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;

@@ -190,17 +190,12 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     {
         av_img = image_provider_(avatar_url_);
     }
-    if (av_img)
-    {
-        cv.draw_circle_image(*av_img, av_centre, kAvatarD);
-    }
-    else
     {
         std::string_view disp =
             display_name_.empty() ? std::string_view("?")
                                   : std::string_view(display_name_);
-        cv.draw_initials_circle(disp, av_centre, kAvatarD,
-                                pal.accent, tk::Color{255, 255, 255, 255});
+        draw_avatar(cv, av_img, av_centre, kAvatarD, disp, pal.accent,
+                    tk::Color{255, 255, 255, 255});
     }
 
     // Display name (Title, centred, ellipsis).

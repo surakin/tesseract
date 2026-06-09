@@ -1,5 +1,6 @@
 #include "JoinRoomView.h"
 
+#include "media_utils.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
@@ -344,18 +345,12 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             av_img = avatar_provider_(preview_.avatar_url);
         }
 
-        if (av_img)
-        {
-            ctx.canvas.draw_circle_image(*av_img, av_centre, kAvatarSize);
-        }
-        else
         {
             std::string_view disp = preview_.name.empty()
                                         ? std::string_view("#")
                                         : std::string_view(preview_.name);
-            ctx.canvas.draw_initials_circle(disp, av_centre, kAvatarSize,
-                                            pal.accent,
-                                            tk::Color{255, 255, 255, 255});
+            draw_avatar(ctx.canvas, av_img, av_centre, kAvatarSize, disp,
+                        pal.accent, tk::Color{255, 255, 255, 255});
         }
 
         // Info column to the right of the avatar.

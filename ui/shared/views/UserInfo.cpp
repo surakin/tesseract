@@ -1,6 +1,7 @@
 #include "UserInfo.h"
 
 #include "tk/theme.h"
+#include "views/media_utils.h"
 
 #include <algorithm>
 
@@ -136,33 +137,25 @@ void UserInfo::paint(tk::PaintCtx& ctx)
                                ? image_provider_(avatar_url_)
                                : nullptr;
 
-    if (img)
+    // Initials fallback. Prefer the display name for the glyph; fall back to
+    // the localpart of the Matrix ID when the name is empty.
+    std::string_view name_source;
+    if (!display_name_.empty())
     {
-        ctx.canvas.draw_circle_image(*img, avatar_centre, avatar_size_);
+        name_source = display_name_;
     }
-    else
+    else if (!user_id_.empty())
     {
-        // Initials fallback. Prefer the display name for the glyph; fall
-        // back to the localpart of the Matrix ID when the name is empty.
-        std::string_view name_source;
-        if (!display_name_.empty())
+        name_source = user_id_;
+        // Strip the leading '@' so the disc shows "A", not "@".
+        if (name_source.front() == '@')
         {
-            name_source = display_name_;
+            name_source.remove_prefix(1);
         }
-        else if (!user_id_.empty())
-        {
-            name_source = user_id_;
-            // Strip the leading '@' so the disc shows "A", not "@".
-            if (name_source.front() == '@')
-            {
-                name_source.remove_prefix(1);
-            }
-        }
-        ctx.canvas.draw_initials_circle(name_source, avatar_centre,
-                                        avatar_size_,
-                                        theme.palette.avatar_initials_bg,
-                                        theme.palette.avatar_initials_text);
     }
+    draw_avatar(ctx.canvas, img, avatar_centre, avatar_size_, name_source,
+                theme.palette.avatar_initials_bg,
+                theme.palette.avatar_initials_text);
 
     // -------- Text column --------
     // Reserve space on the right for the active indicator so the text
