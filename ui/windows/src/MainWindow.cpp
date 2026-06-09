@@ -5572,6 +5572,15 @@ void MainWindow::switch_active_account(const std::string& user_id)
         active_account_->verification_banner_dismissed = verification_banner_dismissed_;
     }
 
+    // Unsubscribe the previous account's open room so its timeline stops
+    // streaming updates to the message list when we swap surfaces.
+    // Must happen before client_ is reassigned to the incoming account.
+    if (client_ && !current_room_id_.empty() &&
+        room_subscription_refs_.count(current_room_id_) == 0)
+    {
+        client_->unsubscribe_room(current_room_id_);
+    }
+
     reset_server_info_();
     active_account_ = new_session;
     auto& sess = active_account_;
