@@ -136,17 +136,12 @@ protected:
     void repaint_anim_frame_() override;
     void repaint_pickers_() override;
 
-    void handle_timeline_reset_ui_(
-        std::string room_id,
-        tesseract::EventList snapshot) override;
-    void
-    handle_message_inserted_ui_(std::string room_id, std::size_t index,
-                                std::unique_ptr<tesseract::Event> ev) override;
-    void
-    handle_message_updated_ui_(std::string room_id, std::size_t index,
-                               std::unique_ptr<tesseract::Event> ev) override;
-    void handle_message_removed_ui_(std::string room_id,
-                                    std::size_t index) override;
+    // handle_timeline_reset_ui_ and handle_message_{inserted,updated,removed}_ui_
+    // are NOT overridden here: the shared ShellBase implementations drive the
+    // same room_view_ this shell owns (via request_relayout_ → _relayoutChatSurface)
+    // and dispatch to secondary windows. They also carry guards this shell used
+    // to drop (in-thread reply exclusion, scroll/focus restore on reset), so the
+    // base path is strictly more correct.
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
@@ -441,15 +436,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
     LoginViewDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate>
 // Provides C++ access to the MacShell from spawn_main_window_() (same .mm file).
 @property (readonly, nonatomic) MacShell* shell;
-- (void)handleTimelineReset:(NSString*)roomId
-                   snapshot:(std::vector<tesseract::Event*>)snapshot;
-- (void)handleMessageInserted:(NSString*)roomId
-                        index:(std::size_t)index
-                        event:(tesseract::Event*)event;
-- (void)handleMessageUpdated:(NSString*)roomId
-                       index:(std::size_t)index
-                       event:(tesseract::Event*)event;
-- (void)handleMessageRemoved:(NSString*)roomId index:(std::size_t)index;
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached;
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached;
@@ -1302,73 +1288,10 @@ void MacShell::repaint_pickers_()
     }
 }
 
-void MacShell::handle_timeline_reset_ui_(
-    std::string room_id,
-    tesseract::EventList snapshot)
-{
-    dispatch_timeline_reset_secondary_(room_id, snapshot);
-
-    MainWindowController* c = ctrl_;
-    if (!c)
-    {
-        return;
-    }
-    std::vector<tesseract::Event*> raw;
-    raw.reserve(snapshot.size());
-    for (auto& p : snapshot)
-    {
-        raw.push_back(p.release());
-    }
-    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    [c handleTimelineReset:rid snapshot:raw];
-}
-
-void MacShell::handle_message_inserted_ui_(std::string room_id,
-                                           std::size_t index,
-                                           std::unique_ptr<tesseract::Event> ev)
-{
-    if (ev && ev->type != tesseract::EventType::Unhandled)
-    {
-        dispatch_message_inserted_secondary_(room_id, index, *ev);
-    }
-    MainWindowController* c = ctrl_;
-    if (!c || !ev)
-    {
-        return;
-    }
-    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    [c handleMessageInserted:rid index:index event:ev.release()];
-}
-
-void MacShell::handle_message_updated_ui_(std::string room_id,
-                                          std::size_t index,
-                                          std::unique_ptr<tesseract::Event> ev)
-{
-    if (ev && ev->type != tesseract::EventType::Unhandled)
-    {
-        dispatch_message_updated_secondary_(room_id, index, *ev);
-    }
-    MainWindowController* c = ctrl_;
-    if (!c || !ev)
-    {
-        return;
-    }
-    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    [c handleMessageUpdated:rid index:index event:ev.release()];
-}
-
-void MacShell::handle_message_removed_ui_(std::string room_id,
-                                          std::size_t index)
-{
-    dispatch_message_removed_secondary_(room_id, index);
-    MainWindowController* c = ctrl_;
-    if (!c)
-    {
-        return;
-    }
-    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    [c handleMessageRemoved:rid index:index];
-}
+// handle_timeline_reset_ui_ and handle_message_{inserted,updated,removed}_ui_
+// are inherited from ShellBase: it drives the same room_view_ this shell owns
+// (relayout via request_relayout_ → _relayoutChatSurface) and dispatches to
+// secondary windows. See the MacShell class declaration for the rationale.
 
 void MacShell::handle_sync_error_ui_(std::string context,
                                      std::string /*user_id*/,
@@ -6810,78 +6733,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
 //  Event-bridge callbacks (main thread)
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)handleMessageInserted:(NSString*)roomId
-                        index:(std::size_t)index
-                        event:(tesseract::Event*)event
-{
-    std::unique_ptr<tesseract::Event> guard(event);
-    if (!event)
-    {
-        return;
-    }
-    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_)
-    {
-        return;
-    }
-    if (event->type == tesseract::EventType::Unhandled)
-    {
-        return;
-    }
-    _shell->ensure_row_media_(*event);
-    if (!event->in_reply_to_id.empty())
-    {
-        _shell->ensure_reply_details_(event->event_id);
-    }
-    if (_roomView)
-    {
-        _roomView->insert_message(index, tesseract::views::make_row_data(
-                                             *event, _shell->my_user_id_));
-    }
-    [self _relayoutChatSurface];
-}
-
-- (void)handleMessageUpdated:(NSString*)roomId
-                       index:(std::size_t)index
-                       event:(tesseract::Event*)event
-{
-    std::unique_ptr<tesseract::Event> guard(event);
-    if (!event)
-    {
-        return;
-    }
-    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_)
-    {
-        return;
-    }
-    if (event->type == tesseract::EventType::Unhandled)
-    {
-        return;
-    }
-    _shell->ensure_row_media_(*event);
-    if (!event->in_reply_to_id.empty())
-    {
-        _shell->ensure_reply_details_(event->event_id);
-    }
-    if (_roomView)
-    {
-        _roomView->update_message(index, tesseract::views::make_row_data(
-                                             *event, _shell->my_user_id_));
-    }
-    [self _relayoutChatSurface];
-}
-
-- (void)handleMessageRemoved:(NSString*)roomId index:(std::size_t)index
-{
-    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_)
-    {
-        return;
-    }
-    if (_roomView)
-    {
-        _roomView->remove_message(index);
-    }
-    [self _relayoutChatSurface];
-}
+// handleMessageInserted/Updated/Removed and handleTimelineReset were removed:
+// the MacShell C++ overrides that forwarded to them are gone, and the shared
+// ShellBase handlers now drive _roomView (via room_view_) and relayout directly.
 
 // updateRoomsForUserId: was the old ObjC EventBridge hook. EventHandlerBase now
 // calls ShellBase::push_rooms_() directly, which invokes on_rooms_updated_()
@@ -6907,48 +6761,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
         }
         [self _logoutActiveAccount];
         [_loginView setStatusMessage:TkTr("Session expired; please log in again.")];
-    }
-}
-
-- (void)handleTimelineReset:(NSString*)roomId
-                   snapshot:(std::vector<tesseract::Event*>)snapshot
-{
-    const bool current = roomId.UTF8String && std::string(roomId.UTF8String) ==
-                                                  _shell->current_room_id_;
-    if (current)
-    {
-        auto rows = _shell->build_rows_(snapshot);
-        const std::string rid = roomId.UTF8String ? roomId.UTF8String : "";
-        // A genuine switch, OR a re-population of an emptied view (e.g.
-        // logout → login → same room): both warrant the display gate.
-        const auto* ml = _roomView ? _roomView->message_list() : nullptr;
-        const bool room_switch = _shell->view_displayed_room_id_ != rid ||
-                                 (ml && ml->messages().empty());
-        _shell->view_displayed_room_id_ = rid;
-        if (_roomView)
-        {
-            _roomView->set_messages(std::move(rows), room_switch);
-        }
-        [self _relayoutChatSurface];
-        if (_roomView && _roomView->message_list())
-        {
-            const auto& pstate = _shell->pagination_[rid];
-            if (room_switch && pstate.is_focused)
-            {
-                _roomView->message_list()->begin_focused_gate(
-                    pstate.focus_event_id);
-            }
-            _roomView->message_list()->set_historical_mode(pstate.is_focused);
-            if (pstate.is_focused)
-            {
-                _roomView->message_list()->scroll_to_event_id(
-                    pstate.focus_event_id);
-            }
-        }
-    }
-    for (auto* ev : snapshot)
-    {
-        delete ev;
     }
 }
 

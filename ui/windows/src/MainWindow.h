@@ -124,17 +124,11 @@ public:
     // MediaImage → anim_cache_/tk_images_[url], invalidate main_app_surface_
 
     // ── EventHandlerBase UI-thread hook overrides (Win32) ────────────────────
-    void handle_timeline_reset_ui_(
-        std::string room_id,
-        tesseract::EventList snapshot) override;
-    void
-    handle_message_inserted_ui_(std::string room_id, std::size_t index,
-                                std::unique_ptr<tesseract::Event> ev) override;
-    void
-    handle_message_updated_ui_(std::string room_id, std::size_t index,
-                               std::unique_ptr<tesseract::Event> ev) override;
-    void handle_message_removed_ui_(std::string room_id,
-                                    std::size_t index) override;
+    // handle_timeline_reset_ui_ and handle_message_{inserted,updated,removed}_ui_
+    // are NOT overridden here: the shared ShellBase implementations drive the
+    // same room_view_ this shell owns and dispatch to secondary windows. They
+    // also carry guards this shell used to drop (in-thread reply exclusion,
+    // scroll/focus restore on reset), so the base path is strictly more correct.
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
@@ -189,17 +183,6 @@ private:
     // Posted-message payloads — see WM_TESSERACT_* constants above. The
     // posting code transfers ownership of each heap-allocated payload to
     // the receiving handler.
-    struct PostedTimelineReset
-    {
-        std::string room_id;
-        tesseract::EventList snapshot;
-    };
-    struct PostedMessageEvent
-    {
-        std::string room_id;
-        std::size_t index;
-        std::unique_ptr<tesseract::Event> event; // null for "removed"
-    };
     struct JumpDonePayload
     {
         bool ok;
@@ -232,10 +215,6 @@ private:
     // hides it, relayouts, and restores focus to the main window.
     void open_quick_switch_();
     void close_quick_switch_();
-    void on_tesseract_timeline_reset(PostedTimelineReset* payload);
-    void on_tesseract_message_inserted(PostedMessageEvent* payload);
-    void on_tesseract_message_updated(PostedMessageEvent* payload);
-    void on_tesseract_message_removed(PostedMessageEvent* payload);
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
     void on_tesseract_subscribe_done(std::string* room_id, bool reached_start);
     void openJumpToDateDialog();
