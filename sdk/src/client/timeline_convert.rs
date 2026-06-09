@@ -178,7 +178,7 @@ pub(super) async fn collect_read_receipts(
     for uid in table.keys() {
         // Hide the current user's own receipt: they don't need to see their
         // own avatar marching down every message they've read.
-        if me.map_or(false, |m| uid.as_str() == m.as_str()) {
+        if me.is_some_and(|m| uid.as_str() == m.as_str()) {
             continue;
         }
         // Cheap-ish lookup against the SDK's in-memory state store. Same
@@ -681,8 +681,8 @@ pub(super) async fn timeline_item_to_ffi(
                 .as_ref()
                 .map(|info| {
                     (
-                        info.width.map(|v| u64::from(v)).unwrap_or(0u64),
-                        info.height.map(|v| u64::from(v)).unwrap_or(0u64),
+                        info.width.map(u64::from).unwrap_or(0u64),
+                        info.height.map(u64::from).unwrap_or(0u64),
                     )
                 })
                 .unwrap_or((0u64, 0u64));
@@ -727,7 +727,7 @@ pub(super) async fn timeline_item_to_ffi(
                 .info
                 .as_ref()
                 .and_then(|info| info.size)
-                .map(|v| u64::from(v))
+                .map(u64::from)
                 .unwrap_or(0u64);
             (
                 f.body.clone(),

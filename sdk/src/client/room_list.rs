@@ -458,7 +458,7 @@ impl ClientFfi {
         };
         let (_, room) = try_op!(require_room(client, room_id));
 
-        let mut content = match self.rt.block_on(room.get_member(&user_id)) {
+        let mut content = match self.rt.block_on(room.get_member(user_id)) {
             Ok(Some(m)) => match m.event().as_sync() {
                 Some(e) => e.as_original().map(|o| o.content.clone()),
                 None => None,
@@ -469,7 +469,7 @@ impl ClientFfi {
 
         content.displayname = if name.is_empty() { None } else { Some(name.to_owned()) };
 
-        match self.rt.block_on(room.send_state_event_for_key(&*user_id, content)) {
+        match self.rt.block_on(room.send_state_event_for_key(user_id, content)) {
             Ok(_)  => ok(""),
             Err(e) => err(e.to_string()),
         }
@@ -502,7 +502,7 @@ impl ClientFfi {
             Err(_) => return err("invalid mxc URI"),
         };
 
-        let mut content = match self.rt.block_on(room.get_member(&user_id)) {
+        let mut content = match self.rt.block_on(room.get_member(user_id)) {
             Ok(Some(m)) => match m.event().as_sync() {
                 Some(e) => e.as_original().map(|o| o.content.clone()),
                 None => None,
@@ -513,7 +513,7 @@ impl ClientFfi {
 
         content.avatar_url = Some(mxc);
 
-        match self.rt.block_on(room.send_state_event_for_key(&*user_id, content)) {
+        match self.rt.block_on(room.send_state_event_for_key(user_id, content)) {
             Ok(_)  => ok(""),
             Err(e) => err(e.to_string()),
         }

@@ -1047,8 +1047,8 @@ impl ClientFfi {
                             SyncServiceState::Running => {
                                 notified_offline = false;
                             }
-                            SyncServiceState::Offline => {
-                                if !notified_offline {
+                            SyncServiceState::Offline
+                                if !notified_offline => {
                                     notified_offline = true;
                                     if let Ok(guard) = h_state.lock() {
                                         guard.on_error(
@@ -1058,7 +1058,6 @@ impl ClientFfi {
                                         );
                                     }
                                 }
-                            }
                             SyncServiceState::Error(e) => {
                                 if let Ok(guard) = h_state.lock() {
                                     guard.on_error(

@@ -53,16 +53,15 @@ pub(super) async fn watch_verification_request(
             VerificationRequestState::Ready {
                 ref other_device_data,
                 ..
-            } => {
+            }
                 // The other side accepted our outgoing request. Signal the UI
                 // to transition from Waiting and call start_sas.
-                if we_started {
+                if we_started => {
                     let device_id = other_device_data.device_id().as_str().to_owned();
                     if let Ok(guard) = handler.lock() {
                         guard.on_verification_request(&flow_id, &user_id, &device_id, false);
                     }
                 }
-            }
             VerificationRequestState::Transitioned { verification } => {
                 if let Verification::SasV1(sas) = verification {
                     let h2 = Arc::clone(&handler);
@@ -138,7 +137,7 @@ pub(super) async fn watch_sas(
             }
             SasState::Cancelled(info) => {
                 if let Ok(guard) = handler.lock() {
-                    guard.on_verification_cancelled(&flow_id, &format!("{}", info.reason()));
+                    guard.on_verification_cancelled(&flow_id, &info.reason().to_string());
                 }
                 lock_or_recover(&emoji_cache).remove(&flow_id);
                 break;

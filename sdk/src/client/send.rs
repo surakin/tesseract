@@ -6,10 +6,7 @@
 use crate::ffi::OpResult;
 
 #[cfg(not(test))]
-use super::{
-    build_uia_fallback_url, // keep import path alive for downstream re-exports
-    err, ok, send_both_receipts, try_op, ClientFfi,
-};
+use super::{err, ok, send_both_receipts, try_op, ClientFfi};
 
 #[cfg(test)]
 use super::{err, ok, ClientFfi};
@@ -27,11 +24,6 @@ use matrix_sdk_ui::timeline::TimelineEventItemId;
 use std::sync::atomic::Ordering;
 #[cfg(not(test))]
 use std::sync::Arc;
-
-// silence unused-import warnings for re-exports kept only to preserve paths
-#[cfg(not(test))]
-#[allow(unused_imports)]
-use build_uia_fallback_url as _unused_uia;
 
 // ---------------------------------------------------------------------------
 // Free helpers (shared by the send methods below and called from tests in
@@ -201,7 +193,7 @@ pub(super) fn extract_href(open_tag: &str) -> Option<String> {
         Some(after[1..1 + end].to_string())
     } else {
         let end = after
-            .find(|c: char| c == ' ' || c == '>' || c == '\t')
+            .find([' ', '>', '\t'])
             .unwrap_or(after.len());
         Some(after[..end].to_string())
     }
@@ -1506,7 +1498,7 @@ impl ClientFfi {
         if pcm.is_empty() {
             return err("empty PCM");
         }
-        if pcm.len() % 2 != 0 {
+        if !pcm.len().is_multiple_of(2) {
             return err("PCM byte count must be even");
         }
 

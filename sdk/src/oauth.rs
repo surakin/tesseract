@@ -299,9 +299,7 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
 }
 
 fn extract_query(captured: &str) -> anyhow::Result<String> {
-    captured
-        .splitn(2, '?')
-        .nth(1)
+    captured.split_once('?').map(|x| x.1)
         .ok_or_else(|| anyhow!("redirect did not include a query string"))
         .map(str::to_owned)
 }

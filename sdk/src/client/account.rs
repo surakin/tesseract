@@ -777,7 +777,7 @@ impl ClientFfi {
                             && ids.iter().any(|id| *id == uid)
                             && client
                                 .user_id()
-                                .is_some_and(|me| ids.iter().any(|id| *id == me))
+                                .is_some_and(|me| ids.contains(&me))
                         {
                             return room.room_id().to_string();
                         }

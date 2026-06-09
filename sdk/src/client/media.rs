@@ -235,7 +235,7 @@ async fn download_media(
             let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
             settings.animated = animated;
             let request = MediaRequestParameters {
-                source: MediaSource::Plain(uri.into()),
+                source: MediaSource::Plain(uri),
                 format: MediaFormat::Thumbnail(settings),
             };
             cap_media_bytes(
@@ -253,7 +253,7 @@ async fn download_media(
                 }
                 let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
                 settings.animated = animated;
-                (MediaSource::Plain(uri.into()), MediaFormat::Thumbnail(settings))
+                (MediaSource::Plain(uri), MediaFormat::Thumbnail(settings))
             } else {
                 match serde_json::from_str::<MediaSource>(source) {
                     Ok(s) => (s, MediaFormat::File),
@@ -275,7 +275,7 @@ async fn download_media(
                 if !uri.is_valid() {
                     return Vec::new();
                 }
-                MediaSource::Plain(uri.into())
+                MediaSource::Plain(uri)
             } else {
                 match serde_json::from_str::<MediaSource>(source) {
                     Ok(s) => s,
@@ -438,7 +438,7 @@ impl ClientFfi {
             return Vec::new();
         }
         let request = MediaRequestParameters {
-            source: MediaSource::Plain(uri.into()),
+            source: MediaSource::Plain(uri),
             format: MediaFormat::File,
         };
         let stop_rx = self.stop_rx.clone();
@@ -479,7 +479,7 @@ impl ClientFfi {
             if !uri.is_valid() {
                 return Vec::new();
             }
-            MediaSource::Plain(uri.into())
+            MediaSource::Plain(uri)
         } else {
             match serde_json::from_str::<MediaSource>(source) {
                 Ok(s) => s,
@@ -558,7 +558,7 @@ impl ClientFfi {
         let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
         settings.animated = animated;
         let request = MediaRequestParameters {
-            source: MediaSource::Plain(uri.into()),
+            source: MediaSource::Plain(uri),
             format: MediaFormat::Thumbnail(settings),
         };
         let stop_rx = self.stop_rx.clone();
@@ -608,7 +608,7 @@ impl ClientFfi {
             let mut settings = MediaThumbnailSettings::new(w.into(), h.into());
             settings.animated = animated;
             (
-                MediaSource::Plain(uri.into()),
+                MediaSource::Plain(uri),
                 MediaFormat::Thumbnail(settings),
             )
         } else {

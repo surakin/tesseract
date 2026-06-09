@@ -83,7 +83,7 @@ fn try_matrix_uri(uri: &str) -> Option<MatrixLinkResult> {
     let mut parts = rest.splitn(3, '/');
     let segment = parts.next()?;
     let value = percent_decode(parts.next().unwrap_or(""));
-    let extra = parts.next().map(|s| percent_decode(s));
+    let extra = parts.next().map(percent_decode);
 
     match segment {
         "u" => {
