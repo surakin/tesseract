@@ -1,6 +1,16 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-08** (v0.8.0).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-09** (v0.8.0).
+
+> **Pre-launch hardening + decomposition (2026-06-09, unreleased).** A full-tree
+> code review (`docs/CODE_REVIEW_2026-06-09.md`) drove a large correctness /
+> safety / dedup pass and the start of a god-object decomposition: shells routed
+> through shared `ShellBase` handlers, a multi-window/logout use-after-free and an
+> FFI aliasing-UB closed, ~1,250 LOC of cross-shell duplication hoisted into
+> `ShellBase`, shared toolkit/view bases extracted, and the `MessageListView` /
+> `ShellBase` god-objects partially split into collaborator classes. No
+> user-facing feature change; 734 C++ / 208 Rust tests. See [CHANGES.md](CHANGES.md)
+> and `docs/TODO-phase5-remaining.md`.
 
 > **Unified Lucide icon set.**
 > The composer (emoji / sticker / mic / stop), message hover-action bar

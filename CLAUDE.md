@@ -38,6 +38,11 @@ ui/
                   RecoveryBanner, VerificationBanner;
                   html_spans (HTML→TextSpan), map_tiles, media_utils
                   (Markdown→HTML lives in client/src/markdown.cpp, Rust-backed)
+                  shared bases: ListPopupBase, MediaOverlayBase, TabbedGridPicker;
+                  MessageListView collaborators (per-concern, behavior-preserving
+                  split): TimelineMediaController, TimelineVideoPlaylist,
+                  LocationMapPanner, RoomSwitchGateKeeper, UrlPreviewCardDisplay,
+                  LinkLayoutCache, SpoilerRevealer, ReadReceiptTracker
   windows/   ← Win32 executable (thin shell)
   macos/     ← AppKit executable (.app bundle, thin shell)
   linux-qt/  ← Qt6 Widgets executable (thin shell)
@@ -52,7 +57,7 @@ ui/
 
 **`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views live under `views/` (see architecture diagram above for the full list). Text input stays native via `tk::NativeTextField` / `tk::NativeTextArea` overlays so IME and selection behave correctly per-OS.
 
-**`ui/shared/app/` (C++)** — `ShellBase` holds all platform-agnostic shell state (accounts, rooms, image caches, worker threads, sync state) as `protected` members with pure-virtual hooks (`post_to_ui_`, `on_rooms_updated_`, `on_media_bytes_ready_`, etc.) and a set of virtual no-ops that each shell overrides (`handle_timeline_reset_ui_`, `on_room_list_state_ui_`, …). `EventHandlerBase : IEventHandler` marshals every SDK callback to the UI thread via `shell->post_to_ui_()` then calls the corresponding `handle_*_ui_()` virtual. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; the macOS shell uses composition (`MainWindowController` holds `std::unique_ptr<MacShell>` where `MacShell : public ShellBase`) and exposes protected members to ObjC++ code via C++ `using` declarations in a `public:` section of `MacShell`.
+**`ui/shared/app/` (C++)** — `ShellBase` holds all platform-agnostic shell state (accounts, rooms, image caches, worker threads, sync state) as `protected` members with pure-virtual hooks (`post_to_ui_`, `on_rooms_updated_`, `on_media_bytes_ready_`, etc.) and a set of virtual no-ops that each shell overrides (`handle_timeline_reset_ui_`, `on_room_list_state_ui_`, …). `EventHandlerBase : IEventHandler` marshals every SDK callback to the UI thread via `shell->post_to_ui_()` then calls the corresponding `handle_*_ui_()` virtual. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; the macOS shell uses composition (`MainWindowController` holds `std::unique_ptr<MacShell>` where `MacShell : public ShellBase`) and exposes protected members to ObjC++ code via C++ `using` declarations in a `public:` section of `MacShell`. Cohesive subsystems are being split out of `ShellBase` into collaborators (`AccountManager`, `ThreadPanelController`; the media-fetch `MediaController` is the next planned cut — see `docs/TODO-phase5-remaining.md`); when extracting, keep shell-read fields (e.g. `thread_panel_`, `current_thread_root_`) on `ShellBase` so the four shells compile untouched.
 
 **`ui/*/` (C++)** — Each platform target is a thin native shell that owns the window/menu/AX surface and mounts one or more `tk::*::Surface`s hosting shared views. Each shell implements `IEventHandler`. Because Rust callbacks arrive on worker threads, the shells route through `tk::Host::post_to_ui`, which is backed by `QueuedConnection` (Qt6), `g_idle_add` (GTK4), `PostMessage` (Win32), and `dispatch_async(dispatch_get_main_queue())` (macOS).
 
