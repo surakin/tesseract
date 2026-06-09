@@ -3338,328 +3338,15 @@ private:
     void paint_voice_card(const MessageRowData& m, tk::PaintCtx& ctx,
                           tk::Rect dst) const
     {
-        // Card chrome.
-        ctx.canvas.fill_rounded_rect(dst, 10.0f, ctx.theme.palette.chrome_bg);
-        ctx.canvas.stroke_rounded_rect(dst, 10.0f, ctx.theme.palette.border,
-                                       1.0f);
-
-        // Play / pause button (circle on the left).
-        const float btn_d = kVoicePlayBtnSize;
-        const float btn_x = dst.x + kVoiceCardPadX;
-        const float btn_y = dst.y + (dst.h - btn_d) * 0.5f;
-        tk::Rect btn_rect{btn_x, btn_y, btn_d, btn_d};
-        ctx.canvas.fill_rounded_rect(btn_rect, btn_d * 0.5f,
-                                     ctx.theme.palette.accent);
-
-        const bool is_active_row =
-            m.event_id == owner_.playing_event_id_ && owner_.playing_is_active_;
-
-        const tk::Color glyph_col = ctx.theme.palette.text_on_accent;
-        if (is_active_row)
-        {
-            // Two pause bars centred in the button.
-            const float bar_w = 4.0f;
-            const float bar_h = btn_d * 0.45f;
-            const float gap = 4.0f;
-            const float cy = btn_y + (btn_d - bar_h) * 0.5f;
-            const float cx = btn_x + btn_d * 0.5f;
-            ctx.canvas.fill_rect({cx - gap * 0.5f - bar_w, cy, bar_w, bar_h},
-                                 glyph_col);
-            ctx.canvas.fill_rect({cx + gap * 0.5f, cy, bar_w, bar_h},
-                                 glyph_col);
-        }
-        else
-        {
-            // Play glyph (▶): Lucide play icon, tinted to the on-accent colour.
-            ic_play_voice_.draw(ctx.canvas, ctx.factory, kPlaySvg, btn_rect,
-                                btn_d * 0.55f, glyph_col);
-        }
-
-        // Right-justified duration label. When this row is the active one
-        // and the backend reports a non-zero position, show remaining time
-        // instead of total — matches Element / FluffyChat affordances.
-        std::uint64_t total =
-            m.duration_ms > 0 ? m.duration_ms
-                              : (m.event_id == owner_.playing_event_id_
-                                     ? owner_.audio_player_
-                                           ? owner_.audio_player_->duration_ms()
-                                           : 0u
-                                     : 0u);
-        std::uint64_t label_ms = total;
-        if (is_active_row && total > 0 && owner_.playing_position_ms_ <= total)
-        {
-            label_ms = total - owner_.playing_position_ms_;
-        }
-        tk::TextStyle ds{};
-        ds.role = tk::FontRole::Timestamp;
-        auto dur_lo = ctx.factory.build_text(format_mmss(label_ms), ds);
-        tk::Size dur_sz = dur_lo ? dur_lo->measure() : tk::Size{};
-        float dur_w = dur_sz.w;
-        float dur_h = dur_sz.h;
-        if (dur_lo)
-        {
-            ctx.canvas.draw_text(*dur_lo,
-                                 {dst.x + dst.w - kVoiceCardPadX - dur_w,
-                                  dst.y + (dst.h - dur_h) * 0.5f},
-                                 ctx.theme.palette.text_secondary);
-        }
-
-        // Speed pill — sits just to the left of the duration label. Only
-        // the active row's pill is interactive; the rate is global, so
-        // rendering it on every row would be a lie about scope.
-        tk::Rect pill_rect{};
-        if (owner_.audio_player_ && is_active_row)
-        {
-            const float pill_x = dst.x + dst.w - kVoiceCardPadX - dur_w - 6.0f -
-                                 kVoiceSpeedPillW;
-            const float pill_y = dst.y + (dst.h - kVoiceSpeedPillH) * 0.5f;
-            pill_rect = {pill_x, pill_y, kVoiceSpeedPillW, kVoiceSpeedPillH};
-            ctx.canvas.fill_rounded_rect(pill_rect, kVoiceSpeedPillH * 0.5f,
-                                         ctx.theme.palette.subtle_hover);
-
-            char rate_buf[8];
-            const float r = owner_.playback_rate_;
-            if (r >= 1.99f)
-            {
-                std::snprintf(rate_buf, sizeof(rate_buf), "2×");
-            }
-            else if (r >= 1.49f)
-            {
-                std::snprintf(rate_buf, sizeof(rate_buf), "1.5×");
-            }
-            else
-            {
-                std::snprintf(rate_buf, sizeof(rate_buf), "1×");
-            }
-            tk::TextStyle rs{};
-            rs.role = tk::FontRole::Timestamp;
-            auto rate_lo = ctx.factory.build_text(rate_buf, rs);
-            if (rate_lo)
-            {
-                tk::Size rsz = rate_lo->measure();
-                ctx.canvas.draw_text(
-                    *rate_lo,
-                    {pill_rect.x + (pill_rect.w - rsz.w) * 0.5f,
-                     pill_rect.y + (pill_rect.h - rsz.h) * 0.5f},
-                    ctx.theme.palette.text_secondary);
-            }
-        }
-
-        // Waveform strip. Sits between the play button and the duration
-        // label (squeezed further when the speed pill is showing). Bars
-        // to the left of the cursor render in the accent colour; bars to
-        // the right stay muted. When the sender omitted the MSC1767
-        // waveform, we paint a flat row of minimum-height bars so the
-        // card still has visual rhythm.
-        const float strip_x = btn_x + btn_d + kVoiceCardPadX;
-        const float right_anchor =
-            (pill_rect.w > 0.0f)
-                ? pill_rect.x - 6.0f
-                : dst.x + dst.w - kVoiceCardPadX - kVoiceDurationW;
-        const float strip_w_avail = right_anchor - strip_x;
-        if (strip_w_avail < kVoiceBarW)
-        {
-            return;
-        }
-        const float strip_y = dst.y + dst.h * 0.5f;
-        const float strip_h = dst.h - 16.0f;
-
-        const float step = kVoiceBarW + kVoiceBarGap;
-        const int bars = std::max(1, static_cast<int>(strip_w_avail / step));
-
-        // Resample sender waveform → `bars` buckets. When empty, the loop
-        // below uses the placeholder height. Senders often record voice well
-        // below the spec's 0..=1024 ceiling (a normal-volume voice peaks at
-        // ~10% of full scale), so normalise by the per-message peak instead
-        // of the spec ceiling — otherwise quiet recordings collapse into a
-        // flat row of minimum-height bars.
-        std::uint16_t wf_peak = 0;
-        for (std::uint16_t v : m.waveform)
-            if (v > wf_peak) wf_peak = v;
-        const float wf_norm = wf_peak > 0 ? 1.0f / static_cast<float>(wf_peak)
-                                          : 0.0f;
-        auto amp_at = [&](int i) -> float
-        {
-            if (m.waveform.empty())
-            {
-                return 0.0f;
-            }
-            const std::size_t n = m.waveform.size();
-            const std::size_t src = std::min<std::size_t>(
-                n - 1, static_cast<std::size_t>(static_cast<double>(i) / bars *
-                                                static_cast<double>(n)));
-            return std::min(1.0f,
-                            static_cast<float>(m.waveform[src]) * wf_norm);
-        };
-
-        float cursor_frac = 0.0f;
-        if (is_active_row && total > 0)
-        {
-            cursor_frac = static_cast<float>(owner_.playing_position_ms_) /
-                          static_cast<float>(total);
-            if (cursor_frac > 1.0f)
-            {
-                cursor_frac = 1.0f;
-            }
-        }
-        const int cursor_bar = static_cast<int>(cursor_frac * bars);
-
-        for (int i = 0; i < bars; ++i)
-        {
-            float a = amp_at(i);
-            float bar_h = m.waveform.empty()
-                              ? kVoiceBarMinH
-                              : std::max(kVoiceBarMinH, a * strip_h);
-            float bx = strip_x + i * step;
-            float by = strip_y - bar_h * 0.5f;
-            tk::Color c = (i < cursor_bar) ? ctx.theme.palette.accent
-                                           : ctx.theme.palette.text_muted;
-            ctx.canvas.fill_rounded_rect({bx, by, kVoiceBarW, bar_h},
-                                         kVoiceBarW * 0.5f, c);
-        }
-
-        // Record world-coord geometry so on_pointer_down can hit-test
-        // the play button, waveform strip, and speed pill without
-        // re-running the layout maths.
-        if (!m.event_id.empty())
-        {
-            tk::Rect strip_rect{
-                strip_x,
-                strip_y - strip_h * 0.5f,
-                strip_w_avail,
-                strip_h,
-            };
-            owner_.voice_card_geom_[m.event_id] =
-                MessageListView::VoiceCardGeom{m.event_id, btn_rect, strip_rect,
-                                               pill_rect, dst};
-        }
+        // Card draw + geometry capture live in the playback controller; the
+        // icon cache stays Adapter-local (one rasterised glyph per backend).
+        owner_.media_.paint_voice_card(m, ctx, dst, ic_play_voice_);
     }
 
     void paint_audio_card(const MessageRowData& m, tk::PaintCtx& ctx,
                           tk::Rect dst) const
     {
-        // Card chrome — same radius as voice card.
-        ctx.canvas.fill_rounded_rect(dst, 10.0f, ctx.theme.palette.chrome_bg);
-        ctx.canvas.stroke_rounded_rect(dst, 10.0f, ctx.theme.palette.border,
-                                       1.0f);
-
-        // Layout:
-        //   Row 1 (top 36 px): [play btn 32px] [track] [time label]
-        //   Row 2 (bottom 24 px): filename · size
-        const float row1_h = 36.0f;
-        const float row1_cy = dst.y + row1_h * 0.5f;
-
-        // Play / pause button — identical to voice card.
-        const float btn_d = kAudioPlayBtnSize;
-        const float btn_x = dst.x + kAudioCardPadX;
-        const float btn_y = row1_cy - btn_d * 0.5f;
-        tk::Rect btn_rect{btn_x, btn_y, btn_d, btn_d};
-        ctx.canvas.fill_rounded_rect(btn_rect, btn_d * 0.5f,
-                                     ctx.theme.palette.accent);
-
-        const bool is_active_row =
-            m.event_id == owner_.playing_event_id_ && owner_.playing_is_active_;
-        const tk::Color glyph_col = ctx.theme.palette.text_on_accent;
-        if (is_active_row)
-        {
-            const float bar_w = 4.0f;
-            const float bar_h = btn_d * 0.45f;
-            const float gap = 4.0f;
-            const float cy = btn_y + (btn_d - bar_h) * 0.5f;
-            const float cx = btn_x + btn_d * 0.5f;
-            ctx.canvas.fill_rect({cx - gap * 0.5f - bar_w, cy, bar_w, bar_h},
-                                 glyph_col);
-            ctx.canvas.fill_rect({cx + gap * 0.5f, cy, bar_w, bar_h},
-                                 glyph_col);
-        }
-        else
-        {
-            // Play glyph (▶): Lucide play icon, tinted to the on-accent colour.
-            ic_play_audio_.draw(ctx.canvas, ctx.factory, kPlaySvg, btn_rect,
-                                btn_d * 0.55f, glyph_col);
-        }
-
-        // Duration / elapsed time label — right-justified in row 1.
-        std::uint64_t total =
-            m.duration_ms > 0
-                ? m.duration_ms
-                : (m.event_id == owner_.playing_event_id_ && owner_.audio_player_
-                       ? owner_.audio_player_->duration_ms()
-                       : 0u);
-        tk::TextStyle ds{};
-        ds.role = tk::FontRole::Timestamp;
-        std::uint64_t label_ms = (is_active_row && total > 0 &&
-                                  owner_.playing_position_ms_ <= total)
-                                     ? (total - owner_.playing_position_ms_)
-                                     : total;
-        auto dur_lo = ctx.factory.build_text(format_mmss(label_ms), ds);
-        tk::Size dur_sz = dur_lo ? dur_lo->measure() : tk::Size{};
-        const float time_x = dst.x + dst.w - kAudioCardPadX - dur_sz.w;
-        if (dur_lo)
-        {
-            ctx.canvas.draw_text(
-                *dur_lo,
-                {time_x, row1_cy - dur_sz.h * 0.5f},
-                ctx.theme.palette.text_secondary);
-        }
-
-        // Linear progress track — between play button and time label.
-        const float track_x = btn_x + btn_d + kAudioCardPadX;
-        const float track_right = time_x - kAudioCardPadX;
-        const float track_w = track_right - track_x;
-        const float track_y = row1_cy - kAudioTrackH * 0.5f;
-        tk::Rect track_bg{track_x, track_y, track_w, kAudioTrackH};
-        if (track_w > 0.0f)
-        {
-            ctx.canvas.fill_rounded_rect(track_bg, kAudioTrackH * 0.5f,
-                                         ctx.theme.palette.text_muted);
-
-            float fill_frac = 0.0f;
-            if (is_active_row && total > 0)
-            {
-                fill_frac = static_cast<float>(owner_.playing_position_ms_) /
-                            static_cast<float>(total);
-                if (fill_frac > 1.0f)
-                    fill_frac = 1.0f;
-            }
-            if (fill_frac > 0.0f)
-            {
-                ctx.canvas.fill_rounded_rect(
-                    {track_x, track_y, track_w * fill_frac, kAudioTrackH},
-                    kAudioTrackH * 0.5f, ctx.theme.palette.accent);
-            }
-        }
-
-        // Row 2: filename · size.
-        const float row2_y = dst.y + row1_h + 4.0f;
-        const float name_x = btn_x + btn_d + kAudioCardPadX;
-        const float name_w = dst.x + dst.w - kAudioCardPadX - name_x;
-        const std::string display_name =
-            m.file_name.empty() ? m.body : m.file_name;
-        const std::string meta = m.file_size > 0
-                                     ? display_name + " \xc2\xb7 " +
-                                           format_size(m.file_size)
-                                     : display_name;
-        tk::TextStyle ns{};
-        ns.role = tk::FontRole::Timestamp;
-        ns.trim = tk::TextTrim::Ellipsis;
-        ns.max_width = name_w;
-        auto name_lo = ctx.factory.build_text(meta, ns);
-        if (name_lo)
-        {
-            ctx.canvas.draw_text(*name_lo, {name_x, row2_y},
-                                 ctx.theme.palette.text_secondary);
-        }
-
-        // Record hit-test geometry.
-        if (!m.event_id.empty())
-        {
-            tk::Rect full_track{track_x, dst.y, track_w,
-                                row1_h}; // full row-1 height for easier tapping
-            owner_.audio_card_geom_[m.event_id] =
-                MessageListView::AudioCardGeom{m.event_id, btn_rect, full_track,
-                                               dst};
-        }
+        owner_.media_.paint_audio_card(m, ctx, dst, ic_play_audio_);
     }
 
     void paint_video_card(const MessageRowData& m, tk::PaintCtx& ctx,
@@ -4799,25 +4486,22 @@ void MessageListView::update_voice_waveform(const std::string&         event_id,
 
 void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
 {
-    audio_player_ = std::move(player);
-    if (audio_player_)
-    {
-        audio_player_->on_progress = [this]()
-        {
-            on_audio_progress();
-        };
-    }
+    // Ownership + the on_progress wiring move into the playback controller.
+    media_.set_player(std::move(player));
 }
 
 void MessageListView::set_voice_bytes_provider(VoiceBytesProvider provider)
 {
-    voice_bytes_provider_ = std::move(provider);
+    media_.set_bytes_provider(std::move(provider));
 }
 
 void MessageListView::set_repaint_requester(
     std::function<void()> request_repaint)
 {
-    request_repaint_ = std::move(request_repaint);
+    request_repaint_ = request_repaint;
+    // The playback controller drives its own repaints (play/pause/scrub/speed
+    // and the on_progress tick), so hand it the same requester.
+    media_.set_repaint(std::move(request_repaint));
 }
 
 void MessageListView::set_video_player_factory(VideoPlayerFactory f)
@@ -4991,7 +4675,7 @@ void MessageListView::on_pointer_drag(tk::Point local)
             if (row.event_id == press_audio_event_id_ &&
                 row.kind == MessageRowData::Kind::Audio)
             {
-                handle_audio_scrub_at(row, world.x);
+                media_.handle_audio_scrub_at(row, world.x);
                 break;
             }
         }
@@ -5048,319 +4732,9 @@ void MessageListView::on_pointer_drag(tk::Point local)
         if (row.event_id == press_voice_event_id_ &&
             row.kind == MessageRowData::Kind::Voice)
         {
-            handle_voice_scrub_at(row, world.x);
+            media_.handle_voice_scrub_at(row, world.x);
             break;
         }
-    }
-}
-
-void MessageListView::handle_voice_scrub_at(const MessageRowData& row,
-                                            float world_x)
-{
-    if (!audio_player_ || !voice_bytes_provider_)
-    {
-        return;
-    }
-    auto it = voice_card_geom_.find(row.event_id);
-    if (it == voice_card_geom_.end())
-    {
-        return;
-    }
-    const tk::Rect& strip = it->second.waveform_strip;
-    if (strip.w <= 0.0f)
-    {
-        return;
-    }
-
-    float frac = (world_x - strip.x) / strip.w;
-    if (frac < 0.0f)
-    {
-        frac = 0.0f;
-    }
-    if (frac > 1.0f)
-    {
-        frac = 1.0f;
-    }
-
-    // Resolve total duration: the sender's metadata if present, otherwise
-    // whatever the backend has discovered after loading.
-    std::uint64_t total = row.duration_ms > 0 ? row.duration_ms : 0;
-    if (total == 0 && row.event_id == playing_event_id_)
-    {
-        total = audio_player_->duration_ms();
-    }
-    if (total == 0)
-    {
-        return;
-    }
-
-    const std::uint64_t target_ms =
-        static_cast<std::uint64_t>(frac * static_cast<float>(total));
-
-    if (row.event_id != playing_event_id_)
-    {
-        // Start playback at the clicked position. Same byte-cache path
-        // as a regular play click; on cache miss the view stays idle and
-        // the user can try again once the prefetch lands.
-        std::vector<std::uint8_t> bytes =
-            voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
-        if (bytes.empty())
-        {
-            if (request_repaint_)
-            {
-                request_repaint_();
-            }
-            return;
-        }
-        if (!playing_event_id_.empty())
-        {
-            audio_player_->stop();
-        }
-        playing_event_id_ = row.event_id;
-        playing_position_ms_ = target_ms;
-        playing_is_active_ = true;
-        playing_ever_active_ = false;
-        audio_player_->set_playback_rate(playback_rate_);
-        audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
-        audio_player_->seek(target_ms);
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
-        return;
-    }
-
-    audio_player_->seek(target_ms);
-    playing_position_ms_ = target_ms;
-    if (request_repaint_)
-    {
-        request_repaint_();
-    }
-}
-
-void MessageListView::handle_voice_speed_click()
-{
-    if (!audio_player_)
-    {
-        return;
-    }
-    if (playback_rate_ < 1.49f)
-    {
-        playback_rate_ = 1.5f;
-    }
-    else if (playback_rate_ < 1.99f)
-    {
-        playback_rate_ = 2.0f;
-    }
-    else
-    {
-        playback_rate_ = 1.0f;
-    }
-    audio_player_->set_playback_rate(playback_rate_);
-    if (request_repaint_)
-    {
-        request_repaint_();
-    }
-}
-
-void MessageListView::on_audio_progress()
-{
-    if (audio_player_)
-    {
-        playing_position_ms_ = audio_player_->position_ms();
-        playing_is_active_ = audio_player_->is_playing();
-        if (playing_is_active_)
-        {
-            playing_ever_active_ = true;
-        }
-        // Only treat position-0 + not-playing as "clip ended" once the clip
-        // was confirmed to have started.  Without this guard the same condition
-        // fires during Qt's async-load window (is_playing()==false while the
-        // FFmpeg probe is in flight), clearing playing_event_id_ before the
-        // first repaint so the play button never flips to active.
-        if (!playing_is_active_ && playing_position_ms_ == 0 && playing_ever_active_)
-        {
-            playing_event_id_.clear();
-            playing_ever_active_ = false;
-        }
-    }
-    if (request_repaint_)
-    {
-        request_repaint_();
-    }
-}
-
-void MessageListView::handle_voice_play_click(const MessageRowData& row)
-{
-    if (!audio_player_ || !voice_bytes_provider_)
-    {
-        return;
-    }
-
-    // Clicking the currently-active row's play button toggles pause.
-    if (row.event_id == playing_event_id_)
-    {
-        if (audio_player_->is_playing())
-        {
-            audio_player_->pause();
-        }
-        else
-        {
-            audio_player_->resume();
-        }
-        on_audio_progress();
-        return;
-    }
-
-    // Switching rows — stop the current clip cleanly first.
-    if (!playing_event_id_.empty())
-    {
-        audio_player_->stop();
-    }
-
-    std::vector<std::uint8_t> bytes = voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
-    if (bytes.empty())
-    {
-        // Cache miss — the SDK kicks off a background fetch on the first
-        // call. Surface state honestly: nothing is loaded, repaint so the
-        // pause glyph (if any) reverts to play, and let the user click
-        // again once bytes arrive.
-        playing_event_id_.clear();
-        playing_is_active_ = false;
-        playing_ever_active_ = false;
-        playing_position_ms_ = 0;
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
-        return;
-    }
-    playing_event_id_ = row.event_id;
-    playing_position_ms_ = 0;
-    playing_is_active_ = true;
-    playing_ever_active_ = false;
-    audio_player_->set_playback_rate(playback_rate_);
-    audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
-    if (request_repaint_)
-    {
-        request_repaint_();
-    }
-}
-
-void MessageListView::handle_audio_play_click(const MessageRowData& row)
-{
-    if (!audio_player_ || !voice_bytes_provider_)
-    {
-        return;
-    }
-    if (row.event_id == playing_event_id_)
-    {
-        if (audio_player_->is_playing())
-        {
-            audio_player_->pause();
-        }
-        else
-        {
-            audio_player_->resume();
-        }
-        on_audio_progress();
-        return;
-    }
-    if (!playing_event_id_.empty())
-    {
-        audio_player_->stop();
-    }
-    std::vector<std::uint8_t> bytes = voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
-    if (bytes.empty())
-    {
-        playing_event_id_.clear();
-        playing_is_active_ = false;
-        playing_ever_active_ = false;
-        playing_position_ms_ = 0;
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
-        return;
-    }
-    playing_event_id_ = row.event_id;
-    playing_position_ms_ = 0;
-    playing_is_active_ = true;
-    playing_ever_active_ = false;
-    audio_player_->set_playback_rate(1.0f);
-    audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
-    if (request_repaint_)
-    {
-        request_repaint_();
-    }
-}
-
-void MessageListView::handle_audio_scrub_at(const MessageRowData& row,
-                                            float world_x)
-{
-    if (!audio_player_ || !voice_bytes_provider_)
-    {
-        return;
-    }
-    auto it = audio_card_geom_.find(row.event_id);
-    if (it == audio_card_geom_.end())
-    {
-        return;
-    }
-    const tk::Rect& track = it->second.progress_track;
-    if (track.w <= 0.0f)
-    {
-        return;
-    }
-    float frac = (world_x - track.x) / track.w;
-    frac = std::max(0.0f, std::min(1.0f, frac));
-
-    std::uint64_t total = row.duration_ms > 0 ? row.duration_ms : 0;
-    if (total == 0 && row.event_id == playing_event_id_)
-    {
-        total = audio_player_->duration_ms();
-    }
-    if (total == 0)
-    {
-        return;
-    }
-    const std::uint64_t target_ms =
-        static_cast<std::uint64_t>(frac * static_cast<float>(total));
-
-    if (row.event_id != playing_event_id_)
-    {
-        std::vector<std::uint8_t> bytes =
-            voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
-        if (bytes.empty())
-        {
-            if (request_repaint_)
-            {
-                request_repaint_();
-            }
-            return;
-        }
-        if (!playing_event_id_.empty())
-        {
-            audio_player_->stop();
-        }
-        playing_event_id_ = row.event_id;
-        playing_position_ms_ = target_ms;
-        playing_is_active_ = true;
-        playing_ever_active_ = false;
-        audio_player_->set_playback_rate(1.0f);
-        audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
-        audio_player_->seek(target_ms);
-        if (request_repaint_)
-        {
-            request_repaint_();
-        }
-        return;
-    }
-    audio_player_->seek(target_ms);
-    playing_position_ms_ = target_ms;
-    if (request_repaint_)
-    {
-        request_repaint_();
     }
 }
 
@@ -5868,7 +5242,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
     // strip. Check pill (small) then play button then waveform strip.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        for (const auto& [event_id, geom] : voice_card_geom_)
+        for (const auto& [event_id, geom] : media_.voice_geom())
         {
             if (geom.speed_pill.w > 0 && rect_contains(geom.speed_pill, world))
             {
@@ -5893,7 +5267,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                     if (row.event_id == event_id &&
                         row.kind == MessageRowData::Kind::Voice)
                     {
-                        handle_voice_scrub_at(row, world.x);
+                        media_.handle_voice_scrub_at(row, world.x);
                         break;
                     }
                 }
@@ -5905,7 +5279,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
     // Audio card hit-test — play button or progress track.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        for (const auto& [event_id, geom] : audio_card_geom_)
+        for (const auto& [event_id, geom] : media_.audio_geom())
         {
             if (rect_contains(geom.play_button, world))
             {
@@ -5923,7 +5297,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                     if (row.event_id == event_id &&
                         row.kind == MessageRowData::Kind::Audio)
                     {
-                        handle_audio_scrub_at(row, world.x);
+                        media_.handle_audio_scrub_at(row, world.x);
                         break;
                     }
                 }
@@ -6367,12 +5741,12 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         }
         // PlayButton — confirm pointer is still over the button.
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        auto it = audio_card_geom_.find(ev);
-        if (it == audio_card_geom_.end())
+        const auto* geom = media_.audio_geom_at(ev);
+        if (!geom)
         {
             return;
         }
-        if (!rect_contains(it->second.play_button, world))
+        if (!rect_contains(geom->play_button, world))
         {
             return;
         }
@@ -6380,7 +5754,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             if (row.event_id == ev && row.kind == MessageRowData::Kind::Audio)
             {
-                handle_audio_play_click(row);
+                media_.handle_audio_play_click(row);
                 return;
             }
         }
@@ -6404,22 +5778,21 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         }
 
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        auto it = voice_card_geom_.find(ev);
-        if (it == voice_card_geom_.end())
+        const auto* geom = media_.voice_geom_at(ev);
+        if (!geom)
         {
             return;
         }
-        const auto& geom = it->second;
         const tk::Rect& target = (kind == VoicePressKind::PlayButton)
-                                     ? geom.play_button
-                                     : geom.speed_pill;
+                                     ? geom->play_button
+                                     : geom->speed_pill;
         if (target.w <= 0 || !rect_contains(target, world))
         {
             return;
         }
         if (kind == VoicePressKind::SpeedPill)
         {
-            handle_voice_speed_click();
+            media_.handle_voice_speed_click();
             return;
         }
         // PlayButton.
@@ -6427,7 +5800,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             if (row.event_id == ev && row.kind == MessageRowData::Kind::Voice)
             {
-                handle_voice_play_click(row);
+                media_.handle_voice_play_click(row);
                 return;
             }
         }
@@ -6877,8 +6250,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     image_geom_.clear();
     video_geom_.clear();
     file_geom_.clear();
-    voice_card_geom_.clear();
-    audio_card_geom_.clear();
+    media_.clear_geometry();
     quote_block_geom_.clear();
     preview_card_geom_.clear();
     chip_hit_rects_.clear();

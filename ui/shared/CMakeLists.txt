@@ -68,6 +68,8 @@ set(_tk_sources
     views/RoomListView.cpp
     views/MessageListView.h
     views/MessageListView.cpp
+    views/TimelineMediaController.h
+    views/TimelineMediaController.cpp
     views/PinnedBanner.h
     views/PinnedBanner.cpp
     views/html_spans.h

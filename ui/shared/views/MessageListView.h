@@ -13,6 +13,7 @@
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 #include "tk/video.h"
+#include "views/TimelineMediaController.h"
 #include "views/map_tiles.h"
 
 #include <tesseract/types.h>
@@ -967,34 +968,18 @@ private:
     std::string newest_visible_real_event_id() const;
     void maybe_notify_receipt_() const;
 
-    // Voice playback. The view owns a single AudioPlayer — at most one
-    // voice clip plays at a time. The host hands ownership in via
-    // `set_audio_player` after construction; until then click-to-play is
-    // a no-op. `voice_card_geom_` is rebuilt every paint pass (world
-    // coords, keyed by event_id) so `on_pointer_down` can hit-test the
-    // play button, waveform strip, and speed pill without touching the
-    // painter again.
-    struct VoiceCardGeom
-    {
-        std::string event_id;
-        tk::Rect play_button{};    // play/pause hit rect
-        tk::Rect waveform_strip{}; // scrub hit rect
-        tk::Rect speed_pill{};     // playback-rate cycle hit rect
-        tk::Rect card_bounds{};
-    };
-    mutable std::unordered_map<std::string, VoiceCardGeom> voice_card_geom_;
+    // Voice + audio message playback. The view owns a single AudioPlayer
+    // (at most one clip plays at a time); ownership, the byte-cache provider,
+    // the play/pause/scrub/speed state, the per-paint hit-test geometry, and
+    // the card paint all live in `media_`. The host hands ownership in via
+    // `set_audio_player` after construction; until then click-to-play is a
+    // no-op. The press FSM below stays on the view because it is part of the
+    // pointer-down/up/drag pipeline; it only names the controller's geometry.
+    TimelineMediaController media_;
 
-    struct AudioCardGeom
-    {
-        std::string event_id;
-        tk::Rect play_button{};    // play/pause hit rect
-        tk::Rect progress_track{}; // linear scrub hit rect
-        tk::Rect card_bounds{};
-    };
-    mutable std::unordered_map<std::string, AudioCardGeom> audio_card_geom_;
-
-    std::unique_ptr<tk::AudioPlayer> audio_player_;
-    VoiceBytesProvider voice_bytes_provider_;
+    // View-wide repaint requester. Wired by `set_repaint_requester` and used
+    // throughout the view (gate reveal, selection drag, async hops, …); also
+    // handed to `media_` so the playback subsystem can drive its own repaints.
     std::function<void()> request_repaint_;
 
     // Liveness sentinel. Async media-fetch / player callbacks capture a
@@ -1002,22 +987,6 @@ private:
     // on every room switch while a fetch may still be in flight, so a raw
     // `this` capture would be a use-after-free.
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
-
-    // The event_id of the currently-loaded clip in `audio_player_`. Empty
-    // when nothing is loaded.
-    std::string playing_event_id_;
-    // Mirror of `audio_player_->position_ms()` — refreshed from the
-    // AudioPlayer's on_progress callback so paint doesn't have to call
-    // back into the player.
-    std::uint64_t playing_position_ms_ = 0;
-    bool playing_is_active_ = false;
-    // Set to true once on_audio_progress() first observes is_playing()==true
-    // for the current clip.  Guards against clearing playing_event_id_ during
-    // the async-load window when Qt reports is_playing()==false at position 0.
-    bool playing_ever_active_ = false;
-    // Global playback rate. Cycles 1.0 → 1.5 → 2.0 → 1.0 via the per-row
-    // speed pill. Applied to every play()/resume()/seek().
-    float playback_rate_ = 1.0f;
 
     enum class VoicePressKind
     {
@@ -1029,11 +998,6 @@ private:
     VoicePressKind press_voice_kind_ = VoicePressKind::None;
     std::string press_voice_event_id_;
 
-    void handle_voice_play_click(const MessageRowData& row);
-    void handle_voice_scrub_at(const MessageRowData& row, float local_x);
-    void handle_voice_speed_click();
-    void on_audio_progress();
-
     enum class AudioPressKind
     {
         None,
@@ -1042,9 +1006,6 @@ private:
     };
     AudioPressKind press_audio_kind_ = AudioPressKind::None;
     std::string press_audio_event_id_;
-
-    void handle_audio_play_click(const MessageRowData& row);
-    void handle_audio_scrub_at(const MessageRowData& row, float world_x);
 
     // Inline video playback — at most kMaxInlinePlayers active simultaneously.
     static constexpr int kMaxInlinePlayers = 10;
