@@ -39,14 +39,33 @@ struct Client::Impl
     // *requests* cancellation) observes a null handler and drops, instead of
     // dereferencing the about-to-be-destroyed handler. See HandlerSlot.
     std::shared_ptr<tesseract_ffi::HandlerSlot> handler_slot;
-    // Serialises all calls that reach &mut ClientFfi across the cxx boundary.
-    // Any method whose Rust signature is `&self` (not `&mut self`) does NOT
-    // acquire this lock and may run concurrently: fetch_*, fetch_media_async,
-    // fetch_url_async, cancel_media_group, get_url_preview, get_url_preview_async,
-    // get_room_summary, get_room_members, space_children,
-    // get_room_notification_mode, can_pin_in_room, needs_recovery,
-    // backup_state, recovery_state, list_pack_images, list_devices,
-    // get_sas_emojis.
+    // Serialises every call that reaches `&mut ClientFfi` across the cxx
+    // boundary so the run_async_() worker threads and the UI thread never hold
+    // a mutable borrow concurrently.
+    //
+    // The unlocked-read invariant (compiler-UNCHECKED — keep it honest):
+    // A method may skip this lock ONLY if its Rust signature is `&self` AND
+    // every field it touches is either (a) immutable for the call's duration
+    // or (b) accessed through its own synchronisation (a Mutex/RwLock/Atomic
+    // inside ClientFfi). Examples that are safe unlocked because they only
+    // read internally-synchronised state: list_image_packs / list_pack_images
+    // / list_favorite_stickers / user_pack_has_sticker (self.image_packs
+    // Mutex), get_sas_emojis (self.sas_emoji_cache Mutex), cancel_media_group
+    // (self.media_tasks Mutex), in_flight_count / backup_state (atomics).
+    //
+    // The hazard the lock does NOT currently cover: a `&self` reader that
+    // touches a *plain* (un-synchronised) field — `self.client`, `self.stop_rx`,
+    // `self.handler`, `self.thread_lists`, `self.thread_timelines`. Those
+    // fields are only mutated by `&mut self` methods (under this lock), so an
+    // unlocked `&self` read of them races the locked writer. Most such readers
+    // (export_session, user_id, get_room_summary, get_room_members,
+    // can_pin_in_room, list_devices, the blocking fetch_*_bytes, …) read
+    // `self.client` and then block_on a network round-trip; taking ffi_mu in
+    // them would serialise blocking I/O against every send and is NOT done
+    // here — the correct fix is to put `client` behind synchronisation on the
+    // Rust side. The one exception locked below is list_room_threads, which
+    // reads the plain self.thread_lists HashMap with NO blocking call and is
+    // cheap to serialise.
     mutable std::mutex ffi_mu;
 
     explicit Impl() : ffi(tesseract_ffi::client_create())
@@ -341,6 +360,12 @@ void Client::unsubscribe_room_threads(const std::string& room_id)
 
 std::vector<ThreadInfo> Client::list_room_threads(const std::string& room_id)
 {
+    // Reads the plain (un-synchronised) self.thread_lists HashMap on the Rust
+    // side, which subscribe_room_threads / unsubscribe_room_threads / drop
+    // mutate under &mut self. Take ffi_mu so this read serialises with those
+    // writers (no data race on the HashMap). Cheap: the underlying items()
+    // call is an in-memory snapshot, not a network round-trip.
+    MUT_FFI;
     return ffi_vec<ThreadInfo>(impl_->ffi->list_room_threads(room_id));
 }
 
