@@ -599,37 +599,12 @@ pub(super) async fn timeline_item_to_ffi(
         _ => return None,
     };
 
-    let (
-        body,
-        formatted_body,
-        msg_type,
-        source_url,
-        source_encrypted_json,
-        width,
-        height,
-        file_url,
-        file_encrypted_json,
-        file_name,
-        file_size,
-        image_filename,
-        audio_url,
-        audio_encrypted_json,
-        audio_duration_ms,
-        audio_waveform,
-        audio_mime,
-        video_thumbnail_url,
-        video_thumbnail_encrypted_json,
-        video_duration_ms,
-        video_mime,
-        video_autoplay,
-        video_loop,
-        video_no_audio,
-        video_hide_controls,
-        video_gif,
-        location_lat,
-        location_lon,
-        location_description,
-    ) = match msg_content.msgtype() {
+    // Per-msgtype partial: each arm sets only the fields that differ from the
+    // zeroed base; everything else comes from `ffi_event_defaults()`. The
+    // post-match code below layers sender/reaction/thread/etc. fields on top of
+    // this partial via struct-update syntax (`..msg_fields`), so this arm must
+    // NOT set any of those fields.
+    let msg_fields: TimelineEvent = match msg_content.msgtype() {
         MessageType::Text(t) => {
             let fmt = t
                 .formatted
@@ -642,37 +617,12 @@ pub(super) async fn timeline_item_to_ffi(
                 })
                 .map(|f| f.body.clone())
                 .unwrap_or_default();
-            (
-                t.body.clone(),
-                fmt,
-                "m.text".to_owned(),
-                String::new(), // source_url
-                String::new(), // source_encrypted_json
-                0u64,
-                0u64,
-                String::new(), // file_url
-                String::new(), // file_encrypted_json
-                String::new(),
-                0u64,
-                String::new(),
-                String::new(), // audio_url
-                String::new(), // audio_encrypted_json
-                0u64,
-                Vec::<u16>::new(),
-                String::new(),
-                String::new(), // video_thumbnail_url
-                String::new(), // video_thumbnail_encrypted_json
-                0u64,
-                String::new(),
-                false,
-                false,
-                false,
-                false,
-                false,
-                0.0f64,
-                0.0f64,
-                String::new(),
-            )
+            TimelineEvent {
+                body: t.body.clone(),
+                formatted_body: fmt,
+                msg_type: "m.text".to_owned(),
+                ..ffi_event_defaults()
+            }
         }
         MessageType::Image(i) => {
             let (src_url, src_enc) = split_source(&i.source);
@@ -688,37 +638,16 @@ pub(super) async fn timeline_item_to_ffi(
                 .unwrap_or((0u64, 0u64));
             // MSC2530: filename field signals that body is a user caption.
             let img_filename = i.filename.clone().unwrap_or_default();
-            (
-                i.body.clone(),
-                String::new(),
-                "m.image".to_owned(),
-                src_url,       // source_url
-                src_enc,       // source_encrypted_json
-                w,
-                h,
-                String::new(), // file_url
-                String::new(), // file_encrypted_json
-                String::new(),
-                0u64,
-                img_filename,
-                String::new(), // audio_url
-                String::new(), // audio_encrypted_json
-                0u64,
-                Vec::new(),
-                String::new(),
-                String::new(), // video_thumbnail_url
-                String::new(), // video_thumbnail_encrypted_json
-                0u64,
-                String::new(),
-                false,
-                false,
-                false,
-                false,
-                false,
-                0.0f64,
-                0.0f64,
-                String::new(),
-            )
+            TimelineEvent {
+                body: i.body.clone(),
+                msg_type: "m.image".to_owned(),
+                source_url: src_url,
+                source_encrypted_json: src_enc,
+                width: w,
+                height: h,
+                image_filename: img_filename,
+                ..ffi_event_defaults()
+            }
         }
         MessageType::File(f) => {
             let (file_url, file_enc) = split_source(&f.source);
@@ -729,37 +658,15 @@ pub(super) async fn timeline_item_to_ffi(
                 .and_then(|info| info.size)
                 .map(u64::from)
                 .unwrap_or(0u64);
-            (
-                f.body.clone(),
-                String::new(),
-                "m.file".to_owned(),
-                String::new(), // source_url
-                String::new(), // source_encrypted_json
-                0u64,
-                0u64,
-                file_url,      // file_url
-                file_enc,      // file_encrypted_json
-                name,
-                size,
-                String::new(),
-                String::new(), // audio_url
-                String::new(), // audio_encrypted_json
-                0u64,
-                Vec::new(),
-                String::new(),
-                String::new(), // video_thumbnail_url
-                String::new(), // video_thumbnail_encrypted_json
-                0u64,
-                String::new(),
-                false,
-                false,
-                false,
-                false,
-                false,
-                0.0f64,
-                0.0f64,
-                String::new(),
-            )
+            TimelineEvent {
+                body: f.body.clone(),
+                msg_type: "m.file".to_owned(),
+                file_url,
+                file_encrypted_json: file_enc,
+                file_name: name,
+                file_size: size,
+                ..ffi_event_defaults()
+            }
         }
         // MSC3245: voice messages are `m.audio` events tagged with
         // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
@@ -791,37 +698,16 @@ pub(super) async fn timeline_item_to_ffi(
                     }
                     None => (info_duration_ms, Vec::new()),
                 };
-                (
-                    a.body.clone(),
-                    String::new(),
-                    "m.voice".to_owned(),
-                    String::new(), // source_url
-                    String::new(), // source_encrypted_json
-                    0u64,
-                    0u64,
-                    String::new(), // file_url
-                    String::new(), // file_encrypted_json
-                    String::new(),
-                    0u64,
-                    String::new(),
-                    aud_url,       // audio_url
-                    aud_enc,       // audio_encrypted_json
-                    duration_ms,
-                    waveform,
-                    info_mime,
-                    String::new(), // video_thumbnail_url
-                    String::new(), // video_thumbnail_encrypted_json
-                    0u64,
-                    String::new(),
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    0.0f64,
-                    0.0f64,
-                    String::new(),
-                )
+                TimelineEvent {
+                    body: a.body.clone(),
+                    msg_type: "m.voice".to_owned(),
+                    audio_url: aud_url,
+                    audio_encrypted_json: aud_enc,
+                    audio_duration_ms: duration_ms,
+                    audio_waveform: waveform,
+                    audio_mime: info_mime,
+                    ..ffi_event_defaults()
+                }
             } else {
                 let name = a.filename.clone().unwrap_or_else(|| a.body.clone());
                 let size = a
@@ -830,37 +716,17 @@ pub(super) async fn timeline_item_to_ffi(
                     .and_then(|i| i.size)
                     .map(u64::from)
                     .unwrap_or(0u64);
-                (
-                    a.body.clone(),
-                    String::new(),
-                    "m.audio".to_owned(),
-                    String::new(), // source_url
-                    String::new(), // source_encrypted_json
-                    0u64,
-                    0u64,
-                    String::new(), // file_url
-                    String::new(), // file_encrypted_json
-                    name,
-                    size,
-                    String::new(),
-                    aud_url,       // audio_url
-                    aud_enc,       // audio_encrypted_json
-                    info_duration_ms,
-                    Vec::new(),
-                    info_mime,
-                    String::new(), // video_thumbnail_url
-                    String::new(), // video_thumbnail_encrypted_json
-                    0u64,
-                    String::new(),
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    0.0f64,
-                    0.0f64,
-                    String::new(),
-                )
+                TimelineEvent {
+                    body: a.body.clone(),
+                    msg_type: "m.audio".to_owned(),
+                    file_name: name,
+                    file_size: size,
+                    audio_url: aud_url,
+                    audio_encrypted_json: aud_enc,
+                    audio_duration_ms: info_duration_ms,
+                    audio_mime: info_mime,
+                    ..ffi_event_defaults()
+                }
             }
         }
         MessageType::Video(v) => {
@@ -897,37 +763,25 @@ pub(super) async fn timeline_item_to_ffi(
             let video_loop = mau("fi.mau.loop") || video_gif;
             let video_no_audio = mau("fi.mau.no_audio") || video_gif;
             let video_hide_controls = mau("fi.mau.hide_controls") || video_gif;
-            (
-                v.body.clone(),
-                String::new(),
-                "m.video".to_owned(),
-                src_url,       // source_url
-                src_enc,       // source_encrypted_json
-                w,
-                h,
-                String::new(), // file_url
-                String::new(), // file_encrypted_json
-                String::new(),
-                0u64,
-                vid_filename,
-                String::new(), // audio_url
-                String::new(), // audio_encrypted_json
-                0u64,
-                Vec::new(),
-                String::new(),
-                thumb_url,     // video_thumbnail_url
-                thumb_enc,     // video_thumbnail_encrypted_json
-                dur_ms,
-                mime,
+            TimelineEvent {
+                body: v.body.clone(),
+                msg_type: "m.video".to_owned(),
+                source_url: src_url,
+                source_encrypted_json: src_enc,
+                width: w,
+                height: h,
+                image_filename: vid_filename,
+                video_thumbnail_url: thumb_url,
+                video_thumbnail_encrypted_json: thumb_enc,
+                video_duration_ms: dur_ms,
+                video_mime: mime,
                 video_autoplay,
                 video_loop,
                 video_no_audio,
                 video_hide_controls,
                 video_gif,
-                0.0f64,
-                0.0f64,
-                String::new(),
-            )
+                ..ffi_event_defaults()
+            }
         }
         MessageType::Emote(e) => {
             let fmt = e
@@ -941,37 +795,12 @@ pub(super) async fn timeline_item_to_ffi(
                 })
                 .map(|f| f.body.clone())
                 .unwrap_or_default();
-            (
-                e.body.clone(),
-                fmt,
-                "m.emote".to_owned(),
-                String::new(), // source_url
-                String::new(), // source_encrypted_json
-                0u64,
-                0u64,
-                String::new(), // file_url
-                String::new(), // file_encrypted_json
-                String::new(),
-                0u64,
-                String::new(),
-                String::new(), // audio_url
-                String::new(), // audio_encrypted_json
-                0u64,
-                Vec::<u16>::new(),
-                String::new(),
-                String::new(), // video_thumbnail_url
-                String::new(), // video_thumbnail_encrypted_json
-                0u64,
-                String::new(),
-                false,
-                false,
-                false,
-                false,
-                false,
-                0.0f64,
-                0.0f64,
-                String::new(),
-            )
+            TimelineEvent {
+                body: e.body.clone(),
+                formatted_body: fmt,
+                msg_type: "m.emote".to_owned(),
+                ..ffi_event_defaults()
+            }
         }
         MessageType::Notice(n) => {
             let fmt = n
@@ -985,71 +814,23 @@ pub(super) async fn timeline_item_to_ffi(
                 })
                 .map(|f| f.body.clone())
                 .unwrap_or_default();
-            (
-                n.body.clone(),
-                fmt,
-                "m.notice".to_owned(),
-                String::new(), // source_url
-                String::new(), // source_encrypted_json
-                0u64,
-                0u64,
-                String::new(), // file_url
-                String::new(), // file_encrypted_json
-                String::new(),
-                0u64,
-                String::new(),
-                String::new(), // audio_url
-                String::new(), // audio_encrypted_json
-                0u64,
-                Vec::<u16>::new(),
-                String::new(),
-                String::new(), // video_thumbnail_url
-                String::new(), // video_thumbnail_encrypted_json
-                0u64,
-                String::new(),
-                false,
-                false,
-                false,
-                false,
-                false,
-                0.0f64,
-                0.0f64,
-                String::new(),
-            )
+            TimelineEvent {
+                body: n.body.clone(),
+                formatted_body: fmt,
+                msg_type: "m.notice".to_owned(),
+                ..ffi_event_defaults()
+            }
         }
         MessageType::Location(l) => {
             let (lat, lon) = parse_geo_uri(l.geo_uri()).unwrap_or((0.0, 0.0));
-            (
-                l.body.clone(),
-                String::new(),
-                "m.location".to_owned(),
-                String::new(), // source_url
-                String::new(), // source_encrypted_json
-                0u64,
-                0u64,
-                String::new(), // file_url
-                String::new(), // file_encrypted_json
-                String::new(),
-                0u64,
-                String::new(),
-                String::new(), // audio_url
-                String::new(), // audio_encrypted_json
-                0u64,
-                Vec::<u16>::new(),
-                String::new(),
-                String::new(), // video_thumbnail_url
-                String::new(), // video_thumbnail_encrypted_json
-                0u64,
-                String::new(),
-                false,
-                false,
-                false,
-                false,
-                false,
-                lat,
-                lon,
-                l.body.clone(),
-            )
+            TimelineEvent {
+                body: l.body.clone(),
+                msg_type: "m.location".to_owned(),
+                location_lat: lat,
+                location_lon: lon,
+                location_description: l.body.clone(),
+                ..ffi_event_defaults()
+            }
         }
         _ => return None,
     };
@@ -1151,6 +932,10 @@ pub(super) async fn timeline_item_to_ffi(
         }
     };
 
+    // Layer the common (sender / reaction / reply / thread / pending) fields on
+    // top of the per-msgtype partial. Fields the match arm set (body, msg_type,
+    // source_*, width/height, file_*, audio_*, video_*, location_*) flow through
+    // unchanged via `..msg_fields`; only the fields named here are overridden.
     Some(TimelineEvent {
         event_id: event_item
             .event_id()
@@ -1160,34 +945,9 @@ pub(super) async fn timeline_item_to_ffi(
         sender: event_item.sender().to_string(),
         sender_name,
         sender_avatar_url,
-        body,
         timestamp: event_item.timestamp().get().into(),
-        msg_type,
-        source_url,
-        source_encrypted_json,
-        width,
-        height,
-        file_url,
-        file_encrypted_json,
-        file_name,
-        file_size,
-        image_filename,
-        audio_url,
-        audio_encrypted_json,
-        audio_duration_ms,
-        audio_waveform,
-        audio_mime,
-        video_thumbnail_url,
-        video_thumbnail_encrypted_json,
         image_thumbnail_url,
         image_thumbnail_encrypted_json,
-        video_duration_ms,
-        video_mime,
-        video_autoplay,
-        video_loop,
-        video_no_audio,
-        video_hide_controls,
-        video_gif,
         reactions,
         read_receipts,
         in_reply_to_id,
@@ -1196,23 +956,19 @@ pub(super) async fn timeline_item_to_ffi(
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
         is_edited: msg_content.is_edited(),
-        formatted_body,
         blurhash,
         image_animated,
         pending_state,
         pending_error,
         pending_recoverable,
         pending_txn_id,
-        location_lat,
-        location_lon,
-        location_description,
         thread_root_id,
         is_thread_root,
         thread_reply_count,
         thread_latest_sender_name,
         thread_latest_body,
         thread_latest_ts,
-        ..ffi_event_defaults()
+        ..msg_fields
     })
 }
 
