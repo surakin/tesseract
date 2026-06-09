@@ -60,6 +60,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         main_window_geometry.y     = mw.value("y", 0);
         main_window_geometry.w     = mw.value("w", 0);
         main_window_geometry.h     = mw.value("h", 0);
+        main_window_geometry.dpi   = mw.value("dpi", 0);
         main_window_geometry.valid = (main_window_geometry.w > 0 && main_window_geometry.h > 0);
     }
 
@@ -76,6 +77,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
             e.geometry.y   = pw.value("y", 0);
             e.geometry.w   = pw.value("w", 0);
             e.geometry.h   = pw.value("h", 0);
+            e.geometry.dpi = pw.value("dpi", 0);
             e.geometry.valid = (!e.room_id.empty() && e.geometry.w > 0 && e.geometry.h > 0);
             if (!e.room_id.empty())
                 popout_windows.push_back(std::move(e));
@@ -139,10 +141,11 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
     if (main_window_geometry.valid)
     {
         j["main_window"] = {
-            {"x", main_window_geometry.x},
-            {"y", main_window_geometry.y},
-            {"w", main_window_geometry.w},
-            {"h", main_window_geometry.h},
+            {"x",   main_window_geometry.x},
+            {"y",   main_window_geometry.y},
+            {"w",   main_window_geometry.w},
+            {"h",   main_window_geometry.h},
+            {"dpi", main_window_geometry.dpi},
         };
     }
 
@@ -158,6 +161,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
             pw["y"]       = e.geometry.y;
             pw["w"]       = e.geometry.w;
             pw["h"]       = e.geometry.h;
+            pw["dpi"]     = e.geometry.dpi;
             pws.push_back(std::move(pw));
         }
         j["popout_windows"] = std::move(pws);

@@ -26,7 +26,9 @@
 #include "views/text_util.h"
 
 #include <commdlg.h>
+#include <cmath>
 #include <dwmapi.h>
+#include <shellscalingapi.h>
 #include <uxtheme.h>
 #include <windowsx.h>
 #include <wincodec.h>
@@ -902,6 +904,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             auto& g = tesseract::Settings::instance().main_window_geometry;
             g.x = wrc.left; g.y = wrc.top;
             g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+            g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
             g.valid = true;
             self->save_settings_debounced_();
         }
@@ -928,6 +931,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         auto& g = tesseract::Settings::instance().main_window_geometry;
         g.x = wrc.left; g.y = wrc.top;
         g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+        g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
         g.valid = true;
         self->save_settings_debounced_();
         return 0;
@@ -1372,9 +1376,23 @@ bool MainWindow::create(int nCmdShow)
     // WM_CREATE fires synchronously inside CreateWindowExW, which calls
     // on_create() → load_from_disk(), so saved geometry is available here.
     {
-        const auto geom = clamp_to_screens_(
-            tesseract::Settings::instance().main_window_geometry,
-            1024, 768, get_screen_work_areas_());
+        auto g = tesseract::Settings::instance().main_window_geometry;
+        // If the save DPI is known, rescale w/h to the target monitor's DPI
+        // before clamping so the window opens at the right logical size even
+        // when moved to a different-DPI screen or a Remote Desktop session.
+        if (g.valid && g.dpi > 0)
+        {
+            HMONITOR hm = MonitorFromPoint({g.x, g.y}, MONITOR_DEFAULTTONEAREST);
+            UINT targetDpi = 96, dummy = 0;
+            GetDpiForMonitor(hm, MDT_EFFECTIVE_DPI, &targetDpi, &dummy);
+            if (static_cast<int>(targetDpi) != g.dpi)
+            {
+                const double s = double(targetDpi) / double(g.dpi);
+                g.w = static_cast<int>(std::lround(g.w * s));
+                g.h = static_cast<int>(std::lround(g.h * s));
+            }
+        }
+        const auto geom = clamp_to_screens_(g, 1024, 768, get_screen_work_areas_());
         if (geom.valid)
         {
             SetWindowPos(hwnd_, nullptr, geom.x, geom.y, geom.w, geom.h,

@@ -155,7 +155,17 @@ protected:
 
     // Write the current native window position/size into Settings and
     // schedule a debounced save. Call from resize/move callbacks.
-    void save_popout_geometry_(int x, int y, int w, int h);
+    // Pass dpi=GetDpiForWindow(hwnd) on Win32 so that geometry can be
+    // rescaled correctly when restored on a monitor at a different DPI.
+    void save_popout_geometry_(int x, int y, int w, int h, int dpi = 0);
+
+    // Like get_saved_popout_geometry_ but rescales w/h from the saved DPI
+    // to target_dpi before clamping. Pass target_dpi=0 to skip rescaling
+    // (equivalent to the no-target_dpi overload). Win32 callers should pass
+    // GetDpiForMonitor(...) for the monitor at the saved position.
+    Settings::WindowGeometry get_saved_popout_geometry_(int default_w,
+                                                        int default_h,
+                                                        int target_dpi) const;
 
     // Remove this room's entry from Settings::popout_windows and save.
     // Called automatically by the destructor; also callable on explicit close.

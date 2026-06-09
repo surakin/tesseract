@@ -9,6 +9,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
+#include <cmath>
 #include <fstream>
 
 namespace tesseract
@@ -746,7 +747,27 @@ Settings::WindowGeometry RoomWindowBase::get_saved_popout_geometry_(
                                         shell_->get_screen_work_areas_());
 }
 
-void RoomWindowBase::save_popout_geometry_(int x, int y, int w, int h)
+Settings::WindowGeometry RoomWindowBase::get_saved_popout_geometry_(
+    int default_w, int default_h, int target_dpi) const
+{
+    const auto& pops = Settings::instance().popout_windows;
+    auto it = std::find_if(pops.begin(), pops.end(),
+                           [this](const Settings::PopoutEntry& e)
+                           { return e.room_id == room_id_; });
+    if (it == pops.end())
+        return {};
+    Settings::WindowGeometry g = it->geometry;
+    if (g.valid && g.dpi > 0 && target_dpi > 0 && target_dpi != g.dpi)
+    {
+        const double s = double(target_dpi) / double(g.dpi);
+        g.w = static_cast<int>(std::lround(g.w * s));
+        g.h = static_cast<int>(std::lround(g.h * s));
+    }
+    return ShellBase::clamp_to_screens_(g, default_w, default_h,
+                                        shell_->get_screen_work_areas_());
+}
+
+void RoomWindowBase::save_popout_geometry_(int x, int y, int w, int h, int dpi)
 {
     auto& pops = Settings::instance().popout_windows;
     auto it = std::find_if(pops.begin(), pops.end(),
@@ -754,6 +775,7 @@ void RoomWindowBase::save_popout_geometry_(int x, int y, int w, int h)
                            { return e.room_id == room_id_; });
     Settings::WindowGeometry geom;
     geom.x = x; geom.y = y; geom.w = w; geom.h = h;
+    geom.dpi = dpi;
     geom.valid = (w > 0 && h > 0);
     if (it != pops.end())
         it->geometry = geom;

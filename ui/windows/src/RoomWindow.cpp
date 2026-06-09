@@ -12,6 +12,7 @@
 #include <tesseract/settings.h>
 
 #include <commctrl.h>
+#include <shellscalingapi.h>
 
 #include <algorithm>
 #include <cmath>
@@ -93,7 +94,26 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         class_registered_ = true;
     }
 
-    const auto saved = get_saved_popout_geometry_(800, 600);
+    // Determine the target DPI from the monitor at the saved position before
+    // the window exists, then call the DPI-aware restore helper so w/h are
+    // scaled from the save-time DPI to the current monitor's DPI.
+    int targetDpi = 0;
+    {
+        const auto& pops = tesseract::Settings::instance().popout_windows;
+        auto it = std::find_if(
+            pops.begin(), pops.end(),
+            [&room_id](const tesseract::Settings::PopoutEntry& e)
+            { return e.room_id == room_id; });
+        if (it != pops.end() && it->geometry.valid && it->geometry.dpi > 0)
+        {
+            POINT pt{it->geometry.x, it->geometry.y};
+            HMONITOR hm = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+            UINT ux = 96, uy = 0;
+            GetDpiForMonitor(hm, MDT_EFFECTIVE_DPI, &ux, &uy);
+            targetDpi = static_cast<int>(ux);
+        }
+    }
+    const auto saved = get_saved_popout_geometry_(800, 600, targetDpi);
     hwnd_ = CreateWindowExW(
         0, kClassName,
         utf8_to_wstr(room_id).c_str(), // title filled in by set_room
@@ -1080,7 +1100,8 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
             save_popout_geometry_(wrc.left, wrc.top,
-                                  wrc.right - wrc.left, wrc.bottom - wrc.top);
+                                  wrc.right - wrc.left, wrc.bottom - wrc.top,
+                                  static_cast<int>(GetDpiForWindow(hwnd)));
         }
         return 0;
 
@@ -1089,7 +1110,8 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
         RECT wrc{};
         GetWindowRect(hwnd, &wrc);
         save_popout_geometry_(wrc.left, wrc.top,
-                              wrc.right - wrc.left, wrc.bottom - wrc.top);
+                              wrc.right - wrc.left, wrc.bottom - wrc.top,
+                              static_cast<int>(GetDpiForWindow(hwnd)));
         return 0;
     }
 

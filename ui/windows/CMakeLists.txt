@@ -149,6 +149,7 @@ target_link_libraries(tesseract_win32 PRIVATE
     dwrite
     windowsapp
     wtsapi32
+    shcore
     mf
     mfplat
     mfreadwrite
