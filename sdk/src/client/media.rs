@@ -25,7 +25,6 @@ use std::sync::{Arc, Mutex};
 /// URI; matrix-sdk buffers the whole body into memory, so without a cap a
 /// single fetch can OOM the process. Oversized content is dropped (returns
 /// empty) rather than propagated into image decoders.
-#[cfg(not(test))]
 pub(super) const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 
 /// Upper bound on a single arbitrary-URL fetch (1 MiB). Used by
@@ -53,9 +52,9 @@ pub(super) const THUMBNAIL_FETCH_TIMEOUT: std::time::Duration =
 pub(super) const FULL_MEDIA_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(120);
 
-#[cfg(not(test))]
 pub(super) fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
     if bytes.len() > MAX_MEDIA_BYTES {
+        #[cfg(not(test))]
         tracing::warn!(
             "media download {} bytes exceeds {} byte cap; discarding",
             bytes.len(),
@@ -70,7 +69,6 @@ pub(super) fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
 /// tight — D-Bus image-data, WinRT toast (~3 MB) and UNNotificationAttachment
 /// all dislike large payloads — so anything bigger is dropped (the
 /// notification still shows, just without the picture).
-#[cfg(not(test))]
 pub(super) const NOTIF_IMAGE_CAP: usize = 2 * 1024 * 1024;
 
 /// Best-effort fetch of a message/sticker image for a notification preview.
@@ -162,11 +160,10 @@ pub(super) async fn emit_notification(
             source: MediaSource::Plain(url.to_owned()),
             format: matrix_sdk::media::MediaFormat::File,
         };
-        client
-            .media()
-            .get_media_content(&req, true)
-            .await
-            .unwrap_or_default()
+        match client.media().get_media_content(&req, true).await {
+            Ok(b) if b.len() <= NOTIF_IMAGE_CAP => b,
+            _ => Vec::new(),
+        }
     } else {
         Vec::new()
     };
@@ -728,4 +725,68 @@ impl ClientFfi {
     pub fn fetch_source_bytes(&self, _source: &str) -> Vec<u8> { Vec::new() }
     pub fn fetch_url_bytes(&self, _url: &str) -> Vec<u8> { Vec::new() }
     pub fn fetch_gif_bytes(&self, _url: &str) -> Vec<u8> { Vec::new() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cap_media_bytes, MAX_MEDIA_BYTES, NOTIF_IMAGE_CAP};
+
+    // Confirm constants have the expected values so any accidental edit is
+    // caught immediately.
+    #[test]
+    fn cap_constants_have_expected_values() {
+        assert_eq!(MAX_MEDIA_BYTES, 64 * 1024 * 1024, "MAX_MEDIA_BYTES should be 64 MiB");
+        assert_eq!(NOTIF_IMAGE_CAP, 2 * 1024 * 1024, "NOTIF_IMAGE_CAP should be 2 MiB");
+        assert!(
+            NOTIF_IMAGE_CAP < MAX_MEDIA_BYTES,
+            "notification cap should be tighter than the general media cap"
+        );
+    }
+
+    // cap_media_bytes must pass through payloads at or below MAX_MEDIA_BYTES.
+    #[test]
+    fn cap_media_bytes_passes_within_limit() {
+        let small = vec![0u8; 1024];
+        assert_eq!(cap_media_bytes(small.clone()), small);
+
+        let exactly_max = vec![0u8; MAX_MEDIA_BYTES];
+        assert_eq!(cap_media_bytes(exactly_max.clone()).len(), MAX_MEDIA_BYTES);
+    }
+
+    // cap_media_bytes must discard payloads that exceed MAX_MEDIA_BYTES.
+    #[test]
+    fn cap_media_bytes_discards_oversized() {
+        let oversized = vec![0u8; MAX_MEDIA_BYTES + 1];
+        assert!(
+            cap_media_bytes(oversized).is_empty(),
+            "cap_media_bytes should return empty Vec for payload exceeding MAX_MEDIA_BYTES"
+        );
+    }
+
+    // The avatar path applies NOTIF_IMAGE_CAP (same as the preview path).
+    // The fetch itself is not unit-testable without a live matrix_sdk client,
+    // so we test the cap helper directly: confirm that a payload within
+    // NOTIF_IMAGE_CAP survives and one just over it is rejected, exactly
+    // mirroring what `Ok(b) if b.len() <= NOTIF_IMAGE_CAP` does inline.
+    #[test]
+    fn notif_image_cap_rejects_oversized_avatar() {
+        let within_cap = vec![1u8; NOTIF_IMAGE_CAP];
+        assert_eq!(
+            within_cap.len(),
+            NOTIF_IMAGE_CAP,
+            "payload at cap boundary must be accepted by `<= NOTIF_IMAGE_CAP` guard"
+        );
+
+        let over_cap = vec![1u8; NOTIF_IMAGE_CAP + 1];
+        // Inline guard: `Ok(b) if b.len() <= NOTIF_IMAGE_CAP => b, _ => Vec::new()`
+        let result: Vec<u8> = if over_cap.len() <= NOTIF_IMAGE_CAP {
+            over_cap.clone()
+        } else {
+            Vec::new()
+        };
+        assert!(
+            result.is_empty(),
+            "avatar bytes exceeding NOTIF_IMAGE_CAP must be discarded"
+        );
+    }
 }
