@@ -13,6 +13,7 @@
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 #include "tk/video.h"
+#include "views/LocationMapPanner.h"
 #include "views/ReadReceiptTracker.h"
 #include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
@@ -907,7 +908,6 @@ private:
     // Per-frame quote-block rects in world coordinates, keyed by event_id.
     // Cleared at the top of each paint pass (same pattern as voice_card_geom_).
     mutable std::unordered_map<std::string, tk::Rect> quote_block_geom_;
-    mutable std::unordered_map<std::string, tk::Rect> map_rect_geom_;
 
     // URL preview card provider + press state.
     PreviewProvider preview_provider_;
@@ -1023,14 +1023,11 @@ private:
     VideoFetchProvider video_fetch_provider_;
     void start_inline_video(const MessageRowData& m);
 
-    // Pan state for Kind::Location rows.
-    static constexpr std::size_t kNoMapRow =
-        std::numeric_limits<std::size_t>::max();
-    std::size_t map_active_row_ = kNoMapRow;
-    tk::Point map_drag_start_pt_{};
-    tk::Point map_drag_start_vp_px_{}; // world-pixel viewport at drag start
-    float map_zoom_accum_ = 0.0f;      // fractional wheel accumulator
-    bool map_tooltip_showing_ = false;
+    // Interactive pan/zoom/tooltip + hit-test geometry for Kind::Location
+    // rows. Owns the pan FSM state and the per-paint map rect geometry; the
+    // dispatch handlers below resolve the active row from messages_ and hand
+    // the row's MapViewport to the panner's math.
+    LocationMapPanner map_panner_;
 
     // Drag-select state.
     struct Selection

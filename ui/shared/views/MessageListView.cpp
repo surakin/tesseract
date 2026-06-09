@@ -3131,152 +3131,12 @@ private:
 
     // Paint a slippy-map tile composite for a Kind::Location row.
     // `map_rect` is the bounding box for the map canvas area (pre-clipped).
+    // The pan/zoom/tooltip + tile-fetch logic lives in LocationMapPanner;
+    // this just delegates (the panner records the hit-test rect).
     void paint_location_map(const MessageRowData& m, tk::PaintCtx& ctx,
                             tk::Rect map_rect) const
     {
-        owner_.map_rect_geom_[m.event_id] = map_rect;
-
-        // Round corners on the map card.
-        ctx.canvas.push_clip_rounded_rect(map_rect, 8.0f);
-
-        const auto& vp = m.map_viewport;
-        tk::Point vp_px = lat_lon_to_world_px(vp.lat, vp.lon, vp.zoom);
-        auto tiles = tiles_in_view(vp, map_rect);
-
-        // Draw tiles (or a placeholder if not yet loaded).
-        bool any_tile_drawn = false;
-        for (const auto& t : tiles)
-        {
-            tk::Point origin = tile_pixel_origin(t, vp_px, map_rect);
-            tk::Rect tdst{origin.x, origin.y, 256.0f, 256.0f};
-            const std::string key = tile_cache_key(t);
-            const tk::Image* img =
-                owner_.image_provider_ ? owner_.image_provider_(key) : nullptr;
-            if (img)
-            {
-                ctx.canvas.draw_image(*img, tdst);
-                any_tile_drawn = true;
-            }
-            else
-            {
-                // Placeholder: grey base, then overlay the nearest cached
-                // approximation so the map doesn't flash blank on zoom.
-                ctx.canvas.fill_rect(tdst, ctx.theme.palette.chrome_bg);
-                if (owner_.image_provider_)
-                {
-                    bool used_parent = false;
-                    if (t.z > 0)
-                    {
-                        // Parent tile (zoom-1): this child occupies a 128×128
-                        // quadrant of the parent's 256×256 image; stretch it.
-                        TileCoord parent{t.z - 1, t.x / 2, t.y / 2};
-                        if (const tk::Image* pimg =
-                                owner_.image_provider_(tile_cache_key(parent)))
-                        {
-                            int qx = t.x & 1, qy = t.y & 1;
-                            tk::Rect src{qx * 128.0f, qy * 128.0f, 128.0f,
-                                         128.0f};
-                            ctx.canvas.draw_image_subregion(*pimg, src, tdst);
-                            any_tile_drawn = true;
-                            used_parent = true;
-                        }
-                    }
-                    if (!used_parent && t.z < 19)
-                    {
-                        // Child tiles (zoom+1): each covers a 128×128 quadrant
-                        // of this tile's area; draw whichever are cached.
-                        for (int dy = 0; dy < 2; ++dy)
-                        for (int dx = 0; dx < 2; ++dx)
-                        {
-                            TileCoord child{t.z + 1, t.x * 2 + dx,
-                                            t.y * 2 + dy};
-                            if (const tk::Image* cimg =
-                                    owner_.image_provider_(
-                                        tile_cache_key(child)))
-                            {
-                                tk::Rect qdst{tdst.x + dx * 128.0f,
-                                              tdst.y + dy * 128.0f, 128.0f,
-                                              128.0f};
-                                ctx.canvas.draw_image(*cimg, qdst);
-                                any_tile_drawn = true;
-                            }
-                        }
-                    }
-                }
-                if (owner_.on_tile_needed)
-                {
-                    owner_.on_tile_needed(t.z, t.x, t.y);
-                }
-            }
-        }
-
-        // Show a hint text when no tiles have loaded yet so the map area
-        // doesn't look like a rendering gap.
-        if (!any_tile_drawn && !tiles.empty())
-        {
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Small;
-            st.max_width = map_rect.w;
-            auto lo = ctx.factory.build_text(tk::tr("Loading map\xe2\x80\xa6"), st);
-            if (lo)
-            {
-                tk::Size sz = lo->measure();
-                ctx.canvas.draw_text(
-                    *lo,
-                    {map_rect.x + (map_rect.w - sz.w) * 0.5f,
-                     map_rect.y + (map_rect.h - lo->ascent()) * 0.5f},
-                    ctx.theme.palette.text_muted);
-            }
-        }
-
-        // Location pin — white outer disc + red inner disc, centred on the
-        // pin coordinate. Use fill_rounded_rect with radius = diameter/2.
-        {
-            tk::Point pin_px =
-                lat_lon_to_world_px(m.location_lat, m.location_lon, vp.zoom);
-            float map_cx = map_rect.x + map_rect.w * 0.5f;
-            float map_cy = map_rect.y + map_rect.h * 0.5f;
-            float pin_sx = map_cx + (pin_px.x - vp_px.x);
-            float pin_sy = map_cy + (pin_px.y - vp_px.y);
-
-            constexpr float kPinOuter = 18.0f;
-            constexpr float kPinInner = 12.0f;
-            tk::Rect outer{pin_sx - kPinOuter * 0.5f, pin_sy - kPinOuter * 0.5f,
-                           kPinOuter, kPinOuter};
-            tk::Rect inner{pin_sx - kPinInner * 0.5f, pin_sy - kPinInner * 0.5f,
-                           kPinInner, kPinInner};
-            ctx.canvas.fill_rounded_rect(outer, kPinOuter * 0.5f,
-                                         tk::Color{255, 255, 255, 230});
-            ctx.canvas.fill_rounded_rect(inner, kPinInner * 0.5f,
-                                         tk::Color::rgb(0xE53935));
-        }
-
-        // Attribution badge — "© OpenStreetMap contributors" at bottom-right.
-        {
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Small;
-            st.wrap = false;
-            auto lo = ctx.factory.build_text(
-                "\xC2\xA9 OpenStreetMap contributors", st);
-            if (lo)
-            {
-                tk::Size sz = lo->measure();
-                constexpr float kBadgePadX = 5.0f;
-                constexpr float kBadgePadY = 3.0f;
-                float bx =
-                    map_rect.x + map_rect.w - sz.w - kBadgePadX * 2 - 4.0f;
-                float by =
-                    map_rect.y + map_rect.h - sz.h - kBadgePadY * 2 - 4.0f;
-                tk::Rect badge{bx, by, sz.w + kBadgePadX * 2,
-                               sz.h + kBadgePadY * 2};
-                ctx.canvas.fill_rounded_rect(badge, 3.0f,
-                                             tk::Color{255, 255, 255, 180});
-                ctx.canvas.draw_text(*lo, {bx + kBadgePadX, by + kBadgePadY},
-                                     tk::Color{0, 0, 0, 200});
-            }
-        }
-
-        ctx.canvas.pop_clip();
+        owner_.map_panner_.paint(m, ctx, map_rect);
     }
 
     void paint_file_card(const MessageRowData& m, tk::PaintCtx& ctx,
@@ -3617,6 +3477,30 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
             on_message_clicked(messages_[idx].event_id);
         }
     };
+
+    // Wire the location-map panner to MessageListView's (later-assigned)
+    // callbacks through indirection so RoomView's assignment of the public
+    // tile/tooltip callbacks and set_image_provider() are picked up.
+    map_panner_.set_tile_image_provider(
+        [this](const std::string& key) -> const tk::Image*
+        { return image_provider_ ? image_provider_(key) : nullptr; });
+    map_panner_.set_tile_request(
+        [this](int z, int x, int y)
+        {
+            if (on_tile_needed)
+                on_tile_needed(z, x, y);
+        });
+    map_panner_.set_tooltip_callbacks(
+        [this](std::string text, tk::Rect anchor)
+        {
+            if (on_show_tooltip)
+                on_show_tooltip(std::move(text), anchor);
+        },
+        [this]
+        {
+            if (on_hide_tooltip)
+                on_hide_tooltip();
+        });
 
     auto pw = std::make_unique<ScrollPillWidget>();
     scroll_pill_ = pw.get();
@@ -4631,25 +4515,14 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
         if (ri < messages_.size() &&
             messages_[ri].kind == MessageRowData::Kind::Location)
         {
-            auto it = map_rect_geom_.find(messages_[ri].event_id);
-            if (it != map_rect_geom_.end() && rect_contains(it->second, world))
+            const tk::Rect* g =
+                map_panner_.geom_at(messages_[ri].event_id);
+            if (g && rect_contains(*g, world))
             {
-                map_zoom_accum_ += dy;
                 // Fire at most one zoom step per wheel event so a physical
                 // mouse wheel (dy ≈ 90) doesn't jump many levels at once.
-                constexpr float kZoomThreshold = 60.0f;
-                if (map_zoom_accum_ >= kZoomThreshold)
+                if (map_panner_.zoom(dy, messages_[ri].map_viewport))
                 {
-                    map_zoom_accum_ = 0.0f;
-                    auto& vp = messages_[ri].map_viewport;
-                    vp.zoom = std::min(19, vp.zoom + 1);
-                    invalidate_data();
-                }
-                else if (map_zoom_accum_ <= -kZoomThreshold)
-                {
-                    map_zoom_accum_ = 0.0f;
-                    auto& vp = messages_[ri].map_viewport;
-                    vp.zoom = std::max(1, vp.zoom - 1);
                     invalidate_data();
                 }
                 return true;
@@ -4801,16 +4674,10 @@ bool MessageListView::on_pointer_move(tk::Point local)
     tk::ListView::on_pointer_move(local);
 
     // Map pan: apply drag delta while a pan is active.
-    if (map_active_row_ != kNoMapRow && map_active_row_ < messages_.size())
+    if (map_panner_.panning() && map_panner_.active_row() < messages_.size())
     {
-        float dx = local.x - map_drag_start_pt_.x;
-        float dy = local.y - map_drag_start_pt_.y;
-        float new_wp_x = map_drag_start_vp_px_.x - dx;
-        float new_wp_y = map_drag_start_vp_px_.y - dy;
-        int zoom = messages_[map_active_row_].map_viewport.zoom;
-        auto [lat, lon] = world_px_to_lat_lon(new_wp_x, new_wp_y, zoom);
-        messages_[map_active_row_].map_viewport.lat = lat;
-        messages_[map_active_row_].map_viewport.lon = lon;
+        map_panner_.drag_pan(local,
+                             messages_[map_panner_.active_row()].map_viewport);
         if (!hover_link_url_.empty())
         {
             hover_link_url_.clear();
@@ -4918,6 +4785,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
     {
         bool want_tooltip = false;
         tk::Rect anchor{};
+        std::string desc;
         int row = hovered_row_index();
         if (row >= 0 && static_cast<std::size_t>(row) < messages_.size())
         {
@@ -4925,34 +4793,25 @@ bool MessageListView::on_pointer_move(tk::Point local)
             if (m.kind == MessageRowData::Kind::Location &&
                 !m.location_description.empty())
             {
-                auto it = map_rect_geom_.find(m.event_id);
-                if (it != map_rect_geom_.end())
+                if (const tk::Rect* g = map_panner_.geom_at(m.event_id))
                 {
                     tk::Point world{local.x + bounds().x, local.y + bounds().y};
-                    if (rect_contains(it->second, world))
+                    if (rect_contains(*g, world))
                     {
                         want_tooltip = true;
-                        anchor = it->second;
+                        anchor = *g;
+                        desc = m.location_description;
                     }
                 }
             }
         }
-        if (want_tooltip && !map_tooltip_showing_)
+        if (want_tooltip)
         {
-            map_tooltip_showing_ = true;
-            const auto& m = messages_[static_cast<std::size_t>(row)];
-            if (on_show_tooltip)
-            {
-                on_show_tooltip(m.location_description, anchor);
-            }
+            map_panner_.show_tooltip(desc, anchor);
         }
-        else if (!want_tooltip && map_tooltip_showing_)
+        else
         {
-            map_tooltip_showing_ = false;
-            if (on_hide_tooltip)
-            {
-                on_hide_tooltip();
-            }
+            map_panner_.hide_tooltip();
         }
     }
     return true;
@@ -4989,14 +4848,7 @@ void MessageListView::on_pointer_leave()
     hovered_row_geom_.abort_button = tk::Rect{};
     hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
-    if (map_tooltip_showing_)
-    {
-        map_tooltip_showing_ = false;
-        if (on_hide_tooltip)
-        {
-            on_hide_tooltip();
-        }
-    }
+    map_panner_.hide_tooltip();
 }
 
 bool MessageListView::should_show_pill() const
@@ -5226,12 +5078,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
             tk::Rect map_rect{rb.x, rb.y, rb.w, kMapRowH};
             if (rect_contains(map_rect, world))
             {
-                map_active_row_ = ri;
-                map_drag_start_pt_ = local;
-                map_drag_start_vp_px_ =
-                    lat_lon_to_world_px(messages_[ri].map_viewport.lat,
-                                        messages_[ri].map_viewport.lon,
-                                        messages_[ri].map_viewport.zoom);
+                map_panner_.begin_pan(ri, local, messages_[ri].map_viewport);
                 return true;
             }
         }
@@ -5689,9 +5536,9 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     }
 
     // Map pan: end drag.
-    if (map_active_row_ != kNoMapRow)
+    if (map_panner_.panning())
     {
-        map_active_row_ = kNoMapRow;
+        map_panner_.end_pan();
         tk::ListView::on_pointer_up(local, inside_self);
         return;
     }
@@ -6251,6 +6098,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     video_geom_.clear();
     file_geom_.clear();
     media_.clear_geometry();
+    map_panner_.clear_geometry();
     quote_block_geom_.clear();
     preview_card_geom_.clear();
     chip_hit_rects_.clear();
