@@ -13,6 +13,7 @@
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 #include "tk/video.h"
+#include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
 #include "views/map_tiles.h"
 
@@ -946,8 +947,9 @@ private:
     std::string press_link_url_;
     std::string hover_link_url_;
 
-    // MSC2010 spoiler reveal state.
-    std::unordered_set<std::string> revealed_spoilers_;
+    // MSC2010 spoiler reveal state. The revealed set lives in SpoilerRevealer;
+    // the press-FSM fields stay here (part of the pointer state machine).
+    SpoilerRevealer spoilers_;
     bool press_spoiler_ = false;
     std::string press_spoiler_eid_;
 

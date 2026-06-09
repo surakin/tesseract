@@ -1987,7 +1987,7 @@ private:
         }
         case MessageRowData::Kind::Emote:
         {
-            bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+            bool revealed = owner_.spoilers_.is_revealed(m.event_id);
             auto spans = build_emote_spans(
                 m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
             float th = 0.0f;
@@ -2113,7 +2113,7 @@ private:
         }
         case MessageRowData::Kind::Emote:
         {
-            bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+            bool revealed = owner_.spoilers_.is_revealed(m.event_id);
             auto spans = build_emote_spans(
                 m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
             float end_y = y;
@@ -2882,7 +2882,7 @@ private:
                             float w) const
     {
         const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
-        const bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+        const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
         LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
         return e.layout ? e.layout->measure().h : 0.0f;
     }
@@ -2910,7 +2910,7 @@ private:
                           float y, float w, tk::Color color) const
     {
         const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
-        const bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+        const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
         LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
         if (!e.layout)
             return 0.0f;
@@ -3708,7 +3708,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
                msgs.end());
 
     inline_players_.clear();
-    revealed_spoilers_.clear();
+    spoilers_.clear();
     link_layout_cache_.clear();
     adapter_->clear_layout_cache();
     suppress_read_marker_ = false;
@@ -5584,7 +5584,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
         {
             const auto& m = messages_[row];
             if (m.formatted_body.find("data-mx-spoiler") != std::string::npos &&
-                revealed_spoilers_.count(m.event_id) == 0)
+                !spoilers_.is_revealed(m.event_id))
             {
                 press_spoiler_ = true;
                 press_spoiler_eid_ = m.event_id;
@@ -5704,7 +5704,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         press_spoiler_eid_.clear();
         if (fire)
         {
-            revealed_spoilers_.insert(eid);
+            spoilers_.reveal(eid);
             invalidate_data();
         }
         return;
