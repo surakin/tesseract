@@ -102,6 +102,8 @@ set(_tk_sources
     views/ShortcodeEngine.cpp
     views/SlashCommandEngine.h
     views/SlashCommandEngine.cpp
+    views/ListPopupBase.h
+    views/ListPopupBase.cpp
     views/SlashCommandPopup.h
     views/SlashCommandPopup.cpp
     views/SlashCommandController.h
