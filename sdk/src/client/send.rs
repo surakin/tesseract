@@ -145,6 +145,57 @@ pub(super) fn build_media_reply(
     }))
 }
 
+/// Build the `AttachmentConfig` shared by every `send_image`/`send_file`/
+/// `send_audio`/`send_video` path (and their `_async` twins). Wires the
+/// per-type `AttachmentInfo`, an optional video `Thumbnail`, the MSC2530
+/// caption (only when non-empty), and the `m.in_reply_to` / `m.thread`
+/// relation resolved by `build_media_reply`. The only per-type input is
+/// `info` (and `thumbnail`, video-only); everything else is identical across
+/// the eight methods.
+#[cfg(not(test))]
+pub(super) fn build_attachment_config(
+    info: matrix_sdk::attachment::AttachmentInfo,
+    thumbnail: Option<matrix_sdk::attachment::Thumbnail>,
+    caption: &str,
+    reply_event_id: &str,
+    thread_root: &str,
+) -> Result<matrix_sdk::attachment::AttachmentConfig, String> {
+    use matrix_sdk::attachment::AttachmentConfig;
+    use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+
+    let mut config = AttachmentConfig::new().info(info);
+    if let Some(thumb) = thumbnail {
+        config = config.thumbnail(Some(thumb));
+    }
+    if !caption.is_empty() {
+        config = config.caption(Some(TextMessageEventContent::plain(caption)));
+    }
+    if let Some(reply) = build_media_reply(reply_event_id, thread_root)? {
+        config = config.reply(Some(reply));
+    }
+    Ok(config)
+}
+
+/// Shared send core for the media-send paths: upload `bytes` and post the
+/// attachment built into `config`. Returns the error as a `String` so both
+/// the blocking (`OpResult`) and async (`deliver`) callers can shape the
+/// result however they need. This is the awaitable body the sync and async
+/// twins share — the sync caller drives it with `block_on`, the async caller
+/// awaits it inside its spawned task.
+#[cfg(not(test))]
+pub(super) async fn do_send_attachment(
+    room: matrix_sdk::Room,
+    filename: String,
+    mime: mime::Mime,
+    bytes: Vec<u8>,
+    config: matrix_sdk::attachment::AttachmentConfig,
+) -> Result<(), String> {
+    room.send_attachment(filename, &mime, bytes, config)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// Strip the `https://matrix.to/#/` (or `http://`) prefix from an href and
 /// return the permalink target (e.g. `@user:server` or `@room`). Trailing
 /// query/fragment params (`?via=…`) are dropped. Returns `None` for non
@@ -730,8 +781,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) -> OpResult {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseImageInfo};
         use matrix_sdk::ruma::UInt;
 
         let Some(client) = self.client.clone() else {
@@ -799,7 +849,7 @@ impl ClientFfi {
             };
         }
 
-        let info = BaseImageInfo {
+        let info = AttachmentInfo::Image(BaseImageInfo {
             width: if width != 0 {
                 UInt::new(width as u64)
             } else {
@@ -813,26 +863,22 @@ impl ClientFfi {
             size: UInt::new(bytes.len() as u64),
             blurhash: None,
             is_animated: None,
-        };
-        let mut config = AttachmentConfig::new().info(AttachmentInfo::Image(info));
-        if !caption.is_empty() {
-            config = config.caption(Some(TextMessageEventContent::plain(caption)));
-        }
-        match build_media_reply(reply_event_id, thread_root) {
-            Ok(Some(reply)) => config = config.reply(Some(reply)),
-            Ok(None) => {}
+        });
+        let config = match build_attachment_config(info, None, caption, reply_event_id, thread_root)
+        {
+            Ok(c) => c,
             Err(e) => return err(e),
-        }
+        };
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
         match self
             .rt
-            .block_on(async move { room.send_attachment(filename, &mime, data, config).await })
+            .block_on(do_send_attachment(room, filename, mime, data, config))
         {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e),
         }
     }
 
@@ -868,8 +914,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) -> OpResult {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseFileInfo};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseFileInfo};
         use matrix_sdk::ruma::UInt;
 
         let Some(client) = self.client.clone() else {
@@ -881,28 +926,24 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid mime: {e}")),
         };
 
-        let info = BaseFileInfo {
+        let info = AttachmentInfo::File(BaseFileInfo {
             size: UInt::new(bytes.len() as u64),
-        };
-        let mut config = AttachmentConfig::new().info(AttachmentInfo::File(info));
-        if !caption.is_empty() {
-            config = config.caption(Some(TextMessageEventContent::plain(caption)));
-        }
-        match build_media_reply(reply_event_id, thread_root) {
-            Ok(Some(reply)) => config = config.reply(Some(reply)),
-            Ok(None) => {}
+        });
+        let config = match build_attachment_config(info, None, caption, reply_event_id, thread_root)
+        {
+            Ok(c) => c,
             Err(e) => return err(e),
-        }
+        };
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
         match self
             .rt
-            .block_on(async move { room.send_attachment(filename, &mime, data, config).await })
+            .block_on(do_send_attachment(room, filename, mime, data, config))
         {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e),
         }
     }
 
@@ -936,8 +977,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) -> OpResult {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseAudioInfo};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseAudioInfo};
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
 
@@ -950,7 +990,7 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid mime: {e}")),
         };
 
-        let info = BaseAudioInfo {
+        let info = AttachmentInfo::Audio(BaseAudioInfo {
             duration: if duration_ms > 0 {
                 Some(Duration::from_millis(duration_ms))
             } else {
@@ -958,26 +998,22 @@ impl ClientFfi {
             },
             size: UInt::new(bytes.len() as u64),
             waveform: None,
-        };
-        let mut config = AttachmentConfig::new().info(AttachmentInfo::Audio(info));
-        if !caption.is_empty() {
-            config = config.caption(Some(TextMessageEventContent::plain(caption)));
-        }
-        match build_media_reply(reply_event_id, thread_root) {
-            Ok(Some(reply)) => config = config.reply(Some(reply)),
-            Ok(None) => {}
+        });
+        let config = match build_attachment_config(info, None, caption, reply_event_id, thread_root)
+        {
+            Ok(c) => c,
             Err(e) => return err(e),
-        }
+        };
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
         match self
             .rt
-            .block_on(async move { room.send_attachment(filename, &mime, data, config).await })
+            .block_on(do_send_attachment(room, filename, mime, data, config))
         {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e),
         }
     }
 
@@ -1019,8 +1055,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) -> OpResult {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseVideoInfo, Thumbnail};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseVideoInfo, Thumbnail};
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
 
@@ -1033,7 +1068,7 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid mime: {e}")),
         };
 
-        let info = BaseVideoInfo {
+        let info = AttachmentInfo::Video(BaseVideoInfo {
             duration: if duration_ms > 0 {
                 Some(Duration::from_millis(duration_ms))
             } else {
@@ -1043,35 +1078,29 @@ impl ClientFfi {
             width: UInt::new(width as u64),
             size: UInt::new(bytes.len() as u64),
             blurhash: None,
-        };
-        let mut config = AttachmentConfig::new().info(AttachmentInfo::Video(info));
-        if !thumb_bytes.is_empty() {
-            config = config.thumbnail(Some(Thumbnail {
-                data: thumb_bytes.to_vec(),
-                content_type: mime::IMAGE_JPEG,
-                height: UInt::new(thumb_height as u64).unwrap_or_default(),
-                width: UInt::new(thumb_width as u64).unwrap_or_default(),
-                size: UInt::new(thumb_bytes.len() as u64).unwrap_or_default(),
-            }));
-        }
-        if !caption.is_empty() {
-            config = config.caption(Some(TextMessageEventContent::plain(caption)));
-        }
-        match build_media_reply(reply_event_id, thread_root) {
-            Ok(Some(reply)) => config = config.reply(Some(reply)),
-            Ok(None) => {}
-            Err(e) => return err(e),
-        }
+        });
+        let thumbnail = (!thumb_bytes.is_empty()).then(|| Thumbnail {
+            data: thumb_bytes.to_vec(),
+            content_type: mime::IMAGE_JPEG,
+            height: UInt::new(thumb_height as u64).unwrap_or_default(),
+            width: UInt::new(thumb_width as u64).unwrap_or_default(),
+            size: UInt::new(thumb_bytes.len() as u64).unwrap_or_default(),
+        });
+        let config =
+            match build_attachment_config(info, thumbnail, caption, reply_event_id, thread_root) {
+                Ok(c) => c,
+                Err(e) => return err(e),
+            };
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
         match self
             .rt
-            .block_on(async move { room.send_attachment(filename, &mime, data, config).await })
+            .block_on(do_send_attachment(room, filename, mime, data, config))
         {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e),
         }
     }
 
@@ -1114,8 +1143,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseImageInfo};
         use matrix_sdk::ruma::UInt;
 
         let Some(client) = self.client.clone() else { return; };
@@ -1182,25 +1210,20 @@ impl ClientFfi {
                 return;
             }
 
-            let info = BaseImageInfo {
+            let info = AttachmentInfo::Image(BaseImageInfo {
                 width: UInt::new(width as u64),
                 height: UInt::new(height as u64),
                 size: UInt::new(bytes.len() as u64),
                 blurhash: None,
                 is_animated: None,
-            };
-            let mut config = AttachmentConfig::new().info(AttachmentInfo::Image(info));
-            if !caption.is_empty() {
-                config = config.caption(Some(TextMessageEventContent::plain(caption)));
-            }
-            match build_media_reply(&reply_event_id, &thread_root) {
-                Ok(Some(reply)) => config = config.reply(Some(reply)),
-                Ok(None) => {}
+            });
+            let config = match build_attachment_config(info, None, &caption, &reply_event_id, &thread_root) {
+                Ok(c) => c,
                 Err(e) => { deliver(false, &e); return; }
-            }
-            match room.send_attachment(filename, &mime, bytes, config).await {
-                Ok(_) => deliver(true, ""),
-                Err(e) => deliver(false, &e.to_string()),
+            };
+            match do_send_attachment(room, filename, mime, bytes, config).await {
+                Ok(()) => deliver(true, ""),
+                Err(e) => deliver(false, &e),
             }
         });
     }
@@ -1233,8 +1256,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseFileInfo};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseFileInfo};
         use matrix_sdk::ruma::UInt;
 
         let Some(client) = self.client.clone() else { return; };
@@ -1263,19 +1285,14 @@ impl ClientFfi {
                 Ok(m) => m,
                 Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
             };
-            let info = BaseFileInfo { size: UInt::new(bytes.len() as u64) };
-            let mut config = AttachmentConfig::new().info(AttachmentInfo::File(info));
-            if !caption.is_empty() {
-                config = config.caption(Some(TextMessageEventContent::plain(caption)));
-            }
-            match build_media_reply(&reply_event_id, &thread_root) {
-                Ok(Some(reply)) => config = config.reply(Some(reply)),
-                Ok(None) => {}
+            let info = AttachmentInfo::File(BaseFileInfo { size: UInt::new(bytes.len() as u64) });
+            let config = match build_attachment_config(info, None, &caption, &reply_event_id, &thread_root) {
+                Ok(c) => c,
                 Err(e) => { deliver(false, &e); return; }
-            }
-            match room.send_attachment(filename, &mime, bytes, config).await {
-                Ok(_) => deliver(true, ""),
-                Err(e) => deliver(false, &e.to_string()),
+            };
+            match do_send_attachment(room, filename, mime, bytes, config).await {
+                Ok(()) => deliver(true, ""),
+                Err(e) => deliver(false, &e),
             }
         });
     }
@@ -1306,8 +1323,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseAudioInfo};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseAudioInfo};
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
 
@@ -1337,23 +1353,18 @@ impl ClientFfi {
                 Ok(m) => m,
                 Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
             };
-            let info = BaseAudioInfo {
+            let info = AttachmentInfo::Audio(BaseAudioInfo {
                 duration: if duration_ms > 0 { Some(Duration::from_millis(duration_ms)) } else { None },
                 size: UInt::new(bytes.len() as u64),
                 waveform: None,
-            };
-            let mut config = AttachmentConfig::new().info(AttachmentInfo::Audio(info));
-            if !caption.is_empty() {
-                config = config.caption(Some(TextMessageEventContent::plain(caption)));
-            }
-            match build_media_reply(&reply_event_id, &thread_root) {
-                Ok(Some(reply)) => config = config.reply(Some(reply)),
-                Ok(None) => {}
+            });
+            let config = match build_attachment_config(info, None, &caption, &reply_event_id, &thread_root) {
+                Ok(c) => c,
                 Err(e) => { deliver(false, &e); return; }
-            }
-            match room.send_attachment(filename, &mime, bytes, config).await {
-                Ok(_) => deliver(true, ""),
-                Err(e) => deliver(false, &e.to_string()),
+            };
+            match do_send_attachment(room, filename, mime, bytes, config).await {
+                Ok(()) => deliver(true, ""),
+                Err(e) => deliver(false, &e),
             }
         });
     }
@@ -1390,8 +1401,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) {
-        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseVideoInfo, Thumbnail};
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::attachment::{AttachmentInfo, BaseVideoInfo, Thumbnail};
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
 
@@ -1422,34 +1432,27 @@ impl ClientFfi {
                 Ok(m) => m,
                 Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
             };
-            let info = BaseVideoInfo {
+            let info = AttachmentInfo::Video(BaseVideoInfo {
                 duration: if duration_ms > 0 { Some(Duration::from_millis(duration_ms)) } else { None },
                 height: UInt::new(height as u64),
                 width: UInt::new(width as u64),
                 size: UInt::new(bytes.len() as u64),
                 blurhash: None,
-            };
-            let mut config = AttachmentConfig::new().info(AttachmentInfo::Video(info));
-            if !thumb_bytes.is_empty() {
-                config = config.thumbnail(Some(Thumbnail {
-                    data: thumb_bytes,
-                    content_type: mime::IMAGE_JPEG,
-                    height: UInt::new(thumb_height as u64).unwrap_or_default(),
-                    width: UInt::new(thumb_width as u64).unwrap_or_default(),
-                    size: UInt::new(0u64).unwrap_or_default(),
-                }));
-            }
-            if !caption.is_empty() {
-                config = config.caption(Some(TextMessageEventContent::plain(caption)));
-            }
-            match build_media_reply(&reply_event_id, &thread_root) {
-                Ok(Some(reply)) => config = config.reply(Some(reply)),
-                Ok(None) => {}
+            });
+            let thumbnail = (!thumb_bytes.is_empty()).then(|| Thumbnail {
+                data: thumb_bytes,
+                content_type: mime::IMAGE_JPEG,
+                height: UInt::new(thumb_height as u64).unwrap_or_default(),
+                width: UInt::new(thumb_width as u64).unwrap_or_default(),
+                size: UInt::new(0u64).unwrap_or_default(),
+            });
+            let config = match build_attachment_config(info, thumbnail, &caption, &reply_event_id, &thread_root) {
+                Ok(c) => c,
                 Err(e) => { deliver(false, &e); return; }
-            }
-            match room.send_attachment(filename, &mime, bytes, config).await {
-                Ok(_) => deliver(true, ""),
-                Err(e) => deliver(false, &e.to_string()),
+            };
+            match do_send_attachment(room, filename, mime, bytes, config).await {
+                Ok(()) => deliver(true, ""),
+                Err(e) => deliver(false, &e),
             }
         });
     }
