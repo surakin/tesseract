@@ -239,6 +239,26 @@ TEST_CASE("Settings persist autoscroll_unread_rooms", "[settings]")
     s.autoscroll_unread_rooms = true; // restore default for other tests
 }
 
+TEST_CASE("Settings load wrong-typed field falls back to defaults", "[settings]")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("wrong_type");
+    // notifications_enabled expects bool but receives a string — this causes
+    // nlohmann::json::type_error (not parse_error) during field reading.
+    write_file(dir / "app_settings.json",
+               "{\"notifications_enabled\": \"yes\"}");
+
+    auto& s = tesseract::Settings::instance();
+    s.notifications_enabled = true; // default
+
+    // Must not throw; load_from_disk should fall back to defaults on type_error.
+    REQUIRE_NOTHROW(s.load_from_disk(dir));
+    // The singleton should still hold its default value after the fallback.
+    REQUIRE(s.notifications_enabled == true);
+
+    fs::remove_all(dir);
+}
+
 TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
 {
     auto dir = make_tmp_dir("section_collapsed");

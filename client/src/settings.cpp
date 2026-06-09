@@ -21,10 +21,13 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     {
         f >> j;
     }
-    catch (const nlohmann::json::parse_error&)
+    catch (const nlohmann::json::exception&)
     {
         return;
     }
+
+    try
+    {
 
     auto theme = j.value("theme", std::string("system"));
     if (theme == "light")
@@ -91,6 +94,16 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     if (!gif_key.empty())
     {
         gif_api_key = gif_key;
+    }
+
+    } // try (field reading)
+    catch (const nlohmann::json::exception&)
+    {
+        // A structurally valid file with wrong-typed fields (e.g.
+        // "notifications_enabled": "yes") throws json::type_error during
+        // field access. Treat it like a parse error and leave defaults in
+        // place rather than propagating out of load_from_disk.
+        return;
     }
 }
 
