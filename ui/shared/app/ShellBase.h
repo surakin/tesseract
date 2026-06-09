@@ -833,6 +833,42 @@ protected:
     // finish-login decision. UI-thread only.
     RestoreResult restore_all_accounts_();
 
+    // ── Add-account login finalize ────────────────────────────────────────────
+    // Outcome of finalize_login_(): lets each shell run the native finish (or the
+    // native duplicate-reject UI) without re-deriving state. On a successful add,
+    // `ok` is true and `user_id` names the account that was added + made active;
+    // on a duplicate (already-signed-in) it is rejected with `rejected_duplicate`
+    // true and `user_id` set so the shell can show "Already signed in as <uid>";
+    // on any hard failure (empty user id, empty session, persist/restore error)
+    // `ok` is false and `error` carries a message (empty when the platform path
+    // had nothing to report).
+    struct FinalizeLoginResult
+    {
+        bool        ok                 = false; // account added + made active
+        bool        rejected_duplicate = false; // uid already signed in
+        std::string user_id;                    // the new (or duplicate) uid
+        std::string error;                      // failure detail (when !ok)
+    };
+
+    // Platform-agnostic core of each shell's on_login_succeeded, run after OAuth
+    // completes for a NEWLY added account on pending_login_client_. Fetches the
+    // user_id; rejects (rejected_duplicate) if account_manager_.find(uid); else
+    // exports the session, drops the pending client (releasing SQLite handles),
+    // renames the pending temp dir → the final per-account dir (copy+remove
+    // fallback for cross-filesystem), saves the account JSON, reopens a fresh
+    // Client at the final path, restore_session + caches display name / avatar /
+    // prefs, builds the per-account bridge (make_account_bridge_) + start_sync,
+    // installs the native notifier (install_account_notifier_) and Linux-only
+    // UnifiedPush connector (install_account_up_connector_), adds the account, and
+    // updates the on-disk index (active = the new uid). On both the duplicate and
+    // hard-failure paths it clears pending_login_client_ / pending_login_temp_dir_
+    // so the shell only owns the native UI restore. Does NOT touch native widgets
+    // (login-view dismiss, surface switch, status bar) — the shell does the
+    // native finish using the returned result. The shell must call set_client(
+    // nullptr) on its login view BEFORE this when it owns a raw alias to
+    // pending_login_client_ (it is reset here). UI-thread only.
+    FinalizeLoginResult finalize_login_();
+
     // Build the shell's concrete IEventHandler bridge for `uid`, with set_user_id
     // already called. The bridge TYPE is native: EventBridge (Qt6, a QObject so
     // the marshalling QMetaObject::invokeMethod has a receiver), EventHandlerBase

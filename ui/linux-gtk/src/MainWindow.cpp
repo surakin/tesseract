@@ -2822,18 +2822,22 @@ void MainWindow::install_account_up_connector_(tesseract::AccountSession& sessio
 
 void MainWindow::on_login_succeeded()
 {
-    // Export session before dropping the in-flight client.
-    std::string uid = pending_login_client_->get_user_id();
-
-    // Reject if this account is already signed in.
-    if (account_manager_.find(uid))
+    if (!pending_login_client_)
     {
-        login_view_->set_client(nullptr);
-        pending_login_client_.reset();
-        std::filesystem::remove_all(pending_login_temp_dir_);
-        pending_login_temp_dir_.clear();
+        return; // defensive
+    }
+
+    // The LoginView holds a raw alias to pending_login_client_; clear it before
+    // finalize_login_ resets the client underneath us.
+    login_view_->set_client(nullptr);
+
+    // Agnostic add-account core (see ShellBase::finalize_login_).
+    const auto fin = finalize_login_();
+
+    if (fin.rejected_duplicate)
+    {
         gtk_label_set_text(GTK_LABEL(status_bar_),
-                           ("Already signed in as " + uid).c_str());
+                           ("Already signed in as " + fin.user_id).c_str());
         if (pending_login_is_add_account_ && add_account_return_idx_ >= 0 &&
             add_account_return_idx_ < static_cast<int>(account_manager_.accounts().size()))
         {
@@ -2846,91 +2850,21 @@ void MainWindow::on_login_succeeded()
         return;
     }
 
-    std::string exported = pending_login_client_->export_session();
-
-    // Drop the in-flight client to release SQLite handles before rename.
-    login_view_->set_client(nullptr);
-    pending_login_client_.reset();
-
-    // Rename temp dir → final per-account dir.
-    auto target = tesseract::SessionStore::account_dir(uid);
-    std::error_code ec;
-    std::filesystem::rename(pending_login_temp_dir_, target, ec);
-    if (ec)
-    {
-        std::filesystem::copy(pending_login_temp_dir_, target,
-                              std::filesystem::copy_options::recursive, ec);
-        std::filesystem::remove_all(pending_login_temp_dir_, ec);
-    }
-    pending_login_temp_dir_.clear();
-
-    tesseract::SessionStore::save_account(uid, exported);
-
-    // Reopen the store at the final path.
-    auto sess = std::make_unique<tesseract::AccountSession>();
-    sess->client = std::make_unique<tesseract::Client>();
-    sess->client->set_data_dir(
-        tesseract::SessionStore::sdk_store_dir(uid).string());
-    auto res = sess->client->restore_session(exported);
-    if (!res)
+    if (!fin.ok)
     {
         gtk_label_set_text(
             GTK_LABEL(status_bar_),
-            (std::string(_("Login error: ")) + res.message).c_str());
+            (std::string(_("Login error: ")) + fin.error).c_str());
         return;
     }
-    sess->user_id = sess->client->get_user_id();
-    sess->display_name = sess->client->get_display_name();
-    sess->avatar_url = sess->client->get_avatar_url();
-    {
-        auto prefs = tesseract::Prefs::parse(sess->client->load_prefs_json());
-        sess->last_room  = prefs.last_room;
-        sess->open_rooms = prefs.open_rooms;
-    }
 
-    auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
-    bridge->set_user_id(sess->user_id);
-    sess->client->start_sync(bridge.get());
-    sess->bridge = std::move(bridge);
-    sess->sync_started = true;
-
-    // Per-account notifier: click switches to this account then navigates.
-    const std::string notif_uid = sess->user_id;
-    sess->notifier = std::make_unique<LinuxNotifierGtk>(
-        [this, notif_uid](std::string room_id, std::string token)
-        {
-            switch_active_account(notif_uid);
-            if (!token.empty())
-            {
-                gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
-            }
-            navigate_to_room(std::move(room_id));
-        });
-
-    // Per-account UnifiedPush connector.
-    {
-        auto up = std::make_unique<LinuxUpConnectorGtk>();
-        up->start(sess->client.get(), sess->user_id);
-        sess->up_connector = std::move(up);
-    }
-
-    account_manager_.add_account(std::move(sess));
-
-    // Update accounts.json index.
-    auto index = tesseract::SessionStore::load_index();
-    if (std::find(index.user_ids.begin(), index.user_ids.end(), uid) ==
-        index.user_ids.end())
-    {
-        index.user_ids.push_back(uid);
-    }
-    index.active_user_id = uid;
-    tesseract::SessionStore::save_index(index);
-
-    switch_active_account(uid);
+    switch_active_account(fin.user_id);
     ensure_settings_controller_();
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     start_tray_if_needed_();
+    pending_login_is_add_account_ = false;
+    add_account_return_idx_ = -1;
 }
 
 void MainWindow::bind_settings_controller_()

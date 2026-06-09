@@ -2688,6 +2688,134 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
     return result;
 }
 
+ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
+{
+    FinalizeLoginResult out;
+
+    if (!pending_login_client_)
+    {
+        return out; // defensive — !ok, nothing to report
+    }
+
+    // OAuth completed on pending_login_client_, which the LoginView drove against
+    // the temp data dir (pending_login_temp_dir_/matrix-store). We don't yet know
+    // the user_id; ask the client now.
+    const std::string user_id = pending_login_client_->get_user_id();
+    if (user_id.empty())
+    {
+        out.error = "no user id";
+        return out;
+    }
+    out.user_id = user_id;
+
+    // If an account with this user_id is already signed in (the user added an
+    // account they're already logged into), refuse rather than colliding on disk.
+    if (account_manager_.find(user_id))
+    {
+        out.rejected_duplicate = true;
+        pending_login_client_.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(pending_login_temp_dir_, ec);
+        pending_login_temp_dir_.clear();
+        return out;
+    }
+
+    // Snapshot the session blob before dropping the in-flight Client — re-opening
+    // it below restores from this JSON.
+    const std::string session_json = pending_login_client_->export_session();
+    if (session_json.empty())
+    {
+        out.error = "empty session";
+        return out;
+    }
+
+    // Drop the in-flight Client so its SQLite handles are released before we
+    // rename the directory underneath it. (The shell has already cleared any raw
+    // login-view alias to this client.)
+    pending_login_client_.reset();
+
+    // Move the temp account directory into its final per-user-id home. The rename
+    // is atomic on the same filesystem; on a cross-filesystem move it fails with
+    // EXDEV, so fall back to a recursive copy + remove.
+    const std::filesystem::path final_dir =
+        tesseract::SessionStore::account_dir(user_id);
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(final_dir.parent_path(), ec);
+        std::filesystem::rename(pending_login_temp_dir_, final_dir, ec);
+        if (ec)
+        {
+            std::error_code ec2;
+            std::filesystem::copy(
+                pending_login_temp_dir_, final_dir,
+                std::filesystem::copy_options::recursive |
+                    std::filesystem::copy_options::overwrite_existing,
+                ec2);
+            if (ec2)
+            {
+                out.error = "couldn't persist matrix store: " + ec2.message();
+                return out;
+            }
+            std::filesystem::remove_all(pending_login_temp_dir_, ec2);
+        }
+    }
+    pending_login_temp_dir_.clear();
+
+    // Persist the session blob into the final per-account dir.
+    if (!tesseract::SessionStore::save_account(user_id, session_json))
+    {
+        out.error = "couldn't persist session";
+        return out;
+    }
+
+    // Open a fresh Client against the final store path and restore from the
+    // just-exported session JSON (matrix-sdk reuses the moved SQLite store
+    // transparently — no resync).
+    auto session    = std::make_unique<tesseract::AccountSession>();
+    session->user_id = user_id;
+    session->client = std::make_unique<tesseract::Client>();
+    session->client->set_data_dir(
+        tesseract::SessionStore::sdk_store_dir(user_id).string());
+    auto res = session->client->restore_session(session_json);
+    if (!res)
+    {
+        out.error = "restore: " + res.message;
+        tesseract::SessionStore::clear_account(user_id);
+        return out;
+    }
+    session->display_name = session->client->get_display_name();
+    session->avatar_url   = session->client->get_avatar_url();
+    {
+        auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
+        session->last_room  = prefs.last_room;
+        session->open_rooms = prefs.open_rooms;
+    }
+
+    // Per-account event bridge (native type) + background sync.
+    session->bridge = make_account_bridge_(session->user_id);
+    session->client->start_sync(session->bridge.get());
+    session->sync_started = true;
+
+    // Per-account notifier (native) and Linux-only UnifiedPush connector.
+    install_account_notifier_(*session);
+    install_account_up_connector_(*session);
+
+    account_manager_.add_account(std::move(session));
+
+    // Update the on-disk index. Active = the account we just added.
+    auto index = tesseract::SessionStore::load_index();
+    if (std::find(index.user_ids.begin(), index.user_ids.end(), user_id) ==
+        index.user_ids.end())
+    {
+        index.user_ids.push_back(user_id);
+    }
+    index.active_user_id = user_id;
+    tesseract::SessionStore::save_index(index);
+
+    out.ok = true;
+    return out;
+}
+
 ShellBase::~ShellBase()
 {
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this

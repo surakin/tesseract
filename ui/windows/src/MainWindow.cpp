@@ -3576,31 +3576,31 @@ void MainWindow::bind_settings_controller_()
 void MainWindow::on_login_succeeded()
 {
     // The pending client ran OAuth into a temp directory.
-    // Drop it (releases SQLite handles), rename the temp dir to its final
-    // per-account location, then reopen a fresh client at the final path.
+    // finalize_login_ drops it (releases SQLite handles), renames the temp dir
+    // to its final per-account location, reopens a fresh client at the final
+    // path, and adds the account; we do only the native finish here.
     if (!pending_login_client_)
     {
         return;
     }
 
-    std::string user_id = pending_login_client_->get_user_id();
+    // login_view_ holds a raw alias to pending_login_client_; clear it before
+    // finalize_login_ resets the client.
+    if (login_view_)
+    {
+        login_view_->set_client(nullptr);
+    }
+
+    const auto fin = finalize_login_();
 
     // Reject if this account is already signed in.
-    if (account_manager_.find(user_id))
+    if (fin.rejected_duplicate)
     {
-        if (login_view_)
-        {
-            login_view_->set_client(nullptr);
-        }
-        pending_login_client_.reset();
-        std::error_code ec;
-        std::filesystem::remove_all(pending_login_temp_dir_, ec);
-        pending_login_temp_dir_.clear();
         if (login_view_)
         {
             login_view_->set_status_message(
                 L"Already signed in as " +
-                std::wstring(user_id.begin(), user_id.end()));
+                std::wstring(fin.user_id.begin(), fin.user_id.end()));
         }
         pending_login_is_add_account_ = false;
         if (add_account_return_idx_ >= 0 &&
@@ -3612,81 +3612,24 @@ void MainWindow::on_login_succeeded()
         return;
     }
 
-    std::string json = pending_login_client_->export_session();
-    if (login_view_)
+    if (!fin.ok)
     {
-        login_view_->set_client(nullptr);
-    }
-    pending_login_client_.reset(); // closes SQLite handles before rename
-
-    namespace fs = std::filesystem;
-    fs::path final_dir = tesseract::SessionStore::account_dir(user_id);
-    std::error_code ec;
-    if (!pending_login_temp_dir_.empty() && fs::exists(pending_login_temp_dir_))
-    {
-        fs::create_directories(final_dir.parent_path(), ec);
-        fs::rename(pending_login_temp_dir_, final_dir, ec);
-        if (ec)
-        {
-            // Rename failed (e.g. cross-device); leave temp dir and bail.
-            pending_login_temp_dir_.clear();
-            if (login_view_)
-            {
-                pending_login_client_ = std::make_unique<tesseract::Client>();
-                login_view_->set_client(pending_login_client_.get());
-                login_view_->set_status_message(L"Failed to save session.");
-                login_view_->reset();
-            }
-            return;
-        }
-        pending_login_temp_dir_.clear();
-    }
-
-    auto sess = std::make_unique<tesseract::AccountSession>();
-    sess->client = std::make_unique<tesseract::Client>();
-    sess->client->set_data_dir(
-        tesseract::SessionStore::sdk_store_dir(user_id).string());
-    if (!sess->client->restore_session(json))
-    {
-        tesseract::SessionStore::clear_account(user_id);
+        // Persist failed (e.g. cross-device rename + copy, or restore error);
+        // re-arm the login view so the user can retry.
         if (login_view_)
         {
             pending_login_client_ = std::make_unique<tesseract::Client>();
             login_view_->set_client(pending_login_client_.get());
+            login_view_->set_status_message(L"Failed to save session.");
             login_view_->reset();
         }
         return;
     }
-    sess->user_id = sess->client->get_user_id();
-    sess->display_name = sess->client->get_display_name();
-    sess->avatar_url = sess->client->get_avatar_url();
-    {
-        auto prefs = tesseract::Prefs::parse(sess->client->load_prefs_json());
-        sess->last_room  = prefs.last_room;
-        sess->open_rooms = prefs.open_rooms;
-    }
 
-    auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
-    bridge->set_user_id(sess->user_id);
-    sess->bridge = std::move(bridge);
-    sess->client->start_sync(sess->bridge.get());
-    sess->sync_started = true;
-
-    // Per-account notifier: click switches to this account then navigates.
-    const std::string new_uid = sess->user_id;
-    sess->notifier = std::make_unique<win32::Win32Notifier>(hwnd_, new_uid);
-
-    account_manager_.add_account(std::move(sess));
-
-    // Persist updated index.
-    auto idx = tesseract::SessionStore::load_index();
-    idx.user_ids.push_back(user_id);
-    idx.active_user_id = user_id;
-    tesseract::SessionStore::save_index(idx);
-    tesseract::SessionStore::save_account(user_id, json);
-
-    switch_active_account(user_id);
+    switch_active_account(fin.user_id);
     ensure_settings_controller_();
+    pending_login_is_add_account_ = false;
+    add_account_return_idx_ = -1;
 }
 
 void MainWindow::open_settings_()

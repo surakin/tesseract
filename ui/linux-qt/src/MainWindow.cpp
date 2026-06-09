@@ -2467,29 +2467,20 @@ void MainWindow::onLoginSucceeded()
         return; // defensive — should not happen
     }
 
-    // The OAuth round-trip completed on `pending_login_client_`, which the
-    // LoginView drove against a temporary data dir
-    // (`pending_login_temp_dir_/matrix-store`). We don't yet know the
-    // user_id; ask the client now.
-    std::string user_id = pending_login_client_->get_user_id();
-    if (user_id.empty())
-    {
-        statusBar()->showMessage(tr("Sign-in failed: no user id"), 6000);
-        return;
-    }
+    // The LoginView holds a raw alias to pending_login_client_; clear it before
+    // finalize_login_ resets the client underneath us.
+    loginView_->set_client(nullptr);
 
-    // If an account with the same user_id is already signed in (the user
-    // added an account they're already logged into), refuse rather than
-    // colliding on disk.
-    if (account_manager_.find(user_id))
+    // Agnostic add-account core: dedupe check, export/rename-to-final/save,
+    // reopen + restore + prefs, bridge/notifier/UP via the shared install hooks,
+    // add_account, index update. See ShellBase::finalize_login_.
+    const auto fin = finalize_login_();
+
+    if (fin.rejected_duplicate)
     {
         statusBar()->showMessage(tr("Already signed in as %1")
-                                     .arg(QString::fromStdString(user_id)),
+                                     .arg(QString::fromStdString(fin.user_id)),
                                  4000);
-        loginView_->set_client(nullptr);
-        pending_login_client_.reset();
-        std::error_code ec;
-        std::filesystem::remove_all(pending_login_temp_dir_, ec);
         // Restore previous active account's UI.
         const int back = add_account_return_idx_;
         if (back >= 0 && back < static_cast<int>(account_manager_.accounts().size()))
@@ -2502,121 +2493,15 @@ void MainWindow::onLoginSucceeded()
         return;
     }
 
-    // Snapshot the session blob before we drop the in-flight Client —
-    // re-opening it below needs to restore from this JSON.
-    auto session_json = pending_login_client_->export_session();
-    if (session_json.empty())
+    if (!fin.ok)
     {
-        statusBar()->showMessage(tr("Sign-in failed: empty session"), 6000);
+        statusBar()->showMessage(
+            tr("Sign-in failed: %1").arg(QString::fromStdString(fin.error)),
+            6000);
         return;
     }
 
-    // Drop the in-flight Client so its SQLite handles are released
-    // before we rename the directory underneath it.
-    loginView_->set_client(nullptr);
-    pending_login_client_.reset();
-
-    // Move the temp account directory into its final per-user-id home.
-    std::filesystem::path final_dir =
-        tesseract::SessionStore::account_dir(user_id);
-    {
-        std::error_code ec;
-        std::filesystem::create_directories(final_dir.parent_path(), ec);
-        std::filesystem::rename(pending_login_temp_dir_, final_dir, ec);
-        if (ec)
-        {
-            // Rename failed — try recursive copy + remove, falling back
-            // to leaving the data in the temp dir if even that fails.
-            std::error_code ec2;
-            std::filesystem::copy(
-                pending_login_temp_dir_, final_dir,
-                std::filesystem::copy_options::recursive |
-                    std::filesystem::copy_options::overwrite_existing,
-                ec2);
-            if (ec2)
-            {
-                statusBar()->showMessage(
-                    tr("Sign-in failed: couldn't persist matrix store: %1")
-                        .arg(QString::fromStdString(ec2.message())),
-                    6000);
-                return;
-            }
-            std::filesystem::remove_all(pending_login_temp_dir_, ec2);
-        }
-    }
-    pending_login_temp_dir_.clear();
-
-    // Persist the session blob into the final per-account dir.
-    if (!tesseract::SessionStore::save_account(user_id, session_json))
-    {
-        statusBar()->showMessage(tr("Sign-in failed: couldn't persist session"),
-                                 6000);
-        return;
-    }
-
-    // Open a fresh Client against the final store path and restore from
-    // the just-exported session JSON (the matrix-sdk reuses the moved
-    // SQLite store transparently — no resync).
-    auto session = std::make_unique<tesseract::AccountSession>();
-    session->user_id = user_id;
-    session->client = std::make_unique<tesseract::Client>();
-    session->client->set_data_dir(
-        tesseract::SessionStore::sdk_store_dir(user_id).string());
-    auto res = session->client->restore_session(session_json);
-    if (!res)
-    {
-        statusBar()->showMessage(tr("Sign-in failed at restore: %1")
-                                     .arg(QString::fromStdString(res.message)),
-                                 6000);
-        tesseract::SessionStore::clear_account(user_id);
-        return;
-    }
-    session->display_name = session->client->get_display_name();
-    session->avatar_url = session->client->get_avatar_url();
-    {
-        auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
-        session->last_room  = prefs.last_room;
-        session->open_rooms = prefs.open_rooms;
-    }
-
-    auto bridge = std::make_unique<EventBridge>(this);
-    bridge->set_user_id(user_id);
-    session->client->start_sync(bridge.get());
-    session->sync_started = true;
-    session->bridge = std::move(bridge);
-
-    // Per-account notifier: click switches to this account then navigates.
-    session->notifier = std::make_unique<LinuxNotifierQt>(
-        [this, uid = user_id](std::string room_id, std::string token)
-        {
-            switchActiveAccount(uid);
-            pending_wayland_token_ = QString::fromStdString(token);
-            navigate_to_room(std::move(room_id));
-        });
-
-    // Per-account UnifiedPush connector.
-    {
-        auto up = std::make_unique<LinuxUpConnectorQt>();
-        up->set_run_async(
-            [this](std::function<void()> fn) { run_async_(std::move(fn)); });
-        up->set_post_to_ui(
-            [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
-        up->start(session->client.get(), user_id);
-        session->up_connector = std::move(up);
-    }
-
-    account_manager_.add_account(std::move(session));
-
-    // Update the on-disk index. Active = the account we just added.
-    tesseract::SessionStore::AccountIndex idx;
-    idx.active_user_id = user_id;
-    for (auto& a : account_manager_.accounts())
-    {
-        idx.user_ids.push_back(a->user_id);
-    }
-    tesseract::SessionStore::save_index(idx);
-
-    switchActiveAccount(user_id);
+    switchActiveAccount(fin.user_id);
     ensure_settings_controller_();
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);

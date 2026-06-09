@@ -341,6 +341,8 @@ public:
     using ShellBase::on_account_picker_select_;
     using ShellBase::restore_all_accounts_;
     using ShellBase::RestoreResult;
+    using ShellBase::finalize_login_;
+    using ShellBase::FinalizeLoginResult;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -5696,16 +5698,16 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
 
-    std::string newUserId = _shell->pending_login_client_->get_user_id();
+    // The LoginView holds a raw alias to pending_login_client_; clear it before
+    // finalize_login_ resets the client.
+    [_loginView setClient:nullptr];
+
+    // Agnostic add-account core (see ShellBase::finalize_login_).
+    const auto fin = _shell->finalize_login_();
 
     // Reject if this account is already signed in.
-    if (_shell->account_manager_.find(newUserId))
+    if (fin.rejected_duplicate)
     {
-        [_loginView setClient:nullptr];
-        _shell->pending_login_client_.reset();
-        std::error_code ec;
-        std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
-        _shell->pending_login_temp_dir_.clear();
         _shell->pending_login_is_add_account_ = false;
         const auto& accs = _shell->account_manager_.accounts();
         int returnIdx = _shell->add_account_return_idx_;
@@ -5717,61 +5719,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     }
 
-    std::string sessionJson = _shell->pending_login_client_->export_session();
-
-    auto finalDir = tesseract::SessionStore::account_dir(newUserId);
-    std::error_code ec;
-    std::filesystem::create_directories(finalDir.parent_path(), ec);
-    std::filesystem::rename(_shell->pending_login_temp_dir_, finalDir, ec);
-    if (ec)
-    {
-        finalDir =
-            _shell->pending_login_temp_dir_; // EXDEV fallback: keep as-is
-    }
-    [_loginView setClient:nullptr];
-    _shell->pending_login_client_.reset(); // close SQLite handles before reopen
-    _shell->pending_login_temp_dir_.clear();
-
-    auto session = std::make_unique<tesseract::AccountSession>();
-    session->client = std::make_unique<tesseract::Client>();
-    session->client->set_data_dir(
-        tesseract::SessionStore::sdk_store_dir(newUserId).string());
-    if (!session->client->restore_session(sessionJson))
+    if (!fin.ok)
     {
         return;
     }
 
-    auto* bridge_ptr = new tesseract::EventHandlerBase(_shell.get());
-    bridge_ptr->set_user_id(newUserId);
-    session->bridge.reset(bridge_ptr);
-
-    session->user_id = newUserId;
-    session->display_name = session->client->get_display_name();
-    session->avatar_url = session->client->get_avatar_url();
-    {
-        auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
-        session->last_room  = prefs.last_room;
-        session->open_rooms = prefs.open_rooms;
-    }
-    session->sync_started = true;
-    session->client->start_sync(session->bridge.get());
-
-    tesseract::SessionStore::save_account(newUserId, sessionJson);
-    auto idxData = tesseract::SessionStore::load_index();
-    auto& ids = idxData.user_ids;
-    if (std::find(ids.begin(), ids.end(), newUserId) == ids.end())
-    {
-        ids.push_back(newUserId);
-    }
-    idxData.active_user_id = newUserId;
-    tesseract::SessionStore::save_index(idxData);
-
-    std::string switchToUid = session->user_id;
-    _shell->account_manager_.add_account(std::move(session));
     _shell->pending_login_is_add_account_ = false;
     _shell->add_account_return_idx_ = -1;
 
-    [self _switchActiveAccount:switchToUid];
+    [self _switchActiveAccount:fin.user_id];
     _shell->ensure_settings_controller_();
 }
 
