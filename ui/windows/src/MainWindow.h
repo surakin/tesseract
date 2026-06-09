@@ -62,19 +62,20 @@ using std::min;
 #include <vector>
 
 // Custom window messages
-constexpr UINT WM_TESSERACT_MESSAGE_INSERTED = WM_APP + 1;
+// WM_APP + 1 was WM_TESSERACT_MESSAGE_INSERTED; Windows now routes through the
+// shared ShellBase timeline/message handlers (no per-message marshalling msg).
 constexpr UINT WM_TESSERACT_ROOMS = WM_APP + 2;
 constexpr UINT WM_TESSERACT_SYNC_ERROR = WM_APP + 3;
-constexpr UINT WM_TESSERACT_TIMELINE_RESET = WM_APP + 4;
+// WM_APP + 4 was WM_TESSERACT_TIMELINE_RESET; see the +1 note above.
 constexpr UINT WM_TESSERACT_RECONNECT = WM_APP + 5;
 constexpr UINT WM_TESSERACT_AUTH_ERROR = WM_APP + 6;
 constexpr UINT WM_TESSERACT_BACKUP_PROGRESS = WM_APP + 7;
 // WM_APP + 8 was the recover-done message; the inline key-entry banner that
 // consumed it was removed (key recovery now lives in the encryption-setup
 // overlay).
-constexpr UINT WM_TESSERACT_MESSAGE_UPDATED = WM_APP + 9;
+// WM_APP + 9 was WM_TESSERACT_MESSAGE_UPDATED; see the +1 note above.
 constexpr UINT WM_TESSERACT_PAGINATE_DONE = WM_APP + 10;
-constexpr UINT WM_TESSERACT_MESSAGE_REMOVED = WM_APP + 11;
+// WM_APP + 11 was WM_TESSERACT_MESSAGE_REMOVED; see the +1 note above.
 constexpr UINT WM_TESSERACT_IMAGE_PACKS = WM_APP + 12;
 // WM_APP + 13 was WM_TESSERACT_STICKER_BYTES; the sticker picker now uses
 // the shared ShellBase async image-cache path (ensure_picker_image_).

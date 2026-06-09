@@ -12,8 +12,8 @@ namespace tesseract::views
 // Autocomplete popup shown while typing a `/command` in the composer.
 // All list scaffolding lives in ListPopupBase; this class owns the suggestion
 // model and a two-line (name + description) per-row paint. It also overrides
-// set_selected_index with clamping (the shell keyboard handlers drive it
-// directly), and exposes suggestion_at() for those handlers.
+// the virtual set_selected_index with clamping (the shell keyboard handlers
+// drive it directly), and exposes suggestion_at() for those handlers.
 class SlashCommandPopup : public ListPopupBase
 {
 public:
@@ -25,7 +25,7 @@ public:
 
     // Clamping setter (differs from the plain base assignment): -1 clears, any
     // other value is clamped into the visible range.
-    void set_selected_index(int index);
+    void set_selected_index(int index) override;
 
     // Public accessor used by shell keyboard handlers — they consume
     // Up/Down/Enter themselves, then need to fire on_accepted with the

@@ -35,9 +35,8 @@ public:
         return selected_index_;
     }
     // Plain assignment matching Mention/Shortcode; subclasses that need
-    // clamping (SlashCommand) override the non-virtual setter via hiding —
-    // controllers always call through the concrete popup type.
-    void set_selected_index(int index)
+    // clamping (SlashCommand) override this.
+    virtual void set_selected_index(int index)
     {
         selected_index_ = index;
     }

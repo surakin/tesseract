@@ -1439,12 +1439,17 @@ impl ClientFfi {
                 size: UInt::new(bytes.len() as u64),
                 blurhash: None,
             });
-            let thumbnail = (!thumb_bytes.is_empty()).then(|| Thumbnail {
-                data: thumb_bytes,
-                content_type: mime::IMAGE_JPEG,
-                height: UInt::new(thumb_height as u64).unwrap_or_default(),
-                width: UInt::new(thumb_width as u64).unwrap_or_default(),
-                size: UInt::new(0u64).unwrap_or_default(),
+            let thumbnail = (!thumb_bytes.is_empty()).then(|| {
+                // Capture the length before `data` moves thumb_bytes; matches the
+                // blocking send_video path (which uses thumb_bytes.len()).
+                let thumb_size = thumb_bytes.len() as u64;
+                Thumbnail {
+                    data: thumb_bytes,
+                    content_type: mime::IMAGE_JPEG,
+                    height: UInt::new(thumb_height as u64).unwrap_or_default(),
+                    width: UInt::new(thumb_width as u64).unwrap_or_default(),
+                    size: UInt::new(thumb_size).unwrap_or_default(),
+                }
             });
             let config = match build_attachment_config(info, thumbnail, &caption, &reply_event_id, &thread_root) {
                 Ok(c) => c,
