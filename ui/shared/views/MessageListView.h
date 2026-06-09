@@ -15,6 +15,7 @@
 #include "tk/video.h"
 #include "views/LocationMapPanner.h"
 #include "views/ReadReceiptTracker.h"
+#include "views/RoomSwitchGateKeeper.h"
 #include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
 #include "views/TimelineVideoPlaylist.h"
@@ -764,23 +765,13 @@ private:
 
     // Room-switch display gate. Armed by set_messages(.., room_switch=true);
     // evaluated on the first paint (heights are guaranteed measured there);
-    // while `pending` is non-empty the message rows are not painted (only
-    // the list background) so the room appears once, already correct.
-    // `epoch` supersedes a stale gate on a rapid A→B→C re-switch.
-    struct RoomSwitchGate
-    {
-        std::uint64_t epoch = 0;
-        bool evaluated = false;                  // visible band scanned
-        std::unordered_set<std::string> pending; // unmet media/url keys
-        bool focused = false;                    // jump-to-event mode
-        std::string focus_event_id;
-    };
-    std::optional<RoomSwitchGate> room_switch_gate_;
-    std::uint64_t room_switch_epoch_ = 0;
-    std::function<void(int, std::function<void()>)> post_delayed_;
-
-    // Has every height-affecting dependency of row `m` already resolved?
-    bool gate_dep_satisfied_(const MessageRowData& m) const;
+    // while blocking the message rows are not painted (only the list
+    // background) so the room appears once, already correct. The state machine
+    // (pending-deps set, per-Kind satisfied check, focused/jump-to-event
+    // reveal, 400ms timeout) lives in RoomSwitchGateKeeper; this view drives
+    // evaluate()/try_reveal() from paint() and forwards its public
+    // begin_focused_gate / notify_*_ready to the keeper.
+    RoomSwitchGateKeeper room_switch_gate_;
 
     // Whole-room pinning: derive `m`'s display key (image/sticker/video-thumb
     // source token, or URL-preview image_mxc) and, when `m` does not yet hold
@@ -791,21 +782,10 @@ private:
     void try_acquire_image_(MessageRowData& m);
     // Display key used both for pinning and for the gate dependency check.
     std::string row_image_key_(const MessageRowData& m) const;
-    // First-paint scan: fill the gate's `pending` set from the visible band.
-    void collect_gate_deps_();
-    // Clear the gate + re-pin scroll (bottom, or focus row) so the first
-    // visible frame is already correct.
-    void reveal_room_switch_gate_();
-    // Hook called from notify_image_ready / notify_url_preview_ready: drop
-    // a resolved key and repaint to reveal once the pending set empties.
-    void on_gate_notify_(const std::string& key);
     // True while a room-switch gate still holds the list invisible. Pointer
     // and wheel input is swallowed in that window so the user can't click /
     // scroll rows that aren't painted yet.
-    bool gate_blocks_input_() const
-    {
-        return room_switch_gate_.has_value();
-    }
+    bool gate_blocks_input_() const { return room_switch_gate_.active(); }
 
     // Non-empty → render a synthetic trailing typing row (see Adapter).
     std::string typing_text_;
@@ -987,6 +967,10 @@ private:
     // throughout the view (gate reveal, selection drag, async hops, …); also
     // handed to `media_` so the playback subsystem can drive its own repaints.
     std::function<void()> request_repaint_;
+
+    // Delayed-callback scheduler. Wired by `set_post_delayed`; the room-switch
+    // gate uses it to arm its 400ms timeout fallback.
+    std::function<void(int, std::function<void()>)> post_delayed_;
 
     // Liveness sentinel. Async media-fetch / player callbacks capture a
     // weak_ptr to this and bail if it has expired — the view is destroyed

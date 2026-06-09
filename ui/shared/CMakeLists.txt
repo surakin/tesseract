@@ -74,6 +74,8 @@ set(_tk_sources
     views/TimelineVideoPlaylist.cpp
     views/LocationMapPanner.h
     views/LocationMapPanner.cpp
+    views/RoomSwitchGateKeeper.h
+    views/RoomSwitchGateKeeper.cpp
     views/PinnedBanner.h
     views/PinnedBanner.cpp
     views/html_spans.h
