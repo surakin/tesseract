@@ -17,8 +17,30 @@ namespace
 
 // ── UTF-8 encoding ────────────────────────────────────────────────────────
 
+// Map a numeric character reference to a safe Unicode scalar value, following
+// the HTML spec's "numeric character reference end state" sanitisation: reject
+// non-scalar values so we never emit invalid UTF-8 that the text backends
+// (Pango / DirectWrite / CoreText) could mishandle.
+//   - NUL, surrogates (U+D800–U+DFFF) and > U+10FFFF → U+FFFD.
+//   - C0 controls are disallowed except TAB/LF/CR (the spec also permits FF,
+//     but mapping it to U+FFFD is harmless here) → U+FFFD.
+// Everything else passes through unchanged.
+uint32_t sanitize_codepoint(uint32_t cp)
+{
+    if (cp == 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
+    {
+        return 0xFFFD;
+    }
+    if (cp < 0x20 && cp != 0x09 && cp != 0x0A && cp != 0x0D)
+    {
+        return 0xFFFD;
+    }
+    return cp;
+}
+
 void append_codepoint(std::string& out, uint32_t cp)
 {
+    cp = sanitize_codepoint(cp);
     if (cp < 0x80)
     {
         out += static_cast<char>(cp);
@@ -554,6 +576,12 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
     std::vector<FmtState> stack;
     stack.push_back(FmtState{});
 
+    // Number of opening tags that were *flattened* (not pushed) because the
+    // depth cap was already reached. Their matching close tags must be
+    // absorbed here rather than popping a legitimate outer frame — otherwise
+    // text after an over-deep section would render with the wrong styling.
+    std::size_t dropped_opens = 0;
+
     std::string cur_text;
     bool first_block = true;
 
@@ -739,6 +767,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                     {
                         stack.push_back(ns);
                     }
+                    else
+                    {
+                        ++dropped_opens;
+                    }
                     continue;
                 }
                 // All other opening tags (u, span, h1-h6, li, …): preserve
@@ -747,6 +779,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 if (stack.size() < kMaxTagDepth)
                 {
                     stack.push_back(ns);
+                }
+                else
+                {
+                    ++dropped_opens;
                 }
             }
             else if (tag.self_closing || tag.name == "br")
@@ -767,7 +803,14 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 {
                     flush();
                 }
-                if (stack.size() > 1)
+                // Absorb a flattened (dropped) open before touching the real
+                // stack, so the close of an over-deep tag can't pop a
+                // legitimate outer formatting frame.
+                if (dropped_opens > 0)
+                {
+                    --dropped_opens;
+                }
+                else if (stack.size() > 1)
                 {
                     stack.pop_back();
                 }

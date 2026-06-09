@@ -15,6 +15,18 @@ const tk::TextSpan* mention_span(const std::vector<tk::TextSpan>& spans)
             return &s;
     return nullptr;
 }
+
+// Concatenate the text of every span — the decoded plain text of the body.
+std::string joined_text(const std::vector<tk::TextSpan>& spans)
+{
+    std::string out;
+    for (const auto& s : spans)
+        out += s.text;
+    return out;
+}
+
+// The UTF-8 encoding of U+FFFD REPLACEMENT CHARACTER.
+constexpr const char* kReplacement = "\xEF\xBF\xBD";
 } // namespace
 
 // autolink_plain_to_spans turns bare http(s):// URLs in a plain-text body
@@ -200,4 +212,104 @@ TEST_CASE("mention: dark theme uses different pill colours than light",
                   lm->background.g != dm->background.g ||
                   lm->background.b != dm->background.b;
     CHECK(differ);
+}
+
+// --- Gap 1: invalid numeric character references --------------------------
+//
+// Numeric character references that name a non-scalar Unicode value (lone
+// surrogate, NUL, codepoint > U+10FFFF, or a disallowed C0 control) must be
+// mapped to U+FFFD rather than emitted as invalid/unsafe UTF-8.
+
+TEST_CASE("entity: lone surrogate decodes to U+FFFD", "[html_spans][entity]")
+{
+    // &#xD800; is the low end of the surrogate range.
+    CHECK(joined_text(html_to_spans("&#xD800;", false)) == kReplacement);
+    // &#xDFFF; the high end.
+    CHECK(joined_text(html_to_spans("&#xDFFF;", false)) == kReplacement);
+    // Decimal form of a surrogate (55296 == 0xD800).
+    CHECK(joined_text(html_to_spans("&#55296;", false)) == kReplacement);
+}
+
+TEST_CASE("entity: NUL decodes to U+FFFD", "[html_spans][entity]")
+{
+    auto t = joined_text(html_to_spans("&#0;", false));
+    CHECK(t == kReplacement);
+    // It must NOT be an embedded NUL byte.
+    CHECK(t.find('\0') == std::string::npos);
+}
+
+TEST_CASE("entity: out-of-range codepoint decodes to U+FFFD",
+          "[html_spans][entity]")
+{
+    // &#x110000; is one past the highest Unicode scalar (U+10FFFF).
+    CHECK(joined_text(html_to_spans("&#x110000;", false)) == kReplacement);
+    // A wildly out-of-range value as well.
+    CHECK(joined_text(html_to_spans("&#x7FFFFFFF;", false)) == kReplacement);
+}
+
+TEST_CASE("entity: disallowed C0 control decodes to U+FFFD",
+          "[html_spans][entity]")
+{
+    // &#7; is BEL — a disallowed C0 control.
+    CHECK(joined_text(html_to_spans("&#7;", false)) == kReplacement);
+    // U+001B ESC.
+    CHECK(joined_text(html_to_spans("&#x1B;", false)) == kReplacement);
+}
+
+TEST_CASE("entity: allowed whitespace controls survive intact",
+          "[html_spans][entity]")
+{
+    // Tab, newline and carriage return are legal and must pass through.
+    // (A non-letter sentinel keeps the LF/CR off the trailing edge, where
+    // html_to_spans intentionally trims newlines.)
+    CHECK(joined_text(html_to_spans("&#9;", false)) == "\t");
+    CHECK(joined_text(html_to_spans("a&#10;b", false)) == "a\nb");
+    CHECK(joined_text(html_to_spans("a&#13;b", false)) == "a\rb");
+    // A normal ASCII character is unaffected.
+    CHECK(joined_text(html_to_spans("&#65;", false)) == "A");
+    // A valid astral codepoint (U+1F600 GRINNING FACE) is unaffected.
+    CHECK(joined_text(html_to_spans("&#x1F600;", false)) ==
+          "\xF0\x9F\x98\x80");
+}
+
+// --- Gap 2: formatting-stack balance under the depth cap ------------------
+//
+// Opening tags past kMaxTagDepth (64) are flattened rather than pushed, but
+// their matching close tags used to still pop a real frame — corrupting the
+// styling of text that follows the over-deep section. The over-deep input
+// must yield the same trailing styling as a shallow baseline.
+
+TEST_CASE("depth-cap: dropped opens do not pop legitimate outer frames",
+          "[html_spans][depth]")
+{
+    // Outer <b> wraps a deeply nested run of <i> opens that overflow the
+    // depth cap, then all the <i> close. Text after the nested section,
+    // still inside <b>, must remain bold.
+    std::string html = "<b>start ";
+    constexpr int kOverflow = 200; // well past kMaxTagDepth (64)
+    for (int i = 0; i < kOverflow; ++i)
+        html += "<i>";
+    html += "deep";
+    for (int i = 0; i < kOverflow; ++i)
+        html += "</i>";
+    html += " tail</b>";
+
+    auto spans = html_to_spans(html, false);
+
+    // The text after the nested section ("tail") must still be bold.
+    bool found_tail = false;
+    for (const auto& s : spans)
+    {
+        if (s.text.find("tail") != std::string::npos)
+        {
+            found_tail = true;
+            CHECK(s.bold); // would be false under the bug
+        }
+    }
+    CHECK(found_tail);
+
+    // And "start" (before the overflow) is bold too — sanity baseline.
+    for (const auto& s : spans)
+        if (s.text.find("start") != std::string::npos)
+            CHECK(s.bold);
 }
