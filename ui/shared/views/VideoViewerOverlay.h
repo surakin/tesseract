@@ -1,5 +1,7 @@
 #pragma once
 
+#include "MediaOverlayBase.h"
+
 #include "tk/canvas.h"
 #include "tk/video.h"
 #include "tk/widget.h"
@@ -22,7 +24,7 @@ namespace tesseract::views
 //   4. Call open() when the user clicks a video thumbnail.
 //   5. Call load_bytes() once the async byte fetch completes.
 //   6. The shell handles Escape natively by calling close() when is_open().
-class VideoViewerOverlay : public tk::Widget
+class VideoViewerOverlay : public MediaOverlayBase
 {
 public:
     // Show the overlay for the given video. Transitions to the loading state
@@ -35,10 +37,6 @@ public:
 
     // Hide the overlay. Stops playback and fires on_close.
     void close();
-    bool is_open() const
-    {
-        return is_open_;
-    }
     bool is_loading() const
     {
         return is_loading_;
@@ -58,13 +56,8 @@ public:
     // repaint of the hosting surface. Typically: [this]{ surface_->relayout(); }
     void set_repaint_requester(std::function<void()> fn);
 
-    // Fires when the overlay should be dismissed (× button, outside click).
-    std::function<void()> on_close;
-
-    /// Fires when the user clicks the ⬇ save button.
-    /// `source_json` is either a plain mxc:// URI or a JSON MediaSource blob;
-    /// pass to `Client::fetch_source_bytes`. `mime_type` is e.g. "video/mp4".
-    std::function<void(std::string source_json, std::string mime_type)> on_save;
+    // on_close / on_save are inherited from MediaOverlayBase. For video the
+    // save callback receives (source_json_, mime_type_).
 
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -74,12 +67,19 @@ public:
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
 
+protected:
+    bool on_content_pointer_down_(tk::Point world, tk::Point local) override;
+    bool on_content_pointer_up_(tk::Point world, tk::Point local,
+                                bool inside_self) override;
+    void fire_save_() override;
+    void dismiss_() override;
+    void on_icon_scale_changed_() override;
+
 private:
     void do_play_or_pause();
     void cycle_speed();
     void recompute_layout();
 
-    bool is_open_ = false;
     bool is_loading_ = false;
     std::chrono::steady_clock::time_point loading_start_{};
     std::string source_json_;
@@ -103,24 +103,16 @@ private:
     tk::Rect play_btn_{};
     tk::Rect scrub_bar_{};
     tk::Rect speed_pill_{};
-    tk::Rect close_btn_{};
-    tk::Rect save_btn_{};
 
-    // Lucide close/download/play icons, rasterized + tinted; re-rasterized when
-    // the canvas DPI scale changes. play_icon_ is tinted to the control colour.
-    std::unique_ptr<tk::Image> close_icon_;
-    std::unique_ptr<tk::Image> save_icon_;
+    // Lucide play icon, rasterized + tinted to the control colour; re-rasterized
+    // when the canvas DPI scale changes (close/save icons live in the base).
     std::unique_ptr<tk::Image> play_icon_;
-    float icon_scale_ = 0.0f;
 
     bool has_error_ = false;
 
     bool press_play_ = false;
     bool press_scrub_ = false;
     bool press_speed_ = false;
-    bool press_close_ = false;
-    bool press_save_ = false;
-    bool press_outside_ = false;
 };
 
 } // namespace tesseract::views

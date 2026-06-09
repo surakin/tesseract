@@ -1,5 +1,7 @@
 #pragma once
 
+#include "MediaOverlayBase.h"
+
 #include "tk/canvas.h"
 #include "tk/widget.h"
 
@@ -25,7 +27,7 @@ namespace tesseract::views
 //       above 1.0, so small images are not upscaled). Scroll wheel zooms
 //       anchored at the cursor, clamped to [fit, 8×]. Click-drag pans
 //       whenever the image is larger than the viewport.
-class ImageViewerOverlay : public tk::Widget
+class ImageViewerOverlay : public MediaOverlayBase
 {
 public:
     // Show the overlay for the given image or sticker.
@@ -36,10 +38,6 @@ public:
               int natural_w, int natural_h);
     // Hide the overlay and reset zoom/pan state.
     void close();
-    bool is_open() const
-    {
-        return is_open_;
-    }
 
     // On-screen image bounds after zoom + pan (valid once arrange/paint has
     // run while open). Exposed for shells and tests.
@@ -58,15 +56,8 @@ public:
     //   [this]{ mainAppSurface_->relayout(); }
     void set_repaint_requester(std::function<void()> fn);
 
-    // Fires when the overlay should be dismissed (× button, outside click).
-    // The shell responds by hiding the host surface/window.
-    std::function<void()> on_close;
-
-    /// Fires when the user clicks the ⬇ save button.
-    /// `source_url` is the media_url_ (mxc:// or source JSON).
-    /// `filename_hint` is the body_ (MSC2530 filename caption, or empty).
-    std::function<void(std::string source_url, std::string filename_hint)>
-        on_save;
+    // on_close / on_save are inherited from MediaOverlayBase. For images the
+    // save callback receives (media_url_, body_) — source URL + filename hint.
 
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -78,6 +69,13 @@ public:
     void on_pointer_drag(tk::Point local) override;
     bool on_wheel(tk::Point local, float dx, float dy) override;
 
+protected:
+    bool on_content_pointer_down_(tk::Point world, tk::Point local) override;
+    bool on_content_pointer_up_(tk::Point world, tk::Point local,
+                                bool inside_self) override;
+    void fire_save_() override;
+    void dismiss_() override;
+
 private:
     // Set base_ to the native image size and fit_zoom_ to the
     // whole-image-fit ratio for the current bounds. On the first pass
@@ -86,7 +84,6 @@ private:
     void recompute_image_rect();
     void clamp_pan();
 
-    bool is_open_ = false;
     std::string media_url_;
     std::string display_key_; // thumbnail cache key — fallback while full-res loads
     std::string body_;
@@ -120,18 +117,7 @@ private:
     bool open_at_fit_ = false;
 
     tk::Rect image_rect_{}; // world-space image bounds (zoom + pan applied)
-    tk::Rect close_btn_{};  // × button in top-right corner
-    tk::Rect save_btn_{};   // ⬇ button left of close button
 
-    // Lucide close/download icons, rasterized + tinted white; re-rasterized
-    // when the canvas DPI scale changes.
-    std::unique_ptr<tk::Image> close_icon_;
-    std::unique_ptr<tk::Image> save_icon_;
-    float icon_scale_ = 0.0f;
-
-    bool press_close_ = false;
-    bool press_save_ = false;
-    bool press_outside_ = false;
     bool press_drag_ = false;
     tk::Point drag_last_{};
 };

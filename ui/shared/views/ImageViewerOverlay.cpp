@@ -18,7 +18,6 @@ static constexpr float kMarginX = 64.0f; // horizontal clearance from edge
 static constexpr float kMarginY = 96.0f; // vertical clearance (caption space)
 static constexpr float kZoomStep = 1.15f;
 static constexpr float kZoomMax = 8.0f;
-static constexpr float kCloseBtnS = 36.0f;
 
 // ── public API ───────────────────────────────────────────────────────────
 
@@ -45,14 +44,15 @@ void ImageViewerOverlay::open(std::string media_url, std::string display_key,
 
 void ImageViewerOverlay::close()
 {
-    is_open_ = false;
+    dismiss_();
+}
+
+void ImageViewerOverlay::dismiss_()
+{
     zoom_ = 1.0f;
     pan_x_ = 0.0f;
     pan_y_ = 0.0f;
-    if (on_close)
-    {
-        on_close();
-    }
+    MediaOverlayBase::dismiss_();
 }
 
 void ImageViewerOverlay::set_image_provider(
@@ -78,9 +78,7 @@ void ImageViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b)
     tk::Widget::arrange(lc, b);
     recompute_base_(b);
     recompute_image_rect();
-    close_btn_ = {b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f, kCloseBtnS,
-                  kCloseBtnS};
-    save_btn_  = {close_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f, kCloseBtnS, kCloseBtnS};
+    layout_chrome_(b);
 }
 
 // ── private helpers ───────────────────────────────────────────────────────
@@ -173,14 +171,12 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
     // Recompute geometry here too — zoom/pan may have changed since arrange.
     recompute_base_(b);
     recompute_image_rect();
-    close_btn_ = {b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f, kCloseBtnS,
-                  kCloseBtnS};
-    save_btn_  = {close_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f, kCloseBtnS, kCloseBtnS};
+    layout_chrome_(b);
 
     auto& cv = ctx.canvas;
 
     // Dark backdrop
-    cv.fill_rect(b, tk::Color::rgba(0, 0, 0, 210));
+    paint_scrim_(ctx);
 
     // Image or placeholder.  Try full-res first; fall back to the thumbnail
     // cache key while the full-res fetch is still in flight.
@@ -271,61 +267,24 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Close / download buttons — Lucide icons tinted white. Re-rasterized when
-    // the canvas DPI scale changes so they stay crisp.
-    constexpr float kIconPx = 20.0f;
-    const float icon_scale = cv.scale_factor();
-    if (icon_scale != icon_scale_)
-    {
-        icon_scale_ = icon_scale;
-        close_icon_.reset();
-        save_icon_.reset();
-    }
-    const int icon_phys = std::max(1, int(std::lround(kIconPx * icon_scale)));
-    auto draw_btn_icon = [&](tk::Rect btn, std::unique_ptr<tk::Image>& cache,
-                             std::span<const std::uint8_t> svg)
-    {
-        if (!cache)
-            cache = tk::rasterize_svg(ctx.factory, svg, icon_phys,
-                                      tk::Color::rgba(255, 255, 255, 220));
-        if (cache)
-            cv.draw_image(*cache, {btn.x + (btn.w - kIconPx) * 0.5f,
-                                   btn.y + (btn.h - kIconPx) * 0.5f, kIconPx,
-                                   kIconPx});
-    };
-
-    // × close button
-    cv.fill_rounded_rect(close_btn_, kCloseBtnS * 0.5f,
-                         tk::Color::rgba(255, 255, 255, 30));
-    draw_btn_icon(close_btn_, close_icon_, kCloseSvg);
-
-    // ⬇ save button
-    cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f,
-                         tk::Color{0, 0, 0, 160});
-    draw_btn_icon(save_btn_, save_icon_, kDownloadSvg);
+    // Close / download chrome buttons (shared scaffolding).
+    paint_chrome_buttons_(ctx);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
 
 bool ImageViewerOverlay::on_pointer_down(tk::Point local)
 {
-    if (!is_open_)
-    {
-        return false;
-    }
+    return handle_pointer_down_(local);
+}
 
-    tk::Point w{local.x + bounds().x, local.y + bounds().y};
+void ImageViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
+{
+    handle_pointer_up_(local, inside_self);
+}
 
-    if (rect_contains(close_btn_, w))
-    {
-        press_close_ = true;
-        return true;
-    }
-    if (rect_contains(save_btn_, w))
-    {
-        press_save_ = true;
-        return true;
-    }
+bool ImageViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
+{
     if (rect_contains(image_rect_, w))
     {
         // Pan whenever the image is larger than the viewport (true at
@@ -339,52 +298,24 @@ bool ImageViewerOverlay::on_pointer_down(tk::Point local)
         // Always consume — prevents row-click passthrough when unzoomed.
         return true;
     }
-    press_outside_ = true;
-    return true;
+    return false;
 }
 
-void ImageViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
+bool ImageViewerOverlay::on_content_pointer_up_(tk::Point /*w*/,
+                                                tk::Point /*local*/,
+                                                bool /*inside_self*/)
 {
     if (press_drag_)
     {
         press_drag_ = false;
-        return;
+        return true;
     }
-    if (press_close_)
-    {
-        press_close_ = false;
-        if (inside_self)
-        {
-            tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (rect_contains(close_btn_, w))
-            {
-                close();
-            }
-        }
-        return;
-    }
-    if (press_save_)
-    {
-        press_save_ = false;
-        if (inside_self && on_save)
-        {
-            tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (rect_contains(save_btn_, w))
-            {
-                on_save(media_url_, body_);
-            }
-        }
-        return;
-    }
-    if (press_outside_)
-    {
-        press_outside_ = false;
-        if (inside_self)
-        {
-            close();
-        }
-        return;
-    }
+    return false;
+}
+
+void ImageViewerOverlay::fire_save_()
+{
+    on_save(media_url_, body_);
 }
 
 void ImageViewerOverlay::on_pointer_drag(tk::Point local)

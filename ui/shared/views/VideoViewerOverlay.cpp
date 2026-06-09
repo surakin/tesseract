@@ -17,7 +17,6 @@ static constexpr float kMarginY = 72.0f;  // room for controls bar
 static constexpr float kCtrlBarH = 56.0f; // controls bar height
 static constexpr float kCtrlPadX = 10.0f;
 static constexpr float kPlayBtnD = 36.0f;
-static constexpr float kCloseBtnS = 36.0f;
 static constexpr float kSpeedPillW = 32.0f;
 static constexpr float kSpeedPillH = 20.0f;
 static constexpr float kDurW = 48.0f; // reserved for "0:00 / 0:00"
@@ -75,16 +74,17 @@ void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
 
 void VideoViewerOverlay::close()
 {
+    dismiss_();
+}
+
+void VideoViewerOverlay::dismiss_()
+{
     if (video_player_)
     {
         video_player_->stop();
     }
-    is_open_ = false;
     is_loading_ = false;
-    if (on_close)
-    {
-        on_close();
-    }
+    MediaOverlayBase::dismiss_();
 }
 
 void VideoViewerOverlay::load_bytes(const std::uint8_t* data, std::size_t size)
@@ -207,10 +207,7 @@ void VideoViewerOverlay::recompute_layout()
     scrub_bar_ = {scrub_x, controls_bar_.y + (kCtrlBarH - kScrubH) * 0.5f,
                   scrub_w, kScrubH};
 
-    close_btn_ = {b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f, kCloseBtnS,
-                  kCloseBtnS};
-    save_btn_ = {close_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f, kCloseBtnS,
-                 kCloseBtnS};
+    layout_chrome_(b);
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -227,32 +224,12 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
     const tk::Rect b = bounds();
     auto& cv = ctx.canvas;
 
-    // Lucide icons are rasterized at physical-pixel resolution and tinted; the
-    // cache is invalidated whenever the canvas DPI scale changes.
-    const float icon_scale = cv.scale_factor();
-    if (icon_scale != icon_scale_)
-    {
-        icon_scale_ = icon_scale;
-        close_icon_.reset();
-        save_icon_.reset();
-        play_icon_.reset();
-    }
-    auto draw_icon = [&](tk::Rect box, float logical_px,
-                         std::unique_ptr<tk::Image>& cache,
-                         std::span<const std::uint8_t> svg, tk::Color tint)
-    {
-        if (!cache)
-            cache = tk::rasterize_svg(
-                ctx.factory, svg,
-                std::max(1, int(std::lround(logical_px * icon_scale))), tint);
-        if (cache)
-            cv.draw_image(*cache, {box.x + (box.w - logical_px) * 0.5f,
-                                   box.y + (box.h - logical_px) * 0.5f,
-                                   logical_px, logical_px});
-    };
+    // Keep icon_scale_ current before the play glyph (a cached icon) is drawn;
+    // the chrome buttons later reuse the same synced scale.
+    sync_icon_scale_(ctx);
 
     // Dark backdrop
-    cv.fill_rect(b, tk::Color::rgba(0, 0, 0, 210));
+    paint_scrim_(ctx);
 
     // Video frame, thumbnail, or placeholder
     const tk::Image* frame = (video_player_ && !is_loading_)
@@ -372,8 +349,8 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
         else
         {
             // Play glyph (▶): Lucide play icon, tinted to the control colour.
-            draw_icon(play_btn_, kPlayBtnD * 0.5f, play_icon_, kPlaySvg,
-                      glyph_col);
+            draw_icon_(ctx, play_btn_, kPlayBtnD * 0.5f, play_icon_, kPlaySvg,
+                       glyph_col);
         }
 
         // Speed pill
@@ -444,40 +421,26 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
 
     } // end if (!hide_controls_)
 
-    // × close button — always visible so the user can dismiss the overlay.
-    constexpr float kBtnIconPx = 20.0f;
-    const tk::Color icon_tint = tk::Color::rgba(255, 255, 255, 220);
-    cv.fill_rounded_rect(close_btn_, kCloseBtnS * 0.5f,
-                         tk::Color::rgba(255, 255, 255, 30));
-    draw_icon(close_btn_, kBtnIconPx, close_icon_, kCloseSvg, icon_tint);
-
-    // ⬇ save button
-    cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f,
-                         tk::Color{0, 0, 0, 160});
-    draw_icon(save_btn_, kBtnIconPx, save_icon_, kDownloadSvg, icon_tint);
+    // × close + ⬇ save chrome buttons — always visible so the user can
+    // dismiss / save (shared scaffolding).
+    paint_chrome_buttons_(ctx);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
 
 bool VideoViewerOverlay::on_pointer_down(tk::Point local)
 {
-    if (!is_open_)
-    {
-        return false;
-    }
+    return handle_pointer_down_(local);
+}
 
-    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+void VideoViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
+{
+    handle_pointer_up_(local, inside_self);
+}
 
-    if (rect_contains(close_btn_, w))
-    {
-        press_close_ = true;
-        return true;
-    }
-    if (rect_contains(save_btn_, w))
-    {
-        press_save_ = true;
-        return true;
-    }
+bool VideoViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
+{
+    (void)local;
     if (!hide_controls_)
     {
         if (rect_contains(play_btn_, w))
@@ -512,38 +475,16 @@ bool VideoViewerOverlay::on_pointer_down(tk::Point local)
     }
     if (rect_contains(video_rect_, w) || rect_contains(controls_bar_, w))
     {
+        // Inside the player/controls but not on a control — consume so the
+        // press is not treated as an outside-tap dismiss.
         return true;
     }
-    press_outside_ = true;
-    return true;
+    return false;
 }
 
-void VideoViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
+bool VideoViewerOverlay::on_content_pointer_up_(tk::Point w, tk::Point /*local*/,
+                                                bool inside_self)
 {
-    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-
-    if (press_close_)
-    {
-        press_close_ = false;
-        if (inside_self && rect_contains(close_btn_, w))
-        {
-            close();
-        }
-        return;
-    }
-    if (press_save_)
-    {
-        press_save_ = false;
-        if (inside_self && on_save)
-        {
-            tk::Point w{local.x + bounds().x, local.y + bounds().y};
-            if (rect_contains(save_btn_, w))
-            {
-                on_save(source_json_, mime_type_);
-            }
-        }
-        return;
-    }
     if (press_play_)
     {
         press_play_ = false;
@@ -551,7 +492,7 @@ void VideoViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
         {
             do_play_or_pause();
         }
-        return;
+        return true;
     }
     if (press_speed_)
     {
@@ -560,22 +501,24 @@ void VideoViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
         {
             cycle_speed();
         }
-        return;
+        return true;
     }
     if (press_scrub_)
     {
         press_scrub_ = false;
-        return;
+        return true;
     }
-    if (press_outside_)
-    {
-        press_outside_ = false;
-        if (inside_self)
-        {
-            close();
-        }
-        return;
-    }
+    return false;
+}
+
+void VideoViewerOverlay::fire_save_()
+{
+    on_save(source_json_, mime_type_);
+}
+
+void VideoViewerOverlay::on_icon_scale_changed_()
+{
+    play_icon_.reset();
 }
 
 // ── private helpers ───────────────────────────────────────────────────────

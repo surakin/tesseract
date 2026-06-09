@@ -92,6 +92,8 @@ set(_tk_sources
     views/UserInfo.cpp
     views/AccountPicker.h
     views/AccountPicker.cpp
+    views/MediaOverlayBase.h
+    views/MediaOverlayBase.cpp
     views/ImageViewerOverlay.h
     views/ImageViewerOverlay.cpp
     views/VideoViewerOverlay.h
