@@ -37,7 +37,8 @@ use matrix_sdk_ui::timeline::{
 #[cfg(not(test))]
 use std::collections::HashMap;
 #[cfg(not(test))]
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 #[cfg(not(test))]
 impl ClientFfi {
@@ -104,14 +105,16 @@ impl ClientFfi {
                             sender_name: String::new(),
                             timestamp_ms: 0,
                         });
-                        if let Ok(mut cache) = preview_cache.lock() {
+                        {
+                            let mut cache = preview_cache.lock();
                             cache.insert(bp_to_cache.room_id.clone(), bp_to_cache);
                         }
                         if let Some(ref bp) = preview {
                             // Write the timestamp immediately so it survives
                             // even if the task is aborted before the batch update.
                             if bp.timestamp_ms != 0 {
-                                if let Ok(db) = db_conn.lock() {
+                                {
+                                    let db = db_conn.lock();
                                     if let Some(ref conn) = *db {
                                         let _ = conn.execute(
                                             "INSERT OR REPLACE INTO backfill_ts \
@@ -138,7 +141,8 @@ impl ClientFfi {
                         if let Some(ref h) = handler {
                             let mut rooms = build_room_infos(&client).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_rooms_updated(&rooms);
                             }
                         }
@@ -149,7 +153,8 @@ impl ClientFfi {
                     if let Some(ref h) = handler {
                         let mut rooms = build_room_infos(&client).await;
                         apply_backfill_previews(&mut rooms, &preview_cache);
-                        if let Ok(guard) = h.lock() {
+                        {
+                            let guard = h.lock();
                             guard.on_rooms_updated(&rooms);
                         }
                     }
@@ -182,12 +187,10 @@ impl ClientFfi {
         // borrows of `self`. Skip rooms that already have a foreground
         // Timeline (the user-active one).
         let skip: std::collections::HashSet<OwnedRoomId> =
-            self.timelines.read().unwrap().keys().cloned().collect();
+            self.timelines.read().keys().cloned().collect();
 
         let cached: std::collections::HashSet<String> = {
-            let Ok(guard) = self.backfill_previews.lock() else {
-                return ok("");
-            };
+            let guard = self.backfill_previews.lock();
             guard.keys().cloned().collect()
         };
 
@@ -242,15 +245,13 @@ impl ClientFfi {
         // Rooms already in backfill_previews have a cached timestamp (either
         // loaded from backfill_ts on startup or written during this session).
         let cached: std::collections::HashSet<String> = {
-            let Ok(guard) = self.backfill_previews.lock() else {
-                return ok("");
-            };
+            let guard = self.backfill_previews.lock();
             guard.keys().cloned().collect()
         };
 
         // Skip the room currently open in the foreground timeline.
         let skip: std::collections::HashSet<OwnedRoomId> =
-            self.timelines.read().unwrap().keys().cloned().collect();
+            self.timelines.read().keys().cloned().collect();
 
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
         for room in client.joined_rooms() {
@@ -312,7 +313,8 @@ impl ClientFfi {
                         if let Some(ts) = room.latest_event_timestamp() {
                             let ts_ms = u64::from(ts.0);
                             if ts_ms != 0 {
-                                if let Ok(db) = db_conn.lock() {
+                                {
+                                    let db = db_conn.lock();
                                     if let Some(ref conn) = *db {
                                         let _ = conn.execute(
                                             "INSERT OR REPLACE INTO backfill_ts \
@@ -333,7 +335,8 @@ impl ClientFfi {
                         if let Some(ref h) = handler {
                             let mut rooms = build_room_infos(&client).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_rooms_updated(&rooms);
                             }
                         }
@@ -352,7 +355,8 @@ impl ClientFfi {
             // Write zero-timestamp sentinels so they aren't re-queued within
             // this session, then fall back to per-room /messages pagination.
             for rid in &remaining {
-                if let Ok(mut cache) = preview_cache.lock() {
+                {
+                    let mut cache = preview_cache.lock();
                     cache.entry(rid.to_string()).or_insert(BackfillPreview {
                         room_id:           rid.to_string(),
                         kind:              String::new(),
@@ -390,11 +394,13 @@ impl ClientFfi {
                             sender_name:   String::new(),
                             timestamp_ms:  0,
                         });
-                        if let Ok(mut cache) = preview_cache.lock() {
+                        {
+                            let mut cache = preview_cache.lock();
                             cache.insert(bp.room_id.clone(), bp.clone());
                         }
                         if bp.timestamp_ms != 0 {
-                            if let Ok(db) = db_conn.lock() {
+                            {
+                                let db = db_conn.lock();
                                 if let Some(ref conn) = *db {
                                     let _ = conn.execute(
                                         "INSERT OR REPLACE INTO backfill_ts \
@@ -419,7 +425,8 @@ impl ClientFfi {
                         if let Some(ref h) = handler {
                             let mut rooms = build_room_infos(&client).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_rooms_updated(&rooms);
                             }
                         }
@@ -429,7 +436,8 @@ impl ClientFfi {
                     if let Some(ref h) = handler {
                         let mut rooms = build_room_infos(&client).await;
                         apply_backfill_previews(&mut rooms, &preview_cache);
-                        if let Ok(guard) = h.lock() {
+                        {
+                            let guard = h.lock();
                             guard.on_rooms_updated(&rooms);
                         }
                     }
@@ -535,7 +543,7 @@ pub(super) fn apply_backfill_previews(
     rooms: &mut Vec<crate::ffi::RoomInfo>,
     cache: &Mutex<HashMap<String, BackfillPreview>>,
 ) {
-    let Ok(guard) = cache.lock() else { return };
+    let guard = cache.lock();
     for ri in rooms.iter_mut() {
         if let Some(bp) = guard.get(&ri.id) {
             if ri.last_message_kind.is_empty() && !bp.kind.is_empty() {
@@ -589,7 +597,7 @@ pub(super) fn load_backfill_ts_conn(
     }) else {
         return;
     };
-    let Ok(mut guard) = cache.lock() else { return };
+    let mut guard = cache.lock();
     for row in rows.flatten() {
         let (room_id, ts_ms) = row;
         if ts_ms <= 0 {

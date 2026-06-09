@@ -1,6 +1,7 @@
 use rusqlite::{Connection, params};
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use parking_lot::Mutex;
+use std::sync::OnceLock;
 
 static DB: OnceLock<Mutex<Connection>> = OnceLock::new();
 const MAX_ROWS: i64 = 2000;
@@ -30,10 +31,10 @@ fn bytes_to_waveform(bytes: Vec<u8>) -> Vec<u16> {
 
 pub fn load(mxc_uri: &str) -> Vec<u16> {
     let Some(db) = DB.get() else { return vec![] };
-    // Recover the guard if a prior holder panicked: this is reached through
-    // the C++ FFI, where a panic unwinding across the boundary is undefined
-    // behavior. The cached connection is unaffected by an unrelated panic.
-    let db = db.lock().unwrap_or_else(|p| p.into_inner());
+    // parking_lot locks do not poison, so a panic by a prior holder leaves the
+    // mutex usable. This matters because we are reached through the C++ FFI,
+    // where a panic unwinding across the boundary is undefined behavior.
+    let db = db.lock();
     db.query_row(
         "SELECT waveform FROM voice_waveforms WHERE mxc_uri = ?1",
         params![mxc_uri],
@@ -50,7 +51,7 @@ pub fn store(mxc_uri: &str, waveform: &[u16]) {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
-    let db = db.lock().unwrap_or_else(|p| p.into_inner());
+    let db = db.lock();
     db.execute(
         "INSERT OR REPLACE INTO voice_waveforms (mxc_uri, waveform, stored_at) \
          VALUES (?1, ?2, ?3)",
@@ -73,7 +74,6 @@ pub fn store(mxc_uri: &str, waveform: &[u16]) {
 pub fn evict(mxc_uri: &str) {
     let Some(db) = DB.get() else { return };
     db.lock()
-        .unwrap_or_else(|p| p.into_inner())
         .execute(
             "DELETE FROM voice_waveforms WHERE mxc_uri = ?1",
             params![mxc_uri],

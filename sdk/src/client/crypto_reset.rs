@@ -76,7 +76,8 @@ impl ClientFfi {
         // Poll for the user's browser approval off the FFI mutex.
         self.rt.spawn(async move {
             let res = handle.auth(None).await;
-            if let Ok(g) = handler.lock() {
+            {
+                let g = handler.lock();
                 match res {
                     Ok(()) => g.on_crypto_reset_result(true, ""),
                     Err(e) => g.on_crypto_reset_result(false, &e.to_string()),

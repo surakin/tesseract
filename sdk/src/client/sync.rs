@@ -45,7 +45,8 @@ impl ClientFfi {
         let _rt_guard = self.rt.enter();
         if let Err(e) = client.event_cache().subscribe() {
             tracing::error!("event cache subscribe failed: {e}");
-            if let Ok(guard) = handler.lock() {
+            {
+                let guard = handler.lock();
                 guard.on_error("event_cache_init", &e.to_string(), false);
             }
             return;
@@ -71,7 +72,8 @@ impl ClientFfi {
                             let Ok(json) = serde_json::to_string(&persisted) else {
                                 continue;
                             };
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_session_refreshed(&json);
                             }
                         }
@@ -80,7 +82,8 @@ impl ClientFfi {
                             // wipe the SQLite data directory while a fresh login is
                             // already in progress.
                             let _ = stop_tx_auth.send(true);
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_error(
                                     "sync_auth_error",
                                     "Session token is no longer valid; please log in again.",
@@ -222,7 +225,8 @@ impl ClientFfi {
                             let name = super::member_display_name_local(&room, u).await;
                             uids.push(name);
                         }
-                        if let Ok(g) = h.lock() {
+                        {
+                            let g = h.lock();
                             g.on_typing_changed(&rid, &uids);
                         }
                     }
@@ -291,7 +295,8 @@ impl ClientFfi {
         {
             Ok(s) => Arc::new(s),
             Err(e) => {
-                if let Ok(guard) = handler.lock() {
+                {
+                    let guard = handler.lock();
                     guard.on_error("sync_init", &e.to_string(), false);
                 }
                 return;
@@ -321,12 +326,14 @@ impl ClientFfi {
                 // data_dir is already the per-account SDK store dir; only
                 // open if we're actually logged in (user_id is known).
                 if client.user_id().is_some() {
-                    if let Ok(mut db) = self.app_cache_db.lock() {
+                    {
+                        let mut db = self.app_cache_db.lock();
                         *db = None; // close any previous session's connection
                     }
                     if let Some(conn) = open_app_cache_db(&self.data_dir) {
                         load_backfill_ts_conn(&conn, &self.backfill_previews);
-                        if let Ok(mut db) = self.app_cache_db.lock() {
+                        {
+                            let mut db = self.app_cache_db.lock();
                             *db = Some(conn);
                         }
                     }
@@ -339,7 +346,7 @@ impl ClientFfi {
             // presence polling task reads this snapshot directly so it never
             // has to walk joined_rooms itself.
             fn refresh_dm_counterparts(
-                cache_w: &std::sync::RwLock<std::collections::HashSet<String>>,
+                cache_w: &parking_lot::RwLock<std::collections::HashSet<String>>,
                 cache: &std::collections::HashMap<OwnedRoomId, crate::ffi::RoomInfo>,
             ) {
                 let new_set: std::collections::HashSet<String> = cache
@@ -347,9 +354,7 @@ impl ClientFfi {
                     .map(|r| r.dm_counterpart_user_id.clone())
                     .filter(|s| !s.is_empty())
                     .collect();
-                if let Ok(mut g) = cache_w.write() {
-                    *g = new_set;
-                }
+                *cache_w.write() = new_set;
             }
 
             // Snapshot helper: clone the cache values into a Vec, apply
@@ -364,7 +369,8 @@ impl ClientFfi {
                 let mut snapshot: Vec<crate::ffi::RoomInfo> = cache.values().cloned().collect();
                 apply_backfill_previews(&mut snapshot, previews);
                 super::sort_room_infos(&mut snapshot);
-                if let Ok(guard) = h.lock() {
+                {
+                    let guard = h.lock();
                     guard.on_rooms_updated(&snapshot);
                 }
             }
@@ -398,21 +404,24 @@ impl ClientFfi {
                 emit_snapshot(&cache, &previews, &h);
 
                 let invites = build_invite_infos(&client_clone).await;
-                if let Ok(guard) = h.lock() {
+                {
+                    let guard = h.lock();
                     guard.on_invites_updated(&invites);
                 }
                 // Initial prefs snapshot — fired BEFORE on_rooms_updated so
                 // the UI has pendingRestoreRoom_ set when the room list
                 // arrives and can navigate immediately on first paint.
                 let mut prev_prefs = account::read_prefs_json(&client_clone).await;
-                if let Ok(guard) = h.lock() {
+                {
+                    let guard = h.lock();
                     guard.on_account_prefs_updated(&prev_prefs);
                 }
 
                 // Initial MSC4278 media-preview config snapshot.
                 let mut prev_media_preview =
                     account::read_media_preview_config_json(&client_clone).await;
-                if let Ok(guard) = h.lock() {
+                {
+                    let guard = h.lock();
                     guard.on_media_preview_config_updated(&prev_media_preview);
                 }
 
@@ -430,8 +439,8 @@ impl ClientFfi {
                     Option<serde_json::Value>,
                 > = std::collections::HashMap::new();
                 let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache).await;
-                if let Ok(mut g) = packs_cache.lock() { *g = pks; }
-                if let Ok(guard) = h.lock() { guard.on_image_packs_updated(); }
+                { let mut g = packs_cache.lock(); *g = pks; }
+                { let guard = h.lock(); guard.on_image_packs_updated(); }
 
                 loop {
                     use matrix_sdk_base::RoomInfoNotableUpdateReasons;
@@ -536,7 +545,8 @@ impl ClientFfi {
                             }
 
                             let invites = build_invite_infos(&client_clone).await;
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_invites_updated(&invites);
                             }
                             // Image packs only change on membership events
@@ -564,7 +574,8 @@ impl ClientFfi {
                             // a polling timer and out of the event
                             // handler machinery.
                             let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache).await;
-                            if let Ok(mut g) = packs_cache.lock() {
+                            {
+                                let mut g = packs_cache.lock();
                                 use std::sync::atomic::Ordering;
                                 use crate::image_packs::PackSource;
 
@@ -615,7 +626,8 @@ impl ClientFfi {
                                     *g = pks;
                                 }
                             }
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_image_packs_updated();
                             }
                             // Check for prefs changes on the same tick.
@@ -624,7 +636,8 @@ impl ClientFfi {
                             // next sync, triggering a notable update.
                             let cur_prefs = account::read_prefs_json(&client_clone).await;
                             if cur_prefs != prev_prefs {
-                                if let Ok(guard) = h.lock() {
+                                {
+                                    let guard = h.lock();
                                     guard.on_account_prefs_updated(&cur_prefs);
                                 }
                                 prev_prefs = cur_prefs;
@@ -634,7 +647,8 @@ impl ClientFfi {
                             let cur_media_preview =
                                 account::read_media_preview_config_json(&client_clone).await;
                             if cur_media_preview != prev_media_preview {
-                                if let Ok(guard) = h.lock() {
+                                {
+                                    let guard = h.lock();
                                     guard.on_media_preview_config_updated(&cur_media_preview);
                                 }
                                 prev_media_preview = cur_media_preview;
@@ -673,7 +687,8 @@ impl ClientFfi {
                         }
                         Some(_state) = rec_stream.next() => {
                             // Re-emit a snapshot; the UI re-queries needs_recovery().
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_backup_progress(&BackupProgress {
                                     state:         state_code.load(Ordering::Relaxed),
                                     imported_keys: imported.load(Ordering::Relaxed),
@@ -711,7 +726,8 @@ impl ClientFfi {
                 {
                     let s = backup_state_code(client_clone.encryption().backups().state());
                     state_code.store(s, Ordering::Relaxed);
-                    if let Ok(guard) = h.lock() {
+                    {
+                        let guard = h.lock();
                         guard.on_backup_progress(&BackupProgress {
                             state: s,
                             imported_keys: imported.load(Ordering::Relaxed),
@@ -728,7 +744,8 @@ impl ClientFfi {
                         Some(Ok(state)) = state_stream.next() => {
                             let s = backup_state_code(state);
                             state_code.store(s, Ordering::Relaxed);
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_backup_progress(&BackupProgress {
                                     state:         s,
                                     imported_keys: imported.load(Ordering::Relaxed),
@@ -788,7 +805,8 @@ impl ClientFfi {
                             if let Ok(keys) = batch {
                                 let n = imported.fetch_add(keys.len() as u64, Ordering::Relaxed)
                                     + keys.len() as u64;
-                                if let Ok(guard) = h.lock() {
+                                {
+                                    let guard = h.lock();
                                     guard.on_backup_progress(&BackupProgress {
                                         state:         state_code.load(Ordering::Relaxed),
                                         imported_keys: n,
@@ -827,7 +845,8 @@ impl ClientFfi {
                 // Initial snapshot.
                 {
                     let s = room_list_state_code(&state_rx.next_now());
-                    if let Ok(guard) = h.lock() {
+                    {
+                        let guard = h.lock();
                         guard.on_room_list_state(s);
                     }
                 }
@@ -839,7 +858,8 @@ impl ClientFfi {
                         }
                         Some(state) = state_rx.next() => {
                             let s = room_list_state_code(&state);
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_room_list_state(s);
                             }
                         }
@@ -867,7 +887,8 @@ impl ClientFfi {
                 // Initial snapshot.
                 {
                     let s = matches!(state_rx.next_now(), VerificationState::Verified);
-                    if let Ok(guard) = h.lock() {
+                    {
+                        let guard = h.lock();
                         guard.on_verification_state_changed(s);
                     }
                 }
@@ -879,7 +900,8 @@ impl ClientFfi {
                         }
                         Some(state) = state_rx.next() => {
                             let verified = matches!(state, VerificationState::Verified);
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_verification_state_changed(verified);
                             }
                         }
@@ -957,7 +979,8 @@ impl ClientFfi {
                         }
                         if let Some(req) = req {
                             lock_or_recover(&flow_users).insert(flow_id.clone(), user_id.clone());
-                            if let Ok(guard) = h.lock() {
+                            {
+                                let guard = h.lock();
                                 guard.on_verification_request(&flow_id, &user_id, &device_id, true);
                             }
                             // Spawn a watcher so we can surface request-level
@@ -1050,7 +1073,8 @@ impl ClientFfi {
                             SyncServiceState::Offline
                                 if !notified_offline => {
                                     notified_offline = true;
-                                    if let Ok(guard) = h_state.lock() {
+                                    {
+                                        let guard = h_state.lock();
                                         guard.on_error(
                                             "sync_offline",
                                             "Lost contact with server; retrying…",
@@ -1059,7 +1083,8 @@ impl ClientFfi {
                                     }
                                 }
                             SyncServiceState::Error(e) => {
-                                if let Ok(guard) = h_state.lock() {
+                                {
+                                    let guard = h_state.lock();
                                     guard.on_error(
                                         "sync_error",
                                         &e.to_string(),
@@ -1094,7 +1119,8 @@ impl ClientFfi {
                     user: full.user,
                 };
                 if let Ok(json) = serde_json::to_string(&persisted) {
-                    if let Ok(guard) = handler.lock() {
+                    {
+                        let guard = handler.lock();
                         guard.on_session_refreshed(&json);
                     }
                 }
@@ -1133,7 +1159,8 @@ impl ClientFfi {
         // Async media downloads (fetch_media_async / get_url_preview_async) hold
         // cloned handler Arcs and would call back through on_media_ready after
         // the handler was taken. Abort every group before the slot detaches.
-        if let Ok(mut m) = self.media_tasks.lock() {
+        {
+            let mut m = self.media_tasks.lock();
             for (_, v) in m.drain() {
                 for (_, h) in v {
                     h.abort();
@@ -1198,9 +1225,9 @@ impl ClientFfi {
 async fn poll_presence_once(
     client: &matrix_sdk::Client,
     handler: &Arc<Mutex<SendHandler>>,
-    dm_counterparts: &Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
+    dm_counterparts: &Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
     forbidden_presence: &Arc<
-        std::sync::Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>,
+        parking_lot::Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>,
     >,
 ) {
     use matrix_sdk::ruma::api::client::presence::get_presence;
@@ -1213,7 +1240,7 @@ async fn poll_presence_once(
     // RoomInfo.dm_counterpart_user_id by the room-list rebuild path — no
     // per-tick scan of joined_rooms or per-room dm_other_user lookup here.
     let counterparts: Vec<String> = {
-        let Ok(set) = dm_counterparts.read() else { return };
+        let set = dm_counterparts.read();
         set.iter().cloned().collect()
     };
     if counterparts.is_empty() {
@@ -1227,7 +1254,7 @@ async fn poll_presence_once(
         futs.push(async move {
             let user_id: matrix_sdk::ruma::OwnedUserId = uid.parse().ok()?;
             // Skip users known to return 403 Forbidden.
-            if forbidden_clone.lock().ok()?.contains(&user_id) {
+            if forbidden_clone.lock().contains(&user_id) {
                 return None;
             }
             let req = get_presence::v3::Request::new(user_id.clone());
@@ -1238,14 +1265,16 @@ async fn poll_presence_once(
                         RumaPresence::Unavailable => 2,
                         _ => 3,
                     };
-                    if let Ok(g) = h_ref.lock() {
+                    {
+                        let g = h_ref.lock();
                         g.on_presence_changed(&uid, state);
                     }
                     Some(())
                 }
                 Err(e) => {
                     if is_presence_forbidden(e.client_api_error_kind()) {
-                        if let Ok(mut set) = forbidden_clone.lock() {
+                        {
+                            let mut set = forbidden_clone.lock();
                             if set.insert(user_id) {
                                 tracing::info!(
                                     "presence: stopping polls for {uid} \

@@ -107,7 +107,7 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let mut ids: Vec<OwnedRoomId> = self.timelines.read().unwrap().keys().cloned().collect();
+        let mut ids: Vec<OwnedRoomId> = self.timelines.read().keys().cloned().collect();
         if !ids.contains(&push_id) {
             ids.push(push_id);
         }

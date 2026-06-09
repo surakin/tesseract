@@ -80,7 +80,8 @@ impl ClientFfi {
         };
         let room_id_str = room_id.to_string();
         let root_str = root.to_string();
-        if let Ok(guard) = handler.lock() {
+        {
+            let guard = handler.lock();
             let empty: Vec<TimelineEvent> = Vec::new();
             guard.on_thread_reset(&room_id_str, &root_str, &empty);
         }
@@ -274,8 +275,8 @@ impl ClientFfi {
         let room_timeline_for_chips = self
             .timelines
             .read()
-            .ok()
-            .and_then(|g| g.get(&rid).map(|hh| std::sync::Arc::clone(&hh.timeline)));
+            .get(&rid)
+            .map(|hh| std::sync::Arc::clone(&hh.timeline));
         let me_for_chips = client.user_id().map(|u| u.to_owned());
         let abort = self
             .rt
@@ -295,7 +296,8 @@ impl ClientFfi {
 
                 let (_initial, mut stream) =
                     svc_for_watch.subscribe_to_items_updates();
-                if let Ok(g) = h.lock() {
+                {
+                    let g = h.lock();
                     g.on_threads_updated(&rid_str);
                 }
                 if let (Some(ref tl), Some(ref room)) =
@@ -313,7 +315,8 @@ impl ClientFfi {
                     .await;
                 }
                 while stream.next().await.is_some() {
-                    if let Ok(g) = h.lock() {
+                    {
+                        let g = h.lock();
                         g.on_threads_updated(&rid_str);
                     }
                     if let (Some(ref tl), Some(ref room)) =
@@ -476,7 +479,7 @@ struct ChipCount {
 async fn apply_thread_chips(
     room_timeline: &matrix_sdk_ui::Timeline,
     room: &matrix_sdk::Room,
-    handler: &std::sync::Arc<std::sync::Mutex<super::SendHandler>>,
+    handler: &std::sync::Arc<parking_lot::Mutex<super::SendHandler>>,
     room_id: &str,
     me: Option<&matrix_sdk::ruma::UserId>,
     items: &[matrix_sdk_ui::timeline::thread_list_service::ThreadListItem],
@@ -628,7 +631,8 @@ async fn apply_thread_chips(
                     ev.thread_latest_sender_name = latest_name;
                     ev.thread_latest_body = latest_body;
                     ev.thread_latest_ts = latest_ts;
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_updated(&g, &TimelineChannel::Room, room_id, visible_idx, &ev);
                     }
                 }

@@ -324,7 +324,7 @@ impl ClientFfi {
         #[cfg(not(test))]
         {
             let _guard = self.rt.enter();
-            for (_, th) in self.timelines.write().unwrap().drain() {
+            for (_, th) in self.timelines.write().drain() {
                 th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();
@@ -350,7 +350,8 @@ impl ClientFfi {
 
         #[cfg(not(test))]
         {
-            if let Ok(mut db) = self.app_cache_db.lock() {
+            {
+                let mut db = self.app_cache_db.lock();
                 *db = None;
             }
             let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
@@ -361,7 +362,8 @@ impl ClientFfi {
             ] {
                 let _ = std::fs::remove_file(self.data_dir.join(sidecar));
             }
-            if let Ok(mut cache) = self.backfill_previews.lock() {
+            {
+                let mut cache = self.backfill_previews.lock();
                 cache.clear();
             }
         }
@@ -382,10 +384,12 @@ impl ClientFfi {
         // after a re-login on the same process.
         #[cfg(not(test))]
         {
-            if let Ok(mut db) = self.app_cache_db.lock() {
+            {
+                let mut db = self.app_cache_db.lock();
                 *db = None;
             }
-            if let Ok(mut cache) = self.backfill_previews.lock() {
+            {
+                let mut cache = self.backfill_previews.lock();
                 cache.clear();
             }
         }
@@ -401,7 +405,7 @@ impl ClientFfi {
         #[cfg(not(test))]
         {
             let _guard = self.rt.enter();
-            for (_, th) in self.timelines.write().unwrap().drain() {
+            for (_, th) in self.timelines.write().drain() {
                 th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();

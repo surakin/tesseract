@@ -18,7 +18,8 @@ use matrix_sdk::{
 #[cfg(not(test))]
 use std::collections::HashMap;
 #[cfg(not(test))]
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// Hard upper bound on a single media download (64 MiB). A malicious or
 /// buggy homeserver can serve an arbitrarily large payload for any `mxc://`
@@ -171,7 +172,8 @@ pub(super) async fn emit_notification(
         Some(src) => fetch_notification_image(client, src).await,
         None => Vec::new(),
     };
-    if let Ok(g) = handler.lock() {
+    {
+        let g = handler.lock();
         g.on_notification(&room_id, &room_name, &sender_name, body, is_mention, &avatar, &preview);
     }
 }
@@ -358,7 +360,8 @@ fn deliver_media(
     bytes: &[u8],
 ) {
     if let Some(h) = handler {
-        if let Ok(g) = h.lock() {
+        {
+            let g = h.lock();
             g.on_media_ready(request_id, bytes);
         }
     }
@@ -379,7 +382,8 @@ fn register_media_task(
     if group_id == 0 {
         return;
     }
-    if let Ok(mut m) = map.lock() {
+    {
+        let mut m = map.lock();
         let v = m.entry(group_id).or_default();
         v.retain(|(_, h)| !h.is_finished());
         v.push((request_id, handle));
@@ -645,7 +649,8 @@ impl ClientFfi {
         if group_id == 0 {
             return;
         }
-        if let Ok(mut m) = self.media_tasks.lock() {
+        {
+            let mut m = self.media_tasks.lock();
             if let Some(v) = m.remove(&group_id) {
                 for (_, h) in v {
                     h.abort();
@@ -664,7 +669,8 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let deliver = |json: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() {
+                {
+                    let g = h.lock();
                     g.on_url_preview_ready(request_id, json);
                 }
             }
@@ -686,7 +692,8 @@ impl ClientFfi {
         let handle = self.rt.spawn(async move {
             let deliver = |json: &str| {
                 if let Some(h) = &handler_task {
-                    if let Ok(g) = h.lock() {
+                    {
+                        let g = h.lock();
                         g.on_url_preview_ready(request_id, json);
                     }
                 }

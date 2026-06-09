@@ -344,7 +344,8 @@ impl ClientFfi {
                 }
             }
             // Room Timeline last (fallback for non-threaded events).
-            if let Ok(guard) = self.timelines.read() {
+            {
+                let guard = self.timelines.read();
                 if let Some(handle) = guard.get(room_id) {
                     out.push(Arc::clone(&handle.timeline));
                 }
@@ -370,7 +371,7 @@ impl ClientFfi {
         // Use the live timeline if subscribed — local echo fires immediately.
         {
             let maybe_tl = {
-                let guard = self.timelines.read().unwrap();
+                let guard = self.timelines.read();
                 guard.get(&room_id).map(|h| h.timeline.clone())
             };
             if let Some(timeline) = maybe_tl {
@@ -447,7 +448,7 @@ impl ClientFfi {
         let room_id = try_op!(parse_room_id(room_id));
         let txn_id: matrix_sdk::ruma::OwnedTransactionId = txn_id.into();
         let timeline = {
-            let guard = self.timelines.read().unwrap();
+            let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
                 return err("no timeline for room");
             };
@@ -688,7 +689,7 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid event id: {e}")),
         };
         let tl = {
-            let guard = self.timelines.read().unwrap();
+            let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
                 return err("room not subscribed");
             };
@@ -1122,7 +1123,7 @@ impl ClientFfi {
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
             }
         };
 
@@ -1241,7 +1242,7 @@ impl ClientFfi {
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
             }
         };
 
@@ -1315,7 +1316,7 @@ impl ClientFfi {
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
             }
         };
 
@@ -1399,7 +1400,7 @@ impl ClientFfi {
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() { g.on_upload_complete(request_id, ok, msg); }
+                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
             }
         };
 

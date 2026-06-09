@@ -72,9 +72,8 @@ impl InFlightGuard {
 
     fn notify(handler: &Option<Arc<Mutex<SendHandler>>>, count: u32) {
         if let Some(h) = handler {
-            if let Ok(g) = h.lock() {
-                g.on_inflight_changed(count);
-            }
+            let g = h.lock();
+            g.on_inflight_changed(count);
         }
     }
 }
@@ -107,7 +106,9 @@ use matrix_sdk_ui::sync_service::SyncService;
 #[cfg(not(test))]
 use std::collections::HashMap;
 #[cfg(not(test))]
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+#[cfg(not(test))]
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 
@@ -360,7 +361,7 @@ pub struct ClientFfi {
     #[cfg(not(test))]
     pub(super) sync_service: Option<Arc<SyncService>>,
     #[cfg(not(test))]
-    pub(super) timelines: std::sync::RwLock<HashMap<OwnedRoomId, TimelineHandle>>,
+    pub(super) timelines: parking_lot::RwLock<HashMap<OwnedRoomId, TimelineHandle>>,
     /// Active thread-focused timelines keyed by (room_id, thread_root_event_id).
     /// Each entry holds the same `TimelineHandle` structure used by `timelines`.
     #[cfg(not(test))]
@@ -474,7 +475,7 @@ pub struct ClientFfi {
     /// belongs to an already-subscribed room.
     #[cfg(not(test))]
     pub(super) last_sync_room_subscriptions:
-        Arc<std::sync::Mutex<std::collections::HashSet<OwnedRoomId>>>,
+        Arc<parking_lot::Mutex<std::collections::HashSet<OwnedRoomId>>>,
     /// Cached set of DM counterpart user IDs (as Matrix user-id strings).
     /// Repopulated after every `build_room_infos` sweep — `RoomInfo` already
     /// carries `dm_counterpart_user_id` — so the presence polling loop does
@@ -482,7 +483,7 @@ pub struct ClientFfi {
     /// `dm_other_user` member-list lookup that goes with it) on every tick.
     #[cfg(not(test))]
     pub(super) dm_counterparts:
-        Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
+        Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
     /// Users that returned 403 Forbidden on the presence endpoint —
     /// typically bridge puppet accounts with presence privacy enabled.
     /// They never recover mid-session so we record them and skip future
@@ -554,7 +555,7 @@ impl Drop for ClientFfi {
         {
             let _guard = self.rt.enter();
             #[cfg(not(test))]
-            for (_, th) in self.timelines.write().unwrap().drain() {
+            for (_, th) in self.timelines.write().drain() {
                 th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();
@@ -579,15 +580,13 @@ impl Drop for ClientFfi {
     }
 }
 
-/// Lock a `Mutex` without ever panicking. A poisoned mutex (a thread panicked
-/// while holding the guard) is recovered by taking the inner value: panicking
-/// here instead — via `.lock().unwrap()` — would unwind a tokio task and, on
-/// synchronous FFI entry points, propagate a panic across the C++ boundary
-/// (undefined behavior). The protected maps are plain caches whose worst-case
-/// post-poison state is a stale entry, so recovery is safe.
+/// Lock a `Mutex` without ever panicking. `parking_lot` mutexes do not poison,
+/// so `.lock()` returns the guard directly even if a prior holder panicked.
+/// This matters on synchronous FFI entry points, where a panic unwinding across
+/// the C++ boundary is undefined behavior.
 #[cfg(not(test))]
-pub(super) fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|p| p.into_inner())
+pub(super) fn lock_or_recover<T>(m: &Mutex<T>) -> parking_lot::MutexGuard<'_, T> {
+    m.lock()
 }
 
 /// Send public (`m.read`), private (`m.read.private`), and fully-read
@@ -720,7 +719,7 @@ impl ClientFfi {
             #[cfg(not(test))]
             sync_service: None,
             #[cfg(not(test))]
-            timelines: std::sync::RwLock::new(HashMap::new()),
+            timelines: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             thread_timelines: HashMap::new(),
             #[cfg(not(test))]
@@ -761,11 +760,11 @@ impl ClientFfi {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             #[cfg(not(test))]
-            last_sync_room_subscriptions: Arc::new(std::sync::Mutex::new(
+            last_sync_room_subscriptions: Arc::new(parking_lot::Mutex::new(
                 std::collections::HashSet::new(),
             )),
             #[cfg(not(test))]
-            dm_counterparts: Arc::new(std::sync::RwLock::new(
+            dm_counterparts: Arc::new(parking_lot::RwLock::new(
                 std::collections::HashSet::new(),
             )),
             #[cfg(not(test))]
@@ -847,7 +846,7 @@ impl ClientFfi {
             return;
         };
         let mut new_set: std::collections::HashSet<OwnedRoomId> =
-            self.timelines.read().unwrap().keys().cloned().collect();
+            self.timelines.read().keys().cloned().collect();
         for (rid, _root) in self.thread_timelines.keys() {
             new_set.insert(rid.clone());
         }
@@ -855,7 +854,7 @@ impl ClientFfi {
         // the spawn entirely. The lock window is short (set comparison +
         // assignment) and only contended by sync_room_subscriptions itself.
         {
-            let mut guard = self.last_sync_room_subscriptions.lock().unwrap();
+            let mut guard = self.last_sync_room_subscriptions.lock();
             if *guard == new_set {
                 return;
             }

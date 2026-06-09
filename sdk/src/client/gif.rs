@@ -282,7 +282,8 @@ use super::{err, ok, require_room, try_op, ClientFfi, SendHandler};
 #[cfg(not(test))]
 use crate::ffi::OpResult;
 #[cfg(not(test))]
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// Deliver an async GIF search outcome to C++ via the event handler. Tolerates
 /// a detached handler (shutdown) and a contended mutex by dropping.
@@ -293,7 +294,7 @@ fn deliver_gif(
     result: Result<Vec<GifResult>, String>,
 ) {
     let Some(h) = handler else { return };
-    let Ok(g) = h.lock() else { return };
+    let g = h.lock();
     match result {
         Ok(items) => {
             let ffi_items: Vec<crate::ffi::GifResult> = items

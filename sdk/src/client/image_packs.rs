@@ -26,9 +26,7 @@ impl ClientFfi {
     /// roundtrip.
     #[cfg(not(test))]
     pub fn list_image_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
-        let Ok(cache) = self.image_packs.lock() else {
-            return Vec::new();
-        };
+        let cache = self.image_packs.lock();
         cache
             .iter()
             .map(|p| crate::ffi::ImagePackFfi {
@@ -63,9 +61,7 @@ impl ClientFfi {
             "emoticon" => crate::image_packs::USAGE_EMOTICON,
             _ => crate::image_packs::USAGE_ANY,
         };
-        let Ok(cache) = self.image_packs.lock() else {
-            return Vec::new();
-        };
+        let cache = self.image_packs.lock();
         let Some(pack) = cache.iter().find(|p| p.id == pack_id) else {
             return Vec::new();
         };
@@ -89,9 +85,7 @@ impl ClientFfi {
     /// only (Favorites tab is sticker-specific).
     #[cfg(not(test))]
     pub fn list_favorite_stickers(&self) -> Vec<crate::ffi::ImageEntryFfi> {
-        let Ok(cache) = self.image_packs.lock() else {
-            return Vec::new();
-        };
+        let cache = self.image_packs.lock();
         let mut out = Vec::new();
         for pack in cache.iter() {
             for e in &pack.images {
@@ -346,9 +340,7 @@ impl ClientFfi {
         if image_url.is_empty() {
             return false;
         }
-        let Ok(cache) = self.image_packs.lock() else {
-            return false;
-        };
+        let cache = self.image_packs.lock();
         // For encrypted stickers, image_url is a JSON-encoded MediaSource.
         // Derive the same deterministic shortcode base that save_sticker_to_user_pack
         // uses so the lookup matches even though the re-uploaded mxc URI differs.
@@ -490,7 +482,8 @@ impl ClientFfi {
         if pack.display_name.is_empty() {
             pack.display_name = "Saved Stickers".to_owned();
         }
-        if let Ok(mut cache) = self.image_packs.lock() {
+        {
+            let mut cache = self.image_packs.lock();
             if let Some(slot) = cache
                 .iter_mut()
                 .find(|p| p.source == crate::image_packs::PackSource::User)
@@ -501,7 +494,8 @@ impl ClientFfi {
             }
         }
         if let Some(h) = &self.handler {
-            if let Ok(g) = h.lock() {
+            {
+                let g = h.lock();
                 g.on_image_packs_updated();
             }
         }

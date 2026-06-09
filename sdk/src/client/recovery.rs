@@ -137,7 +137,8 @@ impl ClientFfi {
                 // spinner forever after a successful key import (the shells only
                 // wire the error branch). step=4 maps to EnableProgress::Done.
                 if let Some(h) = self.handler.as_ref() {
-                    if let Ok(g) = h.lock() {
+                    {
+                        let g = h.lock();
                         g.on_enable_recovery_progress(4, "", 0, 0);
                     }
                 }
@@ -195,7 +196,8 @@ impl ClientFfi {
                 // false success with an unverified device. Abort with the error
                 // instead of silently continuing.
                 tracing::warn!("enable_recovery: bootstrap_cross_signing failed: {e:?}");
-                if let Ok(g) = handler.lock() {
+                {
+                    let g = handler.lock();
                     g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
                 }
                 return err(e.to_string());
@@ -237,7 +239,8 @@ impl ClientFfi {
                                 (4, recovery_key.clone(), 0, 0)
                             }
                         };
-                        if let Ok(g) = handler2.lock() {
+                        {
+                            let g = handler2.lock();
                             g.on_enable_recovery_progress(step, &key, bu, tot);
                         }
                     }
@@ -255,7 +258,8 @@ impl ClientFfi {
                         if let Err(e) =
                             client.encryption().backups().disable_and_delete().await
                         {
-                            if let Ok(g) = handler.lock() {
+                            {
+                                let g = handler.lock();
                                 g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
                             }
                             return err(e.to_string());
@@ -266,7 +270,8 @@ impl ClientFfi {
                     Err(e) => {
                         progress_task.abort();
                         let _ = progress_task.await;
-                        if let Ok(g) = handler.lock() {
+                        {
+                            let g = handler.lock();
                             g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
                         }
                         return err(e.to_string());

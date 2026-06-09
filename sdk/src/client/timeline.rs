@@ -32,7 +32,8 @@ use matrix_sdk_ui::{
 #[cfg(not(test))]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(test))]
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // TimelineChannel and emit helpers
@@ -153,7 +154,8 @@ pub(super) async fn handle_timeline_diff(
                     let idx = visible_len(visible);
                     visible.push(true);
                     visible_ids.push(ev.event_id.clone());
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_inserted(&g, channel, room_id, idx, &ev);
                     }
                 } else {
@@ -171,7 +173,8 @@ pub(super) async fn handle_timeline_diff(
                 let idx = visible_len(visible);
                 visible.push(true);
                 visible_ids.push(ev.event_id.clone());
-                if let Ok(g) = handler.lock() {
+                {
+                    let g = handler.lock();
                     emit_inserted(&g, channel, room_id, idx, &ev);
                 }
             } else {
@@ -187,7 +190,8 @@ pub(super) async fn handle_timeline_diff(
             if let Some(ev) = ev {
                 visible.insert(0, true);
                 visible_ids.insert(0, ev.event_id.clone());
-                if let Ok(g) = handler.lock() {
+                {
+                    let g = handler.lock();
                     emit_inserted(&g, channel, room_id, 0, &ev);
                 }
             } else {
@@ -208,7 +212,8 @@ pub(super) async fn handle_timeline_diff(
                 let v_idx = visible_index_of(visible, index);
                 visible.insert(index, true);
                 visible_ids.insert(index, ev.event_id.clone());
-                if let Ok(g) = handler.lock() {
+                {
+                    let g = handler.lock();
                     emit_inserted(&g, channel, room_id, v_idx, &ev);
                 }
             } else {
@@ -244,7 +249,8 @@ pub(super) async fn handle_timeline_diff(
                     if let Some(slot) = visible_ids.get_mut(index) {
                         *slot = ev.event_id.clone();
                     }
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_updated(&g, channel, room_id, v_idx, &ev);
                     }
                 }
@@ -256,7 +262,8 @@ pub(super) async fn handle_timeline_diff(
                     if let Some(slot) = visible_ids.get_mut(index) {
                         *slot = ev.event_id.clone();
                     }
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_inserted(&g, channel, room_id, v_idx, &ev);
                     }
                 }
@@ -268,7 +275,8 @@ pub(super) async fn handle_timeline_diff(
                     if let Some(slot) = visible_ids.get_mut(index) {
                         *slot = String::new();
                     }
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_removed(&g, channel, room_id, v_idx);
                     }
                 }
@@ -283,7 +291,8 @@ pub(super) async fn handle_timeline_diff(
                 if index < visible_ids.len() {
                     visible_ids.remove(index);
                 }
-                if let Ok(g) = handler.lock() {
+                {
+                    let g = handler.lock();
                     emit_removed(&g, channel, room_id, v_idx);
                 }
             } else if index < visible.len() {
@@ -303,7 +312,8 @@ pub(super) async fn handle_timeline_diff(
                 visible_ids.pop();
                 if was {
                     let v_idx = visible_len(visible);
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_removed(&g, channel, room_id, v_idx);
                     }
                 }
@@ -314,7 +324,8 @@ pub(super) async fn handle_timeline_diff(
                 visible_ids.pop();
                 if was {
                     let v_idx = visible_len(visible);
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_removed(&g, channel, room_id, v_idx);
                     }
                 }
@@ -327,7 +338,8 @@ pub(super) async fn handle_timeline_diff(
                     visible_ids.remove(0);
                 }
                 if was {
-                    if let Ok(g) = handler.lock() {
+                    {
+                        let g = handler.lock();
                         emit_removed(&g, channel, room_id, 0);
                     }
                 }
@@ -336,7 +348,8 @@ pub(super) async fn handle_timeline_diff(
         VectorDiff::Clear => {
             visible.clear();
             visible_ids.clear();
-            if let Ok(g) = handler.lock() {
+            {
+                let g = handler.lock();
                 let empty: Vec<TimelineEvent> = Vec::new();
                 emit_reset(&g, channel, room_id, &empty);
             }
@@ -364,7 +377,8 @@ pub(super) async fn handle_timeline_diff(
                     visible_ids.push(String::new());
                 }
             }
-            if let Ok(g) = handler.lock() {
+            {
+                let g = handler.lock();
                 emit_reset(&g, channel, room_id, &snapshot);
             }
         }
@@ -431,7 +445,8 @@ async fn refresh_receipts(
 
         if !ev.read_receipts.is_empty() {
             let v_idx = visible_index_of(visible, slot_idx);
-            if let Ok(g) = handler.lock() {
+            {
+                let g = handler.lock();
                 emit_updated(&g, channel, room_id, v_idx, &ev);
             }
         }
@@ -508,7 +523,8 @@ impl ClientFfi {
                     }
                 }
                 if !cancelled_stream.load(Ordering::Acquire) {
-                    if let Ok(guard) = h.lock() {
+                    {
+                        let guard = h.lock();
                         emit_reset(&guard, &ch, &rid, &snapshot);
                     }
                 }
@@ -617,7 +633,7 @@ impl ClientFfi {
 
         // Drop any previous subscription for this room.
         {
-            let mut guard = self.timelines.write().unwrap();
+            let mut guard = self.timelines.write();
             if let Some(prev) = guard.remove(&room_id) {
                 prev.cancelled.store(true, Ordering::Release);
                 for h in prev.abort_tasks {
@@ -660,7 +676,8 @@ impl ClientFfi {
         // task below. Both go through the UI's post-to-UI queue so they
         // serialize in order and no live diffs can land between them —
         // diffs only flow once the task starts pumping `stream`.
-        if let Ok(guard) = handler.lock() {
+        {
+            let guard = handler.lock();
             let empty: Vec<TimelineEvent> = Vec::new();
             guard.on_timeline_reset(&room_id_str, &empty);
         }
@@ -669,7 +686,7 @@ impl ClientFfi {
         let (abort, fetch_abort) =
             Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
 
-        self.timelines.write().unwrap().insert(
+        self.timelines.write().insert(
             room_id.clone(),
             TimelineHandle {
                 timeline,
@@ -692,7 +709,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn unsubscribe_room(&mut self, room_id: &str) {
         if let Ok(id) = room_id.parse::<OwnedRoomId>() {
-            if let Some(h) = self.timelines.write().unwrap().remove(&id) {
+            if let Some(h) = self.timelines.write().remove(&id) {
                 h.cancelled.store(true, Ordering::Release);
                 for abort in h.abort_tasks {
                     abort.abort();
@@ -720,7 +737,7 @@ impl ClientFfi {
         };
 
         let tl = {
-            let guard = self.timelines.read().unwrap();
+            let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
                 return PaginateResult {
                     ok: false,
@@ -787,7 +804,8 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let deliver = move |ok: bool, reached_start: bool, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() {
+                {
+                    let g = h.lock();
                     g.on_paginate_result(request_id, ok, reached_start, false, msg);
                 }
             }
@@ -802,7 +820,7 @@ impl ClientFfi {
         };
 
         let tl = {
-            let guard = self.timelines.read().unwrap();
+            let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
                 deliver(false, false, "room not subscribed; call subscribe_room first");
                 return;
@@ -815,7 +833,8 @@ impl ClientFfi {
         self.rt.spawn(async move {
             let deliver = move |ok: bool, reached_start: bool, msg: &str| {
                 if let Some(h) = &handler {
-                    if let Ok(g) = h.lock() {
+                    {
+                        let g = h.lock();
                         g.on_paginate_result(request_id, ok, reached_start, false, msg);
                     }
                 }
@@ -860,7 +879,8 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let deliver = move |ok: bool, reached_end: bool, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() {
+                {
+                    let g = h.lock();
                     g.on_paginate_result(request_id, ok, false, reached_end, msg);
                 }
             }
@@ -875,7 +895,7 @@ impl ClientFfi {
         };
 
         let tl = {
-            let guard = self.timelines.read().unwrap();
+            let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
                 deliver(false, false, "room not subscribed; call subscribe_room_at first");
                 return;
@@ -892,7 +912,8 @@ impl ClientFfi {
         self.rt.spawn(async move {
             let deliver = move |ok: bool, reached_end: bool, msg: &str| {
                 if let Some(h) = &handler {
-                    if let Ok(g) = h.lock() {
+                    {
+                        let g = h.lock();
                         g.on_paginate_result(request_id, ok, false, reached_end, msg);
                     }
                 }
@@ -1008,7 +1029,7 @@ impl ClientFfi {
 
         // Drop any previous subscription for this room.
         {
-            let mut guard = self.timelines.write().unwrap();
+            let mut guard = self.timelines.write();
             if let Some(prev) = guard.remove(&room_id) {
                 prev.cancelled.store(true, Ordering::Release);
                 for h in prev.abort_tasks {
@@ -1047,7 +1068,8 @@ impl ClientFfi {
         let room_id_str = room_id.to_string();
 
         // Synchronously clear the UI for this room (same as subscribe_room).
-        if let Ok(guard) = handler.lock() {
+        {
+            let guard = handler.lock();
             let empty: Vec<TimelineEvent> = Vec::new();
             guard.on_timeline_reset(&room_id_str, &empty);
         }
@@ -1056,7 +1078,7 @@ impl ClientFfi {
         let (abort, fetch_abort) =
             Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
 
-        self.timelines.write().unwrap().insert(
+        self.timelines.write().insert(
             room_id,
             TimelineHandle {
                 timeline,

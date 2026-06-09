@@ -228,7 +228,8 @@ impl ClientFfi {
             let handler = handler.clone();
             move |ok: bool, joined: &str, msg: &str| {
                 if let Some(h) = &handler {
-                    if let Ok(g) = h.lock() {
+                    {
+                        let g = h.lock();
                         g.on_room_action_complete(request_id, ok, joined, msg);
                     }
                 }
@@ -306,7 +307,8 @@ impl ClientFfi {
 
         let deliver = move |ok: bool, joined: &str, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() {
+                {
+                    let g = h.lock();
                     g.on_room_action_complete(request_id, ok, joined, msg);
                 }
             }
@@ -342,7 +344,8 @@ impl ClientFfi {
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                if let Ok(g) = h.lock() {
+                {
+                    let g = h.lock();
                     g.on_room_action_complete(request_id, ok, "", msg);
                 }
             }
