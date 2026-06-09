@@ -339,11 +339,10 @@ constexpr float kStickerSize = tesseract::visual::kStickerSize;        // 256
 constexpr float kFileCardH = 56.0f;
 constexpr float kFileCardW = 280.0f;
 
-// URL preview card dimensions.
+// URL preview card height accounting. The card's internal layout dimensions
+// (width / thumb / padding) live with the paint in UrlPreviewCardDisplay;
+// these two drive the Adapter's row-height math only.
 constexpr float kPreviewCardH = 72.0f;
-constexpr float kPreviewCardW = 280.0f;
-constexpr float kPreviewThumbSide = 56.0f;
-constexpr float kPreviewCardPad = 10.0f;
 constexpr float kPreviewCardGapTop = 6.0f;
 constexpr float kFileIconSize = 36.0f;
 constexpr float kFileIconPadL = 10.0f;
@@ -1894,13 +1893,9 @@ private:
                           measure_text_height("(edited)", ctx, col_w);
             }
             float preview_h = 0.0f;
-            if (!m.first_url.empty() && owner_.preview_provider_)
+            if (owner_.previews_.has_preview(m))
             {
-                const auto* p = owner_.preview_provider_(m.first_url);
-                if (p && p->has_content())
-                {
-                    preview_h = kPreviewCardGapTop + kPreviewCardH;
-                }
+                preview_h = kPreviewCardGapTop + kPreviewCardH;
             }
             return quote_h + th + badge_h + preview_h;
         }
@@ -2000,13 +1995,9 @@ private:
                                   measure_text_height("(edited)", ctx, col_w)
                             : 0.0f;
             float preview_h = 0.0f;
-            if (!m.first_url.empty() && owner_.preview_provider_)
+            if (owner_.previews_.has_preview(m))
             {
-                const auto* p = owner_.preview_provider_(m.first_url);
-                if (p && p->has_content())
-                {
-                    preview_h = kPreviewCardGapTop + kPreviewCardH;
-                }
+                preview_h = kPreviewCardGapTop + kPreviewCardH;
             }
             return quote_h + th + badge_h + preview_h;
         }
@@ -2063,13 +2054,13 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (!m.first_url.empty() && owner_.preview_provider_)
+            if (!m.first_url.empty())
             {
-                const auto* p = owner_.preview_provider_(m.first_url);
+                const auto* p = owner_.previews_.lookup(m.first_url);
                 if (p && p->has_content())
                 {
                     end_y += kPreviewCardGapTop;
-                    paint_preview_card_(m, *p, ctx, x, end_y, col_w);
+                    owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
                     end_y += kPreviewCardH;
                 }
             }
@@ -2094,13 +2085,13 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (!m.first_url.empty() && owner_.preview_provider_)
+            if (!m.first_url.empty())
             {
-                const auto* p = owner_.preview_provider_(m.first_url);
+                const auto* p = owner_.previews_.lookup(m.first_url);
                 if (p && p->has_content())
                 {
                     end_y += kPreviewCardGapTop;
-                    paint_preview_card_(m, *p, ctx, x, end_y, col_w);
+                    owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
                     end_y += kPreviewCardH;
                 }
             }
@@ -2148,13 +2139,13 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (!m.first_url.empty() && owner_.preview_provider_)
+            if (!m.first_url.empty())
             {
-                const auto* p = owner_.preview_provider_(m.first_url);
+                const auto* p = owner_.previews_.lookup(m.first_url);
                 if (p && p->has_content())
                 {
                     end_y += kPreviewCardGapTop;
-                    paint_preview_card_(m, *p, ctx, x, end_y, col_w);
+                    owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
                     end_y += kPreviewCardH;
                 }
             }
@@ -2477,91 +2468,6 @@ private:
         }
 
         return y + block_h;
-    }
-
-    void paint_preview_card_(const MessageRowData& m, const UrlPreviewData& p,
-                             tk::PaintCtx& ctx, float x, float y,
-                             float col_w) const
-    {
-        float card_w = std::min(col_w, kPreviewCardW);
-        tk::Rect card{x, y, card_w, kPreviewCardH};
-
-        ctx.canvas.fill_rounded_rect(card, 8.0f, ctx.theme.palette.chrome_bg);
-        ctx.canvas.stroke_rounded_rect(card, 8.0f, ctx.theme.palette.border,
-                                       1.0f);
-
-        // Record world-coord rect for click-to-open hit-test.
-        owner_.preview_card_geom_[m.event_id] = {m.first_url, card};
-
-        float thumb_right = 0.0f;
-        if (!p.image_mxc.empty() && owner_.image_provider_)
-        {
-            const tk::Image* img = owner_.image_provider_(p.image_mxc);
-            float tx = x + kPreviewCardPad;
-            float ty = y + (kPreviewCardH - kPreviewThumbSide) * 0.5f;
-            tk::Rect thumb{tx, ty, kPreviewThumbSide, kPreviewThumbSide};
-            if (img)
-            {
-                ctx.canvas.draw_image(*img, thumb);
-            }
-            else
-            {
-                ctx.canvas.fill_rounded_rect(thumb, 4.0f,
-                                             ctx.theme.palette.border);
-            }
-            thumb_right = tx + kPreviewThumbSide + kPreviewCardPad;
-        }
-        else
-        {
-            thumb_right = x + kPreviewCardPad;
-        }
-
-        float text_x = thumb_right;
-        float text_w =
-            std::max(0.0f, card.x + card.w - text_x - kPreviewCardPad);
-
-        float text_y = y + kPreviewCardPad;
-
-        if (!p.title.empty())
-        {
-            tk::TextStyle st{};
-            st.role = tk::FontRole::UiSemibold;
-            st.trim = tk::TextTrim::Ellipsis;
-            st.max_width = text_w;
-            auto lo = ctx.factory.build_text(p.title, st);
-            if (lo)
-            {
-                ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                     ctx.theme.palette.text_primary);
-                text_y += lo->measure().h + 2.0f;
-            }
-        }
-        if (!p.description.empty())
-        {
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Body;
-            st.trim = tk::TextTrim::Ellipsis;
-            st.max_width = text_w;
-            auto lo = ctx.factory.build_text(p.description, st);
-            if (lo)
-            {
-                ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                     ctx.theme.palette.text_secondary);
-                text_y += lo->measure().h + 2.0f;
-            }
-        }
-        {
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Small;
-            st.trim = tk::TextTrim::Ellipsis;
-            st.max_width = text_w;
-            auto lo = ctx.factory.build_text(m.first_url, st);
-            if (lo)
-            {
-                ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                     ctx.theme.palette.text_muted);
-            }
-        }
     }
 
     // Returns true when every non-whitespace character in `utf8` is a Unicode
@@ -3492,6 +3398,14 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
                 on_hide_tooltip();
         });
 
+    // The preview card draws its thumbnail via the same image provider as the
+    // rest of the timeline. Wire it through indirection so RoomView's later
+    // set_image_provider() is reflected (matching the historical live read of
+    // image_provider_ inside the card paint).
+    previews_.set_image_provider([this](const std::string& k) -> const tk::Image*
+                                 { return image_provider_ ? image_provider_(k)
+                                                          : nullptr; });
+
     // Wire the room-switch gate keeper through indirection so RoomView's
     // later assignment of the providers / repaint / post_delayed callbacks is
     // always reflected. The keeper owns the gate state machine; this view
@@ -3500,7 +3414,7 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
         [this](const std::string& k) -> const tk::Image*
         { return image_provider_ ? image_provider_(k) : nullptr; },
         [this](const std::string& url) -> const UrlPreviewData*
-        { return preview_provider_ ? preview_provider_(url) : nullptr; });
+        { return previews_.lookup(url); });
     room_switch_gate_.set_scroll_callbacks(
         [this](const std::string& event_id) { scroll_to_event_id(event_id); },
         [this] { scroll_to_bottom(); });
@@ -4075,9 +3989,9 @@ std::string MessageListView::row_image_key_(const MessageRowData& m) const
         break;
     }
     // URL-preview image (text / notice rows carry it via the preview cache).
-    if (!m.first_url.empty() && preview_provider_)
+    if (!m.first_url.empty())
     {
-        if (const auto* p = preview_provider_(m.first_url))
+        if (const auto* p = previews_.lookup(m.first_url))
         {
             return p->image_mxc;
         }
@@ -4109,7 +4023,7 @@ void MessageListView::try_acquire_image_(MessageRowData& m)
 
 void MessageListView::set_preview_provider(PreviewProvider p)
 {
-    preview_provider_ = std::move(p);
+    previews_.set_provider(std::move(p));
 }
 
 void MessageListView::reset_hovered_row_geom_()
@@ -4551,7 +4465,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
         // cursor the same way it does for inline hyperlinks.
         if (new_link_url.empty())
         {
-            for (const auto& [eid, hit] : preview_card_geom_)
+            for (const auto& [eid, hit] : previews_.geometry())
             {
                 if (!hit.url.empty() && rect_contains(hit.rect, world))
                 {
@@ -5072,7 +4986,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
     // URL preview card hit-test.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        for (const auto& [eid, hit] : preview_card_geom_)
+        for (const auto& [eid, hit] : previews_.geometry())
         {
             if (rect_contains(hit.rect, world))
             {
@@ -5671,7 +5585,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             // Confirm pointer is still inside the card rect on release.
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
-            for (const auto& [eid, hit] : preview_card_geom_)
+            for (const auto& [eid, hit] : previews_.geometry())
             {
                 if (hit.url == url && rect_contains(hit.rect, world))
                 {
@@ -5889,7 +5803,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     media_.clear_geometry();
     map_panner_.clear_geometry();
     quote_block_geom_.clear();
-    preview_card_geom_.clear();
+    previews_.clear_geometry();
     chip_hit_rects_.clear();
 
     // Room-switch gate: hold the list invisible until the rows that will

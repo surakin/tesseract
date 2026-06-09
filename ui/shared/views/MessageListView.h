@@ -18,6 +18,7 @@
 #include "views/RoomSwitchGateKeeper.h"
 #include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
+#include "views/UrlPreviewCardDisplay.h"
 #include "views/TimelineVideoPlaylist.h"
 #include "views/map_tiles.h"
 
@@ -890,14 +891,11 @@ private:
     // Cleared at the top of each paint pass (same pattern as voice_card_geom_).
     mutable std::unordered_map<std::string, tk::Rect> quote_block_geom_;
 
-    // URL preview card provider + press state.
-    PreviewProvider preview_provider_;
-    struct PreviewCardHit
-    {
-        std::string url;
-        tk::Rect rect;
-    };
-    mutable std::unordered_map<std::string, PreviewCardHit> preview_card_geom_;
+    // URL preview cards: provider, per-paint card geometry, and the card paint
+    // live in `previews_`. The view forwards set_preview_provider() here and
+    // keeps only the pointer-press FSM (press_preview_ / press_preview_url_)
+    // and the notify→invalidate→scroll-anchor glue (notify_url_preview_ready).
+    UrlPreviewCardDisplay previews_;
     bool press_preview_ = false;
     std::string press_preview_url_;
 
