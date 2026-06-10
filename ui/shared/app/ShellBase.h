@@ -296,6 +296,11 @@ protected:
     int add_account_return_idx_ = -1;
     // URI from open_matrix_link() deferred until the first rooms-update.
     std::string pending_matrix_link_;
+    // Event id to scroll to once a room joined from an event permalink finishes
+    // joining, keyed by the permalink's room id (matched against joined_room_id
+    // in handle_room_action_complete_ui_). Cleared on consume; a stale entry
+    // (user edited the join target) is harmless and tiny.
+    std::unordered_map<std::string, std::string> pending_event_scroll_after_join_;
 
     // ── Active-account identity ───────────────────────────────────────────────
     std::string my_user_id_;

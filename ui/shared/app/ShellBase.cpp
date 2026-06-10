@@ -2584,12 +2584,24 @@ void ShellBase::open_matrix_link(const std::string& uri)
                                [&](const RoomInfo& r) { return r.id == link.primary; });
         if (it != rooms_.end())
         {
+            // Navigate (sets current_room_id_ synchronously), then jump to the
+            // event via the deferred-scroll + focused-subscription path so it
+            // works even when the target isn't in the loaded window.
             tab_navigate_room(link.primary);
-            if (room_view_ && !link.event_id.empty())
-                room_view_->scroll_to_event_id(link.event_id);
+            if (!link.event_id.empty())
+            {
+                if (room_view_ && room_view_->message_list())
+                    room_view_->message_list()->set_highlighted_event(
+                        link.event_id);
+                try_scroll_to_room_event_(link.event_id);
+            }
         }
         else
         {
+            // Not joined yet: remember the target event so the post-join hook
+            // jumps to it once the join completes.
+            if (!link.event_id.empty())
+                pending_event_scroll_after_join_[link.primary] = link.event_id;
             open_join_room_dialog_ui_(link.primary);
         }
         break;
@@ -2701,7 +2713,20 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         break;
     case RoomActionKind::Join:
         if (!joined_room_id.empty())
+        {
             tab_navigate_room(joined_room_id);
+            // If this room was joined by following an event permalink, jump to
+            // the target event now that we're in.
+            auto pit = pending_event_scroll_after_join_.find(joined_room_id);
+            if (pit != pending_event_scroll_after_join_.end())
+            {
+                const std::string ev = std::move(pit->second);
+                pending_event_scroll_after_join_.erase(pit);
+                if (room_view_ && room_view_->message_list())
+                    room_view_->message_list()->set_highlighted_event(ev);
+                try_scroll_to_room_event_(ev);
+            }
+        }
         break;
     case RoomActionKind::Leave:
         if (tabs_.size() > 1)
