@@ -384,6 +384,27 @@ pub struct ClientFfi {
     /// children live inside a `JoinSet` owned by the orchestrator future).
     #[cfg(not(test))]
     pub(super) backfill_task: Option<tokio::task::AbortHandle>,
+    /// One-shot unread-prefetch orchestrator handle. Kept separate from
+    /// `backfill_task` so the inactive-grouping backfill and the unread
+    /// prefetch never abort one another (they share neither handle nor
+    /// idempotency guard). Aborting tears down the orchestrator and every
+    /// per-room silent prefetch it spawned (children live in a `JoinSet`
+    /// owned by the orchestrator future).
+    #[cfg(not(test))]
+    pub(super) prefetch_task: Option<tokio::task::AbortHandle>,
+    /// Newest unread-prefetch room set requested while `prefetch_task` was still
+    /// running. The running task drains this when its current batch finishes, so
+    /// messages that arrive mid-prefetch get warmed without waiting for the next
+    /// fingerprint change. Coalesced — only the latest set is kept.
+    #[cfg(not(test))]
+    pub(super) pending_prefetch:
+        Arc<parking_lot::Mutex<Option<Vec<OwnedRoomId>>>>,
+    /// Shared concurrency limiter for all silent room warm-up pagination — the
+    /// inactive-grouping backfill and the unread prefetch both acquire from it,
+    /// so their *combined* in-flight `backfill_room_silent` count is bounded
+    /// (rather than each having its own lane that sum to a larger total).
+    #[cfg(not(test))]
+    pub(super) warm_semaphore: Arc<tokio::sync::Semaphore>,
     /// In-progress cross-signing reset handle (from `reset_cross_signing`),
     /// held between `begin_reset_crypto_identity` and the background poll /
     /// `cancel_reset_crypto_identity`. `None` when no reset is pending.
@@ -552,6 +573,10 @@ impl Drop for ClientFfi {
         self.stop_sync();
         #[cfg(not(test))]
         if let Some(h) = self.backfill_task.take() {
+            h.abort();
+        }
+        #[cfg(not(test))]
+        if let Some(h) = self.prefetch_task.take() {
             h.abort();
         }
         // Drop SDK objects that call Handle::current() in their Drop impls
@@ -735,6 +760,12 @@ impl ClientFfi {
             #[cfg(not(test))]
             backfill_task: None,
             #[cfg(not(test))]
+            prefetch_task: None,
+            #[cfg(not(test))]
+            pending_prefetch: Arc::new(parking_lot::Mutex::new(None)),
+            #[cfg(not(test))]
+            warm_semaphore: Arc::new(tokio::sync::Semaphore::new(3)),
+            #[cfg(not(test))]
             crypto_reset_handle: None,
             #[cfg(not(test))]
             in_flight: Arc::new(std::sync::atomic::AtomicU32::new(0)),
@@ -836,6 +867,14 @@ impl ClientFfi {
     pub fn stop_sync(&mut self) {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(true);
+        }
+        // Cancel any in-flight unread prefetch — it's a pure UX warm-up with no
+        // persistence obligation, so logout/account-teardown should stop it
+        // rather than waste bandwidth fetching into a cache we're discarding.
+        #[cfg(not(test))]
+        if let Some(h) = self.prefetch_task.take() {
+            h.abort();
+            *self.pending_prefetch.lock() = None;
         }
     }
 

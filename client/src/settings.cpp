@@ -44,6 +44,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     group_inactive_rooms         = j.value("group_inactive_rooms",         false);
     inactive_room_threshold_days = j.value("inactive_room_threshold_days", 30);
     autoscroll_unread_rooms      = j.value("autoscroll_unread_rooms",       true);
+    prefetch_unread_rooms        = j.value("prefetch_unread_rooms",          true);
     send_presence                = j.value("send_presence",                true);
 
     room_section_invites_collapsed   = j.value("room_section_invites_collapsed",   false);
@@ -127,6 +128,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"group_inactive_rooms",             group_inactive_rooms},
         {"inactive_room_threshold_days",     inactive_room_threshold_days},
         {"autoscroll_unread_rooms",          autoscroll_unread_rooms},
+        {"prefetch_unread_rooms",            prefetch_unread_rooms},
         {"send_presence",                    send_presence},
         {"room_section_invites_collapsed",   room_section_invites_collapsed},
         {"room_section_favorites_collapsed", room_section_favorites_collapsed},

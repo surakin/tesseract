@@ -2,6 +2,22 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-06-10** (v0.8.0).
 
+> **Unread-room message prefetch.**
+> Rooms that quietly accumulate unread messages (unread, **not** muted — no
+> notification) now have their recent messages warmed into the SDK event cache
+> ahead of time, so opening them renders instantly instead of fetching on click.
+> The shell reconciles on every `on_rooms_updated` tick: it selects the
+> quiet-unread rooms (excluding the open room), sorts most-recently-active first,
+> caps at **20** (the cap *is* the LRU eviction), and fires a new
+> `Client::start_unread_prefetch` FFI only when a fingerprint over the capped
+> `(room_id, unread_count)` set changes — so new messages in an already-prefetched
+> room re-warm it, but routine sync churn doesn't. The Rust side runs a **one-shot**
+> silent backfill (build temp timeline → paginate → drop; events persist in the
+> SQLite cache) on a task **independent** of the inactive-grouping backfill, with
+> bounded concurrency; it skips rooms with a live timeline (open + pop-outs).
+> Default-on (`prefetch_unread_rooms` setting). All shared code (`ShellBase` +
+> `app/UnreadPrefetch.h`), so every shell benefits. 4 new Rust + 6 new C++ tests.
+
 > **Pre-launch hardening + decomposition (2026-06-09, unreleased).** A full-tree
 > code review (`docs/CODE_REVIEW_2026-06-09.md`) drove a large correctness /
 > safety / dedup pass and the start of a god-object decomposition: shells routed

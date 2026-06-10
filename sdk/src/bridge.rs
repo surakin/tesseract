@@ -1099,6 +1099,25 @@ pub mod ffi {
         /// the list.
         fn start_background_backfill_all_uncached(self: &mut ClientFfi) -> OpResult;
 
+        /// One-shot prefetch of recent messages for the given unread rooms into
+        /// the SDK event cache, so opening them is instant. The caller passes
+        /// the already capped + LRU-ordered (most-recently-active first) set of
+        /// unread, non-muted rooms. Unlike `start_background_backfill` this does
+        /// NOT skip rooms that already have a timestamp / are cached — unread
+        /// rooms always have a timestamp yet still need their *newest* messages.
+        /// Skips rooms with a live timeline (open room + pop-outs). Bounded
+        /// concurrency on a task independent of the inactive-grouping backfill,
+        /// so the two never abort each other. Silent (no callbacks). Idempotent
+        /// while a prefetch is in flight.
+        fn start_unread_prefetch(
+            self: &mut ClientFfi,
+            room_ids: &CxxVector<CxxString>,
+        ) -> OpResult;
+
+        /// Cancel an in-progress unread prefetch. No-op if none is running.
+        /// Also called automatically from `stop_sync` and `Drop`.
+        fn stop_unread_prefetch(self: &mut ClientFfi);
+
         // ----- Messaging -----
 
         fn send_message(

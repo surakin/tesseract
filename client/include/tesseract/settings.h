@@ -168,6 +168,11 @@ public:
     // the most-recent unread room into view in the room list. Default on.
     bool autoscroll_unread_rooms = true;
 
+    // Proactively warm the SDK event cache for rooms with quiet unread messages
+    // (unread, not muted) so opening them renders from cache instantly. One-shot
+    // per relevant change, capped + LRU, bounded concurrency. Default on.
+    bool prefetch_unread_rooms = true;
+
     // Collapsed state of each room-list section; persisted across restarts.
     // Defaults match the hardcoded initial state in RoomListView.
     bool room_section_invites_collapsed   = false;

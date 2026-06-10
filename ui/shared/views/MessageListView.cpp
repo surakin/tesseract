@@ -4,6 +4,7 @@
 #include "media_utils.h"
 
 #include "icons.h"
+#include "tk/hash_combine.h"
 #include "tk/i18n.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
@@ -2675,8 +2676,7 @@ private:
     {
         std::size_t h = std::hash<std::string>{}(m.formatted_body);
         std::size_t b = std::hash<std::string>{}(m.body);
-        h ^= b + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-        return h;
+        return tk::hash_combine(h, b);
     }
 
     // Build-or-reuse the shaped body layout for a message. Both the measure

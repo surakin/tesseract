@@ -406,6 +406,19 @@ void Client::stop_background_backfill()
     impl_->ffi->stop_background_backfill();
 }
 
+Result
+Client::start_unread_prefetch(const std::vector<std::string>& room_ids)
+{
+    MUT_FFI;
+    return from_ffi(impl_->ffi->start_unread_prefetch(room_ids));
+}
+
+void Client::stop_unread_prefetch()
+{
+    MUT_FFI;
+    impl_->ffi->stop_unread_prefetch();
+}
+
 // Single markdown chokepoint for every outgoing text send (all four shells'
 // main windows + RoomWindowBase pop-outs). When the caller did not supply an
 // explicit `formatted_body`, derive it from `body` via markdown_to_html

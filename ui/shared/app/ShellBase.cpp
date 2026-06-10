@@ -1,6 +1,7 @@
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "app/SlashCommands.h"
+#include "app/UnreadPrefetch.h"
 #include "app/media_preview_policy.h"
 #include "tk/blurhash.h"
 #include "tk/host.h"
@@ -1904,6 +1905,36 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     if (client_ && tesseract::Settings::instance().group_inactive_rooms)
         client_->start_background_backfill_all_uncached();
 
+    // Proactively warm the event cache for quiet-unread rooms so opening them is
+    // instant. push_rooms_ fires on every sync tick, so we gate the FFI call on a
+    // fingerprint of the capped (top-N most-recently-active) unread set — it only
+    // fires when that set changes (new unread room, or new messages in an
+    // already-prefetched one). The Rust side skips live timelines and is
+    // idempotent while a prefetch is in flight.
+    if (client_ && tesseract::Settings::instance().prefetch_unread_rooms)
+    {
+        auto sel = compute_unread_prefetch_set(rooms_, current_room_id_,
+                                               kUnreadPrefetchCap);
+        if (sel.fingerprint != unread_prefetch_fingerprint_)
+        {
+            unread_prefetch_fingerprint_ = sel.fingerprint;
+            if (!sel.ids.empty())
+            {
+                // Capture the owning session (not `this`/`client_`): the worker
+                // runs on mut_pool_ where a concurrent account switch/logout can
+                // reassign or free the raw client_ pointer. Holding `sess` keeps
+                // the Client alive for the call — same pattern as subscribe_room.
+                auto sess = active_account_;
+                run_async_mut_(
+                    [sess, ids = std::move(sel.ids)]() mutable
+                    {
+                        if (sess && sess->client)
+                            sess->client->start_unread_prefetch(ids);
+                    });
+            }
+        }
+    }
+
     // One-time encryption setup check — raises the overlay on the first
     // eligible sync tick after login (Disabled → Fresh, Incomplete → Recover).
     check_encryption_setup_();
@@ -3236,6 +3267,9 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
                                               : std::vector<tesseract::RoomInfo>{};
     // The known-user roster belongs to the previous account — drop it.
     invalidate_known_users_();
+    // The unread-prefetch fingerprint is per-account; reset so the incoming
+    // account re-fires its prefetch on the first push_rooms_ after the switch.
+    unread_prefetch_fingerprint_ = 0;
 
     // Restore the invite snapshot for the incoming account (parallel to rooms_).
     auto inv_it = per_account_invites_.find(my_user_id_);

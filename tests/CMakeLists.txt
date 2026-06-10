@@ -27,6 +27,7 @@ add_executable(tesseract_tests
     cpp/test_tk_lists.cpp
     cpp/test_room_list_sections.cpp
     cpp/test_room_list_autoscroll.cpp
+    cpp/test_unread_prefetch.cpp
     cpp/test_tk_emoji_picker.cpp
     cpp/test_tk_verification_banner.cpp
     cpp/test_tk_compose_bar.cpp

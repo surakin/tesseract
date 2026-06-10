@@ -316,6 +316,20 @@ public:
     /// on stop_sync / destruction). No-op if none is running.
     void stop_background_backfill();
 
+    /// One-shot prefetch of recent messages for the given unread rooms into the
+    /// SDK event cache, so opening them is instant. The caller passes the
+    /// already capped + LRU-ordered (most-recently-active first) set of unread,
+    /// non-muted room ids. Unlike `start_background_backfill` this does NOT skip
+    /// rooms that already have a timestamp / are cached — unread rooms need
+    /// their *newest* messages. Skips rooms with a live timeline. Bounded
+    /// concurrency on a task independent of the inactive-grouping backfill.
+    /// Idempotent while a prefetch is in flight.
+    Result start_unread_prefetch(const std::vector<std::string>& room_ids);
+
+    /// Cancel an in-progress unread prefetch (also called automatically on
+    /// stop_sync / destruction). No-op if none is running.
+    void stop_unread_prefetch();
+
     // ------------------------------------------------------------------
     // Messaging
     // ------------------------------------------------------------------

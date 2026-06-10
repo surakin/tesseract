@@ -63,6 +63,9 @@ impl ClientFfi {
         let preview_cache = Arc::clone(&self.backfill_previews);
         let db_conn = Arc::clone(&self.app_cache_db);
         let in_flight = Arc::clone(&self.in_flight);
+        // Shared with the unread prefetch so combined warm-up concurrency is
+        // bounded, not summed.
+        let semaphore = Arc::clone(&self.warm_semaphore);
 
         // Emit on_rooms_updated every UPDATE_EVERY completions so the
         // inactive-room count ticks up visibly during a long backfill run,
@@ -72,7 +75,6 @@ impl ClientFfi {
         let abort = self
             .rt
             .spawn(async move {
-                let semaphore = Arc::new(tokio::sync::Semaphore::new(3));
                 let mut joinset = tokio::task::JoinSet::new();
 
                 for rid in to_backfill {
@@ -277,6 +279,9 @@ impl ClientFfi {
         let handler       = self.handler.clone();
         let preview_cache = Arc::clone(&self.backfill_previews);
         let db_conn       = Arc::clone(&self.app_cache_db);
+        // Shared with the unread prefetch so combined warm-up concurrency is
+        // bounded, not summed.
+        let semaphore     = Arc::clone(&self.warm_semaphore);
 
         let abort = self.rt.spawn(async move {
             // Process in batches of 50 so the event cache's internal broadcast
@@ -370,7 +375,6 @@ impl ClientFfi {
             }
             if !remaining.is_empty() {
                 const UPDATE_EVERY: usize = 5;
-                let semaphore = Arc::new(tokio::sync::Semaphore::new(3));
                 let mut joinset = tokio::task::JoinSet::<()>::new();
 
                 for rid in remaining {
@@ -455,6 +459,165 @@ impl ClientFfi {
             h.abort();
         }
     }
+
+    // -----------------------------------------------------------------------
+    // One-shot unread prefetch
+    // -----------------------------------------------------------------------
+
+    // Spawn a bounded-concurrency, silent prefetch over `initial` and return its
+    // abort handle (the caller places it into `prefetch_task`). Unlike
+    // `launch_backfill_task_` this does NOT write the handle into `self`, so the
+    // unread prefetch and the inactive-grouping backfill keep independent
+    // handles and never abort one another. After each batch it drains
+    // `pending_prefetch` and loops, so a set requested while it was running (new
+    // messages arriving mid-prefetch) is picked up instead of being dropped.
+    #[cfg(not(test))]
+    fn spawn_prefetch_task_(
+        &self,
+        client: matrix_sdk::Client,
+        initial: Vec<OwnedRoomId>,
+    ) -> tokio::task::AbortHandle {
+        let in_flight = Arc::clone(&self.in_flight);
+        let handler = self.handler.clone();
+        // Shared with the inactive-grouping backfill so combined warm-up
+        // concurrency is bounded, not summed.
+        let semaphore = Arc::clone(&self.warm_semaphore);
+        let pending = Arc::clone(&self.pending_prefetch);
+
+        self.rt
+            .spawn(async move {
+                let mut batch = initial;
+                loop {
+                    let mut joinset = tokio::task::JoinSet::new();
+                    for rid in batch {
+                        let client = client.clone();
+                        let sem = semaphore.clone();
+                        let in_flight = Arc::clone(&in_flight);
+                        let handler_ref = handler.clone();
+                        joinset.spawn(async move {
+                            let _permit = match sem.acquire_owned().await {
+                                Ok(p) => p,
+                                Err(_) => return,
+                            };
+                            let _guard =
+                                super::InFlightGuard::new(&in_flight, &handler_ref);
+                            // Warm the SDK event cache so the next open of this
+                            // unread room renders from cache without a fetch
+                            // hitch. The returned preview is intentionally unused
+                            // — prefetch is silent (no on_rooms_updated, no
+                            // backfill_ts write) to stay independent of the
+                            // inactive-grouping bookkeeping.
+                            let _ = backfill_room_silent(&client, &rid, 50).await;
+                        });
+                    }
+                    while joinset.join_next().await.is_some() {}
+
+                    // A sync that grew the unread set while this batch ran stashes
+                    // the newest set in `pending`; pick it up so freshly-arrived
+                    // messages get warmed too. Bounded — only the latest set is
+                    // kept, so this loops at most once per intervening sync.
+                    match pending.lock().take() {
+                        Some(next) if !next.is_empty() => batch = next,
+                        _ => break,
+                    }
+                }
+            })
+            .abort_handle()
+    }
+
+    // One-shot prefetch of recent messages for the given unread rooms into the
+    // SDK event cache. The shell passes the already capped + LRU-ordered set, so
+    // there is no sorting here. Unlike `start_background_backfill` this does NOT
+    // skip rooms that already have a cached timestamp / latest_event — unread
+    // rooms always have a timestamp yet still need their *newest* messages.
+    // Skips rooms with a live foreground timeline (open room + pop-outs).
+    // Idempotent while a prefetch is in flight.
+    #[cfg(not(test))]
+    pub fn start_unread_prefetch(
+        &mut self,
+        room_ids: &cxx::CxxVector<cxx::CxxString>,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+
+        let skip: std::collections::HashSet<OwnedRoomId> =
+            self.timelines.read().keys().cloned().collect();
+
+        let ids: Vec<String> = room_ids
+            .iter()
+            .filter_map(|s| s.to_str().ok().map(str::to_owned))
+            .collect();
+
+        let to_prefetch = select_prefetch_rooms(&ids, &skip, |id| {
+            client.get_room(id).map(|room| room.is_tombstoned())
+        });
+
+        if to_prefetch.is_empty() {
+            return ok("");
+        }
+
+        // If a prefetch is still running, hand it the newest set to process when
+        // its current batch finishes (coalesced — only the latest set is kept),
+        // so messages that arrived mid-prefetch aren't lost rather than dropping
+        // this request outright.
+        if let Some(h) = self.prefetch_task.as_ref() {
+            if !h.is_finished() {
+                *self.pending_prefetch.lock() = Some(to_prefetch);
+                return ok("");
+            }
+        }
+        self.prefetch_task = None;
+        *self.pending_prefetch.lock() = None;
+
+        let handle = self.spawn_prefetch_task_(client, to_prefetch);
+        self.prefetch_task = Some(handle);
+        ok("")
+    }
+
+    #[cfg(not(test))]
+    pub fn stop_unread_prefetch(&mut self) {
+        if let Some(h) = self.prefetch_task.take() {
+            h.abort();
+        }
+        // Drop any coalesced follow-up set so a later task doesn't pick up a
+        // stale request after an explicit stop.
+        *self.pending_prefetch.lock() = None;
+    }
+}
+
+/// Pure selection logic for unread prefetch, factored out so it can be unit
+/// tested (the live orchestrator above is `#[cfg(not(test))]`). Given the
+/// caller-supplied candidate room ids (already capped + LRU-ordered by the
+/// shell), the set of rooms with a live foreground timeline to skip, and a
+/// per-room status probe, return the rooms to warm — preserving input order.
+///
+/// `room_status` returns `None` when the room is unknown to the client and
+/// `Some(tombstoned)` otherwise. Invalid room ids and unknown/tombstoned rooms
+/// are dropped. Crucially — and unlike `start_background_backfill` — this does
+/// NOT filter on cached timestamp: an unread room is prefetched even when it
+/// already has a `latest_event_timestamp`, because we want its newest events.
+fn select_prefetch_rooms<F>(
+    room_ids: &[String],
+    skip: &std::collections::HashSet<matrix_sdk::ruma::OwnedRoomId>,
+    mut room_status: F,
+) -> Vec<matrix_sdk::ruma::OwnedRoomId>
+where
+    F: FnMut(&matrix_sdk::ruma::OwnedRoomId) -> Option<bool>,
+{
+    let mut out = Vec::new();
+    for id_str in room_ids {
+        let Ok(id) = id_str.parse::<matrix_sdk::ruma::OwnedRoomId>() else {
+            continue;
+        };
+        if skip.contains(&id) {
+            continue;
+        }
+        if let Some(false) = room_status(&id) {
+            out.push(id);
+        }
+    }
+    out
 }
 
 /// Extract a room-list preview from a timeline item's content.
@@ -742,4 +905,65 @@ pub(super) async fn backfill_room_silent(
         sender_name,
         timestamp_ms: latest_ts,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_prefetch_rooms;
+    use matrix_sdk::ruma::OwnedRoomId;
+    use std::collections::HashSet;
+
+    fn rid(s: &str) -> OwnedRoomId {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn skips_live_timeline_rooms() {
+        let ids = vec!["!a:ex.org".to_owned(), "!b:ex.org".to_owned()];
+        let mut skip = HashSet::new();
+        skip.insert(rid("!a:ex.org"));
+        // Every room exists and is not tombstoned.
+        let out = select_prefetch_rooms(&ids, &skip, |_| Some(false));
+        assert_eq!(out, vec![rid("!b:ex.org")]);
+    }
+
+    #[test]
+    fn does_not_skip_cached_or_timestamped_rooms() {
+        // Inverse of start_background_backfill: a room that already has a
+        // timestamp / is cached is still selected — the probe only reports
+        // existence + tombstone, never "already cached".
+        let ids = vec!["!a:ex.org".to_owned()];
+        let skip = HashSet::new();
+        let out = select_prefetch_rooms(&ids, &skip, |_| Some(false));
+        assert_eq!(out, vec![rid("!a:ex.org")]);
+    }
+
+    #[test]
+    fn skips_tombstoned_and_unknown_rooms() {
+        let ids = vec![
+            "!live:ex.org".to_owned(),
+            "!dead:ex.org".to_owned(),
+            "!gone:ex.org".to_owned(),
+        ];
+        let skip = HashSet::new();
+        let out = select_prefetch_rooms(&ids, &skip, |id| match id.as_str() {
+            "!live:ex.org" => Some(false), // exists, not tombstoned
+            "!dead:ex.org" => Some(true),  // tombstoned
+            _ => None,                     // unknown to the client
+        });
+        assert_eq!(out, vec![rid("!live:ex.org")]);
+    }
+
+    #[test]
+    fn drops_invalid_room_ids_and_preserves_order() {
+        let ids = vec![
+            "not a room id".to_owned(),
+            "!b:ex.org".to_owned(),
+            "!a:ex.org".to_owned(),
+        ];
+        let skip = HashSet::new();
+        let out = select_prefetch_rooms(&ids, &skip, |_| Some(false));
+        // Invalid id dropped; the LRU order the shell passed in is preserved.
+        assert_eq!(out, vec![rid("!b:ex.org"), rid("!a:ex.org")]);
+    }
 }
