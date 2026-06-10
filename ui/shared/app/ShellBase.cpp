@@ -3343,8 +3343,19 @@ void ShellBase::hand_account_to_spawned_window_(
 
 void ShellBase::claim_dedicated_for_active_()
 {
-    if (active_account_)
-        account_manager_.set_dedicated(active_account_->user_id, this);
+    if (!active_account_)
+        return;
+    const std::string& uid = active_account_->user_id;
+    // Don't steal the mapping from another live window already showing this
+    // account (e.g. a pinned pop-out). A switch can target an owned account via
+    // a path that bypasses the picker's raise-existing check — a notification
+    // click or logout-to-survivor — and overwriting here would make the picker
+    // raise the wrong window and strand the pop-out (whose bridge still owns the
+    // account). Only claim when the account is unowned or already ours.
+    ShellBase* cur = account_manager_.dedicated_window(uid);
+    if (cur && cur != this)
+        return;
+    account_manager_.set_dedicated(uid, this);
 }
 
 void ShellBase::release_dedicated_for_active_()
