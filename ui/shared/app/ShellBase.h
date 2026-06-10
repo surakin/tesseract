@@ -488,9 +488,19 @@ protected:
         // Clears the caller's dedup-set key so the media can be re-requested on
         // re-entry; without this the key would stay stuck in-flight forever.
         std::function<void()>                            on_cancel;
+        // Display/cache key this request feeds (the row's media fetch_token), or
+        // empty for requests not tied to a visible row. Used to drop the
+        // media_key_to_req_ reverse-map entry when the request ends.
+        std::string                                      priority_key;
     };
     std::unordered_map<std::uint64_t, PendingMediaReq> pending_media_;
     std::uint64_t next_media_req_id_ = 1;
+    // Reverse map: a media display/cache key → the request_id currently fetching
+    // it. Lets on_visible_rows_changed_ translate the visible rows' fetch tokens
+    // into the request_ids to raise via client_->prioritize_media. At most one
+    // in-flight request per key (the dedup sets enforce this), so the mapping is
+    // unambiguous. Populated by begin_media_req_, dropped on completion/cancel.
+    std::unordered_map<std::string, std::uint64_t> media_key_to_req_;
     // Cancellation group of the currently-active room's timeline media. When the
     // active room changes, after_active_room_changed_ cancels this group's
     // still-pending downloads before adopting the new room's group.
@@ -512,11 +522,15 @@ protected:
     std::uint64_t begin_media_req_(
         std::uint64_t group_id,
         std::function<void(std::vector<std::uint8_t>&&)> on_bytes,
-        std::function<void()> on_cancel = {})
+        std::function<void()> on_cancel = {},
+        std::string priority_key = {})
     {
         std::uint64_t id   = next_media_req_id_++;
+        if (!priority_key.empty())
+            media_key_to_req_[priority_key] = id;
         pending_media_[id] = PendingMediaReq{
-            group_id, std::move(on_bytes), {}, std::move(on_cancel)};
+            group_id, std::move(on_bytes), {}, std::move(on_cancel),
+            std::move(priority_key)};
         on_inflight_ui_();
         return id;
     }
@@ -545,6 +559,8 @@ protected:
         {
             if (it->second.group_id == group_id)
             {
+                if (!it->second.priority_key.empty())
+                    media_key_to_req_.erase(it->second.priority_key);
                 if (it->second.on_cancel)
                     it->second.on_cancel();
                 it = pending_media_.erase(it);
@@ -787,6 +803,10 @@ protected:
         // UI thread: deliver final bytes (hit or post-fetch). The helper has
         // already erased the in-flight key before calling this.
         std::function<void(std::vector<std::uint8_t>&&)> deliver_;
+        // UI thread: the row display/cache key this fetch feeds, registered in
+        // media_key_to_req_ so a visible-row scroll can re-prioritize it. Empty
+        // for fetches not tied to a visible row (e.g. map tiles).
+        std::string priority_key;
     };
 
     // Run the shared disk-load → UI hop → hit-deliver / miss-fetch → persist →
@@ -2098,6 +2118,20 @@ protected:
 
     // Walk all media references in ev and call ensure_*_ for each.
     void ensure_row_media_(const Event& ev);
+
+    // The timeline's visible rows changed (scroll / room enter / data update):
+    // raise the priority of the still-pending media fetches backing the now-
+    // visible rows so they download ahead of the off-screen backlog. `keys` are
+    // the visible rows' media fetch tokens (what the view's image_provider looks
+    // up), as reported by MessageListView::on_visible_range_changed. Keys with
+    // no in-flight fetch (already cached, or never requested) are skipped.
+    void on_visible_rows_changed_(const std::vector<std::string>& keys);
+
+    // Map visible media tokens → the request_ids still fetching them, dropping
+    // keys with no live request. Split out of on_visible_rows_changed_ so the
+    // key→request resolution is unit-testable without a live Client.
+    std::vector<std::uint64_t>
+    resolve_visible_request_ids_(const std::vector<std::string>& keys) const;
 
     // ── MSC4278 media-preview gating helpers ──────────────────────────────────
     // True when media in `room_id` should auto-load given the global + per-room

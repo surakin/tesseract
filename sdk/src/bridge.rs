@@ -1586,11 +1586,14 @@ pub mod ffi {
 
         /// Start an async media download. Spawns the fetch on the tokio runtime
         /// (so it does NOT pin a C++ worker thread for the network round-trip),
-        /// bounded by a per-lane semaphore, and fires `on_media_ready(request_id,
-        /// bytes)` on completion. `request_id` is a caller-owned correlation
-        /// token. `group_id` groups downloads for bulk cancellation via
-        /// `cancel_media_group` (0 = ungrouped/never-cancelled). `kind` selects
-        /// the source shape and lane (see MEDIA_KIND_* in media.rs):
+        /// bounded by a per-lane priority gate, and fires `on_media_ready(
+        /// request_id, bytes)` on completion. `request_id` is a caller-owned
+        /// correlation token. `group_id` groups downloads for bulk cancellation
+        /// via `cancel_media_group` and scopes `prioritize_media` (0 =
+        /// ungrouped/never-cancelled). `priority` orders pending fetches within a
+        /// lane (see MediaPriority: 0 = normal, 1 = visible row); a higher value
+        /// is granted a free slot first. `kind` selects the source shape and lane
+        /// (see MEDIA_KIND_* in media.rs):
         ///   0 room-avatar thumbnail (room_id in `source`)
         ///   1 mxc thumbnail   2 source thumbnail   3 full source
         /// `w`/`h`/`animated` apply to the thumbnail kinds. Empty bytes on
@@ -1599,6 +1602,7 @@ pub mod ffi {
             self: &ClientFfi,
             request_id: u64,
             group_id: u64,
+            priority: u8,
             kind: u8,
             source: &str,
             w: u32,
@@ -1606,9 +1610,16 @@ pub mod ffi {
             animated: bool,
         );
 
+        /// Raise the priority of still-pending `fetch_media_async` tasks in
+        /// `group_id` whose `request_id` is in `request_ids`, so they are
+        /// downloaded before lower-priority pending items. Called when rows
+        /// scroll into view. No-op for already-running/finished requests (they
+        /// hold a slot already) and for `group_id == 0`.
+        fn prioritize_media(self: &ClientFfi, group_id: u64, request_ids: &[u64]);
+
         /// Abort every still-running `fetch_media_async` download registered
         /// under `group_id`. Used on room switch to drop the previous room's
-        /// in-flight media so the new room's downloads get the semaphore slots.
+        /// in-flight media so the new room's downloads get the slots.
         /// No-op for `group_id == 0` or an unknown group.
         fn cancel_media_group(self: &ClientFfi, group_id: u64);
 

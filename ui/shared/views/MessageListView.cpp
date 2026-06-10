@@ -5765,6 +5765,60 @@ void MessageListView::maybe_notify_receipt_() const
     on_receipt_needed(eid);
 }
 
+std::vector<std::string> MessageListView::collect_visible_media_keys_() const
+{
+    std::vector<std::string> keys;
+    auto [first, last] = visible_range();
+    // visible_range() can return last == messages_.size() (the virtual typing
+    // row); clamp to the real rows.
+    int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
+    if (first < 0 || actual_last < first)
+    {
+        return keys;
+    }
+    using Kind = MessageRowData::Kind;
+    for (int i = first; i <= actual_last; ++i)
+    {
+        const auto& m = messages_[static_cast<std::size_t>(i)];
+        if (m.kind == Kind::DaySeparator || m.kind == Kind::ReadMarker ||
+            m.kind == Kind::TimelineStart)
+        {
+            continue;
+        }
+        // The image provider displays thumbnail-if-present, else the source;
+        // its fetch_token() is exactly the key the shell registered for the
+        // fetch, so this is the token to re-prioritize.
+        const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+        if (look)
+        {
+            std::string tok = look->fetch_token();
+            if (!tok.empty())
+            {
+                keys.push_back(std::move(tok));
+            }
+        }
+    }
+    return keys;
+}
+
+void MessageListView::maybe_notify_visible_range_() const
+{
+    if (!on_visible_range_changed)
+    {
+        return;
+    }
+    auto keys = collect_visible_media_keys_();
+    if (keys == last_visible_media_keys_)
+    {
+        return; // unchanged scroll position → nothing to re-prioritize
+    }
+    last_visible_media_keys_ = keys;
+    if (!keys.empty())
+    {
+        on_visible_range_changed(keys);
+    }
+}
+
 void MessageListView::paint(tk::PaintCtx& ctx)
 {
     // Sticker, voice, quote, and video rects are rebuilt per-paint by Adapter::paint_row.
@@ -5882,6 +5936,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     }
 
     maybe_notify_receipt_();
+    maybe_notify_visible_range_();
 
     // After paint_row() has repopulated hovered_row_geom_, re-evaluate the
     // hover target in case it became stale. This fixes the receipt-disc tooltip

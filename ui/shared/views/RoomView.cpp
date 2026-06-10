@@ -225,6 +225,11 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     {
         if (on_receipt_needed) on_receipt_needed(event_id);
     };
+    ml->on_visible_range_changed =
+        [this](const std::vector<std::string>& keys)
+    {
+        if (on_visible_range_changed) on_visible_range_changed(keys);
+    };
     ml->on_image_clicked = [this](const MessageListView::ImageHit& hit)
     {
         if (on_image_clicked) on_image_clicked(hit);

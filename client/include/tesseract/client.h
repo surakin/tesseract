@@ -779,16 +779,35 @@ public:
         SourceFull   = 3, ///< full source (plain/encrypted) → bulk lane
     };
 
+    /// Scheduling priority for `fetch_media_async`. Within a lane, a pending
+    /// fetch with higher priority is granted a free download slot first, so the
+    /// media for a row the user is looking at jumps ahead of the off-screen
+    /// backlog. Keep in sync with the Rust PRIO_* constants in media_queue.rs.
+    enum class MediaPriority : std::uint8_t
+    {
+        Normal  = 0, ///< eager whole-timeline prefetch
+        Visible = 1, ///< backs a currently-visible row
+    };
+
     /// Start an async media download. Returns immediately; the bytes arrive via
     /// `IEventHandler::on_media_ready(request_id, bytes)` (empty on failure /
     /// timeout / cancel). Unlike `fetch_*_bytes` this does NOT pin a worker
     /// thread for the network round-trip. `request_id` is a caller-owned
     /// correlation token; `group_id` groups downloads for `cancel_media_group`
-    /// (0 = ungrouped/never-cancelled). `w`/`h`/`animated` apply to the
-    /// thumbnail kinds.
+    /// and scopes `prioritize_media` (0 = ungrouped/never-cancelled).
+    /// `w`/`h`/`animated` apply to the thumbnail kinds. `priority` defaults to
+    /// Normal; pass Visible (or call `prioritize_media`) for on-screen rows.
     void fetch_media_async(std::uint64_t request_id, std::uint64_t group_id,
                            MediaReqKind kind, const std::string& source,
-                           std::uint32_t w, std::uint32_t h, bool animated);
+                           std::uint32_t w, std::uint32_t h, bool animated,
+                           MediaPriority priority = MediaPriority::Normal);
+
+    /// Raise the priority of still-pending `fetch_media_async` downloads in
+    /// `group_id` whose request id is in `request_ids` to Visible, so they are
+    /// fetched before the off-screen backlog. Called when rows scroll into view.
+    /// No-op for already-running/finished requests and for group 0.
+    void prioritize_media(std::uint64_t group_id,
+                          const std::vector<std::uint64_t>& request_ids);
 
     /// Abort every in-flight `fetch_media_async` / `get_url_preview_async`
     /// registered under `group_id` (e.g. on room switch). No-op for group 0.

@@ -37,3 +37,8 @@ rusqlite      = "0.37"
 # Syntax highlighting for chat-message code blocks. Pure-Rust regex engine
 # (fancy-regex) to avoid the oniguruma C dependency.
 syntect       = { version = "5", default-features = false, features = ["default-fancy"] }
+
+[dev-dependencies]
+# test-util enables the paused/auto-advancing clock (#[tokio::test(start_paused)]
+# + tokio::time::advance) used by the media-gate stall-reclamation tests.
+tokio = { version = "1", features = ["test-util"] }

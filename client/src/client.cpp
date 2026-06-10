@@ -941,12 +941,24 @@ std::vector<uint8_t> Client::fetch_gif_bytes(const std::string& url)
 
 void Client::fetch_media_async(std::uint64_t request_id, std::uint64_t group_id,
                                MediaReqKind kind, const std::string& source,
-                               std::uint32_t w, std::uint32_t h, bool animated)
+                               std::uint32_t w, std::uint32_t h, bool animated,
+                               MediaPriority priority)
 {
     SH_FFI;
     impl_->ffi->fetch_media_async(request_id, group_id,
+                                  static_cast<std::uint8_t>(priority),
                                   static_cast<std::uint8_t>(kind), source, w, h,
                                   animated);
+}
+
+void Client::prioritize_media(std::uint64_t group_id,
+                              const std::vector<std::uint64_t>& request_ids)
+{
+    if (request_ids.empty())
+        return;
+    SH_FFI;
+    rust::Slice<const std::uint64_t> ids{request_ids.data(), request_ids.size()};
+    impl_->ffi->prioritize_media(group_id, ids);
 }
 
 void Client::cancel_media_group(std::uint64_t group_id)

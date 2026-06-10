@@ -294,7 +294,8 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
                         },
                         // on_cancel (room switch): free the dedup key so a
                         // re-entry re-requests this media.
-                        [s] { s->erase_inflight_(); });
+                        [s] { s->erase_inflight_(); },
+                        s->priority_key);
                     s->start_fetch_(id);
                 });
         });
@@ -308,6 +309,12 @@ void ShellBase::fetch_media_pipeline_(
 {
     MediaFetchSpec spec;
     spec.group_id = group_id;
+    // cache_key is the row's media fetch_token (what the view's image_provider
+    // looks up), so registering the request under it lets a visible-row scroll
+    // re-prioritize this fetch. Room-scoped media only — group 0 (avatars,
+    // tiles) is never re-prioritized, so leave its key empty.
+    if (group_id != 0)
+        spec.priority_key = cache_key;
     spec.load_disk_ = [this, disk_key]
     { return account_manager_.media_disk_cache().load(disk_key); };
     spec.store_disk_ = [this, disk_key](const std::vector<std::uint8_t>& b)
@@ -796,6 +803,11 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->set_avatar_provider(avatar_lookup);
     app->room_view()->on_room_avatar_needed =
         [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+    // Visible-row media prioritization: when the timeline's visible rows change,
+    // move their still-pending downloads to the front of the queue.
+    app->room_view()->on_visible_range_changed =
+        [this](const std::vector<std::string>& keys)
+    { on_visible_rows_changed_(keys); };
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
@@ -1450,6 +1462,34 @@ void ShellBase::ensure_row_media_(const Event& ev)
             ensure_url_preview_(url);
         }
     }
+}
+
+std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
+    const std::vector<std::string>& keys) const
+{
+    std::vector<std::uint64_t> ids;
+    ids.reserve(keys.size());
+    for (const auto& k : keys)
+    {
+        // A key with no live request (cached, failed, or never requested) is
+        // simply absent from the reverse map and skipped.
+        auto it = media_key_to_req_.find(k);
+        if (it != media_key_to_req_.end())
+            ids.push_back(it->second);
+    }
+    return ids;
+}
+
+void ShellBase::on_visible_rows_changed_(const std::vector<std::string>& keys)
+{
+    if (!client_ || active_media_group_ == 0 || keys.empty() ||
+        media_key_to_req_.empty())
+    {
+        return;
+    }
+    auto ids = resolve_visible_request_ids_(keys);
+    if (!ids.empty())
+        client_->prioritize_media(active_media_group_, ids);
 }
 
 namespace
@@ -3971,6 +4011,14 @@ void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
         return; // Cancelled / superseded — drop the late callback.
     PendingMediaReq req = std::move(it->second);
     pending_media_.erase(it);
+    // Drop the reverse-map entry only if it still points at this request (a
+    // newer request for the same key must not have its mapping clobbered).
+    if (!req.priority_key.empty())
+    {
+        auto mit = media_key_to_req_.find(req.priority_key);
+        if (mit != media_key_to_req_.end() && mit->second == request_id)
+            media_key_to_req_.erase(mit);
+    }
     on_inflight_ui_();
     if (req.on_bytes)
         req.on_bytes(std::move(bytes));

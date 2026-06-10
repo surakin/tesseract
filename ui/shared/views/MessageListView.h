@@ -540,6 +540,12 @@ public:
     // Client::send_read_receipt for the active room.
     std::function<void(const std::string& event_id)> on_receipt_needed;
 
+    // Fired with the media fetch tokens of the currently-visible rows whenever
+    // that set changes (scroll, room enter, async data update). The host raises
+    // the download priority of the still-pending fetches for these tokens so the
+    // media the user is looking at downloads ahead of the off-screen backlog.
+    std::function<void(const std::vector<std::string>&)> on_visible_range_changed;
+
     // Clipboard write. Wire to Host::set_clipboard_text via RoomView.
     std::function<void(std::string_view)> on_set_clipboard;
 
@@ -939,6 +945,15 @@ private:
     mutable ReadReceiptTracker receipt_tracker_;
     std::string newest_visible_real_event_id() const;
     void maybe_notify_receipt_() const;
+
+    // Visible-media prioritization. Collects the media fetch tokens (the same
+    // key the image provider looks up) for the currently-visible rows and fires
+    // on_visible_range_changed when that set changes, so the host can move those
+    // rows' downloads to the front of the queue. De-duped against the last
+    // notified set so an unchanged scroll position does not re-fire each paint.
+    std::vector<std::string> collect_visible_media_keys_() const;
+    void maybe_notify_visible_range_() const;
+    mutable std::vector<std::string> last_visible_media_keys_;
 
     // Voice + audio message playback. The view owns a single AudioPlayer
     // (at most one clip plays at a time); ownership, the byte-cache provider,

@@ -555,14 +555,17 @@ impl ClientFfi {
         }
         let in_flight = Arc::clone(&self.in_flight);
         let stop_rx = self.stop_rx.clone();
-        let sem = Arc::clone(&self.media_sem_bulk);
+        let gate = Arc::clone(&self.media_gate_bulk);
         let client = self.http_client.clone();
         let url = url.to_owned();
 
         let handle = self.rt.spawn(async move {
-            let _permit = match sem.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
+            let _permit = match gate
+                .acquire(super::media_queue::PRIO_NORMAL, request_id, group_id)
+                .await
+            {
+                Some(p) => p,
+                None => {
                     deliver_media(&handler, request_id, &[]);
                     return;
                 }
@@ -592,6 +595,7 @@ impl ClientFfi {
         &self,
         request_id: u64,
         group_id: u64,
+        priority: u8,
         kind: u8,
         source: &str,
         w: u32,
@@ -608,10 +612,10 @@ impl ClientFfi {
         let stop_rx = self.stop_rx.clone();
         // Full-size downloads are slow and low-priority → the narrow bulk lane.
         // Avatars/thumbnails are small and interactive → the wide fg lane.
-        let sem = if kind == MEDIA_KIND_SOURCE_FULL {
-            Arc::clone(&self.media_sem_bulk)
+        let gate = if kind == MEDIA_KIND_SOURCE_FULL {
+            Arc::clone(&self.media_gate_bulk)
         } else {
-            Arc::clone(&self.media_sem_fg)
+            Arc::clone(&self.media_gate_fg)
         };
         let timeout = if kind == MEDIA_KIND_SOURCE_FULL {
             FULL_MEDIA_FETCH_TIMEOUT
@@ -621,11 +625,13 @@ impl ClientFfi {
         let source = source.to_owned();
 
         let handle = self.rt.spawn(async move {
-            // `acquire_owned` yields a 'static permit so it can be held across
-            // the await without borrowing the Arc. Closed semaphore = shutdown.
-            let _permit = match sem.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
+            // Park in the lane's priority queue until a slot frees. `None` means
+            // the wait was cancelled (room switch) — deliver empty so the C++
+            // pending entry resolves. `priority` lets a visible-row fetch jump
+            // the off-screen backlog; `prioritize_media` can raise it later.
+            let _permit = match gate.acquire(priority, request_id, group_id).await {
+                Some(p) => p,
+                None => {
                     deliver_media(&handler, request_id, &[]);
                     return;
                 }
@@ -643,6 +649,23 @@ impl ClientFfi {
         register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
     }
 
+    /// Raise the scheduling priority of still-pending `fetch_media_async` tasks
+    /// in `group_id` whose `request_id` is in `request_ids`, so they download
+    /// before lower-priority pending items. The C++ side calls this when a row
+    /// scrolls into view. A request lives in exactly one lane (thumbnail vs
+    /// full-size), unknown to the caller, so both gates are asked — each ignores
+    /// ids it does not hold. No-op for already-running/finished tasks (absent
+    /// from both queues) and for group 0.
+    pub fn prioritize_media(&self, group_id: u64, request_ids: &[u64]) {
+        if group_id == 0 || request_ids.is_empty() {
+            return;
+        }
+        self.media_gate_fg
+            .prioritize(group_id, request_ids, super::media_queue::PRIO_VISIBLE);
+        self.media_gate_bulk
+            .prioritize(group_id, request_ids, super::media_queue::PRIO_VISIBLE);
+    }
+
     /// Abort every in-flight `fetch_media_async` / `get_url_preview_async`
     /// download registered under `group_id`. Called on room switch to drop the
     /// previous room's pending media. No-op for group 0 or an unknown group.
@@ -650,6 +673,12 @@ impl ClientFfi {
         if group_id == 0 {
             return;
         }
+        // Drop parked (not-yet-started) waiters in both lanes so their queue
+        // entries clear at once; each parked `acquire` returns None and the task
+        // ends without delivering. Tasks already past the gate (downloading) are
+        // aborted below via their handles, which on drop release their slot.
+        self.media_gate_fg.cancel_group(group_id);
+        self.media_gate_bulk.cancel_group(group_id);
         {
             let mut m = self.media_tasks.lock();
             if let Some(v) = m.remove(&group_id) {
@@ -686,7 +715,7 @@ impl ClientFfi {
         }
         let in_flight = Arc::clone(&self.in_flight);
         let stop_rx = self.stop_rx.clone();
-        let sem = Arc::clone(&self.media_sem_bulk);
+        let gate = Arc::clone(&self.media_gate_bulk);
         let url_str = url.to_owned();
         let handler_task = self.handler.clone();
 
@@ -699,9 +728,12 @@ impl ClientFfi {
                     }
                 }
             };
-            let _permit = match sem.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
+            let _permit = match gate
+                .acquire(super::media_queue::PRIO_NORMAL, request_id, group_id)
+                .await
+            {
+                Some(p) => p,
+                None => {
                     deliver("");
                     return;
                 }
