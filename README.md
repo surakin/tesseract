@@ -99,6 +99,13 @@ A full featured desktop multiplatform (Linux, Windows, Mac) Matrix client built 
 - In-flight request indicator in the status bar
 - Light / dark / system themes
 
+## Quick usage reference 
+#### All this is probably going to change, but it wasn't written anywhere.
+- Ctrl+click on room = open room in a tab
+- Ctrl+click on a room tab = open room in a separate window
+- Right click on the user info (bottom left) to add an account or open settings
+- Left click on the user info to open account picker (only if there is more than one account)
+- Ctrl+click on an account in the account picker to open said account in a separate window.
 ## Minimum OS requirements
 
 | Platform | Minimum OS | Architecture |
