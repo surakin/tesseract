@@ -89,6 +89,11 @@ public:
     void retry_pending_voice_play();
     // Clears any armed pending play (room switch / timeline reset).
     void reset_pending_play();
+    // True while a pending play is armed (used by the view to abandon it if the
+    // armed clip scrolls off-screen before its bytes warm).
+    bool has_pending_play() const { return !pending_play_event_id_.empty(); }
+    // The event id of the armed pending play (empty when none).
+    const std::string& pending_play_event_id() const { return pending_play_event_id_; }
 
     // --- geometry: written by paint, read by the pointer hit-test ---
     void clear_geometry()

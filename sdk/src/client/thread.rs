@@ -108,7 +108,10 @@ impl ClientFfi {
             let _ = tl_for_paginate.paginate_backwards(50).await;
         }).abort_handle();
 
-        self.thread_timelines.write().insert(
+        // Install atomically: if a concurrent subscribe for the same key raced
+        // in after our early remove, insert returns its handle — cancel + abort
+        // it so its streaming tasks don't outlive this subscription.
+        if let Some(prev) = self.thread_timelines.write().insert(
             key,
             TimelineHandle {
                 timeline,
@@ -116,7 +119,12 @@ impl ClientFfi {
                 is_focused: true,
                 cancelled,
             },
-        );
+        ) {
+            prev.cancelled.store(true, Ordering::Release);
+            for h in prev.abort_tasks {
+                h.abort();
+            }
+        }
         self.sync_room_subscriptions();
         ok("")
     }
@@ -255,11 +263,10 @@ impl ClientFfi {
         let Some(room) = client.get_room(&rid) else {
             return err("room not found");
         };
-        // Abort any previous subscription for this room (brief write guard).
-        let prev = self.thread_lists.write().remove(&rid);
-        if let Some(prev) = prev {
-            prev.abort.abort();
-        }
+        // The previous subscription for this room is aborted via the atomic
+        // insert at the end (insert returns the replaced handle), not removed up
+        // front — so two concurrent subscribes for the same room can't both
+        // insert and orphan a live watcher task.
         // ThreadListService::new spawns a background task via tokio::task::spawn,
         // which requires a runtime context on the calling thread.
         let _rt_guard = self.rt.enter();
@@ -348,9 +355,15 @@ impl ClientFfi {
                 }
             })
             .abort_handle();
-        self.thread_lists
-            .write()
-            .insert(rid, ThreadListHandle { service, abort });
+        // Atomic swap: install the new handle and abort whatever it replaced.
+        // A single guarded insert (vs. a separate remove up front) means a
+        // concurrent subscribe for the same room aborts the loser instead of
+        // leaking its watcher task.
+        if let Some(prev) =
+            self.thread_lists.write().insert(rid, ThreadListHandle { service, abort })
+        {
+            prev.abort.abort();
+        }
         ok("")
     }
 

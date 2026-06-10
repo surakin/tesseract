@@ -62,6 +62,12 @@ struct GateInner {
     active: HashMap<u64, Instant>,
     /// Parked waiters; payload is the one-shot that delivers the granted id.
     queue: MediaQueue<oneshot::Sender<u64>>,
+    /// True while a single gate-owned recheck task is running. A held slot
+    /// crossing `STALL_DEADLINE` fires no event, so reclamation needs a timer —
+    /// but one per gate (driving `dispatch` for all parked waiters), not one per
+    /// waiter. The task is spawned when the first waiter parks and exits once the
+    /// queue drains.
+    recheck_running: bool,
 }
 
 impl GateInner {
@@ -128,6 +134,7 @@ impl PriorityGate {
                 next_permit_id: 0,
                 active: HashMap::new(),
                 queue: MediaQueue::new(),
+                recheck_running: false,
             }),
         })
     }
@@ -141,7 +148,7 @@ impl PriorityGate {
         request_id: u64,
         group_id: u64,
     ) -> Option<GatePermit> {
-        let mut rx = {
+        let rx = {
             let mut inner = self.inner.lock();
             let now = Instant::now();
             // Fast path: capacity is available and no one is ahead of us in line.
@@ -153,21 +160,40 @@ impl PriorityGate {
             inner.seq = inner.seq.wrapping_add(1);
             let (tx, rx) = oneshot::channel();
             inner.queue.push(priority, seq, request_id, group_id, tx);
+            // A held slot can cross STALL_DEADLINE with no release to wake us, so
+            // a timer must re-run dispatch. One gate-owned task drives that for
+            // all waiters (not one timer per waiter); spawned now if not already.
+            if !inner.recheck_running {
+                inner.recheck_running = true;
+                self.spawn_recheck_task();
+            }
             rx
         };
         // Park until granted (rx delivers our slot id) or cancelled (rx errors).
-        // A held slot can cross STALL_DEADLINE with no release to wake us, so
-        // re-evaluate capacity on a tick as well.
-        loop {
-            tokio::select! {
-                res = &mut rx => {
-                    return res.ok().map(|id| GatePermit { gate: self.clone(), id });
-                }
-                _ = tokio::time::sleep(RECHECK_INTERVAL) => {
-                    self.inner.lock().dispatch(Instant::now());
+        match rx.await {
+            Ok(id) => Some(GatePermit { gate: self.clone(), id }),
+            Err(_) => None,
+        }
+    }
+
+    /// Spawn the single recheck task that periodically re-runs `dispatch` so a
+    /// slot that silently goes stale is reclaimed for a parked waiter. It exits
+    /// once no waiters remain (clearing `recheck_running` so the next parking
+    /// waiter re-spawns it). Must be called from within the tokio runtime — the
+    /// only caller, `acquire`, always runs inside a spawned fetch task.
+    fn spawn_recheck_task(self: &Arc<Self>) {
+        let gate = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(RECHECK_INTERVAL).await;
+                let mut inner = gate.inner.lock();
+                inner.dispatch(Instant::now());
+                if inner.queue.is_empty() {
+                    inner.recheck_running = false;
+                    return;
                 }
             }
-        }
+        });
     }
 
     /// Raise the priority of still-parked waiters in `group_id` whose

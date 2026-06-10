@@ -583,6 +583,10 @@ protected:
     std::unordered_map<std::string, tesseract::RoomMember> known_users_;
     bool known_users_built_    = false;
     bool known_users_building_ = false;
+    // Order-independent fingerprint (XOR of per-id hashes) of the active
+    // account's joined-room-id set, so the roster is invalidated when the set
+    // *changes* — including a same-cycle join+leave that leaves the count equal.
+    std::size_t known_users_room_set_hash_ = 0;
     // The current user-mode needle (query with the leading '@' stripped), so an
     // async profile-resolve can re-emit results against the latest query.
     std::string last_user_query_;

@@ -4,6 +4,7 @@
 #include "app/media_preview_policy.h"
 #include "tk/blurhash.h"
 #include "tk/host.h"
+#include "tk/text_util.h"
 #include "tk/theme.h"
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MainAppWidget.h"
@@ -1873,14 +1874,21 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     {
         return;
     }
-    const std::size_t prev_room_count = rooms_.size();
     rooms_ = std::move(rooms);
     // A change in the active account's room set may add/remove people; drop the
     // cached roster so the next user-mode query rebuilds it. Member-only changes
     // within existing rooms aren't tracked here — live-resolve covers anyone the
     // roster misses. Lazy rebuild means this is just a flag flip while idle.
-    if (rooms_.size() != prev_room_count)
+    // Keyed on the room-id *set*, not the count: a sync that joins one room and
+    // leaves another (count unchanged) still invalidates.
+    std::size_t room_set_hash = 0;
+    for (const auto& r : rooms_)
     {
+        room_set_hash ^= std::hash<std::string>{}(r.id);
+    }
+    if (room_set_hash != known_users_room_set_hash_)
+    {
+        known_users_room_set_hash_ = room_set_hash;
         invalidate_known_users_();
     }
     update_space_children_cache_();
@@ -2284,32 +2292,6 @@ bool is_complete_mxid(const std::string& s)
     return colon != std::string::npos && colon > 1 && colon + 1 < s.size();
 }
 
-// Case-insensitive ASCII substring test (mirrors QuickSwitcher::name_matches).
-bool contains_ci(const std::string& haystack, const std::string& needle)
-{
-    if (needle.empty())
-        return true;
-    if (haystack.size() < needle.size())
-        return false;
-    auto lower = [](char c)
-    { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); };
-    for (std::size_t i = 0; i + needle.size() <= haystack.size(); ++i)
-    {
-        bool match = true;
-        for (std::size_t j = 0; j < needle.size(); ++j)
-        {
-            if (lower(haystack[i + j]) != lower(needle[j]))
-            {
-                match = false;
-                break;
-            }
-        }
-        if (match)
-            return true;
-    }
-    return false;
-}
-
 } // namespace
 
 void ShellBase::handle_user_query_(const std::string& query)
@@ -2470,7 +2452,8 @@ ShellBase::filter_known_users_(const std::string& needle) const
     out.reserve(known_users_.size());
     for (const auto& [id, m] : known_users_)
     {
-        if (contains_ci(m.display_name, needle) || contains_ci(m.user_id, needle))
+        if (tk::ci_contains(m.display_name, needle) ||
+            tk::ci_contains(m.user_id, needle))
         {
             out.push_back({m.user_id, m.display_name, m.avatar_url});
         }
@@ -2726,6 +2709,11 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
     {
         std::fprintf(stderr, "[room-action] failed for %s: %s\n",
                      room_id.c_str(), message.c_str());
+        // A failed join must not leave a permalink's pending event-scroll
+        // resident — otherwise it would fire on some later, unrelated join of
+        // the same room and yank the timeline to a stale event.
+        if (kind == RoomActionKind::Join)
+            pending_event_scroll_after_join_.erase(room_id);
         const char* verb = "complete room action";
         switch (kind)
         {
@@ -4032,6 +4020,15 @@ void ShellBase::handle_url_preview_ready_ui_(std::uint64_t request_id,
         return;
     PendingMediaReq req = std::move(it->second);
     pending_media_.erase(it);
+    // Keep the reverse map in lockstep with pending_media_ at every removal
+    // site (URL previews carry no priority_key today, but this guards against a
+    // future preview that does, leaving a dangling key→dead-request entry).
+    if (!req.priority_key.empty())
+    {
+        auto mit = media_key_to_req_.find(req.priority_key);
+        if (mit != media_key_to_req_.end() && mit->second == request_id)
+            media_key_to_req_.erase(mit);
+    }
     on_inflight_ui_();
     if (req.on_preview)
         req.on_preview(std::move(preview_json));

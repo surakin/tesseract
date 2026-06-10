@@ -953,6 +953,8 @@ private:
     // notified set so an unchanged scroll position does not re-fire each paint.
     std::vector<std::string> collect_visible_media_keys_() const;
     void maybe_notify_visible_range_() const;
+    // True when `event_id` maps to a row currently within the visible range.
+    bool is_event_visible_(const std::string& event_id) const;
     mutable std::vector<std::string> last_visible_media_keys_;
 
     // Voice + audio message playback. The view owns a single AudioPlayer

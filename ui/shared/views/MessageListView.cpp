@@ -4174,7 +4174,39 @@ void MessageListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // A voice/audio play click on a not-yet-cached clip arms a pending play.
     // The fetch's on_ready re-runs measure + arrange (this pass), by which
     // point the bytes are warm — start playback so a single click suffices.
-    media_.retry_pending_voice_play();
+    // But arrange() also runs on scroll / new messages, so only retry while the
+    // armed clip is still on screen: if the user scrolled away before the bytes
+    // warmed, abandon the pending play rather than auto-starting audio for a
+    // clip they are no longer looking at.
+    if (media_.has_pending_play())
+    {
+        if (is_event_visible_(media_.pending_play_event_id()))
+        {
+            media_.retry_pending_voice_play();
+        }
+        else
+        {
+            media_.reset_pending_play();
+        }
+    }
+}
+
+bool MessageListView::is_event_visible_(const std::string& event_id) const
+{
+    if (event_id.empty())
+    {
+        return false;
+    }
+    auto [first, last] = visible_range();
+    int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
+    for (int i = std::max(first, 0); i <= actual_last; ++i)
+    {
+        if (messages_[static_cast<std::size_t>(i)].event_id == event_id)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
