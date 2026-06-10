@@ -67,7 +67,7 @@ public:
 
     std::size_t count() const override
     {
-        return owner_.filtered_.size();
+        return owner_.active_count_();
     }
 
     float measure_row_height(std::size_t, tk::LayoutCtx&, float) override
@@ -78,6 +78,11 @@ public:
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
                    bool selected, bool hovered) override
     {
+        if (owner_.mode_ == Mode::User)
+        {
+            paint_user_row(index, ctx, bounds, selected, hovered);
+            return;
+        }
         if (index >= owner_.filtered_.size())
         {
             return;
@@ -135,6 +140,79 @@ public:
         }
     }
 
+    // User-mode row: avatar + display name (top) + mxid (muted, below).
+    void paint_user_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
+                        bool selected, bool hovered)
+    {
+        if (index >= owner_.user_results_.size())
+        {
+            return;
+        }
+        const auto& user = owner_.user_results_[index];
+
+        if (selected)
+        {
+            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
+        }
+        else if (hovered)
+        {
+            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+        }
+
+        const float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        const float avatar_cy = bounds.y + bounds.h * 0.5f;
+
+        const tk::Image* avatar = nullptr;
+        if (owner_.avatar_provider_ && !user.avatar_url.empty())
+        {
+            avatar = owner_.avatar_provider_(user.avatar_url);
+            if (!avatar && owner_.on_user_avatar_needed)
+            {
+                owner_.on_user_avatar_needed(user.avatar_url);
+            }
+        }
+
+        const std::string& disc_name =
+            user.display_name.empty() ? user.user_id : user.display_name;
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+                    disc_name, ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
+
+        const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
+        const float text_w = std::max(0.0f, bounds.x + bounds.w - kPadX - text_x);
+
+        // Display name (primary, upper line).
+        tk::TextStyle ns{};
+        ns.role = tk::FontRole::SidebarName;
+        ns.trim = tk::TextTrim::Ellipsis;
+        ns.max_width = text_w;
+        auto name_lo = ctx.factory.build_text(disc_name, ns);
+
+        // mxid (muted, lower line).
+        tk::TextStyle ms{};
+        ms.role = tk::FontRole::Small;
+        ms.trim = tk::TextTrim::Ellipsis;
+        ms.max_width = text_w;
+        auto id_lo = ctx.factory.build_text(user.user_id, ms);
+
+        const float name_h = name_lo ? name_lo->measure().h : 0.0f;
+        const float id_h = id_lo ? id_lo->measure().h : 0.0f;
+        const float gap = 1.0f;
+        const float block_h = name_h + gap + id_h;
+        float y = bounds.y + (bounds.h - block_h) * 0.5f;
+        if (name_lo)
+        {
+            ctx.canvas.draw_text(*name_lo, {text_x, y},
+                                 ctx.theme.palette.text_primary);
+        }
+        y += name_h + gap;
+        if (id_lo)
+        {
+            ctx.canvas.draw_text(*id_lo, {text_x, y},
+                                 ctx.theme.palette.text_muted);
+        }
+    }
+
 private:
     QuickSwitcher& owner_;
 };
@@ -149,7 +227,7 @@ QuickSwitcher::QuickSwitcher() : adapter_(std::make_unique<Adapter>(*this))
     list->set_adapter(adapter_.get());
     list->on_row_clicked = [this](int idx)
     {
-        if (idx < 0 || static_cast<std::size_t>(idx) >= filtered_.size())
+        if (idx < 0 || static_cast<std::size_t>(idx) >= active_count_())
         {
             return;
         }
@@ -173,7 +251,12 @@ void QuickSwitcher::set_recent_provider(RoomsProvider p)
 
 bool QuickSwitcher::show_recent_() const
 {
-    return query_.empty() && !recent_.empty();
+    return mode_ == Mode::Room && query_.empty() && !recent_.empty();
+}
+
+std::size_t QuickSwitcher::active_count_() const
+{
+    return mode_ == Mode::User ? user_results_.size() : filtered_.size();
 }
 
 void QuickSwitcher::set_avatar_provider(AvatarProvider p)
@@ -188,6 +271,8 @@ void QuickSwitcher::open()
     recent_ = recent_provider_ ? recent_provider_()
                                : std::vector<tesseract::RoomInfo>{};
     query_.clear();
+    mode_ = Mode::Room;
+    user_results_.clear();
     pressed_chip_ = -1;
     is_open_ = true;
     set_visible(true);
@@ -203,6 +288,8 @@ void QuickSwitcher::close()
     is_open_ = false;
     set_visible(false);
     query_.clear();
+    mode_ = Mode::Room;
+    user_results_.clear();
     press_outside_ = false;
     if (on_close)
     {
@@ -213,7 +300,42 @@ void QuickSwitcher::close()
 void QuickSwitcher::set_query(const std::string& q)
 {
     query_ = q;
+
+    // A leading '@' switches to user mode: the shell sources/filters the user
+    // roster and live-resolves a typed mxid, then pushes rows via
+    // set_user_results(). The switcher itself does no user filtering.
+    if (!q.empty() && q.front() == '@')
+    {
+        mode_ = Mode::User;
+        if (on_user_query_changed)
+        {
+            on_user_query_changed(q);
+        }
+        return;
+    }
+
+    if (mode_ == Mode::User)
+    {
+        mode_ = Mode::Room;
+        user_results_.clear();
+    }
     refilter_();
+}
+
+void QuickSwitcher::set_user_results(std::vector<UserEntry> users)
+{
+    // Ignore late/async results that arrive after the query left user mode.
+    if (mode_ != Mode::User)
+    {
+        return;
+    }
+    user_results_ = std::move(users);
+    if (list_)
+    {
+        list_->invalidate_data();
+        list_->set_selected_index(user_results_.empty() ? -1 : 0);
+        list_->scroll_to_top();
+    }
 }
 
 void QuickSwitcher::refilter_()
@@ -236,11 +358,11 @@ void QuickSwitcher::refilter_()
 
 void QuickSwitcher::move_selection(int delta)
 {
-    if (!list_ || filtered_.empty())
+    if (!list_ || active_count_() == 0)
     {
         return;
     }
-    const int n = static_cast<int>(filtered_.size());
+    const int n = static_cast<int>(active_count_());
     int cur = list_->selected_index();
     if (cur < 0)
     {
@@ -255,10 +377,23 @@ void QuickSwitcher::move_selection(int delta)
 void QuickSwitcher::activate_selected()
 {
     const int sel = list_ ? list_->selected_index() : -1;
-    if (sel < 0 || static_cast<std::size_t>(sel) >= filtered_.size())
+    if (sel < 0 || static_cast<std::size_t>(sel) >= active_count_())
     {
         return;
     }
+
+    if (mode_ == Mode::User)
+    {
+        const std::string mxid =
+            user_results_[static_cast<std::size_t>(sel)].user_id;
+        if (on_user_selected)
+        {
+            on_user_selected(mxid);
+        }
+        close();
+        return;
+    }
+
     const std::string room_id = filtered_[static_cast<std::size_t>(sel)].id;
     if (on_room_selected)
     {
@@ -289,7 +424,8 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float chrome_h = kHeaderH + strip_h;
 
     const float list_content =
-        filtered_.empty() ? kRowH : static_cast<float>(filtered_.size()) * kRowH;
+        active_count_() == 0 ? kRowH
+                             : static_cast<float>(active_count_()) * kRowH;
     const float max_h = std::min(kCardMaxH, std::max(0.0f, bounds.h - 2 * margin));
     float ch =
         chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
@@ -348,12 +484,17 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
         paint_recent_strip_(ctx);
     }
 
-    if (filtered_.empty())
+    if (active_count_() == 0)
     {
         tk::TextStyle es{};
         es.role = tk::FontRole::Body;
         es.halign = tk::TextHAlign::Center;
-        auto empty_lo = ctx.factory.build_text(std::string("No rooms"), es);
+        const std::string empty_msg =
+            mode_ == Mode::User
+                ? std::string(
+                      "No matching users — type a full @user:server to chat")
+                : std::string("No rooms");
+        auto empty_lo = ctx.factory.build_text(empty_msg, es);
         if (empty_lo)
         {
             const tk::Size sz = empty_lo->measure();

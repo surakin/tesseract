@@ -2266,7 +2266,8 @@ void MainWindow::on_create(HWND hwnd)
 
         // Quick switcher (Ctrl+K) search field.
         quick_switch_field_ = main_app_surface_->host().make_text_field();
-        quick_switch_field_->set_placeholder("Jump to a room…");
+        quick_switch_field_->set_placeholder(
+            "Jump to a room, or @user to start a chat…");
         quick_switch_field_->set_visible(false);
         quick_switch_field_->set_on_changed(
             [this](const std::string& q)

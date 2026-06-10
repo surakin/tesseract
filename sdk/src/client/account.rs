@@ -797,6 +797,63 @@ impl ClientFfi {
         String::new()
     }
 
+    /// Resolve a user's profile by mxid to confirm existence and fetch the
+    /// display name / avatar. Returns `exists: false` (with empty fields) on a
+    /// parse error, when not logged in, or when the homeserver reports no such
+    /// user (e.g. M_NOT_FOUND). Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn resolve_user_profile(&self, user_id: &str) -> crate::ffi::UserProfile {
+        use matrix_sdk::ruma::api::client::profile::{AvatarUrl, DisplayName};
+
+        let none = || crate::ffi::UserProfile {
+            exists: false,
+            user_id: String::new(),
+            display_name: String::new(),
+            avatar_url: String::new(),
+        };
+        let Some(client) = self.client.as_ref() else {
+            return none();
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            return none();
+        };
+        self.rt.block_on(async {
+            match client.account().fetch_user_profile_of(&uid).await {
+                Ok(profile) => {
+                    let display_name = profile
+                        .get_static::<DisplayName>()
+                        .ok()
+                        .flatten()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| uid.localpart().to_string());
+                    let avatar_url = profile
+                        .get_static::<AvatarUrl>()
+                        .ok()
+                        .flatten()
+                        .map(|u| u.to_string())
+                        .unwrap_or_default();
+                    crate::ffi::UserProfile {
+                        exists: true,
+                        user_id: uid.to_string(),
+                        display_name,
+                        avatar_url,
+                    }
+                }
+                Err(_) => none(),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn resolve_user_profile(&self, _user_id: &str) -> crate::ffi::UserProfile {
+        crate::ffi::UserProfile {
+            exists: false,
+            user_id: String::new(),
+            display_name: String::new(),
+            avatar_url: String::new(),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Homeserver discovery
     // -----------------------------------------------------------------------

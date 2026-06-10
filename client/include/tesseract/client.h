@@ -955,6 +955,13 @@ public:
     /// Blocks the calling thread — call from a worker thread.
     std::string get_or_create_dm(const std::string& user_id);
 
+    /// Resolve a user's profile by mxid to confirm the user exists and fetch
+    /// their display name / avatar. The returned UserProfile has `exists ==
+    /// false` (with empty fields) on a parse error or when the homeserver has
+    /// no profile for the mxid.
+    /// Blocks the calling thread — call from a worker thread.
+    UserProfile resolve_user_profile(const std::string& user_id);
+
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // ------------------------------------------------------------------

@@ -5,6 +5,19 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-06-10
+
+- feat(switcher): start a DM by mxid from the quick switcher. Typing a leading
+  `@` flips the Ctrl/⌘+K switcher into a user-search mode that live-filters a
+  roster of known users (DM partners + members of joined rooms, built lazily on
+  a worker thread and cached per account in `ShellBase`). Typing a full
+  `@user:server` debounce-resolves the profile via a new
+  `Client::resolve_user_profile` FFI (matrix-sdk `fetch_user_profile_of`) to
+  confirm the user exists before offering the row; activating it opens/creates
+  the DM through the existing `handle_open_dm_` path. `@`-detection and
+  rendering live entirely in `views/QuickSwitcher` + `ShellBase`, so no platform
+  shell changed. Adds 8 C++ tests (734 → 742).
+
 ### 2026-06-09
 
 Pre-launch hardening, cross-platform deduplication, and the start of a

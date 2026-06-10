@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-09** (v0.8.0).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-10** (v0.8.0).
 
 > **Pre-launch hardening + decomposition (2026-06-09, unreleased).** A full-tree
 > code review (`docs/CODE_REVIEW_2026-06-09.md`) drove a large correctness /
@@ -161,6 +161,17 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-09
 > wires the accelerator so it fires even over a focused native edit control
 > (Win32 accelerator table, Qt `QShortcut`, GTK `GtkShortcutController`, macOS
 > `NSEvent` monitor).
+>
+> Typing a leading `@` flips the switcher into **user mode** to start a DM with
+> anyone — including a previously-unseen mxid. It shows a live-filtered roster of
+> known users (DM partners + members of joined rooms, built lazily on a worker
+> thread in `ShellBase::build_known_users_roster_` and cached per account), and
+> as a full `@user:server` is typed it debounce-resolves the profile
+> (`Client::resolve_user_profile` → matrix-sdk `fetch_user_profile_of`) to
+> confirm the user exists before offering the row. Activating a user row routes
+> through the existing `ShellBase::handle_open_dm_` (`get_or_create_dm`) and
+> navigates to the DM. The `@`-detection and rendering live entirely in the
+> shared layer, so no platform shell changed.
 
 <!-- -->
 
@@ -446,8 +457,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 200 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 692 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 208 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 742 |
 
 ## Platforms
 

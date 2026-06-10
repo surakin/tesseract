@@ -738,6 +738,16 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
         qs->on_room_selected =
             [this](const std::string& room_id) { tab_select_room(room_id); };
+
+        // User mode ('@'): filter the known-user roster + live-resolve a typed
+        // mxid (on_user_query_changed), open/create the DM (on_user_selected),
+        // and lazily fetch user-row avatars.
+        qs->on_user_query_changed =
+            [this](const std::string& q) { handle_user_query_(q); };
+        qs->on_user_selected =
+            [this](const std::string& mxid) { handle_open_dm_(mxid); };
+        qs->on_user_avatar_needed =
+            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
     }
 
     app->room_list_view()->set_sticker_provider(
@@ -1823,7 +1833,16 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     {
         return;
     }
+    const std::size_t prev_room_count = rooms_.size();
     rooms_ = std::move(rooms);
+    // A change in the active account's room set may add/remove people; drop the
+    // cached roster so the next user-mode query rebuilds it. Member-only changes
+    // within existing rooms aren't tracked here — live-resolve covers anyone the
+    // roster misses. Lazy rebuild means this is just a flag flip while idle.
+    if (rooms_.size() != prev_room_count)
+    {
+        invalidate_known_users_();
+    }
     update_space_children_cache_();
     on_rooms_updated_();
     // Refresh the pinned-events banner from the now-updated cache. Picks up
@@ -2211,6 +2230,281 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
             }
         });
     });
+}
+
+namespace
+{
+
+// A complete, openable mxid: "@localpart:server" with both parts non-empty.
+bool is_complete_mxid(const std::string& s)
+{
+    if (s.size() < 4 || s.front() != '@')
+        return false;
+    const auto colon = s.find(':');
+    return colon != std::string::npos && colon > 1 && colon + 1 < s.size();
+}
+
+// Case-insensitive ASCII substring test (mirrors QuickSwitcher::name_matches).
+bool contains_ci(const std::string& haystack, const std::string& needle)
+{
+    if (needle.empty())
+        return true;
+    if (haystack.size() < needle.size())
+        return false;
+    auto lower = [](char c)
+    { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); };
+    for (std::size_t i = 0; i + needle.size() <= haystack.size(); ++i)
+    {
+        bool match = true;
+        for (std::size_t j = 0; j < needle.size(); ++j)
+        {
+            if (lower(haystack[i + j]) != lower(needle[j]))
+            {
+                match = false;
+                break;
+            }
+        }
+        if (match)
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+
+void ShellBase::handle_user_query_(const std::string& query)
+{
+    // Strip the leading '@' for substring matching; keep `query` for the
+    // complete-mxid test below (the mxid includes its '@').
+    last_user_query_ = query.size() > 1 ? query.substr(1) : std::string{};
+
+    // Every query change invalidates any in-flight profile-resolve.
+    const std::uint64_t gen = user_resolve_gen_.fetch_add(1) + 1;
+
+    if (!known_users_built_ && !known_users_building_)
+    {
+        build_known_users_roster_();
+    }
+
+    // Local matches now (may be empty until the roster build lands).
+    emit_user_results_();
+
+    // Live-resolve a fully-typed mxid we don't already know, debounced so fast
+    // typing coalesces into a single lookup.
+    if (is_complete_mxid(query) &&
+        known_users_.find(query) == known_users_.end())
+    {
+        auto sess = active_account_;
+        run_async_(
+            [this, sess, mxid = query, gen]()
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                if (user_resolve_gen_.load() != gen)
+                    return; // superseded during the debounce window
+                tesseract::UserProfile prof;
+                if (sess && sess->client)
+                    prof = sess->client->resolve_user_profile(mxid);
+                post_to_ui_alive_(
+                    [this, gen, prof = std::move(prof)]() mutable
+                    {
+                        if (user_resolve_gen_.load() != gen || !prof.exists)
+                            return;
+                        merge_resolved_user_(prof);
+                    });
+            });
+    }
+}
+
+void ShellBase::build_known_users_roster_()
+{
+    if (known_users_building_ || !client_)
+        return;
+    known_users_building_ = true;
+
+    // Fresh cancellation token; supersede any prior in-flight build.
+    if (roster_build_cancel_)
+        roster_build_cancel_->store(true);
+    auto cancel = std::make_shared<std::atomic<bool>>(false);
+    roster_build_cancel_ = cancel;
+
+    auto sess = active_account_;
+    const std::string me = my_user_id_;
+    const std::size_t cap = kRosterMaxRoomMembers;
+
+    // Seed DM partners now (instant, from rooms_) and snapshot room ids; member
+    // enumeration happens on the worker. Emitting the seed immediately gives the
+    // user feedback before any network/SDK work runs. Scan rooms most-recent-
+    // first so the people the user talks to surface in the earliest batches.
+    std::vector<const tesseract::RoomInfo*> ordered;
+    ordered.reserve(rooms_.size());
+    for (const auto& r : rooms_)
+        ordered.push_back(&r);
+    std::sort(ordered.begin(), ordered.end(),
+              [](const tesseract::RoomInfo* a, const tesseract::RoomInfo* b)
+              { return a->last_activity_ts > b->last_activity_ts; });
+
+    std::vector<std::string> room_ids;
+    room_ids.reserve(ordered.size());
+    for (const auto* r : ordered)
+    {
+        room_ids.push_back(r->id);
+        if (r->is_direct && !r->dm_counterpart_user_id.empty() &&
+            r->dm_counterpart_user_id != me)
+        {
+            merge_roster_entry_(r->dm_counterpart_user_id, std::string{},
+                                r->dm_avatar_url);
+        }
+    }
+    emit_user_results_();
+
+    run_async_(
+        [this, sess, me, cap, cancel, room_ids = std::move(room_ids)]() mutable
+        {
+            // Per-batch accumulator handed to the UI thread; merged into
+            // known_users_ there so partial results appear as the sweep runs.
+            std::unordered_map<std::string, tesseract::RoomMember> batch;
+
+            auto flush = [&](bool final)
+            {
+                if (batch.empty() && !final)
+                    return;
+                post_to_ui_alive_(
+                    [this, sess, cancel, final,
+                     batch = std::move(batch)]() mutable
+                    {
+                        // Drop if superseded (new build / invalidate / teardown)
+                        // or the account switched mid-build.
+                        if (cancel->load() || active_account_ != sess)
+                        {
+                            if (final && roster_build_cancel_ == cancel)
+                                known_users_building_ = false;
+                            return;
+                        }
+                        for (auto& [id, m] : batch)
+                            merge_roster_entry_(id, std::move(m.display_name),
+                                                m.avatar_url);
+                        if (final)
+                        {
+                            known_users_built_    = true;
+                            known_users_building_ = false;
+                        }
+                        emit_user_results_();
+                    });
+                batch.clear();
+            };
+
+            std::size_t scanned = 0;
+            if (sess && sess->client)
+            {
+                for (const auto& rid : room_ids)
+                {
+                    if (cancel->load())
+                        return; // bail early — keeps shutdown/switch responsive
+                    auto members = sess->client->get_room_members(rid);
+                    if (members.size() > cap)
+                        continue; // skip very large rooms to keep this cheap
+                    for (auto& m : members)
+                    {
+                        if (m.user_id.empty() || m.user_id == me)
+                            continue;
+                        auto& slot = batch[m.user_id];
+                        if (slot.user_id.empty())
+                            slot.user_id = m.user_id;
+                        if (slot.display_name.empty() && !m.display_name.empty())
+                            slot.display_name = std::move(m.display_name);
+                        if (slot.avatar_url.empty() && !m.avatar_url.empty())
+                            slot.avatar_url = std::move(m.avatar_url);
+                    }
+                    if (++scanned % kRosterEmitBatchRooms == 0)
+                        flush(false);
+                }
+            }
+            flush(true);
+        });
+}
+
+std::vector<views::QuickSwitcher::UserEntry>
+ShellBase::filter_known_users_(const std::string& needle) const
+{
+    std::vector<views::QuickSwitcher::UserEntry> out;
+    out.reserve(known_users_.size());
+    for (const auto& [id, m] : known_users_)
+    {
+        if (contains_ci(m.display_name, needle) || contains_ci(m.user_id, needle))
+        {
+            out.push_back({m.user_id, m.display_name, m.avatar_url});
+        }
+    }
+    std::sort(out.begin(), out.end(),
+              [](const views::QuickSwitcher::UserEntry& a,
+                 const views::QuickSwitcher::UserEntry& b)
+              {
+                  const std::string& an =
+                      a.display_name.empty() ? a.user_id : a.display_name;
+                  const std::string& bn =
+                      b.display_name.empty() ? b.user_id : b.display_name;
+                  return std::lexicographical_compare(
+                      an.begin(), an.end(), bn.begin(), bn.end(),
+                      [](char x, char y)
+                      {
+                          return std::tolower(static_cast<unsigned char>(x)) <
+                                 std::tolower(static_cast<unsigned char>(y));
+                      });
+              });
+    constexpr std::size_t kMaxUserRows = 100;
+    if (out.size() > kMaxUserRows)
+        out.resize(kMaxUserRows);
+    return out;
+}
+
+void ShellBase::emit_user_results_()
+{
+    if (!main_app_)
+        return;
+    if (auto* qs = main_app_->quick_switcher())
+    {
+        qs->set_user_results(filter_known_users_(last_user_query_));
+        request_repaint_();
+    }
+}
+
+void ShellBase::merge_roster_entry_(const std::string& id,
+                                    std::string display_name,
+                                    const std::string& avatar_url)
+{
+    if (id.empty())
+        return;
+    auto& slot = known_users_[id];
+    if (slot.user_id.empty())
+        slot.user_id = id;
+    if (slot.display_name.empty() && !display_name.empty())
+        slot.display_name = std::move(display_name);
+    if (slot.avatar_url.empty() && !avatar_url.empty())
+        slot.avatar_url = avatar_url;
+}
+
+void ShellBase::merge_resolved_user_(const tesseract::UserProfile& p)
+{
+    // A live-resolved profile is authoritative — overwrite any stale entry.
+    known_users_[p.user_id] =
+        tesseract::RoomMember{p.user_id, p.display_name, p.avatar_url};
+    emit_user_results_();
+}
+
+void ShellBase::invalidate_known_users_()
+{
+    // Cancel any in-flight roster build so it stops scanning and won't merge
+    // into the cleared map.
+    if (roster_build_cancel_)
+    {
+        roster_build_cancel_->store(true);
+        roster_build_cancel_.reset();
+    }
+    known_users_.clear();
+    known_users_built_    = false;
+    known_users_building_ = false;
+    // Drop any in-flight resolve targeting the old roster/account.
+    user_resolve_gen_.fetch_add(1);
 }
 
 void ShellBase::notify_tray_unread_()
@@ -2881,6 +3175,8 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     auto it = per_account_rooms_.find(my_user_id_);
     rooms_ = (it != per_account_rooms_.end()) ? it->second
                                               : std::vector<tesseract::RoomInfo>{};
+    // The known-user roster belongs to the previous account — drop it.
+    invalidate_known_users_();
 
     // Restore the invite snapshot for the incoming account (parallel to rooms_).
     auto inv_it = per_account_invites_.find(my_user_id_);
@@ -3007,6 +3303,12 @@ ShellBase::~ShellBase()
     // Signal any UI-thread continuations queued via post_to_ui_alive_ that this
     // shell is gone; they will no-op rather than dereference freed members.
     *alive_ = false;
+
+    // Cancel an in-flight known-user roster build so its worker loop bails
+    // between rooms instead of finishing a full member sweep — otherwise the
+    // thread-pool join below would block until the sweep completes.
+    if (roster_build_cancel_)
+        roster_build_cancel_->store(true);
 
     // Tear down pop-out windows while the registries they unregister from are
     // still alive. Members are destroyed in reverse declaration order, so the

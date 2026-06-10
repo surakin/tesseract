@@ -179,6 +179,18 @@ pub mod ffi {
         avatar_url: String,
     }
 
+    /// Result of a `resolve_user_profile` lookup. `exists` is true only when
+    /// the homeserver returned a profile for the requested mxid (i.e. the user
+    /// exists). `display_name` falls back to the localpart when the user has no
+    /// display name set; `avatar_url` is the mxc:// URI or empty when unset.
+    /// When `exists` is false the other fields are empty.
+    struct UserProfile {
+        exists: bool,
+        user_id: String,
+        display_name: String,
+        avatar_url: String,
+    }
+
     /// A single timeline event (message).
     /// Discriminated union: inspect `msg_type` to determine which fields are valid.
     /// For `m.image`   → source_url / source_encrypted_json, width, height are populated.
@@ -1790,6 +1802,12 @@ pub mod ffi {
         /// Return room ID of an existing DM with user_id, or create one.
         /// Returns empty string on error. Blocks — worker thread.
         fn get_or_create_dm(self: &mut ClientFfi, user_id: &str) -> String;
+
+        /// Resolve a user's profile by mxid to confirm the user exists and
+        /// fetch their display name / avatar. `exists` is false on a parse
+        /// error or when the homeserver has no profile for the mxid.
+        /// Blocks — worker thread.
+        fn resolve_user_profile(self: &ClientFfi, user_id: &str) -> UserProfile;
 
         /// Discover the homeserver URL for a server name or Matrix ID.
         /// Accepts "matrix.org", "@user:matrix.org", or "https://matrix.org".

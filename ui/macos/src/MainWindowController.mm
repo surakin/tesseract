@@ -4042,7 +4042,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         // Quick switcher (⌘K) search field.
         _quickSwitchField = _mainAppSurface->host().make_text_field();
-        _quickSwitchField->set_placeholder("Jump to a room…");
+        _quickSwitchField->set_placeholder(
+            "Jump to a room, or @user to start a chat…");
         _quickSwitchField->set_visible(false);
         _quickSwitchField->set_on_changed(
             [weakSelf](const std::string& q)

@@ -92,6 +92,14 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct UserProfile {
+        pub exists: bool,
+        pub user_id: String,
+        pub display_name: String,
+        pub avatar_url: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct TimelineEvent {
         pub event_id: String,
         pub room_id: String,

@@ -79,6 +79,17 @@ struct RoomMember
     std::string avatar_url;   ///< mxc:// or empty
 };
 
+/// Result of Client::resolve_user_profile. `exists` is true only when the
+/// homeserver returned a profile for the requested mxid (i.e. the user exists).
+/// When `exists` is false the other fields are empty.
+struct UserProfile
+{
+    bool        exists = false;
+    std::string user_id;
+    std::string display_name; ///< resolves to user_id localpart when unset
+    std::string avatar_url;   ///< mxc:// or empty
+};
+
 struct Event
 {
     std::string event_id;

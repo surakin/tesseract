@@ -19,10 +19,12 @@
 #include "app/RoomWindowBase.h"
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MessageListView.h"
+#include "views/QuickSwitcher.h"
 
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <atomic>
 #include <filesystem>
 #include <functional>
 #include <algorithm>
@@ -551,6 +553,35 @@ protected:
     // DM creation in-flight guard. Keyed by target user_id.
     std::unordered_set<std::string> dm_in_flight_user_ids_;
 
+    // ── Quick-switcher user mode ("@" → start a DM by mxid) ────────────────────
+    // Roster of known users (DM partners + members of joined rooms), keyed by
+    // mxid. Built lazily on the worker pool the first time the switcher enters
+    // user mode; invalidated on account switch and when the active account's
+    // room set changes. Live-resolved unseen users are inserted here too.
+    // UI-thread access only.
+    std::unordered_map<std::string, tesseract::RoomMember> known_users_;
+    bool known_users_built_    = false;
+    bool known_users_building_ = false;
+    // The current user-mode needle (query with the leading '@' stripped), so an
+    // async profile-resolve can re-emit results against the latest query.
+    std::string last_user_query_;
+    // Monotonic query generation; bumped on every user-mode query change so a
+    // late profile-resolve from a superseded keystroke is dropped. Read from
+    // worker threads, written on the UI thread → atomic.
+    std::atomic<std::uint64_t> user_resolve_gen_{0};
+    // Skip member enumeration for rooms larger than this when building the
+    // roster, to keep the one-off build cheap (live-resolve still covers them).
+    static constexpr std::size_t kRosterMaxRoomMembers = 512;
+    // Emit partial roster results to the switcher after every N rooms scanned,
+    // so a long build shows incremental progress instead of nothing-then-all.
+    static constexpr std::size_t kRosterEmitBatchRooms = 8;
+    // Per-build cancellation token, owned by both the shell and the worker
+    // (shared_ptr so it outlives a shell teardown). Flipped to true on account
+    // switch / roster invalidation / shell destruction so the worker loop bails
+    // between rooms instead of finishing a full sweep (which would block the
+    // destructor's thread-pool join). A new build installs a fresh token.
+    std::shared_ptr<std::atomic<bool>> roster_build_cancel_;
+
     // ── MSC4278 media-preview gating ──────────────────────────────────────────
     // Per-room media_previews override + join_rule, keyed by room_id. Populated
     // by ensure_room_preview_override_ (async) on room switch. Absent → use the
@@ -804,6 +835,28 @@ protected:
     // Core handler: fast path (existing DM), in-flight dedup, loading state,
     // async get_or_create_dm, navigate on success. Always called on UI thread.
     void handle_open_dm_(const std::string& user_id);
+
+    // ── Quick-switcher user mode helpers (all UI-thread unless noted) ──────────
+    // Handle a user-mode query ('@'-prefixed): ensure the roster is built, emit
+    // local matches now, and live-resolve a fully-typed unseen mxid (debounced).
+    void handle_user_query_(const std::string& query);
+    // Build the known-users roster (DM partners + room members) on a worker
+    // thread, then swap it in and re-emit results. No-op if already building.
+    void build_known_users_roster_();
+    // Filter known_users_ by `needle` (matches display name + mxid, case-
+    // insensitive substring; empty needle = all), sorted and capped for display.
+    std::vector<views::QuickSwitcher::UserEntry>
+    filter_known_users_(const std::string& needle) const;
+    // Push the current filtered roster into the switcher (no-op if not mounted).
+    void emit_user_results_();
+    // Insert a live-resolved profile into the roster, then re-emit results.
+    void merge_resolved_user_(const tesseract::UserProfile& p);
+    // Merge one entry into known_users_, keeping the first non-empty name/avatar.
+    void merge_roster_entry_(const std::string& id, std::string display_name,
+                             const std::string& avatar_url);
+    // Drop the cached roster (account switch / room-set change). Bumps the
+    // resolve generation so in-flight resolves are discarded.
+    void invalidate_known_users_();
 
     // Platform screen-lock probe for the notification-image privacy gate.
     // Defaults to the fail-safe Null impl until the concrete shell installs

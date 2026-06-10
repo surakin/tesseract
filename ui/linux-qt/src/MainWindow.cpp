@@ -1656,7 +1656,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     quickSwitchField_ = mainAppSurface_->host().make_text_field();
     quickSwitchField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
-    quickSwitchField_->set_placeholder(tr("Jump to a room\xe2\x80\xa6").toStdString());
+    quickSwitchField_->set_placeholder(
+        tr("Jump to a room, or @user to start a chat\xe2\x80\xa6").toStdString());
     quickSwitchField_->set_visible(false);
     quickSwitchField_->set_on_changed(
         [this](const std::string& q)

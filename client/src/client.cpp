@@ -1286,6 +1286,16 @@ std::string Client::get_or_create_dm(const std::string& user_id)
     return std::string(impl_->ffi->get_or_create_dm(user_id));
 }
 
+UserProfile Client::resolve_user_profile(const std::string& user_id)
+{
+    if (user_id.empty())
+        return {};
+    MUT_FFI;
+    auto p = impl_->ffi->resolve_user_profile(user_id);
+    return UserProfile{p.exists, std::string(p.user_id),
+                       std::string(p.display_name), std::string(p.avatar_url)};
+}
+
 Client::DiscoveryResult
 Client::discover_homeserver(const std::string& server_name_or_mxid)
 {
