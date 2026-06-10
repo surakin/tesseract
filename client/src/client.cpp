@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <mutex>
+#include <shared_mutex>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -39,45 +40,45 @@ struct Client::Impl
     // *requests* cancellation) observes a null handler and drops, instead of
     // dereferencing the about-to-be-destroyed handler. See HandlerSlot.
     std::shared_ptr<tesseract_ffi::HandlerSlot> handler_slot;
-    // Serialises EVERY call that crosses the cxx boundary into ClientFfi.
+    // Guards EVERY call that crosses the cxx boundary into ClientFfi, as a
+    // reader/writer lock. The receiver of each bridge method decides the mode:
     //
-    // The invariant is now uniform: every Client:: method that touches
-    // impl_->ffi acquires this lock (via MUT_FFI) before the call and holds it
-    // for the call's duration. There are no unlocked FFI readers.
+    //   * `&mut ClientFfi` methods  -> MUT_FFI (unique_lock, exclusive).
+    //   * `&ClientFfi`     methods  -> SH_FFI  (shared_lock, concurrent).
     //
-    // Why total serialisation is required (not just a nicety): ~136 of the
-    // ClientFfi bridge methods take `&mut self` on the Rust side, and cxx
-    // turns those into a mutable borrow of the boxed ClientFfi for each call.
-    // Two such calls overlapping — or any call overlapping any other — is an
-    // aliased `&mut`, i.e. undefined behaviour. The earlier design left a
-    // subset of `&self` readers (export_session, user_id, get_room_summary,
-    // get_room_members, list_devices, the blocking fetch_*_bytes, the async
-    // dispatchers, …) unlocked; on the Rust side those still read plain,
-    // un-synchronised fields (self.client, self.handler, self.thread_lists, …)
-    // that the &mut writers mutate, so an unlocked read raced a locked writer.
-    // Bringing them all under ffi_mu closes that race.
+    // Soundness: cxx maps `&self` to a shared `&` borrow of the boxed ClientFfi;
+    // any number of those may overlap because every field a `&self` method
+    // touches is `Sync` and mutated only through interior-mutability primitives
+    // (parking_lot RwLock/Mutex, atomics, Arc<Mutex<…>>) on the Rust side. cxx
+    // maps `&mut self` to a `&mut` borrow, which aliased with ANY other borrow
+    // is undefined behaviour — hence those keep the exclusive lock.
     //
-    // Cost: the lock is coarse and is held across blocking I/O (e.g.
-    // send_message block_on-sends while holding it). That is acceptable here
-    // because every Client call that can block is itself dispatched off the UI
-    // thread by the shells' run_async_() worker pools, so serialising those
-    // workers against each other never blocks UI repaint. (The cleaner fix —
-    // putting `client` behind its own synchronisation on the Rust side so
-    // independent reads can proceed concurrently — is a larger, Rust-side
-    // change; this lock is the complete, correct fix for the aliasing UB.)
+    // Why this matters (the bug it fixes): the lock is held across blocking
+    // `block_on` calls (e.g. subscribe_room building a timeline on a worker).
+    // Previously a single coarse mutex serialised everything, so a worker mid-
+    // block_on blocked the UI thread the instant it did a cheap read
+    // (list_room_threads / subscribe_room_threads during a room switch) — a
+    // visible freeze. Those reads are now `&self`/shared and run concurrently
+    // with the worker's `&self`/shared block_on, so they no longer block.
+    //
+    // Residual: a handful of genuine writers still do a long block_on under the
+    // unique lock — restore_session, oauth_begin/await, start_sync, stop_sync,
+    // clear_caches, logout. All are rare/one-shot and off the room-switch path,
+    // so they are acceptable; do not add new long-blocking `&mut self` methods.
     //
     // `mutable` so the lock can be taken inside `const` reader methods.
-    mutable std::mutex ffi_mu;
+    mutable std::shared_mutex ffi_mu;
 
     explicit Impl() : ffi(tesseract_ffi::client_create())
     {
     }
 };
 
-// Acquire ffi_mu for the duration of the current scope. Add to every wrapper
-// that calls a &mut ClientFfi bridge method to prevent concurrent mutable
-// access from run_async_() worker threads and the UI thread.
-#define MUT_FFI std::lock_guard<std::mutex> _fmu_(impl_->ffi_mu)
+// Exclusive lock for wrappers that call a `&mut ClientFfi` bridge method.
+#define MUT_FFI std::unique_lock<std::shared_mutex> _fmu_(impl_->ffi_mu)
+// Shared lock for wrappers that call a `&ClientFfi` bridge method — these run
+// concurrently with each other (and never block behind a shared block_on).
+#define SH_FFI std::shared_lock<std::shared_mutex> _fsu_(impl_->ffi_mu)
 
 // ---------------------------------------------------------------------------
 
@@ -113,7 +114,7 @@ Client::OAuthFlow Client::begin_oauth(const std::string& homeserver,
 
 bool Client::homeserver_supports_registration(const std::string& homeserver)
 {
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->homeserver_supports_registration(homeserver);
 }
 
@@ -188,7 +189,7 @@ Result Client::restore_session(const std::string& session_json)
 
 std::string Client::export_session() const
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->export_session());
 }
 
@@ -236,13 +237,13 @@ tesseract::Result Client::clear_caches()
 
 std::uint32_t Client::in_flight_count() const
 {
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->in_flight_count();
 }
 
 std::vector<InviteInfo> Client::list_invites() const
 {
-    MUT_FFI;
+    SH_FFI;
     return ffi_vec<InviteInfo>(impl_->ffi->list_invites());
 }
 
@@ -251,7 +252,7 @@ void Client::accept_invite_async(std::uint64_t request_id,
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->accept_invite_async(request_id, room_id);
 }
 
@@ -259,7 +260,7 @@ void Client::decline_invite_async(const std::string& room_id)
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->decline_invite_async(room_id);
 }
 
@@ -268,26 +269,26 @@ void Client::block_invite_async(const std::string& room_id,
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->block_invite_async(room_id, inviter_user_id);
 }
 
 Result Client::subscribe_room(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->subscribe_room(room_id));
 }
 
 void Client::unsubscribe_room(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->unsubscribe_room(room_id);
 }
 
 PaginateResult Client::paginate_back_with_status(const std::string& room_id,
                                                  std::uint16_t count)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->paginate_back_with_status(room_id, count));
 }
 
@@ -297,7 +298,7 @@ void Client::paginate_back_async(std::uint64_t request_id,
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->paginate_back_async(request_id, room_id, count);
 }
 
@@ -307,14 +308,14 @@ void Client::paginate_forward_async(std::uint64_t request_id,
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->paginate_forward_async(request_id, room_id, count);
 }
 
 Result Client::timestamp_to_event(const std::string& room_id, uint64_t ts_ms,
                                   const std::string& dir)
 {
-    MUT_FFI;
+    SH_FFI;
     if (!impl_)
     {
         return {false, "client not initialised"};
@@ -325,7 +326,7 @@ Result Client::timestamp_to_event(const std::string& room_id, uint64_t ts_ms,
 Result Client::subscribe_room_at(const std::string& room_id,
                                  const std::string& focus_event_id)
 {
-    MUT_FFI;
+    SH_FFI;
     if (!impl_)
     {
         return {false, "client not initialised"};
@@ -336,14 +337,14 @@ Result Client::subscribe_room_at(const std::string& room_id,
 Result Client::subscribe_thread(const std::string& room_id,
                                 const std::string& root_event_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->subscribe_thread(room_id, root_event_id));
 }
 
 void Client::unsubscribe_thread(const std::string& room_id,
                                 const std::string& root_event_id)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->unsubscribe_thread(room_id, root_event_id);
 }
 
@@ -351,20 +352,20 @@ PaginateResult Client::paginate_thread_back(const std::string& room_id,
                                             const std::string& root_event_id,
                                             std::uint16_t count)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(
         impl_->ffi->paginate_thread_back(room_id, root_event_id, count));
 }
 
 Result Client::subscribe_room_threads(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->subscribe_room_threads(room_id));
 }
 
 void Client::unsubscribe_room_threads(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->unsubscribe_room_threads(room_id);
 }
 
@@ -375,13 +376,13 @@ std::vector<ThreadInfo> Client::list_room_threads(const std::string& room_id)
     // mutate under &mut self. Take ffi_mu so this read serialises with those
     // writers (no data race on the HashMap). Cheap: the underlying items()
     // call is an in-memory snapshot, not a network round-trip.
-    MUT_FFI;
+    SH_FFI;
     return ffi_vec<ThreadInfo>(impl_->ffi->list_room_threads(room_id));
 }
 
 PaginateResult Client::paginate_room_threads(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->paginate_room_threads(room_id));
 }
 
@@ -424,7 +425,7 @@ static std::string derive_formatted(const std::string& body,
 Result Client::send_message(const std::string& room_id, const std::string& body,
                             const std::string& formatted_body)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->send_message(
         room_id, body, derive_formatted(body, formatted_body)));
 }
@@ -432,26 +433,26 @@ Result Client::send_message(const std::string& room_id, const std::string& body,
 Result Client::send_emote(const std::string& room_id, const std::string& body,
                           const std::string& formatted_body)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->send_emote(
         room_id, body, derive_formatted(body, formatted_body)));
 }
 
 Result Client::retry_send(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->retry_send(room_id));
 }
 
 Result Client::abort_send(const std::string& room_id, const std::string& txn_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->abort_send(room_id, txn_id));
 }
 
 void Client::send_typing_notice(const std::string& room_id, bool typing)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->send_typing_notice(room_id, typing);
 }
 
@@ -465,7 +466,7 @@ Result Client::send_image(const std::string& room_id,
                           const std::string& reply_event_id,
                           const std::string& thread_root)
 {
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_image(room_id, slice, mime_type, filename,
                                            caption, width, height, is_animated,
@@ -484,7 +485,7 @@ Result Client::send_video(const std::string& room_id,
                           const std::string& reply_event_id,
                           const std::string& thread_root)
 {
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     rust::Slice<const std::uint8_t> thumb_slice{thumb_bytes.data(),
                                                 thumb_bytes.size()};
@@ -504,7 +505,7 @@ Result Client::send_audio(const std::string& room_id,
                           const std::string& reply_event_id,
                           const std::string& thread_root)
 {
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_audio(room_id, slice, mime_type, filename,
                                            caption, duration_ms,
@@ -517,7 +518,7 @@ Client::send_file(const std::string& room_id, const std::vector<uint8_t>& bytes,
                   const std::string& caption, const std::string& reply_event_id,
                   const std::string& thread_root)
 {
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_file(room_id, slice, mime_type, filename,
                                           caption, reply_event_id, thread_root));
@@ -535,7 +536,7 @@ void Client::send_image_async(std::uint64_t request_id,
                                const std::string& thread_root)
 {
     if (!impl_) return;
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_image_async(request_id, room_id, slice, mime_type,
                                   filename, caption, width, height, is_animated,
@@ -557,7 +558,7 @@ void Client::send_video_async(std::uint64_t request_id,
                                const std::string& thread_root)
 {
     if (!impl_) return;
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     rust::Slice<const std::uint8_t> thumb_slice{thumb_bytes.data(),
                                                 thumb_bytes.size()};
@@ -578,7 +579,7 @@ void Client::send_audio_async(std::uint64_t request_id,
                                const std::string& thread_root)
 {
     if (!impl_) return;
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_audio_async(request_id, room_id, slice, mime_type,
                                   filename, caption, duration_ms,
@@ -595,7 +596,7 @@ void Client::send_file_async(std::uint64_t request_id,
                               const std::string& thread_root)
 {
     if (!impl_) return;
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_file_async(request_id, room_id, slice, mime_type,
                                  filename, caption, reply_event_id, thread_root);
@@ -609,7 +610,7 @@ Result Client::send_voice(const std::string& room_id,
                           const std::string& reply_event_id,
                           const std::string& thread_root)
 {
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> pcm_slice{pcm, pcm_size};
     rust::Slice<const std::uint16_t> wf_slice{waveform.data(), waveform.size()};
     return from_ffi(impl_->ffi->send_voice(room_id, pcm_slice, duration_ms,
@@ -619,20 +620,20 @@ Result Client::send_voice(const std::string& room_id,
 
 std::uint64_t Client::media_upload_limit()
 {
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->media_upload_limit();
 }
 
 Result Client::send_read_receipt(const std::string& room_id,
                                  const std::string& event_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->send_read_receipt(room_id, event_id));
 }
 
 Result Client::mark_room_as_read(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->mark_room_as_read(room_id));
 }
 
@@ -640,7 +641,7 @@ Result Client::send_reaction(const std::string& room_id,
                              const std::string& event_id,
                              const std::string& key)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->send_reaction(room_id, event_id, key));
 }
 
@@ -649,7 +650,7 @@ Result Client::send_reaction_custom(const std::string& room_id,
                                     const std::string& key,
                                     const std::string& shortcode)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(
         impl_->ffi->send_reaction_custom(room_id, event_id, key, shortcode));
 }
@@ -658,7 +659,7 @@ Result Client::redact_event(const std::string& room_id,
                             const std::string& event_id,
                             const std::string& reason)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->redact_event(room_id, event_id, reason));
 }
 
@@ -666,7 +667,7 @@ Result Client::send_reply(const std::string& room_id,
                           const std::string& event_id, const std::string& body,
                           const std::string& formatted_body)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->send_reply(
         room_id, event_id, body, derive_formatted(body, formatted_body)));
 }
@@ -676,7 +677,7 @@ Result Client::send_thread_message(const std::string& room_id,
                                    const std::string& body,
                                    const std::string& formatted_body)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->send_thread_message(
         room_id, thread_root, body, derive_formatted(body, formatted_body)));
 }
@@ -687,7 +688,7 @@ Result Client::send_thread_reply(const std::string& room_id,
                                  const std::string& body,
                                  const std::string& formatted_body)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->send_thread_reply(
         room_id, thread_root, in_reply_to_event_id, body,
         derive_formatted(body, formatted_body)));
@@ -696,7 +697,7 @@ Result Client::send_thread_reply(const std::string& room_id,
 Result Client::fetch_reply_details(const std::string& room_id,
                                    const std::string& event_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->fetch_reply_details(room_id, event_id));
 }
 
@@ -705,7 +706,7 @@ Result Client::send_edit(const std::string& room_id,
                          const std::string& new_body,
                          const std::string& formatted_body)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(
         impl_->ffi->send_edit(room_id, event_id, new_body,
                               derive_formatted(new_body, formatted_body)));
@@ -713,19 +714,19 @@ Result Client::send_edit(const std::string& room_id,
 
 std::string Client::load_prefs_json()
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->load_prefs());
 }
 
 void Client::save_prefs_json(const std::string& json)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->save_prefs(json);
 }
 
 MediaPreviewConfig Client::media_preview_config()
 {
-    MUT_FFI;
+    SH_FFI;
     auto raw = impl_->ffi->media_preview_config();
     MediaPreviewConfig cfg;
     cfg.media_previews =
@@ -737,7 +738,7 @@ MediaPreviewConfig Client::media_preview_config()
 MediaPreviewOverride
 Client::room_media_preview_override(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     auto raw = impl_->ffi->room_media_preview_override(room_id);
     MediaPreviewOverride ov;
     ov.has_media_previews = raw.has_media_previews;
@@ -750,14 +751,14 @@ Client::room_media_preview_override(const std::string& room_id)
 void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
                                        bool invite_avatars)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->set_media_preview_config(
         static_cast<std::uint8_t>(media_previews), invite_avatars);
 }
 
 std::vector<std::string> Client::recent_emoji_top(std::uint32_t n)
 {
-    MUT_FFI;
+    SH_FFI;
     // cxx returns rust::Vec<rust::String>; copy each into std::string so
     // callers don't have to know about the cxx types.
     auto raw = impl_->ffi->recent_emoji_top(n);
@@ -772,38 +773,38 @@ std::vector<std::string> Client::recent_emoji_top(std::uint32_t n)
 
 void Client::recent_emoji_bump(const std::string& glyph)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->recent_emoji_bump(glyph);
 }
 
 std::string Client::get_user_id() const
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->user_id());
 }
 
 std::string Client::get_display_name() const
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->current_user_display_name());
 }
 
 std::string Client::get_avatar_url() const
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->current_user_avatar_url());
 }
 
 Result Client::set_display_name(const std::string& name)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->set_display_name(name));
 }
 
 Result Client::upload_avatar(const std::vector<uint8_t>& bytes,
                               const std::string& mime_type)
 {
-    MUT_FFI;
+    SH_FFI;
     auto slice = rust::Slice<const uint8_t>{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->upload_avatar(slice, mime_type));
 }
@@ -811,26 +812,26 @@ Result Client::upload_avatar(const std::vector<uint8_t>& bytes,
 Result Client::upload_media(const std::vector<uint8_t>& bytes,
                              const std::string& mime_type)
 {
-    MUT_FFI;
+    SH_FFI;
     auto slice = rust::Slice<const uint8_t>{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->upload_media(slice, mime_type));
 }
 
 Result Client::remove_avatar()
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->remove_avatar());
 }
 
 std::string Client::get_device_id() const
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->device_id());
 }
 
 std::vector<Client::Device> Client::list_devices() const
 {
-    MUT_FFI;
+    SH_FFI;
     auto ffi_devices = impl_->ffi->list_devices();
     std::vector<Device> out;
     out.reserve(ffi_devices.size());
@@ -855,14 +856,14 @@ std::vector<Client::Device> Client::list_devices() const
 Result Client::set_device_display_name(const std::string& device_id,
                                        const std::string& name)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->set_device_display_name(device_id, name));
 }
 
 Client::DeleteDeviceBegin
 Client::begin_delete_device(const std::string& device_id)
 {
-    MUT_FFI;
+    SH_FFI;
     auto r = impl_->ffi->begin_delete_device(device_id);
     DeleteDeviceBegin out;
     out.ok = r.ok;
@@ -876,13 +877,13 @@ Client::begin_delete_device(const std::string& device_id)
 Result Client::complete_delete_device(const std::string& device_id,
                                        const std::string& session)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->complete_delete_device(device_id, session));
 }
 
 Result Client::set_presence(PresenceState state)
 {
-    MUT_FFI;
+    SH_FFI;
     // Map the C++ enum (Online=0, Unavailable=1, Offline=2) to the 1/2/3 wire
     // encoding the Rust FFI accepts (matches event_handler_bridge's inverse).
     std::uint8_t byte = 3;
@@ -898,7 +899,7 @@ Result Client::set_presence(PresenceState state)
 // Windows-only: GTK/Qt/macOS shells use fetch_media_async.
 std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     auto v = impl_->ffi->fetch_avatar_bytes(room_id);
     return std::vector<uint8_t>(v.begin(), v.end());
 }
@@ -906,43 +907,43 @@ std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
 // Windows-only: GTK/Qt/macOS shells use fetch_media_async.
 std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url)
 {
-    MUT_FFI;
+    SH_FFI;
     auto v = impl_->ffi->fetch_media_bytes(mxc_url);
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
 std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
 {
-    MUT_FFI;
+    SH_FFI;
     auto v = impl_->ffi->fetch_source_bytes(source);
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
 std::vector<uint8_t> Client::fetch_url_bytes(const std::string& url)
 {
-    MUT_FFI;
+    SH_FFI;
     auto v = impl_->ffi->fetch_url_bytes(url);
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
 std::vector<uint8_t> Client::fetch_gif_bytes(const std::string& url)
 {
-    MUT_FFI;
+    SH_FFI;
     auto v = impl_->ffi->fetch_gif_bytes(url);
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
 // ---------------------------------------------------------------------------
 // Async media downloads (dispatch returns immediately; the actual download
-// runs on a Rust worker pool). Still serialised under MUT_FFI because the
-// dispatch call itself reaches &mut ClientFfi across the bridge.
+// runs on a Rust worker pool). The dispatch call reaches `&ClientFfi`, so it
+// takes the shared lock (SH_FFI) and never blocks concurrent readers.
 // ---------------------------------------------------------------------------
 
 void Client::fetch_media_async(std::uint64_t request_id, std::uint64_t group_id,
                                MediaReqKind kind, const std::string& source,
                                std::uint32_t w, std::uint32_t h, bool animated)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->fetch_media_async(request_id, group_id,
                                   static_cast<std::uint8_t>(kind), source, w, h,
                                   animated);
@@ -950,7 +951,7 @@ void Client::fetch_media_async(std::uint64_t request_id, std::uint64_t group_id,
 
 void Client::cancel_media_group(std::uint64_t group_id)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->cancel_media_group(group_id);
 }
 
@@ -958,14 +959,14 @@ void Client::get_url_preview_async(std::uint64_t request_id,
                                    std::uint64_t group_id,
                                    const std::string& url)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->get_url_preview_async(request_id, group_id, url);
 }
 
 void Client::fetch_url_async(std::uint64_t request_id, std::uint64_t group_id,
                              const std::string& url)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->fetch_url_async(request_id, group_id, url);
 }
 
@@ -973,7 +974,7 @@ void Client::gif_search(std::uint64_t request_id, const std::string& query,
                         const std::string& api_key,
                         const std::string& client_key, std::uint32_t limit)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->gif_search_async(request_id, query, api_key, client_key, limit);
 }
 
@@ -985,7 +986,7 @@ Result Client::send_gif_video(
     std::uint32_t thumb_width, std::uint32_t thumb_height,
     const std::string& reply_event_id, const std::string& thread_root)
 {
-    MUT_FFI;
+    SH_FFI;
     rust::Slice<const std::uint8_t> mp4{mp4_bytes.data(), mp4_bytes.size()};
     rust::Slice<const std::uint8_t> thumb{thumb_bytes.data(),
                                           thumb_bytes.size()};
@@ -1130,7 +1131,7 @@ si_parse_spec_versions(const nlohmann::json& j)
 
 RoomSummary Client::get_room_summary(const std::string& room_id_or_alias)
 {
-    MUT_FFI;
+    SH_FFI;
     std::string json =
         std::string(impl_->ffi->get_room_summary(room_id_or_alias));
     if (json.empty())
@@ -1156,7 +1157,7 @@ RoomSummary Client::get_room_summary(const std::string& room_id_or_alias)
 
 std::string Client::join_room(const std::string& room_id_or_alias)
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->join_room(room_id_or_alias));
 }
 
@@ -1165,13 +1166,13 @@ void Client::join_room_async(std::uint64_t request_id,
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->join_room_async(request_id, room_id_or_alias);
 }
 
 Result Client::leave_room(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->leave_room(room_id));
 }
 
@@ -1179,7 +1180,7 @@ void Client::leave_room_async(std::uint64_t request_id, const std::string& room_
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->leave_room_async(request_id, room_id);
 }
 
@@ -1188,13 +1189,13 @@ void Client::invite_user_async(const std::string& room_id,
 {
     if (!impl_)
         return;
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->invite_user_async(room_id, user_id);
 }
 
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     auto raw = impl_->ffi->get_room_members(room_id);
     std::vector<RoomMember> out;
     out.reserve(raw.size());
@@ -1208,81 +1209,81 @@ std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
 
 Result Client::set_room_topic(const std::string& room_id, const std::string& topic)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->set_room_topic(room_id, topic));
 }
 
 Result Client::set_room_display_name(const std::string& room_id,
                                       const std::string& name)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->set_room_display_name(room_id, name));
 }
 
 Result Client::set_room_avatar(const std::string& room_id,
                                const std::string& mxc_uri)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->set_room_avatar(room_id, mxc_uri));
 }
 
 Result Client::pin_event(const std::string& room_id, const std::string& event_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->pin_event(room_id, event_id));
 }
 
 Result Client::unpin_event(const std::string& room_id, const std::string& event_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->unpin_event(room_id, event_id));
 }
 
 bool Client::can_pin_in_room(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->can_pin_in_room(room_id);
 }
 
 std::string Client::get_room_notification_mode(std::string room_id) const
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->get_room_notification_mode(room_id));
 }
 
 void Client::set_room_notification_mode(std::string room_id, std::string mode)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->set_room_notification_mode(room_id, mode);
 }
 
 void Client::set_room_favourite(std::string room_id, bool value)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->set_room_favourite(room_id, value);
 }
 
 void Client::set_room_low_priority(std::string room_id, bool value)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->set_room_low_priority(room_id, value);
 }
 
 Result Client::ignore_user(const std::string& user_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->ignore_user(user_id));
 }
 
 Result Client::unignore_user(const std::string& user_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->unignore_user(user_id));
 }
 
 std::string Client::get_or_create_dm(const std::string& user_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return std::string(impl_->ffi->get_or_create_dm(user_id));
 }
 
@@ -1290,7 +1291,7 @@ UserProfile Client::resolve_user_profile(const std::string& user_id)
 {
     if (user_id.empty())
         return {};
-    MUT_FFI;
+    SH_FFI;
     auto p = impl_->ffi->resolve_user_profile(user_id);
     return UserProfile{p.exists, std::string(p.user_id),
                        std::string(p.display_name), std::string(p.avatar_url)};
@@ -1299,7 +1300,7 @@ UserProfile Client::resolve_user_profile(const std::string& user_id)
 Client::DiscoveryResult
 Client::discover_homeserver(const std::string& server_name_or_mxid)
 {
-    MUT_FFI;
+    SH_FFI;
     std::string json =
         std::string(impl_->ffi->discover_homeserver(server_name_or_mxid));
     nlohmann::json j = parse_json_obj(json);
@@ -1334,7 +1335,7 @@ tesseract::ServerInfo tesseract::ServerInfo::from_json(const std::string& json)
 
 ServerInfo Client::get_server_info() const
 {
-    MUT_FFI;
+    SH_FFI;
     return ServerInfo::from_json(std::string(impl_->ffi->get_server_info()));
 }
 
@@ -1366,7 +1367,7 @@ Client::UrlPreview Client::parse_url_preview(const std::string& json)
 
 std::vector<ImagePack> Client::list_image_packs() const
 {
-    MUT_FFI;
+    SH_FFI;
     return ffi_vec<ImagePack>(impl_->ffi->list_image_packs());
 }
 
@@ -1374,14 +1375,14 @@ std::vector<ImagePackImage>
 Client::list_pack_images(const std::string& pack_id,
                          PackUsageFilter filter) const
 {
-    MUT_FFI;
+    SH_FFI;
     return ffi_vec<ImagePackImage>(
         impl_->ffi->list_pack_images(pack_id, pack_usage_filter_to_str(filter)));
 }
 
 std::vector<ImagePackImage> Client::list_favorite_stickers() const
 {
-    MUT_FFI;
+    SH_FFI;
     return ffi_vec<ImagePackImage>(impl_->ffi->list_favorite_stickers());
 }
 
@@ -1389,7 +1390,7 @@ Result Client::send_sticker(const std::string& room_id, const std::string& body,
                             const std::string& image_url,
                             const std::string& info_json)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(
         impl_->ffi->send_sticker(room_id, body, image_url, info_json));
 }
@@ -1400,7 +1401,7 @@ Result Client::send_thread_sticker(const std::string& room_id,
                                    const std::string& image_url,
                                    const std::string& info_json)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(
         impl_->ffi->send_thread_sticker(room_id, thread_root, body, image_url,
                                         info_json));
@@ -1411,7 +1412,7 @@ Result Client::save_sticker_to_user_pack(const std::string& shortcode,
                                          const std::string& image_url,
                                          const std::string& info_json)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->save_sticker_to_user_pack(
         shortcode, body, image_url, info_json));
 }
@@ -1419,20 +1420,20 @@ Result Client::save_sticker_to_user_pack(const std::string& shortcode,
 bool Client::user_pack_has_sticker(const std::string& image_url,
                                    const std::string& info_json) const
 {
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->user_pack_has_sticker(image_url, info_json);
 }
 
 Result Client::toggle_favorite_sticker(const std::string& image_url)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->toggle_favorite_sticker(image_url));
 }
 
 std::vector<std::string>
 Client::space_children(const std::string& space_id) const
 {
-    MUT_FFI;
+    SH_FFI;
     auto raw = impl_->ffi->space_children(space_id);
     std::vector<std::string> result;
     result.reserve(raw.size());
@@ -1445,19 +1446,19 @@ Client::space_children(const std::string& space_id) const
 
 bool Client::needs_recovery() const
 {
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->needs_recovery();
 }
 
 Result Client::recover(const std::string& key_or_passphrase)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->recover(key_or_passphrase));
 }
 
 BackupProgress Client::backup_state() const
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->backup_state());
 }
 
@@ -1465,7 +1466,7 @@ uint8_t Client::recovery_state() const
 {
     if (!impl_)
         return 0;
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->recovery_state();
 }
 
@@ -1473,7 +1474,7 @@ bool Client::own_identity_exists() const
 {
     if (!impl_)
         return false;
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->own_identity_exists();
 }
 
@@ -1481,7 +1482,7 @@ bool Client::device_verified() const
 {
     if (!impl_)
         return false;
-    MUT_FFI;
+    SH_FFI;
     return impl_->ffi->device_verified();
 }
 
@@ -1489,21 +1490,21 @@ Result Client::enable_recovery(const std::string& passphrase)
 {
     if (!impl_)
         return {false, "not logged in"};
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->enable_recovery(passphrase));
 }
 
 Result Client::export_room_keys(const std::string& path,
                                 const std::string& passphrase)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->export_room_keys(path, passphrase));
 }
 
 Result Client::import_room_keys(const std::string& path,
                                 const std::string& passphrase)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->import_room_keys(path, passphrase));
 }
 
@@ -1527,7 +1528,7 @@ void Client::cancel_reset_crypto_identity()
 
 void Client::set_presence_polling_enabled(bool enabled)
 {
-    MUT_FFI;
+    SH_FFI;
     impl_->ffi->set_presence_polling_enabled(enabled);
 }
 
@@ -1539,38 +1540,38 @@ void Client::poll_presence_now()
 
 Result Client::request_self_verification()
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->request_self_verification());
 }
 
 Result Client::accept_verification(const std::string& flow_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->accept_verification(flow_id));
 }
 
 Result Client::start_sas(const std::string& flow_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->start_sas(flow_id));
 }
 
 Result Client::confirm_sas(const std::string& flow_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->confirm_sas(flow_id));
 }
 
 Result Client::cancel_verification(const std::string& flow_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->cancel_verification(flow_id));
 }
 
 std::vector<VerificationEmoji>
 Client::get_sas_emojis(const std::string& flow_id) const
 {
-    MUT_FFI;
+    SH_FFI;
     auto ffi_vec = impl_->ffi->get_sas_emojis(flow_id);
     std::vector<VerificationEmoji> result;
     result.reserve(ffi_vec.size());
@@ -1588,7 +1589,7 @@ Result Client::register_pusher(const std::string& pushkey,
                                const std::string& endpoint_url,
                                const std::string& lang)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(
         impl_->ffi->register_pusher(pushkey, app_id, app_display_name,
                                     device_display_name, endpoint_url, lang));
@@ -1597,13 +1598,13 @@ Result Client::register_pusher(const std::string& pushkey,
 Result Client::remove_pusher(const std::string& pushkey,
                              const std::string& app_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->remove_pusher(pushkey, app_id));
 }
 
 Result Client::hint_push_room(const std::string& room_id)
 {
-    MUT_FFI;
+    SH_FFI;
     return from_ffi(impl_->ffi->hint_push_room(room_id));
 }
 
