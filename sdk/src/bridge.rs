@@ -49,6 +49,13 @@ pub mod ffi {
         notification_count: u64,
         /// Subset of notification_count that matched a highlight (mention) action.
         highlight_count: u64,
+        /// Total unread messages (client-side, regardless of push rules). Drives
+        /// the room-list "quiet unread" dot for rooms whose activity doesn't
+        /// notify (e.g. "mentions only"). Superset of `notification_count`.
+        unread_count: u64,
+        /// True when the user set this room's notification mode to Mute. A muted
+        /// room is excluded from the quiet-unread dot (silenced on purpose).
+        muted: bool,
         is_direct: bool,
         /// mxc:// URI of the room avatar, empty string if none.
         avatar_url: String,
@@ -1988,6 +1995,8 @@ impl Clone for ffi::RoomInfo {
             topic_html: self.topic_html.clone(),
             notification_count: self.notification_count,
             highlight_count: self.highlight_count,
+            unread_count: self.unread_count,
+            muted: self.muted,
             is_direct: self.is_direct,
             avatar_url: self.avatar_url.clone(),
             dm_avatar_url: self.dm_avatar_url.clone(),

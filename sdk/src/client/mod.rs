@@ -1615,6 +1615,13 @@ pub(super) async fn build_room_info(
     // See matrix-sdk-base 0.17 docs on `Room::num_unread_notifications`.
     let notification_count = room.num_unread_notifications();
     let highlight_count    = room.num_unread_mentions();
+    // Total unread (regardless of push rules) drives the room-list quiet-unread
+    // dot; muted rooms are excluded from it. Same client-side read-receipt
+    // source as the counts above (reliable for encrypted rooms).
+    let unread_count = room.num_unread_messages();
+    let muted = matches!(
+        room.cached_user_defined_notification_mode(),
+        Some(matrix_sdk::notification_settings::RoomNotificationMode::Mute));
     let last_activity_ts = room
         .latest_event_timestamp()
         .map(|t| u64::from(t.0))
@@ -1740,6 +1747,8 @@ pub(super) async fn build_room_info(
         topic_html,
         notification_count,
         highlight_count,
+        unread_count,
+        muted,
         is_direct,
         avatar_url,
         dm_avatar_url,
@@ -1788,7 +1797,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
 /// be unit-tested without a live client.
 pub(super) fn room_list_fingerprint(
     rooms: &[crate::ffi::RoomInfo],
-) -> Vec<(bool, bool, bool, u64, String)> {
+) -> Vec<(bool, bool, bool, bool, u64, String)> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -1800,11 +1809,17 @@ pub(super) fn room_list_fingerprint(
     tmp.iter()
         .map(|r| {
             let unread = r.notification_count > 0 || r.highlight_count > 0;
+            // Quiet unread (room-list dot): unread messages with no notification,
+            // not muted. Tracked separately from `unread` so that read-clearing a
+            // quiet room (unread → 0 with no new event, so last_activity_ts is
+            // unchanged) still changes the fingerprint and refreshes the dot.
+            let quiet_unread = !unread && r.unread_count > 0 && !r.muted;
             // Include the favourite / low-priority tags: they change a room's
             // room-list section without affecting recency/unread ordering, so
             // omitting them here suppresses the live update for tag toggles.
             (
                 unread,
+                quiet_unread,
                 r.is_favorite,
                 r.is_low_priority,
                 r.last_activity_ts,
@@ -1944,6 +1959,30 @@ mod tests {
             room_list_fingerprint(std::slice::from_ref(&r)),
             room_list_fingerprint(std::slice::from_ref(&r))
         );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_quiet_unread_toggles() {
+        // A non-notifying message (unread_count 0 → 1 with notification_count
+        // still 0) must change the fingerprint so the room-list dot appears /
+        // clears live — last_activity_ts can be unchanged on a read-clear.
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.unread_count = 1;
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_ignores_quiet_unread_when_muted() {
+        // A muted room shows no dot, so its unread count must not perturb the
+        // fingerprint (otherwise busy muted rooms would spam UI refreshes).
+        let mut r = room("!a:example.org");
+        r.muted = true;
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.unread_count = 5;
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_eq!(before, after);
     }
 
     #[test]

@@ -394,6 +394,13 @@ struct RoomInfo
     uint64_t notification_count = 0;
     /// Subset of notification_count that matched a highlight/mention action.
     uint64_t highlight_count = 0;
+    /// Total unread messages (client-side, regardless of push rules). A
+    /// superset of notification_count; drives the room-list "quiet unread" dot
+    /// for rooms whose activity doesn't notify (e.g. "mentions only").
+    uint64_t unread_count = 0;
+    /// True when this room's notification mode is Mute. Muted rooms are excluded
+    /// from the quiet-unread dot (the user silenced them on purpose).
+    bool muted = false;
     bool is_direct = false;
     std::string avatar_url;
     /// Fallback avatar mxc for an avatar-less DM: the other participant's

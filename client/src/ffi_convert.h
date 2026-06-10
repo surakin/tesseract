@@ -114,6 +114,8 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .topic = std::string(r.topic),
         .notification_count = r.notification_count,
         .highlight_count    = r.highlight_count,
+        .unread_count       = r.unread_count,
+        .muted              = r.muted,
         .is_direct = r.is_direct,
         .avatar_url = std::string(r.avatar_url),
         .dm_avatar_url = std::string(r.dm_avatar_url),

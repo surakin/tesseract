@@ -42,6 +42,8 @@ pub mod ffi {
         pub topic_html: String,
         pub notification_count: u64,
         pub highlight_count: u64,
+        pub unread_count: u64,
+        pub muted: bool,
         pub is_direct: bool,
         pub avatar_url: String,
         pub dm_avatar_url: String,

@@ -1,5 +1,7 @@
 #include "RoomListView.h"
 
+#include "roomlist_unread.h"
+
 #include "icons.h"
 #include "media_utils.h"
 #include "tk/i18n.h"
@@ -30,6 +32,8 @@ constexpr float kBadgeMinW = tesseract::visual::kUnreadBadgeMinWidth; // 20
 constexpr float kBadgeH = tesseract::visual::kUnreadBadgeHeight;      // 18
 constexpr float kBadgePadX = 6.0f;
 constexpr float kBadgeRadius = kBadgeH * 0.5f;
+// Quiet-unread dot (rooms with unread messages but no notification).
+constexpr float kDotSize = 8.0f;
 
 // Thumbnail chip painted on the right side of image/sticker rows.
 constexpr float kThumb = kRowH - kPadY * 2.0f; // 40 px — full usable row height
@@ -240,8 +244,9 @@ private:
         // key
         std::string   title;            // full rendered title string
         bool          collapsed       = false;
-        std::uint64_t section_unread  = 0;
-        bool          section_mention = false;
+        std::uint64_t section_unread       = 0;
+        bool          section_mention      = false;
+        bool          section_quiet_unread = false;
         bool          valid           = false; // false forces rebuild on first use
         // cached layouts
         std::unique_ptr<tk::TextLayout> title_layout;
@@ -279,14 +284,20 @@ private:
 
         // Sum notification counts and check for mentions (badge when collapsed).
         // Invitations have no unread badge.
-        std::uint64_t section_unread  = 0;
-        bool          section_mention = false;
+        std::uint64_t section_unread       = 0;
+        bool          section_mention      = false;
+        bool          section_quiet_unread = false;
         if (collapsed && item.section != RoomListView::kSecInvites)
         {
             for (const auto* r : owner_.section_rooms_[item.section])
             {
                 section_unread  += r->notification_count;
                 section_mention  = section_mention || (r->highlight_count > 0);
+                section_quiet_unread =
+                    section_quiet_unread ||
+                    unread_style_for(r->notification_count, r->highlight_count,
+                                     r->unread_count, r->muted) ==
+                        UnreadStyle::Dot;
             }
         }
 
@@ -294,13 +305,15 @@ private:
         auto& cache = header_cache_[item.section];
         if (!cache.valid || cache.title != title || cache.collapsed != collapsed ||
             cache.section_unread != section_unread ||
-            cache.section_mention != section_mention)
+            cache.section_mention != section_mention ||
+            cache.section_quiet_unread != section_quiet_unread)
         {
-            cache.title           = title;
-            cache.collapsed       = collapsed;
-            cache.section_unread  = section_unread;
-            cache.section_mention = section_mention;
-            cache.valid           = true;
+            cache.title                = title;
+            cache.collapsed            = collapsed;
+            cache.section_unread       = section_unread;
+            cache.section_mention      = section_mention;
+            cache.section_quiet_unread = section_quiet_unread;
+            cache.valid                = true;
 
             tk::TextStyle ts{};
             ts.role            = tk::FontRole::Small;
@@ -360,6 +373,16 @@ private:
                                  {pill.x + (pill.w - ts2.w) * 0.5f,
                                   pill.y + (pill.h - ts2.h) * 0.5f},
                                  sec_pill_text);
+        }
+        else if (collapsed && section_quiet_unread)
+        {
+            // No notifying rooms, but some collapsed room has quiet unread:
+            // mirror the per-row dot on the section header.
+            tk::Rect dot{chevron_x - kBadgePadX - kDotSize,
+                         bounds.y + (bounds.h - kDotSize) * 0.5f,
+                         kDotSize, kDotSize};
+            ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f,
+                                         ctx.theme.palette.unread_bg);
         }
     }
 
@@ -441,14 +464,26 @@ private:
         // Reserve space for the badge (heuristic width keeps text_w stable
         // across frames so the name/preview layouts aren't rebuilt every time
         // the notification count increments by 1).
+        const UnreadStyle unread_style = unread_style_for(
+            room.notification_count, room.highlight_count, room.unread_count,
+            room.muted);
+        const bool show_count = unread_style == UnreadStyle::Count ||
+                                unread_style == UnreadStyle::Mention;
+        const bool show_dot = unread_style == UnreadStyle::Dot;
+
         float       badge_width = 0;
         std::string badge_text;
-        if (room.notification_count > 0)
+        if (show_count)
         {
             badge_text = format_unread(room.notification_count);
             badge_width = std::max(
                 kBadgeMinW,
                 kBadgePadX * 2 + 7.0f * static_cast<float>(badge_text.size()));
+            text_w -= (badge_width + kPadX);
+        }
+        else if (show_dot)
+        {
+            badge_width = kDotSize; // reserve the right-aligned dot slot
             text_w -= (badge_width + kPadX);
         }
         if (text_w < 0)
@@ -512,7 +547,7 @@ private:
         // only when the inputs that determine the layout actually change.
         const std::string display_name =
             room.name.empty() ? room.id : room.name;
-        const bool unread = room.notification_count > 0;
+        const bool unread = unread_style != UnreadStyle::None;
         auto& cache = room_cache_[room.id];
 
         if (cache.display_name != display_name || cache.text_w != text_w ||
@@ -619,6 +654,16 @@ private:
                                  {pill.x + (pill.w - badge_sz.w) * 0.5f,
                                   pill.y + (pill.h - badge_sz.h) * 0.5f},
                                  pill_text);
+        }
+        else if (show_dot)
+        {
+            // Quiet unread (messages but no notification): a small neutral dot
+            // where the count pill would sit.
+            tk::Rect dot{bounds.x + bounds.w - kPadX - kDotSize,
+                         bounds.y + (bounds.h - kDotSize) * 0.5f,
+                         kDotSize, kDotSize};
+            ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f,
+                                         ctx.theme.palette.unread_bg);
         }
     }
 
