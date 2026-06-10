@@ -2531,6 +2531,11 @@ void MainWindow::start_tray_if_needed_()
     {
         return;
     }
+    // Exactly one window owns the single app-wide tray icon (multi-window).
+    if (!account_manager_.claim_tray_owner(this))
+    {
+        return;
+    }
     tray_ = std::make_unique<GtkSniTrayIcon>(
         [this]
         {
@@ -2559,6 +2564,8 @@ void MainWindow::start_tray_if_needed_()
     else
     {
         tray_.reset();
+        // No SNI host: relinquish ownership so another window may retry later.
+        account_manager_.release_tray_owner(this);
     }
 }
 
@@ -2571,9 +2578,9 @@ gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/,
         gtk_widget_set_visible(self->window_, FALSE);
         return TRUE; // stop default destruction
     }
-    if (self->active_account_ &&
-        self->account_manager_.dedicated_window(self->active_account_->user_id) == self)
-        self->account_manager_.clear_dedicated(self->active_account_->user_id);
+    // Hand this window's account bridge back to the primary, release its
+    // dedicated mapping and tray ownership (multi-window), then unregister.
+    self->on_window_closing_();
     self->account_manager_.unregister_window(self);
     if (self->account_manager_.window_count() == 0)
     {
@@ -2732,10 +2739,17 @@ MainWindow::~MainWindow()
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& sess : account_manager_.accounts())
+    // Multi-window: only the primary (non-pinned) window tears down the SHARED
+    // accounts' background sync (its destruction == app shutdown). A secondary
+    // (pinned) window closing must leave every account syncing for the surviving
+    // windows; it still drains its own per-window pools below.
+    if (!is_pinned_window_)
     {
-        if (sess->sync_started)
-            sess->client->stop_sync();
+        for (auto& sess : account_manager_.accounts())
+        {
+            if (sess->sync_started)
+                sess->client->stop_sync();
+        }
     }
     if (pending_login_client_)
         pending_login_client_->stop_sync();
@@ -6360,7 +6374,9 @@ void MainWindow::spawn_main_window_(
 {
     auto* win = new gtk4::MainWindow(account_manager_, app_);
     win->set_initial_account(account);
-    account_manager_.set_dedicated(account->user_id, win);
+    // Shared hand-off: re-point bridge at the new window, seed caches, pin, and
+    // register dedicated — before the new window's deferred doLogin().
+    hand_account_to_spawned_window_(win, account);
     gtk_window_present(GTK_WINDOW(win->widget()));
 }
 

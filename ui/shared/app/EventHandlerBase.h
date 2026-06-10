@@ -1,5 +1,6 @@
 #pragma once
 #include <tesseract/event_handler.h>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -21,6 +22,13 @@ public:
     explicit EventHandlerBase(ShellBase* shell) : shell_(shell)
     {
     }
+
+    // Re-point this bridge at a different window. Multi-window: each account is
+    // owned by exactly one window at a time; when an account is popped out into
+    // (or handed back from) its own window, its sole bridge follows the owner so
+    // every SDK callback reaches the live window. shell_ is read on tokio worker
+    // threads when callbacks fire and written here on the UI thread, hence atomic.
+    void set_shell(ShellBase* s) { shell_.store(s, std::memory_order_release); }
 
     void set_user_id(std::string id)
     {
@@ -111,8 +119,13 @@ public:
                              PresenceState state) override;
 
 protected:
-    ShellBase* shell_;
+    // Current owner window. Atomic because SDK callbacks read it on tokio worker
+    // threads while set_shell() writes it on the UI thread (multi-window re-point).
+    // Read via shell() in callback bodies.
+    std::atomic<ShellBase*> shell_;
     std::string user_id_;
+
+    ShellBase* shell() const { return shell_.load(std::memory_order_acquire); }
 };
 
 } // namespace tesseract

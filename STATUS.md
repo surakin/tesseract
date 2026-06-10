@@ -2,6 +2,22 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-06-10** (v0.8.0).
 
+> **Multi-window: one window per account.**
+> Ctrl+click an account in the picker opens it in its own window; clicking an
+> account that already has a window raises that window instead of switching in
+> place. Each account has a single SDK event bridge, now **re-pointable**
+> (`EventHandlerBase::set_shell`, atomic): on spawn the account's bridge follows
+> the new window (`ShellBase::hand_account_to_spawned_window_` — re-point + seed
+> caches from the spawning window for instant paint + pin + register dedicated),
+> so the existing `MainWindow` machinery drives the full room list, live timeline,
+> media and sending with no new routing layer. A single app-wide tray icon is
+> enforced by an `AccountManager` owner guard; on close a popped-out window hands
+> its bridge back to the primary (`on_window_closing_`). The per-window destructor
+> only tears down the **shared** accounts' sync when it's the primary (non-pinned)
+> window, so closing a secondary no longer stops sync for every account. Shared
+> code in `ShellBase` / `AccountManager`; wired in all four shells (Qt6, GTK4,
+> Win32, macOS). 4 new Catch2 tests. Verified on **Qt6**.
+
 > **Unread-room message prefetch.**
 > Rooms that quietly accumulate unread messages (unread, **not** muted — no
 > notification) now have their recent messages warmed into the SDK event cache
@@ -474,7 +490,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 222 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 756 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 769 |
 
 ## Platforms
 

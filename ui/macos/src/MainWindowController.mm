@@ -254,6 +254,7 @@ public:
     using ShellBase::apply_media_preview_config_;
     using ShellBase::inflight_dot_color_;
     using ShellBase::inflight_total_;
+    using ShellBase::is_pinned_window_;
     using ShellBase::is_secondary_window_startup_;
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
@@ -341,6 +342,7 @@ public:
     using ShellBase::server_info_;
     using ShellBase::show_status_message_;
     using ShellBase::on_account_picker_select_;
+    using ShellBase::on_window_closing_;
     using ShellBase::restore_all_accounts_;
     using ShellBase::RestoreResult;
     using ShellBase::finalize_login_;
@@ -1575,7 +1577,9 @@ void MacShell::spawn_main_window_(
         [[MainWindowController alloc]
             _initWithSharedAccountManager:&account_manager_];
     ctrl.shell->set_initial_account(account);
-    account_manager_.set_dedicated(account->user_id, ctrl.shell);
+    // Shared hand-off: re-point bridge at the new window, seed caches, pin, and
+    // register dedicated — before the new window's deferred doLogin().
+    hand_account_to_spawned_window_(ctrl.shell, account);
     [ctrl showWindow:nil];
 }
 
@@ -1952,10 +1956,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
         [sender orderOut:nil];
         return NO;
     }
-    if (_shell->active_account_ &&
-        _shell->account_manager_.dedicated_window(_shell->active_account_->user_id) ==
-            _shell.get())
-        _shell->account_manager_.clear_dedicated(_shell->active_account_->user_id);
+    // Hand this window's account bridge back to the primary, release its
+    // dedicated mapping and tray ownership (multi-window), then unregister.
+    _shell->on_window_closing_();
     _shell->account_manager_.unregister_window(_shell.get());
     if (_shell->account_manager_.window_count() == 0)
     {
@@ -4699,10 +4702,17 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& acc : _shell->account_manager_.accounts())
+    // Multi-window: only the primary (non-pinned) window tears down the SHARED
+    // accounts' background sync (its destruction == app shutdown). A secondary
+    // (pinned) window closing must leave every account syncing for the survivors;
+    // it still drains its own per-window pools below.
+    if (!_shell->is_pinned_window_)
     {
-        if (acc->sync_started)
-            acc->client->stop_sync();
+        for (auto& acc : _shell->account_manager_.accounts())
+        {
+            if (acc->sync_started)
+                acc->client->stop_sync();
+        }
     }
     _shell->pool_.drain();
     _shell->mut_pool_.drain();
@@ -5828,7 +5838,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _shell->handle_verification_state_ui_(
         _shell->active_account_ && !_shell->active_account_->unverified);
 
-    if (!_tray)
+    // Exactly one window owns the single app-wide tray icon (multi-window).
+    if (!_tray && _shell->account_manager_.claim_tray_owner(_shell.get()))
     {
         __weak MainWindowController* weakSelf = self;
         _tray = std::make_unique<MacOSTrayIcon>(

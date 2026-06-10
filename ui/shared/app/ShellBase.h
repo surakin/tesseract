@@ -957,10 +957,51 @@ protected:
 
     // Spawn a new main window pre-assigned to `account`. Called by
     // on_account_picker_select_ on Ctrl+click when no dedicated window exists
-    // for the uid yet. The new window registers itself, calls set_initial_account,
-    // and calls account_manager_.set_dedicated() in its construction sequence.
+    // for the uid yet. Each shell creates its native window, calls
+    // set_initial_account, then hand_account_to_spawned_window_() (shared) to take
+    // ownership of the account, and shows it.
     virtual void spawn_main_window_(
         std::shared_ptr<tesseract::AccountSession> account) = 0;
+
+    // Shared spawn wiring: hand ownership of `session`'s account to a freshly
+    // constructed window `win` (whose set_initial_account() has already run, but
+    // whose deferred doLogin() has NOT). Called from spawn_main_window_() on the
+    // spawning window. It (1) re-points the account's sole event bridge at `win`
+    // so every SDK callback now reaches it, (2) seeds `win`'s room/invite caches
+    // from this window so its list paints immediately instead of waiting for the
+    // next sync push, (3) marks `win` pinned, and (4) registers `win` as the
+    // dedicated window for the account.
+    void hand_account_to_spawned_window_(
+        ShellBase* win, const std::shared_ptr<tesseract::AccountSession>& session);
+
+    // Copy this window's cached rooms/invites for `uid` into `*this` from `src`.
+    // Used to seed a newly-spawned window for instant paint.
+    void seed_account_caches_from_(ShellBase* src, const std::string& uid);
+
+    // Register / release this window as the dedicated owner of its active account
+    // so the account picker raises this window instead of switching in place.
+    // release_ also re-points the mapping to another live window still showing the
+    // account, if any.
+    void claim_dedicated_for_active_();
+    void release_dedicated_for_active_();
+
+    // Called from each shell's window-close handler before teardown. Hands this
+    // window's account's sole event bridge back to the primary window (so its SDK
+    // callbacks keep reaching a live window), releases this window's dedicated
+    // mapping, and releases tray ownership. No-op-safe for the primary window.
+    void on_window_closing_();
+
+    // Re-point an account's sole event bridge at `win`. The bridge is stored
+    // type-erased as IEventHandler* but is always an EventHandlerBase, so the
+    // downcast is safe. Static so close/spawn paths share one definition.
+    static void rebind_account_bridge_(tesseract::AccountSession& session,
+                                       ShellBase* win);
+
+    // True for windows spawned via spawn_main_window_ (pinned to one account,
+    // cannot switch the active account in place). The startup window is false.
+    bool is_pinned_window_ = false;
+    void mark_pinned_window_() { is_pinned_window_ = true; }
+    bool is_pinned_window() const { return is_pinned_window_; }
 
     // Central picker routing. Each platform's on_select lambda delegates here.
     // Ctrl+click → spawn_main_window_; plain click → switch_active_account_.

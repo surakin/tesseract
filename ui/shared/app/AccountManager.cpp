@@ -41,6 +41,8 @@ std::span<std::shared_ptr<AccountSession> const> AccountManager::accounts() cons
 void AccountManager::register_window(ShellBase* w)
 {
     all_windows_.push_back(w);
+    if (!primary_window_)
+        primary_window_ = w;
 }
 
 void AccountManager::unregister_window(ShellBase* w)
@@ -48,6 +50,40 @@ void AccountManager::unregister_window(ShellBase* w)
     all_windows_.erase(
         std::remove(all_windows_.begin(), all_windows_.end(), w),
         all_windows_.end());
+    // Defensive: under hide-to-tray the startup window never unregisters, but if
+    // the primary ever goes away, fall back to the oldest surviving window.
+    if (primary_window_ == w)
+        primary_window_ = all_windows_.empty() ? nullptr : all_windows_.front();
+    if (tray_owner_ == w)
+        tray_owner_ = nullptr;
+}
+
+ShellBase* AccountManager::primary_window() const
+{
+    return primary_window_;
+}
+
+bool AccountManager::claim_tray_owner(ShellBase* w)
+{
+    if (!tray_owner_)
+        tray_owner_ = w;
+    return tray_owner_ == w;
+}
+
+void AccountManager::release_tray_owner(ShellBase* w)
+{
+    if (tray_owner_ == w)
+        tray_owner_ = nullptr;
+}
+
+bool AccountManager::is_tray_owner(ShellBase* w) const
+{
+    return tray_owner_ == w;
+}
+
+ShellBase* AccountManager::tray_owner() const
+{
+    return tray_owner_;
 }
 
 void AccountManager::set_dedicated(std::string_view user_id, ShellBase* w)

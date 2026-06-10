@@ -47,11 +47,28 @@ public:
     int window_count() const;
     std::span<ShellBase* const> all_windows() const;
 
+    // The first window to register (the startup window). Stays valid for the
+    // app's lifetime under hide-to-tray (the startup window hides rather than
+    // closes). Used as the fallback owner when a popped-out window closes and
+    // hands its account's event bridge back.
+    ShellBase* primary_window() const;
+
+    // App-wide tray ownership: exactly one window owns the single tray icon.
+    // claim_tray_owner returns true iff the caller is now (or already) the owner;
+    // every later caller gets false and skips tray creation. Multi-window: keeps
+    // one tray icon regardless of how many windows are open.
+    bool claim_tray_owner(ShellBase* w);
+    void release_tray_owner(ShellBase* w);
+    bool is_tray_owner(ShellBase* w) const;
+    ShellBase* tray_owner() const;
+
 private:
     std::vector<std::shared_ptr<AccountSession>> accounts_;
 
     std::vector<ShellBase*>                     all_windows_;
     std::unordered_map<std::string, ShellBase*> dedicated_windows_;
+    ShellBase*                                  primary_window_ = nullptr;
+    ShellBase*                                  tray_owner_     = nullptr;
 
     tk::PixmapCache    thumbnail_cache_{48u * 1024u * 1024u,
                                         std::chrono::minutes{30}};

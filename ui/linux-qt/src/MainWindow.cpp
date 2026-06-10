@@ -2024,10 +2024,18 @@ MainWindow::~MainWindow()
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& a : account_manager_.accounts())
+    // Multi-window: only the primary (non-pinned) window tears down the SHARED
+    // accounts' background sync. The primary is a stack local destroyed only at
+    // app exit, so its destruction == shutdown. A secondary (pinned) window
+    // closing must leave every account syncing for the surviving windows; it
+    // still drains its own per-window pools below.
+    if (!is_pinned_window_)
     {
-        if (a && a->client)
-            a->client->stop_sync();
+        for (auto& a : account_manager_.accounts())
+        {
+            if (a && a->client)
+                a->client->stop_sync();
+        }
     }
     if (pending_login_client_)
         pending_login_client_->stop_sync();
@@ -2424,7 +2432,8 @@ void MainWindow::finishLoginUi_(const std::string& uid)
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
 
-    if (!tray_)
+    // Exactly one window owns the single app-wide tray icon (multi-window).
+    if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
             [this]
@@ -2510,7 +2519,8 @@ void MainWindow::onLoginSucceeded()
     pending_login_is_add_account_ = false;
     add_account_return_idx_ = -1;
 
-    if (!tray_)
+    // Exactly one window owns the single app-wide tray icon (multi-window).
+    if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
             [this]
@@ -2573,9 +2583,9 @@ void MainWindow::closeEvent(QCloseEvent* ev)
         hide();
         return;
     }
-    if (active_account_ &&
-        account_manager_.dedicated_window(active_account_->user_id) == this)
-        account_manager_.clear_dedicated(active_account_->user_id);
+    // Hand this window's account bridge back to the primary, release its dedicated
+    // mapping and tray ownership (multi-window), then unregister.
+    on_window_closing_();
     account_manager_.unregister_window(this);
     if (account_manager_.window_count() == 0)
         QApplication::quit();
@@ -5033,7 +5043,10 @@ void MainWindow::spawn_main_window_(
     auto* win = new qt6::MainWindow(account_manager_);
     win->setAttribute(Qt::WA_DeleteOnClose);
     win->set_initial_account(account);
-    account_manager_.set_dedicated(account->user_id, win);
+    // Shared hand-off: re-point the account's bridge at the new window, seed its
+    // caches for instant paint, mark it pinned, and register it as dedicated.
+    // Runs before the new window's deferred (queued) doLogin().
+    hand_account_to_spawned_window_(win, account);
     win->show();
     win->raise();
     win->activateWindow();

@@ -860,10 +860,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_DESTROY:
         self->on_destroy();
-        if (self->active_account_ &&
-            self->account_manager_.dedicated_window(
-                self->active_account_->user_id) == self)
-            self->account_manager_.clear_dedicated(self->active_account_->user_id);
+        // Hand this window's account bridge back to the primary, release its
+        // dedicated mapping and tray ownership (multi-window), then unregister.
+        self->on_window_closing_();
         self->account_manager_.unregister_window(self);
         if (self->account_manager_.window_count() == 0)
             PostQuitMessage(0);
@@ -1341,11 +1340,17 @@ MainWindow::~MainWindow()
     // refresh any remaining windows after this C++ shell is freed.
     broadcast_rebuild_tray_();
 
-    for (auto& s : account_manager_.accounts())
+    // Multi-window: only the primary (non-pinned) window tears down the SHARED
+    // accounts' background sync (its destruction == app shutdown). A secondary
+    // (pinned) window closing must leave every account syncing for the survivors.
+    if (!is_pinned_window_)
     {
-        if (s && s->client)
+        for (auto& s : account_manager_.accounts())
         {
-            s->client->stop_sync();
+            if (s && s->client)
+            {
+                s->client->stop_sync();
+            }
         }
     }
     if (pending_login_client_)
@@ -3405,10 +3410,17 @@ void MainWindow::on_destroy()
     // without blocking.  The invariant "no worker is calling client_->*
     // when the client is destroyed" is still satisfied because drain()
     // runs before the client destructor.
-    for (auto& s : account_manager_.accounts())
+    // Multi-window: only the primary (non-pinned) window tears down the SHARED
+    // accounts' background sync (its destruction == app shutdown). A secondary
+    // (pinned) window closing must leave every account syncing for the survivors;
+    // it still drains its own per-window pools below.
+    if (!is_pinned_window_)
     {
-        if (s && s->client)
-            s->client->stop_sync();
+        for (auto& s : account_manager_.accounts())
+        {
+            if (s && s->client)
+                s->client->stop_sync();
+        }
     }
     if (pending_login_client_)
         pending_login_client_->stop_sync();
@@ -5380,7 +5392,8 @@ void MainWindow::refresh_account_ui_after_switch_()
                  reinterpret_cast<LPARAM>(L"Connected"));
     handle_verification_state_ui_(active_account_ && !active_account_->unverified);
 
-    if (!tray_)
+    // Exactly one window owns the single app-wide tray icon (multi-window).
+    if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<Win32TrayIcon>(
             hInst_,
@@ -7028,7 +7041,9 @@ void MainWindow::spawn_main_window_(
 {
     auto* win = new win32::MainWindow(account_manager_, hInst_);
     win->set_initial_account(account);
-    account_manager_.set_dedicated(account->user_id, win);
+    // Shared hand-off: re-point bridge at the new window, seed caches, pin, and
+    // register dedicated — before the new window's deferred doLogin().
+    hand_account_to_spawned_window_(win, account);
     win->raise_and_activate_();
 }
 

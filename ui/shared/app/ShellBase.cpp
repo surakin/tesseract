@@ -1,4 +1,5 @@
 #include "app/ShellBase.h"
+#include "app/EventHandlerBase.h"
 #include "app/RoomWindowBase.h"
 #include "app/SlashCommands.h"
 #include "app/UnreadPrefetch.h"
@@ -3227,6 +3228,14 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
             verification_banner_dismissed_;
     }
 
+    // Multi-window: release the outgoing account's dedicated mapping if it points
+    // at this window; the incoming account is claimed at the tail of the switch.
+    if (active_account_ &&
+        account_manager_.dedicated_window(active_account_->user_id) == this)
+    {
+        account_manager_.clear_dedicated(active_account_->user_id);
+    }
+
     reset_server_info_();
     active_account_ = new_session;
     auto& sess = *active_account_;
@@ -3289,7 +3298,94 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     index.active_user_id = my_user_id_;
     tesseract::SessionStore::save_index(index);
 
+    // Multi-window: this window now owns the incoming account — register it so the
+    // account picker raises this window instead of switching in place elsewhere.
+    claim_dedicated_for_active_();
+
     return true;
+}
+
+void ShellBase::rebind_account_bridge_(tesseract::AccountSession& session,
+                                       ShellBase* win)
+{
+    // The bridge is stored type-erased as IEventHandler* but is always an
+    // EventHandlerBase (every shell's bridge derives it); safe downcast.
+    if (session.bridge)
+        static_cast<EventHandlerBase*>(session.bridge.get())->set_shell(win);
+}
+
+void ShellBase::seed_account_caches_from_(ShellBase* src, const std::string& uid)
+{
+    if (!src || src == this)
+        return;
+    auto r = src->per_account_rooms_.find(uid);
+    if (r != src->per_account_rooms_.end())
+        per_account_rooms_[uid] = r->second;
+    auto i = src->per_account_invites_.find(uid);
+    if (i != src->per_account_invites_.end())
+        per_account_invites_[uid] = i->second;
+}
+
+void ShellBase::hand_account_to_spawned_window_(
+    ShellBase* win, const std::shared_ptr<tesseract::AccountSession>& session)
+{
+    if (!win || !session)
+        return;
+    // Re-point the account's sole bridge so its SDK callbacks now reach the new
+    // owner window instead of this (the spawning) window.
+    rebind_account_bridge_(*session, win);
+    // Seed the new window's caches from ours so its room list paints immediately;
+    // the deferred doLogin()→switch reads per_account_rooms_ for this uid.
+    win->seed_account_caches_from_(this, session->user_id);
+    win->mark_pinned_window_();
+    account_manager_.set_dedicated(session->user_id, win);
+}
+
+void ShellBase::claim_dedicated_for_active_()
+{
+    if (active_account_)
+        account_manager_.set_dedicated(active_account_->user_id, this);
+}
+
+void ShellBase::release_dedicated_for_active_()
+{
+    if (!active_account_)
+        return;
+    const std::string uid = active_account_->user_id;
+    if (account_manager_.dedicated_window(uid) != this)
+        return;
+    account_manager_.clear_dedicated(uid);
+    // Re-point the mapping to another live window still showing this account
+    // (prefer a non-pinned / primary window so the picker raises the long-lived
+    // one), if any.
+    ShellBase* fallback = nullptr;
+    for (ShellBase* w : account_manager_.all_windows())
+    {
+        if (w == this)
+            continue;
+        auto a = w->active_account_;
+        if (a && a->user_id == uid)
+        {
+            fallback = w;
+            if (!w->is_pinned_window())
+                break;
+        }
+    }
+    if (fallback)
+        account_manager_.set_dedicated(uid, fallback);
+}
+
+void ShellBase::on_window_closing_()
+{
+    // Hand this window's account's sole event bridge back to the primary window so
+    // its SDK callbacks keep reaching a live window after we're destroyed. The
+    // primary uses hide-to-tray and is never destroyed while secondaries live, so
+    // it is always a valid target.
+    ShellBase* primary = account_manager_.primary_window();
+    if (primary && primary != this && active_account_)
+        rebind_account_bridge_(*active_account_, primary);
+    release_dedicated_for_active_();
+    account_manager_.release_tray_owner(this);
 }
 
 ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
@@ -3344,6 +3440,9 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // when the only account with unreads was the one we just signed out.
     notify_tray_unread_();
 
+    // Drop any dedicated-window mapping for the now-removed account so the picker
+    // can't try to raise a window for it.
+    account_manager_.clear_dedicated(uid);
     account_manager_.remove_account(uid);
     active_account_.reset();
     client_        = nullptr;
@@ -5529,13 +5628,23 @@ void ShellBase::on_account_picker_select_(const std::string& uid)
 {
     if (auto* win = account_manager_.dedicated_window(uid))
     {
-        win->raise_and_activate_();
+        // Already shown in some window: raise it (unless that window is us).
+        if (win != this)
+            win->raise_and_activate_();
         return;
     }
     if (is_ctrl_held_())
     {
         auto session = account_manager_.find(uid);
         if (session)
+            spawn_main_window_(session);
+        return;
+    }
+    if (is_pinned_window_)
+    {
+        // A popped-out window is bound to one account; open the chosen account in
+        // its own window rather than hijacking this one.
+        if (auto session = account_manager_.find(uid))
             spawn_main_window_(session);
         return;
     }
