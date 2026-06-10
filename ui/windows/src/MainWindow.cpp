@@ -5579,7 +5579,7 @@ void MainWindow::rebuild_account_picker()
         }
 
         account_picker_surface_ = std::make_unique<tk::win32::Surface>(
-            hInst_, hAccountPicker_, tk::Theme::light());
+            hInst_, hAccountPicker_, current_theme_);
         auto picker = std::make_unique<tesseract::views::AccountPicker>();
         account_picker_ = picker.get();
         account_picker_->set_image_provider(make_avatar_image_provider_());

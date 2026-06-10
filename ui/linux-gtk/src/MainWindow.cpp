@@ -5980,7 +5980,7 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
     {
         // Build once; a GtkPopover parented to the user strip.
         account_picker_surface_ =
-            std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+            std::make_unique<tk::gtk4::Surface>(current_theme_);
         auto picker = std::make_unique<tesseract::views::AccountPicker>();
         account_picker_ = picker.get();
         account_picker_->set_image_provider(make_avatar_image_provider_());

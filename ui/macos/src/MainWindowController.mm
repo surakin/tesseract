@@ -6258,8 +6258,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         vc.view = container;
         _accountPickerPopover.contentViewController = vc;
 
-        _accountPickerSurface =
-            std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        _accountPickerSurface = std::make_unique<tk::macos::Surface>(
+            _mainAppSurface ? _mainAppSurface->theme() : tk::Theme::light());
         auto picker = std::make_unique<tesseract::views::AccountPicker>();
         _accountPickerShared = picker.get();
         __weak MainWindowController* weakSelf = self;

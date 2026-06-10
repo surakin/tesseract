@@ -4462,7 +4462,7 @@ static QString accountPopoverQss(const tk::Theme& t)
     };
     return QStringLiteral(
                "QFrame { background-color: %1; border:1px solid %2; }")
-        .arg(hex(p.chrome_bg), hex(p.popup_border));
+        .arg(hex(p.sidebar_bg), hex(p.popup_border));
 }
 
 void MainWindow::openAccountPicker(const QPoint& global_anchor)
@@ -4479,7 +4479,7 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
         lay->setSpacing(0);
 
         accountPickerSurface_ =
-            new tk::qt6::Surface(tk::Theme::light(), accountPickerPopover_);
+            new tk::qt6::Surface(current_theme_, accountPickerPopover_);
         auto picker_owner = std::make_unique<tesseract::views::AccountPicker>();
         accountPicker_ = picker_owner.get();
         accountPicker_->set_image_provider(make_avatar_image_provider_());
