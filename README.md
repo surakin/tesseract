@@ -4,7 +4,7 @@
 
 (If you don't know what Matrix is - not THE matrix, unfortunately, no one can be told what that is - go [here](https://matrix.org/) before reading forward)
 
-![Brand new account (Qt6)](./screenshots/brand_new_account_qt6.png)
+![Brand new account (Qt6)](./screenshots/brand-new-account-small.png)
 
 A full featured desktop multiplatform (Linux, Windows, Mac) Matrix client built on the [Matrix Rust SDK](https://github.com/matrix-org/matrix-rust-sdk)
 
@@ -20,9 +20,10 @@ A full featured desktop multiplatform (Linux, Windows, Mac) Matrix client built 
 
 ## Screenshots
 
-| Linux (Qt6) | Windows | macOS |
-|---|---|---|
-| ![Linux](screenshots/brand_new_account_qt6.png) | ![Windows](screenshots/brand_new_account_windows.png) | ![macOS](screenshots/brand_new_account_macos.png) |
+| Linux (Qt6) | Linux (Gtk4) | Windows | macOS |
+|---|---|---|---|
+| ![Linux](screenshots/qt6-light.png) | ![Linux](screenshots/gtk4-light.png) | ![Windows](screenshots/win-light.png) | ![macOS](screenshots/mac-light.png) |
+| ![Linux](screenshots/qt6-dark.png) | ![Linux](screenshots/gtk4-dark.png) | ![Windows](screenshots/win-dark.png) | ![macOS](screenshots/mac-dark.png) |
 
 
 ## Features
