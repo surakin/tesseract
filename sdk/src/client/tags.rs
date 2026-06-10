@@ -9,7 +9,7 @@ use super::ClientFfi;
 
 #[cfg(not(test))]
 impl ClientFfi {
-    pub fn set_room_favourite(&mut self, room_id: &str, value: bool) {
+    pub fn set_room_favourite(&self, room_id: &str, value: bool) {
         use matrix_sdk::ruma::RoomId;
         let Some(client) = self.client.clone() else { return; };
         let room_id = room_id.to_owned();
@@ -20,7 +20,7 @@ impl ClientFfi {
         });
     }
 
-    pub fn set_room_low_priority(&mut self, room_id: &str, value: bool) {
+    pub fn set_room_low_priority(&self, room_id: &str, value: bool) {
         use matrix_sdk::ruma::RoomId;
         let Some(client) = self.client.clone() else { return; };
         let room_id = room_id.to_owned();
@@ -34,6 +34,6 @@ impl ClientFfi {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn set_room_favourite(&mut self, _room_id: &str, _value: bool) {}
-    pub fn set_room_low_priority(&mut self, _room_id: &str, _value: bool) {}
+    pub fn set_room_favourite(&self, _room_id: &str, _value: bool) {}
+    pub fn set_room_low_priority(&self, _room_id: &str, _value: bool) {}
 }

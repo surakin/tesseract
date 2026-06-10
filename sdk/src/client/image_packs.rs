@@ -110,7 +110,7 @@ impl ClientFfi {
     /// cache rebuild.
     #[cfg(not(test))]
     pub fn save_sticker_to_user_pack(
-        &mut self,
+        &self,
         shortcode: &str,
         body: &str,
         image_url: &str,
@@ -326,7 +326,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn save_sticker_to_user_pack(
-        &mut self,
+        &self,
         _shortcode: &str,
         _body: &str,
         _image_url: &str,
@@ -391,7 +391,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn toggle_favorite_sticker(&mut self, image_url: &str) -> OpResult {
+    pub fn toggle_favorite_sticker(&self, image_url: &str) -> OpResult {
         use matrix_sdk::ruma::events::GlobalAccountDataEventType;
         use matrix_sdk::ruma::serde::Raw;
         use serde_json::Value;
@@ -463,7 +463,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn toggle_favorite_sticker(&mut self, _image_url: &str) -> OpResult {
+    pub fn toggle_favorite_sticker(&self, _image_url: &str) -> OpResult {
         err("not logged in")
     }
 

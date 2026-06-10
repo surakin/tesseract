@@ -163,7 +163,7 @@ impl ClientFfi {
     /// current user. `on_verification_request(incoming=false)` fires when one
     /// device accepts; the UI should then call `start_sas(flow_id)`.
     #[cfg(not(test))]
-    pub fn request_self_verification(&mut self) -> OpResult {
+    pub fn request_self_verification(&self) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -211,14 +211,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn request_self_verification(&mut self) -> OpResult {
+    pub fn request_self_verification(&self) -> OpResult {
         err("not logged in")
     }
 
     /// Accept an incoming verification request. Call after receiving
     /// `on_verification_request(incoming=true)`, then call `start_sas`.
     #[cfg(not(test))]
-    pub fn accept_verification(&mut self, flow_id: &str) -> OpResult {
+    pub fn accept_verification(&self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -247,7 +247,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn accept_verification(&mut self, _flow_id: &str) -> OpResult {
+    pub fn accept_verification(&self, _flow_id: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -255,7 +255,7 @@ impl ClientFfi {
     /// computed. Call after `accept_verification` (incoming) or after
     /// `on_verification_request(incoming=false)` (outgoing).
     #[cfg(not(test))]
-    pub fn start_sas(&mut self, flow_id: &str) -> OpResult {
+    pub fn start_sas(&self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -295,14 +295,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn start_sas(&mut self, _flow_id: &str) -> OpResult {
+    pub fn start_sas(&self, _flow_id: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Confirm that the SAS emoji match. Fires `on_verification_done` when
     /// both sides confirm. Call from the "They Match" button handler.
     #[cfg(not(test))]
-    pub fn confirm_sas(&mut self, flow_id: &str) -> OpResult {
+    pub fn confirm_sas(&self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -334,13 +334,13 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn confirm_sas(&mut self, _flow_id: &str) -> OpResult {
+    pub fn confirm_sas(&self, _flow_id: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Cancel or decline a verification flow (mismatch or user dismiss).
     #[cfg(not(test))]
-    pub fn cancel_verification(&mut self, flow_id: &str) -> OpResult {
+    pub fn cancel_verification(&self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -376,7 +376,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn cancel_verification(&mut self, _flow_id: &str) -> OpResult {
+    pub fn cancel_verification(&self, _flow_id: &str) -> OpResult {
         err("not logged in")
     }
 

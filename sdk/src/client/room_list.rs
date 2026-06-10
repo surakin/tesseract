@@ -153,12 +153,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn get_room_summary(&mut self, _room_id_or_alias: &str) -> String {
+    pub fn get_room_summary(&self, _room_id_or_alias: &str) -> String {
         String::new()
     }
 
     #[cfg(not(test))]
-    pub fn join_room(&mut self, room_id_or_alias: &str) -> String {
+    pub fn join_room(&self, room_id_or_alias: &str) -> String {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
         let Some(client) = self.client.clone() else {
@@ -187,7 +187,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn join_room(&mut self, _room_id_or_alias: &str) -> String {
+    pub fn join_room(&self, _room_id_or_alias: &str) -> String {
         String::new()
     }
 
@@ -197,7 +197,7 @@ impl ClientFfi {
 
     /// Leave a room. Blocks the calling thread — call from a worker thread.
     #[cfg(not(test))]
-    pub fn leave_room(&mut self, room_id: &str) -> OpResult {
+    pub fn leave_room(&self, room_id: &str) -> OpResult {
         let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
@@ -210,7 +210,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn leave_room(&mut self, _room_id: &str) -> OpResult {
+    pub fn leave_room(&self, _room_id: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -427,7 +427,7 @@ impl ClientFfi {
 
     /// Send an m.room.topic state event. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn set_room_topic(&mut self, room_id: &str, topic: &str) -> OpResult {
+    pub fn set_room_topic(&self, room_id: &str, topic: &str) -> OpResult {
         let _enter = self.rt.enter();
         use matrix_sdk::ruma::events::room::topic::RoomTopicEventContent;
 
@@ -443,14 +443,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn set_room_topic(&mut self, _room_id: &str, _topic: &str) -> OpResult {
+    pub fn set_room_topic(&self, _room_id: &str, _topic: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Set the current user's display name in a specific room (m.room.member
     /// state event). Preserves all other existing member event fields. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn set_room_display_name(&mut self, room_id: &str, name: &str) -> OpResult {
+    pub fn set_room_display_name(&self, room_id: &str, name: &str) -> OpResult {
         use matrix_sdk::ruma::events::room::member::{MembershipState, RoomMemberEventContent};
 
         let Some(client) = self.client.as_ref() else {
@@ -479,14 +479,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn set_room_display_name(&mut self, _room_id: &str, _name: &str) -> OpResult {
+    pub fn set_room_display_name(&self, _room_id: &str, _name: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Set the current user's avatar in a specific room (m.room.member state
     /// event). Preserves all other existing member event fields. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn set_room_avatar(&mut self, room_id: &str, mxc_uri: &str) -> OpResult {
+    pub fn set_room_avatar(&self, room_id: &str, mxc_uri: &str) -> OpResult {
         use matrix_sdk::ruma::{
             events::room::member::{MembershipState, RoomMemberEventContent},
             OwnedMxcUri,
@@ -523,7 +523,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn set_room_avatar(&mut self, _room_id: &str, _mxc_uri: &str) -> OpResult {
+    pub fn set_room_avatar(&self, _room_id: &str, _mxc_uri: &str) -> OpResult {
         err("not logged in")
     }
 }

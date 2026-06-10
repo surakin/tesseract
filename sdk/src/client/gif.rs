@@ -365,7 +365,7 @@ impl ClientFfi {
     /// encrypted + uploaded when the room is encrypted, otherwise uploaded
     /// plaintext; the raw event is built by [`build_gif_video_content`].
     pub fn send_gif_video(
-        &mut self,
+        &self,
         room_id: &str,
         mp4_bytes: &[u8],
         mime_type: &str,

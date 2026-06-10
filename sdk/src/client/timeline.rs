@@ -618,7 +618,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn subscribe_room(&mut self, room_id: &str) -> OpResult {
+    pub fn subscribe_room(&self, room_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -707,7 +707,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn unsubscribe_room(&mut self, room_id: &str) {
+    pub fn unsubscribe_room(&self, room_id: &str) {
         if let Ok(id) = room_id.parse::<OwnedRoomId>() {
             if let Some(h) = self.timelines.write().remove(&id) {
                 h.cancelled.store(true, Ordering::Release);
@@ -958,7 +958,7 @@ impl ClientFfi {
     /// in `room_id`. `dir` is `"f"` (forward) or `"b"` (backward).
     /// On success, `OpResult.message` holds the event ID string.
     #[cfg(not(test))]
-    pub fn timestamp_to_event(&mut self, room_id: &str, ts_ms: u64, dir: &str) -> OpResult {
+    pub fn timestamp_to_event(&self, room_id: &str, ts_ms: u64, dir: &str) -> OpResult {
         use matrix_sdk::ruma::{
             api::{client::room::get_event_by_timestamp::v1::Request, Direction},
             MilliSecondsSinceUnixEpoch,
@@ -999,7 +999,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn timestamp_to_event(&mut self, _room_id: &str, _ts_ms: u64, _dir: &str) -> OpResult {
+    pub fn timestamp_to_event(&self, _room_id: &str, _ts_ms: u64, _dir: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -1009,7 +1009,7 @@ impl ClientFfi {
     /// event callbacks identically to `subscribe_room`. Sets `is_focused = true`
     /// so that `paginate_forward` can gate itself.
     #[cfg(not(test))]
-    pub fn subscribe_room_at(&mut self, room_id: &str, focus_event_id: &str) -> OpResult {
+    pub fn subscribe_room_at(&self, room_id: &str, focus_event_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -1092,7 +1092,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn subscribe_room_at(&mut self, _room_id: &str, _focus_event_id: &str) -> OpResult {
+    pub fn subscribe_room_at(&self, _room_id: &str, _focus_event_id: &str) -> OpResult {
         err("not logged in")
     }
 

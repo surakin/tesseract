@@ -364,15 +364,19 @@ pub struct ClientFfi {
     pub(super) timelines: parking_lot::RwLock<HashMap<OwnedRoomId, TimelineHandle>>,
     /// Active thread-focused timelines keyed by (room_id, thread_root_event_id).
     /// Each entry holds the same `TimelineHandle` structure used by `timelines`.
+    /// Behind a `RwLock` (like `timelines`) so the thread FFI methods can take
+    /// `&self` and run concurrently under the C++ shared lock — see the locking
+    /// note in `client/src/client.cpp`.
     #[cfg(not(test))]
-    pub(super) thread_timelines: HashMap<
+    pub(super) thread_timelines: parking_lot::RwLock<HashMap<
         (OwnedRoomId, matrix_sdk::ruma::OwnedEventId),
         TimelineHandle,
-    >,
+    >>,
     /// Active thread-list subscriptions keyed by room_id. Each entry holds a
     /// `ThreadListService` and an abort handle for the items-watcher task.
+    /// `RwLock`-wrapped for the same `&self` reason as `thread_timelines`.
     #[cfg(not(test))]
-    pub(super) thread_lists: HashMap<OwnedRoomId, ThreadListHandle>,
+    pub(super) thread_lists: parking_lot::RwLock<HashMap<OwnedRoomId, ThreadListHandle>>,
     /// Background backfill orchestrator handle. Aborting it tears down both
     /// the orchestrator and every per-room silent backfill it spawned (the
     /// children live inside a `JoinSet` owned by the orchestrator future).
@@ -511,7 +515,7 @@ pub struct ClientFfi {
     /// and aborted by `stop_sync`. Shared via `Arc` because nested watchers
     /// (`watch_verification_request` spawns a `watch_sas` on its own when
     /// the flow transitions) need to register from inside the running
-    /// future where `&mut self` is unavailable.
+    /// future where `&self` is unavailable.
     #[cfg(not(test))]
     pub(super) verification_tasks: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
     /// Concurrency limiter for interactive media downloads (avatars +
@@ -530,7 +534,7 @@ pub struct ClientFfi {
     /// ungrouped). `cancel_media_group` drains and aborts a group's tasks on
     /// room switch. Each task removes its own `(request_id, handle)` on
     /// completion. Interior-mutable so the `&self` media methods can register
-    /// without `&mut self`. Also drained wholesale in `stop_sync`.
+    /// without `&self`. Also drained wholesale in `stop_sync`.
     #[cfg(not(test))]
     pub(super) media_tasks:
         Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
@@ -562,14 +566,14 @@ impl Drop for ClientFfi {
                 }
             }
             #[cfg(not(test))]
-            for (_, th) in self.thread_timelines.drain() {
+            for (_, th) in self.thread_timelines.write().drain() {
                 th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();
                 }
             }
             #[cfg(not(test))]
-            for (_, h) in self.thread_lists.drain() {
+            for (_, h) in self.thread_lists.write().drain() {
                 h.abort.abort();
             }
             // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
@@ -721,9 +725,9 @@ impl ClientFfi {
             #[cfg(not(test))]
             timelines: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
-            thread_timelines: HashMap::new(),
+            thread_timelines: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
-            thread_lists: HashMap::new(),
+            thread_lists: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             backfill_task: None,
             #[cfg(not(test))]
@@ -847,7 +851,7 @@ impl ClientFfi {
         };
         let mut new_set: std::collections::HashSet<OwnedRoomId> =
             self.timelines.read().keys().cloned().collect();
-        for (rid, _root) in self.thread_timelines.keys() {
+        for (rid, _root) in self.thread_timelines.read().keys() {
             new_set.insert(rid.clone());
         }
         // Compare-and-swap against the last-pushed set. If identical, skip
@@ -881,7 +885,7 @@ impl ClientFfi {
     /// (Production impl lives alongside `start_sync` in `client::sync`; this
     /// test stub mirrors that behaviour without pulling in the watcher task.)
     #[cfg(test)]
-    pub fn set_presence_polling_enabled(&mut self, enabled: bool) {
+    pub fn set_presence_polling_enabled(&self, enabled: bool) {
         self.presence_polling_enabled
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }

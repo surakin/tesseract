@@ -67,7 +67,7 @@ impl ClientFfi {
         }
     }
 
-    pub fn homeserver_supports_registration(&mut self, homeserver: &str) -> bool {
+    pub fn homeserver_supports_registration(&self, homeserver: &str) -> bool {
         let hs = homeserver.to_owned();
         let rt = &self.rt;
         // Keep a tokio context in TLS for the whole call so the throwaway Client
@@ -330,13 +330,13 @@ impl ClientFfi {
                     h.abort();
                 }
             }
-            for (_, th) in self.thread_timelines.drain() {
+            for (_, th) in self.thread_timelines.write().drain() {
                 th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();
                 }
             }
-            for (_, h) in self.thread_lists.drain() {
+            for (_, h) in self.thread_lists.write().drain() {
                 h.abort.abort();
             }
         }

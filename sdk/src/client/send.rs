@@ -389,7 +389,7 @@ impl ClientFfi {
         let candidates: Vec<Arc<matrix_sdk_ui::Timeline>> = {
             let mut out = Vec::new();
             // Thread Timelines for this room first.
-            for ((rid, _root), handle) in self.thread_timelines.iter() {
+            for ((rid, _root), handle) in self.thread_timelines.read().iter() {
                 if rid == room_id {
                     out.push(Arc::clone(&handle.timeline));
                 }
@@ -414,7 +414,7 @@ impl ClientFfi {
     /// Shared send path: client lookup, room_id parse, live-timeline routing
     /// with local-echo, and fallback to Room::send for unsubscribed rooms.
     #[cfg(not(test))]
-    fn dispatch_room_msg_(&mut self, room_id: &str, content: RoomMessageEventContent) -> OpResult {
+    fn dispatch_room_msg_(&self, room_id: &str, content: RoomMessageEventContent) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -444,7 +444,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn send_message(&mut self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
+    pub fn send_message(&self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
         let (mentions, html) = derive_mentions(formatted_body);
         let mut content = if html.is_empty() {
             RoomMessageEventContent::text_plain(body)
@@ -456,14 +456,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_message(&mut self, _room_id: &str, _body: &str, _formatted_body: &str) -> OpResult {
+    pub fn send_message(&self, _room_id: &str, _body: &str, _formatted_body: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Send an `m.emote` (the `/me` slash command). Callers strip the
     /// `/me ` prefix before invoking this.
     #[cfg(not(test))]
-    pub fn send_emote(&mut self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
+    pub fn send_emote(&self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
         let (mentions, html) = derive_mentions(formatted_body);
         let mut content = if html.is_empty() {
             RoomMessageEventContent::emote_plain(body)
@@ -475,12 +475,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_emote(&mut self, _room_id: &str, _body: &str, _formatted_body: &str) -> OpResult {
+    pub fn send_emote(&self, _room_id: &str, _body: &str, _formatted_body: &str) -> OpResult {
         err("not logged in")
     }
 
     #[cfg(not(test))]
-    pub fn retry_send(&mut self, room_id: &str) -> OpResult {
+    pub fn retry_send(&self, room_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -490,12 +490,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn retry_send(&mut self, _room_id: &str) -> OpResult {
+    pub fn retry_send(&self, _room_id: &str) -> OpResult {
         ok("")
     }
 
     #[cfg(not(test))]
-    pub fn abort_send(&mut self, room_id: &str, txn_id: &str) -> OpResult {
+    pub fn abort_send(&self, room_id: &str, txn_id: &str) -> OpResult {
         let room_id = try_op!(parse_room_id(room_id));
         let txn_id: matrix_sdk::ruma::OwnedTransactionId = txn_id.into();
         let timeline = {
@@ -516,13 +516,13 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn abort_send(&mut self, _room_id: &str, _txn_id: &str) -> OpResult {
+    pub fn abort_send(&self, _room_id: &str, _txn_id: &str) -> OpResult {
         ok("")
     }
 
     /// Send a typing notice to `room_id`. Fire-and-forget; errors are swallowed.
     #[cfg(not(test))]
-    pub fn send_typing_notice(&mut self, room_id: &str, typing: bool) {
+    pub fn send_typing_notice(&self, room_id: &str, typing: bool) {
         let Some(client) = self.client.clone() else {
             return;
         };
@@ -539,7 +539,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_typing_notice(&mut self, _room_id: &str, _typing: bool) {}
+    pub fn send_typing_notice(&self, _room_id: &str, _typing: bool) {}
 
     /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds the
     /// `m.in_reply_to` relation and sends via `room.send()`. Does not require
@@ -547,7 +547,7 @@ impl ClientFfi {
     /// renders its own quote block).
     #[cfg(not(test))]
     pub fn send_reply(
-        &mut self,
+        &self,
         room_id: &str,
         event_id: &str,
         body: &str,
@@ -580,7 +580,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_reply(
-        &mut self,
+        &self,
         _room_id: &str,
         _event_id: &str,
         _body: &str,
@@ -591,7 +591,7 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn send_thread_message(
-        &mut self,
+        &self,
         room_id: &str,
         thread_root: &str,
         body: &str,
@@ -602,7 +602,7 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn send_thread_reply(
-        &mut self,
+        &self,
         room_id: &str,
         thread_root: &str,
         in_reply_to_event_id: &str,
@@ -623,7 +623,7 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     fn send_thread_inner(
-        &mut self,
+        &self,
         room_id: &str,
         thread_root: &str,
         in_reply_to: &str,
@@ -651,8 +651,11 @@ impl ClientFfi {
         //   so the event lands with m.relates_to → m.thread + m.in_reply_to and
         //   gets observed by the subscribed timeline).
         let key = (room_id.clone(), root.clone());
-        if let Some(handle) = self.thread_timelines.get(&key) {
-            let timeline = handle.timeline.clone();
+        // Clone the timeline Arc out from under the read guard so it is not held
+        // across the `block_on` below (that would risk a deadlock).
+        let thread_timeline =
+            self.thread_timelines.read().get(&key).map(|h| h.timeline.clone());
+        if let Some(timeline) = thread_timeline {
             let (mentions, html) = derive_mentions(formatted_body);
             let mut msg = if html.is_empty() {
                 RoomMessageEventContent::text_plain(body)
@@ -704,7 +707,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_thread_message(
-        &mut self,
+        &self,
         _room_id: &str,
         _thread_root: &str,
         _body: &str,
@@ -715,7 +718,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_thread_reply(
-        &mut self,
+        &self,
         _room_id: &str,
         _thread_root: &str,
         _in_reply_to_event_id: &str,
@@ -733,7 +736,7 @@ impl ClientFfi {
     /// Requires `subscribe_room`. The call spawns a tokio task and returns
     /// immediately — it never blocks the UI thread.
     #[cfg(not(test))]
-    pub fn fetch_reply_details(&mut self, room_id: &str, event_id: &str) -> OpResult {
+    pub fn fetch_reply_details(&self, room_id: &str, event_id: &str) -> OpResult {
         let room_id = try_op!(parse_room_id(room_id));
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
@@ -753,7 +756,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn fetch_reply_details(&mut self, _: &str, _: &str) -> OpResult {
+    pub fn fetch_reply_details(&self, _: &str, _: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -769,7 +772,7 @@ impl ClientFfi {
     /// strips these fields).
     #[cfg(not(test))]
     pub fn send_image(
-        &mut self,
+        &self,
         room_id: &str,
         bytes: &[u8],
         mime_type: &str,
@@ -884,7 +887,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_image(
-        &mut self,
+        &self,
         _room_id: &str,
         _bytes: &[u8],
         _mime_type: &str,
@@ -905,7 +908,7 @@ impl ClientFfi {
     /// the `m.file` `info` block. Encryption is handled transparently for E2EE rooms.
     #[cfg(not(test))]
     pub fn send_file(
-        &mut self,
+        &self,
         room_id: &str,
         bytes: &[u8],
         mime_type: &str,
@@ -949,7 +952,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_file(
-        &mut self,
+        &self,
         _room_id: &str,
         _bytes: &[u8],
         _mime_type: &str,
@@ -967,7 +970,7 @@ impl ClientFfi {
     /// framing as `send_image` and `send_file`.
     #[cfg(not(test))]
     pub fn send_audio(
-        &mut self,
+        &self,
         room_id: &str,
         bytes: &[u8],
         mime_type: &str,
@@ -1019,7 +1022,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_audio(
-        &mut self,
+        &self,
         _room_id: &str,
         _bytes: &[u8],
         _mime_type: &str,
@@ -1040,7 +1043,7 @@ impl ClientFfi {
     /// `info.thumbnail_url`. E2EE rooms are handled transparently.
     #[cfg(not(test))]
     pub fn send_video(
-        &mut self,
+        &self,
         room_id: &str,
         bytes: &[u8],
         mime_type: &str,
@@ -1106,7 +1109,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_video(
-        &mut self,
+        &self,
         _room_id: &str,
         _bytes: &[u8],
         _mime_type: &str,
@@ -1490,7 +1493,7 @@ impl ClientFfi {
     /// framing as `send_image` and `send_file`.
     #[cfg(not(test))]
     pub fn send_voice(
-        &mut self,
+        &self,
         room_id: &str,
         pcm: &[u8],
         duration_ms: u64,
@@ -1579,7 +1582,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_voice(
-        &mut self,
+        &self,
         _room_id: &str,
         _pcm: &[u8],
         _duration_ms: u64,
@@ -1597,7 +1600,7 @@ impl ClientFfi {
     /// Returns 0 when unknown, the server doesn't advertise a limit, or the
     /// client is not logged in.
     #[cfg(not(test))]
-    pub fn media_upload_limit(&mut self) -> u64 {
+    pub fn media_upload_limit(&self) -> u64 {
         let cached = self.media_upload_limit.load(Ordering::Relaxed);
         if cached != 0 {
             return cached;
@@ -1620,7 +1623,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn media_upload_limit(&mut self) -> u64 {
+    pub fn media_upload_limit(&self) -> u64 {
         0
     }
 
@@ -1629,7 +1632,7 @@ impl ClientFfi {
     /// `room_id` is currently subscribed via `subscribe_room` — we look up
     /// its `Timeline` handle to invoke `toggle_reaction`.
     #[cfg(not(test))]
-    pub fn send_reaction(&mut self, room_id: &str, event_id: &str, key: &str) -> OpResult {
+    pub fn send_reaction(&self, room_id: &str, event_id: &str, key: &str) -> OpResult {
         if self.client.is_none() {
             return err("not logged in");
         }
@@ -1666,13 +1669,13 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_reaction(&mut self, _room_id: &str, _event_id: &str, _key: &str) -> OpResult {
+    pub fn send_reaction(&self, _room_id: &str, _event_id: &str, _key: &str) -> OpResult {
         err("not logged in")
     }
 
     #[cfg(not(test))]
     pub fn send_reaction_custom(
-        &mut self,
+        &self,
         room_id: &str,
         event_id: &str,
         key: &str,
@@ -1713,7 +1716,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_reaction_custom(
-        &mut self,
+        &self,
         _room_id: &str,
         _event_id: &str,
         _key: &str,
@@ -1723,7 +1726,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn send_read_receipt(&mut self, room_id: &str, event_id: &str) -> OpResult {
+    pub fn send_read_receipt(&self, room_id: &str, event_id: &str) -> OpResult {
         let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
@@ -1740,7 +1743,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_read_receipt(&mut self, _room_id: &str, _event_id: &str) -> OpResult {
+    pub fn send_read_receipt(&self, _room_id: &str, _event_id: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -1748,7 +1751,7 @@ impl ClientFfi {
     /// latest cached event in `room_id`. Clears the unread count without
     /// requiring the room to be subscribed via `subscribe_room`.
     #[cfg(not(test))]
-    pub fn mark_room_as_read(&mut self, room_id: &str) -> OpResult {
+    pub fn mark_room_as_read(&self, room_id: &str) -> OpResult {
         let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
@@ -1769,7 +1772,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn mark_room_as_read(&mut self, _room_id: &str) -> OpResult {
+    pub fn mark_room_as_read(&self, _room_id: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -1779,7 +1782,7 @@ impl ClientFfi {
     /// (e.g. trying to redact someone else's message without power) surface
     /// as `OpResult { ok: false, message: ... }`.
     #[cfg(not(test))]
-    pub fn redact_event(&mut self, room_id: &str, event_id: &str, reason: &str) -> OpResult {
+    pub fn redact_event(&self, room_id: &str, event_id: &str, reason: &str) -> OpResult {
         if self.client.is_none() {
             return err("not logged in");
         }
@@ -1816,7 +1819,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn redact_event(&mut self, _room_id: &str, _event_id: &str, _reason: &str) -> OpResult {
+    pub fn redact_event(&self, _room_id: &str, _event_id: &str, _reason: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -1827,7 +1830,7 @@ impl ClientFfi {
     /// events. Does not require `subscribe_room`.
     #[cfg(not(test))]
     pub fn send_edit(
-        &mut self,
+        &self,
         room_id: &str,
         event_id: &str,
         new_body: &str,
@@ -1865,7 +1868,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_edit(
-        &mut self,
+        &self,
         _room_id: &str,
         _event_id: &str,
         _new_body: &str,
@@ -1890,7 +1893,7 @@ impl ClientFfi {
     /// `mxc://` source.
     #[cfg(not(test))]
     pub fn send_sticker(
-        &mut self,
+        &self,
         room_id: &str,
         body: &str,
         image_url: &str,
@@ -1930,7 +1933,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_sticker(
-        &mut self,
+        &self,
         _room_id: &str,
         _body: &str,
         _image_url: &str,
@@ -1945,7 +1948,7 @@ impl ClientFfi {
     /// `room.send_raw` with a manual `m.thread` relation when not subscribed.
     #[cfg(not(test))]
     pub fn send_thread_sticker(
-        &mut self,
+        &self,
         room_id: &str,
         thread_root: &str,
         body: &str,
@@ -1976,8 +1979,11 @@ impl ClientFfi {
         // on_thread_inserted (not the room timeline, which would show the
         // sticker in the main message list instead of the thread view).
         let key = (room_id_parsed.clone(), root.clone());
-        if let Some(handle) = self.thread_timelines.get(&key) {
-            let timeline = handle.timeline.clone();
+        // Clone the timeline Arc out from under the read guard so it is not held
+        // across the `block_on` below.
+        let thread_timeline =
+            self.thread_timelines.read().get(&key).map(|h| h.timeline.clone());
+        if let Some(timeline) = thread_timeline {
             let content = StickerEventContent::new(body.to_owned(), info, uri);
             return match self.rt.block_on(async move {
                 timeline.send(content.into()).await
@@ -2009,7 +2015,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_thread_sticker(
-        &mut self,
+        &self,
         _room_id: &str,
         _thread_root: &str,
         _body: &str,

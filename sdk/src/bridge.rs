@@ -910,7 +910,7 @@ pub mod ffi {
         /// Best-effort: does `homeserver` advertise OIDC registration support
         /// (`prompt_values_supported` contains `create`)? Blocks — worker thread.
         fn homeserver_supports_registration(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             homeserver: &str,
         ) -> bool;
 
@@ -973,10 +973,10 @@ pub mod ffi {
         /// arrive as positional `on_message_inserted` /
         /// `on_message_updated` / `on_message_removed` callbacks. Call
         /// `paginate_back_with_status` to load older history.
-        fn subscribe_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        fn subscribe_room(self: &ClientFfi, room_id: &str) -> OpResult;
 
         /// Unsubscribe from a room's timeline and cancel its background task.
-        fn unsubscribe_room(self: &mut ClientFfi, room_id: &str);
+        fn unsubscribe_room(self: &ClientFfi, room_id: &str);
 
         /// Paginate backwards in a subscribed room's timeline, reporting
         /// whether the timeline has reached its first event (no further
@@ -1008,7 +1008,7 @@ pub mod ffi {
         /// `OpResult.message` holds the event ID string; on failure it holds
         /// the error description.
         fn timestamp_to_event(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             ts_ms: u64,
             dir: &str,
@@ -1019,7 +1019,7 @@ pub mod ffi {
         /// `TimelineFocus::Event` timeline centered on `focus_event_id`.
         /// Fires `on_timeline_reset` + individual event callbacks identically
         /// to `subscribe_room`.
-        fn subscribe_room_at(self: &mut ClientFfi, room_id: &str, focus_event_id: &str)
+        fn subscribe_room_at(self: &ClientFfi, room_id: &str, focus_event_id: &str)
             -> OpResult;
 
         // ----- Thread timeline subscription -----
@@ -1030,14 +1030,14 @@ pub mod ffi {
         /// callbacks as replies arrive. Call `paginate_thread_back` for older
         /// replies.
         fn subscribe_thread(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             root_event_id: &str,
         ) -> OpResult;
 
         /// Unsubscribe from a thread timeline and cancel its background tasks.
         fn unsubscribe_thread(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             root_event_id: &str,
         );
@@ -1046,7 +1046,7 @@ pub mod ffi {
         /// arrive as `on_thread_inserted` callbacks at the front of the thread.
         /// `reached_start` is `true` when there are no more replies to fetch.
         fn paginate_thread_back(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             root_event_id: &str,
             count: u16,
@@ -1057,17 +1057,17 @@ pub mod ffi {
         /// Start watching the thread list for `room_id`: builds a
         /// ThreadListService, kicks an initial pagination, and fires
         /// on_threads_updated when the list changes.
-        fn subscribe_room_threads(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        fn subscribe_room_threads(self: &ClientFfi, room_id: &str) -> OpResult;
 
         /// Stop watching the thread list for `room_id`.
-        fn unsubscribe_room_threads(self: &mut ClientFfi, room_id: &str);
+        fn unsubscribe_room_threads(self: &ClientFfi, room_id: &str);
 
         /// Snapshot of the current thread list for `room_id` (most-recent
         /// first). Empty when not subscribed or none known yet.
         fn list_room_threads(self: &ClientFfi, room_id: &str) -> Vec<ThreadInfo>;
 
         /// Paginate older threads. reached_start == true means list exhausted.
-        fn paginate_room_threads(self: &mut ClientFfi, room_id: &str) -> PaginateResult;
+        fn paginate_room_threads(self: &ClientFfi, room_id: &str) -> PaginateResult;
 
         /// Kick off a background pass that paginates every joined room not
         /// currently subscribed, up to ~50 events each, with bounded
@@ -1095,7 +1095,7 @@ pub mod ffi {
         // ----- Messaging -----
 
         fn send_message(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             body: &str,
             formatted_body: &str,
@@ -1106,7 +1106,7 @@ pub mod ffi {
         /// msgtype. Callers are expected to have already stripped the `/me `
         /// prefix from `body` / `formatted_body`.
         fn send_emote(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             body: &str,
             formatted_body: &str,
@@ -1114,21 +1114,21 @@ pub mod ffi {
 
         /// Re-enable the send queue for `room_id` after a recoverable failure.
         /// The SDK automatically retries all pending sends.
-        fn retry_send(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        fn retry_send(self: &ClientFfi, room_id: &str) -> OpResult;
 
         /// Abort a pending local echo identified by `txn_id` in `room_id`.
-        fn abort_send(self: &mut ClientFfi, room_id: &str, txn_id: &str) -> OpResult;
+        fn abort_send(self: &ClientFfi, room_id: &str, txn_id: &str) -> OpResult;
 
         /// Send a typing notice to `room_id`. Fire-and-forget — errors are
         /// silently swallowed. Does not require `subscribe_room`.
-        fn send_typing_notice(self: &mut ClientFfi, room_id: &str, typing: bool);
+        fn send_typing_notice(self: &ClientFfi, room_id: &str, typing: bool);
 
         /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds the
         /// `m.in_reply_to` relation and sends via `room.send()`. Does not require
         /// `subscribe_room`. Does not add the plain-text fallback body (Tesseract
         /// renders its own quote block for the reply indicator).
         fn send_reply(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             event_id: &str,
             body: &str,
@@ -1138,7 +1138,7 @@ pub mod ffi {
         /// Send `body` as a message into the thread rooted at `thread_root`
         /// (MSC3440 `m.thread` relation). Does not require `subscribe_room`.
         fn send_thread_message(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             thread_root: &str,
             body: &str,
@@ -1148,7 +1148,7 @@ pub mod ffi {
         /// Send `body` as a reply to `in_reply_to_event_id` *within* the thread
         /// rooted at `thread_root`. Does not require `subscribe_room`.
         fn send_thread_reply(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             thread_root: &str,
             in_reply_to_event_id: &str,
@@ -1160,7 +1160,7 @@ pub mod ffi {
         /// `m.in_reply_to`. Requires `subscribe_room`. Returns immediately;
         /// the result arrives via `on_message_updated` for every message in
         /// the subscribed timeline that references `event_id`.
-        fn fetch_reply_details(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+        fn fetch_reply_details(self: &ClientFfi, room_id: &str, event_id: &str) -> OpResult;
 
         /// Send an image to `room_id`. `bytes` are the already-encoded image
         /// payload (PNG/JPEG/etc. as identified by `mime_type`); the SDK
@@ -1178,7 +1178,7 @@ pub mod ffi {
         /// loop on capable clients (the standard `send_attachment` path
         /// strips these fields).
         fn send_image(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             bytes: &[u8],
             mime_type: &str,
@@ -1202,7 +1202,7 @@ pub mod ffi {
         /// caption and the dedicated `filename` field carries the file name.
         /// matrix-sdk handles plain and E2EE rooms transparently.
         fn send_file(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             bytes: &[u8],
             mime_type: &str,
@@ -1219,7 +1219,7 @@ pub mod ffi {
         /// when unknown. `caption`/`reply_event_id` follow MSC2530/m.in_reply_to
         /// framing identical to `send_file`.
         fn send_audio(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             bytes: &[u8],
             mime_type: &str,
@@ -1239,7 +1239,7 @@ pub mod ffi {
         /// uploads the thumbnail as a separate media item and sets
         /// `info.thumbnail_url`. E2EE rooms are handled transparently.
         fn send_video(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             bytes: &[u8],
             mime_type: &str,
@@ -1330,7 +1330,7 @@ pub mod ffi {
         /// `info.duration`. `caption` / `reply_event_id` follow the same
         /// MSC2530 / m.in_reply_to framing as `send_image` and `send_file`.
         fn send_voice(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             pcm: &[u8],
             duration_ms: u64,
@@ -1348,7 +1348,7 @@ pub mod ffi {
         /// works on own `m.text` events; returns `ok=false` for non-own or
         /// non-text events.
         fn send_edit(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             event_id: &str,
             new_body: &str,
@@ -1359,7 +1359,7 @@ pub mod ffi {
         /// (`/_matrix/media/v3/config`). Cached after the first successful
         /// query; returns `0` when the server does not advertise a limit, the
         /// query has not yet completed, or the client is not logged in.
-        fn media_upload_limit(self: &mut ClientFfi) -> u64;
+        fn media_upload_limit(self: &ClientFfi) -> u64;
 
         /// Toggle the current user's `key` reaction on `event_id` in
         /// `room_id`. Adds the reaction when the user has not yet reacted
@@ -1367,7 +1367,7 @@ pub mod ffi {
         /// `Timeline::toggle_reaction`. Requires that `room_id` is
         /// currently subscribed via `subscribe_room`.
         fn send_reaction(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             event_id: &str,
             key: &str,
@@ -1379,7 +1379,7 @@ pub mod ffi {
         /// Omit shortcode (pass "") to skip the field. Unlike `send_reaction`
         /// this always sends (not toggles); redaction uses `send_reaction`.
         fn send_reaction_custom(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             event_id: &str,
             key: &str,
@@ -1388,19 +1388,19 @@ pub mod ffi {
 
         /// Send public `m.read` and private `m.read.private` receipts for
         /// `event_id` in `room_id`. Does not require the room to be subscribed.
-        fn send_read_receipt(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+        fn send_read_receipt(self: &ClientFfi, room_id: &str, event_id: &str) -> OpResult;
 
         /// Send public `m.read` and private `m.read.private` receipts for the
         /// latest cached event in `room_id`. Used to clear the unread badge
         /// when the user opens a room. Does not require a subscription.
-        fn mark_room_as_read(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        fn mark_room_as_read(self: &ClientFfi, room_id: &str) -> OpResult;
 
         /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
         /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room
         /// is currently subscribed via `subscribe_room`. Server-side
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
         fn redact_event(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             event_id: &str,
             reason: &str,
@@ -1436,7 +1436,7 @@ pub mod ffi {
         /// is the literal MSC2545 `info` object (`"{}"` is acceptable).
         /// matrix-sdk handles E2EE rooms transparently.
         fn send_sticker(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             body: &str,
             image_url: &str,
@@ -1447,7 +1447,7 @@ pub mod ffi {
         /// Same semantics as `send_sticker` but emits a full `m.thread`
         /// relation so the sticker appears inside the thread timeline.
         fn send_thread_sticker(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             thread_root: &str,
             body: &str,
@@ -1463,7 +1463,7 @@ pub mod ffi {
         /// updates on the next sync settle and `on_image_packs_updated`
         /// fires.
         fn save_sticker_to_user_pack(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             shortcode: &str,
             body: &str,
             image_url: &str,
@@ -1478,7 +1478,7 @@ pub mod ffi {
         /// Flip the `im.tesseract.favorite` flag on the user-pack entry
         /// whose `url` matches `image_url`. No-op when the sticker isn't in
         /// the user pack (call `save_sticker_to_user_pack` first).
-        fn toggle_favorite_sticker(self: &mut ClientFfi, image_url: &str) -> OpResult;
+        fn toggle_favorite_sticker(self: &ClientFfi, image_url: &str) -> OpResult;
 
         // ----- Application prefs (im.gnomos.tesseract global account-data) -----
 
@@ -1486,13 +1486,13 @@ pub mod ffi {
         /// the SDK's local sync cache. Returns the raw JSON content object,
         /// or `"{}"` when the event has never been written or the client is
         /// not logged in. No network roundtrip.
-        fn load_prefs(self: &mut ClientFfi) -> String;
+        fn load_prefs(self: &ClientFfi) -> String;
 
         /// Write `json` (the full content object) back to the homeserver as
         /// the `im.gnomos.tesseract` account-data event. Fire-and-forget —
         /// returns immediately; errors are silently swallowed. The next sync
         /// deliver of the event will trigger `on_account_prefs_updated`.
-        fn save_prefs(self: &mut ClientFfi, json: &str);
+        fn save_prefs(self: &ClientFfi, json: &str);
 
         // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
@@ -1500,13 +1500,13 @@ pub mod ffi {
         /// cache (stable → unstable precedence). No network roundtrip;
         /// returns the MSC defaults (previews on, invite avatars on) when not
         /// logged in or before the first sync.
-        fn media_preview_config(self: &mut ClientFfi) -> MediaPreviewConfigFfi;
+        fn media_preview_config(self: &ClientFfi) -> MediaPreviewConfigFfi;
 
         /// Read a room-level override of `media_previews` from that room's
         /// account-data. `has_media_previews` is false when the room sets no
         /// override (use the global value). No network roundtrip.
         fn room_media_preview_override(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
         ) -> MediaPreviewOverrideFfi;
 
@@ -1514,7 +1514,7 @@ pub mod ffi {
         /// unstable account-data types. Fire-and-forget; the echo arrives on
         /// the next sync and triggers `on_media_preview_config_updated`.
         fn set_media_preview_config(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             media_previews: u8,
             invite_avatars: bool,
         );
@@ -1525,11 +1525,11 @@ pub mod ffi {
         /// account-data, most-used first. Reads the SDK's local sync cache;
         /// no network roundtrip. Returns an empty vector when not logged in
         /// or before the first sync has populated the cache.
-        fn recent_emoji_top(self: &mut ClientFfi, n: u32) -> Vec<String>;
+        fn recent_emoji_top(self: &ClientFfi, n: u32) -> Vec<String>;
 
         /// Record one use of `glyph`. Fire-and-forget against the homeserver
         /// (the SDK call is GET-modify-PUT and would otherwise stall the UI).
-        fn recent_emoji_bump(self: &mut ClientFfi, glyph: &str);
+        fn recent_emoji_bump(self: &ClientFfi, glyph: &str);
 
         // ----- Identity -----
 
@@ -1643,7 +1643,7 @@ pub mod ffi {
         /// encrypted when the room is encrypted, plaintext otherwise. Blocks the
         /// calling thread.
         fn send_gif_video(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             mp4_bytes: &[u8],
             mime_type: &str,
@@ -1671,14 +1671,14 @@ pub mod ffi {
         /// Join a room by its ID or alias. Returns the canonical room ID
         /// (e.g. `!id:server`) on success, or an empty string on failure.
         /// Blocks the calling thread — call only from a worker thread.
-        fn join_room(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
+        fn join_room(self: &ClientFfi, room_id_or_alias: &str) -> String;
 
         /// Non-blocking join. Spawns the join as a tokio task and delivers
         /// the result via `on_room_action_complete(request_id, ok, joined_room_id, message)`.
         fn join_room_async(self: &ClientFfi, request_id: u64, room_id_or_alias: &str);
 
         /// Leave a room. Blocks the calling thread — call from a worker thread.
-        fn leave_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        fn leave_room(self: &ClientFfi, room_id: &str) -> OpResult;
 
         /// Non-blocking leave. Spawns the leave as a tokio task and delivers
         /// the result via `on_room_action_complete(request_id, ok, "", message)`.
@@ -1691,15 +1691,15 @@ pub mod ffi {
         fn get_room_members(self: &ClientFfi, room_id: &str) -> Vec<RoomMember>;
 
         /// Send an m.room.topic state event. Blocks — worker thread.
-        fn set_room_topic(self: &mut ClientFfi, room_id: &str, topic: &str) -> OpResult;
+        fn set_room_topic(self: &ClientFfi, room_id: &str, topic: &str) -> OpResult;
 
         /// Append `event_id` to this room's `m.room.pinned_events` state
         /// event. No-op (returns ok) if already pinned. Blocks — worker thread.
-        fn pin_event(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+        fn pin_event(self: &ClientFfi, room_id: &str, event_id: &str) -> OpResult;
 
         /// Remove `event_id` from this room's `m.room.pinned_events` state
         /// event. No-op (returns ok) if not pinned. Blocks — worker thread.
-        fn unpin_event(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
+        fn unpin_event(self: &ClientFfi, room_id: &str, event_id: &str) -> OpResult;
 
         /// True iff the current user has permission to send
         /// `m.room.pinned_events` state events in this room. Reads cached
@@ -1707,29 +1707,29 @@ pub mod ffi {
         fn can_pin_in_room(self: &ClientFfi, room_id: &str) -> bool;
 
         /// Add user_id to m.ignored_user_list account data. Blocks — worker thread.
-        fn ignore_user(self: &mut ClientFfi, user_id: &str) -> OpResult;
+        fn ignore_user(self: &ClientFfi, user_id: &str) -> OpResult;
 
         /// Remove user_id from m.ignored_user_list. Blocks — worker thread.
-        fn unignore_user(self: &mut ClientFfi, user_id: &str) -> OpResult;
+        fn unignore_user(self: &ClientFfi, user_id: &str) -> OpResult;
 
         /// Set the current user's display name. Blocks — worker thread.
-        fn set_display_name(self: &mut ClientFfi, name: &str) -> OpResult;
+        fn set_display_name(self: &ClientFfi, name: &str) -> OpResult;
 
         /// Upload an avatar for the current user. `bytes` is the image payload
         /// (PNG/JPEG/etc.); `mime_type` specifies the image format. Blocks — worker thread.
-        fn upload_avatar(self: &mut ClientFfi, bytes: &[u8], mime_type: &str) -> OpResult;
+        fn upload_avatar(self: &ClientFfi, bytes: &[u8], mime_type: &str) -> OpResult;
 
         /// Upload bytes to the media server; returns the mxc:// URI in OpResult.message.
         /// Does NOT change the user's global profile avatar. Blocks — worker thread.
-        fn upload_media(self: &mut ClientFfi, bytes: &[u8], mime_type: &str) -> OpResult;
+        fn upload_media(self: &ClientFfi, bytes: &[u8], mime_type: &str) -> OpResult;
 
         /// Remove the current user's avatar. Blocks — worker thread.
-        fn remove_avatar(self: &mut ClientFfi) -> OpResult;
+        fn remove_avatar(self: &ClientFfi) -> OpResult;
 
         /// Set the current user's display name in a specific room
         /// (m.room.member state event). Blocks — worker thread.
         fn set_room_display_name(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             name: &str,
         ) -> OpResult;
@@ -1737,7 +1737,7 @@ pub mod ffi {
         /// Set the current user's avatar in a specific room
         /// (m.room.member state event). Blocks — worker thread.
         fn set_room_avatar(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             mxc_uri: &str,
         ) -> OpResult;
@@ -1754,7 +1754,7 @@ pub mod ffi {
         /// Rename a device on the homeserver (no UIA required). `device_id`
         /// must belong to the current user. Blocks — worker thread.
         fn set_device_display_name(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             device_id: &str,
             name: &str,
         ) -> OpResult;
@@ -1766,7 +1766,7 @@ pub mod ffi {
         /// browser. Pass the session back to `complete_delete_device` once
         /// the user has authenticated. Blocks — worker thread.
         fn begin_delete_device(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             device_id: &str,
         ) -> DeleteDeviceBegin;
 
@@ -1774,7 +1774,7 @@ pub mod ffi {
         /// browser. `session` is the value returned by `begin_delete_device`.
         /// Blocks — worker thread.
         fn complete_delete_device(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             device_id: &str,
             session: &str,
         ) -> OpResult;
@@ -1785,13 +1785,13 @@ pub mod ffi {
         /// `PUT /presence/{userId}/status`. `state` is the same 1/2/3 wire
         /// encoding the receive side uses: 1=Online, 2=Unavailable, 3=Offline.
         /// Any other value is rejected with `ok=false`. Blocks — worker thread.
-        fn set_presence(self: &mut ClientFfi, state: u8) -> OpResult;
+        fn set_presence(self: &ClientFfi, state: u8) -> OpResult;
 
         /// Enable or disable background presence polling of DM counterparts.
         /// When disabled the polling loop skips every tick; already-received
         /// presence values are left unchanged. Thread-safe; may be called on
         /// any thread.
-        fn set_presence_polling_enabled(self: &mut ClientFfi, enabled: bool);
+        fn set_presence_polling_enabled(self: &ClientFfi, enabled: bool);
 
         /// Issue one immediate round of DM presence polls without waiting
         /// for the 60s interval. Used by the UI shell when the window
@@ -1801,7 +1801,7 @@ pub mod ffi {
 
         /// Return room ID of an existing DM with user_id, or create one.
         /// Returns empty string on error. Blocks — worker thread.
-        fn get_or_create_dm(self: &mut ClientFfi, user_id: &str) -> String;
+        fn get_or_create_dm(self: &ClientFfi, user_id: &str) -> String;
 
         /// Resolve a user's profile by mxid to confirm the user exists and
         /// fetch their display name / avatar. `exists` is false on a parse
@@ -1814,7 +1814,7 @@ pub mod ffi {
         /// Returns JSON: `{"base_url":"https://...","error":""}` on success or
         /// `{"base_url":"","error":"message"}` on failure.
         /// Blocks the calling thread — call only from a worker thread.
-        fn discover_homeserver(self: &mut ClientFfi, server_name_or_mxid: &str) -> String;
+        fn discover_homeserver(self: &ClientFfi, server_name_or_mxid: &str) -> String;
 
         // ----- Spaces -----
 
@@ -1848,24 +1848,24 @@ pub mod ffi {
         /// decryption key into this device, and start downloading historical
         /// room keys. Returns once the SDK reports a steady-state backup, or
         /// with an error if the key is wrong / no secret storage exists.
-        fn recover(self: &mut ClientFfi, key_or_passphrase: &str) -> OpResult;
+        fn recover(self: &ClientFfi, key_or_passphrase: &str) -> OpResult;
 
         /// Bootstrap cross-signing and key backup for a fresh account.
         /// Empty `passphrase` → generate a random recovery key.
         /// Non-empty → derive key from passphrase (reported key is "").
         /// Progress events fire via `on_enable_recovery_progress` before return.
-        fn enable_recovery(self: &mut ClientFfi, passphrase: &str) -> OpResult;
+        fn enable_recovery(self: &ClientFfi, passphrase: &str) -> OpResult;
 
         /// Current snapshot of the backup state and import counters.
         fn backup_state(self: &ClientFfi) -> BackupProgress;
 
         /// Export all Megolm room keys to a passphrase-encrypted file at
         /// `path` (standard Matrix key-export format). Blocks — worker thread.
-        fn export_room_keys(self: &mut ClientFfi, path: &str, passphrase: &str) -> OpResult;
+        fn export_room_keys(self: &ClientFfi, path: &str, passphrase: &str) -> OpResult;
 
         /// Import Megolm room keys from the passphrase-encrypted file at
         /// `path` (standard Matrix key-export format). Blocks — worker thread.
-        fn import_room_keys(self: &mut ClientFfi, path: &str, passphrase: &str) -> OpResult;
+        fn import_room_keys(self: &ClientFfi, path: &str, passphrase: &str) -> OpResult;
 
         /// Begin resetting the user's cross-signing identity (Element's "Reset
         /// cryptographic identity"). Uploads a fresh cross-signing identity;
@@ -1886,23 +1886,23 @@ pub mod ffi {
         /// Send an `m.key.verification.request` to-device event to every other
         /// device of the current user. When one accepts, `on_verification_request`
         /// fires with `incoming = false` and the UI should call `start_sas`.
-        fn request_self_verification(self: &mut ClientFfi) -> OpResult;
+        fn request_self_verification(self: &ClientFfi) -> OpResult;
 
         /// Accept an incoming verification request identified by `flow_id`.
         /// Call after receiving `on_verification_request(incoming=true)`.
-        fn accept_verification(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+        fn accept_verification(self: &ClientFfi, flow_id: &str) -> OpResult;
 
         /// Start the SAS key-exchange on a ready request. The SDK will fire
         /// `on_sas_ready` with the 7 emoji once both sides have exchanged keys.
-        fn start_sas(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+        fn start_sas(self: &ClientFfi, flow_id: &str) -> OpResult;
 
         /// Confirm that the emoji shown on this device match the other device's
         /// display. Fires `on_verification_done` when both sides confirm.
-        fn confirm_sas(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+        fn confirm_sas(self: &ClientFfi, flow_id: &str) -> OpResult;
 
         /// Cancel or decline a verification flow (e.g. emoji mismatch or user
         /// dismissed). Fires `on_verification_cancelled` on both sides.
-        fn cancel_verification(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+        fn cancel_verification(self: &ClientFfi, flow_id: &str) -> OpResult;
 
         /// Return the 7 SAS emoji for `flow_id` after `on_sas_ready` has fired.
         /// Returns an empty Vec before the key exchange completes.
@@ -1915,7 +1915,7 @@ pub mod ffi {
         /// Matrix user ID + hostname). `endpoint_url` is the push gateway URL
         /// provided by the UnifiedPush distributor.
         fn register_pusher(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             pushkey: &str,
             app_id: &str,
             app_display_name: &str,
@@ -1925,13 +1925,13 @@ pub mod ffi {
         ) -> OpResult;
 
         /// Remove a pusher from the homeserver by `pushkey` / `app_id`.
-        fn remove_pusher(self: &mut ClientFfi, pushkey: &str, app_id: &str) -> OpResult;
+        fn remove_pusher(self: &ClientFfi, pushkey: &str, app_id: &str) -> OpResult;
 
         /// Hint that a push notification arrived for `room_id`. Requests a
         /// targeted sliding-sync subscription for that room (union with any
         /// already-open rooms) so the next sync cycle delivers fresh state
         /// before the regular sync loop catches up.
-        fn hint_push_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
+        fn hint_push_room(self: &ClientFfi, room_id: &str) -> OpResult;
 
         // ----- Per-room notification mode -----
 
@@ -1943,19 +1943,19 @@ pub mod ffi {
         /// Set the per-room notification mode by writing push rules to the
         /// homeserver. `mode` must be "default" | "all" | "mentions" | "off".
         /// Fire-and-forget; errors are logged. Blocks — worker thread.
-        fn set_room_notification_mode(self: &mut ClientFfi, room_id: &str, mode: &str);
+        fn set_room_notification_mode(self: &ClientFfi, room_id: &str, mode: &str);
 
         // ----- Per-room tags (favourite / low priority) -----
 
         /// Add or remove the `m.favourite` tag for a room. Setting it removes
         /// `m.lowpriority` if present (mutually exclusive). Fire-and-forget.
         /// Blocks — call from a worker thread.
-        fn set_room_favourite(self: &mut ClientFfi, room_id: &str, value: bool);
+        fn set_room_favourite(self: &ClientFfi, room_id: &str, value: bool);
 
         /// Add or remove the `m.lowpriority` tag for a room. Setting it removes
         /// `m.favourite` if present (mutually exclusive). Fire-and-forget.
         /// Blocks — call from a worker thread.
-        fn set_room_low_priority(self: &mut ClientFfi, room_id: &str, value: bool);
+        fn set_room_low_priority(self: &ClientFfi, room_id: &str, value: bool);
 
         // ----- Session teardown -----
 

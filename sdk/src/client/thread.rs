@@ -35,7 +35,7 @@ impl ClientFfi {
     /// Call `paginate_thread_back` for older replies.
     #[cfg(not(test))]
     pub fn subscribe_thread(
-        &mut self,
+        &self,
         room_id: &str,
         root_event_id: &str,
     ) -> OpResult {
@@ -54,7 +54,11 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid thread root id: {e}")),
         };
         let key = (room_id.clone(), root.clone());
-        if let Some(prev) = self.thread_timelines.remove(&key) {
+        // Brief write guard: remove the previous handle, then drop the guard
+        // before the timeline build / abort calls below (never held across
+        // `block_on`).
+        let prev = self.thread_timelines.write().remove(&key);
+        if let Some(prev) = prev {
             prev.cancelled.store(true, Ordering::Release);
             for h in prev.abort_tasks {
                 h.abort();
@@ -104,7 +108,7 @@ impl ClientFfi {
             let _ = tl_for_paginate.paginate_backwards(50).await;
         }).abort_handle();
 
-        self.thread_timelines.insert(
+        self.thread_timelines.write().insert(
             key,
             TimelineHandle {
                 timeline,
@@ -119,7 +123,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn subscribe_thread(
-        &mut self,
+        &self,
         _room_id: &str,
         _root_event_id: &str,
     ) -> OpResult {
@@ -128,12 +132,13 @@ impl ClientFfi {
 
     /// Unsubscribe from a thread timeline and cancel its background tasks.
     #[cfg(not(test))]
-    pub fn unsubscribe_thread(&mut self, room_id: &str, root_event_id: &str) {
+    pub fn unsubscribe_thread(&self, room_id: &str, root_event_id: &str) {
         if let (Ok(rid), Ok(root)) = (
             room_id.parse::<OwnedRoomId>(),
             root_event_id.parse::<matrix_sdk::ruma::OwnedEventId>(),
         ) {
-            if let Some(h) = self.thread_timelines.remove(&(rid, root)) {
+            let removed = self.thread_timelines.write().remove(&(rid, root));
+            if let Some(h) = removed {
                 h.cancelled.store(true, Ordering::Release);
                 for abort in h.abort_tasks {
                     abort.abort();
@@ -144,14 +149,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn unsubscribe_thread(&mut self, _room_id: &str, _root_event_id: &str) {}
+    pub fn unsubscribe_thread(&self, _room_id: &str, _root_event_id: &str) {}
 
     /// Paginate backwards in a subscribed thread timeline. Older replies
     /// arrive as `on_thread_inserted` callbacks at the front of the thread.
     /// `reached_start` is `true` when there are no more replies to fetch.
     #[cfg(not(test))]
     pub fn paginate_thread_back(
-        &mut self,
+        &self,
         room_id: &str,
         root_event_id: &str,
         count: u16,
@@ -178,7 +183,14 @@ impl ClientFfi {
                 }
             }
         };
-        let Some(handle) = self.thread_timelines.get(&(rid, root)) else {
+        // Clone the timeline Arc out from under the read guard so the guard is
+        // not held across the `block_on` below.
+        let tl = self
+            .thread_timelines
+            .read()
+            .get(&(rid, root))
+            .map(|h| Arc::clone(&h.timeline));
+        let Some(tl) = tl else {
             return PaginateResult {
                 ok: false,
                 message: "thread not subscribed".to_owned(),
@@ -186,7 +198,6 @@ impl ClientFfi {
                 reached_end: false,
             };
         };
-        let tl = Arc::clone(&handle.timeline);
         match self
             .rt
             .block_on(async move { tl.paginate_backwards(count).await })
@@ -208,7 +219,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn paginate_thread_back(
-        &mut self,
+        &self,
         _room_id: &str,
         _root_event_id: &str,
         _count: u16,
@@ -228,7 +239,7 @@ impl ClientFfi {
     /// Subscribe to the thread list for `room_id`. Spawns an initial pagination
     /// and a watcher task that fires `on_threads_updated` on every change.
     #[cfg(not(test))]
-    pub fn subscribe_room_threads(&mut self, room_id: &str) -> OpResult {
+    pub fn subscribe_room_threads(&self, room_id: &str) -> OpResult {
         use matrix_sdk_ui::timeline::ThreadListService;
 
         let Some(client) = self.client.clone() else {
@@ -244,8 +255,9 @@ impl ClientFfi {
         let Some(room) = client.get_room(&rid) else {
             return err("room not found");
         };
-        // Abort any previous subscription for this room.
-        if let Some(prev) = self.thread_lists.remove(&rid) {
+        // Abort any previous subscription for this room (brief write guard).
+        let prev = self.thread_lists.write().remove(&rid);
+        if let Some(prev) = prev {
             prev.abort.abort();
         }
         // ThreadListService::new spawns a background task via tokio::task::spawn,
@@ -337,27 +349,29 @@ impl ClientFfi {
             })
             .abort_handle();
         self.thread_lists
+            .write()
             .insert(rid, ThreadListHandle { service, abort });
         ok("")
     }
 
     #[cfg(test)]
-    pub fn subscribe_room_threads(&mut self, _room_id: &str) -> OpResult {
+    pub fn subscribe_room_threads(&self, _room_id: &str) -> OpResult {
         super::err("not logged in")
     }
 
     /// Unsubscribe from the thread list for `room_id` and cancel the watcher.
     #[cfg(not(test))]
-    pub fn unsubscribe_room_threads(&mut self, room_id: &str) {
+    pub fn unsubscribe_room_threads(&self, room_id: &str) {
         if let Ok(rid) = room_id.parse::<OwnedRoomId>() {
-            if let Some(h) = self.thread_lists.remove(&rid) {
+            let removed = self.thread_lists.write().remove(&rid);
+            if let Some(h) = removed {
                 h.abort.abort();
             }
         }
     }
 
     #[cfg(test)]
-    pub fn unsubscribe_room_threads(&mut self, _room_id: &str) {}
+    pub fn unsubscribe_room_threads(&self, _room_id: &str) {}
 
     /// Snapshot of the current thread list for `room_id` (order as returned
     /// by the SDK). Empty when not subscribed or no threads known yet.
@@ -366,11 +380,13 @@ impl ClientFfi {
         let Ok(rid) = room_id.parse::<OwnedRoomId>() else {
             return Vec::new();
         };
-        let Some(handle) = self.thread_lists.get(&rid) else {
+        // Clone the service Arc out from under the read guard before walking
+        // its items (keeps the guard window minimal).
+        let Some(service) = self.thread_lists.read().get(&rid).map(|h| h.service.clone())
+        else {
             return Vec::new();
         };
-        handle
-            .service
+        service
             .items()
             .iter()
             .map(thread_info_from_item)
@@ -385,7 +401,7 @@ impl ClientFfi {
     /// Paginate older threads for `room_id`. `reached_start == true` means the
     /// server reports no further pages.
     #[cfg(not(test))]
-    pub fn paginate_room_threads(&mut self, room_id: &str) -> PaginateResult {
+    pub fn paginate_room_threads(&self, room_id: &str) -> PaginateResult {
         let rid: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => {
@@ -397,7 +413,10 @@ impl ClientFfi {
                 }
             }
         };
-        let Some(handle) = self.thread_lists.get(&rid) else {
+        // Clone the service Arc out from under the read guard so the guard is
+        // not held across the `block_on` below.
+        let Some(svc) = self.thread_lists.read().get(&rid).map(|h| h.service.clone())
+        else {
             return PaginateResult {
                 ok: false,
                 message: "room threads not subscribed".to_owned(),
@@ -405,19 +424,19 @@ impl ClientFfi {
                 reached_end: false,
             };
         };
-        let svc = std::sync::Arc::clone(&handle.service);
         // Spawn on a runtime worker thread (8 MB stack) rather than polling
         // the future directly on the calling thread, which may be a libdispatch
         // thread with only 512 KB of stack. svc.paginate() converts a Vec<T>
         // into an imbl vector via deep push_back/promote_front recursion that
         // overflows the smaller stack (same class of crash as the timeline
         // subscribe fix in 789eb2b).
-        let join = self.rt.spawn(async move { svc.paginate().await });
+        let svc_for_spawn = std::sync::Arc::clone(&svc);
+        let join = self.rt.spawn(async move { svc_for_spawn.paginate().await });
         match self.rt.block_on(join) {
             Ok(Ok(())) => {
                 use matrix_sdk_ui::timeline::ThreadListPaginationState;
                 let reached_start = matches!(
-                    handle.service.pagination_state(),
+                    svc.pagination_state(),
                     ThreadListPaginationState::Idle { end_reached: true }
                 );
                 PaginateResult {
@@ -443,7 +462,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn paginate_room_threads(&mut self, _room_id: &str) -> PaginateResult {
+    pub fn paginate_room_threads(&self, _room_id: &str) -> PaginateResult {
         PaginateResult {
             ok: false,
             message: "room threads not subscribed".to_owned(),

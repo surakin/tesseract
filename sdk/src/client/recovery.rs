@@ -115,7 +115,7 @@ impl ClientFfi {
     /// backup decryption key into this device. The actual backup download
     /// runs asynchronously; observe `on_backup_progress` for progress.
     #[cfg(not(test))]
-    pub fn recover(&mut self, key_or_passphrase: &str) -> OpResult {
+    pub fn recover(&self, key_or_passphrase: &str) -> OpResult {
         use matrix_sdk::encryption::{
             recovery::RecoveryError, secret_storage::SecretStorageError,
         };
@@ -153,7 +153,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn recover(&mut self, _key_or_passphrase: &str) -> OpResult {
+    pub fn recover(&self, _key_or_passphrase: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -163,7 +163,7 @@ impl ClientFfi {
     /// in that case — `recovery_key` in the Done callback will be empty).
     /// Progress is reported via `on_enable_recovery_progress` before this returns.
     #[cfg(not(test))]
-    pub fn enable_recovery(&mut self, passphrase: &str) -> OpResult {
+    pub fn enable_recovery(&self, passphrase: &str) -> OpResult {
         use matrix_sdk::encryption::recovery::{EnableProgress, RecoveryError};
         use futures_util::StreamExt as _;
 
@@ -282,7 +282,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn enable_recovery(&mut self, _passphrase: &str) -> OpResult {
+    pub fn enable_recovery(&self, _passphrase: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -310,7 +310,7 @@ impl ClientFfi {
     /// `path`. The output uses the standard Matrix key-export format so the
     /// file can be imported by any compatible Matrix client.
     #[cfg(not(test))]
-    pub fn export_room_keys(&mut self, path: &str, passphrase: &str) -> OpResult {
+    pub fn export_room_keys(&self, path: &str, passphrase: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -328,14 +328,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn export_room_keys(&mut self, _path: &str, _passphrase: &str) -> OpResult {
+    pub fn export_room_keys(&self, _path: &str, _passphrase: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Import Megolm room keys from the passphrase-encrypted file at `path`.
     /// Returns an error string on failure (wrong passphrase, bad file, etc.).
     #[cfg(not(test))]
-    pub fn import_room_keys(&mut self, path: &str, passphrase: &str) -> OpResult {
+    pub fn import_room_keys(&self, path: &str, passphrase: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -350,7 +350,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn import_room_keys(&mut self, _path: &str, _passphrase: &str) -> OpResult {
+    pub fn import_room_keys(&self, _path: &str, _passphrase: &str) -> OpResult {
         err("not logged in")
     }
 }

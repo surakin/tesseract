@@ -138,7 +138,7 @@ impl ClientFfi {
     /// vec when not logged in, when no blob has ever been written, or on
     /// any deserialization error: a broken blob never stalls the picker.
     #[cfg(not(test))]
-    pub fn recent_emoji_top(&mut self, n: u32) -> Vec<String> {
+    pub fn recent_emoji_top(&self, n: u32) -> Vec<String> {
         let Some(client) = self.client.clone() else {
             return Vec::new();
         };
@@ -149,7 +149,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn recent_emoji_top(&mut self, _n: u32) -> Vec<String> {
+    pub fn recent_emoji_top(&self, _n: u32) -> Vec<String> {
         Vec::new()
     }
 
@@ -165,7 +165,7 @@ impl ClientFfi {
     /// fallback but never written, leaving Element / other clients to
     /// manage their own copy.
     #[cfg(not(test))]
-    pub fn recent_emoji_bump(&mut self, glyph: &str) {
+    pub fn recent_emoji_bump(&self, glyph: &str) {
         if glyph.is_empty() {
             return;
         }
@@ -204,12 +204,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn recent_emoji_bump(&mut self, _glyph: &str) {}
+    pub fn recent_emoji_bump(&self, _glyph: &str) {}
 
     // ----- Application prefs (im.gnomos.tesseract global account-data) -----
 
     #[cfg(not(test))]
-    pub fn load_prefs(&mut self) -> String {
+    pub fn load_prefs(&self) -> String {
         let Some(client) = self.client.clone() else {
             return "{}".to_owned();
         };
@@ -228,12 +228,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn load_prefs(&mut self) -> String {
+    pub fn load_prefs(&self) -> String {
         "{}".to_owned()
     }
 
     #[cfg(not(test))]
-    pub fn save_prefs(&mut self, json: &str) {
+    pub fn save_prefs(&self, json: &str) {
         let Some(client) = self.client.clone() else {
             return;
         };
@@ -256,7 +256,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn save_prefs(&mut self, _json: &str) {}
+    pub fn save_prefs(&self, _json: &str) {}
 
     // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
@@ -265,7 +265,7 @@ impl ClientFfi {
     /// the MSC defaults (previews on, invite avatars on) when not logged in
     /// or before the first sync has populated the cache.
     #[cfg(not(test))]
-    pub fn media_preview_config(&mut self) -> crate::ffi::MediaPreviewConfigFfi {
+    pub fn media_preview_config(&self) -> crate::ffi::MediaPreviewConfigFfi {
         let Some(client) = self.client.clone() else {
             return crate::ffi::MediaPreviewConfigFfi {
                 media_previews: crate::media_preview::MediaPreviews::On.to_u8(),
@@ -282,7 +282,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn media_preview_config(&mut self) -> crate::ffi::MediaPreviewConfigFfi {
+    pub fn media_preview_config(&self) -> crate::ffi::MediaPreviewConfigFfi {
         crate::ffi::MediaPreviewConfigFfi {
             media_previews: 2,
             invite_avatars: true,
@@ -296,7 +296,7 @@ impl ClientFfi {
     /// network roundtrip — reads the local sync cache.
     #[cfg(not(test))]
     pub fn room_media_preview_override(
-        &mut self,
+        &self,
         room_id: &str,
     ) -> crate::ffi::MediaPreviewOverrideFfi {
         fn none() -> crate::ffi::MediaPreviewOverrideFfi {
@@ -348,7 +348,7 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn room_media_preview_override(
-        &mut self,
+        &self,
         _room_id: &str,
     ) -> crate::ffi::MediaPreviewOverrideFfi {
         crate::ffi::MediaPreviewOverrideFfi {
@@ -364,7 +364,7 @@ impl ClientFfi {
     /// the echo arrives on the next sync and triggers
     /// `on_media_preview_config_updated`.
     #[cfg(not(test))]
-    pub fn set_media_preview_config(&mut self, media_previews: u8, invite_avatars: bool) {
+    pub fn set_media_preview_config(&self, media_previews: u8, invite_avatars: bool) {
         let Some(client) = self.client.clone() else {
             return;
         };
@@ -397,7 +397,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn set_media_preview_config(&mut self, _media_previews: u8, _invite_avatars: bool) {}
+    pub fn set_media_preview_config(&self, _media_previews: u8, _invite_avatars: bool) {}
 
     pub fn user_id(&self) -> String {
         self.client
@@ -444,7 +444,7 @@ impl ClientFfi {
 
     /// Add user_id to m.ignored_user_list account data. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn ignore_user(&mut self, user_id: &str) -> OpResult {
+    pub fn ignore_user(&self, user_id: &str) -> OpResult {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -458,13 +458,13 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn ignore_user(&mut self, _user_id: &str) -> OpResult {
+    pub fn ignore_user(&self, _user_id: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Remove user_id from m.ignored_user_list. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn unignore_user(&mut self, user_id: &str) -> OpResult {
+    pub fn unignore_user(&self, user_id: &str) -> OpResult {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -478,12 +478,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn unignore_user(&mut self, _user_id: &str) -> OpResult {
+    pub fn unignore_user(&self, _user_id: &str) -> OpResult {
         err("not logged in")
     }
 
     #[cfg(not(test))]
-    pub fn set_display_name(&mut self, name: &str) -> OpResult {
+    pub fn set_display_name(&self, name: &str) -> OpResult {
         let Some(client) = self.client.as_ref() else { return err("not logged in"); };
         match self.rt.block_on(client.account().set_display_name(Some(name))) {
             Ok(_) => ok(""),
@@ -491,10 +491,10 @@ impl ClientFfi {
         }
     }
     #[cfg(test)]
-    pub fn set_display_name(&mut self, _name: &str) -> OpResult { err("not logged in") }
+    pub fn set_display_name(&self, _name: &str) -> OpResult { err("not logged in") }
 
     #[cfg(not(test))]
-    pub fn upload_avatar(&mut self, bytes: &[u8], mime_type: &str) -> OpResult {
+    pub fn upload_avatar(&self, bytes: &[u8], mime_type: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in"); };
         let data = bytes.to_vec();
         let mime: mime::Mime = match mime_type.parse() {
@@ -511,12 +511,12 @@ impl ClientFfi {
         }
     }
     #[cfg(test)]
-    pub fn upload_avatar(&mut self, _bytes: &[u8], _mime_type: &str) -> OpResult { err("not logged in") }
+    pub fn upload_avatar(&self, _bytes: &[u8], _mime_type: &str) -> OpResult { err("not logged in") }
 
     /// Upload bytes to the media server; returns the mxc:// URI in OpResult.message.
     /// Does NOT change the user's global profile avatar.
     #[cfg(not(test))]
-    pub fn upload_media(&mut self, bytes: &[u8], mime_type: &str) -> OpResult {
+    pub fn upload_media(&self, bytes: &[u8], mime_type: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in"); };
         let data = bytes.to_vec();
         let mime: mime::Mime = match mime_type.parse() {
@@ -529,10 +529,10 @@ impl ClientFfi {
         }
     }
     #[cfg(test)]
-    pub fn upload_media(&mut self, _bytes: &[u8], _mime_type: &str) -> OpResult { err("not logged in") }
+    pub fn upload_media(&self, _bytes: &[u8], _mime_type: &str) -> OpResult { err("not logged in") }
 
     #[cfg(not(test))]
-    pub fn remove_avatar(&mut self) -> OpResult {
+    pub fn remove_avatar(&self) -> OpResult {
         let Some(client) = self.client.as_ref() else { return err("not logged in"); };
         match self.rt.block_on(client.account().set_avatar_url(None)) {
             Ok(_) => ok(""),
@@ -540,7 +540,7 @@ impl ClientFfi {
         }
     }
     #[cfg(test)]
-    pub fn remove_avatar(&mut self) -> OpResult { err("not logged in") }
+    pub fn remove_avatar(&self) -> OpResult { err("not logged in") }
 
     // -----------------------------------------------------------------------
     // Devices / sessions
@@ -608,7 +608,7 @@ impl ClientFfi {
     pub fn list_devices(&self) -> Vec<crate::ffi::DeviceFfi> { Vec::new() }
 
     #[cfg(not(test))]
-    pub fn set_device_display_name(&mut self, device_id: &str, name: &str) -> OpResult {
+    pub fn set_device_display_name(&self, device_id: &str, name: &str) -> OpResult {
         use matrix_sdk::ruma::OwnedDeviceId;
         let Some(client) = self.client.clone() else { return err("not logged in"); };
         let owned: OwnedDeviceId = device_id.into();
@@ -622,12 +622,12 @@ impl ClientFfi {
         }
     }
     #[cfg(test)]
-    pub fn set_device_display_name(&mut self, _device_id: &str, _name: &str) -> OpResult {
+    pub fn set_device_display_name(&self, _device_id: &str, _name: &str) -> OpResult {
         err("not logged in")
     }
 
     #[cfg(not(test))]
-    pub fn begin_delete_device(&mut self, device_id: &str) -> crate::ffi::DeleteDeviceBegin {
+    pub fn begin_delete_device(&self, device_id: &str) -> crate::ffi::DeleteDeviceBegin {
         use matrix_sdk::ruma::OwnedDeviceId;
         let Some(client) = self.client.clone() else {
             return crate::ffi::DeleteDeviceBegin {
@@ -684,7 +684,7 @@ impl ClientFfi {
         })
     }
     #[cfg(test)]
-    pub fn begin_delete_device(&mut self, _device_id: &str) -> crate::ffi::DeleteDeviceBegin {
+    pub fn begin_delete_device(&self, _device_id: &str) -> crate::ffi::DeleteDeviceBegin {
         crate::ffi::DeleteDeviceBegin {
             ok: false,
             message: "not logged in".into(),
@@ -695,7 +695,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn complete_delete_device(&mut self, device_id: &str, session: &str) -> OpResult {
+    pub fn complete_delete_device(&self, device_id: &str, session: &str) -> OpResult {
         use matrix_sdk::ruma::api::client::uiaa;
         use matrix_sdk::ruma::OwnedDeviceId;
         let Some(client) = self.client.clone() else { return err("not logged in"); };
@@ -709,7 +709,7 @@ impl ClientFfi {
         }
     }
     #[cfg(test)]
-    pub fn complete_delete_device(&mut self, _device_id: &str, _session: &str) -> OpResult {
+    pub fn complete_delete_device(&self, _device_id: &str, _session: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -718,7 +718,7 @@ impl ClientFfi {
     // -----------------------------------------------------------------------
 
     #[cfg(not(test))]
-    pub fn set_presence(&mut self, state: u8) -> OpResult {
+    pub fn set_presence(&self, state: u8) -> OpResult {
         use matrix_sdk::ruma::api::client::presence::set_presence::v3;
         use matrix_sdk::ruma::presence::PresenceState;
         let presence = match state {
@@ -741,7 +741,7 @@ impl ClientFfi {
         }
     }
     #[cfg(test)]
-    pub fn set_presence(&mut self, state: u8) -> OpResult {
+    pub fn set_presence(&self, state: u8) -> OpResult {
         if !matches!(state, 1 | 2 | 3) {
             return err(format!("invalid presence state {state}"));
         }
@@ -751,7 +751,7 @@ impl ClientFfi {
     /// Return room ID of an existing DM with user_id, or create one.
     /// Returns empty string on error. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn get_or_create_dm(&mut self, user_id: &str) -> String {
+    pub fn get_or_create_dm(&self, user_id: &str) -> String {
         let Some(client) = self.client.as_ref() else {
             return String::new();
         };
@@ -793,7 +793,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn get_or_create_dm(&mut self, _user_id: &str) -> String {
+    pub fn get_or_create_dm(&self, _user_id: &str) -> String {
         String::new()
     }
 
@@ -897,7 +897,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn discover_homeserver(&mut self, server_name_or_mxid: &str) -> String {
+    pub fn discover_homeserver(&self, server_name_or_mxid: &str) -> String {
         let input = server_name_or_mxid.trim();
 
         // Extract server name from a full MXID (@user:server.org → server.org).
@@ -954,7 +954,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn discover_homeserver(&mut self, _: &str) -> String {
+    pub fn discover_homeserver(&self, _: &str) -> String {
         r#"{"base_url":"","error":""}"#.to_owned()
     }
 }

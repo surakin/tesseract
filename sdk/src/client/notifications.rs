@@ -99,7 +99,7 @@ impl ClientFfi {
     // cycle delivers fresh state before the regular sync loop catches up.
     // The hint is ephemeral: the next subscribe_room/unsubscribe_room call
     // will re-sync the subscription set from self.timelines.
-    pub fn hint_push_room(&mut self, room_id: &str) -> OpResult {
+    pub fn hint_push_room(&self, room_id: &str) -> OpResult {
         let Some(svc) = self.sync_service.clone() else {
             return err("sync not started");
         };
@@ -147,7 +147,7 @@ impl ClientFfi {
         })
     }
 
-    pub fn set_room_notification_mode(&mut self, room_id: &str, mode: &str) {
+    pub fn set_room_notification_mode(&self, room_id: &str, mode: &str) {
         use matrix_sdk::notification_settings::RoomNotificationMode;
         use matrix_sdk::ruma::RoomId;
 
@@ -180,7 +180,7 @@ impl ClientFfi {
 #[cfg(not(test))]
 impl ClientFfi {
     pub fn register_pusher(
-        &mut self,
+        &self,
         pushkey: &str,
         app_id: &str,
         app_display_name: &str,
@@ -207,7 +207,7 @@ impl ClientFfi {
         }
     }
 
-    pub fn remove_pusher(&mut self, pushkey: &str, app_id: &str) -> OpResult {
+    pub fn remove_pusher(&self, pushkey: &str, app_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -222,7 +222,7 @@ impl ClientFfi {
 #[cfg(test)]
 impl ClientFfi {
     pub fn register_pusher(
-        &mut self,
+        &self,
         _pushkey: &str,
         _app_id: &str,
         _app_display_name: &str,
@@ -233,11 +233,11 @@ impl ClientFfi {
         err("not logged in")
     }
 
-    pub fn remove_pusher(&mut self, _pushkey: &str, _app_id: &str) -> OpResult {
+    pub fn remove_pusher(&self, _pushkey: &str, _app_id: &str) -> OpResult {
         err("not logged in")
     }
 
-    pub fn hint_push_room(&mut self, _room_id: &str) -> OpResult {
+    pub fn hint_push_room(&self, _room_id: &str) -> OpResult {
         err("sync not started")
     }
 
@@ -245,5 +245,5 @@ impl ClientFfi {
         "default".to_owned()
     }
 
-    pub fn set_room_notification_mode(&mut self, _room_id: &str, _mode: &str) {}
+    pub fn set_room_notification_mode(&self, _room_id: &str, _mode: &str) {}
 }

@@ -13,7 +13,7 @@ use super::{require_room, try_op};
 impl ClientFfi {
     /// Append `event_id` to m.room.pinned_events if not already present, then
     /// write the state event back. Server enforces permission.
-    pub fn pin_event(&mut self, room_id: &str, event_id: &str) -> OpResult {
+    pub fn pin_event(&self, room_id: &str, event_id: &str) -> OpResult {
         let _enter = self.rt.enter();
         use matrix_sdk::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::room::pinned_events::RoomPinnedEventsEventContent;
@@ -60,7 +60,7 @@ impl ClientFfi {
 
     /// Remove `event_id` from m.room.pinned_events if present, then write
     /// back. No-op (returns ok) if not pinned.
-    pub fn unpin_event(&mut self, room_id: &str, event_id: &str) -> OpResult {
+    pub fn unpin_event(&self, room_id: &str, event_id: &str) -> OpResult {
         let _enter = self.rt.enter();
         use matrix_sdk::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::room::pinned_events::RoomPinnedEventsEventContent;
@@ -136,10 +136,10 @@ impl ClientFfi {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn pin_event(&mut self, _room_id: &str, _event_id: &str) -> OpResult {
+    pub fn pin_event(&self, _room_id: &str, _event_id: &str) -> OpResult {
         err("not logged in")
     }
-    pub fn unpin_event(&mut self, _room_id: &str, _event_id: &str) -> OpResult {
+    pub fn unpin_event(&self, _room_id: &str, _event_id: &str) -> OpResult {
         err("not logged in")
     }
     pub fn can_pin_in_room(&self, _room_id: &str) -> bool {

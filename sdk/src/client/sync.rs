@@ -851,7 +851,7 @@ impl ClientFfi {
 
     /// Enable or disable background presence polling. Thread-safe — may be
     /// called from the UI thread while the polling task runs on a worker.
-    pub fn set_presence_polling_enabled(&mut self, enabled: bool) {
+    pub fn set_presence_polling_enabled(&self, enabled: bool) {
         self.presence_polling_enabled
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
