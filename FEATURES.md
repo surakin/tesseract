@@ -49,6 +49,7 @@ version) are noted where relevant.
 - Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer)
 - Image sending via clipboard paste and drag-and-drop
 - File / image / video downloads
+- Visible-first media loading: the media for rows currently on screen downloads ahead of the off-screen backlog and re-prioritizes as you scroll; a few stuck downloads can't freeze the queue
 - URL previews (fetched via the homeserver)
 
 ## Rooms & navigation
@@ -62,7 +63,7 @@ version) are noted where relevant.
 - Back / forward room history navigation (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
 - Jump-to-date via a calendar button in the room header (MSC3030; server capability checked)
-- Unread indicators in the room list (badge plus a semibold room title when unread)
+- Unread indicators in the room list: a semibold room title plus a count badge for notifying rooms (accent-colored for mentions), or a small dot for rooms with unread messages that don't notify (e.g. "mentions only"); muted rooms are excluded
 - Auto-scroll the room list to the most-recent unread room when new messages arrive — spaces count when any child room is unread; excludes low-priority/inactive rooms; optional (Appearance setting, default on)
 - Last-message previews, including image and sticker previews
 - Room search (filters by room display name)

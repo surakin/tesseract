@@ -17,6 +17,64 @@ Tagged releases summarize all changes since the previous tag.
   the DM through the existing `handle_open_dm_` path. `@`-detection and
   rendering live entirely in `views/QuickSwitcher` + `ShellBase`, so no platform
   shell changed. Adds 8 C++ tests (734 → 742).
+- feat(matrix-uri): navigate to the event from a `matrix.to` / `matrix:`
+  permalink. Event permalinks parsed end-to-end but dispatch was a stub — it
+  searched only the loaded timeline window and silently failed when the event
+  wasn't already loaded. The `Kind::Event` case now routes through the existing
+  `try_scroll_to_room_event_` path (deferred scroll + focused
+  `subscribe_room_at` / `/context` fallback, the same machinery reply / pinned /
+  thread jumps use) and highlights the target row. An event link to a not-yet-
+  joined room stashes the event id and consumes it in the Join completion so the
+  timeline jumps to the highlighted event once the join lands. Shared-layer only
+  (`ShellBase`); parsing already covered by the `matrix_uri` Rust tests.
+- refactor/fix(ffi): eliminate the room-switch UI freeze. ~60 `ClientFfi` bridge
+  methods took `&mut self`, forcing the C++ `Client` to serialise every FFI call
+  behind one coarse `std::mutex` held across blocking `block_on`s — so a worker
+  mid-`subscribe_room` (timeline build) froze the UI thread the instant it did a
+  cheap read during a room switch. Converted the read / lightweight-dispatch
+  methods to `&self` (moving `thread_lists` / `thread_timelines` behind
+  `parking_lot::RwLock` and scoping every map guard so none is held across a
+  `block_on`), then replaced `ffi_mu` with a `std::shared_mutex`: readers take a
+  shared lock (`SH_FFI`), the ~15 genuine writers (`start_sync`,
+  `restore_session`, `logout`, `oauth_*`, …) keep the exclusive lock
+  (`MUT_FFI`). The UI thread's room-switch reads now run concurrently with a
+  worker's timeline build instead of freezing behind it.
+- fix(voice): play voice / audio messages on a single click. A play click on a
+  clip whose bytes weren't cached yet returned early (it only kicked off a
+  background fetch + repaint), so the user had to click twice. The cold-cache
+  click now arms a pending play and retries it from `MessageListView::arrange()`
+  — the relayout the fetch's `on_ready` already drives — so playback starts on
+  the first click; cleared on room switch. Shared-layer only. Adds 4 C++ tests
+  (742 → 746).
+- feat(media): prioritize visible-row downloads and never freeze on stuck
+  fetches. The room timeline eagerly enqueues *every* row's media at once and
+  the SDK drained it through a FIFO-fair `tokio::Semaphore`, so the media for
+  the rows the user is actually looking at queued behind the off-screen backlog
+  and could not be reordered. Replaced the per-lane semaphore with a
+  `PriorityGate` over a pure `MediaQueue` (priority desc, then FIFO seq);
+  `fetch_media_async` gained a priority and a new `prioritize_media(group, ids)`
+  raises still-parked fetches so a just-scrolled-to row jumps the queue. A
+  `MessageListView::on_visible_range_changed` callback (frame-coalesced,
+  de-duped), re-exposed via `RoomView` and bound once in the shared
+  `wire_main_app_widget_`, drives it across all four shells + the thread panel.
+  Stall reclamation: a slot held past an 8 s deadline stops counting against the
+  lane limit (matrix-sdk media is an opaque await with no progress hook), so the
+  queue keeps flowing past stuck downloads while they drain in the background; a
+  hard ceiling (2× the lane) bounds total in-flight. Adds 12 Rust + 5 C++ tests
+  (208 → 220 Rust, 746 → 751 C++).
+- feat(room-list): highlight rooms with unread messages but no notification.
+  Rooms whose activity doesn't notify (set to "mentions only", or any room whose
+  push rules don't notify) had no indication at all because every unread
+  affordance keyed on `notification_count`. `RoomInfo` now also carries
+  `unread_count` (`Room::num_unread_messages()`) and `muted`
+  (`cached_user_defined_notification_mode`); a new header-only
+  `unread_style_for()` maps the counts + mute state to `{None, Dot, Count,
+  Mention}`, and `RoomListView` renders a **bold name + small neutral dot** for
+  quiet unread (mirrored on a collapsed section header). Muted rooms are
+  excluded. Also fixed `room_list_fingerprint` — the room-list update-dedup gate
+  encoded only notification state, so read-clearing a quiet room left the dot
+  stuck — to include the quiet-unread state. Adds 2 Rust + 5 C++ tests
+  (220 → 222 Rust, 751 → 756 C++).
 
 ### 2026-06-09
 
