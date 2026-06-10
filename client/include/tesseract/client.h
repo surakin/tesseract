@@ -1080,6 +1080,13 @@ public:
     /// Whether this device is currently cross-signed / verified.
     bool device_verified() const;
 
+    /// Whether the cross-signing PRIVATE keys are present locally (this device
+    /// bootstrapped the identity, or has recovered it). Unlike device_verified()
+    /// this does not depend on the verification state having settled, so it
+    /// reliably distinguishes a fresh first device (keys present) from a foreign
+    /// identity synced from another device (keys absent).
+    bool have_cross_signing_keys() const;
+
     /// Bootstrap cross-signing + key backup for a fresh account.
     /// Pass an empty `passphrase` to generate a random recovery key; non-empty
     /// to derive the key from the passphrase. Progress is reported via

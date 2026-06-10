@@ -1908,6 +1908,12 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // eligible sync tick after login (Disabled → Fresh, Incomplete → Recover).
     check_encryption_setup_();
 
+    // Re-evaluate the "verify this device" banner now that the roster (and any
+    // foreign cross-signing identity) has synced. The initial verification_state
+    // snapshot can fire before a second device's identity is known, which would
+    // otherwise leave the prompt suppressed; the shells' handler is idempotent.
+    handle_verification_state_ui_(read_device_verified_());
+
     // Replay a matrix link that arrived before we were logged in.
     if (!pending_matrix_link_.empty())
     {
@@ -5260,6 +5266,20 @@ bool ShellBase::read_device_verified_() const
     return client_ ? client_->device_verified() : false;
 }
 
+bool ShellBase::read_have_cross_signing_keys_() const
+{
+    return client_ ? client_->have_cross_signing_keys() : false;
+}
+
+bool ShellBase::foreign_cross_signing_identity_() const
+{
+    // An identity exists (public part synced) but we don't hold its private
+    // keys → it was set up elsewhere; this device must verify/recover against
+    // it. On a fresh first device our own login-time bootstrap holds the keys,
+    // so this is false even before verification_state() has flipped to Verified.
+    return read_own_identity_exists_() && !read_have_cross_signing_keys_();
+}
+
 void ShellBase::handle_offline_ui_()
 {
     offline_ = true;
@@ -5365,12 +5385,13 @@ void ShellBase::check_encryption_setup_()
         // would never verify this device. Route those to Recover (enter the
         // recovery key, or hand off to SAS) instead.
         //
-        // We only treat the identity as "foreign" when it exists AND this
-        // device is not verified. On a pristine account our own login-time
-        // bootstrap creates the identity and signs this device together, so
-        // identity-exists implies verified there → Fresh, as intended.
-        const bool foreign_identity =
-            read_own_identity_exists_() && !read_device_verified_();
+        // The identity is "foreign" when it exists but we don't hold its
+        // private cross-signing keys — it was bootstrapped on another device.
+        // Using key-presence (not device_verified()) avoids a false Recover on
+        // a fresh first device: our own login-time bootstrap stores the private
+        // keys locally immediately, whereas verification_state() may not have
+        // flipped to Verified yet at this point.
+        const bool foreign_identity = foreign_cross_signing_identity_();
         encryption_setup_shown_ = true;
         show_encryption_setup_overlay_(foreign_identity ? Mode::Recover
                                                         : Mode::Fresh);

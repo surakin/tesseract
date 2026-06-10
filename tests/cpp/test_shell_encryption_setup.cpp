@@ -62,8 +62,10 @@ struct TestShell : WithAccountManager, ShellBase
 
     bool identity_exists_stub_ = false;
     bool device_verified_stub_ = false;
+    bool have_keys_stub_       = false;
     bool read_own_identity_exists_() const override { return identity_exists_stub_; }
     bool read_device_verified_() const override { return device_verified_stub_; }
+    bool read_have_cross_signing_keys_() const override { return have_keys_stub_; }
 
     // ── Expose internals for test inspection ─────────────────────────────
     using ShellBase::check_encryption_setup_;
@@ -83,25 +85,42 @@ TEST_CASE("Disabled state → Fresh overlay shown", "[shell][encryption]")
     CHECK(shell.encryption_setup_shown_);
 }
 
-TEST_CASE("Disabled + foreign identity (exists, unverified) → Recover",
+TEST_CASE("Disabled + foreign identity (exists, no local keys) → Recover",
           "[shell][encryption]")
 {
     TestShell shell;
-    shell.recovery_state_stub_ = 1; // Disabled
+    shell.recovery_state_stub_  = 1;     // Disabled
     shell.identity_exists_stub_ = true;  // cross-signing set up elsewhere
-    shell.device_verified_stub_ = false; // this device can't satisfy it
+    shell.have_keys_stub_       = false; // we don't hold the private keys
     shell.check_encryption_setup_();
     REQUIRE(shell.overlay_shown_);
     CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Recover);
 }
 
-TEST_CASE("Disabled + own verified identity → Fresh (add recovery key)",
+TEST_CASE("Disabled + own identity with local keys → Fresh (add recovery key)",
           "[shell][encryption]")
 {
     TestShell shell;
-    shell.recovery_state_stub_ = 1; // Disabled
+    shell.recovery_state_stub_  = 1;    // Disabled
     shell.identity_exists_stub_ = true; // our own, just bootstrapped
-    shell.device_verified_stub_ = true; // already cross-signed
+    shell.have_keys_stub_       = true; // private keys present locally
+    shell.check_encryption_setup_();
+    REQUIRE(shell.overlay_shown_);
+    CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Fresh);
+}
+
+// Regression: a fresh first device whose login-time bootstrap created the
+// identity but whose verification_state() has not yet flipped to Verified.
+// device_verified() is false, yet the private keys are present → must be Fresh,
+// not Recover (the bug where the friend got a "verify this device" dead end).
+TEST_CASE("Disabled + own keys but not-yet-verified → Fresh",
+          "[shell][encryption]")
+{
+    TestShell shell;
+    shell.recovery_state_stub_  = 1;     // Disabled
+    shell.identity_exists_stub_ = true;  // bootstrapped at login
+    shell.have_keys_stub_       = true;  // private keys stored locally
+    shell.device_verified_stub_ = false; // verification_state lags
     shell.check_encryption_setup_();
     REQUIRE(shell.overlay_shown_);
     CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Fresh);

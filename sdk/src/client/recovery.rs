@@ -110,6 +110,32 @@ impl ClientFfi {
         false
     }
 
+    /// Whether the cross-signing PRIVATE keys are present in the local store
+    /// (i.e. this device created the identity at login, or has since recovered
+    /// it). Distinct from `own_identity_exists()`, which only checks the PUBLIC
+    /// identity synced from the server. This lets the UI tell a freshly
+    /// bootstrapped first device (keys present → Fresh setup) from a foreign
+    /// identity created on another device (keys absent → Recover), without
+    /// depending on the timing of `verification_state()` flipping to Verified.
+    #[cfg(not(test))]
+    pub fn have_cross_signing_keys(&self) -> bool {
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        self.rt.block_on(async move {
+            client
+                .encryption()
+                .cross_signing_status()
+                .await
+                .is_some_and(|s| s.is_complete())
+        })
+    }
+
+    #[cfg(test)]
+    pub fn have_cross_signing_keys(&self) -> bool {
+        false
+    }
+
     /// Unlock the server-side secret storage with the supplied recovery key
     /// (or passphrase), importing the cross-signing private keys and the
     /// backup decryption key into this device. The actual backup download

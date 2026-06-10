@@ -1861,6 +1861,14 @@ pub mod ffi {
         /// (synchronous local read of the verification state).
         fn device_verified(self: &ClientFfi) -> bool;
 
+        /// Whether the cross-signing PRIVATE keys are present locally (this
+        /// device bootstrapped the identity, or has recovered it). Unlike
+        /// `device_verified()` this does not depend on the verification state
+        /// having settled, so the UI can reliably tell a fresh first device
+        /// (keys present → Fresh setup) from a foreign identity synced from
+        /// another device (keys absent → Recover).
+        fn have_cross_signing_keys(self: &ClientFfi) -> bool;
+
         /// Unlock the server-side secret storage with a recovery key or
         /// passphrase, import the cross-signing private keys + backup
         /// decryption key into this device, and start downloading historical

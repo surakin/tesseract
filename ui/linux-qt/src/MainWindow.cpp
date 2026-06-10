@@ -4545,6 +4545,16 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
         mainAppSurface_->relayout();
         return;
     }
+    // Only prompt when there is actually an identity to verify against. On a
+    // fresh/only device our own login-time bootstrap holds the cross-signing
+    // keys, so "verify this device" is a dead end — check_encryption_setup_
+    // drives the Fresh setup overlay instead.
+    if (!foreign_cross_signing_identity_())
+    {
+        mainApp_->show_verif_banner(false);
+        mainAppSurface_->relayout();
+        return;
+    }
     if (verification_banner_dismissed_)
     {
         return;

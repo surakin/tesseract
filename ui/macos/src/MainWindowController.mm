@@ -328,6 +328,7 @@ public:
     using ShellBase::tick_anim_;
     using ShellBase::url_preview_data_;
     using ShellBase::verification_banner_dismissed_;
+    using ShellBase::foreign_cross_signing_identity_;
     using ShellBase::video_thumb_in_flight_;
     using ShellBase::view_displayed_room_id_;
     using ShellBase::voice_bytes_or_fetch_;
@@ -6603,7 +6604,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         return;
     }
-    if (!isVerified && !_shell->verification_banner_dismissed_)
+    // Only prompt when there is actually an identity to verify against. On a
+    // fresh/only device our own login-time bootstrap holds the cross-signing
+    // keys, so "verify this device" is a dead end — check_encryption_setup_
+    // drives the Fresh setup overlay instead.
+    if (!isVerified && !_shell->verification_banner_dismissed_
+        && _shell->foreign_cross_signing_identity_())
     {
         if (!_verifShared->visible())
         {

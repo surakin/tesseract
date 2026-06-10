@@ -1191,12 +1191,22 @@ protected:
     // 0=Unknown, 1=Disabled, 2=Enabled, 3=Incomplete.
     virtual uint8_t read_recovery_state_() const;
 
-    // Whether a cross-signing identity already exists for our user, and whether
-    // this device is currently verified. Used to disambiguate the Disabled
-    // recovery state (see check_encryption_setup_). Virtual so tests can stub
-    // them without a real client_.
+    // Whether a cross-signing identity already exists for our user, whether
+    // this device is currently verified, and whether the cross-signing PRIVATE
+    // keys are present locally. Used to disambiguate the Disabled recovery state
+    // (see check_encryption_setup_). Virtual so tests can stub them without a
+    // real client_.
     virtual bool read_own_identity_exists_() const;
     virtual bool read_device_verified_() const;
+    virtual bool read_have_cross_signing_keys_() const;
+
+    // True when a cross-signing identity exists for our user but its private
+    // keys are NOT held locally — i.e. the identity was created on another
+    // device and this one must verify/recover against it (vs. a fresh first
+    // device whose own login-time bootstrap holds the keys). Shared by
+    // check_encryption_setup_ (Fresh vs Recover) and the verification-banner
+    // gating in the platform shells.
+    bool foreign_cross_signing_identity_() const;
 
     // Called after invites_ is updated — shell refreshes the invite UI.
     // Non-pure: shells are added in Task H; until then the default no-op

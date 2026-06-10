@@ -1498,6 +1498,14 @@ bool Client::device_verified() const
     return impl_->ffi->device_verified();
 }
 
+bool Client::have_cross_signing_keys() const
+{
+    if (!impl_)
+        return false;
+    SH_FFI;
+    return impl_->ffi->have_cross_signing_keys();
+}
+
 Result Client::enable_recovery(const std::string& passphrase)
 {
     if (!impl_)
