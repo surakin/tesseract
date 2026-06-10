@@ -3502,6 +3502,9 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     pending_scroll_event_id_.clear();
     if (room_switch)
     {
+        // Discard any voice/audio play armed in the previous room so a clip
+        // whose fetch is still in flight can't auto-start here.
+        media_.reset_pending_play();
         pinned_event_ids_.clear();
         can_pin_ = false;
         messages_ = std::move(msgs);
@@ -4168,6 +4171,10 @@ void MessageListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             pending_scroll_event_id_.clear();
         }
     }
+    // A voice/audio play click on a not-yet-cached clip arms a pending play.
+    // The fetch's on_ready re-runs measure + arrange (this pass), by which
+    // point the bytes are warm — start playback so a single click suffices.
+    media_.retry_pending_voice_play();
 }
 
 bool MessageListView::on_wheel(tk::Point local, float dx, float dy)

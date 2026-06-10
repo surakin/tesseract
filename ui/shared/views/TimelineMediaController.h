@@ -82,6 +82,14 @@ public:
     // Wired to AudioPlayer::on_progress; snapshots position / playing state.
     void on_audio_progress();
 
+    // A play click on a not-yet-cached clip arms a pending play instead of
+    // failing silently; retry_pending_voice_play() is called from
+    // MessageListView::arrange() on the relayout that the arriving bytes
+    // trigger, and starts playback once the warm cache holds the bytes.
+    void retry_pending_voice_play();
+    // Clears any armed pending play (room switch / timeline reset).
+    void reset_pending_play();
+
     // --- geometry: written by paint, read by the pointer hit-test ---
     void clear_geometry()
     {
@@ -136,6 +144,15 @@ private:
     // Global playback rate. Cycles 1.0 -> 1.5 -> 2.0 -> 1.0 via the per-row
     // speed pill. Applied to every play()/resume()/seek().
     float playback_rate_ = 1.0f;
+
+    // Armed when a play click hits a cold cache (bytes still fetching). The
+    // next relayout (the fetch's on_ready repaints/relayouts) re-runs
+    // retry_pending_voice_play(), which re-pulls the now-warm bytes and
+    // starts playback — so a single click suffices.
+    std::string pending_play_event_id_;
+    std::string pending_play_token_;
+    std::string pending_play_mime_;
+    bool        pending_play_is_voice_ = false; // voice → playback_rate_; audio → 1.0f
 
     mutable std::unordered_map<std::string, VoiceCardGeom> voice_card_geom_;
     mutable std::unordered_map<std::string, AudioCardGeom> audio_card_geom_;

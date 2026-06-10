@@ -272,18 +272,25 @@ void TimelineMediaController::handle_voice_play_click(const MessageRowData& row)
     {
         // Cache miss — the SDK kicks off a background fetch on the first
         // call. Surface state honestly: nothing is loaded, repaint so the
-        // pause glyph (if any) reverts to play, and let the user click
-        // again once bytes arrive.
+        // pause glyph (if any) reverts to play. Arm a pending play so the
+        // relayout fired when the bytes arrive auto-starts playback — the
+        // user's single click is enough.
         playing_event_id_.clear();
-        playing_is_active_   = false;
-        playing_ever_active_ = false;
-        playing_position_ms_ = 0;
+        playing_is_active_     = false;
+        playing_ever_active_   = false;
+        playing_position_ms_   = 0;
+        pending_play_event_id_ = row.event_id;
+        pending_play_token_ =
+            row.audio_source ? row.audio_source->fetch_token() : std::string{};
+        pending_play_mime_     = row.audio_mime;
+        pending_play_is_voice_ = true;
         if (request_repaint_)
         {
             request_repaint_();
         }
         return;
     }
+    reset_pending_play();
     playing_event_id_    = row.event_id;
     playing_position_ms_ = 0;
     playing_is_active_   = true;
@@ -323,22 +330,66 @@ void TimelineMediaController::handle_audio_play_click(const MessageRowData& row)
         row.audio_source ? row.audio_source->fetch_token() : std::string{});
     if (bytes.empty())
     {
+        // Cache miss — arm a pending play so the relayout that fires when the
+        // bytes arrive auto-starts playback (single-click behavior).
         playing_event_id_.clear();
-        playing_is_active_   = false;
-        playing_ever_active_ = false;
-        playing_position_ms_ = 0;
+        playing_is_active_     = false;
+        playing_ever_active_   = false;
+        playing_position_ms_   = 0;
+        pending_play_event_id_ = row.event_id;
+        pending_play_token_ =
+            row.audio_source ? row.audio_source->fetch_token() : std::string{};
+        pending_play_mime_     = row.audio_mime;
+        pending_play_is_voice_ = false;
         if (request_repaint_)
         {
             request_repaint_();
         }
         return;
     }
+    reset_pending_play();
     playing_event_id_    = row.event_id;
     playing_position_ms_ = 0;
     playing_is_active_   = true;
     playing_ever_active_ = false;
     audio_player_->set_playback_rate(1.0f);
     audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
+}
+
+void TimelineMediaController::reset_pending_play()
+{
+    pending_play_event_id_.clear();
+    pending_play_token_.clear();
+    pending_play_mime_.clear();
+    pending_play_is_voice_ = false;
+}
+
+void TimelineMediaController::retry_pending_voice_play()
+{
+    if (pending_play_event_id_.empty() || !audio_player_ || !voice_bytes_provider_)
+    {
+        return;
+    }
+    // The fetch armed on the cache-miss click may have completed and warmed
+    // the cache; if so the provider hands back the bytes now. If it's still
+    // in flight the provider returns empty (and won't re-fetch) — leave the
+    // pending state set so a later relayout retries.
+    std::vector<std::uint8_t> bytes = voice_bytes_provider_(pending_play_token_);
+    if (bytes.empty())
+    {
+        return;
+    }
+    playing_event_id_    = pending_play_event_id_;
+    playing_position_ms_ = 0;
+    playing_is_active_   = true;
+    playing_ever_active_ = false;
+    audio_player_->set_playback_rate(pending_play_is_voice_ ? playback_rate_ : 1.0f);
+    audio_player_->play(bytes.data(), bytes.size(), pending_play_mime_);
+    reset_pending_play();
     if (request_repaint_)
     {
         request_repaint_();
