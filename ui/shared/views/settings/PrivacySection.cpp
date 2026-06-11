@@ -24,6 +24,18 @@ PrivacySection::PrivacySection()
         if (on_send_presence_changed) on_send_presence_changed(v);
     };
 
+    // ── Search ────────────────────────────────────────────────────────────────
+    auto* search_group = add_group("Search");
+
+    auto search_cb = std::make_unique<tk::CheckButton>(
+        "Index messages for search (stores decrypted text on this device)",
+        s.index_messages_for_search);
+    search_index_cb_ = search_group->add_widget(std::move(search_cb));
+    search_index_cb_->on_change = [this](bool v)
+    {
+        if (on_index_messages_changed) on_index_messages_changed(v);
+    };
+
     // ── Encryption ────────────────────────────────────────────────────────────
     auto* enc_group = add_group("Encryption");
 
@@ -44,6 +56,11 @@ PrivacySection::PrivacySection()
 void PrivacySection::set_send_presence(bool enabled)
 {
     presence_cb_->set_checked(enabled);
+}
+
+void PrivacySection::set_index_messages(bool enabled)
+{
+    search_index_cb_->set_checked(enabled);
 }
 
 } // namespace tesseract::views

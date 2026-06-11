@@ -778,6 +778,18 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
     }
 
+    // Message search (Ctrl+Shift+F): the query runs against the local FTS
+    // index on the active account; results jump to the message. The native
+    // search field, keyboard accelerator and on_close stay per-shell.
+    if (auto* ms = app->message_search())
+    {
+        ms->on_query_changed =
+            [this](const std::string& q) { handle_search_query_(q); };
+        ms->on_result_activated =
+            [this](const std::string& room_id, const std::string& event_id)
+            { handle_search_result_activated_(room_id, event_id); };
+    }
+
     app->room_list_view()->set_sticker_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
@@ -2853,6 +2865,64 @@ void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
     }
 }
 
+void ShellBase::handle_search_query_(const std::string& query)
+{
+    // Empty query → nothing to search; the overlay shows its prompt.
+    if (query.empty() || !client_)
+        return;
+    const std::uint64_t id = ++search_request_id_;
+    search_pending_queries_[id] = query;
+    // Global search (empty room filter). Non-blocking; results arrive via
+    // on_search_results → handle_search_results_ui_.
+    client_->search_messages(id, query, std::string(), 200);
+}
+
+void ShellBase::handle_search_results_ui_(
+    std::uint64_t request_id, std::vector<tesseract::SearchHit> results)
+{
+    auto it = search_pending_queries_.find(request_id);
+    if (it == search_pending_queries_.end())
+        return; // unknown / superseded request
+    const std::string for_query = std::move(it->second);
+    search_pending_queries_.erase(it);
+    // Drop responses older than the latest issued request.
+    if (request_id != search_request_id_)
+        return;
+    if (main_app_ && main_app_->message_search())
+        main_app_->message_search()->set_results(std::move(results), for_query);
+}
+
+void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
+                                         const std::string& /*message*/)
+{
+    // Treat a failure as an empty result set for the issuing query so the
+    // overlay shows "No matches" rather than spinning.
+    auto it = search_pending_queries_.find(request_id);
+    if (it == search_pending_queries_.end())
+        return;
+    const std::string for_query = std::move(it->second);
+    search_pending_queries_.erase(it);
+    if (request_id != search_request_id_)
+        return;
+    if (main_app_ && main_app_->message_search())
+        main_app_->message_search()->set_results({}, for_query);
+}
+
+void ShellBase::handle_search_result_activated_(const std::string& room_id,
+                                                const std::string& event_id)
+{
+    // Mirror the event-permalink path: navigate (sets current_room_id_
+    // synchronously), then jump to the event via the deferred-scroll +
+    // focused-subscription path so it works even when the target isn't loaded.
+    tab_navigate_room(room_id);
+    if (!event_id.empty())
+    {
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_highlighted_event(event_id);
+        try_scroll_to_room_event_(event_id);
+    }
+}
+
 void ShellBase::try_scroll_to_room_event_(const std::string& event_id)
 {
     if (event_id.empty() || !room_view_ || current_room_id_.empty() || !client_)
@@ -3059,6 +3129,7 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
         session->bridge = make_account_bridge_(session->user_id);
         session->client->start_sync(session->bridge.get());
         session->sync_started = true;
+        apply_search_indexing_pref_(*session);
 
         // Per-account notifier (native) and Linux-only UnifiedPush connector.
         install_account_notifier_(*session);
@@ -3186,6 +3257,7 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     session->bridge = make_account_bridge_(session->user_id);
     session->client->start_sync(session->bridge.get());
     session->sync_started = true;
+    apply_search_indexing_pref_(*session);
 
     // Per-account notifier (native) and Linux-only UnifiedPush connector.
     install_account_notifier_(*session);
@@ -4430,6 +4502,34 @@ void ShellBase::handle_send_presence_toggle_(bool enabled)
         notify_presence_logout_();
         presence_tracker_.reset();
     }
+}
+
+void ShellBase::handle_index_messages_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.index_messages_for_search = enabled;
+    s.save_to_disk(tesseract::config_dir());
+
+    // Apply to every logged-in account's client: the index is per-account, but
+    // the preference is global. Enabling lazily backfills history; disabling
+    // clears each account's on-disk index. The call is non-blocking (sets a
+    // flag + spawns/cleans up on the SDK runtime), so it is safe on the UI
+    // thread.
+    for (const auto& sess : account_manager_.accounts())
+    {
+        if (sess && sess->client)
+            sess->client->set_search_indexing_enabled(enabled);
+    }
+}
+
+void ShellBase::apply_search_indexing_pref_(tesseract::AccountSession& session)
+{
+    // Resume live indexing for this account when the global preference is on.
+    // The Rust side skips the history backfill when the index is already
+    // populated, so this is cheap on every launch after the first enable. The
+    // call is non-blocking, so it is safe on the UI thread.
+    if (session.client && tesseract::Settings::instance().index_messages_for_search)
+        session.client->set_search_indexing_enabled(true);
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text)

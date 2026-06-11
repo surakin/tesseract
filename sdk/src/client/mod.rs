@@ -22,6 +22,7 @@ mod notifications;
 mod pins;
 mod recovery;
 mod room_list;
+pub(crate) mod search;
 mod send;
 mod session;
 #[cfg(not(test))]
@@ -428,6 +429,13 @@ pub struct ClientFfi {
     /// after account switch).
     #[cfg(not(test))]
     pub(super) app_cache_db: Arc<Mutex<Option<rusqlite::Connection>>>,
+    /// Opt-in full-text search indexing gate. When false (the default), the
+    /// timeline/pagination/backfill paths skip writing decrypted bodies to the
+    /// `message_index` FTS5 table in `app_cache.db`. Flipped by
+    /// `set_search_indexing_enabled` from the Settings toggle. `Arc` so it can
+    /// be cloned into spawned indexing tasks.
+    #[cfg(not(test))]
+    pub(super) search_indexing_enabled: Arc<std::sync::atomic::AtomicBool>,
     /// Abort handles for every long-lived task spawned by `start_sync`
     /// (session-refresh watcher, room/pack watcher, backup watchers, sync
     /// monitor, …). These outlive `self.handler.take()`, so without explicit
@@ -773,6 +781,8 @@ impl ClientFfi {
             backfill_previews: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             app_cache_db: Arc::new(Mutex::new(None)),
+            #[cfg(not(test))]
+            search_indexing_enabled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(not(test))]
             sync_tasks: Vec::new(),
             #[cfg(not(test))]

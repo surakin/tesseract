@@ -46,6 +46,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     autoscroll_unread_rooms      = j.value("autoscroll_unread_rooms",       true);
     prefetch_unread_rooms        = j.value("prefetch_unread_rooms",          true);
     send_presence                = j.value("send_presence",                true);
+    index_messages_for_search    = j.value("index_messages_for_search",   false);
 
     room_section_invites_collapsed   = j.value("room_section_invites_collapsed",   false);
     room_section_favorites_collapsed = j.value("room_section_favorites_collapsed", false);
@@ -130,6 +131,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"autoscroll_unread_rooms",          autoscroll_unread_rooms},
         {"prefetch_unread_rooms",            prefetch_unread_rooms},
         {"send_presence",                    send_presence},
+        {"index_messages_for_search",        index_messages_for_search},
         {"room_section_invites_collapsed",   room_section_invites_collapsed},
         {"room_section_favorites_collapsed", room_section_favorites_collapsed},
         {"room_section_dms_collapsed",       room_section_dms_collapsed},

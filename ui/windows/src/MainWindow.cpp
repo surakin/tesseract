@@ -1120,6 +1120,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             self->open_quick_switch_();
         }
+        if (LOWORD(wParam) == IDC_MESSAGE_SEARCH)
+        {
+            self->open_message_search_();
+        }
         if (LOWORD(wParam) == IDC_NAV_BACK)
         {
             self->navigate_history_back();
@@ -1319,6 +1323,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 self->main_app_->quick_switcher()->is_open())
             {
                 self->close_quick_switch_();
+                return 0;
+            }
+            if (self->main_app_ && self->main_app_->message_search() &&
+                self->main_app_->message_search()->is_open())
+            {
+                self->close_message_search_();
                 return 0;
             }
             if (self->vid_viewer_ && self->vid_viewer_->is_open())
@@ -1572,7 +1582,7 @@ void MainWindow::on_create(HWND hwnd)
     // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
     // plain key handler only fires when the canvas has focus.
     {
-        ACCEL accs[3]{};
+        ACCEL accs[4]{};
         accs[0].fVirt = FCONTROL | FVIRTKEY;
         accs[0].key   = 'K';
         accs[0].cmd   = IDC_QUICK_SWITCH;
@@ -1582,7 +1592,10 @@ void MainWindow::on_create(HWND hwnd)
         accs[2].fVirt = FALT | FVIRTKEY;
         accs[2].key   = VK_RIGHT;
         accs[2].cmd   = IDC_NAV_FWD;
-        accel_ = CreateAcceleratorTableW(accs, 3);
+        accs[3].fVirt = FCONTROL | FSHIFT | FVIRTKEY;
+        accs[3].key   = 'F';
+        accs[3].cmd   = IDC_MESSAGE_SEARCH;
+        accel_ = CreateAcceleratorTableW(accs, 4);
     }
 
     Gdiplus::GdiplusStartupInput gsi;
@@ -2471,6 +2484,57 @@ void MainWindow::on_create(HWND hwnd)
             qs->on_close = [this] { close_quick_switch_(); };
         }
 
+        // Message search (Ctrl+Shift+F) native field — mirrors the switcher.
+        message_search_field_ = main_app_surface_->host().make_text_field();
+        message_search_field_->set_placeholder("Search your messages…");
+        message_search_field_->set_visible(false);
+        message_search_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (auto* ms = main_app_->message_search())
+                {
+                    ms->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        message_search_field_->set_on_submit(
+            [this]
+            {
+                if (auto* ms = main_app_->message_search())
+                {
+                    ms->activate_selected();
+                }
+            });
+        message_search_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* ms = main_app_->message_search();
+                if (!ms || !ms->is_open())
+                {
+                    return false;
+                }
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    ms->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    ms->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_message_search_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (auto* ms = main_app_->message_search())
+        {
+            ms->on_close = [this] { close_message_search_(); };
+        }
+
         room_text_area_ = main_app_surface_->host().make_text_area();
         room_text_area_->set_placeholder("Message…");
         // All four composer popups (gif > slash > shortcode > mention) are
@@ -3267,6 +3331,23 @@ void MainWindow::on_create(HWND hwnd)
                     }
                 }
 
+                // Message search field — same topmost-modal treatment as the
+                // quick switcher (not gated on `hide`).
+                if (message_search_field_)
+                {
+                    bool vis = main_app_->message_search_field_visible();
+                    message_search_field_->set_visible(vis);
+                    if (vis)
+                    {
+                        tk::Rect r = main_app_->message_search_field_rect();
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
+                        message_search_field_->set_rect(r);
+                    }
+                }
+
                 // Encryption setup passphrase field.
                 if (enc_passphrase_field_)
                 {
@@ -3427,6 +3508,10 @@ void MainWindow::on_create(HWND hwnd)
         settings_view_->on_send_presence_changed = [this](bool enabled)
         {
             handle_send_presence_toggle_(enabled);
+        };
+        settings_view_->on_index_messages_changed = [this](bool enabled)
+        {
+            handle_index_messages_toggle_(enabled);
         };
         settings_view_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)
@@ -3839,6 +3924,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().autoscroll_unread_rooms);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    settings_view_->set_index_messages_pref(
+        tesseract::Settings::instance().index_messages_for_search);
     settings_view_->set_media_previews_pref(
         tesseract::Settings::instance().media_previews);
     settings_view_->set_invite_avatars_pref(
@@ -4073,6 +4160,55 @@ void MainWindow::close_quick_switch_()
     }
     // Restore focus: prefer the compose bar when a room is open, otherwise
     // fall back to the main window so Esc / nav keys reach wnd_proc.
+    if (room_text_area_ && room_text_area_->visible())
+    {
+        room_text_area_->set_focused(true);
+    }
+    else
+    {
+        SetFocus(hwnd_);
+    }
+}
+
+void MainWindow::open_message_search_()
+{
+    if (!main_app_ || !main_app_->message_search())
+    {
+        return;
+    }
+    // Application-wide accelerator: may fire while a pop-out holds focus. Bring
+    // the main window forward (search lives here) so its field can focus.
+    if (IsIconic(hwnd_))
+    {
+        ShowWindow(hwnd_, SW_RESTORE);
+    }
+    SetForegroundWindow(hwnd_);
+    main_app_->show_message_search(true);
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (message_search_field_)
+    {
+        message_search_field_->set_text("");
+        message_search_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_message_search_()
+{
+    if (main_app_)
+    {
+        main_app_->show_message_search(false);
+    }
+    if (message_search_field_)
+    {
+        message_search_field_->set_visible(false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
     if (room_text_area_ && room_text_area_->visible())
     {
         room_text_area_->set_focused(true);

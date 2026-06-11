@@ -2153,6 +2153,52 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             main_app_->quick_switcher()->on_close = [this]
             { close_quick_switch_(); };
 
+        // Message search (Ctrl+Shift+F) native field — mirrors the switcher.
+        message_search_field_ = main_app_surface_->host().make_text_field();
+        message_search_field_->set_placeholder("Search your messages…");
+        message_search_field_->set_visible(false);
+        message_search_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (main_app_ && main_app_->message_search())
+                {
+                    main_app_->message_search()->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        message_search_field_->set_on_submit(
+            [this]
+            {
+                if (main_app_ && main_app_->message_search())
+                    main_app_->message_search()->activate_selected();
+            });
+        message_search_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* ms = main_app_ ? main_app_->message_search() : nullptr;
+                if (!ms || !ms->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    ms->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    ms->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_message_search_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (main_app_ && main_app_->message_search())
+            main_app_->message_search()->on_close = [this]
+            { close_message_search_(); };
+
         // Unified layout callback — positions all native overlays.
         main_app_surface_->set_on_layout(
             [this]
@@ -2181,6 +2227,18 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     {
                         quick_switch_field_->set_rect(
                             main_app_->quick_switch_field_rect());
+                    }
+                }
+
+                if (message_search_field_)
+                {
+                    const bool ms_vis =
+                        main_app_->message_search_field_visible();
+                    message_search_field_->set_visible(ms_vis);
+                    if (ms_vis)
+                    {
+                        message_search_field_->set_rect(
+                            main_app_->message_search_field_rect());
                     }
                 }
 
@@ -2346,6 +2404,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         {
             handle_send_presence_toggle_(enabled);
         };
+        settings_widget_->on_index_messages_changed = [this](bool enabled)
+        {
+            handle_index_messages_toggle_(enabled);
+        };
         settings_widget_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)
         {
@@ -2421,6 +2483,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             gtk_callback_action_new(on_quick_switch_shortcut_, this, nullptr));
         gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
                                              shortcut);
+
+        // Ctrl+Shift+F: open global message search.
+        GtkShortcut* search_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_F,
+                                   GdkModifierType(GDK_CONTROL_MASK |
+                                                   GDK_SHIFT_MASK)),
+            gtk_callback_action_new(on_message_search_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             search_sc);
 
         GtkShortcut* back_sc = gtk_shortcut_new(
             gtk_keyval_trigger_new(GDK_KEY_Left, GDK_ALT_MASK),
@@ -5475,6 +5546,14 @@ gboolean MainWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*,
     return TRUE;
 }
 
+gboolean MainWindow::on_message_search_shortcut_(GtkWidget*, GVariant*,
+                                                 gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->open_message_search_();
+    return TRUE;
+}
+
 gboolean MainWindow::on_nav_back_shortcut_(GtkWidget*, GVariant*,
                                            gpointer user_data)
 {
@@ -5509,6 +5588,30 @@ void MainWindow::close_quick_switch_()
         main_app_->show_quick_switch(false);
     if (quick_switch_field_)
         quick_switch_field_->set_visible(false);
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+}
+
+void MainWindow::open_message_search_()
+{
+    if (!main_app_ || !main_app_->message_search())
+        return;
+    main_app_->show_message_search(true);
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+    if (message_search_field_)
+    {
+        message_search_field_->set_text("");
+        message_search_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_message_search_()
+{
+    if (main_app_)
+        main_app_->show_message_search(false);
+    if (message_search_field_)
+        message_search_field_->set_visible(false);
     if (main_app_surface_)
         main_app_surface_->relayout();
 }

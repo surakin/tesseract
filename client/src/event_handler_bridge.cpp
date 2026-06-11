@@ -425,6 +425,40 @@ void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_search_results(std::uint64_t request_id,
+                                           const rust::Vec<SearchHit>& results) const
+{
+    with_handler("on_search_results", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::vector<tesseract::SearchHit> cpp_results;
+              cpp_results.reserve(results.size());
+              for (const auto& r : results)
+              {
+                  tesseract::SearchHit h;
+                  h.event_id = std::string(r.event_id);
+                  h.room_id = std::string(r.room_id);
+                  h.room_name = std::string(r.room_name);
+                  h.sender = std::string(r.sender);
+                  h.sender_name = std::string(r.sender_name);
+                  h.body = std::string(r.body);
+                  h.timestamp_ms = r.timestamp_ms;
+                  cpp_results.push_back(std::move(h));
+              }
+              handler_->on_search_results(request_id, cpp_results);
+          });
+}
+
+void EventHandlerBridge::on_search_failed(std::uint64_t request_id,
+                                          rust::Str message) const
+{
+    with_handler("on_search_failed", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_search_failed(request_id, std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_paginate_result(std::uint64_t request_id,
                                             bool ok, bool reached_start,
                                             bool reached_end,

@@ -208,6 +208,27 @@ void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_search_results(std::uint64_t request_id,
+                                         const std::vector<SearchHit>& results)
+{
+    auto r = std::make_shared<std::vector<SearchHit>>(results);
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, r]() mutable
+        {
+            shell->handle_search_results_ui_(request_id, std::move(*r));
+        });
+}
+
+void EventHandlerBase::on_search_failed(std::uint64_t request_id,
+                                        const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, msg = message]() mutable
+        {
+            shell->handle_search_failed_ui_(request_id, std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_paginate_result(std::uint64_t request_id, bool ok,
                                           bool reached_start, bool reached_end,
                                           const std::string& message)

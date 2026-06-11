@@ -252,6 +252,7 @@ public:
     using ShellBase::handle_compose_room_leaving_;
     using ShellBase::handle_compose_text_changed_;
     using ShellBase::handle_send_presence_toggle_;
+    using ShellBase::handle_index_messages_toggle_;
     using ShellBase::apply_media_preview_config_;
     using ShellBase::inflight_dot_color_;
     using ShellBase::inflight_total_;
@@ -481,6 +482,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_openSettings;
 - (void)_openQuickSwitch;
 - (void)_closeQuickSwitch;
+- (void)_openMessageSearch;
+- (void)_closeMessageSearch;
 - (void)_navigateHistoryBack;
 - (void)_navigateHistoryForward;
 - (void)loginViewDidCancel:(LoginView*)view;
@@ -1721,6 +1724,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Native overlay fields positioned via _mainAppSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
     std::unique_ptr<tk::NativeTextField> _quickSwitchField;
+    std::unique_ptr<tk::NativeTextField> _messageSearchField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
 
@@ -4094,6 +4098,60 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     [s _closeQuickSwitch];
             };
 
+        // Message search (⌘⇧F) native field — mirrors the quick switcher.
+        _messageSearchField = _mainAppSurface->host().make_text_field();
+        _messageSearchField->set_placeholder("Search your messages…");
+        _messageSearchField->set_visible(false);
+        _messageSearchField->set_on_changed(
+            [weakSelf](const std::string& q)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->message_search())
+                {
+                    s->_mainApp->message_search()->set_query(q);
+                    s->_mainAppSurface->relayout();
+                }
+            });
+        _messageSearchField->set_on_submit(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->message_search())
+                    s->_mainApp->message_search()->activate_selected();
+            });
+        _messageSearchField->set_on_popup_nav(
+            [weakSelf](tk::NavKey nk) -> bool
+            {
+                MainWindowController* s = weakSelf;
+                auto* ms = (s && s->_mainApp) ? s->_mainApp->message_search()
+                                              : nullptr;
+                if (!ms || !ms->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    ms->move_selection(-1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    ms->move_selection(+1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    [s _closeMessageSearch];
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (_mainApp->message_search())
+            _mainApp->message_search()->on_close = [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s)
+                    [s _closeMessageSearch];
+            };
+
         _mainAppSurface->set_on_layout(
             [weakSelf]
             {
@@ -4162,6 +4220,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
                         s->_quickSwitchField->set_rect(
                             app->quick_switch_field_rect());
                 }
+                // Message search field (topmost modal like the switcher).
+                if (s->_messageSearchField)
+                {
+                    bool msVisible = app->message_search_field_visible();
+                    s->_messageSearchField->set_visible(msVisible);
+                    if (msVisible)
+                        s->_messageSearchField->set_rect(
+                            app->message_search_field_rect());
+                }
                 // Encryption setup passphrase field.
                 if (s->_shell->enc_passphrase_field_ && app->encryption_setup())
                 {
@@ -4202,6 +4269,18 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                  [s _openQuickSwitch];
                                                  return (NSEvent*)nil;
                                              }
+                                             // ⌘⇧F → open global message search.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagCommand) &&
+                                                 (event.modifierFlags &
+                                                  NSEventModifierFlagShift) &&
+                                                 [[event.charactersIgnoringModifiers
+                                                     lowercaseString]
+                                                     isEqualToString:@"f"])
+                                             {
+                                                 [s _openMessageSearch];
+                                                 return (NSEvent*)nil;
+                                             }
                                              // ⌘[ → navigate room history back.
                                              if ((event.modifierFlags &
                                                   NSEventModifierFlagCommand) &&
@@ -4230,6 +4309,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                          ->is_open())
                                                  {
                                                      [s _closeQuickSwitch];
+                                                     return (NSEvent*)nil;
+                                                 }
+                                                 if (s->_mainApp &&
+                                                     s->_mainApp
+                                                         ->message_search() &&
+                                                     s->_mainApp->message_search()
+                                                         ->is_open())
+                                                 {
+                                                     [s _closeMessageSearch];
                                                      return (NSEvent*)nil;
                                                  }
                                                  if (s->_vidViewer &&
@@ -4433,6 +4521,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             MainWindowController* s = ws;
             if (s) s->_shell->handle_send_presence_toggle_(enabled);
+        };
+        _settingsView->on_index_messages_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_index_messages_toggle_(enabled);
         };
         _settingsView->on_media_previews_changed =
             [ws](tesseract::Settings::MediaPreviews mode)
@@ -6143,6 +6236,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         tesseract::Settings::instance().autoscroll_unread_rooms);
     _settingsView->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    _settingsView->set_index_messages_pref(
+        tesseract::Settings::instance().index_messages_for_search);
     _settingsView->set_media_previews_pref(
         tesseract::Settings::instance().media_previews);
     _settingsView->set_invite_avatars_pref(
@@ -6228,6 +6323,34 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _mainApp->show_quick_switch(false);
     if (_quickSwitchField)
         _quickSwitchField->set_visible(false);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+}
+
+- (void)_openMessageSearch
+{
+    if (!_mainApp || !_mainApp->message_search())
+        return;
+    // The ⌘⇧F monitor is application-local, so it can fire while a pop-out
+    // room window is key. Bring the main window forward (search lives here).
+    if (![self.window isKeyWindow])
+        [self.window makeKeyAndOrderFront:nil];
+    _mainApp->show_message_search(true);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+    if (_messageSearchField)
+    {
+        _messageSearchField->set_text("");
+        _messageSearchField->set_focused(true);
+    }
+}
+
+- (void)_closeMessageSearch
+{
+    if (_mainApp)
+        _mainApp->show_message_search(false);
+    if (_messageSearchField)
+        _messageSearchField->set_visible(false);
     if (_mainAppSurface)
         _mainAppSurface->relayout();
 }

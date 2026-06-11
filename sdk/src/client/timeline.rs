@@ -141,6 +141,7 @@ pub(super) async fn handle_timeline_diff(
     _client: &Client,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
+    search_index: &Option<super::search::SearchIndexCtx>,
 ) {
     if cancelled.load(Ordering::Acquire) { return; }
     match diff {
@@ -157,6 +158,9 @@ pub(super) async fn handle_timeline_diff(
                     {
                         let g = handler.lock();
                         emit_inserted(&g, channel, room_id, idx, &ev);
+                    }
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
                     }
                 } else {
                     visible.push(false);
@@ -177,6 +181,9 @@ pub(super) async fn handle_timeline_diff(
                     let g = handler.lock();
                     emit_inserted(&g, channel, room_id, idx, &ev);
                 }
+                if let Some(ix) = search_index {
+                    ix.index_event(&ev);
+                }
             } else {
                 visible.push(false);
                 visible_ids.push(String::new());
@@ -193,6 +200,9 @@ pub(super) async fn handle_timeline_diff(
                 {
                     let g = handler.lock();
                     emit_inserted(&g, channel, room_id, 0, &ev);
+                }
+                if let Some(ix) = search_index {
+                    ix.index_event(&ev);
                 }
             } else {
                 visible.insert(0, false);
@@ -215,6 +225,9 @@ pub(super) async fn handle_timeline_diff(
                 {
                     let g = handler.lock();
                     emit_inserted(&g, channel, room_id, v_idx, &ev);
+                }
+                if let Some(ix) = search_index {
+                    ix.index_event(&ev);
                 }
             } else {
                 visible.insert(index, false);
@@ -253,6 +266,9 @@ pub(super) async fn handle_timeline_diff(
                         let g = handler.lock();
                         emit_updated(&g, channel, room_id, v_idx, &ev);
                     }
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
+                    }
                 }
                 (false, Some(ev)) => {
                     let v_idx = visible_index_of(visible, index);
@@ -265,6 +281,9 @@ pub(super) async fn handle_timeline_diff(
                     {
                         let g = handler.lock();
                         emit_inserted(&g, channel, room_id, v_idx, &ev);
+                    }
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
                     }
                 }
                 (true, None) => {
@@ -381,6 +400,11 @@ pub(super) async fn handle_timeline_diff(
                 let g = handler.lock();
                 emit_reset(&g, channel, room_id, &snapshot);
             }
+            if let Some(ix) = search_index {
+                for e in &snapshot {
+                    ix.index_event(e);
+                }
+            }
         }
     }
 }
@@ -475,6 +499,7 @@ impl ClientFfi {
         rt: &tokio::runtime::Runtime,
         channel: TimelineChannel,
         cancelled: Arc<AtomicBool>,
+        index: Option<super::search::SearchIndexCtx>,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
         let tl = Arc::clone(timeline);
         let h = Arc::clone(handler);
@@ -528,6 +553,11 @@ impl ClientFfi {
                         emit_reset(&guard, &ch, &rid, &snapshot);
                     }
                 }
+                if let Some(ix) = &index {
+                    for e in &snapshot {
+                        ix.index_event(e);
+                    }
+                }
                 drop(snapshot);
 
                 // Holds the receipt-refresh receiver until it has fired once;
@@ -557,6 +587,7 @@ impl ClientFfi {
                                     &client_ref,
                                     &ch,
                                     &cancelled_stream,
+                                    &index,
                                 )
                                 .await;
                             }
@@ -669,6 +700,7 @@ impl ClientFfi {
                         &self.rt,
                         TimelineChannel::Room,
                         Arc::clone(&new_cancelled),
+                        self.search_index_ctx(),
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
                     existing.cancelled  = new_cancelled;
@@ -726,7 +758,7 @@ impl ClientFfi {
 
         let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled), self.search_index_ctx());
 
         self.timelines.write().insert(
             room_id.clone(),
@@ -1118,7 +1150,7 @@ impl ClientFfi {
 
         let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled), self.search_index_ctx());
 
         self.timelines.write().insert(
             room_id,

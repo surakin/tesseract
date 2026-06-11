@@ -172,6 +172,11 @@ private:
     void open_quick_switch_();
     void close_quick_switch_();
 
+    // Ctrl+Shift+F global message search — open focuses the native search
+    // field; close hides it and relayouts.
+    void open_message_search_();
+    void close_message_search_();
+
     static gboolean on_window_key_pressed_(GtkEventControllerKey*, guint keyval,
                                            guint, GdkModifierType,
                                            gpointer user_data);
@@ -179,6 +184,9 @@ private:
     // while a native entry / text view holds focus.
     static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
                                               gpointer user_data);
+    // Global-scope Ctrl+Shift+F shortcut callback — opens message search.
+    static gboolean on_message_search_shortcut_(GtkWidget*, GVariant*,
+                                                gpointer user_data);
     // Global-scope Alt+Left / Alt+Right shortcut callbacks — room history nav.
     static gboolean on_nav_back_shortcut_(GtkWidget*, GVariant*,
                                           gpointer user_data);
@@ -316,6 +324,7 @@ private:
     tesseract::views::RoomListView* room_list_view_ = nullptr;
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
+    std::unique_ptr<tk::NativeTextField> message_search_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     GtkWidget* emoji_popover_ = nullptr;

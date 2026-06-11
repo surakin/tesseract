@@ -120,6 +120,8 @@ set(_tk_sources
     views/VideoViewerOverlay.cpp
     views/QuickSwitcher.h
     views/QuickSwitcher.cpp
+    views/MessageSearchView.h
+    views/MessageSearchView.cpp
     views/ShortcodeEngine.h
     views/ShortcodeEngine.cpp
     views/SlashCommandEngine.h

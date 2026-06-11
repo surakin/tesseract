@@ -127,6 +127,11 @@ private:
     void openQuickSwitch_();
     void closeQuickSwitch_();
 
+    // Ctrl+Shift+F message search — open focuses the native search field; close
+    // hides it and relayouts.
+    void openMessageSearch_();
+    void closeMessageSearch_();
+
     // ── EventHandlerBase UI-thread hook overrides (Qt6) ──────────────────────
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
@@ -332,6 +337,7 @@ private:
     std::unique_ptr<tk::NativeTextField> encKeyField_;
     std::unique_ptr<tk::NativeTextField> roomSearchField_;
     std::unique_ptr<tk::NativeTextField> quickSwitchField_;
+    std::unique_ptr<tk::NativeTextField> messageSearchField_;
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     std::unique_ptr<tk::NativeTextArea> topicTextArea_;
     bool topicTextAreaVisible_ = false; // mirrors topicTextArea_ visibility for transition detection

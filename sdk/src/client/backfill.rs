@@ -741,6 +741,9 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
          );",
     )
     .ok()?;
+    // Full-text message search index (gated at runtime by the opt-in setting;
+    // the schema is always created so toggling on needs no migration step).
+    super::search::ensure_schema(&conn).ok()?;
     Some(conn)
 }
 

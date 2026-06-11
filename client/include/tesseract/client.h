@@ -852,6 +852,27 @@ public:
                     const std::string& api_key, const std::string& client_key,
                     std::uint32_t limit);
 
+    // ------------------------------------------------------------------
+    // Full-text message search
+    // ------------------------------------------------------------------
+
+    /// Enable or disable local full-text indexing of decrypted message bodies
+    /// (opt-in privacy setting, off by default). Enabling kicks off a lazy
+    /// background backfill of existing history; disabling clears the on-disk
+    /// index so no decrypted plaintext remains at rest. Cheap + synchronous;
+    /// call from the UI thread on a settings toggle, and once after login to
+    /// push the persisted preference into the SDK.
+    void set_search_indexing_enabled(bool enabled);
+
+    /// Full-text search indexed messages for `query` (async, non-blocking).
+    /// Results arrive via `IEventHandler::on_search_results(request_id, …)`, or
+    /// `on_search_failed` on error. A non-empty `room_id` scopes the search to
+    /// one room (in-room find); empty searches the whole active account (global
+    /// overlay). `request_id` lets the caller drop stale responses; `limit`
+    /// caps the result count.
+    void search_messages(std::uint64_t request_id, const std::string& query,
+                         const std::string& room_id, std::uint32_t limit);
+
     /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying the
     /// `fi.mau.gif` vendor hint (autoplay/loop/muted). `thumb_bytes` is a
     /// static poster image (`thumb_mime`, e.g. "image/png"; empty to omit).

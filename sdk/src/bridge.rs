@@ -425,6 +425,23 @@ pub mod ffi {
         strip_mime: String,
     }
 
+    /// One full-text message-search hit delivered to C++ via
+    /// `on_search_results`. The local FTS5 index (per-account `app_cache.db`)
+    /// stores only what is needed to render a result row and jump to the
+    /// message; `room_name` is resolved at query time from the live client so
+    /// the UI need not look it up. `body` is the decrypted plaintext that
+    /// matched (encrypted-room messages included).
+    struct SearchHit {
+        event_id: String,
+        room_id: String,
+        room_name: String,
+        sender: String,
+        sender_name: String,
+        body: String,
+        /// Unix timestamp in milliseconds.
+        timestamp_ms: u64,
+    }
+
     /// Snapshot of the server-side key-backup state plus a running counter of
     /// imported room keys for this device. Carried by `on_backup_progress`
     /// callbacks and returned by `backup_state()`.
@@ -811,6 +828,25 @@ pub mod ffi {
         /// Fired when an async GIF search fails (network / provider error).
         /// `request_id` is the correlation token; `message` is human-readable.
         fn on_gif_search_failed(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            message: &str,
+        );
+
+        /// Fired when an async full-text search started via
+        /// `search_messages_async` completes successfully. `request_id` is the
+        /// correlation token the caller passed; the C++ side drops results
+        /// whose id is stale (a newer query has since been issued).
+        fn on_search_results(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            results: &Vec<SearchHit>,
+        );
+
+        /// Fired when an async full-text search fails (e.g. the index is not
+        /// open). `request_id` is the correlation token; `message` is
+        /// human-readable.
+        fn on_search_failed(
             self: &EventHandlerBridge,
             request_id: u64,
             message: &str,
@@ -1671,6 +1707,30 @@ pub mod ffi {
             query: &str,
             api_key: &str,
             client_key: &str,
+            limit: u32,
+        );
+
+        // ----- Full-text message search -----
+
+        /// Enable or disable local message indexing for full-text search. Off
+        /// by default (opt-in privacy setting). Turning it on kicks off a lazy
+        /// background backfill of joined rooms; turning it off clears the index
+        /// (decrypted plaintext is removed from disk). Cheap + synchronous: it
+        /// only flips a flag and spawns/cleans up; safe to call from the UI
+        /// thread on a settings toggle or once after login.
+        fn set_search_indexing_enabled(self: &ClientFfi, enabled: bool);
+
+        /// Full-text search the local index for `query`, returning at most
+        /// `limit` hits via `on_search_results(request_id, …)` (or
+        /// `on_search_failed`). A non-empty `room_id` scopes the search to one
+        /// room (in-room find); empty searches the whole active account (global
+        /// overlay). Non-blocking; runs on a worker thread. The C++ controller
+        /// debounces input and drops stale `request_id`s.
+        fn search_messages_async(
+            self: &ClientFfi,
+            request_id: u64,
+            query: &str,
+            room_id: &str,
             limit: u32,
         );
 

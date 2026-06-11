@@ -19,6 +19,7 @@ struct InviteInfo;
 struct BackupProgress;
 struct VerificationEmoji;
 struct GifResult;
+struct SearchHit;
 } // namespace tesseract_ffi
 
 namespace tesseract_ffi
@@ -112,6 +113,10 @@ public:
                         const rust::Vec<GifResult>& results) const;
     void on_gif_search_failed(std::uint64_t request_id,
                               rust::Str message) const;
+    void on_search_results(std::uint64_t request_id,
+                           const rust::Vec<SearchHit>& results) const;
+    void on_search_failed(std::uint64_t request_id,
+                          rust::Str message) const;
     void on_paginate_result(std::uint64_t request_id, bool ok,
                             bool reached_start, bool reached_end,
                             rust::Str message) const;

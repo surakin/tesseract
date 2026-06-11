@@ -187,6 +187,13 @@ public:
     // server nor polls other users' presence. Default on.
     bool send_presence = true;
 
+    // Build a local full-text search index of decrypted message bodies so that
+    // messages — including those in encrypted rooms — can be searched. Stores
+    // decrypted plaintext on disk (in the per-account app_cache.db), so it is
+    // opt-in and OFF by default. Toggling drives Client::set_search_indexing_
+    // enabled(): enabling lazily backfills history, disabling clears the index.
+    bool index_messages_for_search = false;
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.

@@ -197,6 +197,21 @@ public:
     {
     }
 
+    /// Fired when an async full-text search (`Client::search_messages`)
+    /// completes. The UI drops results whose `request_id` is stale (a newer
+    /// query was issued). Default no-op.
+    virtual void on_search_results(std::uint64_t /*request_id*/,
+                                   const std::vector<SearchHit>& /*results*/)
+    {
+    }
+
+    /// Fired when an async full-text search fails (e.g. the index is not open).
+    /// Default no-op.
+    virtual void on_search_failed(std::uint64_t /*request_id*/,
+                                  const std::string& /*message*/)
+    {
+    }
+
     /// Fired when an async paginate request started via
     /// `Client::paginate_back_async` or `Client::paginate_forward_async`
     /// completes. `reached_start`/`reached_end` mirror the synchronous

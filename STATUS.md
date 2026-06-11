@@ -2,6 +2,26 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-06-11** (v0.8.0).
 
+> **Full-text message search, incl. encrypted rooms (2026-06-11, unreleased).**
+> A global search overlay (**Ctrl+Shift+F** / **⌘⇧F**) searches your message
+> history — **including encrypted rooms**, which the Matrix server-side
+> `/search` endpoint cannot do. Search runs against a local **SQLite FTS5**
+> index of *decrypted* message bodies kept in the per-account `app_cache.db`
+> (`sdk/src/client/search.rs`, external-content FTS + triggers). Indexing is an
+> **opt-in privacy setting** (Settings → Privacy → Search, off by default,
+> since it stores decrypted text at rest); enabling lazily backfills history,
+> disabling clears the index. Population is incremental (every message indexed
+> on the live timeline-diff + pagination paths) plus a one-time background
+> history backfill per joined room on first enable. The overlay reuses the
+> QuickSwitcher pattern (`ui/shared/views/MessageSearchView.*`); results show
+> room · sender · snippet and clicking jumps to the message (reusing the
+> event-permalink scroll/focus path, so off-screen events resolve via a focused
+> timeline). New FFI: `Client::search_messages` / `set_search_indexing_enabled`,
+> `SearchHit`, `on_search_results`/`on_search_failed`. Shared code in
+> `ShellBase` / `EventHandlerBase`; wired in all four shells (Qt6, GTK4, Win32,
+> macOS). 11 new Rust unit tests. Verified on **Qt6**. *(In-room find bar
+> (Ctrl+F) is planned as a follow-up.)*
+
 > **Room-switch performance overhaul (2026-06-11, unreleased).** Switching
 > rooms is now instant and flicker-free. The SDK no longer emits an empty
 > `on_timeline_reset` before the populated one; instead the UI clears the
@@ -515,8 +535,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 222 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 769 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 237 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 816 |
 
 ## Platforms
 

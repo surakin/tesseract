@@ -593,6 +593,22 @@ struct GifResult
     std::string strip_mime;
 };
 
+/// One full-text message-search hit, surfaced via
+/// `IEventHandler::on_search_results`. Comes from the local FTS5 index (covers
+/// encrypted rooms — the bodies are already decrypted). `room_name` is resolved
+/// at query time so the UI can render a result row without a lookup; jump to the
+/// message via `room_id` + `event_id`. Mirrors the `SearchHit` cxx bridge struct.
+struct SearchHit
+{
+    std::string event_id;
+    std::string room_id;
+    std::string room_name;
+    std::string sender;
+    std::string sender_name;
+    std::string body;
+    std::uint64_t timestamp_ms = 0;
+};
+
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via
 /// `IEventHandler::on_room_list_state` so UIs can render a "Syncing
 /// rooms…" indicator while the joined-room set is still being hydrated.

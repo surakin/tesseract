@@ -27,8 +27,16 @@ public:
     // Silently update the presence checkbox without firing the callback.
     void set_send_presence(bool enabled);
 
+    // Silently update the message-search-index checkbox without firing.
+    void set_index_messages(bool enabled);
+
     // Fired with the new state when the presence checkbox is toggled.
     std::function<void(bool)> on_send_presence_changed;
+
+    // Fired with the new state when the "index messages for search" checkbox is
+    // toggled. The shell persists the setting and calls
+    // Client::set_search_indexing_enabled().
+    std::function<void(bool)> on_index_messages_changed;
 
     // Fired when the user clicks "Export room keys…".
     std::function<void()> on_export_keys;
@@ -41,6 +49,7 @@ public:
 
 private:
     tk::CheckButton* presence_cb_ = nullptr;
+    tk::CheckButton* search_index_cb_ = nullptr;
 };
 
 } // namespace tesseract::views

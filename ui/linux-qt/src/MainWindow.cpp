@@ -1701,6 +1701,54 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     if (mainApp_ && mainApp_->quick_switcher())
         mainApp_->quick_switcher()->on_close = [this] { closeQuickSwitch_(); };
 
+    // Message search (Ctrl+Shift+F) native field — mirrors the quick switcher.
+    messageSearchField_ = mainAppSurface_->host().make_text_field();
+    messageSearchField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    messageSearchField_->set_placeholder(
+        tr("Search your messages\xe2\x80\xa6").toStdString());
+    messageSearchField_->set_visible(false);
+    messageSearchField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (mainApp_ && mainApp_->message_search())
+            {
+                mainApp_->message_search()->set_query(q);
+                mainAppSurface_->relayout();
+            }
+        });
+    messageSearchField_->set_on_submit(
+        [this]
+        {
+            if (mainApp_ && mainApp_->message_search())
+                mainApp_->message_search()->activate_selected();
+        });
+    messageSearchField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            auto* ms = mainApp_ ? mainApp_->message_search() : nullptr;
+            if (!ms || !ms->is_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                ms->move_selection(-1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                ms->move_selection(+1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                closeMessageSearch_();
+                return true;
+            default:
+                return false;
+            }
+        });
+    if (mainApp_ && mainApp_->message_search())
+        mainApp_->message_search()->on_close = [this] { closeMessageSearch_(); };
+
     // Ctrl+K accelerator. An application-scoped QShortcut fires even when the
     // native compose / search QLineEdit/QTextEdit holds focus — keyPressEvent
     // on the window does not see keys consumed by a focused child widget.
@@ -1708,6 +1756,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this);
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this, [this] { openQuickSwitch_(); });
+    }
+    // Ctrl+Shift+F: open global message search (application-scoped so it fires
+    // while the compose box holds focus).
+    {
+        auto* sc = new QShortcut(
+            QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this] { openMessageSearch_(); });
     }
     // Alt+Left / Alt+Right: navigate room history back / forward.
     // ApplicationShortcut so these fire while the compose box holds focus.
@@ -1747,6 +1804,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 if (vis)
                     quickSwitchField_->set_rect(
                         mainApp_->quick_switch_field_rect());
+            }
+            if (mainApp_ && messageSearchField_)
+            {
+                const bool vis = mainApp_->message_search_field_visible();
+                messageSearchField_->set_visible(vis);
+                if (vis)
+                    messageSearchField_->set_rect(
+                        mainApp_->message_search_field_rect());
             }
             if (mainApp_ && encPassphraseField_)
             {
@@ -2258,6 +2323,34 @@ void MainWindow::closeQuickSwitch_()
         mainApp_->show_quick_switch(false);
     if (quickSwitchField_)
         quickSwitchField_->set_visible(false);
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+}
+
+void MainWindow::openMessageSearch_()
+{
+    if (!mainApp_ || !mainApp_->message_search())
+        return;
+    // Application-scoped shortcut: may fire while a pop-out holds focus. Bring
+    // the main window forward (search lives here) so its field can focus.
+    if (!isActiveWindow())
+        activateWindowWithToken_(QString{});
+    mainApp_->show_message_search(true);
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+    if (messageSearchField_)
+    {
+        messageSearchField_->set_text("");
+        messageSearchField_->set_focused(true);
+    }
+}
+
+void MainWindow::closeMessageSearch_()
+{
+    if (mainApp_)
+        mainApp_->show_message_search(false);
+    if (messageSearchField_)
+        messageSearchField_->set_visible(false);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
 }
@@ -3842,6 +3935,11 @@ void MainWindow::openSettings()
                 [this](bool enabled)
                 {
                     handle_send_presence_toggle_(enabled);
+                });
+        connect(settingsWidget_, &SettingsWidget::indexMessagesChanged, this,
+                [this](bool enabled)
+                {
+                    handle_index_messages_toggle_(enabled);
                 });
         connect(settingsWidget_, &SettingsWidget::mediaPreviewsChanged, this,
                 [this](tesseract::Settings::MediaPreviews mode)

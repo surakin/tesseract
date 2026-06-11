@@ -1945,6 +1945,15 @@ protected:
     // and starts or stops the PresenceTracker accordingly.
     void handle_send_presence_toggle_(bool enabled);
 
+    // Toggle handler for the "Index messages for search" Privacy setting.
+    // Persists the setting and calls Client::set_search_indexing_enabled() on
+    // every logged-in account (enable → lazy backfill; disable → clear index).
+    void handle_index_messages_toggle_(bool enabled);
+
+    // Resume live search indexing for a freshly-synced account if the global
+    // "index messages for search" preference is enabled. Called after start_sync.
+    void apply_search_indexing_pref_(tesseract::AccountSession& session);
+
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
     // formats the display text, and calls update_typing_bar_.
@@ -2450,6 +2459,24 @@ protected:
     // found. Stores a deferred scroll in the MessageListView so arrange()
     // applies it after row_offsets_ are rebuilt each pass.
     void try_scroll_to_room_event_(const std::string& event_id);
+
+    // ── Message search (Ctrl+Shift+F global overlay) ──────────────────────
+    // Issue a global FTS query on the active account (allocates a request_id,
+    // tracked in search_pending_queries_). Results land in handle_search_*_ui_.
+    void handle_search_query_(const std::string& query);
+    void handle_search_results_ui_(std::uint64_t request_id,
+                                   std::vector<tesseract::SearchHit> results);
+    void handle_search_failed_ui_(std::uint64_t request_id,
+                                  const std::string& message);
+    // Open the result's room and scroll/highlight the matching event.
+    void handle_search_result_activated_(const std::string& room_id,
+                                         const std::string& event_id);
+
+    // Monotonic id for the latest issued search; stale responses are dropped.
+    std::uint64_t search_request_id_ = 0;
+    // request_id → the query string it was issued for (so a response can be
+    // tagged for the overlay's stale-drop check); erased on completion.
+    std::unordered_map<std::uint64_t, std::string> search_pending_queries_;
 
     // Event ID we are currently paginating towards (empty when idle).
     std::string pending_scroll_room_event_id_;
