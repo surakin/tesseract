@@ -40,8 +40,11 @@ class RoomSwitchGateKeeper
 {
 public:
     // Default fallback timeout: a slow / offline network can never hold the
-    // list invisible forever.
-    static constexpr int kTimeoutMs = 400;
+    // list invisible forever. Since the gate no longer waits on image/video
+    // decode (height is reserved from intrinsic dimensions; see dep_satisfied),
+    // it blocks only on text-affecting deps (URL previews), which resolve fast —
+    // so this safety net can be tight.
+    static constexpr int kTimeoutMs = 150;
 
     // --- wiring (forwarded from MessageListView) ---
     using ImageProvider =

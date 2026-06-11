@@ -10,6 +10,18 @@ namespace tesseract
 namespace Prefs
 {
 
+PrefsData room_layout(const std::string&              last_room,
+                      const std::vector<std::string>& open_room_ids)
+{
+    PrefsData p;
+    p.last_room  = last_room;
+    p.open_rooms = open_room_ids;
+    // Always round-trip: with no open tabs, the active room is the layout.
+    if (p.open_rooms.empty() && !last_room.empty())
+        p.open_rooms.push_back(last_room);
+    return p;
+}
+
 PrefsData parse(const std::string& json_str)
 {
     PrefsData p;

@@ -3477,6 +3477,17 @@ MessageListView::file_hit_at(tk::Point world) const
 void MessageListView::set_messages(std::vector<MessageRowData> msgs,
                                    bool room_switch)
 {
+    // The new room's content has arrived — leave the room-switch loading state
+    // (clean background + delayed spinner) and bump the epoch so any pending
+    // delayed-spinner timer from the switch is neutralised. The gate armed below
+    // takes over from here for height-stability holding.
+    if (switch_loading_)
+    {
+        switch_loading_     = false;
+        switch_spinner_due_ = false;
+        ++switch_epoch_;
+    }
+
     // Defence-in-depth: drop any in-thread replies. The main timeline
     // shows only top-level events + thread roots; in-thread replies are
     // rendered in the ThreadPanel. ShellBase already routes inserts away
@@ -3489,7 +3500,12 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
 
     video_playlist_.clear();
     spoilers_.clear();
-    link_cache_.clear();
+    // NB: do NOT clear link_cache_ here. It is the content-addressed body-text
+    // layout cache (keyed by {width, theme, revealed, hash_body}), so retaining
+    // it across a room switch lets a return to a previously-viewed room reuse
+    // the already-shaped bodies instead of re-shaping every visible line; its
+    // 128-entry LRU bounds memory. The adapter's layout_cache_ below is
+    // index-aligned to messages_, so it must still be cleared on a full replace.
     adapter_->clear_layout_cache();
     suppress_read_marker_ = false;
     sel_.reset();
@@ -4639,35 +4655,85 @@ void MessageListView::flush_pending_prepends_()
 
 void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx)
 {
+    // Top-of-viewport indicator while a back-paginate is in flight.
+    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f, bounds_.y + 20.0f,
+                       paginate_start_, /*radius=*/10.0f, /*dot_r=*/2.5f);
+}
+
+void MessageListView::begin_switch_loading()
+{
+    // Supersede any prior loading state / display gate, and bump the epoch so an
+    // outstanding delayed-spinner timer from a previous switch is neutralised.
+    ++switch_epoch_;
+    switch_loading_       = true;
+    switch_spinner_due_   = false;
+    switch_spinner_start_ = std::chrono::steady_clock::now();
+    room_switch_gate_.clear();
+
+    // Clear the previous room's rows immediately so they can never show beneath
+    // the new room's header. The new room's populated snapshot arrives via
+    // set_messages(.., room_switch=true), which cancels this state.
+    messages_.clear();
+    adapter_->clear_layout_cache();
+    video_playlist_.clear();
+    invalidate_data();
+
+    // Arm the delayed spinner: only surface it if the load outlasts the delay,
+    // so fast / warm switches show nothing transient. Guarded by alive_ (the
+    // view may be destroyed before the timer fires) and the epoch.
+    if (post_delayed_)
+    {
+        std::weak_ptr<bool> walive = alive_;
+        const std::uint64_t ep     = switch_epoch_;
+        post_delayed_(kSwitchSpinnerDelayMs,
+                      [this, walive, ep]()
+                      {
+                          auto live = walive.lock();
+                          if (!live || !*live)
+                              return;
+                          if (ep != switch_epoch_ || !switch_loading_)
+                              return;
+                          switch_spinner_due_   = true;
+                          switch_spinner_start_ = std::chrono::steady_clock::now();
+                          if (request_repaint_)
+                              request_repaint_();
+                      });
+    }
+}
+
+void MessageListView::draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
+                                         std::chrono::steady_clock::time_point
+                                             start,
+                                         float radius, float dot_r)
+{
     const auto elapsed_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - paginate_start_)
+            std::chrono::steady_clock::now() - start)
             .count();
-    const float phase =
-        static_cast<float>(elapsed_ms % 1000) / 1000.0f;
-
-    constexpr float kRadius = 10.0f;
-    constexpr float kDotR   = 2.5f;
-    constexpr int   kN      = 8;
-    const float scx = bounds_.x + bounds_.w * 0.5f;
-    const float scy = bounds_.y + 20.0f;
-
-    const auto& pal = ctx.theme.palette;
+    const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
+    constexpr int kN  = 8;
+    const auto& pal   = ctx.theme.palette;
     for (int i = 0; i < kN; ++i)
     {
         const float angle =
             (static_cast<float>(i) / kN + phase) * 2.0f * 3.14159265f;
-        const float dx    = std::cos(angle) * kRadius;
-        const float dy    = std::sin(angle) * kRadius;
+        const float dx    = std::cos(angle) * radius;
+        const float dy    = std::sin(angle) * radius;
         const float t     = static_cast<float>(i) / kN;
         const auto  alpha = static_cast<std::uint8_t>(40.0f + 215.0f * t);
-        ctx.canvas.fill_rounded_rect({scx + dx - kDotR, scy + dy - kDotR,
-                                      kDotR * 2.0f, kDotR * 2.0f},
-                                     kDotR,
-                                     pal.text_muted.with_alpha(alpha));
+        ctx.canvas.fill_rounded_rect(
+            {cx + dx - dot_r, cy + dy - dot_r, dot_r * 2.0f, dot_r * 2.0f},
+            dot_r, pal.text_muted.with_alpha(alpha));
     }
     if (request_repaint_)
         request_repaint_();
+}
+
+void MessageListView::draw_switch_spinner_(tk::PaintCtx& ctx)
+{
+    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f,
+                       bounds_.y + bounds_.h * 0.5f, switch_spinner_start_,
+                       /*radius=*/12.0f, /*dot_r=*/3.0f);
 }
 
 int MessageListView::message_index_of(const std::string& event_id) const
@@ -5864,6 +5930,19 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     quote_block_geom_.clear();
     previews_.clear_geometry();
     chip_hit_rects_.clear();
+
+    // Room-switch loading: the old room's rows were cleared on the click; show a
+    // clean background until the new room's snapshot lands (set_messages cancels
+    // this). A centered spinner appears only once the delay has elapsed, so fast
+    // / warm switches show nothing transient. Mutually exclusive with the gate
+    // below (begin_switch_loading clears the gate; set_messages re-arms it).
+    if (switch_loading_)
+    {
+        ctx.canvas.fill_rect(bounds(), ctx.theme.palette.sidebar_bg);
+        if (switch_spinner_due_)
+            draw_switch_spinner_(ctx);
+        return;
+    }
 
     // Room-switch gate: hold the list invisible until the rows that will
     // be visible have their height-affecting content loaded + measured, so

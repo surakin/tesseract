@@ -83,6 +83,8 @@ add_executable(tesseract_tests
     cpp/test_tk_pinned_banner.cpp
     cpp/test_tk_message_list_threads.cpp
     cpp/test_tk_message_list_layout_cache.cpp
+    cpp/test_room_switch_gate.cpp
+    cpp/test_shell_warm_subscriptions.cpp
     cpp/test_tk_thread_list_view.cpp
     cpp/test_tk_thread_view.cpp
     cpp/test_event_handler_bridge.cpp

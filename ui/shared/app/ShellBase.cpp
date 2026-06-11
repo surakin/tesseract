@@ -1881,6 +1881,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         return;
     }
     rooms_ = std::move(rooms);
+    rebuild_room_index_();
     // A change in the active account's room set may add/remove people; drop the
     // cached roster so the next user-mode query rebuilds it. Member-only changes
     // within existing rooms aren't tracked here — live-resolve covers anyone the
@@ -3278,6 +3279,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     auto it = per_account_rooms_.find(my_user_id_);
     rooms_ = (it != per_account_rooms_.end()) ? it->second
                                               : std::vector<tesseract::RoomInfo>{};
+    rebuild_room_index_();
     // The known-user roster belongs to the previous account — drop it.
     invalidate_known_users_();
     // The unread-prefetch fingerprint is per-account; reset so the incoming
@@ -3471,6 +3473,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     my_display_name_.clear();
     my_avatar_url_.clear();
     rooms_.clear();
+    room_index_by_id_.clear();
     invites_.clear();
     current_invite_.reset();
     pagination_.clear();
@@ -5310,6 +5313,24 @@ void ShellBase::after_active_room_changed_()
         }
     }
 
+    // Clear the room we just left from the timeline immediately and show a clean
+    // loading view (a centered spinner only if the new room's snapshot takes
+    // longer than the delay). The populated reset → set_messages cancels it. This
+    // replaces the old "flash to empty then repopulate": the previous room's rows
+    // never linger under the new room's header.
+    if (room_view_)
+        if (auto* ml = room_view_->message_list())
+            ml->begin_switch_loading();
+
+    // Warm-subscription LRU: mark this room most-recently-active and unsubscribe
+    // any room that has aged out of the warm window (kept rooms = active + open
+    // tabs + pop-out-pinned + the newest kWarmRoomsMax others). This bounds the
+    // otherwise-unbounded growth of live timelines / sliding-sync subscriptions
+    // for a long browsing session; rooms still warm are reused on return without
+    // a rebuild (SDK subscribe_room reuse).
+    touch_visited_room_(current_room_id_);
+    prune_warm_subscriptions_();
+
     // Drop the room we just left: cancel its still-pending timeline media
     // downloads (full-size images, thumbnails) so the room we're switching to
     // gets the semaphore slots instead of queueing behind the old room's flood.
@@ -5352,6 +5373,144 @@ void ShellBase::after_active_room_changed_()
     // timeline gating (and Private-mode evaluation) is ready before the
     // timeline reset builds rows.
     ensure_room_preview_override_(current_room_id_);
+}
+
+void ShellBase::start_room_subscription_(const std::string&       room_id,
+                                         std::vector<std::string> visible_ids)
+{
+    if (room_id.empty() || !client_)
+        return;
+    // Snapshot client_ on the calling (UI) thread so an account switch while the
+    // workers run can't race the raw pointer to the wrong account's client.
+    auto* c = client_;
+
+    // 1. Subscribe on the single-thread mut pool. Dispatched on EVERY switch
+    //    (intentionally not gated by in_flight): subscribe_room emits the
+    //    timeline reset that repopulates the view and cancels the loading
+    //    spinner, and for a warm room the SDK reuses the live timeline so this
+    //    is cheap. The network back-pagination is deliberately NOT run here.
+    run_async_mut_(
+        [this, c, room_id, visible_ids]()
+        {
+            auto        res = c->subscribe_room(room_id);
+            const bool  ok  = res.ok;
+            std::string msg = res.message;
+            post_to_ui_(
+                [this, c, room_id, ok, msg, visible_ids]()
+                {
+                    if (!ok)
+                    {
+                        show_status_message_("Subscribe failed: " + msg);
+                        return;
+                    }
+                    // 2. Subscribe established the timeline; load the initial
+                    //    screenful of history on the SHARED pool so the blocking
+                    //    network round-trip never holds the mut thread. Deduped
+                    //    per room; skipped once the room has reached its start.
+                    auto& state = pagination_[room_id];
+                    if (state.in_flight || state.reached_start)
+                        return;
+                    state.in_flight = true;
+                    run_async_(
+                        [this, c, room_id, visible_ids]()
+                        {
+                            auto pr = c->paginate_back_with_status(
+                                room_id, kPaginationBatch);
+                            const bool reached = pr.ok && pr.reached_start;
+                            c->start_background_backfill(visible_ids);
+                            post_to_ui_(
+                                [this, room_id, reached]()
+                                {
+                                    pagination_[room_id].in_flight = false;
+                                    if (current_room_id_ == room_id)
+                                        pagination_[room_id].reached_start =
+                                            reached;
+                                });
+                        });
+                });
+        });
+}
+
+void ShellBase::persist_room_layout_pref_()
+{
+    if (!client_)
+        return;
+    std::vector<std::string> open;
+    open.reserve(tabs_.size());
+    for (const auto& t : tabs_)
+        open.push_back(t.room_id);
+    // save_prefs_json dispatches the write on a runtime worker (non-blocking);
+    // no load is needed since room_layout reconstructs the full PrefsData.
+    client_->save_prefs_json(tesseract::Prefs::serialize(
+        tesseract::Prefs::room_layout(current_room_id_, open)));
+}
+
+void ShellBase::rebuild_room_index_()
+{
+    room_index_by_id_.clear();
+    room_index_by_id_.reserve(rooms_.size());
+    for (std::size_t i = 0; i < rooms_.size(); ++i)
+        room_index_by_id_[rooms_[i].id] = i;
+}
+
+const RoomInfo* ShellBase::room_by_id_(const std::string& room_id) const
+{
+    auto it = room_index_by_id_.find(room_id);
+    if (it == room_index_by_id_.end() || it->second >= rooms_.size())
+        return nullptr;
+    return &rooms_[it->second];
+}
+
+void ShellBase::touch_visited_room_(const std::string& room_id)
+{
+    if (room_id.empty())
+        return;
+    auto& v = visited_lru_;
+    v.erase(std::remove(v.begin(), v.end(), room_id), v.end());
+    v.insert(v.begin(), room_id); // most-recently-active at the front
+}
+
+std::vector<std::string> ShellBase::select_warm_evictions_(
+    const std::unordered_set<std::string>& keep, std::size_t warm_cap)
+{
+    std::vector<std::string> evicted;
+    std::vector<std::string> retained;
+    retained.reserve(visited_lru_.size());
+    std::size_t warm_kept = 0;
+    for (const auto& r : visited_lru_) // front = most recent
+    {
+        if (keep.count(r) != 0)
+        {
+            retained.push_back(r); // active / open tab / pinned: always kept
+        }
+        else if (warm_kept < warm_cap)
+        {
+            retained.push_back(r); // newest warm rooms, up to the cap
+            ++warm_kept;
+        }
+        else
+        {
+            evicted.push_back(r); // older than the warm window → drop
+        }
+    }
+    visited_lru_ = std::move(retained);
+    return evicted;
+}
+
+void ShellBase::prune_warm_subscriptions_()
+{
+    if (!client_)
+        return;
+    std::unordered_set<std::string> keep;
+    if (!current_room_id_.empty())
+        keep.insert(current_room_id_);
+    for (const auto& t : tabs_)
+        keep.insert(t.room_id);
+    for (const auto& kv : room_subscription_refs_)
+        if (kv.second > 0)
+            keep.insert(kv.first); // pinned by a pop-out window
+    for (const auto& room : select_warm_evictions_(keep, kWarmRoomsMax))
+        client_->unsubscribe_room(room);
 }
 
 void ShellBase::ensure_settings_controller_()

@@ -281,6 +281,7 @@ public:
     using ShellBase::pending_restore_rooms_;
     using ShellBase::pending_restore_popouts_;
     using ShellBase::populate_pending_restore_popouts_;
+    using ShellBase::persist_room_layout_pref_;
     using ShellBase::save_settings_debounced_;
     using ShellBase::settings_controller_;
     using ShellBase::ensure_settings_controller_;
@@ -301,6 +302,7 @@ public:
     using ShellBase::reply_details_requested_;
     using ShellBase::request_forward_history_;
     using ShellBase::return_to_live_;
+    using ShellBase::room_by_id_;
     using ShellBase::room_subscription_refs_;
     using ShellBase::invites_;
     using ShellBase::rooms_;
@@ -318,6 +320,7 @@ public:
     using ShellBase::apply_space_child_counts_;
     using ShellBase::space_children_cache_;
     using ShellBase::space_stack_;
+    using ShellBase::start_room_subscription_;
     using ShellBase::sticker_fetches_in_flight_;
     using ShellBase::sync_progress_shown_;
     using ShellBase::tab_close;
@@ -658,16 +661,12 @@ void MacShell::on_rooms_updated_()
     [c _refreshRoomList];
     if (!current_room_id_.empty())
     {
-        for (const auto& r : rooms_)
+        if (const auto* r = room_by_id_(current_room_id_))
         {
-            if (r.id == current_room_id_)
+            if (room_view_)
             {
-                if (room_view_)
-                {
-                    room_view_->set_room(r);
-                    [c _relayoutChatSurface];
-                }
-                break;
+                room_view_->set_room(*r);
+                [c _relayoutChatSurface];
             }
         }
     }
@@ -1621,19 +1620,14 @@ void MacShell::on_tab_state_changed_ui_()
         {
             const tk::Image* avatar = nullptr;
             std::string name;
-            for (const auto& r : rooms_)
+            if (const auto* r = room_by_id_(t.room_id))
             {
-                if (r.id != t.room_id)
-                {
-                    continue;
-                }
-                name = r.name;
-                const std::string& av_mxc = r.effective_avatar_url();
+                name = r->name;
+                const std::string& av_mxc = r->effective_avatar_url();
                 if (!av_mxc.empty())
                 {
                     avatar = account_manager_.thumbnail_cache().peek(av_mxc);
                 }
-                break;
             }
             tb->add_tab(t.room_id, name, avatar);
         }
@@ -7082,14 +7076,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         return;
     }
-    for (const auto& r : _shell->rooms_)
+    if (const auto* r = _shell->room_by_id_(roomId); r && r->is_space)
     {
-        if (r.id == roomId && r.is_space)
-        {
-            _shell->space_stack_.push_back(roomId);
-            [self _refreshRoomList];
-            return;
-        }
+        _shell->space_stack_.push_back(roomId);
+        [self _refreshRoomList];
+        return;
     }
     [self hideSlashPopup];
     [self hideShortcodePopup];
@@ -7118,17 +7109,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                      }
                                  }];
     _shell->reply_details_requested_.clear();
-    {
-        auto prefs =
-            tesseract::Prefs::parse(_shell->client_->load_prefs_json());
-        prefs.last_room = roomId;
-        prefs.open_rooms.clear();
-        for (const auto& t : _shell->tabs_)
-            prefs.open_rooms.push_back(t.room_id);
-        if (prefs.open_rooms.empty())
-            prefs.open_rooms.push_back(roomId);
-        _shell->client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
-    }
+    _shell->persist_room_layout_pref_();
     if (_roomView)
     {
         _roomView->compose_bar()->clear_reply();
@@ -7155,32 +7136,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
         }
     }
 
-    // subscribe_room + paginate_back both block inside the Rust runtime;
-    // run them on a background queue so the main thread stays responsive.
+    // Subscribe (mut pool) + initial history (shared pool). The split keeps the
+    // network paginate off the single mut thread so the next switch's reset is
+    // never blocked. See ShellBase::start_room_subscription_.
     std::vector<std::string> visibleIds =
         _roomListView ? _roomListView->visible_room_ids()
                       : std::vector<std::string>{};
-    std::string subRoom = _shell->current_room_id_;
-    {
-        auto& state = _shell->pagination_[subRoom];
-        if (state.in_flight)
-            return;
-        state.in_flight = true;
-    }
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        auto res = self->_shell->client_->subscribe_room(subRoom);
-        BOOL reached = NO;
-        if (res)
-        {
-            auto pr =
-                self->_shell->client_->paginate_back_with_status(subRoom, 50);
-            reached = pr.ok && pr.reached_start;
-            self->_shell->client_->start_background_backfill(visibleIds);
-        }
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self handleSubscribeResultForRoom:subRoom reached:reached];
-        });
-    });
+    _shell->start_room_subscription_(_shell->current_room_id_,
+                                     std::move(visibleIds));
 }
 
 - (void)requestMoreHistoryForRoom:(std::string)roomId

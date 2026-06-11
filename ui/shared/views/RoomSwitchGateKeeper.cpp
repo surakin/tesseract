@@ -68,6 +68,16 @@ void RoomSwitchGateKeeper::set_focus_event(const std::string& focus_event_id)
 bool RoomSwitchGateKeeper::dep_satisfied(const MessageRowData& m) const
 {
     using K = MessageRowData::Kind;
+    // When the event carries intrinsic media dimensions, the measure path
+    // reserves the media box from media_w/media_h (see measure_row_height for
+    // Image/Sticker/Video), so the row's height is already final — the pixels
+    // decode in place without reflow. Don't hold the whole list invisible
+    // waiting for that decode; only wait when the height is genuinely unknown.
+    if ((m.kind == K::Image || m.kind == K::Sticker || m.kind == K::Video) &&
+        m.media_w > 0 && m.media_h > 0)
+    {
+        return true;
+    }
     switch (m.kind)
     {
     case K::Image:

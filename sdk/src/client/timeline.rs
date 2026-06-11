@@ -631,7 +631,49 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid room id: {e}")),
         };
 
-        // Drop any previous subscription for this room.
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+
+        // Reuse a still-live, non-focused timeline for this room instead of the
+        // expensive rebuild. `Timeline::init_focus` (inside `build()`) is the
+        // costly part — it collects the cached events into an `imbl::Vector`.
+        // Keeping the built `Timeline` and only restarting its streaming task
+        // re-emits the current items as a fresh reset to the (already-cleared by
+        // begin_switch_loading) UI, then resumes diffs — so returning to a
+        // recently-viewed room is instant. Focused (jump-to-event) or already
+        // cancelled handles fall through to a clean rebuild below.
+        {
+            let mut guard = self.timelines.write();
+            if let Some(existing) = guard.get_mut(&room_id) {
+                if !existing.is_focused
+                    && !existing.cancelled.load(Ordering::Acquire)
+                {
+                    for h in existing.abort_tasks.drain(..) {
+                        h.abort();
+                    }
+                    let timeline = Arc::clone(&existing.timeline);
+                    let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+                        &timeline,
+                        &room,
+                        room_id.to_string(),
+                        &handler,
+                        &client,
+                        &self.rt,
+                        TimelineChannel::Room,
+                        Arc::clone(&existing.cancelled),
+                    );
+                    existing.abort_tasks = vec![abort, fetch_abort];
+                    drop(guard);
+                    self.sync_room_subscriptions();
+                    let _ = self.subscribe_room_threads(room_id.as_str());
+                    return ok("");
+                }
+            }
+        }
+
+        // Drop any previous (focused / cancelled) subscription for this room
+        // before building a fresh live timeline.
         {
             let mut guard = self.timelines.write();
             if let Some(prev) = guard.remove(&room_id) {
@@ -641,10 +683,6 @@ impl ClientFfi {
                 }
             }
         }
-
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
 
         // Build the timeline on a runtime worker thread, not the calling FFI
         // thread. `Timeline::init_focus` collects the cached events into an
@@ -671,16 +709,12 @@ impl ClientFfi {
 
         let room_id_str = room_id.to_string();
 
-        // Synchronously clear the UI for this room. The follow-up snapshot
-        // reset (with the initial cached items) arrives from the spawned
-        // task below. Both go through the UI's post-to-UI queue so they
-        // serialize in order and no live diffs can land between them —
-        // diffs only flow once the task starts pumping `stream`.
-        {
-            let guard = handler.lock();
-            let empty: Vec<TimelineEvent> = Vec::new();
-            guard.on_timeline_reset(&room_id_str, &empty);
-        }
+        // No synchronous empty reset here: the UI clears the previous room's
+        // rows itself the instant the user clicks (begin_switch_loading) and
+        // holds a clean loading view, so emitting an empty reset would only add
+        // a redundant blank frame. The single populated reset arrives from the
+        // streaming task below (it emits before pumping any diff, preserving
+        // ordering).
 
         let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) =

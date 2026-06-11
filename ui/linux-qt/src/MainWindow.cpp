@@ -2625,14 +2625,11 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     }
 
     // Drill into a space if the clicked row is one.
-    for (const auto& r : rooms_)
+    if (const auto* r = room_by_id_(room_id); r && r->is_space)
     {
-        if (r.id == room_id && r.is_space)
-        {
-            space_stack_.push_back(room_id);
-            refreshRoomList();
-            return;
-        }
+        space_stack_.push_back(room_id);
+        refreshRoomList();
+        return;
     }
 
     // Route through the controllers so their visible_ state stays in sync with
@@ -2668,16 +2665,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
         tesseract::Settings::instance().mark_as_read_delay_ms);
     update_typing_bar_({}, false);
     reply_details_requested_.clear();
-    {
-        auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
-        prefs.last_room = current_room_id_;
-        prefs.open_rooms.clear();
-        for (const auto& t : tabs_)
-            prefs.open_rooms.push_back(t.room_id);
-        if (prefs.open_rooms.empty())
-            prefs.open_rooms.push_back(current_room_id_);
-        client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
-    }
+    persist_room_layout_pref_();
     if (mainApp_)
     {
         mainApp_->room_view()->compose_bar()->clear_reply();
@@ -2693,75 +2681,20 @@ void MainWindow::onRoomSelected(const std::string& room_id)
         roomTextArea_->set_focused(true);
     }
 
-    for (const auto& r : rooms_)
+    if (const auto* r = room_by_id_(current_room_id_))
     {
-        if (r.id == current_room_id_)
+        if (mainApp_)
         {
-            if (mainApp_)
-            {
-                mainApp_->room_view()->set_room(r);
-            }
-            break;
+            mainApp_->room_view()->set_room(*r);
         }
     }
 
-    // subscribe_room + paginate_back both block inside the Rust runtime;
-    // run them on a worker thread so the UI stays responsive during the
-    // first-load network round-trip.
+    // Subscribe (mut pool) + initial history (shared pool). The split keeps the
+    // network paginate off the single mut thread so the next switch's reset is
+    // never blocked. See ShellBase::start_room_subscription_.
     auto visible_ids = mainApp_ ? mainApp_->room_list_view()->visible_room_ids()
                                 : std::vector<std::string>{};
-    std::string sub_room = current_room_id_;
-    // Snapshot client_ on the GUI thread: an account switch while this
-    // worker runs would otherwise race the raw pointer and could subscribe /
-    // paginate against the wrong account's client.
-    auto* c = client_;
-    if (!c)
-    {
-        return;
-    }
-    {
-        auto& state = pagination_[sub_room];
-        if (state.in_flight)
-            return;
-        state.in_flight = true;
-    }
-    run_async_mut_(
-        [this, c, sub_room, visible_ids = std::move(visible_ids)]
-        {
-            auto res = c->subscribe_room(sub_room);
-            bool ok = res.ok;
-            std::string msg = res.message;
-            bool reached = false;
-            if (ok)
-            {
-                auto pr =
-                    c->paginate_back_with_status(sub_room, kPaginationBatch);
-                reached = pr.ok && pr.reached_start;
-                c->start_background_backfill(visible_ids);
-            }
-            QMetaObject::invokeMethod(
-                this,
-                [this, sub_room, ok, msg = std::move(msg), reached]() mutable
-                {
-                    // Always clear in_flight regardless of which room is now
-                    // current — otherwise navigating away before the worker
-                    // finishes permanently blocks re-subscription for sub_room.
-                    pagination_[sub_room].in_flight = false;
-                    if (!ok)
-                    {
-                        statusBar()->showMessage(
-                            tr("Subscribe failed: %1")
-                                .arg(QString::fromStdString(msg)),
-                            4000);
-                        return;
-                    }
-                    if (current_room_id_ == sub_room)
-                    {
-                        pagination_[sub_room].reached_start = reached;
-                    }
-                },
-                Qt::QueuedConnection);
-        });
+    start_room_subscription_(current_room_id_, std::move(visible_ids));
 }
 
 void MainWindow::requestMoreHistory(const std::string& room_id)
@@ -4156,19 +4089,14 @@ void MainWindow::on_tab_state_changed_ui_()
         {
             const tk::Image* avatar = nullptr;
             std::string name;
-            for (const auto& r : rooms_)
+            if (const auto* r = room_by_id_(t.room_id))
             {
-                if (r.id != t.room_id)
-                {
-                    continue;
-                }
-                name = r.name;
-                const std::string& av_mxc = r.effective_avatar_url();
+                name = r->name;
+                const std::string& av_mxc = r->effective_avatar_url();
                 if (!av_mxc.empty())
                 {
                     avatar = account_manager_.thumbnail_cache().peek(av_mxc);
                 }
-                break;
             }
             tb->add_tab(t.room_id, name, avatar);
         }

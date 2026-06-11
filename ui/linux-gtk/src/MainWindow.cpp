@@ -3096,14 +3096,11 @@ void MainWindow::on_room_selected(const std::string& room_id)
     }
 
     // Drill into a space if the clicked row is one.
-    for (const auto& r : rooms_)
+    if (const auto* r = room_by_id_(room_id); r && r->is_space)
     {
-        if (r.id == room_id && r.is_space)
-        {
-            space_stack_.push_back(room_id);
-            refresh_room_list();
-            return;
-        }
+        space_stack_.push_back(room_id);
+        refresh_room_list();
+        return;
     }
 
     // Route through the controllers so their visible_ state stays in sync.
@@ -3140,16 +3137,7 @@ void MainWindow::on_room_selected(const std::string& room_id)
         this);
     update_typing_bar_({}, false);
     reply_details_requested_.clear();
-    {
-        auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
-        prefs.last_room = current_room_id_;
-        prefs.open_rooms.clear();
-        for (const auto& t : tabs_)
-            prefs.open_rooms.push_back(t.room_id);
-        if (prefs.open_rooms.empty())
-            prefs.open_rooms.push_back(current_room_id_);
-        client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
-    }
+    persist_room_layout_pref_();
     if (room_view_)
     {
         room_view_->compose_bar()->clear_reply();
@@ -3168,51 +3156,17 @@ void MainWindow::on_room_selected(const std::string& room_id)
         room_view_->clear_compose_text();
     }
 
-    for (const auto& r : rooms_)
+    if (const auto* r = room_by_id_(current_room_id_))
     {
-        if (r.id == current_room_id_)
-        {
-            room_view_->set_room(r);
-            break;
-        }
+        room_view_->set_room(*r);
     }
 
-    // subscribe_room + paginate_back both block inside the Rust runtime;
-    // run them on a worker thread so the GTK main loop stays responsive.
+    // Subscribe (mut pool) + initial history (shared pool). The split keeps the
+    // network paginate off the single mut thread so the next switch's reset is
+    // never blocked. See ShellBase::start_room_subscription_.
     auto visible_ids = room_list_view_ ? room_list_view_->visible_room_ids()
                                        : std::vector<std::string>{};
-    std::string sub_room = current_room_id_;
-    {
-        auto& state = pagination_[sub_room];
-        if (state.in_flight)
-            return;
-        state.in_flight = true;
-    }
-    run_async_mut_(
-        [this, sub_room, visible_ids = std::move(visible_ids)]
-        {
-            auto res = client_->subscribe_room(sub_room);
-            bool reached = false;
-            if (res)
-            {
-                auto pr = client_->paginate_back_with_status(sub_room,
-                                                             kPaginationBatch);
-                reached = pr.ok && pr.reached_start;
-                client_->start_background_backfill(visible_ids);
-            }
-            auto* d = new IdleSubscribeResult{this, sub_room, reached, alive_};
-            g_idle_add(
-                [](gpointer data) -> gboolean
-                {
-                    auto* dd = static_cast<IdleSubscribeResult*>(data);
-                    if (auto a = dd->alive.lock(); a && *a)
-                        dd->window->push_subscribe_result(std::move(dd->room_id),
-                                                          dd->reached_start);
-                    delete dd;
-                    return G_SOURCE_REMOVE;
-                },
-                d);
-        });
+    start_room_subscription_(current_room_id_, std::move(visible_ids));
 }
 
 void MainWindow::push_paginate_result(std::string room_id, bool reached_start)
@@ -6273,19 +6227,14 @@ void MainWindow::on_tab_state_changed_ui_()
         {
             const tk::Image* avatar = nullptr;
             std::string name;
-            for (const auto& r : rooms_)
+            if (const auto* r = room_by_id_(t.room_id))
             {
-                if (r.id != t.room_id)
-                {
-                    continue;
-                }
-                name = r.name;
-                const std::string& av_mxc = r.effective_avatar_url();
+                name = r->name;
+                const std::string& av_mxc = r->effective_avatar_url();
                 if (!av_mxc.empty())
                 {
                     avatar = account_manager_.thumbnail_cache().peek(av_mxc);
                 }
-                break;
             }
             tb->add_tab(t.room_id, name, avatar);
         }

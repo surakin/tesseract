@@ -656,6 +656,23 @@ public:
     // batch on the false transition to reduce per-insertion layout churn.
     void set_paginating(bool paginating);
 
+    // Enter the room-switch "loading" state: clear the previous room's rows at
+    // once (so they never show under the new room's header) and hold a clean
+    // loading view until the new room's populated snapshot arrives via
+    // set_messages(..., room_switch=true), which cancels this state. A centered
+    // spinner is drawn only if the load runs longer than kSwitchSpinnerDelayMs,
+    // so fast / warm switches show nothing transient. Each call supersedes any
+    // prior loading (epoch), neutralising an outstanding delayed-spinner timer.
+    void begin_switch_loading();
+    // True while the room-switch loading state is active (rows held empty,
+    // awaiting the new room's snapshot).
+    bool is_switch_loading() const { return switch_loading_; }
+    // Test seam: whether the delayed spinner is currently due to paint.
+    bool switch_spinner_visible_for_test() const
+    {
+        return switch_loading_ && switch_spinner_due_;
+    }
+
     // Fired when the user clicks the scroll-to-bottom pill while in
     // historical mode.
     std::function<void()> on_return_to_live;
@@ -770,6 +787,28 @@ private:
     std::vector<MessageRowData> pending_prepends_;
     void draw_pagination_spinner_(tk::PaintCtx& ctx);
     void flush_pending_prepends_();
+
+    // Room-switch loading state (see begin_switch_loading). While active the
+    // list is held empty (clean background) and, once switch_spinner_due_ flips
+    // true at the delay, a centered spinner is drawn. switch_epoch_ neutralises
+    // a superseded delayed-spinner timer (rapid re-switch / arriving snapshot).
+    //
+    // The delay must sit ABOVE a normal cold-room load (first visit: the SDK
+    // builds the room's timeline from scratch, ~hundreds of ms) so that path
+    // shows only the clean background, never a one-frame spinner flicker. Warm
+    // re-visits (reused timeline) return well under this and also show nothing.
+    // Only a genuinely slow load — uncached history, slow/offline network —
+    // outlasts it and surfaces the spinner, which is exactly when it's wanted.
+    static constexpr int kSwitchSpinnerDelayMs = 500;
+    bool          switch_loading_     = false;
+    bool          switch_spinner_due_ = false;
+    std::uint64_t switch_epoch_       = 0;
+    std::chrono::steady_clock::time_point switch_spinner_start_;
+    void draw_switch_spinner_(tk::PaintCtx& ctx);
+    // Shared 8-dot rotating indicator (back-pagination + room-switch loading).
+    void draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
+                            std::chrono::steady_clock::time_point start,
+                            float radius, float dot_r);
 
     // Room-switch display gate. Armed by set_messages(.., room_switch=true);
     // evaluated on the first paint (heights are guaranteed measured there);
