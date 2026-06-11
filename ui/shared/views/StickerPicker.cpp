@@ -61,6 +61,15 @@ void StickerPicker::refresh_packs()
         {
             if (any(p.usage & PackUsage::Sticker))
             {
+                // Packs without their own avatar borrow the first sticker's
+                // image so the tab shows a glyph rather than a bare letter.
+                if (p.avatar_url.empty())
+                {
+                    auto imgs =
+                        client_->list_pack_images(p.id, PackUsageFilter::Sticker);
+                    if (!imgs.empty())
+                        p.avatar_url = imgs.front().url;
+                }
                 packs_.push_back(std::move(p));
             }
         }
