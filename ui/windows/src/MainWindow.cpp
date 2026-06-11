@@ -421,14 +421,16 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         RECT top = {rc.left, rc.top, rc.right, rc.top + 1};
         FillRect(hdc, &top, theme::brush(pal.separator));
 
+        const UINT sb_dpi = GetDpiForWindow(hwnd);
         auto* p =
             static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         if (p && !p->empty())
         {
             SetBkMode(hdc, TRANSPARENT);
             HFONT small_font = theme::font(theme::FontRole::Small);
-            // Reserve 24px on the right for the inflight dot.
-            RECT text_rc = {rc.left + 10, rc.top, rc.right - 24, rc.bottom};
+            // Reserve space on the right for the inflight dot (DPI-scaled).
+            RECT text_rc = {rc.left + MulDiv(10, sb_dpi, 96), rc.top,
+                            rc.right - MulDiv(24, sb_dpi, 96), rc.bottom};
             auto* st = static_cast<StatusBarLinkState*>(
                 GetPropW(hwnd, L"TesseractStatusLinks"));
             if (st && st->has_links)
@@ -499,8 +501,8 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             const COLORREF dot_cr = static_cast<COLORREF>(reinterpret_cast<ULONG_PTR>(
                 GetPropW(hwnd, L"TesseractStatusDot")));
-            const int DOT_R = 4;
-            const int cx = rc.right - 12;
+            const int DOT_R = MulDiv(4, sb_dpi, 96);
+            const int cx = rc.right - MulDiv(12, sb_dpi, 96);
             const int cy = (rc.top + rc.bottom) / 2;
             HBRUSH dot_br = CreateSolidBrush(dot_cr);
             HPEN null_pen = CreatePen(PS_NULL, 0, 0);
