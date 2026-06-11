@@ -48,8 +48,14 @@ text-align:center;padding:4em'><h1>Sign-in failed.</h1>\
 
 /// Informational `client_uri` advertised in the OAuth dynamic-registration
 /// metadata. The MAS consent page may surface this to the user, so it
-/// points at the project repo.
-const CLIENT_URI: &str = "https://github.com/surakin/tesseract";
+/// points at the project page. Must share a host with `LOGO_URI` below —
+/// MAS rejects registration when `logo_uri`/`tos_uri`/`policy_uri` have a
+/// different host than `client_uri`.
+const CLIENT_URI: &str = "https://surakin.github.io/tesseract/";
+
+/// Informational `logo_uri` advertised in the OAuth dynamic-registration
+/// metadata. The MAS consent page may display it next to the client name.
+const LOGO_URI: &str = "https://surakin.github.io/tesseract/favicon-160.png";
 
 fn build_device_display_name() -> Option<String> {
     hostname::get()
@@ -167,6 +173,7 @@ pub async fn begin(
     // 3. Native-app client metadata for dynamic registration.
     let metadata = ClientMetadata {
         client_name: Some(Localized::new("Tesseract".to_owned(), [])),
+        logo_uri: Some(Localized::new(Url::parse(LOGO_URI).context("logo_uri")?, [])),
         ..ClientMetadata::new(
             ApplicationType::Native,
             vec![OAuthGrantType::AuthorizationCode {
