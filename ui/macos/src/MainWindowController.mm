@@ -275,6 +275,7 @@ public:
     using ShellBase::notify_presence_logout_;
     using ShellBase::notify_presence_tick_;
     using ShellBase::pagination_;
+    using ShellBase::parse_status_message_;
     using ShellBase::pending_login_client_;
     using ShellBase::pending_login_is_add_account_;
     using ShellBase::pending_login_temp_dir_;
@@ -469,7 +470,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 @property (readonly, nonatomic) MacShell* shell;
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached;
-- (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
 - (void)openJumpToDateDialog;
 - (void)_switchActiveAccount:(const std::string&)user_id;
@@ -6814,8 +6814,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // attributed-string trick (selectable + allowsEditingTextAttributes)
     // so AppKit renders NSLinkAttributeName clickable and opens the
     // default browser itself.
+    const std::string raw = std::string([text UTF8String] ?: "");
+    // Opt-in gate (server/error text → plain) lives in ShellBase; fall back to
+    // plain when the shell isn't attached yet.
     const auto segs =
-        tesseract::parse_status_links(std::string([text UTF8String] ?: ""));
+        _shell ? _shell->parse_status_message_(raw)
+               : std::vector<tesseract::StatusSegment>{{raw, std::string{}}};
     if (!tesseract::status_has_links(segs))
     {
         _statusLabel.selectable = NO;
@@ -7085,12 +7089,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [self hideSlashPopup];
     [self hideShortcodePopup];
     _shell->handle_compose_room_leaving_(_shell->current_room_id_);
-    if (!_shell->current_room_id_.empty() &&
-        _shell->current_room_id_ != roomId &&
-        _shell->room_subscription_refs_.count(_shell->current_room_id_) == 0)
-    {
-        _shell->client_->unsubscribe_room(_shell->current_room_id_);
-    }
+    // (No unsubscribe-on-leave here: ShellBase::prune_warm_subscriptions_ owns
+    // timeline lifecycle via the warm-subscription LRU.)
     _shell->current_room_id_ = roomId;
     _shell->clear_focused_state_(roomId);
     [_markReadTimer invalidate];
@@ -7284,19 +7284,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         _roomView->message_list()->reset_near_top_latch();
     }
-}
-
-- (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached
-{
-    // Always clear in_flight regardless of current room — otherwise navigating
-    // away before the worker finishes permanently blocks re-subscription.
-    auto& state = _shell->pagination_[roomId];
-    state.in_flight = false;
-    if (roomId != _shell->current_room_id_)
-    {
-        return;
-    }
-    state.reached_start = reached;
 }
 
 // Note: _ensureRowMedia is now handled by ShellBase::ensure_row_media_() via

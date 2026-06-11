@@ -60,17 +60,22 @@ struct TestShell : WithAccountManager, ShellBase
     using ShellBase::touch_visited_room_;
     using ShellBase::visited_lru_;
     using ShellBase::kWarmRoomsMax;
+    using ShellBase::current_room_id_;
+    using ShellBase::pagination_;
+    using ShellBase::prune_warm_subscriptions_;
+    using ShellBase::parse_status_message_;
+    using ShellBase::status_message_allows_links_;
 
-    using ShellBase::rebuild_room_index_;
+    using ShellBase::mark_room_index_dirty_;
     using ShellBase::room_by_id_;
     using ShellBase::rooms_;
 
     // Replace the room list the way the production code does (wholesale), then
-    // refresh the id→index map.
+    // mark the index dirty so the next room_by_id_ rebuilds it lazily.
     void set_rooms_for_test(std::vector<tesseract::RoomInfo> rs)
     {
         rooms_ = std::move(rs);
-        rebuild_room_index_();
+        mark_room_index_dirty_();
     }
 };
 
@@ -82,6 +87,24 @@ tesseract::RoomInfo room(const std::string& id)
 }
 
 } // namespace
+
+TEST_CASE("status messages are not linkified unless explicitly opted in",
+          "[shell][status_links]")
+{
+    TestShell s;
+    const std::string msg = "failed: see [click here](https://evil.example)";
+
+    // Default (server/error text): no linkification — a single plain segment.
+    auto plain = s.parse_status_message_(msg);
+    REQUIRE(plain.size() == 1);
+    CHECK(plain[0].url.empty());
+    CHECK(plain[0].text == msg);
+
+    // Opted in (app-authored text): markdown links are parsed.
+    s.status_message_allows_links_ = true;
+    auto linked = s.parse_status_message_(msg);
+    CHECK(tesseract::status_has_links(linked));
+}
 
 TEST_CASE("room_by_id_ returns the matching room or nullptr",
           "[shell][room_index]")
@@ -175,4 +198,25 @@ TEST_CASE("select_warm_evictions_ evicts nothing when within the cap",
     auto evicted = s.select_warm_evictions_({"!c"}, /*warm_cap=*/4);
     CHECK(evicted.empty());
     CHECK(s.visited_lru_.size() == 3);
+}
+
+TEST_CASE("prune_warm_subscriptions_ drops pagination_ state for evicted rooms",
+          "[shell][warm_subscriptions]")
+{
+    // An evicted room's SDK timeline is torn down (unsubscribe_room), so its
+    // stale pagination_ state (e.g. reached_start=true) must not survive — else
+    // a rebuilt timeline on return would skip back-pagination and show truncated
+    // history.
+    TestShell s;
+    s.current_room_id_ = "!f"; // active room (protected)
+    // 6 visited rooms, cap 4 → with !f active, !a is the oldest warm and evicts.
+    s.visited_lru_ = {"!f", "!e", "!d", "!c", "!b", "!a"};
+    s.pagination_["!a"].reached_start = true; // will be evicted
+    s.pagination_["!e"].reached_start = true; // stays warm
+
+    s.prune_warm_subscriptions_();
+
+    CHECK(s.pagination_.count("!a") == 0);     // evicted → state dropped
+    CHECK(s.pagination_.count("!e") == 1);     // retained → state kept
+    CHECK(s.pagination_["!e"].reached_start);  // unchanged
 }

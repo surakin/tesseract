@@ -1196,13 +1196,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         delete p;
         return 0;
     }
-    case WM_TESSERACT_SUBSCRIBE_DONE:
-    {
-        auto* p = reinterpret_cast<std::string*>(lParam);
-        self->on_tesseract_subscribe_done(p, wParam != 0);
-        delete p;
-        return 0;
-    }
     case WM_TESSERACT_JUMP_DONE:
     {
         auto* p = reinterpret_cast<JumpDonePayload*>(lParam);
@@ -4127,12 +4120,8 @@ void MainWindow::on_room_selected(const std::string& room_id)
     if (mention_controller_)
         mention_controller_->hide();
     handle_compose_room_leaving_(current_room_id_);
-    if (!current_room_id_.empty() && current_room_id_ != room_id &&
-        room_subscription_refs_.count(current_room_id_) == 0)
-    {
-        client_->unsubscribe_room(current_room_id_);
-    }
-
+    // (No unsubscribe-on-leave here: ShellBase::prune_warm_subscriptions_ owns
+    // timeline lifecycle via the warm-subscription LRU.)
     current_room_id_ = room_id;
     clear_focused_state_(room_id);
     KillTimer(hwnd_, kMarkReadTimerId);
@@ -4282,19 +4271,6 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     {
         tray_->set_unread(has_unread, has_highlight);
     }
-}
-
-void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
-                                             bool reached_start)
-{
-    if (!room_id)
-    {
-        return;
-    }
-    // push_paginate_result_ clears in_flight unconditionally — don't guard on
-    // current room, otherwise navigating away before the worker finishes
-    // permanently blocks re-subscription for that room.
-    push_paginate_result_(*room_id, reached_start);
 }
 
 void MainWindow::on_tesseract_jump_done(JumpDonePayload* p)

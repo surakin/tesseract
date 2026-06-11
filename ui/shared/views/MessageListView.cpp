@@ -6,6 +6,7 @@
 #include "icons.h"
 #include "tk/hash_combine.h"
 #include "tk/i18n.h"
+#include "tk/loading_spinner.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 #include <tesseract/settings.h>
@@ -4701,6 +4702,20 @@ void MessageListView::begin_switch_loading()
     }
 }
 
+void MessageListView::end_switch_loading()
+{
+    if (!switch_loading_)
+        return;
+    // Bump the epoch so any pending delayed-spinner timer is neutralised, then
+    // settle on the (already-empty) row set. No populated snapshot is coming.
+    ++switch_epoch_;
+    switch_loading_     = false;
+    switch_spinner_due_ = false;
+    invalidate_data();
+    if (request_repaint_)
+        request_repaint_();
+}
+
 void MessageListView::draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
                                          std::chrono::steady_clock::time_point
                                              start,
@@ -4711,22 +4726,10 @@ void MessageListView::draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
             std::chrono::steady_clock::now() - start)
             .count();
     const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
-    constexpr int kN  = 8;
-    const auto& pal   = ctx.theme.palette;
-    for (int i = 0; i < kN; ++i)
-    {
-        const float angle =
-            (static_cast<float>(i) / kN + phase) * 2.0f * 3.14159265f;
-        const float dx    = std::cos(angle) * radius;
-        const float dy    = std::sin(angle) * radius;
-        const float t     = static_cast<float>(i) / kN;
-        const auto  alpha = static_cast<std::uint8_t>(40.0f + 215.0f * t);
-        ctx.canvas.fill_rounded_rect(
-            {cx + dx - dot_r, cy + dy - dot_r, dot_r * 2.0f, dot_r * 2.0f},
-            dot_r, pal.text_muted.with_alpha(alpha));
-    }
+    tk::draw_spinner_dots(ctx.canvas, {cx, cy}, phase, radius, dot_r,
+                          ctx.theme.palette.text_muted);
     if (request_repaint_)
-        request_repaint_();
+        request_repaint_(); // self-animate the next frame while visible
 }
 
 void MessageListView::draw_switch_spinner_(tk::PaintCtx& ctx)

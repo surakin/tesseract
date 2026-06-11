@@ -39,12 +39,14 @@ struct UrlPreviewData;
 class RoomSwitchGateKeeper
 {
 public:
-    // Default fallback timeout: a slow / offline network can never hold the
-    // list invisible forever. Since the gate no longer waits on image/video
-    // decode (height is reserved from intrinsic dimensions; see dep_satisfied),
-    // it blocks only on text-affecting deps (URL previews), which resolve fast —
-    // so this safety net can be tight.
-    static constexpr int kTimeoutMs = 150;
+    // Fallback timeout so a slow / offline network can never hold the list
+    // invisible forever. The gate no longer waits on image/video decode (height
+    // is reserved from intrinsic dimensions; see dep_satisfied) — it blocks only
+    // on URL previews, which are a homeserver round-trip and routinely exceed
+    // ~150ms. Keep the timeout generous so a not-yet-loaded preview is waited for
+    // (avoiding the reveal-then-grow reflow the gate exists to prevent) rather
+    // than revealed early.
+    static constexpr int kTimeoutMs = 400;
 
     // --- wiring (forwarded from MessageListView) ---
     using ImageProvider =

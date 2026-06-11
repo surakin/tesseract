@@ -128,10 +128,24 @@ Settings::WindowGeometry ShellBase::clamp_to_screens_(
     return result;
 }
 
-void ShellBase::show_status_message_(std::string msg, int auto_clear_ms)
+std::vector<tesseract::StatusSegment>
+ShellBase::parse_status_message_(const std::string& msg) const
+{
+    if (status_message_allows_links_)
+        return tesseract::parse_status_links(msg);
+    return {{msg, std::string{}}}; // plain: never linkify un-opted-in text
+}
+
+void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
+                                     bool allow_links)
 {
     const std::uint32_t gen = ++status_msg_gen_;
-    post_to_ui_alive_([this, msg = std::move(msg)] { on_show_status_message_ui_(msg); });
+    post_to_ui_alive_(
+        [this, msg = std::move(msg), allow_links]
+        {
+            status_message_allows_links_ = allow_links;
+            on_show_status_message_ui_(msg);
+        });
     // auto_clear_ms <= 0 → persistent: the message stays until a newer
     // status message (which bumps the generation) replaces it.
     if (auto_clear_ms <= 0)
@@ -1881,7 +1895,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         return;
     }
     rooms_ = std::move(rooms);
-    rebuild_room_index_();
+    mark_room_index_dirty_();
     // A change in the active account's room set may add/remove people; drop the
     // cached roster so the next user-mode query rebuilds it. Member-only changes
     // within existing rooms aren't tracked here — live-resolve covers anyone the
@@ -3224,6 +3238,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     active_tab_idx_ = 0;
     space_stack_.clear();
     pagination_.clear();
+    visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
 
     // Save the outgoing account's banner state before switching.
@@ -3279,7 +3294,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     auto it = per_account_rooms_.find(my_user_id_);
     rooms_ = (it != per_account_rooms_.end()) ? it->second
                                               : std::vector<tesseract::RoomInfo>{};
-    rebuild_room_index_();
+    mark_room_index_dirty_();
     // The known-user roster belongs to the previous account — drop it.
     invalidate_known_users_();
     // The unread-prefetch fingerprint is per-account; reset so the incoming
@@ -3473,10 +3488,11 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     my_display_name_.clear();
     my_avatar_url_.clear();
     rooms_.clear();
-    room_index_by_id_.clear();
+    mark_room_index_dirty_();
     invites_.clear();
     current_invite_.reset();
     pagination_.clear();
+    visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
     reset_server_info_();
 
@@ -5378,11 +5394,13 @@ void ShellBase::after_active_room_changed_()
 void ShellBase::start_room_subscription_(const std::string&       room_id,
                                          std::vector<std::string> visible_ids)
 {
-    if (room_id.empty() || !client_)
+    if (room_id.empty() || !active_account_ || !active_account_->client)
         return;
-    // Snapshot client_ on the calling (UI) thread so an account switch while the
-    // workers run can't race the raw pointer to the wrong account's client.
-    auto* c = client_;
+    // Capture the OWNING session (not the raw client_): the workers run on
+    // mut_pool_ / pool_ where a concurrent account switch/logout can free the
+    // raw client_ pointer. Holding `sess` keeps the Client alive for the call —
+    // same pattern as the unread-prefetch worker above.
+    auto sess = active_account_;
 
     // 1. Subscribe on the single-thread mut pool. Dispatched on EVERY switch
     //    (intentionally not gated by in_flight): subscribe_room emits the
@@ -5390,17 +5408,26 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
     //    spinner, and for a warm room the SDK reuses the live timeline so this
     //    is cheap. The network back-pagination is deliberately NOT run here.
     run_async_mut_(
-        [this, c, room_id, visible_ids]()
+        [this, sess, room_id, visible_ids = std::move(visible_ids)]() mutable
         {
-            auto        res = c->subscribe_room(room_id);
+            if (!sess->client)
+                return;
+            auto        res = sess->client->subscribe_room(room_id);
             const bool  ok  = res.ok;
             std::string msg = res.message;
             post_to_ui_(
-                [this, c, room_id, ok, msg, visible_ids]()
+                [this, sess, room_id, ok, msg = std::move(msg),
+                 visible_ids = std::move(visible_ids)]() mutable
                 {
                     if (!ok)
                     {
                         show_status_message_("Subscribe failed: " + msg);
+                        // No timeline reset will arrive, so leave the loading
+                        // state — otherwise begin_switch_loading's cleared view
+                        // hangs on the spinner forever.
+                        if (current_room_id_ == room_id && room_view_)
+                            if (auto* ml = room_view_->message_list())
+                                ml->end_switch_loading();
                         return;
                     }
                     // 2. Subscribe established the timeline; load the initial
@@ -5412,12 +5439,20 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                         return;
                     state.in_flight = true;
                     run_async_(
-                        [this, c, room_id, visible_ids]()
+                        [this, sess, room_id,
+                         visible_ids = std::move(visible_ids)]() mutable
                         {
-                            auto pr = c->paginate_back_with_status(
+                            if (!sess->client)
+                            {
+                                post_to_ui_([this, room_id]()
+                                            { pagination_[room_id].in_flight =
+                                                  false; });
+                                return;
+                            }
+                            auto pr = sess->client->paginate_back_with_status(
                                 room_id, kPaginationBatch);
                             const bool reached = pr.ok && pr.reached_start;
-                            c->start_background_backfill(visible_ids);
+                            sess->client->start_background_backfill(visible_ids);
                             post_to_ui_(
                                 [this, room_id, reached]()
                                 {
@@ -5445,16 +5480,19 @@ void ShellBase::persist_room_layout_pref_()
         tesseract::Prefs::room_layout(current_room_id_, open)));
 }
 
-void ShellBase::rebuild_room_index_()
+void ShellBase::rebuild_room_index_() const
 {
     room_index_by_id_.clear();
     room_index_by_id_.reserve(rooms_.size());
     for (std::size_t i = 0; i < rooms_.size(); ++i)
         room_index_by_id_[rooms_[i].id] = i;
+    room_index_dirty_ = false;
 }
 
 const RoomInfo* ShellBase::room_by_id_(const std::string& room_id) const
 {
+    if (room_index_dirty_)
+        rebuild_room_index_();
     auto it = room_index_by_id_.find(room_id);
     if (it == room_index_by_id_.end() || it->second >= rooms_.size())
         return nullptr;
@@ -5499,8 +5537,6 @@ std::vector<std::string> ShellBase::select_warm_evictions_(
 
 void ShellBase::prune_warm_subscriptions_()
 {
-    if (!client_)
-        return;
     std::unordered_set<std::string> keep;
     if (!current_room_id_.empty())
         keep.insert(current_room_id_);
@@ -5510,7 +5546,15 @@ void ShellBase::prune_warm_subscriptions_()
         if (kv.second > 0)
             keep.insert(kv.first); // pinned by a pop-out window
     for (const auto& room : select_warm_evictions_(keep, kWarmRoomsMax))
-        client_->unsubscribe_room(room);
+    {
+        // Drop the room's per-room pagination state: unsubscribe_room tears the
+        // SDK timeline down, so a rebuilt timeline on return must start fresh —
+        // a stale reached_start would otherwise suppress back-pagination and
+        // leave the room showing truncated history.
+        pagination_.erase(room);
+        if (client_)
+            client_->unsubscribe_room(room);
+    }
 }
 
 void ShellBase::ensure_settings_controller_()

@@ -1954,6 +1954,26 @@ TEST_CASE("MessageListView populated set_messages cancels switch-loading",
     CHECK_FALSE(view.switch_spinner_visible_for_test());
 }
 
+TEST_CASE("MessageListView end_switch_loading clears the loading state",
+          "[tk][view][messagelist][switch_loading]")
+{
+    MessageListView view;
+    std::function<void()> spinner_fn;
+    view.set_post_delayed(
+        [&](int, std::function<void()> fn) { spinner_fn = std::move(fn); });
+
+    view.begin_switch_loading();
+    REQUIRE(view.is_switch_loading());
+
+    view.end_switch_loading(); // subscription failed → no snapshot is coming
+    CHECK_FALSE(view.is_switch_loading());
+
+    // A late spinner timer from the aborted switch must not resurrect it.
+    if (spinner_fn)
+        spinner_fn();
+    CHECK_FALSE(view.switch_spinner_visible_for_test());
+}
+
 TEST_CASE("MessageListView second begin_switch_loading supersedes the first timer",
           "[tk][view][messagelist][switch_loading]")
 {

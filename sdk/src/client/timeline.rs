@@ -649,9 +649,16 @@ impl ClientFfi {
                 if !existing.is_focused
                     && !existing.cancelled.load(Ordering::Acquire)
                 {
+                    // Cancel the OLD tasks' in-flight emissions before aborting:
+                    // tokio abort is cooperative, so without this an old streaming
+                    // task can emit one more VectorDiff (stale, pre-reset indices)
+                    // that races the new task's reset and corrupts the rows. The
+                    // respawned tasks get a fresh cancellation flag.
+                    existing.cancelled.store(true, Ordering::Release);
                     for h in existing.abort_tasks.drain(..) {
                         h.abort();
                     }
+                    let new_cancelled = Arc::new(AtomicBool::new(false));
                     let timeline = Arc::clone(&existing.timeline);
                     let (abort, fetch_abort) = Self::spawn_timeline_tasks(
                         &timeline,
@@ -661,9 +668,10 @@ impl ClientFfi {
                         &client,
                         &self.rt,
                         TimelineChannel::Room,
-                        Arc::clone(&existing.cancelled),
+                        Arc::clone(&new_cancelled),
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
+                    existing.cancelled  = new_cancelled;
                     drop(guard);
                     self.sync_room_subscriptions();
                     let _ = self.subscribe_room_threads(room_id.as_str());

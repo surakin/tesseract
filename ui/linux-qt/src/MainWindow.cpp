@@ -2641,12 +2641,9 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     if (mention_controller_)
         mention_controller_->hide();
     handle_compose_room_leaving_(current_room_id_);
-    if (!current_room_id_.empty() && current_room_id_ != room_id &&
-        room_subscription_refs_.count(current_room_id_) == 0)
-    {
-        client_->unsubscribe_room(current_room_id_);
-    }
-
+    // (No unsubscribe-on-leave here: the warm-subscription LRU in
+    // ShellBase::prune_warm_subscriptions_ now owns timeline lifecycle, keeping
+    // recently-left rooms warm for instant reuse and evicting the rest.)
     current_room_id_ = room_id;
     // Member prefetch (for mention pills/clicks) now lives in the shared
     // RoomView::set_room(), so every shell gets it without wiring it here.
@@ -4224,7 +4221,7 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
 {
-    const auto segs = tesseract::parse_status_links(msg);
+    const auto segs = parse_status_message_(msg); // opt-in gate (server text → plain)
     if (!tesseract::status_has_links(segs))
     {
         if (statusLinkLabel_)
