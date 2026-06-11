@@ -1,6 +1,32 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-10** (v0.8.0).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-11** (v0.8.0).
+
+> **Room-switch performance overhaul (2026-06-11, unreleased).** Switching
+> rooms is now instant and flicker-free. The SDK no longer emits an empty
+> `on_timeline_reset` before the populated one; instead the UI clears the
+> previous room's rows the moment the user clicks
+> (`MessageListView::begin_switch_loading`) and shows a clean loading view —
+> a centered spinner only if the load outlasts ~500ms, so warm/fast switches
+> show nothing transient and never the old room under the new header. The
+> display gate reserves media height from intrinsic `media_w/media_h` instead
+> of blocking on image/video decode (reveals on text-ready; timeout 400→150ms),
+> the content-addressed body-layout cache is retained across switches, and the
+> per-switch blocking `load_prefs_json()` is gone (cached `PrefsData` via
+> `Prefs::room_layout`). `subscribe_room` **reuses** a still-live timeline
+> (restart its streaming task) instead of rebuilding, with a **bounded
+> warm-subscription LRU** (`ShellBase::prune_warm_subscriptions_`) capping the
+> previously-unbounded live-timeline growth. The four shells' duplicated
+> subscribe/paginate workers are consolidated into one shared
+> `ShellBase::start_room_subscription_`: `subscribe_room` on the single mut
+> thread (emits the reset on every switch), the blocking network paginate on
+> the shared pool so it never blocks the next switch's reset — fixing a
+> spurious loading spinner on rapid A↔B switching. Plus O(1) room lookup
+> (`ShellBase::room_by_id_`) on the switch path. All shared code; wired in all
+> four shells (Qt6, GTK4, Win32, macOS) and **verified on Qt6, GTK4, Win32 and
+> macOS**. New Catch2 suites for the room-switch gate and warm-subscription
+> LRU + room index, plus added prefs / layout-cache / loading-state cases —
+> **813 C++ + 226 Rust tests**.
 
 > **Multi-window: one window per account.**
 > Ctrl+click an account in the picker opens it in its own window; clicking an
