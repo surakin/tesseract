@@ -1,12 +1,689 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-  <meta charset="utf-8">
-  <title>Tesseract</title>
-  <meta http-equiv="refresh" content="0; url=https://github.com/surakin/tesseract">
-  <link rel="canonical" href="https://github.com/surakin/tesseract">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tesseract — the native desktop Matrix client</title>
+<meta name="description" content="Tesseract is a full-featured, truly native desktop Matrix client for Linux, Windows and macOS, built on the Matrix Rust SDK. Try the interactive simulator.">
+<link rel="canonical" href="https://github.com/surakin/tesseract">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="160x160" href="favicon-160.png">
+<link rel="apple-touch-icon" href="favicon-160.png">
+<style>
+  /* ===== Theme tokens — copied verbatim from ui/shared/tk/theme.cpp ===== */
+  :root {
+    --bg: #FFFFFF;
+    --sidebar-bg: #F0F2F5;
+    --sidebar-selected: #E4E6EB;
+    --sidebar-hover: #EBEDF0;
+    --section-header-bg: #DADDE5;
+    --section-header-hover: #C6CAD4;
+    --chrome-bg: #F8F9FA;
+    --compose-card-bg: #F0F2F5;
+    --border: #D0D3D8;
+    --separator: #D0D3D8;
+    --popup-border: #BBBEC4;
+    --text-primary: #111111;
+    --text-secondary: #8E8E93;
+    --text-muted: #A0A0A6;
+    --text-on-accent: #FFFFFF;
+    --accent: #0084FF;
+    --accent-hover: #1A92FF;
+    --accent-pressed: #006BD1;
+    --chip-bg: #EBEDF0;
+    --chip-bg-me: #CFE3FF;
+    --chip-border: #D0D3D8;
+    --chip-border-me: #9CC4FF;
+    --chip-text: #111111;
+    --chip-text-me: #004A9E;
+    --unread-bg: #0084FF;
+    --unread-text: #FFFFFF;
+    --avatar-bg: #CFE3FF;
+    --avatar-text: #004A9E;
+    --code-bg: #D9DCE3;
+    --presence-online: #2ECC40;
+    /* page surroundings (not from the app — the website frame around the sim) */
+    --page-bg: #E7E9EE;
+    --page-panel: #FFFFFF;
+    --page-text: #111111;
+    --page-muted: #5B616E;
+  }
+  html[data-theme="dark"] {
+    --bg: #1B1D21;
+    --sidebar-bg: #16181C;
+    --sidebar-selected: #2A2D33;
+    --sidebar-hover: #23262B;
+    --section-header-bg: #2D3138;
+    --section-header-hover: #3C414A;
+    --chrome-bg: #202327;
+    --compose-card-bg: #202327;
+    --border: #33363B;
+    --separator: #33363B;
+    --popup-border: #50535A;
+    --text-primary: #F0F0F2;
+    --text-secondary: #A0A0A8;
+    --text-muted: #808088;
+    --text-on-accent: #FFFFFF;
+    --accent: #4DA3FF;
+    --accent-hover: #66B3FF;
+    --accent-pressed: #3388E0;
+    --chip-bg: #2A2D33;
+    --chip-bg-me: #1F3A66;
+    --chip-border: #33363B;
+    --chip-border-me: #2D55A0;
+    --chip-text: #E6E6E8;
+    --chip-text-me: #BFD8FF;
+    --unread-bg: #4DA3FF;
+    --unread-text: #0B1320;
+    --avatar-bg: #1F3A66;
+    --avatar-text: #BFD8FF;
+    --code-bg: #2E3138;
+    --presence-online: #23B064;
+    --page-bg: #0E0F12;
+    --page-panel: #16181C;
+    --page-text: #F0F0F2;
+    --page-muted: #9AA0AC;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
+                 system-ui, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    transition: background .2s ease, color .2s ease;
+  }
+  a { color: var(--accent); }
+
+  /* ===== Hero ===== */
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  header.hero { padding: 56px 0 28px; }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand .logo { width: 64px; height: 64px; border-radius: 16px; flex: none;
+    box-shadow: 0 6px 20px rgba(49,46,129,.35); }
+  .brand h1 { margin: 0; font-size: 38px; font-weight: 700; letter-spacing: -.5px; }
+  .brand .ver { font-size: 14px; font-weight: 600; color: var(--page-muted);
+    vertical-align: super; margin-left: 6px; }
+  .tagline { margin: 14px 0 0; font-size: 19px; color: var(--page-muted); max-width: 640px; }
+  .cta { margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-size: 15px; font-weight: 600; text-decoration: none;
+    padding: 11px 18px; border-radius: 10px; border: 1px solid transparent;
+    cursor: pointer; transition: background .15s ease, border-color .15s ease;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-ghost { background: transparent; color: var(--page-text);
+    border-color: var(--border); }
+  .btn-ghost:hover { background: var(--sidebar-hover); }
+  .btn svg { width: 18px; height: 18px; }
+
+  /* ===== Desktop-window simulator ===== */
+  .sim-stage { padding: 8px 0 40px; }
+  .window {
+    width: 100%; max-width: 980px; margin: 0 auto;
+    height: 620px; min-height: 480px;
+    background: var(--bg); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.28);
+    display: flex; flex-direction: column;
+    font-size: 14px;
+  }
+  /* Title bar */
+  .titlebar {
+    height: 36px; flex: none; display: flex; align-items: center;
+    gap: 8px; padding: 0 12px; background: var(--chrome-bg);
+    border-bottom: 1px solid var(--separator); user-select: none;
+  }
+  .titlebar .ticon { width: 16px; height: 16px; border-radius: 4px; }
+  .titlebar .ttitle { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .titlebar .winbtns { margin-left: auto; display: flex; gap: 16px; color: var(--text-muted); }
+  .titlebar .winbtns span { font-size: 13px; line-height: 1; }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px; flex: none; background: var(--sidebar-bg);
+    border-right: 1px solid var(--separator);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .search {
+    margin: 8px; height: 30px; flex: none; display: flex; align-items: center;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0 10px; color: var(--text-muted); font-size: 12px; gap: 7px;
+  }
+  .search svg { width: 13px; height: 13px; flex: none; }
+  .roomscroll { flex: 1; overflow-y: auto; min-height: 0; }
+  .section-header {
+    height: 28px; display: flex; align-items: center; gap: 6px;
+    padding: 0 10px; background: var(--section-header-bg);
+    font-size: 12px; font-weight: 600; color: var(--text-primary);
+    cursor: default; user-select: none;
+  }
+  .section-header .chev { font-size: 9px; color: var(--text-secondary); }
+
+  .room {
+    height: 48px; display: flex; align-items: center; gap: 12px;
+    padding: 0 6px 0 8px; cursor: pointer; position: relative;
+    border-bottom: 1px solid transparent;
+  }
+  .room:hover { background: var(--sidebar-hover); }
+  .room.active { background: var(--sidebar-selected); }
+  .avatar {
+    flex: none; border-radius: 50%; background: var(--avatar-bg);
+    color: var(--avatar-text); font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+  }
+  .room .avatar { width: 36px; height: 36px; font-size: 15px; }
+  .avatar.img { background-size: cover; background-position: center; color: transparent; }
+  /* App-icon avatar: cube fills the disc; inherits the circular mask from .avatar */
+  .avatar.app { background: transparent; }
+  .avatar.app svg { width: 100%; height: 100%; display: block; }
+  .presence {
+    position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px;
+    border-radius: 50%; background: var(--presence-online);
+    border: 2px solid var(--sidebar-bg);
+  }
+  .room-text { flex: 1; min-width: 0; }
+  .room-name { font-size: 13px; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .room.unread .room-name { font-weight: 600; }
+  .room-prev { font-size: 11px; color: var(--text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .unread-badge {
+    flex: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px;
+    background: var(--unread-bg); color: var(--unread-text);
+    font-size: 11px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .room:not(.unread) .unread-badge { display: none; }
+
+  .userstrip {
+    height: 48px; flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 0 10px; border-top: 1px solid var(--separator); background: var(--chrome-bg);
+  }
+  .userstrip .avatar { width: 32px; height: 32px; font-size: 13px; }
+  .userstrip .u-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .userstrip .u-sub { font-size: 11px; color: var(--text-secondary); }
+  .userstrip .conn { font-size: 11px; color: var(--presence-online); margin-top: 1px; }
+
+  /* Room panel */
+  .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  .room-header {
+    height: 60px; flex: none; display: flex; align-items: center; gap: 12px;
+    padding: 0 16px; border-bottom: 1px solid var(--separator); background: var(--chrome-bg);
+  }
+  .room-header .avatar { width: 32px; height: 32px; font-size: 14px; }
+  .rh-text { flex: 1; min-width: 0; }
+  .rh-name { font-size: 15px; font-weight: 600; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rh-topic { font-size: 12px; color: var(--text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rh-actions { display: flex; gap: 14px; color: var(--text-secondary); }
+  .rh-actions svg { width: 18px; height: 18px; }
+
+  .timeline { flex: 1; overflow-y: auto; padding: 12px 16px 6px; min-height: 0; }
+  .msg { display: flex; gap: 8px; padding: 6px 0; }
+  .msg .avatar { width: 32px; height: 32px; font-size: 13px; flex: none; }
+  .msg.cont .avatar { visibility: hidden; height: 0; }
+  .msg-body { flex: 1; min-width: 0; }
+  .msg-meta { display: flex; align-items: baseline; gap: 8px; }
+  .msg-sender { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .msg-time { font-size: 11px; color: var(--text-muted); }
+  .msg-text { font-size: 14px; color: var(--text-primary); margin-top: 1px;
+    overflow-wrap: anywhere; }
+  .msg-text code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  .msg.cont .msg-text { margin-top: 0; }
+  .reactions { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12px; padding: 1px 8px; border-radius: 11px;
+    background: var(--chip-bg); border: 1px solid var(--chip-border); color: var(--chip-text);
+  }
+  .chip.me { background: var(--chip-bg-me); border-color: var(--chip-border-me); color: var(--chip-text-me); }
+  .reply-quote {
+    border-left: 3px solid var(--accent); padding: 2px 0 2px 8px; margin: 2px 0 4px;
+    font-size: 13px; color: var(--text-secondary);
+  }
+  .reply-quote b { color: var(--text-secondary); font-weight: 600; }
+  /* On-brand "matrix rain" media tile (no copyrighted assets) */
+  .media-tile {
+    margin-top: 4px; width: 280px; max-width: 100%; height: 150px; border-radius: 8px;
+    overflow: hidden; background: #000; position: relative; border: 1px solid var(--separator);
+  }
+  .media-tile canvas { display: block; width: 100%; height: 100%; }
+  .media-cap {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px;
+    font-size: 11px; color: #cfe3d0; background: linear-gradient(transparent, rgba(0,0,0,.7));
+  }
+
+  /* Compose bar */
+  .compose {
+    flex: none; min-height: 56px; display: flex; align-items: center; gap: 6px;
+    padding: 8px; border-top: 1px solid var(--separator); background: var(--chrome-bg);
+  }
+  .icon-btn {
+    width: 40px; height: 40px; flex: none; border: none; background: transparent;
+    border-radius: 8px; color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: var(--sidebar-hover); }
+  .icon-btn svg { width: 19px; height: 19px; }
+  /* Text field card holds the input plus the emoji/sticker/mic buttons on the right */
+  .compose-card {
+    flex: 1; min-width: 0; height: 40px; display: flex; align-items: center;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
+    padding-left: 12px;
+  }
+  .compose-card:focus-within { border-color: var(--accent); }
+  .compose-card input.field {
+    flex: 1; min-width: 0; height: 100%; border: none; background: transparent;
+    color: var(--text-primary); padding: 0; font: inherit; font-size: 14px; outline: none;
+  }
+  .compose-card .icon-btn { width: 32px; height: 32px; border-radius: 7px; }
+  .compose-card .icon-btn svg { width: 18px; height: 18px; }
+  .send-btn {
+    flex: none; width: 64px; height: 40px; border: none; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 14px;
+    cursor: pointer;
+  }
+  .send-btn:hover { background: var(--accent-hover); }
+  .send-btn:disabled { background: var(--border); color: var(--text-muted); cursor: default; }
+
+  /* ===== About + features ===== */
+  section.about { padding: 24px 0 8px; }
+  section.about h2 { font-size: 26px; margin: 0 0 12px; letter-spacing: -.3px; }
+  section.about p.lead { font-size: 17px; color: var(--page-muted); max-width: 760px; margin: 0; }
+  .features {
+    margin: 28px 0 8px; display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+  .feature {
+    background: var(--page-panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .feature .ico { font-size: 20px; }
+  .feature h3 { margin: 8px 0 4px; font-size: 15px; }
+  .feature p { margin: 0; font-size: 13px; color: var(--page-muted); }
+
+  footer.foot {
+    margin-top: 32px; padding: 24px 0 48px; border-top: 1px solid var(--border);
+    color: var(--page-muted); font-size: 13px;
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+  }
+  footer.foot a { font-weight: 600; text-decoration: none; }
+
+  .sim-hint { text-align: center; color: var(--page-muted); font-size: 13px; margin: 12px 0 0; }
+
+  @media (max-width: 720px) {
+    .brand h1 { font-size: 30px; }
+    .window { height: 560px; }
+    .sidebar { width: 210px; }
+    .room-prev { display: none; }
+  }
+</style>
 </head>
 <body>
-  <p>Redirecting to <a href="https://github.com/surakin/tesseract">github.com/surakin/tesseract</a>&hellip;</p>
+<div class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <header class="hero">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 512 512" aria-label="Tesseract logo" role="img">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#1e1b4b"/><stop offset="100%" stop-color="#312e81"/>
+          </linearGradient>
+          <linearGradient id="wire" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+        <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+        <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+        <line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+        <line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+        <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+        <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+      </svg>
+      <h1>Tesseract<span class="ver">0.8.1</span></h1>
+    </div>
+    <p class="tagline">The native desktop Matrix client you always wanted.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/surakin/tesseract">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        View on GitHub
+      </a>
+      <button class="btn btn-ghost" id="themeToggle" type="button" aria-label="Toggle light / dark theme">
+        <span id="themeIcon">🌙</span><span id="themeLabel">Dark</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================== SIMULATOR ===================== -->
+  <div class="sim-stage">
+    <div class="window" id="sim">
+      <div class="titlebar">
+        <svg class="ticon" viewBox="0 0 512 512" aria-hidden="true">
+          <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+          <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="34" stroke-linejoin="round"/>
+          <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="34" stroke-linejoin="round"/>
+        </svg>
+        <span class="ttitle">Tesseract</span>
+        <div class="winbtns"><span>&#9472;</span><span>&#9633;</span><span>&#10005;</span></div>
+      </div>
+
+      <div class="body">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <div class="search">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l4 4"/></svg>
+            <span>Search rooms…</span>
+          </div>
+          <div class="roomscroll">
+            <div class="section-header"><span class="chev">&#9660;</span> Direct Messages</div>
+            <div id="roomlist-dm"></div>
+            <div class="section-header"><span class="chev">&#9660;</span> Rooms</div>
+            <div id="roomlist-rooms"></div>
+          </div>
+          <div class="userstrip">
+            <div class="avatar app">
+              <svg viewBox="0 0 512 512" aria-label="Tesseractor">
+                <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+                <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+                <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+                <line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+                <line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+                <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+                <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="room-text">
+              <div class="u-name">Tesseractor</div>
+              <div class="u-sub">@tessetest:matrix.org</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Room panel -->
+        <main class="panel">
+          <div class="room-header">
+            <div class="avatar" id="rhAvatar">T</div>
+            <div class="rh-text">
+              <div class="rh-name" id="rhName">Tesseract</div>
+              <div class="rh-topic" id="rhTopic"></div>
+            </div>
+            <div class="rh-actions">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Threads"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Jump to date"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
+            </div>
+          </div>
+
+          <div class="timeline" id="timeline"></div>
+
+          <form class="compose" id="composeForm" autocomplete="off">
+            <div class="compose-card">
+              <input class="field" id="composeInput" type="text" placeholder="Send a message…" aria-label="Message">
+              <button class="icon-btn" type="button" title="Emoji" tabindex="-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M18 13a6 6 0 0 1-6 5 6 6 0 0 1-6-5h12Z"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Sticker" tabindex="-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><path d="M15 3v5a1 1 0 0 0 1 1h5"/><path d="M8 13h.01"/><path d="M16 13h.01"/><path d="M10 16s.8 1 2 1c1.3 0 2-1 2-1"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Voice message" tabindex="-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>
+              </button>
+            </div>
+            <button class="send-btn" id="sendBtn" type="submit" disabled>Send</button>
+          </form>
+        </main>
+      </div>
+    </div>
+    <p class="sim-hint">↑ A live simulator — switch rooms, send a message, toggle the theme. Not connected to any real server.</p>
+  </div>
+
+  <!-- ===================== ABOUT + FEATURES ===================== -->
+  <section class="about">
+    <h2>A truly native Matrix client</h2>
+    <p class="lead">
+      Tesseract is a full-featured desktop Matrix client for Linux, Windows and macOS,
+      built on the Matrix Rust SDK. The networking core is Rust; each platform gets a
+      genuinely native UI — Win32 on Windows, AppKit on macOS, and Qt6 or GTK4 on Linux —
+      so it looks and feels right everywhere, no web view in sight.
+    </p>
+
+    <div class="features">
+      <div class="feature"><div class="ico">🖥️</div><h3>Truly native, four platforms</h3><p>Win32, macOS AppKit, and Linux Qt6 &amp; GTK4 — one shared C++ toolkit, native everywhere.</p></div>
+      <div class="feature"><div class="ico">👥</div><h3>Multi-account</h3><p>Sign in to several Matrix accounts at once and switch between them seamlessly.</p></div>
+      <div class="feature"><div class="ico">🔒</div><h3>End-to-end encryption</h3><p>Full E2EE with device verification and cross-signing, powered by the Rust SDK.</p></div>
+      <div class="feature"><div class="ico">🧵</div><h3>Threads &amp; replies</h3><p>Follow conversations with a dedicated thread panel and inline quoted replies.</p></div>
+      <div class="feature"><div class="ico">😀</div><h3>Reactions &amp; stickers</h3><p>React with emoji, send stickers, and browse a built-in emoji &amp; sticker picker.</p></div>
+      <div class="feature"><div class="ico">✍️</div><h3>Markdown formatting</h3><p>Write in Markdown — bold, italics, lists, code blocks and inline <code>code</code>.</p></div>
+      <div class="feature"><div class="ico">🎙️</div><h3>Voice messages</h3><p>Record and send voice clips, with waveform playback right in the timeline.</p></div>
+      <div class="feature"><div class="ico">🌗</div><h3>Light &amp; dark themes</h3><p>System-matching light and dark modes plus native tray integration on each OS.</p></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <a href="https://github.com/surakin/tesseract">github.com/surakin/tesseract</a>
+    <span>Built on the Matrix Rust SDK.</span>
+    <span>Tesseract is an independent project and is not affiliated with Matrix.org.</span>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Theme toggle (persisted) ---------- */
+  var root = document.documentElement;
+  var icon = document.getElementById("themeIcon");
+  var label = document.getElementById("themeLabel");
+  function applyTheme(mode) {
+    root.setAttribute("data-theme", mode);
+    var dark = mode === "dark";
+    icon.textContent = dark ? "☀️" : "🌙";
+    label.textContent = dark ? "Light" : "Dark";
+    try { localStorage.setItem("tesseract-theme", mode); } catch (e) {}
+  }
+  var saved = null;
+  try { saved = localStorage.getItem("tesseract-theme"); } catch (e) {}
+  applyTheme(saved === "dark" ? "dark" : "light");
+  document.getElementById("themeToggle").addEventListener("click", function () {
+    applyTheme(root.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+
+  /* ---------- App icon (cube) reused for the Tesseract room + own user ---------- */
+  var APP_ICON =
+    '<svg viewBox="0 0 512 512">' +
+    '<rect width="512" height="512" rx="96" fill="url(#bg)"/>' +
+    '<rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>' +
+    '<rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>' +
+    '<line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '<line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '<line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '<line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>' +
+    '</svg>';
+
+  /* ---------- Data model ---------- */
+  var rooms = [
+    {
+      id: "tesseract", name: "Tesseract", initials: "T", icon: true, section: "rooms",
+      topic: "Tesseract Matrix Client — https://github.com/surakin/tesseract",
+      preview: "He is the one!", unread: 0, dm: false,
+      messages: [
+        { sender: "Morpheus", initials: "M", time: "14:18",
+          text: "Welcome to Tesseract. This is a faithful reconstruction of the real desktop client, running entirely in your browser." },
+        { sender: "Morpheus", initials: "M", time: "14:18", cont: true,
+          text: "Try switching rooms in the sidebar, or send a message below.", reactions: ["👍 3", "🎉 2"] },
+        { sender: "Trinity", initials: "T2", time: "14:21",
+          text: "The whole UI is driven by the same colour tokens and dimensions as the native app." },
+        { sender: "Neo", initials: "N", time: "14:22", media: true, mediaCap: "the-matrix.gif",
+          text: "He is the one!" }
+      ]
+    },
+    {
+      id: "matrixorg", name: "Matrix.org (Official Account)", initials: "m", section: "dm",
+      topic: "Official Matrix.org account", dm: true,
+      preview: "Welcome to Matrix!", unread: 2,
+      messages: [
+        { sender: "Matrix.org", initials: "m", time: "09:30",
+          text: "Welcome to Matrix! Let us know if you have any questions getting started." },
+        { sender: "Matrix.org", initials: "m", time: "09:31", cont: true,
+          text: "You can format messages with **Markdown** and run `inline code` too." }
+      ]
+    },
+    {
+      id: "rustsdk", name: "Matrix Rust SDK", initials: "R", section: "rooms",
+      topic: "Discussion about the matrix-rust-sdk",
+      preview: "Shipped the new sliding sync API 🚀", unread: 0,
+      messages: [
+        { sender: "ahmed", initials: "A", time: "11:02",
+          text: "Shipped the new sliding sync API 🚀", reactions: ["🚀 5", "🦀 4"] },
+        { sender: "you", initials: "Y", time: "11:05", me: true,
+          text: "Nice — Tesseract picks it up automatically through the FFI bridge." }
+      ]
+    }
+  ];
+  var activeId = rooms[0].id;
+
+  function roomById(id) { for (var i = 0; i < rooms.length; i++) if (rooms[i].id === id) return rooms[i]; return rooms[0]; }
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+  // minimal inline markdown: **bold**, *italic*, `code`
+  function fmt(s) {
+    s = esc(s);
+    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    return s;
+  }
+
+  /* ---------- Matrix-rain media tiles (on-brand, no external assets) ---------- */
+  var rainTimers = [];
+  function clearRain() { rainTimers.forEach(function (t) { clearInterval(t); }); rainTimers = []; }
+  function startRain(canvas) {
+    var ctx = canvas.getContext("2d");
+    var W = canvas.width = canvas.clientWidth || 280;
+    var H = canvas.height = canvas.clientHeight || 150;
+    var fontSize = 13, cols = Math.floor(W / fontSize);
+    var drops = []; for (var i = 0; i < cols; i++) drops[i] = Math.floor(Math.random() * (H / fontSize));
+    var glyphs = "アァカサタナハマヤラワ0123456789ABCDEF";
+    var timer = setInterval(function () {
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#22e36a";
+      ctx.font = fontSize + "px monospace";
+      for (var i = 0; i < drops.length; i++) {
+        var ch = glyphs[Math.floor(Math.random() * glyphs.length)];
+        ctx.fillText(ch, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > H && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+      }
+    }, 70);
+    rainTimers.push(timer);
+  }
+
+  /* ---------- Render sidebar ---------- */
+  function renderSidebar() {
+    var dm = document.getElementById("roomlist-dm");
+    var rm = document.getElementById("roomlist-rooms");
+    dm.innerHTML = ""; rm.innerHTML = "";
+    rooms.forEach(function (r) {
+      var el = document.createElement("div");
+      el.className = "room" + (r.id === activeId ? " active" : "") + (r.unread > 0 ? " unread" : "");
+      el.innerHTML =
+        '<div class="avatar' + (r.icon ? ' app' : '') + '">' +
+          (r.icon ? APP_ICON : esc(r.initials)) + (r.dm ? '<span class="presence"></span>' : '') +
+        '</div>' +
+        '<div class="room-text">' +
+          '<div class="room-name">' + esc(r.name) + '</div>' +
+          '<div class="room-prev">' + esc(r.preview) + '</div>' +
+        '</div>' +
+        '<div class="unread-badge">' + r.unread + '</div>';
+      el.addEventListener("click", function () { selectRoom(r.id); });
+      (r.section === "dm" ? dm : rm).appendChild(el);
+    });
+  }
+
+  /* ---------- Render timeline ---------- */
+  function renderRoom() {
+    var r = roomById(activeId);
+    document.getElementById("rhName").textContent = r.name;
+    document.getElementById("rhTopic").textContent = r.topic || "";
+    var rhAv = document.getElementById("rhAvatar");
+    if (r.icon) { rhAv.className = "avatar app"; rhAv.innerHTML = APP_ICON; }
+    else { rhAv.className = "avatar"; rhAv.textContent = r.initials; }
+
+    clearRain();
+    var tl = document.getElementById("timeline");
+    tl.innerHTML = "";
+    r.messages.forEach(function (m) {
+      var row = document.createElement("div");
+      row.className = "msg" + (m.cont ? " cont" : "");
+      var inner = '<div class="avatar">' + esc(m.initials || "?") + '</div><div class="msg-body">';
+      if (!m.cont) {
+        inner += '<div class="msg-meta"><span class="msg-sender">' + esc(m.sender) +
+                 '</span><span class="msg-time">' + esc(m.time) + '</span></div>';
+      }
+      if (m.reply) inner += '<div class="reply-quote"><b>' + esc(m.reply.sender) + '</b><br>' + fmt(m.reply.text) + '</div>';
+      inner += '<div class="msg-text">' + fmt(m.text) + '</div>';
+      if (m.media) {
+        inner += '<div class="media-tile"><canvas></canvas><div class="media-cap">' + esc(m.mediaCap || "") + '</div></div>';
+      }
+      if (m.reactions && m.reactions.length) {
+        inner += '<div class="reactions">' + m.reactions.map(function (rx, i) {
+          return '<span class="chip' + (i === 0 ? ' me' : '') + '">' + esc(rx) + '</span>';
+        }).join("") + '</div>';
+      }
+      inner += '</div>';
+      row.innerHTML = inner;
+      tl.appendChild(row);
+    });
+    // boot the rain canvases now that they're in the DOM
+    var canvases = tl.querySelectorAll(".media-tile canvas");
+    for (var i = 0; i < canvases.length; i++) startRain(canvases[i]);
+    tl.scrollTop = tl.scrollHeight;
+  }
+
+  function selectRoom(id) {
+    activeId = id;
+    var r = roomById(id);
+    r.unread = 0;
+    renderSidebar();
+    renderRoom();
+  }
+
+  /* ---------- Compose ---------- */
+  var input = document.getElementById("composeInput");
+  var sendBtn = document.getElementById("sendBtn");
+  input.addEventListener("input", function () { sendBtn.disabled = input.value.trim() === ""; });
+
+  document.getElementById("composeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    if (!text) return;
+    var r = roomById(activeId);
+    var now = new Date();
+    var hh = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+    r.messages.push({ sender: "Tesseractor", initials: "T", time: hh, me: true, text: text });
+    r.preview = text;
+    input.value = "";
+    sendBtn.disabled = true;
+    renderRoom();
+    renderSidebar();
+  });
+
+  /* ---------- Boot ---------- */
+  renderSidebar();
+  renderRoom();
+})();
+</script>
 </body>
 </html>
