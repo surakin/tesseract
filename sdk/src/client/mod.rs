@@ -95,7 +95,7 @@ pub(super) const MEDIA_FG_PERMITS: usize = 12;
 /// Max concurrent bulk media downloads (full-size source, URL previews, tiles,
 /// audio prefetch). Narrow so a stalled large download cannot starve the rest.
 #[cfg(not(test))]
-pub(super) const MEDIA_BULK_PERMITS: usize = 3;
+pub(super) const MEDIA_BULK_PERMITS: usize = 6;
 
 #[cfg(not(test))]
 use crate::ffi::EventHandlerBridge;

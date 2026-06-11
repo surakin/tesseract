@@ -461,7 +461,7 @@ protected:
         auto& e    = media_fetch_failed_[key];
         e.attempts = std::min<std::uint32_t>(e.attempts + 1, 7);
         const auto delay = std::min<std::chrono::seconds>(
-            std::chrono::seconds(30) * (1u << (e.attempts - 1)),
+            std::chrono::minutes(5) * (1u << (e.attempts - 1)),
             std::chrono::minutes(30));
         e.retry_after = std::chrono::steady_clock::now() + delay;
     }
