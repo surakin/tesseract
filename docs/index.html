@@ -493,7 +493,7 @@
         <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
         <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
       </svg>
-      <h1>Tesseract<span class="ver">0.8.1</span></h1>
+      <h1>Tesseract<span class="ver" id="hero-version"></span></h1>
     </div>
     <p class="tagline">The native desktop Matrix client you always wanted.</p>
   </header>
@@ -1012,6 +1012,8 @@
       var assets = rel.assets || [];
       var vEl = document.getElementById("dl-version");
       if (vEl && rel.tag_name) vEl.textContent = "Latest: " + rel.tag_name;
+      var heroV = document.getElementById("hero-version");
+      if (heroV && rel.tag_name) heroV.textContent = rel.tag_name;
       Object.keys(matchers).forEach(function (key) {
         var hit = assets.filter(function (a) { return matchers[key](a.name); })[0];
         var btn = document.querySelector('[data-dl="' + key + '"]');
