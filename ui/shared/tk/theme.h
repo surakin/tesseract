@@ -9,8 +9,9 @@
 namespace tk
 {
 
-// Visual mode the palette was built for. Dark-mode parity is roadmap
-// work — for now Theme::light() is the only built-in palette.
+// Visual mode the palette was built for. Both Theme::light() and
+// Theme::dark() are shipped; the active one is resolved per platform
+// from Settings::ThemePreference (see ShellBase::apply_current_theme_()).
 enum class ThemeMode
 {
     Light,

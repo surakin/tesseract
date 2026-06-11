@@ -74,8 +74,7 @@ constexpr Palette light_palette()
 constexpr Palette dark_palette()
 {
     Palette p{};
-    // First-pass dark-mode palette. Will be refined once Step-5 dark
-    // mode parity work begins; values here are conservative.
+    // Dark-mode palette, mirrored in docs/UI-PARITY.md's colour table.
     p.bg = Color::rgb(0x1B1D21);
     p.sidebar_bg = Color::rgb(0x16181C);
     p.sidebar_selected = Color::rgb(0x2A2D33);
