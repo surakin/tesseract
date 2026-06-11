@@ -2,6 +2,7 @@
 #include "icons.h"
 #include "media_utils.h"
 
+#include "tk/loading_spinner.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 
@@ -222,26 +223,13 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
         // Spinning-dots loading indicator
         const float cx = image_rect_.x + image_rect_.w * 0.5f;
         const float cy = image_rect_.y + image_rect_.h * 0.5f;
-        constexpr float kRadius = 14.0f;
-        constexpr float kDotR   = 3.0f;
-        constexpr int   kN      = 8;
         const auto elapsed_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - loading_start_)
                 .count();
         const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
-        for (int i = 0; i < kN; ++i)
-        {
-            const float angle =
-                (static_cast<float>(i) / kN + phase) * 2.0f * 3.14159265f;
-            const float dx    = std::cos(angle) * kRadius;
-            const float dy    = std::sin(angle) * kRadius;
-            const float t     = static_cast<float>(i) / kN;
-            const auto  alpha = static_cast<uint8_t>(40.0f + 215.0f * t);
-            cv.fill_rounded_rect({cx + dx - kDotR, cy + dy - kDotR,
-                                   kDotR * 2.0f, kDotR * 2.0f},
-                                 kDotR, tk::Color{220, 220, 220, alpha});
-        }
+        tk::draw_spinner_dots(cv, {cx, cy}, phase, /*radius=*/14.0f,
+                              /*dot_r=*/3.0f, tk::Color{220, 220, 220, 255});
         // Self-drive animation: schedules a layout+redraw every frame while
         // loading. Note request_repaint_() triggers relayout() (not just a
         // redraw), so spinner animation runs one full measure/arrange pass

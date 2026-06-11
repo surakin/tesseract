@@ -664,6 +664,10 @@ public:
     // so fast / warm switches show nothing transient. Each call supersedes any
     // prior loading (epoch), neutralising an outstanding delayed-spinner timer.
     void begin_switch_loading();
+    // Leave the room-switch loading state without a populated snapshot — used
+    // when the subscription FAILS (no reset will ever arrive), so the list stops
+    // showing the spinner and settles on an empty room instead of hanging.
+    void end_switch_loading();
     // True while the room-switch loading state is active (rows held empty,
     // awaiting the new room's snapshot).
     bool is_switch_loading() const { return switch_loading_; }

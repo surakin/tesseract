@@ -78,14 +78,6 @@ struct IdlePaginateResult
     std::weak_ptr<bool> alive;
 };
 
-struct IdleSubscribeResult
-{
-    MainWindow* window;
-    std::string room_id;
-    bool reached_start;
-    std::weak_ptr<bool> alive;
-};
-
 struct IdleJumpResult
 {
     MainWindow* window;
@@ -206,7 +198,7 @@ void MainWindow::on_show_status_message_ui_(const std::string& msg)
 {
     if (!status_bar_)
         return;
-    const auto segs = tesseract::parse_status_links(msg);
+    const auto segs = parse_status_message_(msg); // opt-in gate (server text → plain)
     if (!tesseract::status_has_links(segs))
     {
         // set_text resets use-markup, so a later plain message cleanly
@@ -3111,12 +3103,8 @@ void MainWindow::on_room_selected(const std::string& room_id)
     if (mention_controller_)
         mention_controller_->hide();
     handle_compose_room_leaving_(current_room_id_);
-    if (!current_room_id_.empty() && current_room_id_ != room_id &&
-        room_subscription_refs_.count(current_room_id_) == 0)
-    {
-        client_->unsubscribe_room(current_room_id_);
-    }
-
+    // (No unsubscribe-on-leave here: ShellBase::prune_warm_subscriptions_ owns
+    // timeline lifecycle via the warm-subscription LRU.)
     current_room_id_ = room_id;
     clear_focused_state_(room_id);
     if (mark_read_timer_id_)
@@ -3177,19 +3165,6 @@ void MainWindow::push_paginate_result(std::string room_id, bool reached_start)
     {
         room_view_->message_list()->reset_near_top_latch();
     }
-}
-
-void MainWindow::push_subscribe_result(std::string room_id, bool reached_start)
-{
-    // Always clear in_flight regardless of current room — otherwise navigating
-    // away before the worker finishes permanently blocks re-subscription.
-    auto& state = pagination_[room_id];
-    state.in_flight = false;
-    if (room_id != current_room_id_)
-    {
-        return;
-    }
-    state.reached_start = reached_start;
 }
 
 void MainWindow::request_more_history(const std::string& room_id)

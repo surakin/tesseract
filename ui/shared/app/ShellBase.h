@@ -12,6 +12,7 @@
 #include "app/AccountManager.h"
 #include "app/PresenceTracker.h"
 #include "app/SettingsController.h"
+#include "app/status_links.h"
 #include "app/ThreadPanelController.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
@@ -341,13 +342,16 @@ protected:
     std::vector<RoomInfo> rooms_;
     // room_id → index into rooms_, for O(1) lookup instead of a linear scan on
     // the room-switch path (space-detection, set_room, tab-bar metadata). rooms_
-    // is only ever wholesale-replaced or cleared (never mutated in place), so
-    // the index stays valid until rebuild_room_index_() is called at each of
-    // those mutation points.
-    std::unordered_map<std::string, std::size_t> room_index_by_id_;
-    void rebuild_room_index_();
-    // O(1) room lookup by id; nullptr when not present. The pointer is valid
-    // until rooms_ is next replaced/cleared.
+    // is only ever wholesale-replaced or cleared (never mutated in place), and
+    // those writers call mark_room_index_dirty_(); the index is rebuilt lazily on
+    // the next room_by_id_() so frequent sync ticks (which re-sort rooms_ without
+    // anyone reading the index between them) don't each pay an O(n) rebuild.
+    mutable std::unordered_map<std::string, std::size_t> room_index_by_id_;
+    mutable bool room_index_dirty_ = true;
+    void rebuild_room_index_() const;
+    void mark_room_index_dirty_() { room_index_dirty_ = true; }
+    // O(1) room lookup by id; nullptr when not present. The returned pointer is
+    // valid until rooms_ is next replaced/cleared.
     const RoomInfo* room_by_id_(const std::string& room_id) const;
     // ── Invites ───────────────────────────────────────────────────────────────
     std::vector<InviteInfo> invites_;
@@ -1766,10 +1770,24 @@ protected:
     // Show `msg` in the platform status bar for `auto_clear_ms` milliseconds,
     // then restore the sync-status text. `auto_clear_ms <= 0` → the message
     // persists until the next status change (e.g. an update notification).
-    // `msg` may contain markdown-style "[label](url)" hyperlinks — see
-    // app/status_links.h; shells render them clickable. Safe to call from
-    // any thread.
-    void show_status_message_(std::string msg, int auto_clear_ms = 4000);
+    // `allow_links` opts into markdown-style "[label](url)" hyperlink parsing
+    // (see app/status_links.h) — pass it ONLY for app-authored text. It defaults
+    // to false so server/error-sourced messages (subscribe / sync / sign-out
+    // failures whose tail is a homeserver string) can never inject a clickable
+    // link. Safe to call from any thread.
+    void show_status_message_(std::string msg, int auto_clear_ms = 4000,
+                              bool allow_links = false);
+
+    // Segment a status message for the shells' status-bar renderers: links only
+    // when the current message opted in (status_message_allows_links_), else a
+    // single plain segment. Shells call this instead of parse_status_links so
+    // the opt-in gate lives in one place.
+    std::vector<tesseract::StatusSegment>
+    parse_status_message_(const std::string& msg) const;
+    // Set on the UI thread by show_status_message_ immediately before
+    // on_show_status_message_ui_ runs (its only caller), so reading it there is
+    // race-free.
+    bool status_message_allows_links_ = false;
 
     // Called by show_status_message_ on the UI thread to display the message.
     virtual void on_show_status_message_ui_(const std::string& /*msg*/) {}

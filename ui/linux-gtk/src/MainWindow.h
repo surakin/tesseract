@@ -83,7 +83,6 @@ public:
 
     // These are called from internal async callbacks (paginate/subscribe workers).
     void push_paginate_result(std::string room_id, bool reached_start);
-    void push_subscribe_result(std::string room_id, bool reached_start);
 
 private:
     // ── EventHandlerBase UI-thread hook overrides (GTK4) ──────────────────────

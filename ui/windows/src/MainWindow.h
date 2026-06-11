@@ -80,7 +80,8 @@ constexpr UINT WM_TESSERACT_IMAGE_PACKS = WM_APP + 12;
 // WM_APP + 13 was WM_TESSERACT_STICKER_BYTES; the sticker picker now uses
 // the shared ShellBase async image-cache path (ensure_picker_image_).
 constexpr UINT WM_TESSERACT_MEDIA_BYTES = WM_APP + 14;
-constexpr UINT WM_TESSERACT_SUBSCRIBE_DONE = WM_APP + 15;
+// WM_APP + 15 was WM_TESSERACT_SUBSCRIBE_DONE (removed with the shared
+// start_room_subscription_ consolidation); left as a gap to avoid renumbering.
 constexpr UINT WM_TESSERACT_ACCOUNT_PREFS = WM_APP + 16;
 constexpr UINT WM_TESSERACT_NOTIFY = WM_APP + 17;
 // WM_APP + 18 = WM_TESSERACT_NOTIFY_CLICK, defined in Win32Notifier.h
@@ -219,7 +220,6 @@ private:
     void open_quick_switch_();
     void close_quick_switch_();
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
-    void on_tesseract_subscribe_done(std::string* room_id, bool reached_start);
     void openJumpToDateDialog();
     void on_tesseract_jump_done(JumpDonePayload* p);
     void on_tesseract_rooms(RoomsPayload* payload);
