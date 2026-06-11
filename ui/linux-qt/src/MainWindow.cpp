@@ -11,6 +11,7 @@
 #include "JoinRoomDialog.h"
 #include "LinuxScreenLockQt.h"
 #include "app/SlashCommands.h"
+#include "app/status_links.h"
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
@@ -3731,6 +3732,13 @@ void MainWindow::prep_row_media_(const tesseract::Event& ev)
 
 void MainWindow::refreshSyncStatus()
 {
+    // A hyperlinked status message (statusLinkLabel_) is superseded by any
+    // sync-status update; hide it so it can't reappear when a temporary
+    // showMessage() clears.
+    if (statusLinkLabel_)
+    {
+        statusLinkLabel_->hide();
+    }
     // Compose progress text for the status bar. Priority order:
     //   1. Init / SettingUp        → "Syncing rooms…" (debounced 300 ms)
     //   2. Recovering              → "Reconnecting…"
@@ -4288,7 +4296,49 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
 {
-    statusBar()->showMessage(QString::fromStdString(msg));
+    const auto segs = tesseract::parse_status_links(msg);
+    if (!tesseract::status_has_links(segs))
+    {
+        if (statusLinkLabel_)
+        {
+            statusLinkLabel_->hide();
+        }
+        statusBar()->showMessage(QString::fromStdString(msg));
+        return;
+    }
+
+    // Hyperlinked message → rich-text label (showMessage cannot render
+    // links). Created once; clearMessage() is required because a temporary
+    // message would hide normal status-bar widgets.
+    if (!statusLinkLabel_)
+    {
+        statusLinkLabel_ = new QLabel(this);
+        statusLinkLabel_->setTextFormat(Qt::RichText);
+        statusLinkLabel_->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        statusLinkLabel_->setOpenExternalLinks(false);
+        connect(statusLinkLabel_, &QLabel::linkActivated, this,
+                [](const QString& url)
+                { tesseract::Client::open_in_browser(url.toStdString()); });
+        statusBar()->addWidget(statusLinkLabel_, 1);
+    }
+    QString html;
+    for (const auto& seg : segs)
+    {
+        const QString text = QString::fromStdString(seg.text).toHtmlEscaped();
+        if (seg.url.empty())
+        {
+            html += text;
+        }
+        else
+        {
+            html += QStringLiteral("<a href=\"%1\">%2</a>")
+                        .arg(QString::fromStdString(seg.url).toHtmlEscaped(),
+                             text);
+        }
+    }
+    statusBar()->clearMessage();
+    statusLinkLabel_->setText(html);
+    statusLinkLabel_->show();
 }
 
 void MainWindow::on_restore_status_ui_()
