@@ -5,6 +5,43 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-06-11
+
+- perf(room-switch): perceived-latency pass on opening a room. `subscribe_room`
+  no longer emits an empty `on_timeline_reset` before the populated one; the UI
+  instead clears the previous room's rows the instant the user clicks
+  (`MessageListView::begin_switch_loading`) and shows a clean loading view — a
+  centered spinner only if the load outlasts ~500ms, so warm/fast switches show
+  nothing transient and the old room never lingers under the new header. The
+  display gate (`RoomSwitchGateKeeper`) reserves media height from intrinsic
+  `media_w`/`media_h` instead of blocking on image/video decode, so the list
+  reveals on text-ready (timeout 400→150ms); the content-addressed body-layout
+  cache is retained across switches (no per-switch `link_cache_` clear) so
+  returning to a room reuses shaped text; and the per-switch blocking
+  `load_prefs_json()` (`rt.block_on` on the UI thread) is gone — the room layout
+  is rebuilt from in-memory state via a new `Prefs::room_layout` and saved on the
+  async path. New Catch2 suite `test_room_switch_gate` + added prefs / layout-cache
+  / loading-state cases.
+- perf(room-switch): warm timelines + bounded subscriptions. `subscribe_room`
+  reuses a still-live, non-focused timeline (restart its streaming task to
+  re-emit the current items) instead of dropping and rebuilding, so returning to
+  a recently-viewed room is instant. A bounded warm-subscription LRU
+  (`ShellBase::prune_warm_subscriptions_`) keeps the active room + open tabs +
+  pop-out-pinned + the newest few visited rooms and unsubscribes the rest,
+  capping the previously-unbounded growth of live timelines / sliding-sync
+  subscriptions over a long session. New `test_shell_warm_subscriptions`.
+- perf(room-switch): consolidate the four shells' duplicated subscribe/paginate
+  workers into one shared `ShellBase::start_room_subscription_`. `subscribe_room`
+  runs on the single-thread mut pool and is dispatched on every switch (it emits
+  the reset that repopulates the view), while the blocking network back-pagination
+  moves to the shared pool so it never holds the one mut thread and blocks the
+  next switch's reset — fixing a spurious loading spinner on rapid A↔B switching,
+  and removing the `in_flight` guard that could skip the reset-producing subscribe
+  entirely. Adds an O(1) `ShellBase::room_by_id_` index replacing the per-switch
+  O(n_rooms) scans (space-detection, `set_room`, tab-bar metadata). All shared
+  code; wired in all four shells (Qt6, GTK4, Win32, macOS) and verified on each.
+  813 C++ + 226 Rust tests.
+
 ### 2026-06-10
 
 - feat(switcher): start a DM by mxid from the quick switcher. Typing a leading
