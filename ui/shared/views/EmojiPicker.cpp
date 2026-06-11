@@ -87,6 +87,15 @@ void EmojiPicker::refresh_emoticon_packs()
         {
             if (any(p.usage & tesseract::PackUsage::Emoticon))
             {
+                // Packs without their own avatar borrow the first emoji's
+                // image so the tab shows a glyph rather than a bare letter.
+                if (p.avatar_url.empty())
+                {
+                    auto imgs = client_->list_pack_images(
+                        p.id, tesseract::PackUsageFilter::Emoticon);
+                    if (!imgs.empty())
+                        p.avatar_url = imgs.front().url;
+                }
                 custom_packs_.push_back(std::move(p));
             }
         }
