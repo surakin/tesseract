@@ -359,6 +359,13 @@
   .dl-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
   .dl-btn .dl-sub { font-size: 12px; font-weight: 500; color: var(--page-muted); }
   .dl-btn:hover .dl-sub { color: rgba(255,255,255,.85); }
+  .dl-note { font-size: 11px; color: var(--page-muted); margin-top: 2px; }
+  .dl-note summary { cursor: pointer; color: var(--accent); font-weight: 600;
+    list-style: none; }
+  .dl-note summary::-webkit-details-marker { display: none; }
+  .dl-note summary::before { content: "ⓘ "; }
+  .dl-note p { margin: 6px 0 0; line-height: 1.45; }
+  .dl-note b { color: var(--page-text); font-weight: 600; }
 
   footer.foot {
     margin-top: 32px; padding: 24px 0 48px; border-top: 1px solid var(--border);
@@ -606,11 +613,19 @@
           <div class="dl-card">
             <div class="dl-os"><span class="ico">🪟</span> Windows</div>
             <a class="dl-btn" data-dl="win" href="https://github.com/surakin/tesseract/releases/latest"><span>Installer</span><span class="dl-sub">.exe · 64-bit</span></a>
+            <details class="dl-note">
+              <summary>Unsigned build — how to open</summary>
+              <p>SmartScreen may show “Windows protected your PC”. Click <b>More info</b> → <b>Run anyway</b>.</p>
+            </details>
           </div>
           <div class="dl-card">
             <div class="dl-os"><span class="ico">🍎</span> macOS</div>
             <a class="dl-btn" data-dl="mac-arm" href="https://github.com/surakin/tesseract/releases/latest"><span>Apple Silicon</span><span class="dl-sub">.dmg · arm64</span></a>
             <a class="dl-btn" data-dl="mac-x86" href="https://github.com/surakin/tesseract/releases/latest"><span>Intel</span><span class="dl-sub">.dmg · x86_64</span></a>
+            <details class="dl-note">
+              <summary>Unsigned build — how to open</summary>
+              <p>Gatekeeper will say it can’t verify the developer. <b>Right-click</b> the app → <b>Open</b>, then confirm — or allow it under <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security</b>.</p>
+            </details>
           </div>
           <div class="dl-card">
             <div class="dl-os"><span class="ico">🐧</span> Linux</div>
