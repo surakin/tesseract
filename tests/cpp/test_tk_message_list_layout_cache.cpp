@@ -158,6 +158,33 @@ TEST_CASE("inserting a message collapses an existing read marker",
     CHECK(v.row_world_rect(1).h == 0.0f); // marker collapsed by suppress flip
 }
 
+TEST_CASE("MessageListView retains the body layout across a room switch and back",
+          "[message_list][layout_cache]")
+{
+    // Switching rooms (room_switch=true) must not discard the content-addressed
+    // body layout cache: returning to a previously-viewed room should reuse the
+    // already-shaped bodies instead of re-shaping every visible line.
+    Stage st;
+    MessageListView v;
+
+    // Switch INTO room A and render — shapes "hello world" at least once.
+    v.set_messages({make_rich("$a", "hello world")}, true);
+    st.run(v, {0, 0, 600, 400});
+    REQUIRE(st.cf.rich >= 1);
+
+    // Switch to room B and render.
+    v.set_messages({make_rich("$b", "a different room body")}, true);
+    st.run(v, {0, 0, 600, 400});
+    const int before_return = st.cf.rich;
+
+    // Switch BACK to room A with identical content and render. With the cache
+    // retained across switches the body is reused — no additional rich build.
+    v.set_messages({make_rich("$a", "hello world")}, true);
+    st.run(v, {0, 0, 600, 400});
+
+    CHECK(st.cf.rich == before_return);
+}
+
 TEST_CASE("MessageListView body layout cache is memory-bounded",
           "[message_list][layout_cache]")
 {

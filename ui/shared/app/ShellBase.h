@@ -263,6 +263,26 @@ protected:
     // when this is a first-time visit).
     void after_active_room_changed_();
 
+    // Persist the current room-layout prefs (active room + open tabs) for the
+    // logged-in account. Builds the layout fresh from current_room_id_ + tabs_
+    // (PrefsData carries only these) and dispatches the async save — it does NOT
+    // call the blocking load_prefs_json(), so it's cheap to run on every room
+    // switch. Shared by all four shells (replaces a duplicated inline block).
+    void persist_room_layout_pref_();
+
+    // Drive the SDK subscription for a room switch. subscribe_room runs on the
+    // single-thread mut pool (fast for a warm room — the SDK reuses the live
+    // timeline; either way it emits the reset that repopulates the just-cleared
+    // view and cancels the loading state). The initial back-pagination then runs
+    // on the SHARED pool so its blocking network round-trip never holds the one
+    // mut thread — otherwise the next switch's subscribe/reset would queue behind
+    // it and the loading spinner would flash on rapid A<->B switching. subscribe
+    // is dispatched on every switch (not gated by in_flight) so the reset always
+    // arrives; only the network paginate is deduplicated per room. Shared by all
+    // four shells. `visible_ids` seeds the background unread prefetch.
+    void start_room_subscription_(const std::string&        room_id,
+                                  std::vector<std::string>  visible_ids);
+
     // ── Multi-account ─────────────────────────────────────────────────────────
     AccountManager& account_manager_;
     std::shared_ptr<AccountSession> active_account_;
@@ -319,6 +339,16 @@ protected:
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
+    // room_id → index into rooms_, for O(1) lookup instead of a linear scan on
+    // the room-switch path (space-detection, set_room, tab-bar metadata). rooms_
+    // is only ever wholesale-replaced or cleared (never mutated in place), so
+    // the index stays valid until rebuild_room_index_() is called at each of
+    // those mutation points.
+    std::unordered_map<std::string, std::size_t> room_index_by_id_;
+    void rebuild_room_index_();
+    // O(1) room lookup by id; nullptr when not present. The pointer is valid
+    // until rooms_ is next replaced/cleared.
+    const RoomInfo* room_by_id_(const std::string& room_id) const;
     // ── Invites ───────────────────────────────────────────────────────────────
     std::vector<InviteInfo> invites_;
     // Populated asynchronously from update_space_children_cache_(); read
@@ -720,6 +750,29 @@ protected:
     std::unordered_map<std::string, RoomWindowBase*> secondary_windows_;
     // Ref-count of active subscriptions per room_id across all secondary windows.
     std::unordered_map<std::string, int> room_subscription_refs_;
+
+    // ── Warm-subscription LRU ─────────────────────────────────────────────────
+    // Rooms stay subscribed after you leave them (their SDK timeline is reused
+    // on return — see ShellBase::prune_warm_subscriptions_ + the SDK's
+    // subscribe_room reuse). Without a cap a long session would accumulate one
+    // live timeline + sliding-sync subscription + streaming task per room ever
+    // visited. visited_lru_ tracks recency (front = most recently active); rooms
+    // that are the active room, an open tab, or pinned by a pop-out are always
+    // kept, and at most kWarmRoomsMax *other* warm rooms are retained — older
+    // ones are unsubscribed.
+    static constexpr std::size_t kWarmRoomsMax = 4;
+    std::vector<std::string> visited_lru_;
+    // Move room_id to the front of visited_lru_ (most-recently-active).
+    void touch_visited_room_(const std::string& room_id);
+    // Pure selection: given the always-keep set and the warm cap, return the
+    // rooms to unsubscribe and drop them from visited_lru_. Keeps protected
+    // rooms regardless of position; keeps the newest `warm_cap` non-protected.
+    std::vector<std::string>
+    select_warm_evictions_(const std::unordered_set<std::string>& keep,
+                           std::size_t warm_cap);
+    // Build the keep-set (active + open tabs + pop-out-pinned) and unsubscribe
+    // every room select_warm_evictions_ returns. Cheap; runs on each switch.
+    void prune_warm_subscriptions_();
 
     // ── Worker thread pools ───────────────────────────────────────────────────
     // Two pools with different concurrency levels:

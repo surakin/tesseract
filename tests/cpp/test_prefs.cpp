@@ -80,6 +80,31 @@ TEST_CASE("Prefs serialize open_rooms round-trips")
     CHECK(p2.open_rooms[2] == "!c:h");
 }
 
+TEST_CASE("Prefs room_layout builds last_room + open tabs in order")
+{
+    auto p = tesseract::Prefs::room_layout("!a:h", {"!a:h", "!b:h", "!c:h"});
+    CHECK(p.last_room == "!a:h");
+    REQUIRE(p.open_rooms.size() == 3);
+    CHECK(p.open_rooms[0] == "!a:h");
+    CHECK(p.open_rooms[1] == "!b:h");
+    CHECK(p.open_rooms[2] == "!c:h");
+}
+
+TEST_CASE("Prefs room_layout falls back to the active room when no tabs are open")
+{
+    auto p = tesseract::Prefs::room_layout("!solo:h", {});
+    CHECK(p.last_room == "!solo:h");
+    REQUIRE(p.open_rooms.size() == 1);
+    CHECK(p.open_rooms[0] == "!solo:h");
+}
+
+TEST_CASE("Prefs room_layout with no active room and no tabs stays empty")
+{
+    auto p = tesseract::Prefs::room_layout("", {});
+    CHECK(p.last_room.empty());
+    CHECK(p.open_rooms.empty());
+}
+
 TEST_CASE("Prefs serialize single tab produces open_rooms of size 1")
 {
     PrefsData p;

@@ -1837,6 +1837,18 @@ MessageRowData gate_image_row()
     return img;
 }
 
+// An image with NO intrinsic dimensions: its displayed height can't be reserved
+// up front, so its decode genuinely shifts the layout. This is the case the
+// room-switch gate must still hold for (a known-dimension image reserves its box
+// from media_w/media_h and is therefore not gated — see RoomSwitchGateKeeper).
+MessageRowData gate_unsized_image_row()
+{
+    MessageRowData img = gate_image_row();
+    img.media_w = 0;
+    img.media_h = 0;
+    return img;
+}
+
 bool any_image_painted(MessageListView& view)
 {
     for (float x = 40; x < 400; x += 40)
@@ -1866,7 +1878,7 @@ TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
             return nullptr;
         });
 
-    view.set_messages({gate_image_row()}, /*room_switch=*/true);
+    view.set_messages({gate_unsized_image_row()}, /*room_switch=*/true);
     st.run(view, {0, 0, 400, 600});
     CHECK_FALSE(any_image_painted(view)); // gated: row not painted yet
 
@@ -1874,6 +1886,106 @@ TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
     view.notify_image_ready("mxc://example.org/pic");
     st.run(view, {0, 0, 400, 600});
     CHECK(any_image_painted(view)); // revealed
+}
+
+TEST_CASE("MessageListView begin_switch_loading clears the old room's rows at once",
+          "[tk][view][messagelist][switch_loading]")
+{
+    Stage st;
+    MessageListView view;
+    MessageRowData t{};
+    t.kind = MessageRowData::Kind::Text;
+    t.event_id = "$old";
+    t.sender_name = "A";
+    t.body = "old room line";
+    view.set_messages({t}, /*room_switch=*/true);
+    st.run(view, {0, 0, 400, 600});
+    REQUIRE(view.messages().size() == 1);
+
+    view.begin_switch_loading();
+    CHECK(view.messages().empty());   // previous room gone immediately
+    CHECK(view.is_switch_loading());  // holding the loading view
+}
+
+TEST_CASE("MessageListView switch-loading spinner is delayed, not immediate",
+          "[tk][view][messagelist][switch_loading]")
+{
+    MessageListView view;
+    std::function<void()> spinner_fn;
+    int delay_ms = -1;
+    view.set_post_delayed(
+        [&](int ms, std::function<void()> fn)
+        {
+            delay_ms = ms;
+            spinner_fn = std::move(fn);
+        });
+
+    view.begin_switch_loading();
+    CHECK_FALSE(view.switch_spinner_visible_for_test()); // nothing transient yet
+    REQUIRE(spinner_fn);                                 // a delayed timer armed
+    CHECK(delay_ms > 0);
+
+    spinner_fn();                                        // the delay elapses
+    CHECK(view.switch_spinner_visible_for_test());       // spinner now due
+}
+
+TEST_CASE("MessageListView populated set_messages cancels switch-loading",
+          "[tk][view][messagelist][switch_loading]")
+{
+    MessageListView view;
+    std::function<void()> spinner_fn;
+    view.set_post_delayed(
+        [&](int, std::function<void()> fn) { spinner_fn = std::move(fn); });
+
+    view.begin_switch_loading();
+    REQUIRE(view.is_switch_loading());
+
+    MessageRowData t{};
+    t.kind = MessageRowData::Kind::Text;
+    t.event_id = "$new";
+    t.sender_name = "B";
+    t.body = "new room content";
+    view.set_messages({t}, /*room_switch=*/true);
+    CHECK_FALSE(view.is_switch_loading()); // content arrived → loading cleared
+
+    // A late spinner timer from the now-superseded switch must not resurrect it.
+    if (spinner_fn)
+        spinner_fn();
+    CHECK_FALSE(view.switch_spinner_visible_for_test());
+}
+
+TEST_CASE("MessageListView second begin_switch_loading supersedes the first timer",
+          "[tk][view][messagelist][switch_loading]")
+{
+    MessageListView view;
+    std::vector<std::function<void()>> timers;
+    view.set_post_delayed(
+        [&](int, std::function<void()> fn) { timers.push_back(std::move(fn)); });
+
+    view.begin_switch_loading(); // arms timer 0
+    view.begin_switch_loading(); // supersedes → arms timer 1
+    REQUIRE(timers.size() == 2);
+
+    timers[0](); // stale epoch: ignored
+    CHECK_FALSE(view.switch_spinner_visible_for_test());
+    timers[1](); // current epoch: shows
+    CHECK(view.switch_spinner_visible_for_test());
+}
+
+TEST_CASE("MessageListView room-switch gate does not hold a known-dimension image",
+          "[tk][view][messagelist][gate]")
+{
+    Stage st;
+    MessageListView view;
+    // Image never decodes (null provider), but gate_image_row carries
+    // media_w/media_h so its box is reserved up front — the gate must reveal
+    // immediately instead of waiting on the decode.
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image* { return nullptr; });
+
+    view.set_messages({gate_image_row()}, /*room_switch=*/true);
+    st.run(view, {0, 0, 400, 600});
+    CHECK(any_image_painted(view)); // revealed immediately; not gated on decode
 }
 
 TEST_CASE("MessageListView keeps the hovered message put when a preview card "
@@ -1975,7 +2087,7 @@ TEST_CASE("MessageListView room-switch gate reveals on timeout",
             timeout_fn = std::move(fn);
         });
 
-    view.set_messages({gate_image_row()}, /*room_switch=*/true);
+    view.set_messages({gate_unsized_image_row()}, /*room_switch=*/true);
     st.run(view, {0, 0, 400, 600});
     CHECK_FALSE(any_image_painted(view)); // still gated
     REQUIRE(timeout_fn);                  // gate armed the timeout
@@ -2061,7 +2173,7 @@ TEST_CASE("MessageListView room-switch gate swallows pointer input",
         clicked = true;
     };
 
-    view.set_messages({gate_image_row()}, /*room_switch=*/true);
+    view.set_messages({gate_unsized_image_row()}, /*room_switch=*/true);
     st.run(view, {0, 0, 400, 600});
     REQUIRE_FALSE(any_image_painted(view)); // gated: nothing painted
 

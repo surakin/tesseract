@@ -28,6 +28,14 @@ PrefsData parse(const std::string& json);
 /// Encode `p` as a JSON object suitable for `Client::save_prefs_json()`.
 std::string serialize(const PrefsData& p);
 
+/// Build the room-layout prefs to persist after a room switch / tab change.
+/// `last_room` is the active room; `open_room_ids` are the open tabs in visual
+/// order. When no tabs are open the active room is used as the sole open room
+/// (so the layout always round-trips). PrefsData carries only these two fields,
+/// so this fully reconstructs what to persist — no prior load is needed.
+PrefsData room_layout(const std::string&              last_room,
+                      const std::vector<std::string>& open_room_ids);
+
 } // namespace Prefs
 
 } // namespace tesseract
