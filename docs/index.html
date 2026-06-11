@@ -30,6 +30,8 @@
     --accent: #0084FF;
     --accent-hover: #1A92FF;
     --accent-pressed: #006BD1;
+    --destructive: #D93636;
+    --destructive-hover: #E04848;
     --chip-bg: #EBEDF0;
     --chip-bg-me: #CFE3FF;
     --chip-border: #D0D3D8;
@@ -67,6 +69,8 @@
     --accent: #4DA3FF;
     --accent-hover: #66B3FF;
     --accent-pressed: #3388E0;
+    --destructive: #E45656;
+    --destructive-hover: #EC6868;
     --chip-bg: #2A2D33;
     --chip-bg-me: #1F3A66;
     --chip-border: #33363B;
@@ -108,19 +112,21 @@
   .brand .ver { font-size: 14px; font-weight: 600; color: var(--page-muted);
     vertical-align: super; margin-left: 6px; }
   .tagline { margin: 14px 0 0; font-size: 19px; color: var(--page-muted); max-width: 640px; }
-  .cta { margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 9px;
-    font-size: 15px; font-weight: 600; text-decoration: none;
-    padding: 11px 18px; border-radius: 10px; border: 1px solid transparent;
-    cursor: pointer; transition: background .15s ease, border-color .15s ease;
+
+  /* Top-right icon controls (GitHub + theme), fixed to the viewport corner */
+  .topbar { position: fixed; top: 16px; right: 16px; z-index: 50;
+    display: flex; gap: 10px; }
+  .icon-action {
+    width: 42px; height: 42px; flex: none; display: inline-flex;
+    align-items: center; justify-content: center; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--page-panel);
+    color: var(--page-text); cursor: pointer; text-decoration: none;
+    font-size: 18px; line-height: 1;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    transition: background .15s ease, border-color .15s ease;
   }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-primary:hover { background: var(--accent-hover); }
-  .btn-ghost { background: transparent; color: var(--page-text);
-    border-color: var(--border); }
-  .btn-ghost:hover { background: var(--sidebar-hover); }
-  .btn svg { width: 18px; height: 18px; }
+  .icon-action:hover { background: var(--sidebar-hover); }
+  .icon-action svg { width: 20px; height: 20px; }
 
   /* ===== Desktop-window simulator ===== */
   .sim-stage { padding: 8px 0 40px; }
@@ -145,6 +151,18 @@
   .titlebar .winbtns span { font-size: 13px; line-height: 1; }
 
   .body { flex: 1; display: flex; min-height: 0; }
+
+  /* Status bar — native window status strip along the bottom */
+  .statusbar {
+    height: 24px; flex: none; display: flex; align-items: center;
+    padding: 0 12px; background: var(--chrome-bg);
+    border-top: 1px solid var(--separator);
+    font-size: 11px; color: var(--text-secondary);
+  }
+  .statusbar .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--presence-online); margin-left: auto; flex: none;
+  }
 
   /* Sidebar */
   .sidebar {
@@ -218,7 +236,9 @@
   .userstrip .conn { font-size: 11px; color: var(--presence-online); margin-top: 1px; }
 
   /* Room panel */
-  .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg);
+    position: relative; }
+  .room-header .rh-text, .room-header > .avatar { cursor: pointer; }
   .room-header {
     height: 60px; flex: none; display: flex; align-items: center; gap: 12px;
     padding: 0 16px; border-bottom: 1px solid var(--separator); background: var(--chrome-bg);
@@ -229,8 +249,7 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rh-topic { font-size: 12px; color: var(--text-secondary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rh-actions { display: flex; gap: 14px; color: var(--text-secondary); }
-  .rh-actions svg { width: 18px; height: 18px; }
+  .rh-actions { display: flex; gap: 2px; color: var(--text-secondary); }
 
   .timeline { flex: 1; overflow-y: auto; padding: 12px 16px 6px; min-height: 0; }
   .msg { display: flex; gap: 8px; padding: 6px 0; }
@@ -316,6 +335,38 @@
   .feature h3 { margin: 8px 0 4px; font-size: 15px; }
   .feature p { margin: 0; font-size: 13px; color: var(--page-muted); }
 
+  /* ===== Downloads (column to the right of the simulator) ===== */
+  .sim-row { display: flex; gap: 22px; align-items: flex-start; }
+  .sim-main { flex: 1; min-width: 0; }
+  .sim-main .window { max-width: none; }
+  .sim-downloads { width: 250px; flex: none; }
+  .sim-downloads h2 { font-size: 20px; margin: 0 0 4px; letter-spacing: -.3px; }
+  .dl-lead { font-size: 13px; color: var(--page-muted); margin: 0 0 14px; }
+  .dl-version { display: block; color: var(--page-text); font-weight: 600; margin-top: 2px; }
+  .dl-cards { display: flex; flex-direction: column; gap: 14px; }
+  .dl-card {
+    background: var(--page-panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .dl-os { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; }
+  .dl-os .ico { font-size: 20px; }
+  .dl-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    text-decoration: none; font-size: 14px; font-weight: 600; color: var(--page-text);
+    border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .dl-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dl-btn .dl-sub { font-size: 12px; font-weight: 500; color: var(--page-muted); }
+  .dl-btn:hover .dl-sub { color: rgba(255,255,255,.85); }
+  .dl-note { font-size: 11px; color: var(--page-muted); margin-top: 2px; }
+  .dl-note summary { cursor: pointer; color: var(--accent); font-weight: 600;
+    list-style: none; }
+  .dl-note summary::-webkit-details-marker { display: none; }
+  .dl-note summary::before { content: "ⓘ "; }
+  .dl-note p { margin: 6px 0 0; line-height: 1.45; }
+  .dl-note b { color: var(--page-text); font-weight: 600; }
+
   footer.foot {
     margin-top: 32px; padding: 24px 0 48px; border-top: 1px solid var(--border);
     color: var(--page-muted); font-size: 13px;
@@ -324,6 +375,60 @@
   footer.foot a { font-weight: 600; text-decoration: none; }
 
   .sim-hint { text-align: center; color: var(--page-muted); font-size: 13px; margin: 12px 0 0; }
+
+  /* Room info panel — slides in from the right over the room view */
+  .info-overlay { position: absolute; inset: 0; z-index: 20; display: none; }
+  .info-overlay.open { display: block; }
+  .info-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.39); }
+  .info-panel {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 280px;
+    background: var(--chrome-bg); border-left: 1px solid var(--separator);
+    display: flex; flex-direction: column;
+    box-shadow: -8px 0 24px rgba(0,0,0,.20);
+    transform: translateX(100%); transition: transform .18s ease;
+  }
+  .info-overlay.open .info-panel { transform: translateX(0); }
+  .info-header {
+    height: 48px; flex: none; display: flex; align-items: center;
+    padding: 0 8px 0 16px; border-bottom: 1px solid var(--separator);
+  }
+  .info-title { flex: 1; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .info-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+  .info-avatar { width: 72px; height: 72px; margin: 0 auto; font-size: 28px; }
+  .info-name { text-align: center; font-size: 15px; font-weight: 600;
+    color: var(--text-primary); margin-top: 12px; }
+  .info-badges { display: flex; gap: 10px; justify-content: center;
+    flex-wrap: wrap; margin-top: 5px; }
+  .info-badge { font-size: 11px; color: var(--text-muted); }
+  .info-sep { height: 1px; background: var(--separator); margin: 14px 0; }
+  .info-label { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+  .info-topic { font-size: 13px; color: var(--text-primary); line-height: 1.45; }
+  .info-topic.empty { color: var(--text-muted); }
+  .info-switch-row { display: flex; align-items: center; height: 36px;
+    font-size: 13px; color: var(--text-primary); }
+  .info-switch-row span.lbl { flex: 1; }
+  .switch { width: 36px; height: 20px; flex: none; border-radius: 10px;
+    background: var(--border); position: relative; cursor: pointer;
+    transition: background .15s ease; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    transition: transform .15s ease; }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { transform: translateX(16px); }
+  .member-row { display: flex; align-items: center; gap: 10px; height: 44px; }
+  .member-row .avatar { width: 32px; height: 32px; font-size: 13px; }
+  .member-text { min-width: 0; }
+  .member-name { font-size: 13px; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .member-id { font-size: 11px; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info-select { width: 100%; height: 34px; margin-top: 2px; padding: 0 8px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text-primary); font: inherit; font-size: 13px; }
+  .info-leave { width: 100%; height: 36px; margin-top: 18px; border: none;
+    border-radius: 8px; background: var(--destructive); color: #fff;
+    font-weight: 600; font-size: 13px; cursor: pointer; }
+  .info-leave:hover { background: var(--destructive-hover); }
 
   /* Right-click context menu on the user strip */
   .ctx-menu {
@@ -340,6 +445,12 @@
   .ctx-item:hover { background: var(--accent); color: var(--text-on-accent); }
   .ctx-sep { height: 1px; margin: 5px 6px; background: var(--separator); }
 
+  @media (max-width: 900px) {
+    .sim-row { flex-direction: column; }
+    .sim-downloads { width: 100%; }
+    .dl-cards { flex-direction: row; flex-wrap: wrap; }
+    .dl-cards .dl-card { flex: 1 1 220px; }
+  }
   @media (max-width: 720px) {
     .brand h1 { font-size: 30px; }
     .window { height: 560px; }
@@ -349,6 +460,17 @@
 </style>
 </head>
 <body>
+
+<!-- Top-right controls: GitHub + theme toggle (icon only) -->
+<div class="topbar">
+  <a class="icon-action" href="https://github.com/surakin/tesseract" aria-label="View on GitHub" title="View on GitHub">
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  </a>
+  <button class="icon-action" id="themeToggle" type="button" aria-label="Toggle light / dark theme" title="Toggle light / dark theme">
+    <span id="themeIcon">🌙</span>
+  </button>
+</div>
+
 <div class="wrap">
 
   <!-- ===================== HERO ===================== -->
@@ -371,28 +493,25 @@
         <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
         <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
       </svg>
-      <h1>Tesseract<span class="ver">0.8.1</span></h1>
+      <h1>Tesseract<span class="ver" id="hero-version"></span></h1>
     </div>
     <p class="tagline">The native desktop Matrix client you always wanted.</p>
-    <div class="cta">
-      <a class="btn btn-primary" href="https://github.com/surakin/tesseract">
-        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        View on GitHub
-      </a>
-      <button class="btn btn-ghost" id="themeToggle" type="button" aria-label="Toggle light / dark theme">
-        <span id="themeIcon">🌙</span><span id="themeLabel">Dark</span>
-      </button>
-    </div>
   </header>
 
   <!-- ===================== SIMULATOR ===================== -->
   <div class="sim-stage">
-    <div class="window" id="sim">
+    <div class="sim-row">
+      <div class="sim-main">
+        <div class="window" id="sim">
       <div class="titlebar">
         <svg class="ticon" viewBox="0 0 512 512" aria-hidden="true">
           <rect width="512" height="512" rx="96" fill="url(#bg)"/>
-          <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="34" stroke-linejoin="round"/>
-          <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="34" stroke-linejoin="round"/>
+          <rect x="64" y="64" width="384" height="384" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+          <rect x="163" y="163" width="186" height="186" fill="none" stroke="url(#wire)" stroke-width="28" stroke-linejoin="round"/>
+          <line x1="64" y1="64" x2="163" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+          <line x1="448" y1="64" x2="349" y2="163" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+          <line x1="448" y1="448" x2="349" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
+          <line x1="64" y1="448" x2="163" y2="349" stroke="#c4b5fd" stroke-width="20" stroke-linecap="round"/>
         </svg>
         <span class="ttitle">Tesseract</span>
         <div class="winbtns"><span>&#9472;</span><span>&#9633;</span><span>&#10005;</span></div>
@@ -439,8 +558,12 @@
               <div class="rh-topic" id="rhTopic"></div>
             </div>
             <div class="rh-actions">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Threads"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Jump to date"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
+              <button class="icon-btn" type="button" title="Threads" aria-label="Threads">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Jump to date" aria-label="Jump to date">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
+              </button>
             </div>
           </div>
 
@@ -461,10 +584,58 @@
             </div>
             <button class="send-btn" id="sendBtn" type="submit" disabled>Send</button>
           </form>
+
+          <!-- Room info panel (fake) -->
+          <div class="info-overlay" id="infoOverlay">
+            <div class="info-backdrop" id="infoBackdrop"></div>
+            <aside class="info-panel">
+              <div class="info-header">
+                <span class="info-title">Room info</span>
+                <button class="icon-btn" id="infoClose" type="button" title="Close" aria-label="Close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <div class="info-scroll" id="infoScroll"></div>
+            </aside>
+          </div>
         </main>
       </div>
+
+      <div class="statusbar">Connected<span class="status-dot"></span></div>
+        </div>
+        <p class="sim-hint">↑ A live simulator — switch rooms, send a message, click the room header for info, right-click your account, toggle the theme. Not connected to any real server.</p>
+      </div>
+
+      <aside class="sim-downloads">
+        <h2>Download</h2>
+        <p class="dl-lead">Native installers for every platform. <span class="dl-version" id="dl-version"></span></p>
+        <div class="dl-cards">
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🪟</span> Windows</div>
+            <a class="dl-btn" data-dl="win" href="https://github.com/surakin/tesseract/releases/latest"><span>Installer</span><span class="dl-sub">.exe · 64-bit</span></a>
+            <details class="dl-note">
+              <summary>Unsigned build — how to open</summary>
+              <p>SmartScreen may show “Windows protected your PC”. Click <b>More info</b> → <b>Run anyway</b>.</p>
+            </details>
+          </div>
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🍎</span> macOS</div>
+            <a class="dl-btn" data-dl="mac-arm" href="https://github.com/surakin/tesseract/releases/latest"><span>Apple Silicon</span><span class="dl-sub">.dmg · arm64</span></a>
+            <a class="dl-btn" data-dl="mac-x86" href="https://github.com/surakin/tesseract/releases/latest"><span>Intel</span><span class="dl-sub">.dmg · x86_64</span></a>
+            <details class="dl-note">
+              <summary>Unsigned build — how to open</summary>
+              <p>Gatekeeper will say it can’t verify the developer. <b>Right-click</b> the app → <b>Open</b>, then confirm — or allow it under <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security</b>.</p>
+            </details>
+          </div>
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🐧</span> Linux</div>
+            <a class="dl-btn" data-dl="deb" href="https://github.com/surakin/tesseract/releases/latest"><span>Debian / Ubuntu</span><span class="dl-sub">.deb</span></a>
+            <a class="dl-btn" data-dl="rpm" href="https://github.com/surakin/tesseract/releases/latest"><span>Fedora / RHEL</span><span class="dl-sub">.rpm</span></a>
+            <a class="dl-btn" data-dl="appimage" href="https://github.com/surakin/tesseract/releases/latest"><span>AppImage</span><span class="dl-sub">portable</span></a>
+          </div>
+        </div>
+      </aside>
     </div>
-    <p class="sim-hint">↑ A live simulator — switch rooms, send a message, right-click your account, toggle the theme. Not connected to any real server.</p>
   </div>
 
   <!-- Fake account context menu (right-click the user strip) -->
@@ -513,12 +684,10 @@
   /* ---------- Theme toggle (persisted) ---------- */
   var root = document.documentElement;
   var icon = document.getElementById("themeIcon");
-  var label = document.getElementById("themeLabel");
   function applyTheme(mode) {
     root.setAttribute("data-theme", mode);
     var dark = mode === "dark";
     icon.textContent = dark ? "☀️" : "🌙";
-    label.textContent = dark ? "Light" : "Dark";
     try { localStorage.setItem("tesseract-theme", mode); } catch (e) {}
   }
   var saved = null;
@@ -545,7 +714,13 @@
     {
       id: "tesseract", name: "Tesseract", initials: "T", icon: true, section: "rooms",
       topic: "Tesseract Matrix Client — https://github.com/surakin/tesseract",
-      preview: "He is the one!", unread: 0, dm: false,
+      preview: "He is the one!", unread: 0, dm: false, encrypted: true,
+      members: [
+        { name: "Morpheus", id: "@morpheus:matrix.org", initials: "M", online: true },
+        { name: "Trinity", id: "@trinity:matrix.org", initials: "T2", online: true },
+        { name: "Neo", id: "@neo:matrix.org", initials: "N", online: false },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
       messages: [
         { sender: "Morpheus", initials: "M", time: "14:18",
           text: "Welcome to Tesseract. This is a faithful reconstruction of the real desktop client, running entirely in your browser." },
@@ -559,7 +734,11 @@
     },
     {
       id: "matrixorg", name: "Matrix.org (Official Account)", initials: "m", section: "dm",
-      topic: "Official Matrix.org account", dm: true,
+      topic: "Official Matrix.org account", dm: true, encrypted: true,
+      members: [
+        { name: "Matrix.org", id: "@matrix:matrix.org", initials: "m", online: true },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
       preview: "Welcome to Matrix!", unread: 2,
       messages: [
         { sender: "Matrix.org", initials: "m", time: "09:30",
@@ -571,7 +750,13 @@
     {
       id: "rustsdk", name: "Matrix Rust SDK", initials: "R", section: "rooms",
       topic: "Discussion about the matrix-rust-sdk",
-      preview: "Shipped the new sliding sync API 🚀", unread: 0,
+      preview: "Shipped the new sliding sync API 🚀", unread: 0, encrypted: true,
+      members: [
+        { name: "ahmed", id: "@ahmed:matrix.org", initials: "A", online: true },
+        { name: "poljar", id: "@poljar:matrix.org", initials: "P", online: true },
+        { name: "Hywan", id: "@hywan:matrix.org", initials: "H", online: false },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
       messages: [
         { sender: "ahmed", initials: "A", time: "11:02",
           text: "Shipped the new sliding sync API 🚀", reactions: ["🚀 5", "🦀 4"] },
@@ -591,6 +776,13 @@
     s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
     return s;
+  }
+  // opts: { icon, initials, presence, cls }
+  function avatarHtml(opts) {
+    var cls = "avatar" + (opts.icon ? " app" : "") + (opts.cls ? " " + opts.cls : "");
+    var inner = opts.icon ? APP_ICON : esc(opts.initials || "?");
+    if (opts.presence) inner += '<span class="presence"></span>';
+    return '<div class="' + cls + '">' + inner + "</div>";
   }
 
   /* ---------- Matrix-rain media tiles (on-brand, no external assets) ---------- */
@@ -684,6 +876,7 @@
     activeId = id;
     var r = roomById(id);
     r.unread = 0;
+    closeInfo();
     renderSidebar();
     renderRoom();
   }
@@ -720,6 +913,53 @@
     })(headers[h]);
   }
 
+  /* ---------- Room info panel (fake) ---------- */
+  var infoOverlay = document.getElementById("infoOverlay");
+  function renderInfo(r) {
+    var badges = "";
+    if (r.encrypted) badges += '<span class="info-badge">🔒 Encrypted</span>';
+    badges += '<span class="info-badge">Shared history</span>';
+    var memberRows = (r.members || []).map(function (m) {
+      return '<div class="member-row">' +
+        avatarHtml({ initials: m.initials, presence: m.online }) +
+        '<div class="member-text">' +
+          '<div class="member-name">' + esc(m.name) + '</div>' +
+          '<div class="member-id">' + esc(m.id) + '</div>' +
+        '</div></div>';
+    }).join("");
+    var hasTopic = !!r.topic;
+    document.getElementById("infoScroll").innerHTML =
+      avatarHtml({ icon: r.icon, initials: r.initials, cls: "info-avatar" }) +
+      '<div class="info-name">' + esc(r.name) + '</div>' +
+      '<div class="info-badges">' + badges + '</div>' +
+      '<div class="info-sep"></div>' +
+      '<div class="info-label">Topic</div>' +
+      '<div class="info-topic' + (hasTopic ? '' : ' empty') + '">' +
+        (hasTopic ? fmt(r.topic) : "No topic set.") + '</div>' +
+      '<div class="info-sep"></div>' +
+      '<div class="info-switch-row"><span class="lbl">Favourite</span><span class="switch" data-switch></span></div>' +
+      '<div class="info-switch-row"><span class="lbl">Low priority</span><span class="switch" data-switch></span></div>' +
+      '<div class="info-sep"></div>' +
+      '<div class="info-label">Members (' + (r.members ? r.members.length : 0) + ')</div>' +
+      memberRows +
+      '<div class="info-sep"></div>' +
+      '<div class="info-label">Notifications</div>' +
+      '<select class="info-select"><option>Default</option><option>All messages</option><option>Mentions</option><option>Off</option></select>' +
+      '<button class="info-leave" type="button">Leave Room</button>';
+    var sws = document.getElementById("infoScroll").querySelectorAll("[data-switch]");
+    for (var i = 0; i < sws.length; i++) {
+      sws[i].addEventListener("click", function () { this.classList.toggle("on"); });
+    }
+  }
+  function openInfo() { renderInfo(roomById(activeId)); infoOverlay.classList.add("open"); }
+  function closeInfo() { infoOverlay.classList.remove("open"); }
+  document.querySelector(".room-header").addEventListener("click", function (e) {
+    if (e.target.closest(".rh-actions")) return;
+    openInfo();
+  });
+  document.getElementById("infoClose").addEventListener("click", closeInfo);
+  document.getElementById("infoBackdrop").addEventListener("click", closeInfo);
+
   /* ---------- Account context menu (fake) ---------- */
   var userStrip = document.getElementById("userStrip");
   var userMenu = document.getElementById("userMenu");
@@ -742,13 +982,45 @@
     if (!userMenu.contains(e.target)) closeMenu();
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") closeMenu();
+    if (e.key === "Escape") { closeMenu(); closeInfo(); }
   });
   window.addEventListener("blur", closeMenu);
 
   /* ---------- Boot ---------- */
   renderSidebar();
   renderRoom();
+})();
+
+/* ===== Downloads: resolve the latest release's installer assets ===== */
+(function () {
+  "use strict";
+  var REPO = "surakin/tesseract";
+  // Each button keeps a default href → the latest-release page, so it works
+  // even before this resolves (or if the API call fails / no release exists).
+  var matchers = {
+    "win":      function (n) { return /\.exe$/i.test(n); },
+    "mac-arm":  function (n) { return /\.dmg$/i.test(n) && /(arm64|aarch64|apple|silicon)/i.test(n); },
+    "mac-x86":  function (n) { return /\.dmg$/i.test(n) && /(x86[_-]?64|x64|intel|amd64)/i.test(n); },
+    "deb":      function (n) { return /\.deb$/i.test(n); },
+    "rpm":      function (n) { return /\.rpm$/i.test(n); },
+    "appimage": function (n) { return /\.appimage$/i.test(n); }
+  };
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest",
+        { headers: { "Accept": "application/vnd.github+json" } })
+    .then(function (r) { if (!r.ok) throw new Error("no release"); return r.json(); })
+    .then(function (rel) {
+      var assets = rel.assets || [];
+      var vEl = document.getElementById("dl-version");
+      if (vEl && rel.tag_name) vEl.textContent = "Latest: " + rel.tag_name;
+      var heroV = document.getElementById("hero-version");
+      if (heroV && rel.tag_name) heroV.textContent = rel.tag_name;
+      Object.keys(matchers).forEach(function (key) {
+        var hit = assets.filter(function (a) { return matchers[key](a.name); })[0];
+        var btn = document.querySelector('[data-dl="' + key + '"]');
+        if (btn && hit) { btn.href = hit.browser_download_url; btn.setAttribute("download", ""); }
+      });
+    })
+    .catch(function () { /* keep default hrefs → releases page */ });
 })();
 </script>
 </body>
