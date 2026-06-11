@@ -25,6 +25,15 @@ std::string joined_text(const std::vector<tk::TextSpan>& spans)
     return out;
 }
 
+// True when any span carries a (clickable) url — i.e. the body was linkified.
+bool any_link(const std::vector<tk::TextSpan>& spans)
+{
+    for (const auto& s : spans)
+        if (!s.url.empty())
+            return true;
+    return false;
+}
+
 // The UTF-8 encoding of U+FFFD REPLACEMENT CHARACTER.
 constexpr const char* kReplacement = "\xEF\xBF\xBD";
 } // namespace
@@ -312,4 +321,220 @@ TEST_CASE("depth-cap: dropped opens do not pop legitimate outer frames",
     for (const auto& s : spans)
         if (s.text.find("start") != std::string::npos)
             CHECK(s.bold);
+}
+
+TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes",
+          "[html_spans][depth]")
+{
+    // The parser is iterative (no recursion) and the formatting stack is
+    // hard-capped at kMaxTagDepth, so even a hostile body of tens of
+    // thousands of tags must complete in bounded memory without a stack
+    // overflow. Reaching the end of each CHECK is the assertion.
+    constexpr int kHuge = 100000;
+
+    // A massive UNCLOSED nest — the worst case for an unbounded formatting
+    // stack (every open would push a frame).
+    {
+        std::string html;
+        html.reserve(static_cast<std::size_t>(kHuge) * 3 + 4);
+        for (int i = 0; i < kHuge; ++i)
+            html += "<b>";
+        html += "deep";
+        CHECK_NOTHROW(html_to_spans(html, false));
+    }
+
+    // A massive balanced nest, then trailing text — exercises both the push
+    // cap and the matching-close absorption at scale.
+    {
+        std::string html;
+        html.reserve(static_cast<std::size_t>(kHuge) * 7 + 8);
+        for (int i = 0; i < kHuge; ++i)
+            html += "<i>";
+        html += "x";
+        for (int i = 0; i < kHuge; ++i)
+            html += "</i>";
+        html += "tail";
+        auto spans = html_to_spans(html, false);
+        // The body is still rendered (text survives the over-deep section).
+        CHECK(joined_text(spans).find("tail") != std::string::npos);
+    }
+
+    // Far more CLOSE tags than opens must not underflow the stack (it never
+    // pops below the base frame).
+    {
+        std::string html = "<b>x</b>";
+        for (int i = 0; i < kHuge; ++i)
+            html += "</b>";
+        html += "after";
+        CHECK_NOTHROW(html_to_spans(html, false));
+    }
+}
+
+// --- Gap 3: hostile <a href> schemes are never linkified ------------------
+//
+// The renderer emits inert text spans (it is not a web view), so the one
+// place an incoming body can smuggle an actionable payload is the href of a
+// link the user might click. parse_tag keeps href ONLY when it begins with
+// http:// or https:// — every other scheme must be dropped so the run is
+// plain, unclickable text. A regression here would let a crafted message ship
+// a `javascript:` / `data:` link straight to on_link_clicked.
+
+TEST_CASE("hostile: javascript: href is not turned into a link",
+          "[html_spans][hostile]")
+{
+    auto s = html_to_spans("<a href=\"javascript:alert(1)\">click</a>", false);
+    CHECK_FALSE(any_link(s));          // no clickable url survives
+    CHECK(joined_text(s) == "click");  // the visible text is preserved, inert
+}
+
+TEST_CASE("hostile: data:, vbscript:, file: and relative hrefs are dropped",
+          "[html_spans][hostile]")
+{
+    const char* hostile[] = {
+        "<a href=\"data:text/html,<script>alert(1)</script>\">x</a>",
+        "<a href=\"vbscript:msgbox(1)\">x</a>",
+        "<a href=\"file:///etc/passwd\">x</a>",
+        "<a href=\"/relative/path\">x</a>",
+        "<a href=\"mailto:a@b.org\">x</a>",
+        // Leading whitespace must not sneak a scheme past the http(s) prefix
+        // check (the value is taken verbatim from the attribute).
+        "<a href=\" javascript:alert(1)\">x</a>",
+    };
+    for (const char* h : hostile)
+    {
+        auto s = html_to_spans(h, false);
+        INFO(h);
+        CHECK_FALSE(any_link(s));
+    }
+}
+
+TEST_CASE("hostile: a legitimate https link still works (fail-open is narrow)",
+          "[html_spans][hostile]")
+{
+    // The allowlist must not be so tight it breaks ordinary links.
+    auto s = html_to_spans("<a href=\"https://example.org/x\">ok</a>", false);
+    REQUIRE(any_link(s));
+    bool found = false;
+    for (const auto& sp : s)
+        if (sp.url == "https://example.org/x" && sp.text.find("ok") !=
+                                                      std::string::npos)
+            found = true;
+    CHECK(found);
+}
+
+TEST_CASE("hostile: entity-encoded scheme stays inert (attrs are not decoded)",
+          "[html_spans][hostile]")
+{
+    // extract_attr returns the raw attribute bytes; it does NOT run HTML
+    // entity decoding, so an encoded "javascript:" never resolves to the
+    // real scheme and can't be linkified.
+    auto s = html_to_spans(
+        "<a href=\"&#106;avascript:alert(1)\">x</a>", false);
+    CHECK_FALSE(any_link(s));
+}
+
+// --- Gap 4: dangerous/unknown tags are stripped, content stays inert -------
+//
+// <script>, <style>, <iframe>, <img onerror=…> etc. are not in the allowlist.
+// Unknown tags are dropped while their text content is preserved as plain
+// text — crucially WITHOUT any url, color, or other actionable attribute. The
+// payload becomes visible inert text, never something the UI acts on.
+
+TEST_CASE("hostile: <script> body is preserved as inert plain text",
+          "[html_spans][hostile]")
+{
+    auto s = html_to_spans("<script>alert(1)</script>", false);
+    CHECK_FALSE(any_link(s));
+    // The unknown tag is stripped; its text content remains, harmless.
+    CHECK(joined_text(s) == "alert(1)");
+}
+
+TEST_CASE("hostile: <img onerror> / <iframe> carry nothing actionable",
+          "[html_spans][hostile]")
+{
+    auto img = html_to_spans(
+        "<img src=\"x\" onerror=\"alert(1)\">caption", false);
+    CHECK_FALSE(any_link(img));
+    CHECK(joined_text(img) == "caption");
+
+    auto frame = html_to_spans(
+        "<iframe src=\"javascript:alert(1)\">fallback</iframe>", false);
+    CHECK_FALSE(any_link(frame));
+    CHECK(joined_text(frame) == "fallback");
+}
+
+TEST_CASE("hostile: <style> content is not linkified",
+          "[html_spans][hostile]")
+{
+    auto s = html_to_spans(
+        "<style>a{background:url(javascript:alert(1))}</style>body", false);
+    CHECK_FALSE(any_link(s));
+    // The trailing real body text survives.
+    CHECK(joined_text(s).find("body") != std::string::npos);
+}
+
+TEST_CASE("hostile: HTML comments and DOCTYPE are skipped without leaking",
+          "[html_spans][hostile]")
+{
+    auto s = html_to_spans(
+        "<!-- <a href=\"javascript:alert(1)\">x</a> -->visible", false);
+    CHECK_FALSE(any_link(s));
+    CHECK(joined_text(s) == "visible");
+
+    auto d = html_to_spans("<!DOCTYPE html>hi", false);
+    CHECK(joined_text(d) == "hi");
+}
+
+// --- Gap 5: malformed / truncated input is panic-safe ---------------------
+//
+// Incoming formatted_body is fully attacker-controlled and may be malformed.
+// The parser must never read past the buffer, loop forever, or crash on
+// unterminated tags, unbalanced quotes, or truncated entities. Reaching the
+// end of each CHECK (no crash / hang) IS the assertion; we also assert the
+// safety invariant that no hostile href slipped through.
+
+TEST_CASE("malformed: unterminated tags and stray '<' do not crash",
+          "[html_spans][malformed]")
+{
+    // No closing '>' on the tag — parse_tag must stop at end, not overrun.
+    CHECK_NOTHROW(html_to_spans("<a href=\"http://x", false));
+    CHECK_NOTHROW(html_to_spans("<b>bold but never closed", false));
+    CHECK_NOTHROW(html_to_spans("a < b < c", false));
+    CHECK_NOTHROW(html_to_spans("<<<<>>>>", false));
+    CHECK_NOTHROW(html_to_spans("<", false));
+    CHECK_NOTHROW(html_to_spans("</", false));
+    // Unbalanced quote inside an attribute must not run off the end.
+    CHECK_NOTHROW(html_to_spans("<a href=\"http://x>still text", false));
+}
+
+TEST_CASE("malformed: an unterminated http href is not exposed as a link",
+          "[html_spans][malformed]")
+{
+    // The tag never closes, so it should not yield a usable link span.
+    auto s = html_to_spans("<a href=\"javascript:alert(1)", false);
+    CHECK_FALSE(any_link(s));
+}
+
+TEST_CASE("malformed: truncated and empty entities do not crash",
+          "[html_spans][malformed]")
+{
+    CHECK_NOTHROW(html_to_spans("&", false));
+    CHECK_NOTHROW(html_to_spans("&#", false));
+    CHECK_NOTHROW(html_to_spans("&#x", false));
+    CHECK_NOTHROW(html_to_spans("&#;", false));
+    CHECK_NOTHROW(html_to_spans("&#x;", false));
+    CHECK_NOTHROW(html_to_spans("&;", false));
+    CHECK_NOTHROW(html_to_spans("&#x110000", false)); // no terminating ';'
+    CHECK_NOTHROW(html_to_spans("&nosuchentity;", false));
+    // A bare, undecodable '&' is emitted literally.
+    CHECK(joined_text(html_to_spans("AT&T", false)) == "AT&T");
+}
+
+TEST_CASE("malformed: unterminated <pre> code block is still emitted",
+          "[html_spans][malformed]")
+{
+    // A <pre> with no closing </pre> must flush its buffer at end-of-input
+    // rather than silently dropping the captured text.
+    auto s = html_to_spans("<pre>let x = 1;", false);
+    CHECK(joined_text(s).find("let x = 1;") != std::string::npos);
 }
