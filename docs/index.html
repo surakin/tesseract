@@ -163,9 +163,13 @@
     height: 28px; display: flex; align-items: center; gap: 6px;
     padding: 0 10px; background: var(--section-header-bg);
     font-size: 12px; font-weight: 600; color: var(--text-primary);
-    cursor: default; user-select: none;
+    cursor: pointer; user-select: none;
   }
-  .section-header .chev { font-size: 9px; color: var(--text-secondary); }
+  .section-header:hover { background: var(--section-header-hover); }
+  .section-header .title { flex: 1; min-width: 0; }
+  .section-header .chev { font-size: 9px; color: var(--text-secondary);
+    transition: transform .15s ease; }
+  .section-header.collapsed .chev { transform: rotate(-90deg); }
 
   .room {
     height: 48px; display: flex; align-items: center; gap: 12px;
@@ -321,6 +325,21 @@
 
   .sim-hint { text-align: center; color: var(--page-muted); font-size: 13px; margin: 12px 0 0; }
 
+  /* Right-click context menu on the user strip */
+  .ctx-menu {
+    position: fixed; z-index: 100; min-width: 190px; padding: 5px;
+    background: var(--bg); border: 1px solid var(--popup-border); border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.30);
+    font-size: 13px; color: var(--text-primary); display: none;
+  }
+  .ctx-menu.open { display: block; }
+  .ctx-item {
+    padding: 7px 12px; border-radius: 5px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ctx-item:hover { background: var(--accent); color: var(--text-on-accent); }
+  .ctx-sep { height: 1px; margin: 5px 6px; background: var(--separator); }
+
   @media (max-width: 720px) {
     .brand h1 { font-size: 30px; }
     .window { height: 560px; }
@@ -387,12 +406,12 @@
             <span>Search rooms…</span>
           </div>
           <div class="roomscroll">
-            <div class="section-header"><span class="chev">&#9660;</span> Direct Messages</div>
+            <div class="section-header" data-target="roomlist-dm"><span class="title">Direct Messages</span><span class="chev">&#9662;</span></div>
             <div id="roomlist-dm"></div>
-            <div class="section-header"><span class="chev">&#9660;</span> Rooms</div>
+            <div class="section-header" data-target="roomlist-rooms"><span class="title">Rooms</span><span class="chev">&#9662;</span></div>
             <div id="roomlist-rooms"></div>
           </div>
-          <div class="userstrip">
+          <div class="userstrip" id="userStrip" title="Right-click for account options">
             <div class="avatar app">
               <svg viewBox="0 0 512 512" aria-label="Tesseractor">
                 <rect width="512" height="512" rx="96" fill="url(#bg)"/>
@@ -445,7 +464,16 @@
         </main>
       </div>
     </div>
-    <p class="sim-hint">↑ A live simulator — switch rooms, send a message, toggle the theme. Not connected to any real server.</p>
+    <p class="sim-hint">↑ A live simulator — switch rooms, send a message, right-click your account, toggle the theme. Not connected to any real server.</p>
+  </div>
+
+  <!-- Fake account context menu (right-click the user strip) -->
+  <div class="ctx-menu" id="userMenu" role="menu">
+    <div class="ctx-item" role="menuitem">Settings…</div>
+    <div class="ctx-item" role="menuitem">Add Account…</div>
+    <div class="ctx-item" role="menuitem">Log Out Tesseractor</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" role="menuitem">Quit</div>
   </div>
 
   <!-- ===================== ABOUT + FEATURES ===================== -->
@@ -679,6 +707,44 @@
     renderRoom();
     renderSidebar();
   });
+
+  /* ---------- Collapsible section headers ---------- */
+  var headers = document.querySelectorAll(".section-header[data-target]");
+  for (var h = 0; h < headers.length; h++) {
+    (function (header) {
+      header.addEventListener("click", function () {
+        var list = document.getElementById(header.getAttribute("data-target"));
+        var collapsed = header.classList.toggle("collapsed");
+        if (list) list.style.display = collapsed ? "none" : "";
+      });
+    })(headers[h]);
+  }
+
+  /* ---------- Account context menu (fake) ---------- */
+  var userStrip = document.getElementById("userStrip");
+  var userMenu = document.getElementById("userMenu");
+  function closeMenu() { userMenu.classList.remove("open"); }
+  userStrip.addEventListener("contextmenu", function (e) {
+    e.preventDefault();
+    userMenu.classList.add("open");
+    // Measure now that it's visible, then place it. The strip sits at the
+    // bottom of the window, so open upward from the cursor like the real app.
+    var mw = userMenu.offsetWidth, mh = userMenu.offsetHeight;
+    var x = Math.min(e.clientX, window.innerWidth - mw - 8);
+    var y = Math.max(8, e.clientY - mh);
+    userMenu.style.left = Math.max(8, x) + "px";
+    userMenu.style.top = y + "px";
+  });
+  userMenu.addEventListener("click", function (e) {
+    if (e.target.classList.contains("ctx-item")) closeMenu();
+  });
+  document.addEventListener("click", function (e) {
+    if (!userMenu.contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeMenu();
+  });
+  window.addEventListener("blur", closeMenu);
 
   /* ---------- Boot ---------- */
   renderSidebar();
