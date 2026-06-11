@@ -335,6 +335,31 @@
   .feature h3 { margin: 8px 0 4px; font-size: 15px; }
   .feature p { margin: 0; font-size: 13px; color: var(--page-muted); }
 
+  /* ===== Downloads (column to the right of the simulator) ===== */
+  .sim-row { display: flex; gap: 22px; align-items: flex-start; }
+  .sim-main { flex: 1; min-width: 0; }
+  .sim-main .window { max-width: none; }
+  .sim-downloads { width: 250px; flex: none; }
+  .sim-downloads h2 { font-size: 20px; margin: 0 0 4px; letter-spacing: -.3px; }
+  .dl-lead { font-size: 13px; color: var(--page-muted); margin: 0 0 14px; }
+  .dl-version { display: block; color: var(--page-text); font-weight: 600; margin-top: 2px; }
+  .dl-cards { display: flex; flex-direction: column; gap: 14px; }
+  .dl-card {
+    background: var(--page-panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .dl-os { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; }
+  .dl-os .ico { font-size: 20px; }
+  .dl-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    text-decoration: none; font-size: 14px; font-weight: 600; color: var(--page-text);
+    border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .dl-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dl-btn .dl-sub { font-size: 12px; font-weight: 500; color: var(--page-muted); }
+  .dl-btn:hover .dl-sub { color: rgba(255,255,255,.85); }
+
   footer.foot {
     margin-top: 32px; padding: 24px 0 48px; border-top: 1px solid var(--border);
     color: var(--page-muted); font-size: 13px;
@@ -413,6 +438,12 @@
   .ctx-item:hover { background: var(--accent); color: var(--text-on-accent); }
   .ctx-sep { height: 1px; margin: 5px 6px; background: var(--separator); }
 
+  @media (max-width: 900px) {
+    .sim-row { flex-direction: column; }
+    .sim-downloads { width: 100%; }
+    .dl-cards { flex-direction: row; flex-wrap: wrap; }
+    .dl-cards .dl-card { flex: 1 1 220px; }
+  }
   @media (max-width: 720px) {
     .brand h1 { font-size: 30px; }
     .window { height: 560px; }
@@ -462,7 +493,9 @@
 
   <!-- ===================== SIMULATOR ===================== -->
   <div class="sim-stage">
-    <div class="window" id="sim">
+    <div class="sim-row">
+      <div class="sim-main">
+        <div class="window" id="sim">
       <div class="titlebar">
         <svg class="ticon" viewBox="0 0 512 512" aria-hidden="true">
           <rect width="512" height="512" rx="96" fill="url(#bg)"/>
@@ -562,8 +595,32 @@
       </div>
 
       <div class="statusbar">Connected<span class="status-dot"></span></div>
+        </div>
+        <p class="sim-hint">↑ A live simulator — switch rooms, send a message, click the room header for info, right-click your account, toggle the theme. Not connected to any real server.</p>
+      </div>
+
+      <aside class="sim-downloads">
+        <h2>Download</h2>
+        <p class="dl-lead">Native installers for every platform. <span class="dl-version" id="dl-version"></span></p>
+        <div class="dl-cards">
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🪟</span> Windows</div>
+            <a class="dl-btn" data-dl="win" href="https://github.com/surakin/tesseract/releases/latest"><span>Installer</span><span class="dl-sub">.exe · 64-bit</span></a>
+          </div>
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🍎</span> macOS</div>
+            <a class="dl-btn" data-dl="mac-arm" href="https://github.com/surakin/tesseract/releases/latest"><span>Apple Silicon</span><span class="dl-sub">.dmg · arm64</span></a>
+            <a class="dl-btn" data-dl="mac-x86" href="https://github.com/surakin/tesseract/releases/latest"><span>Intel</span><span class="dl-sub">.dmg · x86_64</span></a>
+          </div>
+          <div class="dl-card">
+            <div class="dl-os"><span class="ico">🐧</span> Linux</div>
+            <a class="dl-btn" data-dl="deb" href="https://github.com/surakin/tesseract/releases/latest"><span>Debian / Ubuntu</span><span class="dl-sub">.deb</span></a>
+            <a class="dl-btn" data-dl="rpm" href="https://github.com/surakin/tesseract/releases/latest"><span>Fedora / RHEL</span><span class="dl-sub">.rpm</span></a>
+            <a class="dl-btn" data-dl="appimage" href="https://github.com/surakin/tesseract/releases/latest"><span>AppImage</span><span class="dl-sub">portable</span></a>
+          </div>
+        </div>
+      </aside>
     </div>
-    <p class="sim-hint">↑ A live simulator — switch rooms, send a message, click the room header for info, right-click your account, toggle the theme. Not connected to any real server.</p>
   </div>
 
   <!-- Fake account context menu (right-click the user strip) -->
@@ -917,6 +974,36 @@
   /* ---------- Boot ---------- */
   renderSidebar();
   renderRoom();
+})();
+
+/* ===== Downloads: resolve the latest release's installer assets ===== */
+(function () {
+  "use strict";
+  var REPO = "surakin/tesseract";
+  // Each button keeps a default href → the latest-release page, so it works
+  // even before this resolves (or if the API call fails / no release exists).
+  var matchers = {
+    "win":      function (n) { return /\.exe$/i.test(n); },
+    "mac-arm":  function (n) { return /\.dmg$/i.test(n) && /(arm64|aarch64|apple|silicon)/i.test(n); },
+    "mac-x86":  function (n) { return /\.dmg$/i.test(n) && /(x86[_-]?64|x64|intel|amd64)/i.test(n); },
+    "deb":      function (n) { return /\.deb$/i.test(n); },
+    "rpm":      function (n) { return /\.rpm$/i.test(n); },
+    "appimage": function (n) { return /\.appimage$/i.test(n); }
+  };
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest",
+        { headers: { "Accept": "application/vnd.github+json" } })
+    .then(function (r) { if (!r.ok) throw new Error("no release"); return r.json(); })
+    .then(function (rel) {
+      var assets = rel.assets || [];
+      var vEl = document.getElementById("dl-version");
+      if (vEl && rel.tag_name) vEl.textContent = "Latest: " + rel.tag_name;
+      Object.keys(matchers).forEach(function (key) {
+        var hit = assets.filter(function (a) { return matchers[key](a.name); })[0];
+        var btn = document.querySelector('[data-dl="' + key + '"]');
+        if (btn && hit) { btn.href = hit.browser_download_url; btn.setAttribute("download", ""); }
+      });
+    })
+    .catch(function () { /* keep default hrefs → releases page */ });
 })();
 </script>
 </body>
