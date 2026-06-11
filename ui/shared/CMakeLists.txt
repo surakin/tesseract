@@ -24,6 +24,8 @@ set(_tk_sources
     app/ThreadPanelController.cpp
     app/SlashCommands.h
     app/SlashCommands.cpp
+    app/status_links.h
+    app/status_links.cpp
     tk/audio.h
     tk/audio_capture.h
     tk/video.h

@@ -132,6 +132,10 @@ void ShellBase::show_status_message_(std::string msg, int auto_clear_ms)
 {
     const std::uint32_t gen = ++status_msg_gen_;
     post_to_ui_alive_([this, msg = std::move(msg)] { on_show_status_message_ui_(msg); });
+    // auto_clear_ms <= 0 → persistent: the message stays until a newer
+    // status message (which bumps the generation) replaces it.
+    if (auto_clear_ms <= 0)
+        return;
     post_to_ui_after_(auto_clear_ms,
                       [this, gen]
                       {

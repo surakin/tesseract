@@ -10,6 +10,7 @@
 #include "Theme.h"
 #include "resource.h"
 #include "app/SlashCommands.h"
+#include "app/status_links.h"
 #include "tk/video_decode.h"
 
 #include <thread>
@@ -230,6 +231,52 @@ struct FileBytesPayload
 
 static constexpr UINT SB_SET_INFLIGHT_COLOR = WM_USER + 2;
 
+namespace
+{
+
+// Hyperlink state for the status bar. Status text may carry markdown-style
+// "[label](url)" spans (see app/status_links.h); the wnd proc parses them on
+// WM_SETTEXT and paints link runs in accent + underline. `hits` holds the
+// painted link rects (client coords), rebuilt on every WM_PAINT, so cursor
+// and click hit-testing always match what is on screen.
+struct StatusBarLinkHit
+{
+    RECT rc;
+    std::string url;
+};
+struct StatusBarLinkState
+{
+    std::vector<tesseract::StatusSegment> segs;
+    std::vector<std::wstring> wide; // per-segment text, pre-widened
+    bool has_links = false;
+    std::vector<StatusBarLinkHit> hits;
+};
+
+void status_bar_update_links(HWND hwnd, const std::wstring& text)
+{
+    auto* st =
+        static_cast<StatusBarLinkState*>(GetPropW(hwnd, L"TesseractStatusLinks"));
+    if (!st)
+    {
+        st = new StatusBarLinkState;
+        SetPropW(hwnd, L"TesseractStatusLinks", st);
+    }
+    st->segs = tesseract::parse_status_links(wstr_to_utf8(text.c_str()));
+    st->has_links = tesseract::status_has_links(st->segs);
+    st->wide.clear();
+    st->hits.clear();
+    if (st->has_links)
+    {
+        st->wide.reserve(st->segs.size());
+        for (const auto& s : st->segs)
+        {
+            st->wide.push_back(utf8_to_wstr(s.text));
+        }
+    }
+}
+
+} // namespace
+
 LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                                      LPARAM lParam)
 {
@@ -245,7 +292,11 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         auto* p =
             static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         delete p;
+        auto* st = static_cast<StatusBarLinkState*>(
+            GetPropW(hwnd, L"TesseractStatusLinks"));
+        delete st;
         RemovePropW(hwnd, L"TesseractStatusText");
+        RemovePropW(hwnd, L"TesseractStatusLinks");
         RemovePropW(hwnd, L"TesseractStatusDot");
         RemovePropW(hwnd, L"StatusTip");
         return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -258,10 +309,48 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_MBUTTONDOWN:
     case WM_MBUTTONUP:
     {
+        if (msg == WM_LBUTTONUP)
+        {
+            // Hyperlink click — consume before the tooltip relay.
+            auto* st = static_cast<StatusBarLinkState*>(
+                GetPropW(hwnd, L"TesseractStatusLinks"));
+            if (st && st->has_links)
+            {
+                POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                for (const auto& h : st->hits)
+                {
+                    if (PtInRect(&h.rc, pt))
+                    {
+                        tesseract::Client::open_in_browser(h.url);
+                        return 0;
+                    }
+                }
+            }
+        }
         if (HWND tip = static_cast<HWND>(GetPropW(hwnd, L"StatusTip")))
         {
             MSG relay{hwnd, msg, wParam, lParam};
             SendMessageW(tip, TTM_RELAYEVENT, 0, reinterpret_cast<LPARAM>(&relay));
+        }
+        break;
+    }
+    case WM_SETCURSOR:
+    {
+        auto* st = static_cast<StatusBarLinkState*>(
+            GetPropW(hwnd, L"TesseractStatusLinks"));
+        if (st && st->has_links)
+        {
+            const DWORD mp = GetMessagePos();
+            POINT pt{GET_X_LPARAM(mp), GET_Y_LPARAM(mp)};
+            ScreenToClient(hwnd, &pt);
+            for (const auto& h : st->hits)
+            {
+                if (PtInRect(&h.rc, pt))
+                {
+                    SetCursor(LoadCursorW(nullptr, IDC_HAND));
+                    return TRUE;
+                }
+            }
         }
         break;
     }
@@ -285,6 +374,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             SetPropW(hwnd, L"TesseractStatusText", p);
         }
         p->assign(txt ? txt : L"");
+        status_bar_update_links(hwnd, *p);
         InvalidateRect(hwnd, nullptr, FALSE);
         return TRUE;
     }
@@ -311,6 +401,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             p->clear();
         }
+        status_bar_update_links(hwnd, *p);
         InvalidateRect(hwnd, nullptr, FALSE);
         return TRUE;
     }
@@ -335,15 +426,74 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         if (p && !p->empty())
         {
             SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, pal.text_secondary);
-            HFONT old =
-                (HFONT)SelectObject(hdc, theme::font(theme::FontRole::Small));
+            HFONT small_font = theme::font(theme::FontRole::Small);
             // Reserve 24px on the right for the inflight dot.
             RECT text_rc = {rc.left + 10, rc.top, rc.right - 24, rc.bottom};
-            DrawTextW(hdc, p->c_str(), -1, &text_rc,
-                      DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS |
-                          DT_NOPREFIX);
-            SelectObject(hdc, old);
+            auto* st = static_cast<StatusBarLinkState*>(
+                GetPropW(hwnd, L"TesseractStatusLinks"));
+            if (st && st->has_links)
+            {
+                // Segmented paint: plain runs in text_secondary, link runs in
+                // accent + underline. Hit rects are rebuilt to match exactly
+                // what is painted (clamped to the visible text area).
+                st->hits.clear();
+                LOGFONTW lf{};
+                GetObjectW(small_font, sizeof(lf), &lf);
+                lf.lfUnderline = TRUE;
+                HFONT link_font = CreateFontIndirectW(&lf);
+                HFONT old = (HFONT)SelectObject(hdc, small_font);
+                int x = text_rc.left;
+                for (std::size_t i = 0;
+                     i < st->segs.size() && x < text_rc.right; ++i)
+                {
+                    const std::wstring& run = st->wide[i];
+                    if (run.empty())
+                    {
+                        continue;
+                    }
+                    const bool is_link = !st->segs[i].url.empty();
+                    SelectObject(hdc, is_link && link_font ? link_font
+                                                           : small_font);
+                    SetTextColor(hdc,
+                                 is_link ? pal.accent : pal.text_secondary);
+                    SIZE sz{};
+                    GetTextExtentPoint32W(hdc, run.c_str(),
+                                          static_cast<int>(run.size()), &sz);
+                    const bool overflow = x + sz.cx > text_rc.right;
+                    RECT run_rc = {x, text_rc.top, text_rc.right,
+                                   text_rc.bottom};
+                    DrawTextW(hdc, run.c_str(), static_cast<int>(run.size()),
+                              &run_rc,
+                              DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX |
+                                  (overflow ? DT_END_ELLIPSIS : 0));
+                    if (is_link)
+                    {
+                        RECT hit = {x, text_rc.top,
+                                    std::min<LONG>(x + sz.cx, text_rc.right),
+                                    text_rc.bottom};
+                        st->hits.push_back({hit, st->segs[i].url});
+                    }
+                    if (overflow)
+                    {
+                        break;
+                    }
+                    x += sz.cx;
+                }
+                SelectObject(hdc, old);
+                if (link_font)
+                {
+                    DeleteObject(link_font);
+                }
+            }
+            else
+            {
+                SetTextColor(hdc, pal.text_secondary);
+                HFONT old = (HFONT)SelectObject(hdc, small_font);
+                DrawTextW(hdc, p->c_str(), -1, &text_rc,
+                          DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS |
+                              DT_NOPREFIX);
+                SelectObject(hdc, old);
+            }
         }
         // Draw the inflight dot — always visible on the right.
         {

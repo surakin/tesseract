@@ -6,6 +6,7 @@
 #include "SettingsWidget.h"
 #include "LinuxScreenLockGtk.h"
 #include "app/SlashCommands.h"
+#include "app/status_links.h"
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
@@ -203,8 +204,37 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
 {
-    if (status_bar_)
+    if (!status_bar_)
+        return;
+    const auto segs = tesseract::parse_status_links(msg);
+    if (!tesseract::status_has_links(segs))
+    {
+        // set_text resets use-markup, so a later plain message cleanly
+        // clears any prior link rendering.
         gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+        return;
+    }
+    std::string markup;
+    for (const auto& seg : segs)
+    {
+        char* text = g_markup_escape_text(seg.text.c_str(), -1);
+        if (seg.url.empty())
+        {
+            markup += text;
+        }
+        else
+        {
+            char* href = g_markup_escape_text(seg.url.c_str(), -1);
+            markup += "<a href=\"";
+            markup += href;
+            markup += "\">";
+            markup += text;
+            markup += "</a>";
+            g_free(href);
+        }
+        g_free(text);
+    }
+    gtk_label_set_markup(GTK_LABEL(status_bar_), markup.c_str());
 }
 
 void MainWindow::on_restore_status_ui_()
@@ -2422,6 +2452,19 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
     gtk_widget_set_margin_start(status_bar_, 4);
     gtk_widget_set_margin_bottom(status_bar_, 2);
+    gtk_label_set_ellipsize(GTK_LABEL(status_bar_), PANGO_ELLIPSIZE_END);
+    // Hyperlinked status messages (see app/status_links.h) render via Pango
+    // markup; route activation through the shared opener instead of
+    // gtk_show_uri so all platforms share one code path.
+    g_signal_connect(status_bar_, "activate-link",
+                     G_CALLBACK(+[](GtkLabel*, const char* uri,
+                                    gpointer) -> gboolean
+                                {
+                                    tesseract::Client::open_in_browser(
+                                        uri ? uri : "");
+                                    return TRUE;
+                                }),
+                     nullptr);
     inflight_dot_ = gtk_label_new("●");
     gtk_widget_set_margin_end(inflight_dot_, 6);
     gtk_widget_set_margin_bottom(inflight_dot_, 2);

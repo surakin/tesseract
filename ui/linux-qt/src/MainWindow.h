@@ -342,6 +342,10 @@ private:
     // flash the status bar.
     QTimer* syncStatusDebounce_ = nullptr;
     QLabel* inflightDot_ = nullptr;
+    // Rich-text label for status messages carrying hyperlinks (see
+    // app/status_links.h). Created lazily; hidden while plain messages
+    // use statusBar()->showMessage().
+    QLabel* statusLinkLabel_ = nullptr;
     QTimer* markReadTimer_ = nullptr;
     void refreshSyncStatus();
 

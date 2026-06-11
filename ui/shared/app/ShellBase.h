@@ -1711,7 +1711,11 @@ protected:
         }
     }
     // Show `msg` in the platform status bar for `auto_clear_ms` milliseconds,
-    // then restore the sync-status text. Safe to call from any thread.
+    // then restore the sync-status text. `auto_clear_ms <= 0` → the message
+    // persists until the next status change (e.g. an update notification).
+    // `msg` may contain markdown-style "[label](url)" hyperlinks — see
+    // app/status_links.h; shells render them clickable. Safe to call from
+    // any thread.
     void show_status_message_(std::string msg, int auto_clear_ms = 4000);
 
     // Called by show_status_message_ on the UI thread to display the message.

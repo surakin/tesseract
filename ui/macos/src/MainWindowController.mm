@@ -17,6 +17,7 @@
 #include <tesseract/visual.h>
 
 #include "app/SlashCommands.h"
+#include "app/status_links.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
 #include "tk/video_decode.h"
@@ -6811,8 +6812,51 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_setStatusLabelText:(NSString*)text
 {
-    if (_statusLabel)
+    if (!_statusLabel)
+        return;
+    // Status messages may carry markdown-style "[label](url)" hyperlinks
+    // (see app/status_links.h). Plain messages keep the exact legacy
+    // non-selectable NSTextField behavior; linked messages use the
+    // attributed-string trick (selectable + allowsEditingTextAttributes)
+    // so AppKit renders NSLinkAttributeName clickable and opens the
+    // default browser itself.
+    const auto segs =
+        tesseract::parse_status_links(std::string([text UTF8String] ?: ""));
+    if (!tesseract::status_has_links(segs))
+    {
+        _statusLabel.selectable = NO;
+        _statusLabel.allowsEditingTextAttributes = NO;
         _statusLabel.stringValue = text;
+        return;
+    }
+
+    NSMutableParagraphStyle* para = [[NSMutableParagraphStyle alloc] init];
+    para.lineBreakMode = NSLineBreakByTruncatingTail;
+    NSFont* font = [NSFont systemFontOfSize:11];
+    NSMutableAttributedString* att =
+        [[NSMutableAttributedString alloc] init];
+    for (const auto& seg : segs)
+    {
+        NSString* run = @(seg.text.c_str());
+        if (!run.length)
+            continue;
+        NSMutableDictionary* attrs = [@{
+            NSFontAttributeName : font,
+            NSParagraphStyleAttributeName : para,
+            NSForegroundColorAttributeName : NSColor.secondaryLabelColor,
+        } mutableCopy];
+        if (!seg.url.empty())
+        {
+            if (NSURL* url = [NSURL URLWithString:@(seg.url.c_str())])
+                attrs[NSLinkAttributeName] = url;
+        }
+        [att appendAttributedString:[[NSAttributedString alloc]
+                                        initWithString:run
+                                            attributes:attrs]];
+    }
+    _statusLabel.selectable = YES;
+    _statusLabel.allowsEditingTextAttributes = YES;
+    _statusLabel.attributedStringValue = att;
 }
 
 - (void)_refreshSyncStatus
@@ -6840,7 +6884,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
     else
         text = @"Connected";
 
-    _statusLabel.stringValue = text;
+    // Funnel through _setStatusLabelText: so the selectable /
+    // allowsEditingTextAttributes resets from a prior linked message apply.
+    [self _setStatusLabelText:text];
     _shell->sync_progress_shown_ = room_busy || reconnecting || keys_busy;
 }
 
