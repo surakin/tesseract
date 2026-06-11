@@ -154,7 +154,8 @@ void decode_entity(const char*& p, const char* end, std::string& out)
         ++p;
     }
     std::string_view ent(name_start, static_cast<std::size_t>(p - name_start));
-    if (p < end && *p == ';')
+    const bool had_semicolon = (p < end && *p == ';');
+    if (had_semicolon)
     {
         ++p;
     }
@@ -184,12 +185,17 @@ void decode_entity(const char*& p, const char* end, std::string& out)
         out += '\xc2';
         out += '\xa0';
     } // U+00A0
-    // Unknown entity: emit literal '&name;' fallback
+    // Unknown entity: emit the literal source back, preserving the original
+    // terminator state. A bare '&' or '&word' with no ';' must NOT gain one
+    // (e.g. "AT&T" stays "AT&T", "Tom & Jerry" stays unchanged).
     else
     {
         out += '&';
         out += std::string(ent);
-        out += ';';
+        if (had_semicolon)
+        {
+            out += ';';
+        }
     }
 }
 
@@ -352,14 +358,33 @@ Tag parse_tag(const char*& p, const char* end)
     }
     if (p < end && *p == '!')
     {
-        // Comment or DOCTYPE — skip to '>'
-        while (p < end && *p != '>')
+        // An HTML comment ends at "-->", not the first '>': a '>' inside the
+        // comment (e.g. within a quoted attribute) must not terminate it early
+        // and leak the tail as visible text. DOCTYPE / other "<!…>"
+        // declarations have no such body and end at the first '>'.
+        if (end - p >= 3 && p[1] == '-' && p[2] == '-')
         {
-            ++p;
+            p += 3; // skip "!--"
+            while (p < end)
+            {
+                if (end - p >= 3 && p[0] == '-' && p[1] == '-' && p[2] == '>')
+                {
+                    p += 3;
+                    break;
+                }
+                ++p;
+            }
         }
-        if (p < end)
+        else
         {
-            ++p;
+            while (p < end && *p != '>')
+            {
+                ++p;
+            }
+            if (p < end)
+            {
+                ++p;
+            }
         }
         return t;
     }
