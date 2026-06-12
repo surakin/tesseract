@@ -488,7 +488,6 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
     {
         tk::TextStyle es{};
         es.role = tk::FontRole::Body;
-        es.halign = tk::TextHAlign::Center;
         const std::string empty_msg =
             mode_ == Mode::User
                 ? std::string(

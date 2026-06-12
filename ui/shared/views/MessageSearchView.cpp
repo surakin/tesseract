@@ -337,7 +337,6 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
     {
         tk::TextStyle es{};
         es.role = tk::FontRole::Body;
-        es.halign = tk::TextHAlign::Center;
         const std::string msg =
             query_.empty()
                 ? std::string("Type to search your messages")
