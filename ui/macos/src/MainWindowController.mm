@@ -359,6 +359,7 @@ public:
     using ShellBase::switch_active_account_impl_;
     using ShellBase::logout_active_account_impl_;
     using ShellBase::LogoutResult;
+    using ShellBase::handle_date_jump_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
