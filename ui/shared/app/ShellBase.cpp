@@ -3036,6 +3036,41 @@ void ShellBase::clear_focused_state_(const std::string& room_id)
     state.fwd_in_flight = false;
 }
 
+void ShellBase::handle_date_jump_(std::uint64_t ts_ms)
+{
+    if (current_room_id_.empty() || !client_)
+        return;
+    const std::string room_id = current_room_id_;
+    run_async_mut_(
+        [this, room_id, ts_ms]
+        {
+            auto res = client_->timestamp_to_event(room_id, ts_ms, "f");
+            if (!res.ok)
+            {
+                const std::string err = res.message;
+                post_to_ui_alive_(
+                    [this, err]
+                    {
+                        show_status_message_(
+                            "Jump to date failed: " + err, 4000);
+                    });
+                return;
+            }
+            const std::string event_id = res.message;
+            post_to_ui_alive_(
+                [this, room_id, event_id]
+                {
+                    begin_focused_subscription_(room_id, event_id);
+                    run_async_mut_(
+                        [this, room_id, event_id]
+                        {
+                            if (client_)
+                                client_->subscribe_room_at(room_id, event_id);
+                        });
+                });
+        });
+}
+
 void ShellBase::request_forward_history_(const std::string& room_id)
 {
     auto& state = pagination_[room_id];

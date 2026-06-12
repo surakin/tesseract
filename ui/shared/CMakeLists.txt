@@ -100,6 +100,8 @@ set(_tk_sources
     views/ThreadView.cpp
     views/VerificationBanner.h
     views/VerificationBanner.cpp
+    views/DatePickerView.h
+    views/DatePickerView.cpp
     views/RoomHeader.h
     views/RoomHeader.cpp
     views/RoomView.h

@@ -475,7 +475,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
-- (void)openJumpToDateDialog;
 - (void)_switchActiveAccount:(const std::string&)user_id;
 - (void)_refreshAccountUIAfterSwitch;
 - (void)_populateUserStrip;
@@ -2913,13 +2912,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     }
                 });
         };
-        _mainApp->room_view()->on_jump_to_date_requested = [weakSelf]
+        _mainApp->room_view()->on_date_jump = [weakSelf](std::uint64_t ts_ms)
         {
             MainWindowController* s = weakSelf;
             if (s)
-            {
-                [s openJumpToDateDialog];
-            }
+                s->_shell->handle_date_jump_(ts_ms);
         };
         _mainApp->room_view()->on_threads_button_clicked = [weakSelf]
         {
@@ -7299,104 +7296,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [self handlePaginateResultForRoom:roomId reached_start:reached];
         });
     });
-}
-
-- (void)openJumpToDateDialog
-{
-    if (_shell->current_room_id_.empty())
-    {
-        return;
-    }
-
-    // Text-field+stepper style: each component (month/day/year) is a separate
-    // clickable field — the user can click the year and type or spin it directly.
-    NSDatePicker* picker =
-        [[NSDatePicker alloc] initWithFrame:NSMakeRect(0, 0, 228, 28)];
-    picker.datePickerStyle = NSDatePickerStyleTextFieldAndStepper;
-    picker.datePickerElements = NSDatePickerElementFlagYearMonthDay;
-    picker.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
-    picker.dateValue = [NSDate date]; // default to today, not the 2001 reference epoch
-
-    // Clamp selection to [1970-01-01, today].
-    NSCalendar* utcCal =
-        [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
-    utcCal.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
-    NSDateComponents* epochComps = [[NSDateComponents alloc] init];
-    epochComps.year = 1970;
-    epochComps.month = 1;
-    epochComps.day = 1;
-    picker.minDate = [utcCal dateFromComponents:epochComps];
-    picker.maxDate = [NSDate date];
-
-    NSAlert* alert = [[NSAlert alloc] init];
-    alert.messageText = @"Jump to Date";
-    alert.informativeText = @"Navigate to messages from the selected day.";
-    [alert addButtonWithTitle:@"Jump"];
-    [alert addButtonWithTitle:@"Cancel"];
-    alert.accessoryView = picker;
-
-    [alert
-        beginSheetModalForWindow:self.window
-               completionHandler:^(NSModalResponse r) {
-                   if (r != NSAlertFirstButtonReturn)
-                   {
-                       return;
-                   }
-
-                   // Extract midnight UTC from the selected date.
-                   NSDate* selected = picker.dateValue;
-                   NSDateComponents* comps = [utcCal
-                       components:(NSCalendarUnitYear | NSCalendarUnitMonth |
-                                   NSCalendarUnitDay)
-                         fromDate:selected];
-                   comps.hour = 0;
-                   comps.minute = 0;
-                   comps.second = 0;
-                   NSDate* midnight = [utcCal dateFromComponents:comps];
-                   const uint64_t ts_ms = static_cast<uint64_t>(
-                       [midnight timeIntervalSince1970] * 1000.0);
-
-                   const std::string room_id = self->_shell->current_room_id_;
-                   if (room_id.empty())
-                   {
-                       return;
-                   }
-
-                   dispatch_async(
-                       dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                       ^{
-                           auto res = self->_shell->client_->timestamp_to_event(
-                               room_id, ts_ms, "f");
-                           if (!res.ok)
-                           {
-                               NSString* msg =
-                                   [NSString
-                                       stringWithUTF8String:res.message.c_str()]
-                                       ?: @"Unknown error";
-                               dispatch_async(dispatch_get_main_queue(), ^{
-                                   NSAlert* err = [[NSAlert alloc] init];
-                                   err.alertStyle = NSAlertStyleWarning;
-                                   err.messageText = @"Jump to Date Failed";
-                                   err.informativeText = msg;
-                                   [err beginSheetModalForWindow:self.window
-                                               completionHandler:nil];
-                               });
-                               return;
-                           }
-                           const std::string event_id = res.message;
-                           dispatch_async(dispatch_get_main_queue(), ^{
-                               self->_shell->begin_focused_subscription_(
-                                   room_id, event_id);
-                               dispatch_async(
-                                   dispatch_get_global_queue(
-                                       QOS_CLASS_USER_INITIATED, 0),
-                                   ^{
-                                       self->_shell->client_->subscribe_room_at(
-                                           room_id, event_id);
-                                   });
-                           });
-                       });
-               }];
 }
 
 - (void)handlePaginateResultForRoom:(std::string)roomId

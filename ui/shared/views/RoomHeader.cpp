@@ -3,6 +3,7 @@
 #include "html_spans.h"
 #include "icons.h"
 #include "media_utils.h"
+#include "tk/host.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 
@@ -56,8 +57,16 @@ RoomHeader::RoomHeader()
                                             tk::Button::Variant::Icon);
     calendar_btn_ = add_child(std::move(cal));
     calendar_btn_->set_visible(false);
-    calendar_btn_->set_on_click(
-        [this] { if (on_jump_to_date_requested) on_jump_to_date_requested(); });
+    calendar_btn_->set_on_click([this] { show_date_picker_(); });
+
+    date_picker_ = std::make_unique<DatePickerView>();
+    date_picker_->on_date_picked = [this](int y, int m, int d)
+    {
+        hide_date_picker_();
+        if (on_date_jump)
+            on_date_jump(date_to_midnight_utc_ms_(y, m, d));
+    };
+    date_picker_->on_dismiss = [this] { hide_date_picker_(); };
 
     auto thr = std::make_unique<tk::Button>("", std::function<void()>{},
                                             tk::Button::Variant::Icon);
@@ -502,6 +511,11 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
                            threads_btn_->bounds(), kHeaderIconPx,
                            ctx.theme.palette.text_primary);
     }
+
+    // Register the date picker as the active popup so the host calls
+    // paint_overlay() on it after the tree paint and routes pointer events.
+    if (date_picker_visible_ && date_picker_ && ctx.host)
+        ctx.host->register_popup(date_picker_.get());
 }
 
 void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
@@ -636,6 +650,64 @@ void RoomHeader::on_pointer_leave()
     }
     hover_topic_ = false;
     // Host calls request_repaint() after dispatching pointer-leave.
+}
+
+void RoomHeader::paint_overlay(tk::PaintCtx& ctx)
+{
+    Widget::paint_overlay(ctx);
+    // DatePickerView is not in the widget tree, so the tree traversal inside
+    // root_->paint_overlay() never reaches it. We must call it explicitly here.
+    if (date_picker_visible_ && date_picker_)
+        date_picker_->paint_overlay(ctx);
+}
+
+void RoomHeader::on_popup_dismiss()
+{
+    hide_date_picker_();
+}
+
+void RoomHeader::show_date_picker_()
+{
+    if (date_picker_visible_)
+    {
+        hide_date_picker_();
+        return;
+    }
+    if (!calendar_btn_ || !date_picker_)
+        return;
+
+    int ty, tm, td;
+    DatePickerView::today(ty, tm, td);
+    date_picker_->set_max_date(ty, tm, td);
+
+    // Position the picker below the calendar button, right-aligned to its
+    // right edge; clamp so it never overlaps the header's left edge.
+    const tk::Rect btn = calendar_btn_->bounds();
+    float px = btn.x + btn.w - DatePickerView::kWidth;
+    px = std::max(px, bounds_.x);
+    date_picker_->open_at(
+        {px, btn.y + btn.h + 4.0f, DatePickerView::kWidth, DatePickerView::kHeight});
+    date_picker_visible_ = true;
+}
+
+void RoomHeader::hide_date_picker_()
+{
+    date_picker_visible_ = false;
+}
+
+/*static*/ std::uint64_t RoomHeader::date_to_midnight_utc_ms_(int y, int m,
+                                                               int d)
+{
+    // Julian Day Number → days since Unix epoch (1970-01-01 = JDN 2440588).
+    // Proleptic Gregorian calendar; valid for all dates we show (1970–2099+).
+    const int a  = (14 - m) / 12;
+    const int yj = y + 4800 - a;
+    const int mj = m + 12 * a - 3;
+    const int jdn =
+        d + (153 * mj + 2) / 5 + 365 * yj + yj / 4 - yj / 100 + yj / 400 -
+        32045;
+    const std::int64_t days = static_cast<std::int64_t>(jdn) - 2440588LL;
+    return static_cast<std::uint64_t>(days) * 86400ULL * 1000ULL;
 }
 
 } // namespace tesseract::views

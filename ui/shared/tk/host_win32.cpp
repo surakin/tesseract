@@ -3657,7 +3657,7 @@ public:
         // The toolkit convention is positive dy = scroll content down,
         // so invert. One notch (120) maps to ~3 toolkit pixels per step.
         float dy = static_cast<float>(-delta_steps) * (3.0f / 120.0f) * 30.0f;
-        if (root_->dispatch_wheel(
+        if (dispatch_wheel(
                 {phys_to_dip(static_cast<float>(pt.x)),
                  phys_to_dip(static_cast<float>(pt.y))},
                 0, dy))

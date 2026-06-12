@@ -8,6 +8,7 @@
 // the image is not yet in the provider's cache). Name and topic are child
 // tk::Label widgets laid out in arrange().
 
+#include "DatePickerView.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/svg.h"
@@ -15,6 +16,7 @@
 
 #include <tesseract/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -64,6 +66,8 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
+    void paint_overlay(tk::PaintCtx&) override;
+    void on_popup_dismiss() override;
 
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
@@ -75,8 +79,9 @@ public:
     // Fired when a hyperlink in the room topic is clicked.
     std::function<void(const std::string& url)> on_link_clicked;
 
-    // Fired when the user clicks the calendar/jump-to-date button.
-    std::function<void()> on_jump_to_date_requested;
+    // Fired when the user confirms a date in the picker (ms since Unix epoch,
+    // midnight UTC on the selected day). Replaces on_jump_to_date_requested.
+    std::function<void(std::uint64_t ts_ms)> on_date_jump;
 
     // Fired when the user clicks the threads button.
     std::function<void()> on_threads_requested;
@@ -104,6 +109,16 @@ private:
     // glyph centred inside each button's bounds (see paint()).
     tk::Button* calendar_btn_ = nullptr;
     tk::Button* threads_btn_ = nullptr;
+
+    // Owned date-picker popup (not a widget-tree child — driven via
+    // register_popup / paint_overlay).
+    std::unique_ptr<DatePickerView> date_picker_;
+    bool date_picker_visible_ = false;
+
+    // Helpers.
+    void show_date_picker_();
+    void hide_date_picker_();
+    static std::uint64_t date_to_midnight_utc_ms_(int year, int month, int day);
 
     // Lucide jump-to-date / threads icons for calendar_btn_ / threads_btn_,
     // tinted text_primary (tint-aware so they recolor on theme switch).

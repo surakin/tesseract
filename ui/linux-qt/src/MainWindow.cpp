@@ -55,11 +55,8 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
-#include <QCalendarWidget>
 #include <QDate>
 #include <QDateTime>
-#include <QDialog>
-#include <QDialogButtonBox>
 #include <QTime>
 #include <QTimeZone>
 #include <QTimer>
@@ -564,9 +561,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                     client_->subscribe_room_at(room, event_id);
                 });
         };
-        mainApp_->room_view()->on_jump_to_date_requested = [this]
+        mainApp_->room_view()->on_date_jump = [this](std::uint64_t ts_ms)
         {
-            openJumpToDateDialog();
+            handle_date_jump_(ts_ms);
         };
         mainApp_->room_view()->on_threads_button_clicked = [this]
         {
@@ -2822,70 +2819,6 @@ void MainWindow::requestMoreHistory(const std::string& room_id)
                 this, "onPaginateFinished", Qt::QueuedConnection,
                 Q_ARG(QString, QString::fromStdString(room_id)),
                 Q_ARG(bool, reached));
-        });
-}
-
-void MainWindow::openJumpToDateDialog()
-{
-    if (current_room_id_.empty())
-    {
-        return;
-    }
-
-    QDialog dlg(this);
-    dlg.setWindowTitle(tr("Jump to Date"));
-    auto* cal = new QCalendarWidget(&dlg);
-    cal->setMinimumDate(QDate(1970, 1, 1));
-    cal->setMaximumDate(QDate::currentDate());
-    auto* bb = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    auto* lo = new QVBoxLayout(&dlg);
-    lo->addWidget(cal);
-    lo->addWidget(bb);
-
-    if (dlg.exec() != QDialog::Accepted)
-    {
-        return;
-    }
-
-    const QDate date = cal->selectedDate();
-    const uint64_t ts_ms = static_cast<uint64_t>(
-        QDateTime(date, QTime(0, 0, 0), QTimeZone::utc()).toMSecsSinceEpoch());
-
-    const std::string room_id = current_room_id_;
-    run_async_mut_(
-        [this, room_id, ts_ms]
-        {
-            auto res = client_->timestamp_to_event(room_id, ts_ms, "f");
-            if (!res.ok)
-            {
-                QMetaObject::invokeMethod(
-                    this,
-                    [this, msg = res.message]
-                    {
-                        statusBar()->showMessage(
-                            tr("Jump to date failed: %1")
-                                .arg(QString::fromStdString(msg)),
-                            4000);
-                    },
-                    Qt::QueuedConnection);
-                return;
-            }
-            const std::string event_id = res.message;
-            QMetaObject::invokeMethod(
-                this,
-                [this, room_id, event_id]
-                {
-                    begin_focused_subscription_(room_id, event_id);
-                    run_async_mut_(
-                        [this, room_id, event_id]
-                        {
-                            client_->subscribe_room_at(room_id, event_id);
-                        });
-                },
-                Qt::QueuedConnection);
         });
 }
 

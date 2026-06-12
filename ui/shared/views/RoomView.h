@@ -312,7 +312,7 @@ public:
     std::function<void()> on_near_top;
     std::function<void()> on_near_bottom;
     std::function<void()> on_return_to_live;
-    std::function<void()> on_jump_to_date_requested;
+    std::function<void(std::uint64_t ts_ms)> on_date_jump;
     std::function<void(std::string original_event_id)> on_scroll_to_original;
 
     // Clipboard write — forward to the platform host. Wire to

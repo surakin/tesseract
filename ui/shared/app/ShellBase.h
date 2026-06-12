@@ -2506,6 +2506,11 @@ protected:
     void begin_focused_subscription_(const std::string& room_id,
                                      const std::string& event_id);
 
+    // MSC3030 jump-to-date: resolve ts_ms to an event and begin a focused
+    // subscription. Shared handler wired from all four platform shells via
+    // room_view_->on_date_jump.
+    void handle_date_jump_(std::uint64_t ts_ms);
+
     // MSC3030: clear stale focused-timeline state when (re-)entering a room via
     // the live room-selection path.  Must be called before subscribe_room() so
     // that the subsequent handle_timeline_reset_ui_() sees is_focused == false.

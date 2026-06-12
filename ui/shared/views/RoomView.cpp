@@ -463,12 +463,10 @@ void RoomView::wire_internal_callbacks()
             on_return_to_live();
         }
     };
-    header_->on_jump_to_date_requested = [this]
+    header_->on_date_jump = [this](std::uint64_t ts_ms)
     {
-        if (on_jump_to_date_requested)
-        {
-            on_jump_to_date_requested();
-        }
+        if (on_date_jump)
+            on_date_jump(ts_ms);
     };
     header_->on_threads_requested = [this]
     {

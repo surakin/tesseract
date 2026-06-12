@@ -1718,7 +1718,7 @@ void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy)
     {
         return;
     }
-    if (root_->dispatch_wheel(
+    if (dispatch_wheel(
             {static_cast<float>(p.x), static_cast<float>(p.y)},
             static_cast<float>(dx), static_cast<float>(dy)))
     {

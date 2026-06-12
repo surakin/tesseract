@@ -89,7 +89,6 @@ constexpr UINT WM_TESSERACT_VIDEO_BYTES = WM_APP + 19;
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE = WM_APP + 21;
 constexpr UINT WM_TESSERACT_POST_TO_UI = WM_APP + 22;
-constexpr UINT WM_TESSERACT_JUMP_DONE = WM_APP + 23;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE = WM_APP + 25;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_DONE = WM_APP + 26;
 constexpr UINT WM_TESSERACT_FILE_BYTES = WM_APP + 27;
@@ -187,13 +186,6 @@ private:
     // Posted-message payloads — see WM_TESSERACT_* constants above. The
     // posting code transfers ownership of each heap-allocated payload to
     // the receiving handler.
-    struct JumpDonePayload
-    {
-        bool ok;
-        std::string room_id;
-        std::string event_id;  // valid when ok == true
-        std::string error_msg; // valid when ok == false
-    };
     struct NotificationPayload
     {
         std::string room_id;
@@ -222,8 +214,6 @@ private:
     void open_message_search_();
     void close_message_search_();
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
-    void openJumpToDateDialog();
-    void on_tesseract_jump_done(JumpDonePayload* p);
     void on_tesseract_rooms(RoomsPayload* payload);
     void refresh_room_list();
     /// Kick off back-pagination on a worker thread.

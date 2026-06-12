@@ -389,6 +389,11 @@ protected:
     // widget so a captured widget can clean up its pressed state.
     void dispatch_pointer_leave();
 
+    // Wheel: route into an open popup when the pointer is inside it; otherwise
+    // route into the widget tree. Never dismisses the popup (wheel outside just
+    // reaches the tree beneath). Returns true if the event was consumed.
+    bool dispatch_wheel(Point world, float dx, float dy);
+
     // Hook returning the root widget the dispatch operates on. Each subclass
     // owns its `root_` (a std::unique_ptr<Widget>) and returns `root_.get()`.
     virtual Widget* input_root_() const = 0;
