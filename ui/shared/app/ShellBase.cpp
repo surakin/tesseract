@@ -2910,7 +2910,10 @@ void ShellBase::handle_search_results_ui_(
             hit.room_name = hit.room_id;
     }
     if (main_app_ && main_app_->message_search())
+    {
         main_app_->message_search()->set_results(std::move(results), for_query);
+        schedule_relayout_();
+    }
 }
 
 void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
@@ -2926,7 +2929,10 @@ void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
     if (request_id != search_request_id_)
         return;
     if (main_app_ && main_app_->message_search())
+    {
         main_app_->message_search()->set_results({}, for_query);
+        schedule_relayout_();
+    }
 }
 
 void ShellBase::start_search_index_stats_poll_()
