@@ -4675,6 +4675,11 @@ void MessageListView::begin_switch_loading()
     // the new room's header. The new room's populated snapshot arrives via
     // set_messages(.., room_switch=true), which cancels this state.
     messages_.clear();
+    // Discard any in-flight pagination state from the previous room. A stale
+    // paginating_=true would silently buffer the new room's live appends;
+    // stale pending_prepends_ entries would corrupt the new room's list on flush.
+    paginating_ = false;
+    pending_prepends_.clear();
     adapter_->clear_layout_cache();
     video_playlist_.clear();
     invalidate_data();
