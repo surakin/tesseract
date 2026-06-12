@@ -190,6 +190,7 @@ void MessageSearchView::open()
     results_.clear();
     have_searched_ = false;
     press_outside_ = false;
+    max_card_h_ = 0.0f;
     is_open_ = true;
     set_visible(true);
     if (list_)
@@ -297,6 +298,9 @@ void MessageSearchView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
     ch = std::max(ch, chrome_h + kRowH);
     ch = std::min(ch, max_h);
+
+    max_card_h_ = std::max(max_card_h_, ch);
+    ch = max_card_h_;
 
     const float cx = bounds.x + (bounds.w - cw) * 0.5f;
     float cy = bounds.y + (bounds.h - ch) * 0.38f; // bias above centre

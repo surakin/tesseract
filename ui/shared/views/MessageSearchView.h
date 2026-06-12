@@ -122,6 +122,11 @@ private:
     // True while a pointer-down landed on the dim backdrop (outside the card);
     // a pointer-up that also lands outside dismisses the overlay.
     bool press_outside_ = false;
+    // Monotonically non-decreasing within an open session: once the card has
+    // grown to accommodate results it never shrinks back when the user keeps
+    // typing (which clears results and re-triggers arrange before the next
+    // search response arrives).
+    float max_card_h_ = 0.0f;
 };
 
 } // namespace tesseract::views
