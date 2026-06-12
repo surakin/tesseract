@@ -114,6 +114,7 @@ SettingsView::SettingsView()
     };
     privacy->on_index_messages_changed = [this](bool v)
     {
+        if (request_repaint_) request_repaint_();
         if (on_index_messages_changed) on_index_messages_changed(v);
     };
     // on_export_keys / on_import_keys are wired in set_controller()
