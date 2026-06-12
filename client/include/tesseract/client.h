@@ -878,6 +878,11 @@ public:
     /// cheap single-aggregate read; not for hot paths.
     SearchIndexStats search_index_stats() const;
 
+    /// On-disk size of the search index in bytes, measured via the SQLite
+    /// `dbstat` virtual table (an O(pages) B-tree walk). Call once when the
+    /// Settings panel opens — not on the 2-second poll tick.
+    std::uint64_t search_index_size_bytes() const;
+
     /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying the
     /// `fi.mau.gif` vendor hint (autoplay/loop/muted). `thumb_bytes` is a
     /// static poster image (`thumb_mime`, e.g. "image/png"; empty to omit).

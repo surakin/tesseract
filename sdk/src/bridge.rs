@@ -445,11 +445,15 @@ pub mod ffi {
     /// Summary of the local search index for the Settings panel.
     /// `backfill_done` is true once the one-time history crawl has finished a
     /// full pass; `oldest_ts_ms` is 0 when the index is empty.
+    /// `index_bytes` is populated separately via `search_index_size_bytes`
+    /// (the `dbstat` walk is computed once on panel open, not on every poll).
     struct SearchIndexStats {
         message_count: u64,
         room_count: u64,
         oldest_ts_ms: u64,
         backfill_done: bool,
+        /// Always 0 in this struct; populated C++-side from `search_index_size_bytes`.
+        index_bytes: u64,
     }
 
     /// Snapshot of the server-side key-backup state plus a running counter of
@@ -1747,7 +1751,15 @@ pub mod ffi {
         /// Synchronous summary of the local search index (message/room counts,
         /// oldest indexed timestamp, backfill-complete flag) for the Settings
         /// panel. Cheap single-aggregate read; not for hot paths.
+        /// `index_bytes` in the returned struct is always 0; use
+        /// `search_index_size_bytes` for the on-disk size (dbstat walk, once on
+        /// panel open only).
         fn search_index_stats(self: &ClientFfi) -> SearchIndexStats;
+
+        /// On-disk size of the search index in bytes via the SQLite `dbstat`
+        /// virtual table. This is an O(pages) B-tree walk — call only once when
+        /// the Settings panel opens, not on the 2-second refresh poll.
+        fn search_index_size_bytes(self: &ClientFfi) -> u64;
 
         /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying
         /// the `fi.mau.gif` vendor hint. `thumb_bytes` is a static poster image

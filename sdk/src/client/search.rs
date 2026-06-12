@@ -108,6 +108,22 @@ pub struct IndexStats {
     pub backfill_done: bool,
 }
 
+/// On-disk space consumed by the search index tables and the FTS5 shadow tables.
+///
+/// Uses the `dbstat` virtual table, which counts live SQLite pages. This is a
+/// full B-tree walk (O(pages)), so it should only be called when the Settings
+/// panel first opens — not on every 2-second refresh tick.
+pub fn index_size_bytes(conn: &Connection) -> u64 {
+    conn.query_row(
+        "SELECT COALESCE(SUM(pgsize), 0) FROM dbstat \
+         WHERE name IN ('message_index', 'search_state') OR name LIKE 'message_fts%'",
+        [],
+        |r| r.get::<_, i64>(0),
+    )
+    .map(|n| n.max(0) as u64)
+    .unwrap_or(0)
+}
+
 /// Compute index stats in a single table scan.
 pub fn stats(conn: &Connection) -> IndexStats {
     let (message_count, room_count, oldest_ts_ms) = conn
@@ -462,6 +478,16 @@ impl ClientFfi {
         }
     }
 
+    /// On-disk size of the search index tables — a `dbstat` B-tree walk. Must
+    /// only be called once when the Settings panel opens (not on the 2s poll).
+    pub fn search_index_size_bytes(&self) -> u64 {
+        let guard = self.app_cache_db.lock();
+        match guard.as_ref() {
+            Some(conn) => index_size_bytes(conn),
+            None => 0,
+        }
+    }
+
     /// Synchronous index-stats read for the Settings panel. A single aggregate
     /// scan, called only while that panel is open (one-shot + a slow poll), so
     /// it is not on any hot path. Returns zeros when the DB isn't open.
@@ -475,6 +501,7 @@ impl ClientFfi {
                     room_count: s.room_count,
                     oldest_ts_ms: s.oldest_ts_ms,
                     backfill_done: s.backfill_done,
+                    index_bytes: 0, // populated C++-side from search_index_size_bytes
                 }
             }
             None => crate::ffi::SearchIndexStats {
@@ -482,6 +509,7 @@ impl ClientFfi {
                 room_count: 0,
                 oldest_ts_ms: 0,
                 backfill_done: false,
+                index_bytes: 0,
             },
         }
     }

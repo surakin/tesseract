@@ -1970,6 +1970,10 @@ protected:
     // it once.
     tesseract::views::SettingsView* stats_settings_view_ = nullptr;
     bool search_stats_panel_open_ = false;
+    /// On-disk index size computed once via `dbstat` when the Settings panel
+    /// opens; injected into `SearchIndexStats` before passing to the UI so the
+    /// expensive B-tree walk is not repeated on every 2-second poll tick.
+    std::uint64_t cached_index_bytes_ = 0;
 
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,

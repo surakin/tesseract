@@ -1028,6 +1028,14 @@ SearchIndexStats Client::search_index_stats() const
     return from_ffi(impl_->ffi->search_index_stats());
 }
 
+std::uint64_t Client::search_index_size_bytes() const
+{
+    if (!impl_)
+        return 0;
+    SH_FFI;
+    return impl_->ffi->search_index_size_bytes();
+}
+
 Result Client::send_gif_video(
     const std::string& room_id, const std::vector<uint8_t>& mp4_bytes,
     const std::string& mime_type, const std::string& body, std::uint32_t width,

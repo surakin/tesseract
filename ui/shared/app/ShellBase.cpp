@@ -2932,6 +2932,9 @@ void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
 void ShellBase::start_search_index_stats_poll_()
 {
     search_stats_panel_open_ = true;
+    // Compute the on-disk size exactly once when the panel opens; the `dbstat`
+    // B-tree walk is not cheap enough to repeat on every 2-second poll tick.
+    cached_index_bytes_ = client_ ? client_->search_index_size_bytes() : 0;
     refresh_search_index_stats_();
 }
 
@@ -2948,6 +2951,7 @@ void ShellBase::refresh_search_index_stats_()
     const bool enabled = tesseract::Settings::instance().index_messages_for_search;
     tesseract::SearchIndexStats stats =
         client_ ? client_->search_index_stats() : tesseract::SearchIndexStats{};
+    stats.index_bytes = cached_index_bytes_;
     stats_settings_view_->set_search_index_stats(stats, enabled);
     // Keep polling (slowly) only while the panel is open, indexing is on, and
     // the history backfill is still running — so the counts tick up live but

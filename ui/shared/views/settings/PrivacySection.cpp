@@ -4,6 +4,7 @@
 
 #include "tesseract/settings.h"
 
+#include <cstdio>
 #include <ctime>
 #include <memory>
 #include <string>
@@ -20,6 +21,24 @@ std::string group_thousands(std::uint64_t n)
     for (int i = static_cast<int>(s.size()) - 3; i > 0; i -= 3)
         s.insert(static_cast<std::size_t>(i), ",");
     return s;
+}
+
+// "~1.2 MB" / "~456 KB" from a byte count; empty when 0.
+std::string format_bytes(std::uint64_t bytes)
+{
+    if (bytes == 0)
+        return {};
+    if (bytes >= 1'000'000u)
+    {
+        double mb = static_cast<double>(bytes) / 1'000'000.0;
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "~%.1f MB", mb);
+        return buf;
+    }
+    std::uint64_t kb = (bytes + 999u) / 1000u;
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "~%llu KB", static_cast<unsigned long long>(kb));
+    return buf;
 }
 
 // "March 2024" from a Unix-ms timestamp; empty when 0.
@@ -136,9 +155,13 @@ void PrivacySection::set_search_index_stats(
     else
     {
         const char* status = stats.backfill_done ? "up to date" : "indexing…";
-        search_stats_label_->set_text(
+        std::string line =
             group_thousands(stats.message_count) + " messages across " +
-            group_thousands(stats.room_count) + " rooms · " + status);
+            group_thousands(stats.room_count) + " rooms · " + status;
+        const std::string sz = format_bytes(stats.index_bytes);
+        if (!sz.empty())
+            line += " · " + sz;
+        search_stats_label_->set_text(line);
     }
     search_stats_label_->set_visible(true);
 

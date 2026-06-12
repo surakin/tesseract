@@ -619,6 +619,9 @@ struct SearchIndexStats
     std::uint64_t room_count = 0;
     std::uint64_t oldest_ts_ms = 0;
     bool backfill_done = false;
+    /// On-disk size from `dbstat`; populated C++-side once per panel open (not
+    /// carried through the FFI struct to avoid an O(pages) walk on every poll).
+    std::uint64_t index_bytes = 0;
 };
 
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via
