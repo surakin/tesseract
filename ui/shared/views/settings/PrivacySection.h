@@ -13,6 +13,8 @@
 
 #include "tk/controls.h"
 
+#include <tesseract/types.h>
+
 #include <functional>
 
 namespace tesseract::views
@@ -29,6 +31,12 @@ public:
 
     // Silently update the message-search-index checkbox without firing.
     void set_index_messages(bool enabled);
+
+    // Update the index-stats lines under the checkbox. Shown only while
+    // `enabled`; hidden otherwise. Called by the shell on settings-open and on
+    // a slow poll while the history backfill runs.
+    void set_search_index_stats(const tesseract::SearchIndexStats& stats,
+                                bool enabled);
 
     // Fired with the new state when the presence checkbox is toggled.
     std::function<void(bool)> on_send_presence_changed;
@@ -50,6 +58,8 @@ public:
 private:
     tk::CheckButton* presence_cb_ = nullptr;
     tk::CheckButton* search_index_cb_ = nullptr;
+    tk::Label* search_stats_label_ = nullptr; // counts + status
+    tk::Label* search_date_label_ = nullptr;  // "covers messages since …"
 };
 
 } // namespace tesseract::views

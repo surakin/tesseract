@@ -3900,10 +3900,12 @@ void MainWindow::openSettings()
         settingsWidget_ = new SettingsWidget(this);
         settingsWidget_->set_theme(current_theme_);
         contentStack_->addWidget(settingsWidget_);
+        stats_settings_view_ = settingsWidget_->settings_view();
 
         connect(settingsWidget_, &SettingsWidget::settingsClosed, this,
                 [this]
                 {
+                    stop_search_index_stats_poll_();
                     contentStack_->setCurrentWidget(mainAppSurface_);
                 });
         connect(settingsWidget_, &SettingsWidget::logoutRequested, this,
@@ -4015,6 +4017,7 @@ void MainWindow::openSettings()
     });
 
     contentStack_->setCurrentWidget(settingsWidget_);
+    start_search_index_stats_poll_();
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)

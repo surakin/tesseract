@@ -328,6 +328,15 @@ void SettingsView::set_index_messages_pref(bool enabled)
     }
 }
 
+void SettingsView::set_search_index_stats(
+    const tesseract::SearchIndexStats& stats, bool enabled)
+{
+    if (privacy_)
+    {
+        privacy_->set_search_index_stats(stats, enabled);
+    }
+}
+
 void SettingsView::set_server_info(const tesseract::ServerInfo& info)
 {
     if (server_section_)

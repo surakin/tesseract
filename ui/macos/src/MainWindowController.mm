@@ -254,6 +254,9 @@ public:
     using ShellBase::handle_send_presence_toggle_;
     using ShellBase::handle_index_messages_toggle_;
     using ShellBase::apply_media_preview_config_;
+    using ShellBase::stats_settings_view_;
+    using ShellBase::start_search_index_stats_poll_;
+    using ShellBase::stop_search_index_stats_poll_;
     using ShellBase::inflight_dot_color_;
     using ShellBase::inflight_total_;
     using ShellBase::is_pinned_window_;
@@ -4389,6 +4392,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             std::make_unique<tk::macos::Surface>(tk::Theme::light());
         auto view = std::make_unique<tesseract::views::SettingsView>();
         _settingsView = view.get();
+        _shell->stats_settings_view_ = _settingsView;
         __weak MainWindowController* ws = self;
         _settingsView->on_close = [ws]
         {
@@ -4397,6 +4401,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
+            s->_shell->stop_search_index_stats_poll_();
             NSView* mainAppView =
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
@@ -6257,6 +6262,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     mainAppView.hidden = YES;
     ((__bridge NSView*)_settingsSurface->view_handle()).hidden = NO;
+    _shell->start_search_index_stats_poll_();
 }
 
 - (void)_populateUserStrip

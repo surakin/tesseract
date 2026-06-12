@@ -53,6 +53,7 @@ namespace views
 class ComposeBar;
 class MainAppWidget;
 class RoomView;
+class SettingsView;
 }
 
 // ShellBase holds all state and platform-agnostic logic that is identical
@@ -182,6 +183,7 @@ public:
         RoomSearch,
         SaveSettings,
         MessageSearch,
+        SearchStats,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -1954,6 +1956,20 @@ protected:
     // Resume live search indexing for a freshly-synced account if the global
     // "index messages for search" preference is enabled. Called after start_sync.
     void apply_search_indexing_pref_(tesseract::AccountSession& session);
+
+    // ── Search-index stats (Settings panel) ───────────────────────────────
+    // Each shell points `settings_view_` at its shared SettingsView once, and
+    // calls start_/stop_ when its Settings panel opens/closes. The refresh
+    // fetches stats from the active account's client and pushes them to the
+    // view, re-arming a slow poll while the history backfill runs.
+    void start_search_index_stats_poll_();
+    void stop_search_index_stats_poll_();
+    void refresh_search_index_stats_();
+    // Borrowed pointer to the shell's shared SettingsView (named distinctly so
+    // it never shadows a shell's own `settings_view_` member). Each shell sets
+    // it once.
+    tesseract::views::SettingsView* stats_settings_view_ = nullptr;
+    bool search_stats_panel_open_ = false;
 
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,

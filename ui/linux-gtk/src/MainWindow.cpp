@@ -2373,9 +2373,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         gtk_widget_set_hexpand(w, TRUE);
         gtk_widget_set_vexpand(w, TRUE);
         gtk_stack_add_named(GTK_STACK(content_stack_), w, "settings");
+        stats_settings_view_ = settings_widget_->settings_view();
 
         settings_widget_->on_close = [this]
         {
+            stop_search_index_stats_poll_();
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
         };
         settings_widget_->on_logout = [this]
@@ -5078,6 +5080,7 @@ void MainWindow::open_settings_()
     });
 
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
+    start_search_index_stats_poll_();
 }
 
 void MainWindow::do_logout()

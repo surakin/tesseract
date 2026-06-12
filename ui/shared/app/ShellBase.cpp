@@ -11,6 +11,7 @@
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MainAppWidget.h"
 #include "views/RoomListView.h"
+#include "views/SettingsView.h"
 #include "views/RoomView.h"
 #include "views/UserInfo.h"
 #include "views/html_spans.h"
@@ -2926,6 +2927,41 @@ void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
         return;
     if (main_app_ && main_app_->message_search())
         main_app_->message_search()->set_results({}, for_query);
+}
+
+void ShellBase::start_search_index_stats_poll_()
+{
+    search_stats_panel_open_ = true;
+    refresh_search_index_stats_();
+}
+
+void ShellBase::stop_search_index_stats_poll_()
+{
+    search_stats_panel_open_ = false;
+    cancel_debounce_(DebounceSlot::SearchStats);
+}
+
+void ShellBase::refresh_search_index_stats_()
+{
+    if (!search_stats_panel_open_ || !stats_settings_view_)
+        return;
+    const bool enabled = tesseract::Settings::instance().index_messages_for_search;
+    tesseract::SearchIndexStats stats =
+        client_ ? client_->search_index_stats() : tesseract::SearchIndexStats{};
+    stats_settings_view_->set_search_index_stats(stats, enabled);
+    // Keep polling (slowly) only while the panel is open, indexing is on, and
+    // the history backfill is still running — so the counts tick up live but
+    // we stop once it's "up to date". The debounce generation guard prevents
+    // overlapping loops if start_ is called again.
+    if (enabled && !stats.backfill_done)
+    {
+        debounce_(DebounceSlot::SearchStats, 2000,
+                  [this] { refresh_search_index_stats_(); });
+    }
+    else
+    {
+        cancel_debounce_(DebounceSlot::SearchStats);
+    }
 }
 
 void ShellBase::handle_search_result_activated_(const std::string& room_id,

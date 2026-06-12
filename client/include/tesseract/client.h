@@ -873,6 +873,11 @@ public:
     void search_messages(std::uint64_t request_id, const std::string& query,
                          const std::string& room_id, std::uint32_t limit);
 
+    /// Summary of the local search index (message/room counts, oldest indexed
+    /// timestamp, backfill-complete flag) for the Settings panel. Synchronous,
+    /// cheap single-aggregate read; not for hot paths.
+    SearchIndexStats search_index_stats() const;
+
     /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying the
     /// `fi.mau.gif` vendor hint (autoplay/loop/muted). `thumb_bytes` is a
     /// static poster image (`thumb_mime`, e.g. "image/png"; empty to omit).

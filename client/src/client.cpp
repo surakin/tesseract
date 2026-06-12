@@ -1020,6 +1020,14 @@ void Client::search_messages(std::uint64_t request_id, const std::string& query,
     impl_->ffi->search_messages_async(request_id, query, room_id, limit);
 }
 
+SearchIndexStats Client::search_index_stats() const
+{
+    if (!impl_)
+        return {};
+    SH_FFI;
+    return from_ffi(impl_->ffi->search_index_stats());
+}
+
 Result Client::send_gif_video(
     const std::string& room_id, const std::vector<uint8_t>& mp4_bytes,
     const std::string& mime_type, const std::string& body, std::uint32_t width,

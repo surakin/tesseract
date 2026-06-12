@@ -96,6 +96,36 @@ pub fn mark_backfill_complete(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Summary stats for the Settings panel: how much is indexed and whether the
+/// one-time history crawl has finished.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IndexStats {
+    pub message_count: u64,
+    pub room_count: u64,
+    /// Timestamp (ms) of the oldest indexed message, or 0 when the index is
+    /// empty. Drives the "covers messages since <month year>" line.
+    pub oldest_ts_ms: u64,
+    pub backfill_done: bool,
+}
+
+/// Compute index stats in a single table scan.
+pub fn stats(conn: &Connection) -> IndexStats {
+    let (message_count, room_count, oldest_ts_ms) = conn
+        .query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT room_id), COALESCE(MIN(ts), 0) \
+             FROM message_index",
+            [],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)),
+        )
+        .unwrap_or((0, 0, 0));
+    IndexStats {
+        message_count: message_count.max(0) as u64,
+        room_count: room_count.max(0) as u64,
+        oldest_ts_ms: oldest_ts_ms.max(0) as u64,
+        backfill_done: is_backfill_complete(conn),
+    }
+}
+
 /// Upsert one message into the index. Re-indexing the same `event_id` (an edit
 /// arriving as `m.replace`) updates the stored body in place via the conflict
 /// clause, which fires the `message_au` trigger to refresh the FTS row.
@@ -432,6 +462,30 @@ impl ClientFfi {
         }
     }
 
+    /// Synchronous index-stats read for the Settings panel. A single aggregate
+    /// scan, called only while that panel is open (one-shot + a slow poll), so
+    /// it is not on any hot path. Returns zeros when the DB isn't open.
+    pub fn search_index_stats(&self) -> crate::ffi::SearchIndexStats {
+        let guard = self.app_cache_db.lock();
+        match guard.as_ref() {
+            Some(conn) => {
+                let s = stats(conn);
+                crate::ffi::SearchIndexStats {
+                    message_count: s.message_count,
+                    room_count: s.room_count,
+                    oldest_ts_ms: s.oldest_ts_ms,
+                    backfill_done: s.backfill_done,
+                }
+            }
+            None => crate::ffi::SearchIndexStats {
+                message_count: 0,
+                room_count: 0,
+                oldest_ts_ms: 0,
+                backfill_done: false,
+            },
+        }
+    }
+
     /// Spawn a bounded-concurrency pass that indexes the recent history of every
     /// joined room. Shares `warm_semaphore` with the other warm-up tasks so the
     /// combined pagination load stays bounded. Skips rooms with a live
@@ -669,6 +723,22 @@ mod tests {
         assert!(!is_backfill_complete(&conn));
         mark_backfill_complete(&conn).unwrap();
         assert!(is_backfill_complete(&conn));
+    }
+
+    #[test]
+    fn stats_counts_messages_rooms_and_oldest() {
+        let conn = db();
+        assert_eq!(stats(&conn), IndexStats::default());
+        index_record(&conn, "$e1", "!a:x", "@u:x", "U", 100, "alpha").unwrap();
+        index_record(&conn, "$e2", "!a:x", "@u:x", "U", 300, "beta").unwrap();
+        index_record(&conn, "$e3", "!b:x", "@u:x", "U", 200, "gamma").unwrap();
+        let s = stats(&conn);
+        assert_eq!(s.message_count, 3);
+        assert_eq!(s.room_count, 2);
+        assert_eq!(s.oldest_ts_ms, 100);
+        assert!(!s.backfill_done);
+        mark_backfill_complete(&conn).unwrap();
+        assert!(stats(&conn).backfill_done);
     }
 
     #[test]

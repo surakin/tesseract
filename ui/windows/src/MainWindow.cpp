@@ -3440,6 +3440,7 @@ void MainWindow::on_create(HWND hwnd)
             hInst_, hwnd_, tk::Theme::light());
         auto view = std::make_unique<tesseract::views::SettingsView>();
         settings_view_ = view.get();
+        stats_settings_view_ = settings_view_;
         settings_view_->on_close = [this]
         {
             close_settings_();
@@ -3959,6 +3960,7 @@ void MainWindow::open_settings_()
     {
         ShowWindow(settings_surface_->hwnd(), SW_SHOW);
     }
+    start_search_index_stats_poll_();
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -3968,6 +3970,7 @@ void MainWindow::open_settings_()
 void MainWindow::close_settings_()
 {
     settings_visible_ = false;
+    stop_search_index_stats_poll_();
     if (settings_surface_ && settings_surface_->hwnd())
     {
         ShowWindow(settings_surface_->hwnd(), SW_HIDE);

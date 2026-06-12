@@ -96,6 +96,11 @@ public:
     // Silently initialise the "index messages for search" checkbox.
     void set_index_messages_pref(bool enabled);
 
+    // Update the search-index stats line under the checkbox (shown only while
+    // enabled). Driven by the shell on settings-open and a slow poll.
+    void set_search_index_stats(const tesseract::SearchIndexStats& stats,
+                                bool enabled);
+
     // ----- Server section ---------------------------------------------------
 
     // Populate the Server section with the connected server's info.

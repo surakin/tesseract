@@ -442,6 +442,16 @@ pub mod ffi {
         timestamp_ms: u64,
     }
 
+    /// Summary of the local search index for the Settings panel.
+    /// `backfill_done` is true once the one-time history crawl has finished a
+    /// full pass; `oldest_ts_ms` is 0 when the index is empty.
+    struct SearchIndexStats {
+        message_count: u64,
+        room_count: u64,
+        oldest_ts_ms: u64,
+        backfill_done: bool,
+    }
+
     /// Snapshot of the server-side key-backup state plus a running counter of
     /// imported room keys for this device. Carried by `on_backup_progress`
     /// callbacks and returned by `backup_state()`.
@@ -1733,6 +1743,11 @@ pub mod ffi {
             room_id: &str,
             limit: u32,
         );
+
+        /// Synchronous summary of the local search index (message/room counts,
+        /// oldest indexed timestamp, backfill-complete flag) for the Settings
+        /// panel. Cheap single-aggregate read; not for hot paths.
+        fn search_index_stats(self: &ClientFfi) -> SearchIndexStats;
 
         /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying
         /// the `fi.mau.gif` vendor hint. `thumb_bytes` is a static poster image

@@ -609,6 +609,18 @@ struct SearchHit
     std::uint64_t timestamp_ms = 0;
 };
 
+/// Summary of the local full-text search index, for the Settings panel.
+/// Mirrors the `SearchIndexStats` cxx bridge struct. `backfill_done` is true
+/// once the one-time history crawl has finished; `oldest_ts_ms` is 0 when the
+/// index is empty.
+struct SearchIndexStats
+{
+    std::uint64_t message_count = 0;
+    std::uint64_t room_count = 0;
+    std::uint64_t oldest_ts_ms = 0;
+    bool backfill_done = false;
+};
+
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via
 /// `IEventHandler::on_room_list_state` so UIs can render a "Syncing
 /// rooms…" indicator while the joined-room set is still being hydrated.
