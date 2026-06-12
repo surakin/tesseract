@@ -146,36 +146,25 @@ pub(super) async fn handle_timeline_diff(
     if cancelled.load(Ordering::Acquire) { return; }
     match diff {
         VectorDiff::Append { values } => {
-            // Convert items first (each .await may yield to the tokio scheduler,
-            // letting the Qt event loop run between conversions). Collect the
-            // results, then emit them all in one lock-hold so no Qt paint can
-            // slip between individual inserts and show them one-by-one.
-            let mut batch: Vec<(u64, TimelineEvent)> =
-                Vec::with_capacity(values.len());
-            for item in &values {
+            for item in values {
                 let ev = filter_for_channel(
-                    timeline_item_to_ffi(item, room_id, room, me).await,
+                    timeline_item_to_ffi(&item, room_id, room, me).await,
                     channel,
                 );
                 if let Some(ev) = ev {
                     let idx = visible_len(visible);
                     visible.push(true);
                     visible_ids.push(ev.event_id.clone());
-                    batch.push((idx, ev));
+                    {
+                        let g = handler.lock();
+                        emit_inserted(&g, channel, room_id, idx, &ev);
+                    }
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
+                    }
                 } else {
                     visible.push(false);
                     visible_ids.push(String::new());
-                }
-            }
-            if !batch.is_empty() {
-                let g = handler.lock();
-                for (idx, ev) in &batch {
-                    emit_inserted(&g, channel, room_id, *idx, ev);
-                }
-            }
-            if let Some(ix) = search_index {
-                for (_, ev) in &batch {
-                    ix.index_event(ev);
                 }
             }
         }

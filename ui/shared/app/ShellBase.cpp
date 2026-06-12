@@ -5644,30 +5644,15 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                     if (state.in_flight || state.reached_start)
                         return;
                     state.in_flight = true;
-                    // Buffer VectorDiff::PushFront inserts (back-pagination
-                    // diffs) into pending_prepends_ so they flush as one batch
-                    // on completion instead of one-at-a-time visible
-                    // insertions. Mirrors the set_paginating(true) the platform
-                    // shells call before paginate_back_async.
-                    if (current_room_id_ == room_id && room_view_)
-                        room_view_->set_paginating(true);
                     run_async_(
                         [this, sess, room_id,
                          visible_ids = std::move(visible_ids)]() mutable
                         {
                             if (!sess->client)
                             {
-                                post_to_ui_(
-                                    [this, room_id]()
-                                    {
-                                        pagination_[room_id].in_flight = false;
-                                        if (current_room_id_ == room_id &&
-                                            room_view_)
-                                        {
-                                            room_view_->set_paginating(false);
-                                            schedule_relayout_();
-                                        }
-                                    });
+                                post_to_ui_([this, room_id]()
+                                            { pagination_[room_id].in_flight =
+                                                  false; });
                                 return;
                             }
                             auto pr = sess->client->paginate_back_with_status(
@@ -5681,14 +5666,6 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                                     if (current_room_id_ == room_id)
                                         pagination_[room_id].reached_start =
                                             reached;
-                                    if (current_room_id_ == room_id &&
-                                        room_view_)
-                                    {
-                                        room_view_->set_paginating(false);
-                                        // flush_pending_prepends_ may have
-                                        // armed the scroll anchor
-                                        schedule_relayout_();
-                                    }
                                 });
                         });
                 });
