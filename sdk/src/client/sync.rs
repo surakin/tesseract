@@ -180,10 +180,11 @@ impl ClientFfi {
             let packs_cache = Arc::clone(&self.image_packs);
             let write_pending = Arc::clone(&self.user_pack_write_pending);
             let packs_dirty = Arc::clone(&self.packs_dirty);
-            // Open the per-account app cache DB for this session.
-            // Load persisted timestamps now so the first on_rooms_updated()
-            // already classifies rooms correctly; the connection stays open
-            // until the next start_sync (account switch) or app exit.
+            // Open the per-account cache DBs for this session.
+            // Load persisted backfill timestamps now so the first
+            // on_rooms_updated() already classifies rooms correctly;
+            // both connections stay open until the next start_sync
+            // (account switch) or app exit.
             {
                 // data_dir is already the per-account SDK store dir; only
                 // open if we're actually logged in (user_id is known).
@@ -192,12 +193,20 @@ impl ClientFfi {
                         let mut db = self.app_cache_db.lock();
                         *db = None; // close any previous session's connection
                     }
+                    {
+                        let mut db = self.search_db.lock();
+                        *db = None; // close any previous session's connection
+                    }
                     if let Some(conn) = open_app_cache_db(&self.data_dir) {
                         load_backfill_ts_conn(&conn, &self.backfill_previews);
                         {
                             let mut db = self.app_cache_db.lock();
                             *db = Some(conn);
                         }
+                    }
+                    if let Some(conn) = open_search_db(&self.data_dir) {
+                        let mut db = self.search_db.lock();
+                        *db = Some(conn);
                     }
                 }
             }

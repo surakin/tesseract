@@ -3,8 +3,8 @@
 //! matrix-sdk ships no search, and the Matrix server-side `/search` endpoint
 //! cannot see into encrypted rooms. The only way to search E2EE history is to
 //! index the already-decrypted message bodies locally. This module owns a
-//! SQLite FTS5 index living in the per-account `app_cache.db` (created in
-//! `backfill::open_app_cache_db`).
+//! SQLite FTS5 index living in the per-account `search_index.db` (created in
+//! `backfill::open_search_db`).
 //!
 //! The functions here are pure over a `&rusqlite::Connection` so they unit-test
 //! against an in-memory DB without the live client (mirrors the `#[cfg(test)]`
@@ -445,7 +445,7 @@ impl ClientFfi {
     /// pass it unconditionally.
     pub(super) fn search_index_ctx(&self) -> Option<SearchIndexCtx> {
         Some(SearchIndexCtx {
-            db: Arc::clone(&self.app_cache_db),
+            db: Arc::clone(&self.search_db),
             enabled: Arc::clone(&self.search_indexing_enabled),
         })
     }
@@ -468,7 +468,7 @@ impl ClientFfi {
             // Clear the on-disk index off the UI thread: a large DELETE + the
             // per-row FTS 'delete' trigger cascade (and lock contention with
             // the indexing/search tasks) must not block the settings window.
-            let db = Arc::clone(&self.app_cache_db);
+            let db = Arc::clone(&self.search_db);
             self.rt.spawn(async move {
                 let guard = db.lock();
                 if let Some(conn) = guard.as_ref() {
@@ -481,7 +481,7 @@ impl ClientFfi {
     /// On-disk size of the search index tables — a `dbstat` B-tree walk. Must
     /// only be called once when the Settings panel opens (not on the 2s poll).
     pub fn search_index_size_bytes(&self) -> u64 {
-        let guard = self.app_cache_db.lock();
+        let guard = self.search_db.lock();
         match guard.as_ref() {
             Some(conn) => index_size_bytes(conn),
             None => 0,
@@ -492,7 +492,7 @@ impl ClientFfi {
     /// scan, called only while that panel is open (one-shot + a slow poll), so
     /// it is not on any hot path. Returns zeros when the DB isn't open.
     pub fn search_index_stats(&self) -> crate::ffi::SearchIndexStats {
-        let guard = self.app_cache_db.lock();
+        let guard = self.search_db.lock();
         match guard.as_ref() {
             Some(conn) => {
                 let s = stats(conn);
@@ -526,7 +526,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return;
         };
-        let db = Arc::clone(&self.app_cache_db);
+        let db = Arc::clone(&self.search_db);
         let enabled = Arc::clone(&self.search_indexing_enabled);
         let semaphore = Arc::clone(&self.warm_semaphore);
         let me = client.user_id().map(|u| u.to_owned());
@@ -594,7 +594,7 @@ impl ClientFfi {
         limit: u32,
     ) {
         let handler = self.handler.clone();
-        let db = Arc::clone(&self.app_cache_db);
+        let db = Arc::clone(&self.search_db);
         let query = query.to_owned();
         let room_filter = if room_id.is_empty() {
             None

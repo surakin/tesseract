@@ -741,8 +741,19 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
          );",
     )
     .ok()?;
-    // Full-text message search index (gated at runtime by the opt-in setting;
-    // the schema is always created so toggling on needs no migration step).
+    Some(conn)
+}
+
+/// Open (or create) the per-account search-index database at
+/// `data_dir/search_index.db` and ensure the FTS schema exists.
+/// Separate from `app_cache.db` so the FTS5 tables live in their own file
+/// and can be cleared independently of the backfill state.
+/// Returns `None` on any I/O or SQL error (treated as a soft failure).
+#[cfg(not(test))]
+pub(super) fn open_search_db(data_dir: &std::path::Path) -> Option<rusqlite::Connection> {
+    let path = data_dir.join("search_index.db");
+    let conn = rusqlite::Connection::open(&path).ok()?;
+    conn.execute_batch("PRAGMA journal_mode=WAL;").ok()?;
     super::search::ensure_schema(&conn).ok()?;
     Some(conn)
 }
