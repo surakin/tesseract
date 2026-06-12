@@ -3627,15 +3627,6 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     const bool animated = msg.kind == MessageRowData::Kind::Video &&
                           (msg.video_autoplay || msg.video_gif);
 
-    // Buffer front-inserts during back-pagination so they can be flushed as
-    // one batch when set_paginating(false) is called. Animated rows (autoplay
-    // / gif video) need start_inline_video() and take the normal path.
-    if (index == 0 && paginating_ && !animated)
-    {
-        pending_prepends_.push_back(std::move(msg));
-        return;
-    }
-
     // Suppress the read marker while the SDK catches up to the new position.
     // update_message() clears this flag when it delivers the updated marker.
     using Kind = MessageRowData::Kind;
@@ -4612,46 +4603,62 @@ void MessageListView::set_historical_mode(bool historical)
     invalidate_data();
 }
 
+void MessageListView::prepend_messages(std::vector<MessageRowData> rows)
+{
+    if (rows.empty())
+        return;
+    const std::size_t n = rows.size();
+    for (std::size_t i = 0; i < n; ++i)
+        adapter_->insert_layout_cache_at(0);
+    preserve_top_through(
+        [&]
+        {
+            messages_.insert(messages_.begin(), rows.begin(), rows.end());
+            for (std::size_t i = 0; i < n; ++i)
+                try_acquire_image_(messages_[i]);
+            invalidate_data();
+        });
+}
+
+void MessageListView::append_messages(std::vector<MessageRowData> rows)
+{
+    if (rows.empty())
+        return;
+    // Drop in-thread replies (defence-in-depth; callers should not send them).
+    rows.erase(
+        std::remove_if(rows.begin(), rows.end(),
+                       [](const MessageRowData& r)
+                       { return !r.thread_root_id.empty(); }),
+        rows.end());
+    if (rows.empty())
+        return;
+
+    const bool at_bottom = scroll_y() + bounds().h + 1.0f >= content_height();
+    // New real messages require the read marker to be repositioned.
+    suppress_read_marker_ = true;
+    for (auto& row : rows)
+    {
+        const bool animated = row.kind == MessageRowData::Kind::Video &&
+                              (row.video_autoplay || row.video_gif);
+        if (animated)
+            start_inline_video(row);
+        messages_.push_back(std::move(row));
+        try_acquire_image_(messages_.back());
+        insert_row(messages_.size() - 1);
+    }
+    if (at_bottom)
+        scroll_to_bottom();
+}
+
 void MessageListView::set_paginating(bool paginating)
 {
     if (paginating_ == paginating)
         return;
     paginating_ = paginating;
     if (paginating)
-    {
         paginate_start_ = std::chrono::steady_clock::now();
-    }
-    else
-    {
-        flush_pending_prepends_();
-    }
     if (request_repaint_)
         request_repaint_();
-}
-
-void MessageListView::flush_pending_prepends_()
-{
-    if (pending_prepends_.empty())
-        return;
-    // Insert N cache slots at position 0, one per queued message.
-    // Calling insert_layout_cache_at(0) N times shifts the existing
-    // slots to positions N..N+old, matching the bulk vector insert below.
-    for (std::size_t i = 0; i < pending_prepends_.size(); ++i)
-        adapter_->insert_layout_cache_at(0);
-    // pending_prepends_[0] = first PushFront received (most recent of the
-    // batch); rbegin..rend inserts oldest-first so messages_[0] ends up
-    // being the oldest paginated event, matching chronological order.
-    preserve_top_through(
-        [&]
-        {
-            messages_.insert(messages_.begin(),
-                             pending_prepends_.rbegin(),
-                             pending_prepends_.rend());
-            for (std::size_t i = 0; i < pending_prepends_.size(); ++i)
-                try_acquire_image_(messages_[i]);
-            invalidate_data();
-        });
-    pending_prepends_.clear();
 }
 
 void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx)

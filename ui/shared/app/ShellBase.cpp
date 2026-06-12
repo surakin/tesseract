@@ -2726,7 +2726,7 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
     if (room_id == current_room_id_ && room_view_)
     {
         room_view_->set_paginating(false);
-        schedule_relayout_(); // flush_pending_prepends_ may have armed the scroll anchor
+        schedule_relayout_();
     }
 }
 
@@ -4260,6 +4260,164 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
         }
     }
     dispatch_message_removed_secondary_(room_id, index);
+}
+
+void ShellBase::handle_messages_prepended_ui_(std::string room_id,
+                                              EventList events)
+{
+    const bool in_thread = !events.empty() && events.front() &&
+                           !events.front()->thread_root_id.empty();
+    if (room_id == current_room_id_ && !in_thread && room_view_)
+    {
+        std::vector<views::MessageRowData> rows;
+        rows.reserve(events.size());
+        for (auto& ev : events)
+        {
+            if (!ev || ev->type == tesseract::EventType::Unhandled)
+                continue;
+            prep_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty())
+                ensure_reply_details_(ev->event_id);
+            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+        if (!rows.empty())
+        {
+            room_view_->prepend_messages(std::move(rows));
+            schedule_relayout_();
+        }
+    }
+    if (!in_thread)
+    {
+        // Events are oldest-first; replicate original PushFront-at-0 order by
+        // dispatching newest-first so each secondary window sees the same
+        // sequence of insert-at-0 calls as the pre-batching code path.
+        for (auto it = events.crbegin(); it != events.crend(); ++it)
+        {
+            if (*it)
+                dispatch_message_inserted_secondary_(room_id, 0, **it);
+        }
+    }
+}
+
+void ShellBase::handle_messages_appended_ui_(std::string room_id,
+                                             EventList events)
+{
+    const bool in_thread = !events.empty() && events.front() &&
+                           !events.front()->thread_root_id.empty();
+    if (room_id == current_room_id_ && !in_thread && room_view_)
+    {
+        std::vector<views::MessageRowData> rows;
+        rows.reserve(events.size());
+        for (auto& ev : events)
+        {
+            if (!ev || ev->type == tesseract::EventType::Unhandled)
+                continue;
+            prep_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty())
+                ensure_reply_details_(ev->event_id);
+            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+        if (!rows.empty())
+        {
+            room_view_->append_messages(std::move(rows));
+            schedule_relayout_();
+        }
+    }
+    if (!in_thread)
+    {
+        for (auto& ev : events)
+        {
+            if (ev)
+                dispatch_message_inserted_secondary_(room_id, SIZE_MAX, *ev);
+        }
+    }
+}
+
+void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
+                                                  std::vector<std::size_t> indices,
+                                                  EventList events)
+{
+    const bool in_thread = !events.empty() && events.front() &&
+                           !events.front()->thread_root_id.empty();
+    if (room_id == current_room_id_ && !in_thread && room_view_)
+    {
+        for (std::size_t i = 0; i < indices.size() && i < events.size(); ++i)
+        {
+            auto& ev = events[i];
+            if (!ev || ev->type == tesseract::EventType::Unhandled)
+                continue;
+            prep_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty())
+                ensure_reply_details_(ev->event_id);
+            room_view_->update_message(
+                indices[i],
+                tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+        if (!indices.empty())
+            schedule_relayout_();
+    }
+    if (!in_thread)
+    {
+        for (std::size_t i = 0; i < indices.size() && i < events.size(); ++i)
+        {
+            if (events[i])
+                dispatch_message_updated_secondary_(room_id, indices[i], *events[i]);
+        }
+    }
+}
+
+void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
+                                                     std::string thread_root,
+                                                     EventList events)
+{
+    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+        return;
+    if (!room_view_)
+        return;
+    auto* tl = room_view_->thread_view();
+    if (!tl)
+        return;
+    std::vector<views::MessageRowData> rows;
+    rows.reserve(events.size());
+    for (auto& ev : events)
+    {
+        if (!ev || ev->type == tesseract::EventType::Unhandled)
+            continue;
+        prep_row_media_(*ev);
+        rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+    }
+    if (!rows.empty())
+    {
+        tl->message_list()->prepend_messages(std::move(rows));
+        schedule_relayout_();
+    }
+}
+
+void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
+                                                    std::string thread_root,
+                                                    EventList events)
+{
+    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+        return;
+    if (!room_view_)
+        return;
+    auto* tl = room_view_->thread_view();
+    if (!tl)
+        return;
+    std::vector<views::MessageRowData> rows;
+    rows.reserve(events.size());
+    for (auto& ev : events)
+    {
+        if (!ev || ev->type == tesseract::EventType::Unhandled)
+            continue;
+        prep_row_media_(*ev);
+        rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+    }
+    if (!rows.empty())
+    {
+        tl->message_list()->append_messages(std::move(rows));
+        schedule_relayout_();
+    }
 }
 
 void ShellBase::handle_thread_reset_ui_(std::string room_id,

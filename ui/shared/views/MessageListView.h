@@ -650,10 +650,14 @@ public:
     // a surface repaint for the change to take effect immediately.
     void set_historical_mode(bool historical);
 
+    /// Bulk-insert events at the front of the timeline (oldest-first in `rows`).
+    void prepend_messages(std::vector<MessageRowData> rows);
+
+    /// Bulk-insert events at the end of the timeline (oldest-first in `rows`).
+    void append_messages(std::vector<MessageRowData> rows);
+
     // Show/hide the back-pagination spinner. Pass true when a back-paginate
-    // request is in flight, false when it completes. While true, incoming
-    // index-0 inserts (non-animated) are buffered and flushed as a single
-    // batch on the false transition to reduce per-insertion layout churn.
+    // request is in flight, false when it completes.
     void set_paginating(bool paginating);
 
     // Enter the room-switch "loading" state: clear the previous room's rows at
@@ -782,15 +786,11 @@ private:
     // ReadMarker row (SDK confirmed the new position).
     bool suppress_read_marker_ = false;
 
-    // Back-pagination in-flight state. While true, index-0 non-animated
-    // inserts are buffered in pending_prepends_ and flushed atomically when
-    // set_paginating(false) is called. A spinner is drawn at the top of the
-    // viewport during this window.
+    // Back-pagination spinner state. Set while a back-paginate is in flight;
+    // a rotating-dots indicator is drawn at the top of the viewport.
     bool paginating_ = false;
     std::chrono::steady_clock::time_point paginate_start_;
-    std::vector<MessageRowData> pending_prepends_;
     void draw_pagination_spinner_(tk::PaintCtx& ctx);
-    void flush_pending_prepends_();
 
     // Room-switch loading state (see begin_switch_loading). While active the
     // list is held empty (clean background) and, once switch_spinner_due_ flips

@@ -50,6 +50,32 @@ public:
     virtual void on_message_removed(const std::string& room_id,
                                     std::size_t index) = 0;
 
+    /// Batch prepend: N older messages added at the front of `room_id`'s
+    /// timeline in one shot (back-pagination result). Events are oldest-first.
+    /// Replaces N individual on_message_inserted(idx=0) calls.
+    virtual void on_messages_prepended(const std::string& /*room_id*/,
+                                       EventList /*events*/)
+    {
+    }
+
+    /// Batch append: N newer messages added at the end of `room_id`'s timeline
+    /// (forward-pagination, VectorDiff::Append, or a live-sync burst).
+    /// Events are oldest-first.
+    virtual void on_messages_appended(const std::string& /*room_id*/,
+                                      EventList /*events*/)
+    {
+    }
+
+    /// Batch update: multiple visible events replaced simultaneously
+    /// (receipt-refresh pass after fetch_members, or a VectorDiff::Set burst).
+    /// `indices[i]` is the visible-index of `events[i]`; both vectors are
+    /// always the same length.
+    virtual void on_messages_updated_batch(const std::string& /*room_id*/,
+                                           std::vector<std::size_t> /*indices*/,
+                                           EventList /*events*/)
+    {
+    }
+
     /// Thread-timeline twins of the four room-timeline callbacks. `thread_root`
     /// is the thread root event id. Default no-ops so shells opt in later.
     virtual void on_thread_reset(const std::string& /*room_id*/,
@@ -72,6 +98,20 @@ public:
     virtual void on_thread_removed(const std::string& /*room_id*/,
                                    const std::string& /*thread_root*/,
                                    std::size_t /*index*/)
+    {
+    }
+    /// Batch prepend for a thread timeline (back-pagination of thread history).
+    /// Events are oldest-first.
+    virtual void on_thread_messages_prepended(const std::string& /*room_id*/,
+                                              const std::string& /*thread_root*/,
+                                              EventList /*events*/)
+    {
+    }
+    /// Batch append for a thread timeline (forward-pagination or live burst).
+    /// Events are oldest-first.
+    virtual void on_thread_messages_appended(const std::string& /*room_id*/,
+                                             const std::string& /*thread_root*/,
+                                             EventList /*events*/)
     {
     }
 

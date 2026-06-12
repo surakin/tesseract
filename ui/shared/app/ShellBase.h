@@ -1543,6 +1543,13 @@ protected:
                                             std::unique_ptr<Event> ev);
     virtual void handle_message_removed_ui_(std::string room_id,
                                             std::size_t index);
+    virtual void handle_messages_prepended_ui_(std::string room_id,
+                                               EventList events);
+    virtual void handle_messages_appended_ui_(std::string room_id,
+                                              EventList events);
+    virtual void handle_messages_updated_batch_ui_(std::string room_id,
+                                                   std::vector<std::size_t> indices,
+                                                   EventList events);
     virtual void handle_thread_reset_ui_(std::string room_id,
                                          std::string thread_root,
                                          EventList snapshot);
@@ -1557,6 +1564,12 @@ protected:
     virtual void handle_thread_removed_ui_(std::string room_id,
                                            std::string thread_root,
                                            std::size_t index);
+    virtual void handle_thread_messages_prepended_ui_(std::string room_id,
+                                                      std::string thread_root,
+                                                      EventList events);
+    virtual void handle_thread_messages_appended_ui_(std::string room_id,
+                                                     std::string thread_root,
+                                                     EventList events);
     virtual void handle_threads_updated_ui_(std::string room_id);
     // Completion for an async fetch_media_async download. Looks up the pending
     // request by id (ignoring late callbacks for cancelled/superseded requests)

@@ -922,6 +922,18 @@ void RoomView::append_message(MessageRowData msg)
     }
 }
 
+void RoomView::prepend_messages(std::vector<MessageRowData> rows)
+{
+    if (message_list_)
+        message_list_->prepend_messages(std::move(rows));
+}
+
+void RoomView::append_messages(std::vector<MessageRowData> rows)
+{
+    if (message_list_)
+        message_list_->append_messages(std::move(rows));
+}
+
 void RoomView::notify_image_ready(const std::string& url)
 {
     if (message_list_)

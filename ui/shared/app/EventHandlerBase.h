@@ -48,6 +48,13 @@ public:
                             std::unique_ptr<Event> event) override;
     void on_message_removed(const std::string& room_id,
                             std::size_t index) override;
+    void on_messages_prepended(const std::string& room_id,
+                               EventList events) override;
+    void on_messages_appended(const std::string& room_id,
+                              EventList events) override;
+    void on_messages_updated_batch(const std::string& room_id,
+                                   std::vector<std::size_t> indices,
+                                   EventList events) override;
     void
     on_thread_reset(const std::string& room_id,
                     const std::string& thread_root,
@@ -63,6 +70,12 @@ public:
     void on_thread_removed(const std::string& room_id,
                            const std::string& thread_root,
                            std::size_t index) override;
+    void on_thread_messages_prepended(const std::string& room_id,
+                                      const std::string& thread_root,
+                                      EventList events) override;
+    void on_thread_messages_appended(const std::string& room_id,
+                                     const std::string& thread_root,
+                                     EventList events) override;
     void on_threads_updated(const std::string& room_id) override;
     void on_media_ready(std::uint64_t request_id,
                         const std::vector<std::uint8_t>& bytes) override;

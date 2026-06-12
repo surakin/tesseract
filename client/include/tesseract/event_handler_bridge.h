@@ -91,6 +91,17 @@ public:
     /// Remove the event at visible-index `index`.
     void on_message_removed(rust::Str room_id, std::uint64_t index) const;
 
+    /// Batch prepend: N events added at front (back-pagination). Oldest-first.
+    void on_messages_prepended(rust::Str room_id,
+                               const rust::Vec<TimelineEvent>& events) const;
+    /// Batch append: N events added at end. Oldest-first.
+    void on_messages_appended(rust::Str room_id,
+                              const rust::Vec<TimelineEvent>& events) const;
+    /// Batch update: parallel arrays of visible-indices and replacement events.
+    void on_messages_updated_batch(rust::Str room_id,
+                                   const rust::Vec<std::uint64_t>& indices,
+                                   const rust::Vec<TimelineEvent>& events) const;
+
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
     void on_invites_updated(const rust::Vec<InviteInfo>& invites) const;
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
@@ -155,6 +166,10 @@ public:
                            std::uint64_t index, const TimelineEvent& ev) const;
     void on_thread_removed(rust::Str room_id, rust::Str thread_root,
                            std::uint64_t index) const;
+    void on_thread_messages_prepended(rust::Str room_id, rust::Str thread_root,
+                                      const rust::Vec<TimelineEvent>& events) const;
+    void on_thread_messages_appended(rust::Str room_id, rust::Str thread_root,
+                                     const rust::Vec<TimelineEvent>& events) const;
 
 private:
     // Shared, mutex-guarded handler slot. `const`: the shared_ptr is set once

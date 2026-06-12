@@ -152,6 +152,103 @@ void EventHandlerBase::on_thread_removed(
         });
 }
 
+void EventHandlerBase::on_messages_prepended(const std::string& room_id,
+                                             EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(Payload{room_id, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_messages_prepended_ui_(std::move(p->rid),
+                                                 std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_messages_appended(const std::string& room_id,
+                                            EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(Payload{room_id, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_messages_appended_ui_(std::move(p->rid),
+                                                std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_messages_updated_batch(const std::string& room_id,
+                                                 std::vector<std::size_t> indices,
+                                                 EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::vector<std::size_t> idxs;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, std::move(indices), std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_messages_updated_batch_ui_(std::move(p->rid),
+                                                     std::move(p->idxs),
+                                                     std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_thread_messages_prepended(
+    const std::string& room_id, const std::string& thread_root,
+    EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::string root;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, thread_root, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_thread_messages_prepended_ui_(std::move(p->rid),
+                                                        std::move(p->root),
+                                                        std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_thread_messages_appended(
+    const std::string& room_id, const std::string& thread_root,
+    EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::string root;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, thread_root, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_thread_messages_appended_ui_(std::move(p->rid),
+                                                       std::move(p->root),
+                                                       std::move(p->evs));
+        });
+}
+
 void EventHandlerBase::on_threads_updated(const std::string& room_id)
 {
     shell()->post_to_ui_(

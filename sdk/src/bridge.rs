@@ -639,6 +639,34 @@ pub mod ffi {
         /// Remove the event at visible-index `index`.
         fn on_message_removed(self: &EventHandlerBridge, room_id: &str, index: u64);
 
+        /// Batch prepend: N older messages added at the front of `room_id`'s
+        /// timeline (back-pagination). Events are oldest-first so C++ can
+        /// insert them at the front in one pass. Replaces N individual
+        /// `on_message_inserted(idx=0)` calls.
+        fn on_messages_prepended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            events: &Vec<TimelineEvent>,
+        );
+        /// Batch append: N newer messages added at the end of `room_id`'s
+        /// timeline (forward-pagination, VectorDiff::Append, or a live-sync
+        /// burst of more than one event). Events are oldest-first.
+        fn on_messages_appended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            events: &Vec<TimelineEvent>,
+        );
+        /// Batch update: multiple visible events replaced simultaneously
+        /// (receipt-refresh pass after fetch_members, or a VectorDiff::Set
+        /// burst). `indices` and `events` are parallel arrays of equal length;
+        /// `indices[i]` is the visible-index of `events[i]`.
+        fn on_messages_updated_batch(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            indices: &Vec<u64>,
+            events: &Vec<TimelineEvent>,
+        );
+
         /// Thread-timeline twins of the four room-timeline callbacks. `room_id`
         /// is the host room; `thread_root` is the thread root event id. Indices
         /// follow the same visible-index VectorDiff semantics.
@@ -667,6 +695,22 @@ pub mod ffi {
             room_id: &str,
             thread_root: &str,
             index: u64,
+        );
+        /// Batch prepend for a thread timeline (back-pagination of thread history).
+        /// Events are oldest-first.
+        fn on_thread_messages_prepended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            events: &Vec<TimelineEvent>,
+        );
+        /// Batch append for a thread timeline (forward-pagination or live burst).
+        /// Events are oldest-first.
+        fn on_thread_messages_appended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            events: &Vec<TimelineEvent>,
         );
 
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);

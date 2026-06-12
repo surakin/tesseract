@@ -87,6 +87,8 @@ public:
     void update_message(std::size_t index, MessageRowData msg);
     void remove_message(std::size_t index);
     void append_message(MessageRowData msg);
+    void prepend_messages(std::vector<MessageRowData> rows);
+    void append_messages(std::vector<MessageRowData> rows);
 
     void notify_image_ready(const std::string& url);
     void notify_url_preview_ready(const std::string& url);
