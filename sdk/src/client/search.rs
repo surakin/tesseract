@@ -67,8 +67,33 @@ pub fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
              INSERT INTO message_fts(message_fts, rowid, body)
                  VALUES('delete', old.rowid, old.body);
              INSERT INTO message_fts(rowid, body) VALUES (new.rowid, new.body);
-         END;",
+         END;
+         -- One-row table tracking whether the one-time history backfill has run
+         -- to completion, so an interrupted crawl resumes on the next enable
+         -- rather than being mistaken for 'done' the moment it writes a row.
+         CREATE TABLE IF NOT EXISTS search_state (
+             id            INTEGER PRIMARY KEY CHECK (id = 0),
+             backfill_done INTEGER NOT NULL DEFAULT 0
+         );
+         INSERT OR IGNORE INTO search_state (id, backfill_done) VALUES (0, 0);",
     )
+}
+
+/// True when the one-time history backfill has previously run to completion.
+pub fn is_backfill_complete(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT backfill_done FROM search_state WHERE id = 0",
+        [],
+        |r| r.get::<_, i64>(0),
+    )
+    .map(|n| n != 0)
+    .unwrap_or(false)
+}
+
+/// Record that the history backfill finished a full pass.
+pub fn mark_backfill_complete(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute("UPDATE search_state SET backfill_done = 1 WHERE id = 0", [])?;
+    Ok(())
 }
 
 /// Upsert one message into the index. Re-indexing the same `event_id` (an edit
@@ -107,22 +132,15 @@ pub fn remove_record(conn: &Connection, event_id: &str) -> rusqlite::Result<()> 
     Ok(())
 }
 
-/// True when the index already holds at least one row. Used to skip the
-/// (potentially expensive) history backfill on app launch when the index was
-/// already built in a previous session — live indexing alone keeps it current.
-pub fn is_populated(conn: &Connection) -> bool {
-    conn.query_row("SELECT EXISTS(SELECT 1 FROM message_index)", [], |r| {
-        r.get::<_, i64>(0)
-    })
-    .map(|n| n != 0)
-    .unwrap_or(false)
-}
-
-/// Drop everything from the index (privacy toggle turned off).
+/// Drop everything from the index (privacy toggle turned off) and reset the
+/// backfill-complete marker so re-enabling re-crawls history.
 pub fn clear(conn: &Connection) -> rusqlite::Result<()> {
     // Deleting the rows fires the AD trigger per row, keeping the FTS table in
     // sync; an explicit `DELETE FROM message_fts` is therefore unnecessary.
-    conn.execute_batch("DELETE FROM message_index;")
+    conn.execute_batch(
+        "DELETE FROM message_index;
+         UPDATE search_state SET backfill_done = 0 WHERE id = 0;",
+    )
 }
 
 /// Turn arbitrary user input into a safe FTS5 MATCH expression.
@@ -267,6 +285,20 @@ impl SearchIndexCtx {
             let _ = remove_record(conn, &ev.event_id);
         }
     }
+
+    /// Remove a previously-indexed event by id. Used when a timeline slot that
+    /// held an indexed message converts to something non-renderable for the
+    /// channel (a `Set` whose new value yields `None`), so stale plaintext does
+    /// not linger. No-op when indexing is disabled or the id was never indexed.
+    pub(crate) fn remove_event(&self, event_id: &str) {
+        if event_id.is_empty() || !self.enabled.load(Ordering::Relaxed) {
+            return;
+        }
+        let guard = self.db.lock();
+        if let Some(conn) = guard.as_ref() {
+            let _ = remove_record(conn, event_id);
+        }
+    }
 }
 
 // ── Live FFI entry points ─────────────────────────────────────────────────
@@ -287,26 +319,6 @@ fn deliver_search(
     match result {
         Ok(hits) => g.on_search_results(request_id, &hits),
         Err(e) => g.on_search_failed(request_id, &e),
-    }
-}
-
-/// Resolve a room's display name from the live client, falling back to the raw
-/// room id when the client is gone or the room is unknown.
-#[cfg(not(test))]
-async fn resolve_room_name(client: Option<&matrix_sdk::Client>, room_id: &str) -> String {
-    let Some(client) = client else {
-        return room_id.to_string();
-    };
-    let Ok(rid) = room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() else {
-        return room_id.to_string();
-    };
-    match client.get_room(&rid) {
-        Some(room) => room
-            .display_name()
-            .await
-            .map(|n| n.to_string())
-            .unwrap_or_else(|_| room_id.to_string()),
-        None => room_id.to_string(),
     }
 }
 
@@ -403,27 +415,31 @@ impl ClientFfi {
             return;
         }
         if enabled {
-            // Only backfill history the first time the index is built. On later
-            // launches the index already holds rows, so live indexing alone
-            // keeps it current and we skip the redundant pagination crawl.
-            let already_populated = {
-                let guard = self.app_cache_db.lock();
-                guard.as_ref().map(is_populated).unwrap_or(false)
-            };
-            if !already_populated {
-                self.spawn_index_backfill();
-            }
+            // The backfill checks the completion marker off-thread and skips a
+            // crawl that has already finished.
+            self.spawn_index_backfill();
         } else {
-            let guard = self.app_cache_db.lock();
-            if let Some(conn) = guard.as_ref() {
-                let _ = clear(conn);
-            }
+            // Clear the on-disk index off the UI thread: a large DELETE + the
+            // per-row FTS 'delete' trigger cascade (and lock contention with
+            // the indexing/search tasks) must not block the settings window.
+            let db = Arc::clone(&self.app_cache_db);
+            self.rt.spawn(async move {
+                let guard = db.lock();
+                if let Some(conn) = guard.as_ref() {
+                    let _ = clear(conn);
+                }
+            });
         }
     }
 
     /// Spawn a bounded-concurrency pass that indexes the recent history of every
     /// joined room. Shares `warm_semaphore` with the other warm-up tasks so the
-    /// combined pagination load stays bounded.
+    /// combined pagination load stays bounded. Skips rooms with a live
+    /// foreground timeline (building a second timeline for them would paginate
+    /// history into the stream the user is viewing); their current messages are
+    /// indexed by the live path instead. Runs only once per index — the
+    /// completion marker, set after a full pass, makes re-enables a no-op while
+    /// still resuming an interrupted crawl.
     fn spawn_index_backfill(&self) {
         let Some(client) = self.client.clone() else {
             return;
@@ -432,12 +448,29 @@ impl ClientFfi {
         let enabled = Arc::clone(&self.search_indexing_enabled);
         let semaphore = Arc::clone(&self.warm_semaphore);
         let me = client.user_id().map(|u| u.to_owned());
+        // Fast in-memory snapshot of the foreground rooms to skip.
+        let skip: std::collections::HashSet<matrix_sdk::ruma::OwnedRoomId> =
+            self.timelines.read().keys().cloned().collect();
 
         self.rt.spawn(async move {
+            // Completion check off the UI thread — skip a crawl that already
+            // finished in a prior session.
+            {
+                let guard = db.lock();
+                if let Some(conn) = guard.as_ref() {
+                    if is_backfill_complete(conn) {
+                        return;
+                    }
+                }
+            }
+
             let mut joinset = tokio::task::JoinSet::new();
             for room in client.joined_rooms() {
                 if !enabled.load(Ordering::Relaxed) {
                     break;
+                }
+                if skip.contains(room.room_id()) {
+                    continue;
                 }
                 let db = Arc::clone(&db);
                 let enabled = Arc::clone(&enabled);
@@ -455,6 +488,15 @@ impl ClientFfi {
                 });
             }
             while joinset.join_next().await.is_some() {}
+
+            // Mark complete only if we finished a full pass without being
+            // disabled mid-crawl, so an interrupted crawl is retried next time.
+            if enabled.load(Ordering::Relaxed) {
+                let guard = db.lock();
+                if let Some(conn) = guard.as_ref() {
+                    let _ = mark_backfill_complete(conn);
+                }
+            }
         });
     }
 
@@ -471,7 +513,6 @@ impl ClientFfi {
     ) {
         let handler = self.handler.clone();
         let db = Arc::clone(&self.app_cache_db);
-        let client = self.client.clone();
         let query = query.to_owned();
         let room_filter = if room_id.is_empty() {
             None
@@ -481,41 +522,30 @@ impl ClientFfi {
         let limit = limit.clamp(1, 500);
 
         self.rt.spawn(async move {
-            let raw: Result<Vec<SearchHit>, String> = {
+            // Pure synchronous FTS read — no room-name resolution here. The C++
+            // shell fills SearchHit::room_name from its already-cached room list
+            // (RoomInfo.name) so we avoid a per-result member-store walk on every
+            // keystroke. room_name is left empty on the bridge.
+            let result: Result<Vec<crate::ffi::SearchHit>, String> = {
                 let guard = db.lock();
                 match guard.as_ref() {
                     Some(conn) => search(conn, &query, room_filter.as_deref(), limit)
+                        .map(|hits| {
+                            hits.into_iter()
+                                .map(|h| crate::ffi::SearchHit {
+                                    event_id: h.event_id,
+                                    room_id: h.room_id,
+                                    room_name: String::new(),
+                                    sender: h.sender,
+                                    sender_name: h.sender_name,
+                                    body: h.body,
+                                    timestamp_ms: h.timestamp_ms,
+                                })
+                                .collect()
+                        })
                         .map_err(|e| e.to_string()),
                     None => Err("search index not open".to_string()),
                 }
-            };
-            let result = match raw {
-                Ok(hits) => {
-                    let mut name_cache: std::collections::HashMap<String, String> =
-                        std::collections::HashMap::new();
-                    let mut out: Vec<crate::ffi::SearchHit> = Vec::with_capacity(hits.len());
-                    for h in hits {
-                        let room_name = match name_cache.get(&h.room_id) {
-                            Some(n) => n.clone(),
-                            None => {
-                                let n = resolve_room_name(client.as_ref(), &h.room_id).await;
-                                name_cache.insert(h.room_id.clone(), n.clone());
-                                n
-                            }
-                        };
-                        out.push(crate::ffi::SearchHit {
-                            event_id: h.event_id,
-                            room_id: h.room_id,
-                            room_name,
-                            sender: h.sender,
-                            sender_name: h.sender_name,
-                            body: h.body,
-                            timestamp_ms: h.timestamp_ms,
-                        });
-                    }
-                    Ok(out)
-                }
-                Err(e) => Err(e),
             };
             deliver_search(&handler, request_id, result);
         });
@@ -631,5 +661,25 @@ mod tests {
         let conn = db();
         index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "content").unwrap();
         assert!(search(&conn, "   ", None, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn backfill_marker_defaults_false_and_can_be_set() {
+        let conn = db();
+        assert!(!is_backfill_complete(&conn));
+        mark_backfill_complete(&conn).unwrap();
+        assert!(is_backfill_complete(&conn));
+    }
+
+    #[test]
+    fn clear_resets_backfill_marker() {
+        let conn = db();
+        index_record(&conn, "$e1", "!r:x", "@a:x", "A", 1, "alpha").unwrap();
+        mark_backfill_complete(&conn).unwrap();
+        assert!(is_backfill_complete(&conn));
+        clear(&conn).unwrap();
+        // Index emptied AND the marker reset, so a re-enable re-crawls history.
+        assert!(search(&conn, "alpha", None, 10).unwrap().is_empty());
+        assert!(!is_backfill_complete(&conn));
     }
 }

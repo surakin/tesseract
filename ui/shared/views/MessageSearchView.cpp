@@ -35,9 +35,10 @@ std::string relative_time(std::uint64_t ts_ms)
     const std::uint64_t days = hours / 24;
     if (days < 7)
         return std::to_string(days) + "d";
-    const std::uint64_t weeks = days / 7;
-    if (weeks < 52)
-        return std::to_string(weeks) + "w";
+    // Show weeks up to a full year, then years. Guard on `days` (not `weeks`)
+    // so a ~52-week-old hit renders "52w" rather than rounding to "0y".
+    if (days < 365)
+        return std::to_string(days / 7) + "w";
     return std::to_string(days / 365) + "y";
 }
 

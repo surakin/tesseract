@@ -2867,14 +2867,24 @@ void ShellBase::handle_upload_complete_ui_(std::uint64_t /*request_id*/,
 
 void ShellBase::handle_search_query_(const std::string& query)
 {
-    // Empty query → nothing to search; the overlay shows its prompt.
+    // Empty query → nothing to search; the overlay shows its prompt. Drop any
+    // pending debounced search so a just-cleared field never fires late.
     if (query.empty() || !client_)
+    {
+        cancel_debounce_(DebounceSlot::MessageSearch);
         return;
-    const std::uint64_t id = ++search_request_id_;
-    search_pending_queries_[id] = query;
-    // Global search (empty room filter). Non-blocking; results arrive via
-    // on_search_results → handle_search_results_ui_.
-    client_->search_messages(id, query, std::string(), 200);
+    }
+    // Debounce so a burst of keystrokes issues one FTS query, not one per key.
+    // Correctness is still guarded by the request_id stale-drop below.
+    debounce_(DebounceSlot::MessageSearch, 120, [this, query]() {
+        if (query.empty() || !client_)
+            return;
+        const std::uint64_t id = ++search_request_id_;
+        search_pending_queries_[id] = query;
+        // Global search (empty room filter). Non-blocking; results arrive via
+        // on_search_results → handle_search_results_ui_.
+        client_->search_messages(id, query, std::string(), 200);
+    });
 }
 
 void ShellBase::handle_search_results_ui_(
@@ -2888,6 +2898,16 @@ void ShellBase::handle_search_results_ui_(
     // Drop responses older than the latest issued request.
     if (request_id != search_request_id_)
         return;
+    // Resolve room display names from the already-cached room list (the SDK
+    // deliberately leaves SearchHit::room_name empty to avoid a per-result
+    // member-store walk on every keystroke). Falls back to the room id.
+    for (auto& hit : results)
+    {
+        if (const RoomInfo* ri = room_by_id_(hit.room_id))
+            hit.room_name = ri->name.empty() ? hit.room_id : ri->name;
+        else
+            hit.room_name = hit.room_id;
+    }
     if (main_app_ && main_app_->message_search())
         main_app_->message_search()->set_results(std::move(results), for_query);
 }
@@ -3312,6 +3332,11 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
+    // In-flight searches belong to the outgoing account; their responses route
+    // to that account's (possibly different) shell, so drop the pending map and
+    // any debounced query here rather than leaking entries for them.
+    cancel_debounce_(DebounceSlot::MessageSearch);
+    search_pending_queries_.clear();
 
     // Save the outgoing account's banner state before switching.
     if (active_account_)

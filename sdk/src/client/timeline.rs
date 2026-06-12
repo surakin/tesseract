@@ -291,6 +291,13 @@ pub(super) async fn handle_timeline_diff(
                     if let Some(slot) = visible.get_mut(index) {
                         *slot = false;
                     }
+                    // The slot's event is no longer renderable for this channel;
+                    // drop any index entry so its plaintext doesn't linger.
+                    if let Some(ix) = search_index {
+                        if let Some(old_id) = visible_ids.get(index) {
+                            ix.remove_event(old_id);
+                        }
+                    }
                     if let Some(slot) = visible_ids.get_mut(index) {
                         *slot = String::new();
                     }

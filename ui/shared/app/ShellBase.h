@@ -181,6 +181,7 @@ public:
     {
         RoomSearch,
         SaveSettings,
+        MessageSearch,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,

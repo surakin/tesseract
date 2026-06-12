@@ -2484,9 +2484,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
                                              shortcut);
 
-        // Ctrl+Shift+F: open global message search.
+        // Ctrl+Shift+F: open global message search. GTK normalizes a shifted
+        // key event to the unshifted lowercase keyval before matching, so the
+        // trigger keyval must be lowercase `f` (mirrors the Ctrl+K trigger).
         GtkShortcut* search_sc = gtk_shortcut_new(
-            gtk_keyval_trigger_new(GDK_KEY_F,
+            gtk_keyval_trigger_new(GDK_KEY_f,
                                    GdkModifierType(GDK_CONTROL_MASK |
                                                    GDK_SHIFT_MASK)),
             gtk_callback_action_new(on_message_search_shortcut_, this, nullptr));
