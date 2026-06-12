@@ -54,9 +54,8 @@ namespace tk::win32
 //  Process-wide D2D backend + post-to-UI message
 // ─────────────────────────────────────────────────────────────────────────
 
-// External linkage (declared in host_win32.h): the WIC factory it owns is
-// free-threaded, so worker threads can call decode_image / decode_animation
-// against this backend without marshalling to the UI thread.
+// External linkage (declared in host_win32.h). The WIC factory is STA-bound;
+// see host_win32.h for the threading contract.
 d2d::Backend& backend_singleton()
 {
     static d2d::Backend instance;

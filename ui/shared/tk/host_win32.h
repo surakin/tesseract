@@ -127,8 +127,11 @@ private:
     std::unique_ptr<Host> host_;
 };
 
-// Process-wide D2D backend. WIC factory is free-threaded; safe to use
-// from worker threads for decode_image / decode_animation.
+// Process-wide D2D backend. The WIC factory inside is STA-bound (created on
+// the main thread via OleInitialize).  Worker threads may call decode_image /
+// decode_animation against this backend, but on_destroy() must pump the STA
+// message queue while joining them (see com_drain in MainWindow::on_destroy)
+// so WIC's internal COM dispatch can complete.
 tk::d2d::Backend& backend_singleton();
 
 // Wrapper around tk::d2d::decode_animation that uses the per-process

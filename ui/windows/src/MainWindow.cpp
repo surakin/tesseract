@@ -3648,8 +3648,39 @@ void MainWindow::on_destroy()
     }
     if (pending_login_client_)
         pending_login_client_->stop_sync();
-    pool_.drain();
-    mut_pool_.drain();
+
+    // On Win32 the main thread is an STA (OleInitialize), and some WIC codec
+    // operations inside decode_image_ marshal internally back to the STA via
+    // the message queue.  A plain drain() → join() blocks the STA message
+    // pump, so those WIC calls can never complete → deadlock.
+    // CoWaitForMultipleHandles keeps the STA pump running while we wait,
+    // allowing in-flight WIC decodes to finish.  WorkerPool::~WorkerPool still
+    // calls drain(), but by then every thread is already joined (joinable()
+    // returns false), so it is a no-op.
+    auto com_drain = [](WorkerPool& wp)
+    {
+        {
+            std::lock_guard<std::mutex> lk(wp.mu_);
+            wp.stop_      = true;
+            wp.on_change_ = nullptr;
+            wp.queue_.clear();
+            wp.pending_.store(0, std::memory_order_relaxed);
+        }
+        wp.cv_.notify_all();
+        for (auto& t : wp.threads_)
+        {
+            if (!t.joinable())
+                continue;
+            HANDLE h      = t.native_handle();
+            DWORD  ignored = 0;
+            CoWaitForMultipleHandles(
+                COWAIT_DISPATCH_CALLS | COWAIT_DISPATCH_WINDOW_MESSAGES,
+                INFINITE, 1, &h, &ignored);
+            t.join();
+        }
+    };
+    com_drain(pool_);
+    com_drain(mut_pool_);
 }
 
 // run_async_ is implemented in tesseract::ShellBase.
