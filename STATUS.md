@@ -1,13 +1,13 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-11** (v0.8.0).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-13** (development branch, unreleased).
 
-> **Full-text message search, incl. encrypted rooms (2026-06-11, unreleased).**
+> **Full-text message search, incl. encrypted rooms (2026-06-11/13, unreleased).**
 > A global search overlay (**Ctrl+Shift+F** / **⌘⇧F**) searches your message
 > history — **including encrypted rooms**, which the Matrix server-side
 > `/search` endpoint cannot do. Search runs against a local **SQLite FTS5**
-> index of *decrypted* message bodies kept in the per-account `app_cache.db`
-> (`sdk/src/client/search.rs`, external-content FTS + triggers). Indexing is an
+> index of *decrypted* message bodies in the per-account `search_index.db`
+> (`sdk/src/client/search.rs`, external-content FTS5 + triggers). Indexing is an
 > **opt-in privacy setting** (Settings → Privacy → Search, off by default,
 > since it stores decrypted text at rest); enabling lazily backfills history,
 > disabling clears the index. Population is incremental (every message indexed
@@ -16,11 +16,24 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-11
 > QuickSwitcher pattern (`ui/shared/views/MessageSearchView.*`); results show
 > room · sender · snippet and clicking jumps to the message (reusing the
 > event-permalink scroll/focus path, so off-screen events resolve via a focused
-> timeline). New FFI: `Client::search_messages` / `set_search_indexing_enabled`,
-> `SearchHit`, `on_search_results`/`on_search_failed`. Shared code in
-> `ShellBase` / `EventHandlerBase`; wired in all four shells (Qt6, GTK4, Win32,
-> macOS). 11 new Rust unit tests. Verified on **Qt6**. *(In-room find bar
-> (Ctrl+F) is planned as a follow-up.)*
+> timeline). While the toggle is enabled, Settings shows a live summary: message
+> and room count, oldest indexed date, indexing progress ("indexing…" → "up to
+> date"), and on-disk size ("· ~1.2 MB") from a `dbstat` vtab query. New FFI:
+> `Client::search_messages` / `set_search_indexing_enabled` /
+> `search_index_stats` / `search_index_size_bytes`, `SearchHit`,
+> `on_search_results` / `on_search_failed`. Shared code in `ShellBase` /
+> `EventHandlerBase`; wired in all four shells (Qt6, GTK4, Win32, macOS).
+> 240 Rust + 816 C++ tests. Verified on **Qt6**. *(In-room find bar (Ctrl+F)
+> planned as follow-up.)*
+
+> **Shared jump-to-date picker (2026-06-13, unreleased).** The four native date
+> pickers (Win32 `MonthCal`, GTK4 `gtk_calendar`, Qt6 `QCalendarWidget`, macOS
+> `NSDatePicker`) are replaced by a single `DatePickerView` widget in
+> `ui/shared/views/`. The picker registers as a `tk::Host` popup, draws through
+> the shared canvas, and handles pointer and wheel input through the normal
+> dispatch layer. Scroll-wheel over the year token navigates years; elsewhere
+> navigates months. `ShellBase::handle_date_jump_()` centralises the previously
+> duplicated `timestamp_to_event` + `subscribe_room_at` logic across all shells.
 
 > **Room-switch performance overhaul (2026-06-11, unreleased).** Switching
 > rooms is now instant and flicker-free. The SDK no longer emits an empty

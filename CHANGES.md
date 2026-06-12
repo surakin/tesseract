@@ -5,7 +5,100 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-06-13
+
+- refactor(search): search index moved to its own `search_index.db`. The FTS5
+  tables (`message_index`, `message_fts`, `search_state`) now live in a
+  dedicated per-account `search_index.db` instead of sharing `app_cache.db`
+  with the unrelated `backfill_ts` table. Each database has a single
+  responsibility and can be cleared independently. `clear_caches` and `logout`
+  close and delete both files; existing `app_cache.db` files are untouched (old
+  search tables become inert dead weight until manually pruned). Purely internal
+  Rust — no FFI or C++ changes.
+- fix(search): search card no longer shrinks while the user is typing. All four
+  shells call `relayout()` immediately after `set_query()`, which cleared results
+  and caused `arrange()` to compute the minimum card height before the next
+  search response arrived. The card now tracks its peak height
+  (`max_card_h_`) since the overlay was opened and only ever grows.
+- perf(timeline): batch FFI events to eliminate per-message redraws during
+  pagination. The Rust SDK previously emitted one `VectorDiff` per message; each
+  crossed the FFI boundary individually and posted a separate layout pass. An
+  `EmitOp` accumulator now collects a full `stream.next()` poll before any FFI
+  crossing, coalescing runs of same-kind ops into five new bridge callbacks:
+  `on_messages_prepended`, `on_messages_appended`, `on_messages_updated_batch`,
+  `on_thread_messages_prepended`, `on_thread_messages_appended`. `MessageListView`
+  adds `prepend_messages`/`append_messages` bulk-insert paths and drops the old
+  `pending_prepends_` buffer (batching now happens in Rust). One layout pass per
+  pagination response instead of one per message.
+- fix(win32): pump the STA message queue while joining worker threads on
+  shutdown. Worker threads call `decode_image_()` which uses the WIC
+  `IWICImagingFactory` stored in the D2D backend — that factory is STA-bound and
+  some WIC codec operations dispatch back to the STA via the message queue. A
+  plain `join()` in `drain()` blocked the STA pump, causing deadlock.
+  `MainWindow::on_destroy()` now uses `CoWaitForMultipleHandles` with
+  `COWAIT_DISPATCH_CALLS | COWAIT_DISPATCH_WINDOW_MESSAGES` to keep the pump
+  alive until each thread finishes.
+- fix(search): search results now appear immediately. `handle_search_results_ui_`
+  and `handle_search_failed_ui_` called `set_results()` but never requested a
+  relayout, so the results card stayed invisible until the user pressed Up/Down.
+  `schedule_relayout_()` now runs after every result update.
+- fix(ui): remove `TextHAlign::Center` from unbounded empty-state layouts on Qt.
+  Qt's QPainter backend clamps `max_width=-1` to 8192 px; with center alignment
+  this shifted the draw origin ~4000 px off-screen. `MessageSearchView` and
+  `QuickSwitcher` both computed a centered origin manually, so removing
+  `halign=Center` is the complete fix.
+- feat(ui): replace per-platform jump-to-date dialogs with a single shared
+  `DatePickerView`. Removes four native date pickers (Win32 `MonthCal`, GTK4
+  `gtk_calendar`, Qt6 `QCalendarWidget`, macOS `NSDatePicker`) and replaces them
+  with a shared widget in `ui/shared/views/`. The picker registers as a
+  `tk::Host` popup, handles pointer and wheel input through the shared dispatch
+  layer, and supports scroll-wheel year navigation (wheel over the year token
+  navigates years; elsewhere navigates months). `ShellBase::handle_date_jump_()`
+  consolidates the previously duplicated `timestamp_to_event` +
+  `subscribe_room_at` logic.
+- fix(search): Settings toggle now correctly relayouts after toggling the search
+  index. The `on_change` handler showed/hid stats labels synchronously but the
+  surface only repainted (not relayouted) on pointer events, so newly-visible
+  labels had unset bounds and painted at the window origin.
+- feat(search): show on-disk search index size in Settings. A new
+  `search_index_size_bytes` FFI call queries the SQLite `dbstat` virtual table
+  to measure the space used by `message_index`, `message_fts*`, and
+  `search_state`. Called once when Settings opens and cached in
+  `cached_index_bytes_`; the result is rendered as "· ~1.2 MB" alongside the
+  message/room count.
+- feat(search): show live index stats under the Settings toggle. While the
+  Privacy → Search toggle is enabled, a summary line shows the message and room
+  count and the oldest indexed timestamp ("12,431 messages across 38 rooms ·
+  indexing…" → "· up to date" once the backfill completes). The shell polls
+  every 2 s while Settings is open and the backfill is still running, then
+  stops. Stats come from a new synchronous `search_index_stats()` FFI backed by
+  a single aggregate scan in `search::stats()`.
+- fix(search): nine code-review findings addressed: GTK Ctrl+Shift+F keyval
+  (`GDK_KEY_F` → `GDK_KEY_f`); backfill now skips the foreground room;
+  index-toggle SQLite work moved off the UI thread; backfill-resume marker
+  (`backfill_done`) set only after a complete crawl; account-switch clears
+  in-flight search state; `Set(true, None)` diff removes the old index entry;
+  `relative_time` year-boundary fix; debounce search queries at 120 ms;
+  room display names resolved C++-side from the cached room list.
+- fix(macos): build fixed after search additions.
+
 ### 2026-06-11
+
+- feat(search): full-text message search across all rooms, including encrypted.
+  A global search overlay (**Ctrl+Shift+F** / **⌘⇧F**) backed by a local SQLite
+  FTS5 index of decrypted message bodies — the only approach that can search E2EE
+  history, since the Matrix server-side `/search` endpoint never sees plaintext.
+  Indexing is **opt-in** (Settings → Privacy → Search, off by default).  Enabling
+  lazily backfills history per joined room; disabling clears the index.  Population
+  is incremental: every message is indexed on the live timeline-diff and pagination
+  paths plus a one-time background history backfill on first enable.  The overlay
+  (`ui/shared/views/MessageSearchView`) reuses the QuickSwitcher pattern; results
+  show room · sender · snippet; clicking jumps to the message via the existing
+  event-permalink scroll/focus path.  New FFI: `Client::search_messages` /
+  `set_search_indexing_enabled`, `SearchHit`, `on_search_results` /
+  `on_search_failed`.  Shared code in `ShellBase` / `EventHandlerBase`; wired in
+  all four shells (Qt6, GTK4, Win32, macOS).  11 new Rust unit tests.  Verified
+  on Qt6.  *(In-room find bar (Ctrl+F) planned as follow-up.)*
 
 - perf(room-switch): perceived-latency pass on opening a room. `subscribe_room`
   no longer emits an empty `on_timeline_reset` before the populated one; the UI
