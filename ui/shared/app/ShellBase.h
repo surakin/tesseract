@@ -707,10 +707,11 @@ protected:
     {
         bool in_flight = false;
         bool reached_start = false;
-        bool fwd_in_flight = false; // forward paginate guard
+        bool fwd_in_flight = false;    // forward paginate guard
         bool reached_end = false;
-        bool is_focused = false;    // true = using with_focus timeline
-        std::string focus_event_id; // scroll target after timeline reset
+        bool is_focused = false;       // true = using with_focus timeline
+        bool returning_to_live = false; // snap to bottom on next timeline reset
+        std::string focus_event_id;    // scroll target after timeline reset
     };
     std::unordered_map<std::string, PaginationState> pagination_;
 
