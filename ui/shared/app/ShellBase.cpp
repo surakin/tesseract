@@ -2806,7 +2806,8 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                     const std::uint64_t id = ++in_room_search_request_id_;
                     in_room_search_pending_[id] = q;
                     client_->search_messages(id, q, in_room_search_room_id_, 200);
-                    bar->set_match_status(0, 0, /*searching=*/true, false);
+                    // Don't reset the label to "Searching…" during pagination;
+                    // the paginating spinner is sufficient feedback.
                 }
             }
         }

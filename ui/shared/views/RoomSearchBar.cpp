@@ -88,9 +88,6 @@ void RoomSearchBar::set_query(const std::string& q)
     if (q == query_)
         return;
     query_ = q;
-    count_text_ = "Type to search";
-    if (count_label_)
-        count_label_->set_text(count_text_);
     if (on_query_changed)
         on_query_changed(query_);
 }
