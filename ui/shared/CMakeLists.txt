@@ -282,6 +282,9 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-join.svg"
     "${_lucide_dir}/lucide-jump-to-date.svg"
     "${_lucide_dir}/lucide-threadlist.svg"
+    "${_lucide_dir}/lucide-search.svg"
+    "${_lucide_dir}/lucide-chevron-up.svg"
+    "${_lucide_dir}/lucide-chevron-down.svg"
 )
 
 add_custom_command(

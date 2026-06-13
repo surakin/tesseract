@@ -28,7 +28,6 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -711,6 +710,19 @@ public:
         return highlighted_event_id_;
     }
 
+    /// Replace the full set of search-match event ids.  Every loaded row
+    /// whose event_id is in the set receives a subtle accent tint; the
+    /// focused match (highlighted_event_id_) additionally gets a 2px
+    /// accent outline.  Survives set_messages() calls — the shell clears
+    /// when the search bar closes or the query changes.
+    void set_search_matches(std::unordered_set<std::string> ids);
+    void clear_search_matches();
+    bool has_search_matches() const { return !search_match_ids_.empty(); }
+    const std::unordered_set<std::string>& search_match_ids() const
+    {
+        return search_match_ids_;
+    }
+
     /// Replace the cached set of pinned event ids for this room.
     /// MessageListView consults the set when drawing the hover-action row
     /// to pick Pin vs Unpin and the corresponding callback. Cleared on
@@ -769,6 +781,12 @@ private:
     // Thread overlay state (see set_dimmed / set_highlighted_event).
     bool dimmed_ = false;
     std::string highlighted_event_id_;
+
+    // Search-match state (see set_search_matches / clear_search_matches).
+    // All loaded rows whose event_id is in this set receive a subtle accent
+    // tint; the focused match (highlighted_event_id_) gets a 2px outline.
+    // NOT cleared in set_messages() — the shell owns clearing.
+    std::unordered_set<std::string> search_match_ids_;
 
     // Pinned-events state (see set_pinned_event_ids / set_can_pin). The
     // set determines whether the hover-action row shows Pin or Unpin for
