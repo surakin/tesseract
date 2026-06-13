@@ -680,6 +680,11 @@ public:
         return switch_loading_ && switch_spinner_due_;
     }
 
+    void begin_nav_loading();
+    void end_nav_loading();
+    bool is_nav_loading() const { return nav_loading_; }
+    bool nav_spinner_visible_for_test() const { return nav_loading_ && nav_spinner_due_; }
+
     // Fired when the user clicks the scroll-to-bottom pill while in
     // historical mode.
     std::function<void()> on_return_to_live;
@@ -827,6 +832,16 @@ private:
     std::uint64_t switch_epoch_       = 0;
     std::chrono::steady_clock::time_point switch_spinner_start_;
     void draw_switch_spinner_(tk::PaintCtx& ctx);
+    // Historical-event nav loading. Active from the moment subscribe_room_at is
+    // dispatched until set_messages() arrives with the rebuilt timeline.
+    // Scroll/pointer input is blocked immediately; the scrim + spinner paint only
+    // after kNavSpinnerDelayMs so fast resolutions show nothing transient.
+    static constexpr int kNavSpinnerDelayMs = 400;
+    bool          nav_loading_     = false;
+    bool          nav_spinner_due_ = false;
+    std::uint64_t nav_epoch_       = 0;
+    std::chrono::steady_clock::time_point nav_spinner_start_;
+    void draw_nav_spinner_(tk::PaintCtx& ctx);
     // Shared 8-dot rotating indicator (back-pagination + room-switch loading).
     void draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
                             std::chrono::steady_clock::time_point start,
