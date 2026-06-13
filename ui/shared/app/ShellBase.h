@@ -363,6 +363,16 @@ protected:
     // Populated asynchronously from update_space_children_cache_(); read
     // synchronously in each shell's refresh_room_list().
     std::unordered_map<std::string, std::vector<std::string>> space_children_cache_;
+
+    // space_id → child room IDs that are NOT in rooms_ (unjoined children).
+    // Built alongside space_children_cache_ inside update_space_children_cache_().
+    std::unordered_map<std::string, std::vector<std::string>>
+        unjoined_space_children_cache_;
+
+    // space_id → MSC3266 summaries for unjoined children.
+    // Fetched lazily via fetch_space_unjoined_summaries_().
+    std::unordered_map<std::string, std::vector<tesseract::RoomSummary>>
+        unjoined_summaries_cache_;
     std::string current_room_id_;
     // Most-recently-visited room IDs in visit order (front = most recent),
     // recorded in after_active_room_changed_(). Feeds the Ctrl+K quick
@@ -1855,10 +1865,30 @@ protected:
     // Each shell overrides to call its refresh_room_list().
     virtual void on_space_children_cache_ready_ui_() {}
 
+    // Called on the UI thread after unjoined summaries for space_id arrive.
+    // Each shell overrides to call its refresh_room_list().
+    virtual void on_space_unjoined_summaries_ready_ui_(
+        const std::string& /*space_id*/) {}
+
+    // Called after handle_room_action_complete_ui_() processes a Join action.
+    // ok=true means the join succeeded; room_id is the canonical joined room ID.
+    virtual void on_join_room_outcome_ui_(bool /*ok*/,
+                                          const std::string& /*room_id*/) {}
+
     // Fetch space children for every space in rooms_ on a worker thread and
     // post the result into space_children_cache_, then fire
     // on_space_children_cache_ready_ui_(). Idempotent w.r.t. rooms_ contents.
     void update_space_children_cache_();
+
+    // Fetch MSC3266 summaries for unjoined children of space_id via the
+    // worker pool. Stores in unjoined_summaries_cache_ and fires
+    // on_space_unjoined_summaries_ready_ui_().
+    void fetch_space_unjoined_summaries_(const std::string& space_id);
+
+    // Returns cached summaries if present; triggers a fetch and returns {}
+    // otherwise. Call from refresh_room_list() while drilled into a space.
+    const std::vector<tesseract::RoomSummary>&
+    get_cached_unjoined_summaries_(const std::string& space_id);
 
     // For each space row in `rooms`, replace its notification_count and
     // highlight_count with the aggregate of its children's counts (from

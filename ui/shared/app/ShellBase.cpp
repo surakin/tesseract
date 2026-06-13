@@ -2199,6 +2199,7 @@ void ShellBase::update_space_children_cache_()
     if (!client_)
     {
         space_children_cache_.clear();
+        unjoined_space_children_cache_.clear();
         return;
     }
     std::vector<std::string> space_ids;
@@ -2212,6 +2213,7 @@ void ShellBase::update_space_children_cache_()
     if (space_ids.empty())
     {
         space_children_cache_.clear();
+        unjoined_space_children_cache_.clear();
         return;
     }
     auto sess = active_account_;
@@ -2219,21 +2221,93 @@ void ShellBase::update_space_children_cache_()
         [this, sess, space_ids = std::move(space_ids)]()
         {
             if (!sess || !sess->client) return;
-            std::unordered_map<std::string, std::vector<std::string>> fresh;
+
+            std::unordered_map<std::string, std::vector<std::string>> fresh_joined;
+            std::unordered_map<std::string, std::vector<std::string>> fresh_unjoined;
+
             for (const auto& id : space_ids)
             {
-                fresh[id] = sess->client->space_children(id);
-            }
-            post_to_ui_alive_(
-                [this, fresh = std::move(fresh)]() mutable
+                auto all    = sess->client->space_children_all(id);
+                auto joined = sess->client->space_children(id);
+
+                std::unordered_set<std::string> joined_set(
+                    joined.begin(), joined.end());
+                std::vector<std::string> unjoined;
+                for (const auto& child : all)
                 {
-                    if (fresh != space_children_cache_)
+                    if (!joined_set.count(child))
+                        unjoined.push_back(child);
+                }
+                fresh_joined[id]   = std::move(joined);
+                fresh_unjoined[id] = std::move(unjoined);
+            }
+
+            post_to_ui_alive_(
+                [this,
+                 fresh_joined   = std::move(fresh_joined),
+                 fresh_unjoined = std::move(fresh_unjoined)]() mutable
+                {
+                    if (fresh_joined != space_children_cache_)
                     {
-                        space_children_cache_ = std::move(fresh);
+                        space_children_cache_          = std::move(fresh_joined);
+                        unjoined_space_children_cache_ = std::move(fresh_unjoined);
+
+                        // Evict summaries for rooms that are now joined.
+                        for (auto& [space_id, summaries] : unjoined_summaries_cache_)
+                        {
+                            summaries.erase(
+                                std::remove_if(
+                                    summaries.begin(), summaries.end(),
+                                    [this](const tesseract::RoomSummary& s) {
+                                        return room_by_id_(s.room_id) != nullptr;
+                                    }),
+                                summaries.end());
+                        }
+
                         on_space_children_cache_ready_ui_();
                     }
                 });
         });
+}
+
+void ShellBase::fetch_space_unjoined_summaries_(const std::string& space_id)
+{
+    auto it = unjoined_space_children_cache_.find(space_id);
+    if (it == unjoined_space_children_cache_.end() || it->second.empty())
+        return;
+
+    std::vector<std::string> ids = it->second;
+    auto sess = active_account_;
+    run_async_(
+        [this, sess, space_id, ids = std::move(ids)]()
+        {
+            if (!sess || !sess->client) return;
+            std::vector<tesseract::RoomSummary> summaries;
+            summaries.reserve(ids.size());
+            for (const auto& id : ids)
+            {
+                auto s = sess->client->get_room_summary(id);
+                if (s.ok())
+                    summaries.push_back(std::move(s));
+            }
+            post_to_ui_alive_(
+                [this, space_id, summaries = std::move(summaries)]() mutable
+                {
+                    unjoined_summaries_cache_[space_id] = std::move(summaries);
+                    on_space_unjoined_summaries_ready_ui_(space_id);
+                });
+        });
+}
+
+const std::vector<tesseract::RoomSummary>&
+ShellBase::get_cached_unjoined_summaries_(const std::string& space_id)
+{
+    static const std::vector<tesseract::RoomSummary> kEmpty;
+    auto it = unjoined_summaries_cache_.find(space_id);
+    if (it != unjoined_summaries_cache_.end())
+        return it->second;
+    fetch_space_unjoined_summaries_(space_id);
+    return kEmpty;
 }
 
 void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
@@ -2887,6 +2961,8 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         if (!message.empty())
             status += ": " + message;
         show_status_message_(std::move(status));
+        if (kind == RoomActionKind::Join)
+            on_join_room_outcome_ui_(false, room_id);
         return;
     }
 
@@ -2896,6 +2972,9 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         tab_select_room(room_id);
         break;
     case RoomActionKind::Join:
+    {
+        const std::string& effective_id =
+            joined_room_id.empty() ? room_id : joined_room_id;
         if (!joined_room_id.empty())
         {
             tab_navigate_room(joined_room_id);
@@ -2911,7 +2990,9 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                 try_scroll_to_room_event_(ev);
             }
         }
+        on_join_room_outcome_ui_(true, effective_id);
         break;
+    }
     case RoomActionKind::Leave:
         if (tabs_.size() > 1)
         {
