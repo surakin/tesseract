@@ -252,7 +252,11 @@ public:
     using ShellBase::handle_compose_room_leaving_;
     using ShellBase::handle_compose_text_changed_;
     using ShellBase::handle_send_presence_toggle_;
+    using ShellBase::handle_index_messages_toggle_;
     using ShellBase::apply_media_preview_config_;
+    using ShellBase::stats_settings_view_;
+    using ShellBase::start_search_index_stats_poll_;
+    using ShellBase::stop_search_index_stats_poll_;
     using ShellBase::inflight_dot_color_;
     using ShellBase::inflight_total_;
     using ShellBase::is_pinned_window_;
@@ -355,6 +359,8 @@ public:
     using ShellBase::switch_active_account_impl_;
     using ShellBase::logout_active_account_impl_;
     using ShellBase::LogoutResult;
+    using ShellBase::handle_date_jump_;
+    using ShellBase::has_status_override_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -471,7 +477,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
-- (void)openJumpToDateDialog;
 - (void)_switchActiveAccount:(const std::string&)user_id;
 - (void)_refreshAccountUIAfterSwitch;
 - (void)_populateUserStrip;
@@ -481,6 +486,10 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_openSettings;
 - (void)_openQuickSwitch;
 - (void)_closeQuickSwitch;
+- (void)_openMessageSearch;
+- (void)_closeMessageSearch;
+- (void)_openFindInRoom;
+- (void)_closeFindInRoom;
 - (void)_navigateHistoryBack;
 - (void)_navigateHistoryForward;
 - (void)loginViewDidCancel:(LoginView*)view;
@@ -1721,6 +1730,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Native overlay fields positioned via _mainAppSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
     std::unique_ptr<tk::NativeTextField> _quickSwitchField;
+    std::unique_ptr<tk::NativeTextField> _messageSearchField;
+    std::unique_ptr<tk::NativeTextField> _findInRoomField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
 
@@ -2906,13 +2917,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     }
                 });
         };
-        _mainApp->room_view()->on_jump_to_date_requested = [weakSelf]
+        _mainApp->room_view()->on_date_jump = [weakSelf](std::uint64_t ts_ms)
         {
             MainWindowController* s = weakSelf;
             if (s)
-            {
-                [s openJumpToDateDialog];
-            }
+                s->_shell->handle_date_jump_(ts_ms);
         };
         _mainApp->room_view()->on_threads_button_clicked = [weakSelf]
         {
@@ -4094,6 +4103,117 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     [s _closeQuickSwitch];
             };
 
+        // Message search (⌘⇧F) native field — mirrors the quick switcher.
+        _messageSearchField = _mainAppSurface->host().make_text_field();
+        _messageSearchField->set_placeholder("Search your messages…");
+        _messageSearchField->set_visible(false);
+        _messageSearchField->set_on_changed(
+            [weakSelf](const std::string& q)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->message_search())
+                {
+                    s->_mainApp->message_search()->set_query(q);
+                    s->_mainAppSurface->relayout();
+                }
+            });
+        _messageSearchField->set_on_submit(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->message_search())
+                    s->_mainApp->message_search()->activate_selected();
+            });
+        _messageSearchField->set_on_popup_nav(
+            [weakSelf](tk::NavKey nk) -> bool
+            {
+                MainWindowController* s = weakSelf;
+                auto* ms = (s && s->_mainApp) ? s->_mainApp->message_search()
+                                              : nullptr;
+                if (!ms || !ms->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    ms->move_selection(-1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    ms->move_selection(+1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    [s _closeMessageSearch];
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (_mainApp->message_search())
+            _mainApp->message_search()->on_close = [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s)
+                    [s _closeMessageSearch];
+            };
+
+        // Per-room "find in conversation" (⌘F) native field.
+        _findInRoomField = _mainAppSurface->host().make_text_field();
+        _findInRoomField->set_placeholder("Find in conversation…");
+        _findInRoomField->set_visible(false);
+        _findInRoomField->set_on_changed(
+            [weakSelf](const std::string& q)
+            {
+                MainWindowController* s = weakSelf;
+                auto* rv = (s && s->_mainApp) ? s->_mainApp->room_view()
+                                              : nullptr;
+                if (rv)
+                {
+                    if (auto* bar = rv->room_search_bar())
+                    {
+                        bar->set_query(q);
+                        s->_mainAppSurface->relayout();
+                    }
+                }
+            });
+        _findInRoomField->set_on_popup_nav(
+            [weakSelf](tk::NavKey nk) -> bool
+            {
+                MainWindowController* s = weakSelf;
+                auto* rv = (s && s->_mainApp) ? s->_mainApp->room_view()
+                                              : nullptr;
+                if (!rv || !rv->room_search_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(-1);
+                    return true;
+                case tk::NavKey::Down:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(+1);
+                    return true;
+                case tk::NavKey::Escape:
+                    [s _closeFindInRoom];
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (auto* rv = _mainApp->room_view())
+        {
+            if (auto* bar = rv->room_search_bar())
+            {
+                bar->on_close = [weakSelf]
+                {
+                    MainWindowController* s = weakSelf;
+                    if (s)
+                        [s _closeFindInRoom];
+                };
+            }
+        }
+
         _mainAppSurface->set_on_layout(
             [weakSelf]
             {
@@ -4162,6 +4282,24 @@ void MacShell::set_compose_draft_(const std::string& draft)
                         s->_quickSwitchField->set_rect(
                             app->quick_switch_field_rect());
                 }
+                // Message search field (topmost modal like the switcher).
+                if (s->_messageSearchField)
+                {
+                    bool msVisible = app->message_search_field_visible();
+                    s->_messageSearchField->set_visible(msVisible);
+                    if (msVisible)
+                        s->_messageSearchField->set_rect(
+                            app->message_search_field_rect());
+                }
+                // Per-room find-in-conversation field (⌘F).
+                if (s->_findInRoomField)
+                {
+                    bool vis = app->in_room_search_field_visible();
+                    s->_findInRoomField->set_visible(vis);
+                    if (vis)
+                        s->_findInRoomField->set_rect(
+                            app->in_room_search_field_rect());
+                }
                 // Encryption setup passphrase field.
                 if (s->_shell->enc_passphrase_field_ && app->encryption_setup())
                 {
@@ -4202,6 +4340,30 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                  [s _openQuickSwitch];
                                                  return (NSEvent*)nil;
                                              }
+                                             // ⌘⇧F → open global message search.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagCommand) &&
+                                                 (event.modifierFlags &
+                                                  NSEventModifierFlagShift) &&
+                                                 [[event.charactersIgnoringModifiers
+                                                     lowercaseString]
+                                                     isEqualToString:@"f"])
+                                             {
+                                                 [s _openMessageSearch];
+                                                 return (NSEvent*)nil;
+                                             }
+                                             // ⌘F → open per-room find in conversation.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagCommand) &&
+                                                 !(event.modifierFlags &
+                                                   NSEventModifierFlagShift) &&
+                                                 [[event.charactersIgnoringModifiers
+                                                     lowercaseString]
+                                                     isEqualToString:@"f"])
+                                             {
+                                                 [s _openFindInRoom];
+                                                 return (NSEvent*)nil;
+                                             }
                                              // ⌘[ → navigate room history back.
                                              if ((event.modifierFlags &
                                                   NSEventModifierFlagCommand) &&
@@ -4230,6 +4392,23 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                          ->is_open())
                                                  {
                                                      [s _closeQuickSwitch];
+                                                     return (NSEvent*)nil;
+                                                 }
+                                                 if (s->_mainApp &&
+                                                     s->_mainApp
+                                                         ->message_search() &&
+                                                     s->_mainApp->message_search()
+                                                         ->is_open())
+                                                 {
+                                                     [s _closeMessageSearch];
+                                                     return (NSEvent*)nil;
+                                                 }
+                                                 if (s->_mainApp &&
+                                                     s->_mainApp->room_view() &&
+                                                     s->_mainApp->room_view()
+                                                         ->room_search_open())
+                                                 {
+                                                     [s _closeFindInRoom];
                                                      return (NSEvent*)nil;
                                                  }
                                                  if (s->_vidViewer &&
@@ -4301,6 +4480,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             std::make_unique<tk::macos::Surface>(tk::Theme::light());
         auto view = std::make_unique<tesseract::views::SettingsView>();
         _settingsView = view.get();
+        _shell->stats_settings_view_ = _settingsView;
         __weak MainWindowController* ws = self;
         _settingsView->on_close = [ws]
         {
@@ -4309,6 +4489,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
+            s->_shell->stop_search_index_stats_poll_();
             NSView* mainAppView =
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
@@ -4433,6 +4614,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             MainWindowController* s = ws;
             if (s) s->_shell->handle_send_presence_toggle_(enabled);
+        };
+        _settingsView->on_index_messages_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_index_messages_toggle_(enabled);
         };
         _settingsView->on_media_previews_changed =
             [ws](tesseract::Settings::MediaPreviews mode)
@@ -6143,6 +6329,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         tesseract::Settings::instance().autoscroll_unread_rooms);
     _settingsView->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    _settingsView->set_index_messages_pref(
+        tesseract::Settings::instance().index_messages_for_search);
     _settingsView->set_media_previews_pref(
         tesseract::Settings::instance().media_previews);
     _settingsView->set_invite_avatars_pref(
@@ -6162,6 +6350,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     mainAppView.hidden = YES;
     ((__bridge NSView*)_settingsSurface->view_handle()).hidden = NO;
+    _shell->start_search_index_stats_poll_();
 }
 
 - (void)_populateUserStrip
@@ -6228,6 +6417,62 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _mainApp->show_quick_switch(false);
     if (_quickSwitchField)
         _quickSwitchField->set_visible(false);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+}
+
+- (void)_openMessageSearch
+{
+    if (!_mainApp || !_mainApp->message_search())
+        return;
+    // The ⌘⇧F monitor is application-local, so it can fire while a pop-out
+    // room window is key. Bring the main window forward (search lives here).
+    if (![self.window isKeyWindow])
+        [self.window makeKeyAndOrderFront:nil];
+    _mainApp->show_message_search(true);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+    if (_messageSearchField)
+    {
+        _messageSearchField->set_text("");
+        _messageSearchField->set_focused(true);
+    }
+}
+
+- (void)_closeMessageSearch
+{
+    if (_mainApp)
+        _mainApp->show_message_search(false);
+    if (_messageSearchField)
+        _messageSearchField->set_visible(false);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+}
+
+- (void)_openFindInRoom
+{
+    auto* rv = _mainApp ? _mainApp->room_view() : nullptr;
+    if (!rv || !rv->has_room())
+        return;
+    if (![self.window isKeyWindow])
+        [self.window makeKeyAndOrderFront:nil];
+    rv->open_room_search();
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+    if (_findInRoomField)
+    {
+        _findInRoomField->set_text("");
+        _findInRoomField->set_focused(true);
+    }
+}
+
+- (void)_closeFindInRoom
+{
+    auto* rv = _mainApp ? _mainApp->room_view() : nullptr;
+    if (rv)
+        rv->close_room_search();
+    if (_findInRoomField)
+        _findInRoomField->set_visible(false);
     if (_mainAppSurface)
         _mainAppSurface->relayout();
 }
@@ -6879,6 +7124,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         text = [NSString
             stringWithFormat:@"Downloading encryption keys (%llu)…",
                              (unsigned long long)_shell->last_imported_keys_];
+    else if (_shell->has_status_override_())
+        return; // persistent status override active; don't overwrite with "Connected"
     else
         text = @"Connected";
 
@@ -7170,104 +7417,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [self handlePaginateResultForRoom:roomId reached_start:reached];
         });
     });
-}
-
-- (void)openJumpToDateDialog
-{
-    if (_shell->current_room_id_.empty())
-    {
-        return;
-    }
-
-    // Text-field+stepper style: each component (month/day/year) is a separate
-    // clickable field — the user can click the year and type or spin it directly.
-    NSDatePicker* picker =
-        [[NSDatePicker alloc] initWithFrame:NSMakeRect(0, 0, 228, 28)];
-    picker.datePickerStyle = NSDatePickerStyleTextFieldAndStepper;
-    picker.datePickerElements = NSDatePickerElementFlagYearMonthDay;
-    picker.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
-    picker.dateValue = [NSDate date]; // default to today, not the 2001 reference epoch
-
-    // Clamp selection to [1970-01-01, today].
-    NSCalendar* utcCal =
-        [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
-    utcCal.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
-    NSDateComponents* epochComps = [[NSDateComponents alloc] init];
-    epochComps.year = 1970;
-    epochComps.month = 1;
-    epochComps.day = 1;
-    picker.minDate = [utcCal dateFromComponents:epochComps];
-    picker.maxDate = [NSDate date];
-
-    NSAlert* alert = [[NSAlert alloc] init];
-    alert.messageText = @"Jump to Date";
-    alert.informativeText = @"Navigate to messages from the selected day.";
-    [alert addButtonWithTitle:@"Jump"];
-    [alert addButtonWithTitle:@"Cancel"];
-    alert.accessoryView = picker;
-
-    [alert
-        beginSheetModalForWindow:self.window
-               completionHandler:^(NSModalResponse r) {
-                   if (r != NSAlertFirstButtonReturn)
-                   {
-                       return;
-                   }
-
-                   // Extract midnight UTC from the selected date.
-                   NSDate* selected = picker.dateValue;
-                   NSDateComponents* comps = [utcCal
-                       components:(NSCalendarUnitYear | NSCalendarUnitMonth |
-                                   NSCalendarUnitDay)
-                         fromDate:selected];
-                   comps.hour = 0;
-                   comps.minute = 0;
-                   comps.second = 0;
-                   NSDate* midnight = [utcCal dateFromComponents:comps];
-                   const uint64_t ts_ms = static_cast<uint64_t>(
-                       [midnight timeIntervalSince1970] * 1000.0);
-
-                   const std::string room_id = self->_shell->current_room_id_;
-                   if (room_id.empty())
-                   {
-                       return;
-                   }
-
-                   dispatch_async(
-                       dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                       ^{
-                           auto res = self->_shell->client_->timestamp_to_event(
-                               room_id, ts_ms, "f");
-                           if (!res.ok)
-                           {
-                               NSString* msg =
-                                   [NSString
-                                       stringWithUTF8String:res.message.c_str()]
-                                       ?: @"Unknown error";
-                               dispatch_async(dispatch_get_main_queue(), ^{
-                                   NSAlert* err = [[NSAlert alloc] init];
-                                   err.alertStyle = NSAlertStyleWarning;
-                                   err.messageText = @"Jump to Date Failed";
-                                   err.informativeText = msg;
-                                   [err beginSheetModalForWindow:self.window
-                                               completionHandler:nil];
-                               });
-                               return;
-                           }
-                           const std::string event_id = res.message;
-                           dispatch_async(dispatch_get_main_queue(), ^{
-                               self->_shell->begin_focused_subscription_(
-                                   room_id, event_id);
-                               dispatch_async(
-                                   dispatch_get_global_queue(
-                                       QOS_CLASS_USER_INITIATED, 0),
-                                   ^{
-                                       self->_shell->client_->subscribe_room_at(
-                                           room_id, event_id);
-                                   });
-                           });
-                       });
-               }];
 }
 
 - (void)handlePaginateResultForRoom:(std::string)roomId

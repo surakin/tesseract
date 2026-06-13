@@ -22,6 +22,7 @@ mod notifications;
 mod pins;
 mod recovery;
 mod room_list;
+pub(crate) mod search;
 mod send;
 mod session;
 #[cfg(not(test))]
@@ -49,7 +50,8 @@ pub(super) use timeline::{visible_index_of, visible_len};
 
 #[cfg(not(test))]
 use backfill::{
-    apply_backfill_previews, load_backfill_ts_conn, open_app_cache_db, BackfillPreview,
+    apply_backfill_previews, load_backfill_ts_conn, open_app_cache_db, open_search_db,
+    BackfillPreview,
 };
 
 /// RAII guard that increments `counter` on creation and decrements it on drop,
@@ -423,11 +425,24 @@ pub struct ClientFfi {
     /// call so previews persist even when a notable update overwrites the list.
     #[cfg(not(test))]
     pub(super) backfill_previews: Arc<Mutex<HashMap<String, BackfillPreview>>>,
-    /// Per-account SQLite database for persistent UI state (open for the
-    /// lifetime of the sync session; `None` before first `start_sync` or
-    /// after account switch).
+    /// Per-account SQLite database for backfill state (`backfill_ts` table).
+    /// Open for the lifetime of the sync session; `None` before first
+    /// `start_sync` or after account switch.
     #[cfg(not(test))]
     pub(super) app_cache_db: Arc<Mutex<Option<rusqlite::Connection>>>,
+    /// Per-account SQLite database for the full-text search index
+    /// (`message_index`, `message_fts`, `search_state`). Opened alongside
+    /// `app_cache_db` in `start_sync`; `None` before first login or after
+    /// account switch.
+    #[cfg(not(test))]
+    pub(super) search_db: Arc<Mutex<Option<rusqlite::Connection>>>,
+    /// Opt-in full-text search indexing gate. When false (the default), the
+    /// timeline/pagination/backfill paths skip writing decrypted bodies to the
+    /// `message_index` FTS5 table in `app_cache.db`. Flipped by
+    /// `set_search_indexing_enabled` from the Settings toggle. `Arc` so it can
+    /// be cloned into spawned indexing tasks.
+    #[cfg(not(test))]
+    pub(super) search_indexing_enabled: Arc<std::sync::atomic::AtomicBool>,
     /// Abort handles for every long-lived task spawned by `start_sync`
     /// (session-refresh watcher, room/pack watcher, backup watchers, sync
     /// monitor, …). These outlive `self.handler.take()`, so without explicit
@@ -563,6 +578,14 @@ pub struct ClientFfi {
     #[cfg(not(test))]
     pub(super) media_tasks:
         Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
+    /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
+    /// SQLite store already holds. `fetch_media_async` uses this to skip the
+    /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
+    /// 10 ms probe always resolves before any real network round-trip. Cleared
+    /// on `start_sync` (account switch) so stale keys from a different session
+    /// never bypass a legitimate download.
+    #[cfg(not(test))]
+    pub(super) sdk_media_fetched: Arc<Mutex<std::collections::HashSet<String>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -774,6 +797,10 @@ impl ClientFfi {
             #[cfg(not(test))]
             app_cache_db: Arc::new(Mutex::new(None)),
             #[cfg(not(test))]
+            search_db: Arc::new(Mutex::new(None)),
+            #[cfg(not(test))]
+            search_indexing_enabled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(not(test))]
             sync_tasks: Vec::new(),
             #[cfg(not(test))]
             event_handler_handles: Vec::new(),
@@ -827,6 +854,8 @@ impl ClientFfi {
                 MEDIA_BULK_PERMITS, MEDIA_BULK_PERMITS * 2),
             #[cfg(not(test))]
             media_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            sdk_media_fetched: Arc::new(Mutex::new(std::collections::HashSet::new())),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 // Timeline construction collects cached events

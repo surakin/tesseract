@@ -20,6 +20,11 @@ inline PaginateResult from_ffi(const tesseract_ffi::PaginateResult& r)
     return {r.ok, std::string(r.message), r.reached_start, r.reached_end};
 }
 
+inline SearchIndexStats from_ffi(const tesseract_ffi::SearchIndexStats& s)
+{
+    return {s.message_count, s.room_count, s.oldest_ts_ms, s.backfill_done, 0};
+}
+
 inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p)
 {
     BackupState state = BackupState::Unknown;

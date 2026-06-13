@@ -62,7 +62,8 @@ version) are noted where relevant.
 - Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
 - Back / forward room history navigation (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable inactivity threshold)
-- Jump-to-date via a calendar button in the room header (MSC3030; server capability checked)
+- Jump-to-date via a calendar button in the room header (MSC3030; server capability checked); shared `DatePickerView` across all four platforms
+- Full-text message search across all rooms, including encrypted (**Ctrl+Shift+F** / **⌘⇧F**) — see Security & privacy for details
 - Unread indicators in the room list: a semibold room title plus a count badge for notifying rooms (accent-colored for mentions), or a small dot for rooms with unread messages that don't notify (e.g. "mentions only"); muted rooms are excluded
 - Auto-scroll the room list to the most-recent unread room when new messages arrive — spaces count when any child room is unread; excludes low-priority/inactive rooms; optional (Appearance setting, default on)
 - Last-message previews, including image and sticker previews
@@ -85,6 +86,7 @@ version) are noted where relevant.
 - Device verification via emoji (SAS)
 - Key backup recovery
 - Room key export / import (standard interoperable format)
+- **Full-text message search** across all rooms, including E2EE (**Ctrl+Shift+F** / **⌘⇧F**): a local SQLite FTS5 index of decrypted message bodies in `search_index.db`. Opt-in (Settings → Privacy → Search, off by default); enabling lazily backfills history and indexes every subsequent message; disabling clears the index. Results show room · sender · snippet; clicking jumps to the message. Settings panel shows live stats (message count, room count, oldest indexed date, on-disk size).
 - Privacy controls, including presence send/poll toggles
 - Device & session management (list sessions with verified status, sign out remote sessions)
 - Undecryptable-message states surfaced in the UI
@@ -102,7 +104,7 @@ version) are noted where relevant.
 - Sessions / devices
 - Notifications (per-room)
 - Appearance (light / dark / system theme; room-list inactive grouping; auto-scroll to unread rooms)
-- Privacy (presence controls)
+- Privacy (presence controls; search index toggle with live stats and on-disk size)
 - Media (automatic full-media fetch)
 - About (version, with branded view)
 
@@ -122,7 +124,6 @@ version) are noted where relevant.
 - **Room directory browsing**
 - **Global default notification level** (per-room settings work; global default planned)
 - **Cross-signing setup for brand-new accounts** {confirm: existing accounts with cross-signing already initialized work fine}
-- **Message search across rooms**
 - **Accessibility**: screen-reader support is incomplete
 - **Localization**: English only (i18n architecture in place)
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)

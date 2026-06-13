@@ -593,6 +593,37 @@ struct GifResult
     std::string strip_mime;
 };
 
+/// One full-text message-search hit, surfaced via
+/// `IEventHandler::on_search_results`. Comes from the local FTS5 index (covers
+/// encrypted rooms — the bodies are already decrypted). `room_name` is resolved
+/// at query time so the UI can render a result row without a lookup; jump to the
+/// message via `room_id` + `event_id`. Mirrors the `SearchHit` cxx bridge struct.
+struct SearchHit
+{
+    std::string event_id;
+    std::string room_id;
+    std::string room_name;
+    std::string sender;
+    std::string sender_name;
+    std::string body;
+    std::uint64_t timestamp_ms = 0;
+};
+
+/// Summary of the local full-text search index, for the Settings panel.
+/// Mirrors the `SearchIndexStats` cxx bridge struct. `backfill_done` is true
+/// once the one-time history crawl has finished; `oldest_ts_ms` is 0 when the
+/// index is empty.
+struct SearchIndexStats
+{
+    std::uint64_t message_count = 0;
+    std::uint64_t room_count = 0;
+    std::uint64_t oldest_ts_ms = 0;
+    bool backfill_done = false;
+    /// On-disk size from `dbstat`; populated C++-side once per panel open (not
+    /// carried through the FFI struct to avoid an O(pages) walk on every poll).
+    std::uint64_t index_bytes = 0;
+};
+
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via
 /// `IEventHandler::on_room_list_state` so UIs can render a "Syncing
 /// rooms…" indicator while the joined-room set is still being hydrated.

@@ -26,6 +26,7 @@
 #include "PopupMenu.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
+#include "RoomSearchBar.h"
 #include "ThreadListView.h"
 #include "ThreadView.h"
 #include "UserProfilePanel.h"
@@ -87,6 +88,8 @@ public:
     void update_message(std::size_t index, MessageRowData msg);
     void remove_message(std::size_t index);
     void append_message(MessageRowData msg);
+    void prepend_messages(std::vector<MessageRowData> rows);
+    void append_messages(std::vector<MessageRowData> rows);
 
     void notify_image_ready(const std::string& url);
     void notify_url_preview_ready(const std::string& url);
@@ -167,6 +170,31 @@ public:
     {
         return pinned_banner_;
     }
+
+    // ── In-room search bar ("find in conversation") ──────────────────────
+
+    // Open the docked search strip (also reveals the header search button).
+    void open_room_search();
+    // Close the search strip, clear match highlights and focused event.
+    void close_room_search();
+
+    bool      has_room()                 const { return has_room_; }
+    bool      room_search_open()         const;
+    tk::Rect  room_search_field_rect()   const;
+    bool      room_search_field_visible() const;
+
+    RoomSearchBar* room_search_bar() const;
+
+    // Forwarded to the shell. Shell debounces and calls Client::search_messages
+    // with the current room id.
+    std::function<void(const std::string& query)> on_room_search_query;
+    // delta: -1 = older/UP, +1 = newer/DOWN.
+    std::function<void(int delta)> on_room_search_navigate;
+    std::function<void(bool enabled)> on_room_search_paginate_toggled;
+    // Fired by close_room_search() so ShellBase can stop the paginate loop.
+    std::function<void()> on_room_search_closed;
+
+    // ── Pinned events ────────────────────────────────────────────────────
 
     // Drive the pinned-events banner + the per-message Pin/Unpin button
     // state. set_pinned() lazily creates the banner widget the first time a
@@ -312,7 +340,7 @@ public:
     std::function<void()> on_near_top;
     std::function<void()> on_near_bottom;
     std::function<void()> on_return_to_live;
-    std::function<void()> on_jump_to_date_requested;
+    std::function<void(std::uint64_t ts_ms)> on_date_jump;
     std::function<void(std::string original_event_id)> on_scroll_to_original;
 
     // Clipboard write — forward to the platform host. Wire to
@@ -441,7 +469,9 @@ private:
     PinnedBanner*   pinned_banner_    = nullptr;
     // Click/hover blocker over message_list_, visible only while the
     // thread panel is open. See the nested class doc above.
-    MessageBlocker* message_blocker_ = nullptr;
+    MessageBlocker*  message_blocker_   = nullptr;
+    // Docked search strip under the header; nullptr until first open.
+    RoomSearchBar*   room_search_bar_   = nullptr;
     ThreadPanelState thread_panel_state_ = ThreadPanelState::Closed;
     std::string thread_panel_root_;
     // Current room's members (mirrors what was last passed to

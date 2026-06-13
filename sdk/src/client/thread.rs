@@ -99,6 +99,7 @@ impl ClientFfi {
             &self.rt,
             TimelineChannel::Thread(root_str),
             Arc::clone(&cancelled),
+            self.search_index_ctx(),
         );
         // Kick an initial backwards pagination so the thread view is populated
         // immediately from the server. Results arrive as VectorDiff events in

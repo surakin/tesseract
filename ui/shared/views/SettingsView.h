@@ -93,6 +93,14 @@ public:
     // Silently initialise the presence checkbox from persisted settings.
     void set_send_presence_pref(bool enabled);
 
+    // Silently initialise the "index messages for search" checkbox.
+    void set_index_messages_pref(bool enabled);
+
+    // Update the search-index stats line under the checkbox (shown only while
+    // enabled). Driven by the shell on settings-open and a slow poll.
+    void set_search_index_stats(const tesseract::SearchIndexStats& stats,
+                                bool enabled);
+
     // ----- Server section ---------------------------------------------------
 
     // Populate the Server section with the connected server's info.
@@ -174,6 +182,10 @@ public:
 
     // Fired when the user toggles the "Send and receive presence status" option.
     std::function<void(bool)> on_send_presence_changed;
+
+    // Fired when the user toggles "Index messages for search". The shell
+    // persists the setting and calls Client::set_search_indexing_enabled().
+    std::function<void(bool)> on_index_messages_changed;
 
     // Fired when the active settings tab changes (so shells can relayout
     // native overlays whose visibility depends on the selected tab).

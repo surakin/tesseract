@@ -623,8 +623,35 @@ impl ClientFfi {
             THUMBNAIL_FETCH_TIMEOUT
         };
         let source = source.to_owned();
+        let cache_key = format!("{kind}:{source}");
+        let sdk_fetched = Arc::clone(&self.sdk_media_fetched);
 
         let handle = self.rt.spawn(async move {
+            // Fast path: if this source was successfully fetched before, it should
+            // be in matrix-sdk's SQLite media store. Probe with a 10 ms timeout —
+            // a SQLite hit takes < 1 ms, so any real network round-trip will
+            // overflow the budget and we fall through to the normal gated path.
+            // This keeps the priority gate from artificially queuing media the
+            // user has already seen.
+            if sdk_fetched.lock().contains(&cache_key) {
+                let probe = tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    download_media(&client, kind, &source, w, h, animated),
+                )
+                .await;
+                match probe {
+                    Ok(bytes) if !bytes.is_empty() => {
+                        deliver_media(&handler, request_id, &bytes);
+                        return;
+                    }
+                    _ => {
+                        // Cache miss or unexpected timeout — evict the stale key
+                        // and fall through to the normal gated download below.
+                        sdk_fetched.lock().remove(&cache_key);
+                    }
+                }
+            }
+
             // Park in the lane's priority queue until a slot frees. `None` means
             // the wait was cancelled (room switch) — deliver empty so the C++
             // pending entry resolves. `priority` lets a visible-row fetch jump
@@ -643,6 +670,9 @@ impl ClientFfi {
                 _ = tokio::time::sleep(timeout) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
             };
+            if !bytes.is_empty() {
+                sdk_fetched.lock().insert(cache_key);
+            }
             deliver_media(&handler, request_id, &bytes);
         });
 

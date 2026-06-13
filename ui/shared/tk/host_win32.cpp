@@ -54,9 +54,8 @@ namespace tk::win32
 //  Process-wide D2D backend + post-to-UI message
 // ─────────────────────────────────────────────────────────────────────────
 
-// External linkage (declared in host_win32.h): the WIC factory it owns is
-// free-threaded, so worker threads can call decode_image / decode_animation
-// against this backend without marshalling to the UI thread.
+// External linkage (declared in host_win32.h). The WIC factory is STA-bound;
+// see host_win32.h for the threading contract.
 d2d::Backend& backend_singleton()
 {
     static d2d::Backend instance;
@@ -3657,7 +3656,7 @@ public:
         // The toolkit convention is positive dy = scroll content down,
         // so invert. One notch (120) maps to ~3 toolkit pixels per step.
         float dy = static_cast<float>(-delta_steps) * (3.0f / 120.0f) * 30.0f;
-        if (root_->dispatch_wheel(
+        if (dispatch_wheel(
                 {phys_to_dip(static_cast<float>(pt.x)),
                  phys_to_dip(static_cast<float>(pt.y))},
                 0, dy))

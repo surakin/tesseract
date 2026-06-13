@@ -250,6 +250,31 @@
   .rh-topic { font-size: 12px; color: var(--text-secondary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rh-actions { display: flex; gap: 2px; color: var(--text-secondary); }
+  .icon-btn.rs-active { background: var(--sidebar-selected); color: var(--accent); }
+
+  /* In-room search bar — docked strip below room header */
+  .room-search-bar {
+    height: 44px; flex: none; display: none; align-items: center; gap: 6px;
+    padding: 0 12px; background: var(--chrome-bg);
+    border-bottom: 1px solid var(--separator);
+  }
+  .room-search-bar.open { display: flex; }
+  .rs-field {
+    flex: 1; min-width: 0; height: 28px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text-primary);
+    padding: 0 8px; font: inherit; font-size: 13px; outline: none;
+  }
+  .rs-field:focus { border-color: var(--accent); }
+  .rs-count { font-size: 12px; color: var(--text-secondary); white-space: nowrap; flex: none; }
+  .rs-paginate {
+    font-size: 12px; color: var(--text-secondary); white-space: nowrap;
+    flex: none; display: flex; align-items: center; gap: 4px; cursor: pointer;
+  }
+  .msg.rs-match { background: rgba(0,132,255,.08); border-radius: 6px; }
+  .msg.rs-focus { background: rgba(0,132,255,.22); border-radius: 6px; outline: 2px solid var(--accent); outline-offset: -2px; }
+  html[data-theme="dark"] .msg.rs-match { background: rgba(77,163,255,.10); }
+  html[data-theme="dark"] .msg.rs-focus { background: rgba(77,163,255,.22); }
 
   .timeline { flex: 1; overflow-y: auto; padding: 12px 16px 6px; min-height: 0; }
   .msg { display: flex; gap: 8px; padding: 6px 0; }
@@ -292,8 +317,8 @@
     padding: 8px; border-top: 1px solid var(--separator); background: var(--chrome-bg);
   }
   .icon-btn {
-    width: 40px; height: 40px; flex: none; border: none; background: transparent;
-    border-radius: 8px; color: var(--text-secondary); cursor: pointer;
+    width: 32px; height: 32px; flex: none; border: none; background: transparent;
+    border-radius: 2px; color: var(--text-secondary); cursor: pointer;
     display: flex; align-items: center; justify-content: center;
   }
   .icon-btn:hover { background: var(--sidebar-hover); }
@@ -558,6 +583,9 @@
               <div class="rh-topic" id="rhTopic"></div>
             </div>
             <div class="rh-actions">
+              <button class="icon-btn" id="rsSearchBtn" type="button" title="Find in conversation (Ctrl+F)" aria-label="Find in conversation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </button>
               <button class="icon-btn" type="button" title="Threads" aria-label="Threads">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg>
               </button>
@@ -565,6 +593,24 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
               </button>
             </div>
+          </div>
+
+          <!-- In-room search bar (hidden until opened) -->
+          <div class="room-search-bar" id="roomSearchBar">
+            <input class="rs-field" id="rsInput" type="text" placeholder="Find in conversation…" aria-label="Find in conversation">
+            <span class="rs-count" id="rsCount">Type to search</span>
+            <button class="icon-btn" id="rsUp" type="button" title="Previous match" aria-label="Previous match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+            </button>
+            <button class="icon-btn" id="rsDown" type="button" title="Next match" aria-label="Next match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <label class="rs-paginate">
+              <input type="checkbox" id="rsPaginate"> Paginate
+            </label>
+            <button class="icon-btn" id="rsClose" type="button" title="Close" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
           </div>
 
           <div class="timeline" id="timeline"></div>
@@ -877,6 +923,7 @@
     var r = roomById(id);
     r.unread = 0;
     closeInfo();
+    rsClose();
     renderSidebar();
     renderRoom();
   }
@@ -960,6 +1007,84 @@
   document.getElementById("infoClose").addEventListener("click", closeInfo);
   document.getElementById("infoBackdrop").addEventListener("click", closeInfo);
 
+  /* ---------- In-room search bar ---------- */
+  var rsBar       = document.getElementById("roomSearchBar");
+  var rsInput     = document.getElementById("rsInput");
+  var rsCountEl   = document.getElementById("rsCount");
+  var rsUpBtn     = document.getElementById("rsUp");
+  var rsDownBtn   = document.getElementById("rsDown");
+  var rsCloseBtn  = document.getElementById("rsClose");
+  var rsSearchBtn = document.getElementById("rsSearchBtn");
+  var rsMatches = []; // message indices that match
+  var rsCurrent = -1;
+
+  function rsClearHighlights() {
+    var els = document.querySelectorAll("#timeline .msg");
+    for (var i = 0; i < els.length; i++) els[i].classList.remove("rs-match", "rs-focus");
+  }
+
+  function rsFocus() {
+    var els = document.querySelectorAll("#timeline .msg");
+    for (var i = 0; i < els.length; i++) els[i].classList.remove("rs-focus");
+    if (rsCurrent < 0 || rsCurrent >= rsMatches.length) return;
+    var el = els[rsMatches[rsCurrent]];
+    if (el) { el.classList.add("rs-focus"); el.scrollIntoView({ block: "nearest" }); }
+    rsCountEl.textContent = (rsCurrent + 1) + " of " + rsMatches.length;
+  }
+
+  function rsSearch() {
+    rsClearHighlights();
+    rsMatches = []; rsCurrent = -1;
+    var q = rsInput.value.trim().toLowerCase();
+    if (!q) { rsCountEl.textContent = "Type to search"; return; }
+    var r = roomById(activeId);
+    var els = document.querySelectorAll("#timeline .msg");
+    r.messages.forEach(function (m, i) {
+      if (m.text.toLowerCase().indexOf(q) >= 0) {
+        rsMatches.push(i);
+        if (els[i]) els[i].classList.add("rs-match");
+      }
+    });
+    if (rsMatches.length === 0) { rsCountEl.textContent = "No matches"; return; }
+    rsCurrent = rsMatches.length - 1; // start at newest match
+    rsFocus();
+  }
+
+  function rsNavigate(delta) {
+    if (rsMatches.length === 0) return;
+    rsCurrent = (rsCurrent + delta + rsMatches.length) % rsMatches.length;
+    rsFocus();
+  }
+
+  function rsOpen() {
+    rsBar.classList.add("open");
+    rsSearchBtn.classList.add("rs-active");
+    rsInput.value = ""; rsCountEl.textContent = "Type to search";
+    rsMatches = []; rsCurrent = -1;
+    rsClearHighlights();
+    setTimeout(function () { rsInput.focus(); }, 0);
+  }
+
+  function rsClose() {
+    rsBar.classList.remove("open");
+    rsSearchBtn.classList.remove("rs-active");
+    rsInput.value = ""; rsCountEl.textContent = "Type to search";
+    rsMatches = []; rsCurrent = -1;
+    rsClearHighlights();
+  }
+
+  rsInput.addEventListener("input", rsSearch);
+  rsInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); rsNavigate(e.shiftKey ? -1 : 1); }
+    if (e.key === "Escape") { e.stopPropagation(); rsClose(); }
+  });
+  rsUpBtn.addEventListener("click", function () { rsNavigate(-1); });
+  rsDownBtn.addEventListener("click", function () { rsNavigate(1); });
+  rsCloseBtn.addEventListener("click", rsClose);
+  rsSearchBtn.addEventListener("click", function () {
+    if (rsBar.classList.contains("open")) rsClose(); else rsOpen();
+  });
+
   /* ---------- Account context menu (fake) ---------- */
   var userStrip = document.getElementById("userStrip");
   var userMenu = document.getElementById("userMenu");
@@ -982,7 +1107,14 @@
     if (!userMenu.contains(e.target)) closeMenu();
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { closeMenu(); closeInfo(); }
+    if (e.key === "Escape") { closeMenu(); closeInfo(); rsClose(); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "f") {
+      var sim = document.getElementById("sim");
+      if (sim && sim.contains(document.activeElement)) {
+        e.preventDefault();
+        if (rsBar.classList.contains("open")) rsClose(); else rsOpen();
+      }
+    }
   });
   window.addEventListener("blur", closeMenu);
 

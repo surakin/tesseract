@@ -847,7 +847,18 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         }
         else
         {
-            cur_text += *p++;
+            const char c = *p++;
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+            {
+                // Collapse HTML whitespace (CSS white-space:normal): any run of
+                // whitespace in a text node becomes at most one space.
+                if (cur_text.empty() || cur_text.back() != ' ')
+                    cur_text += ' ';
+            }
+            else
+            {
+                cur_text += c;
+            }
         }
     }
 

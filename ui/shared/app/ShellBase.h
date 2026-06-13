@@ -52,7 +52,9 @@ namespace views
 {
 class ComposeBar;
 class MainAppWidget;
+class RoomSearchBar;
 class RoomView;
+class SettingsView;
 }
 
 // ShellBase holds all state and platform-agnostic logic that is identical
@@ -181,6 +183,9 @@ public:
     {
         RoomSearch,
         SaveSettings,
+        MessageSearch,
+        SearchStats,
+        InRoomSearch,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -692,6 +697,9 @@ protected:
     /// Generation counter for show_status_message_ auto-clear: a late-firing
     /// callback only calls on_restore_status_ui_() if the gen still matches.
     std::uint32_t status_msg_gen_ = 0;
+    /// True while a persistent (auto_clear_ms=0) status override is active.
+    /// refresh_sync_status() checks this to avoid clobbering the override.
+    bool status_override_active_ = false;
 
     // ── Encryption setup overlay ──────────────────────────────────────────────
     // True once show_encryption_setup_overlay_() has been called this session;
@@ -1540,6 +1548,13 @@ protected:
                                             std::unique_ptr<Event> ev);
     virtual void handle_message_removed_ui_(std::string room_id,
                                             std::size_t index);
+    virtual void handle_messages_prepended_ui_(std::string room_id,
+                                               EventList events);
+    virtual void handle_messages_appended_ui_(std::string room_id,
+                                              EventList events);
+    virtual void handle_messages_updated_batch_ui_(std::string room_id,
+                                                   std::vector<std::size_t> indices,
+                                                   EventList events);
     virtual void handle_thread_reset_ui_(std::string room_id,
                                          std::string thread_root,
                                          EventList snapshot);
@@ -1554,6 +1569,12 @@ protected:
     virtual void handle_thread_removed_ui_(std::string room_id,
                                            std::string thread_root,
                                            std::size_t index);
+    virtual void handle_thread_messages_prepended_ui_(std::string room_id,
+                                                      std::string thread_root,
+                                                      EventList events);
+    virtual void handle_thread_messages_appended_ui_(std::string room_id,
+                                                     std::string thread_root,
+                                                     EventList events);
     virtual void handle_threads_updated_ui_(std::string room_id);
     // Completion for an async fetch_media_async download. Looks up the pending
     // request by id (ignoring late callbacks for cancelled/superseded requests)
@@ -1793,6 +1814,9 @@ protected:
     virtual void on_show_status_message_ui_(const std::string& /*msg*/) {}
     // Called when the auto-clear timer fires to restore normal sync status.
     virtual void on_restore_status_ui_() {}
+    // True while a persistent status override is showing; shells check this
+    // in refresh_sync_status() to avoid overwriting it with "Connected".
+    bool has_status_override_() const { return status_override_active_; }
 
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_()
@@ -1944,6 +1968,33 @@ protected:
     // changes. Persists the setting, enables/disables the Rust polling loop,
     // and starts or stops the PresenceTracker accordingly.
     void handle_send_presence_toggle_(bool enabled);
+
+    // Toggle handler for the "Index messages for search" Privacy setting.
+    // Persists the setting and calls Client::set_search_indexing_enabled() on
+    // every logged-in account (enable → lazy backfill; disable → clear index).
+    void handle_index_messages_toggle_(bool enabled);
+
+    // Resume live search indexing for a freshly-synced account if the global
+    // "index messages for search" preference is enabled. Called after start_sync.
+    void apply_search_indexing_pref_(tesseract::AccountSession& session);
+
+    // ── Search-index stats (Settings panel) ───────────────────────────────
+    // Each shell points `settings_view_` at its shared SettingsView once, and
+    // calls start_/stop_ when its Settings panel opens/closes. The refresh
+    // fetches stats from the active account's client and pushes them to the
+    // view, re-arming a slow poll while the history backfill runs.
+    void start_search_index_stats_poll_();
+    void stop_search_index_stats_poll_();
+    void refresh_search_index_stats_();
+    // Borrowed pointer to the shell's shared SettingsView (named distinctly so
+    // it never shadows a shell's own `settings_view_` member). Each shell sets
+    // it once.
+    tesseract::views::SettingsView* stats_settings_view_ = nullptr;
+    bool search_stats_panel_open_ = false;
+    /// On-disk index size computed once via `dbstat` when the Settings panel
+    /// opens; injected into `SearchIndexStats` before passing to the UI so the
+    /// expensive B-tree walk is not repeated on every 2-second poll tick.
+    std::uint64_t cached_index_bytes_ = 0;
 
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
@@ -2451,12 +2502,67 @@ protected:
     // applies it after row_offsets_ are rebuilt each pass.
     void try_scroll_to_room_event_(const std::string& event_id);
 
+    // ── Message search (Ctrl+Shift+F global overlay) ──────────────────────
+    // Issue a global FTS query on the active account (allocates a request_id,
+    // tracked in search_pending_queries_). Results land in handle_search_*_ui_.
+    void handle_search_query_(const std::string& query);
+    void handle_search_results_ui_(std::uint64_t request_id,
+                                   std::vector<tesseract::SearchHit> results);
+    void handle_search_failed_ui_(std::uint64_t request_id,
+                                  const std::string& message);
+    // Open the result's room and scroll/highlight the matching event.
+    void handle_search_result_activated_(const std::string& room_id,
+                                         const std::string& event_id);
+
+    // Monotonic id for the latest issued search; stale responses are dropped.
+    std::uint64_t search_request_id_ = 0;
+    // request_id → the query string it was issued for (so a response can be
+    // tagged for the overlay's stale-drop check); erased on completion.
+    std::unordered_map<std::uint64_t, std::string> search_pending_queries_;
+
+    // ── Per-room "find in conversation" search (Ctrl+F / Cmd+F) ──────────
+    void handle_in_room_search_query_(const std::string& query);
+    void handle_in_room_search_results_ui_(std::uint64_t request_id,
+                                           std::vector<tesseract::SearchHit> results);
+    void handle_in_room_search_failed_ui_(std::uint64_t request_id,
+                                          const std::string& message);
+    void in_room_search_navigate_(int delta);
+    void set_in_room_search_paginate_(bool enabled);
+    void in_room_search_focus_current_();
+    void in_room_search_maybe_paginate_(bool at_oldest_boundary);
+    void in_room_search_apply_highlights_();
+    void in_room_search_clear_();
+    // Returns the active RoomSearchBar, or nullptr when unavailable.
+    views::RoomSearchBar* in_room_search_bar_() const;
+
+    std::uint64_t in_room_search_request_id_ = 0;
+    std::unordered_map<std::uint64_t, std::string> in_room_search_pending_;
+    std::string   in_room_search_room_id_;
+    std::vector<tesseract::SearchHit> in_room_search_matches_;
+    int           in_room_search_current_           = -1;
+    bool          in_room_search_paginate_          = false;
+    // Set when pagination was triggered by the in-room search; cleared when
+    // handle_paginate_result_ui_ re-runs the query.
+    bool          in_room_search_rerun_on_paginate_ = false;
+    // When true, the next results delivery should focus the oldest match (index 0).
+    // Set when UP-at-oldest triggers back-pagination.
+    bool          in_room_search_goto_oldest_       = false;
+    // Set alongside in_room_search_rerun_on_paginate_ so the results handler
+    // can detect a paginate-triggered re-run and continue if no new matches.
+    bool          in_room_search_paginate_rerun_    = false;
+    int           in_room_search_prev_match_count_  = 0;
+
     // Event ID we are currently paginating towards (empty when idle).
     std::string pending_scroll_room_event_id_;
 
     // MSC3030: begin a focused-timeline subscription centred on event_id.
     void begin_focused_subscription_(const std::string& room_id,
                                      const std::string& event_id);
+
+    // MSC3030 jump-to-date: resolve ts_ms to an event and begin a focused
+    // subscription. Shared handler wired from all four platform shells via
+    // room_view_->on_date_jump.
+    void handle_date_jump_(std::uint64_t ts_ms);
 
     // MSC3030: clear stale focused-timeline state when (re-)entering a room via
     // the live room-selection path.  Must be called before subscribe_room() so

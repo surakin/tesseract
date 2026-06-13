@@ -117,6 +117,28 @@ RoomView::RoomView()
             on_layout_changed();
     };
 
+    // In-room search bar — docked strip under the header. Hidden until
+    // open_room_search() is called.
+    auto search_bar = std::make_unique<RoomSearchBar>();
+    room_search_bar_ = add_child(std::move(search_bar));
+    room_search_bar_->set_visible(false);
+    room_search_bar_->on_query_changed = [this](const std::string& q)
+    {
+        if (on_room_search_query) on_room_search_query(q);
+    };
+    room_search_bar_->on_navigate = [this](int delta)
+    {
+        if (on_room_search_navigate) on_room_search_navigate(delta);
+    };
+    room_search_bar_->on_paginate_toggled = [this](bool enabled)
+    {
+        if (on_room_search_paginate_toggled) on_room_search_paginate_toggled(enabled);
+    };
+    room_search_bar_->on_close = [this] { close_room_search(); };
+
+    if (header_)
+        header_->on_search_requested = [this] { open_room_search(); };
+
     wire_internal_callbacks();
 }
 
@@ -463,12 +485,10 @@ void RoomView::wire_internal_callbacks()
             on_return_to_live();
         }
     };
-    header_->on_jump_to_date_requested = [this]
+    header_->on_date_jump = [this](std::uint64_t ts_ms)
     {
-        if (on_jump_to_date_requested)
-        {
-            on_jump_to_date_requested();
-        }
+        if (on_date_jump)
+            on_date_jump(ts_ms);
     };
     header_->on_threads_requested = [this]
     {
@@ -797,6 +817,55 @@ bool RoomView::is_overlay_open() const
            (user_profile_panel_ && user_profile_panel_->is_open());
 }
 
+RoomSearchBar* RoomView::room_search_bar() const
+{
+    return room_search_bar_;
+}
+
+void RoomView::open_room_search()
+{
+    if (!has_room_ || !room_search_bar_)
+        return;
+    room_search_bar_->set_visible(true);
+    room_search_bar_->open();
+    if (on_layout_changed)
+        on_layout_changed();
+}
+
+void RoomView::close_room_search()
+{
+    if (!room_search_bar_ || !room_search_bar_->is_open())
+        return;
+    room_search_bar_->close();
+    room_search_bar_->set_visible(false);
+    if (message_list_)
+    {
+        message_list_->clear_search_matches();
+        message_list_->set_highlighted_event({});
+    }
+    if (on_room_search_closed)
+        on_room_search_closed();
+    if (on_layout_changed)
+        on_layout_changed();
+}
+
+bool RoomView::room_search_open() const
+{
+    return room_search_bar_ && room_search_bar_->is_open();
+}
+
+tk::Rect RoomView::room_search_field_rect() const
+{
+    if (!room_search_bar_ || !room_search_bar_->is_open())
+        return {};
+    return room_search_bar_->search_field_rect();
+}
+
+bool RoomView::room_search_field_visible() const
+{
+    return room_search_bar_ && room_search_bar_->search_field_visible();
+}
+
 void RoomView::set_video_player_factory(MessageListView::VideoPlayerFactory f)
 {
     if (message_list_)
@@ -847,6 +916,7 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
             room_info_panel_->close();
         if (user_profile_panel_)
             user_profile_panel_->close();
+        close_room_search();
     }
     else if (room_info_panel_ && room_info_panel_->is_open())
     {
@@ -864,6 +934,7 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     if (header_)
     {
         header_->set_room(info);
+        header_->set_show_search_btn(true);
     }
     if (compose_bar_)
     {
@@ -874,6 +945,7 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
 void RoomView::clear_room()
 {
     has_room_ = false;
+    close_room_search();
     if (compose_bar_)
     {
         compose_bar_->set_enabled(false);
@@ -922,6 +994,18 @@ void RoomView::append_message(MessageRowData msg)
     {
         message_list_->append_message(std::move(msg));
     }
+}
+
+void RoomView::prepend_messages(std::vector<MessageRowData> rows)
+{
+    if (message_list_)
+        message_list_->prepend_messages(std::move(rows));
+}
+
+void RoomView::append_messages(std::vector<MessageRowData> rows)
+{
+    if (message_list_)
+        message_list_->append_messages(std::move(rows));
 }
 
 void RoomView::notify_image_ready(const std::string& url)
@@ -1241,6 +1325,25 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         pinned_banner_->arrange(ctx, {bounds.x, list_top, bounds.w, bh});
         list_top += bh;
     }
+
+    // In-room search bar — occupies kStripH between the header/banner and the
+    // message list when open. Arranged at zero height (invisible to
+    // hit-testing) when closed.
+    const bool search_bar_open = room_search_bar_ && room_search_bar_->is_open();
+    if (room_search_bar_)
+    {
+        if (search_bar_open)
+        {
+            room_search_bar_->arrange(
+                ctx, {bounds.x, list_top, bounds.w, RoomSearchBar::kStripH});
+            list_top += RoomSearchBar::kStripH;
+        }
+        else
+        {
+            room_search_bar_->arrange(ctx, {bounds.x, list_top, bounds.w, 0.0f});
+        }
+    }
+
     const float msg_h = std::max(0.0f, compose_top - list_top);
 
     if (header_)
@@ -1318,6 +1421,8 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         pinned_banner_->paint(ctx);
     }
+    if (room_search_bar_ && room_search_bar_->is_open())
+        room_search_bar_->paint(ctx);
     if (message_list_)
     {
         message_list_->paint(ctx);

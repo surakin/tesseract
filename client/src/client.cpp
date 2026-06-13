@@ -1003,6 +1003,39 @@ void Client::gif_search(std::uint64_t request_id, const std::string& query,
     impl_->ffi->gif_search_async(request_id, query, api_key, client_key, limit);
 }
 
+void Client::set_search_indexing_enabled(bool enabled)
+{
+    if (!impl_)
+        return;
+    SH_FFI;
+    impl_->ffi->set_search_indexing_enabled(enabled);
+}
+
+void Client::search_messages(std::uint64_t request_id, const std::string& query,
+                             const std::string& room_id, std::uint32_t limit)
+{
+    if (!impl_)
+        return;
+    SH_FFI;
+    impl_->ffi->search_messages_async(request_id, query, room_id, limit);
+}
+
+SearchIndexStats Client::search_index_stats() const
+{
+    if (!impl_)
+        return {};
+    SH_FFI;
+    return from_ffi(impl_->ffi->search_index_stats());
+}
+
+std::uint64_t Client::search_index_size_bytes() const
+{
+    if (!impl_)
+        return 0;
+    SH_FFI;
+    return impl_->ffi->search_index_size_bytes();
+}
+
 Result Client::send_gif_video(
     const std::string& room_id, const std::vector<uint8_t>& mp4_bytes,
     const std::string& mime_type, const std::string& body, std::uint32_t width,

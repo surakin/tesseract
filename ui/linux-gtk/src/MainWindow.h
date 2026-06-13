@@ -172,12 +172,26 @@ private:
     void open_quick_switch_();
     void close_quick_switch_();
 
+    // Ctrl+Shift+F global message search — open focuses the native search
+    // field; close hides it and relayouts.
+    void open_message_search_();
+    void close_message_search_();
+    // Ctrl+F per-room "find in conversation" search bar.
+    void open_find_in_room_();
+    void close_find_in_room_();
+
     static gboolean on_window_key_pressed_(GtkEventControllerKey*, guint keyval,
                                            guint, GdkModifierType,
                                            gpointer user_data);
     // Global-scope Ctrl+K shortcut callback — opens the quick switcher even
     // while a native entry / text view holds focus.
     static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
+                                              gpointer user_data);
+    // Global-scope Ctrl+Shift+F shortcut callback — opens message search.
+    static gboolean on_message_search_shortcut_(GtkWidget*, GVariant*,
+                                                gpointer user_data);
+    // Global-scope Ctrl+F shortcut callback — opens per-room find bar.
+    static gboolean on_find_in_room_shortcut_(GtkWidget*, GVariant*,
                                               gpointer user_data);
     // Global-scope Alt+Left / Alt+Right shortcut callbacks — room history nav.
     static gboolean on_nav_back_shortcut_(GtkWidget*, GVariant*,
@@ -203,10 +217,6 @@ private:
     void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
     void request_more_history(const std::string& room_id);
-    void open_jump_to_date_dialog();
-    static void on_jump_dialog_ok_(GtkButton*, gpointer user_data);
-    static void on_jump_dialog_cancel_(GtkButton*, gpointer user_data);
-    static void on_jump_dialog_destroy_(GtkWidget*, gpointer user_data);
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
     // Bind the UI to the now-active account `uid` and finish startup (settings
@@ -316,6 +326,8 @@ private:
     tesseract::views::RoomListView* room_list_view_ = nullptr;
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
+    std::unique_ptr<tk::NativeTextField> message_search_field_;
+    std::unique_ptr<tk::NativeTextField> find_in_room_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     GtkWidget* emoji_popover_ = nullptr;

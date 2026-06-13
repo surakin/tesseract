@@ -1143,7 +1143,7 @@ public:
         {
             return;
         }
-        if (root_->dispatch_wheel(local, dx, dy))
+        if (dispatch_wheel(local, dx, dy))
         {
             request_repaint();
             on_pointer_move(local);

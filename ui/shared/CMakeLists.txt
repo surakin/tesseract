@@ -100,6 +100,8 @@ set(_tk_sources
     views/ThreadView.cpp
     views/VerificationBanner.h
     views/VerificationBanner.cpp
+    views/DatePickerView.h
+    views/DatePickerView.cpp
     views/RoomHeader.h
     views/RoomHeader.cpp
     views/RoomView.h
@@ -120,6 +122,10 @@ set(_tk_sources
     views/VideoViewerOverlay.cpp
     views/QuickSwitcher.h
     views/QuickSwitcher.cpp
+    views/MessageSearchView.h
+    views/MessageSearchView.cpp
+    views/RoomSearchBar.h
+    views/RoomSearchBar.cpp
     views/ShortcodeEngine.h
     views/ShortcodeEngine.cpp
     views/SlashCommandEngine.h
@@ -278,6 +284,9 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-join.svg"
     "${_lucide_dir}/lucide-jump-to-date.svg"
     "${_lucide_dir}/lucide-threadlist.svg"
+    "${_lucide_dir}/lucide-search.svg"
+    "${_lucide_dir}/lucide-chevron-up.svg"
+    "${_lucide_dir}/lucide-chevron-down.svg"
 )
 
 add_custom_command(

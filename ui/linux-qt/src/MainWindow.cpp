@@ -55,11 +55,8 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
-#include <QCalendarWidget>
 #include <QDate>
 #include <QDateTime>
-#include <QDialog>
-#include <QDialogButtonBox>
 #include <QTime>
 #include <QTimeZone>
 #include <QTimer>
@@ -564,9 +561,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                     client_->subscribe_room_at(room, event_id);
                 });
         };
-        mainApp_->room_view()->on_jump_to_date_requested = [this]
+        mainApp_->room_view()->on_date_jump = [this](std::uint64_t ts_ms)
         {
-            openJumpToDateDialog();
+            handle_date_jump_(ts_ms);
         };
         mainApp_->room_view()->on_threads_button_clicked = [this]
         {
@@ -1701,6 +1698,101 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     if (mainApp_ && mainApp_->quick_switcher())
         mainApp_->quick_switcher()->on_close = [this] { closeQuickSwitch_(); };
 
+    // Message search (Ctrl+Shift+F) native field — mirrors the quick switcher.
+    messageSearchField_ = mainAppSurface_->host().make_text_field();
+    messageSearchField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    messageSearchField_->set_placeholder(
+        tr("Search your messages\xe2\x80\xa6").toStdString());
+    messageSearchField_->set_visible(false);
+    messageSearchField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (mainApp_ && mainApp_->message_search())
+            {
+                mainApp_->message_search()->set_query(q);
+                mainAppSurface_->relayout();
+            }
+        });
+    messageSearchField_->set_on_submit(
+        [this]
+        {
+            if (mainApp_ && mainApp_->message_search())
+                mainApp_->message_search()->activate_selected();
+        });
+    messageSearchField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            auto* ms = mainApp_ ? mainApp_->message_search() : nullptr;
+            if (!ms || !ms->is_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                ms->move_selection(-1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                ms->move_selection(+1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                closeMessageSearch_();
+                return true;
+            default:
+                return false;
+            }
+        });
+    if (mainApp_ && mainApp_->message_search())
+        mainApp_->message_search()->on_close = [this] { closeMessageSearch_(); };
+
+    // Per-room "find in conversation" (Ctrl+F) native field — docked under the
+    // RoomHeader inside the shared search bar strip. Mirrors messageSearchField_
+    // except: no popup-nav (UP/DOWN are button clicks in the strip), submit is
+    // a no-op, and Escape closes the bar.
+    findInRoomField_ = mainAppSurface_->host().make_text_field();
+    findInRoomField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    findInRoomField_->set_placeholder(
+        tr("Find in conversation\xe2\x80\xa6").toStdString());
+    findInRoomField_->set_visible(false);
+    findInRoomField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (mainApp_ && mainApp_->room_view() &&
+                mainApp_->room_view()->room_search_bar())
+            {
+                mainApp_->room_view()->room_search_bar()->set_query(q);
+                mainAppSurface_->relayout();
+            }
+        });
+    findInRoomField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            auto* rv = mainApp_ ? mainApp_->room_view() : nullptr;
+            if (!rv || !rv->room_search_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                if (rv->on_room_search_navigate) rv->on_room_search_navigate(-1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                if (rv->on_room_search_navigate) rv->on_room_search_navigate(+1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                closeFindInRoom_();
+                return true;
+            default:
+                return false;
+            }
+        });
+    if (mainApp_ && mainApp_->room_view())
+        mainApp_->room_view()->room_search_bar()->on_close =
+            [this] { closeFindInRoom_(); };
+
     // Ctrl+K accelerator. An application-scoped QShortcut fires even when the
     // native compose / search QLineEdit/QTextEdit holds focus — keyPressEvent
     // on the window does not see keys consumed by a focused child widget.
@@ -1708,6 +1800,23 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this);
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this, [this] { openQuickSwitch_(); });
+    }
+    // Ctrl+Shift+F: open global message search (application-scoped so it fires
+    // while the compose box holds focus).
+    {
+        auto* sc = new QShortcut(
+            QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this] { openMessageSearch_(); });
+    }
+    // Ctrl+F: open per-room "find in conversation" (application-scoped so it
+    // fires while the compose box holds focus; no-op when no room is open).
+    {
+        auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this] { openFindInRoom_(); });
     }
     // Alt+Left / Alt+Right: navigate room history back / forward.
     // ApplicationShortcut so these fire while the compose box holds focus.
@@ -1747,6 +1856,22 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 if (vis)
                     quickSwitchField_->set_rect(
                         mainApp_->quick_switch_field_rect());
+            }
+            if (mainApp_ && messageSearchField_)
+            {
+                const bool vis = mainApp_->message_search_field_visible();
+                messageSearchField_->set_visible(vis);
+                if (vis)
+                    messageSearchField_->set_rect(
+                        mainApp_->message_search_field_rect());
+            }
+            if (mainApp_ && findInRoomField_)
+            {
+                const bool vis = mainApp_->in_room_search_field_visible();
+                findInRoomField_->set_visible(vis);
+                if (vis)
+                    findInRoomField_->set_rect(
+                        mainApp_->in_room_search_field_rect());
             }
             if (mainApp_ && encPassphraseField_)
             {
@@ -2262,6 +2387,63 @@ void MainWindow::closeQuickSwitch_()
         mainAppSurface_->relayout();
 }
 
+void MainWindow::openMessageSearch_()
+{
+    if (!mainApp_ || !mainApp_->message_search())
+        return;
+    // Application-scoped shortcut: may fire while a pop-out holds focus. Bring
+    // the main window forward (search lives here) so its field can focus.
+    if (!isActiveWindow())
+        activateWindowWithToken_(QString{});
+    mainApp_->show_message_search(true);
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+    if (messageSearchField_)
+    {
+        messageSearchField_->set_text("");
+        messageSearchField_->set_focused(true);
+    }
+}
+
+void MainWindow::closeMessageSearch_()
+{
+    if (mainApp_)
+        mainApp_->show_message_search(false);
+    if (messageSearchField_)
+        messageSearchField_->set_visible(false);
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+}
+
+void MainWindow::openFindInRoom_()
+{
+    if (!mainApp_ || !mainApp_->room_view())
+        return;
+    if (current_room_id_.empty())
+        return;
+    mainApp_->room_view()->open_room_search();
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+    if (findInRoomField_)
+    {
+        findInRoomField_->set_text("");
+        findInRoomField_->set_focused(true);
+    }
+}
+
+void MainWindow::closeFindInRoom_()
+{
+    if (mainApp_ && mainApp_->room_view())
+        mainApp_->room_view()->close_room_search();
+    if (findInRoomField_)
+    {
+        findInRoomField_->set_visible(false);
+        findInRoomField_->set_text("");
+    }
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+}
+
 void MainWindow::keyPressEvent(QKeyEvent* ev)
 {
     if (ev->key() == Qt::Key_Escape)
@@ -2287,6 +2469,13 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
             mainApp_->image_viewer()->close();
             mainApp_->show_image_viewer(false);
             mainAppSurface_->relayout();
+            ev->accept();
+            return;
+        }
+        if (mainApp_ && mainApp_->room_view() &&
+            mainApp_->room_view()->room_search_open())
+        {
+            closeFindInRoom_();
             ev->accept();
             return;
         }
@@ -2729,70 +2918,6 @@ void MainWindow::requestMoreHistory(const std::string& room_id)
                 this, "onPaginateFinished", Qt::QueuedConnection,
                 Q_ARG(QString, QString::fromStdString(room_id)),
                 Q_ARG(bool, reached));
-        });
-}
-
-void MainWindow::openJumpToDateDialog()
-{
-    if (current_room_id_.empty())
-    {
-        return;
-    }
-
-    QDialog dlg(this);
-    dlg.setWindowTitle(tr("Jump to Date"));
-    auto* cal = new QCalendarWidget(&dlg);
-    cal->setMinimumDate(QDate(1970, 1, 1));
-    cal->setMaximumDate(QDate::currentDate());
-    auto* bb = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    auto* lo = new QVBoxLayout(&dlg);
-    lo->addWidget(cal);
-    lo->addWidget(bb);
-
-    if (dlg.exec() != QDialog::Accepted)
-    {
-        return;
-    }
-
-    const QDate date = cal->selectedDate();
-    const uint64_t ts_ms = static_cast<uint64_t>(
-        QDateTime(date, QTime(0, 0, 0), QTimeZone::utc()).toMSecsSinceEpoch());
-
-    const std::string room_id = current_room_id_;
-    run_async_mut_(
-        [this, room_id, ts_ms]
-        {
-            auto res = client_->timestamp_to_event(room_id, ts_ms, "f");
-            if (!res.ok)
-            {
-                QMetaObject::invokeMethod(
-                    this,
-                    [this, msg = res.message]
-                    {
-                        statusBar()->showMessage(
-                            tr("Jump to date failed: %1")
-                                .arg(QString::fromStdString(msg)),
-                            4000);
-                    },
-                    Qt::QueuedConnection);
-                return;
-            }
-            const std::string event_id = res.message;
-            QMetaObject::invokeMethod(
-                this,
-                [this, room_id, event_id]
-                {
-                    begin_focused_subscription_(room_id, event_id);
-                    run_async_mut_(
-                        [this, room_id, event_id]
-                        {
-                            client_->subscribe_room_at(room_id, event_id);
-                        });
-                },
-                Qt::QueuedConnection);
         });
 }
 
@@ -3735,12 +3860,12 @@ void MainWindow::refreshSyncStatus()
                 .arg(static_cast<qulonglong>(last_imported_keys_)));
         return;
     }
-    if (sync_progress_shown_)
-    {
-        // We covered up a prior login message; settle to the steady-state copy.
-        sync_progress_shown_ = false;
-        statusBar()->showMessage(tr("Connected"));
-    }
+    // Steady state: settle to "Connected" unless a persistent status override
+    // (e.g., "Fetching older messages…" from in-room search) is still active.
+    if (has_status_override_())
+        return;
+    sync_progress_shown_ = false;
+    statusBar()->showMessage(tr("Connected"));
 }
 
 // ---------------------------------------------------------------------------
@@ -3807,10 +3932,12 @@ void MainWindow::openSettings()
         settingsWidget_ = new SettingsWidget(this);
         settingsWidget_->set_theme(current_theme_);
         contentStack_->addWidget(settingsWidget_);
+        stats_settings_view_ = settingsWidget_->settings_view();
 
         connect(settingsWidget_, &SettingsWidget::settingsClosed, this,
                 [this]
                 {
+                    stop_search_index_stats_poll_();
                     contentStack_->setCurrentWidget(mainAppSurface_);
                 });
         connect(settingsWidget_, &SettingsWidget::logoutRequested, this,
@@ -3842,6 +3969,11 @@ void MainWindow::openSettings()
                 [this](bool enabled)
                 {
                     handle_send_presence_toggle_(enabled);
+                });
+        connect(settingsWidget_, &SettingsWidget::indexMessagesChanged, this,
+                [this](bool enabled)
+                {
+                    handle_index_messages_toggle_(enabled);
                 });
         connect(settingsWidget_, &SettingsWidget::mediaPreviewsChanged, this,
                 [this](tesseract::Settings::MediaPreviews mode)
@@ -3917,6 +4049,7 @@ void MainWindow::openSettings()
     });
 
     contentStack_->setCurrentWidget(settingsWidget_);
+    start_search_index_stats_poll_();
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)

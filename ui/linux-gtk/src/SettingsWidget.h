@@ -36,6 +36,10 @@ public:
                   tesseract::Settings::ThemePreference theme_pref,
                   bool notifications_enabled);
 
+    // The hosted shared SettingsView (borrowed). Used by the shell to push
+    // search-index stats.
+    tesseract::views::SettingsView* settings_view() const { return settings_view_; }
+
     // Forward server capability info into the shared SettingsView.
     void set_server_info(const tesseract::ServerInfo& info);
 
@@ -57,6 +61,7 @@ public:
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
     std::function<void(bool)> on_notifications_changed;
     std::function<void(bool)> on_send_presence_changed;
+    std::function<void(bool)> on_index_messages_changed;
     std::function<void(tesseract::Settings::MediaPreviews)>
         on_media_previews_changed;
     std::function<void(bool)> on_invite_avatars_changed;

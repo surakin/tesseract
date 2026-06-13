@@ -1489,7 +1489,7 @@ public:
             x = gtk_widget_get_width(drawing_area_) * 0.5;
             y = gtk_widget_get_height(drawing_area_) * 0.5;
         }
-        if (root_->dispatch_wheel(
+        if (dispatch_wheel(
                 {static_cast<float>(x), static_cast<float>(y)},
                 static_cast<float>(dx), static_cast<float>(dy)))
         {

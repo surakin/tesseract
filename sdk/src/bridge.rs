@@ -425,6 +425,37 @@ pub mod ffi {
         strip_mime: String,
     }
 
+    /// One full-text message-search hit delivered to C++ via
+    /// `on_search_results`. The local FTS5 index (per-account `app_cache.db`)
+    /// stores only what is needed to render a result row and jump to the
+    /// message; `room_name` is resolved at query time from the live client so
+    /// the UI need not look it up. `body` is the decrypted plaintext that
+    /// matched (encrypted-room messages included).
+    struct SearchHit {
+        event_id: String,
+        room_id: String,
+        room_name: String,
+        sender: String,
+        sender_name: String,
+        body: String,
+        /// Unix timestamp in milliseconds.
+        timestamp_ms: u64,
+    }
+
+    /// Summary of the local search index for the Settings panel.
+    /// `backfill_done` is true once the one-time history crawl has finished a
+    /// full pass; `oldest_ts_ms` is 0 when the index is empty.
+    /// `index_bytes` is populated separately via `search_index_size_bytes`
+    /// (the `dbstat` walk is computed once on panel open, not on every poll).
+    struct SearchIndexStats {
+        message_count: u64,
+        room_count: u64,
+        oldest_ts_ms: u64,
+        backfill_done: bool,
+        /// Always 0 in this struct; populated C++-side from `search_index_size_bytes`.
+        index_bytes: u64,
+    }
+
     /// Snapshot of the server-side key-backup state plus a running counter of
     /// imported room keys for this device. Carried by `on_backup_progress`
     /// callbacks and returned by `backup_state()`.
@@ -608,6 +639,34 @@ pub mod ffi {
         /// Remove the event at visible-index `index`.
         fn on_message_removed(self: &EventHandlerBridge, room_id: &str, index: u64);
 
+        /// Batch prepend: N older messages added at the front of `room_id`'s
+        /// timeline (back-pagination). Events are oldest-first so C++ can
+        /// insert them at the front in one pass. Replaces N individual
+        /// `on_message_inserted(idx=0)` calls.
+        fn on_messages_prepended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            events: &Vec<TimelineEvent>,
+        );
+        /// Batch append: N newer messages added at the end of `room_id`'s
+        /// timeline (forward-pagination, VectorDiff::Append, or a live-sync
+        /// burst of more than one event). Events are oldest-first.
+        fn on_messages_appended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            events: &Vec<TimelineEvent>,
+        );
+        /// Batch update: multiple visible events replaced simultaneously
+        /// (receipt-refresh pass after fetch_members, or a VectorDiff::Set
+        /// burst). `indices` and `events` are parallel arrays of equal length;
+        /// `indices[i]` is the visible-index of `events[i]`.
+        fn on_messages_updated_batch(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            indices: &Vec<u64>,
+            events: &Vec<TimelineEvent>,
+        );
+
         /// Thread-timeline twins of the four room-timeline callbacks. `room_id`
         /// is the host room; `thread_root` is the thread root event id. Indices
         /// follow the same visible-index VectorDiff semantics.
@@ -636,6 +695,22 @@ pub mod ffi {
             room_id: &str,
             thread_root: &str,
             index: u64,
+        );
+        /// Batch prepend for a thread timeline (back-pagination of thread history).
+        /// Events are oldest-first.
+        fn on_thread_messages_prepended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            events: &Vec<TimelineEvent>,
+        );
+        /// Batch append for a thread timeline (forward-pagination or live burst).
+        /// Events are oldest-first.
+        fn on_thread_messages_appended(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            events: &Vec<TimelineEvent>,
         );
 
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
@@ -811,6 +886,25 @@ pub mod ffi {
         /// Fired when an async GIF search fails (network / provider error).
         /// `request_id` is the correlation token; `message` is human-readable.
         fn on_gif_search_failed(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            message: &str,
+        );
+
+        /// Fired when an async full-text search started via
+        /// `search_messages_async` completes successfully. `request_id` is the
+        /// correlation token the caller passed; the C++ side drops results
+        /// whose id is stale (a newer query has since been issued).
+        fn on_search_results(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            results: &Vec<SearchHit>,
+        );
+
+        /// Fired when an async full-text search fails (e.g. the index is not
+        /// open). `request_id` is the correlation token; `message` is
+        /// human-readable.
+        fn on_search_failed(
             self: &EventHandlerBridge,
             request_id: u64,
             message: &str,
@@ -1673,6 +1767,43 @@ pub mod ffi {
             client_key: &str,
             limit: u32,
         );
+
+        // ----- Full-text message search -----
+
+        /// Enable or disable local message indexing for full-text search. Off
+        /// by default (opt-in privacy setting). Turning it on kicks off a lazy
+        /// background backfill of joined rooms; turning it off clears the index
+        /// (decrypted plaintext is removed from disk). Cheap + synchronous: it
+        /// only flips a flag and spawns/cleans up; safe to call from the UI
+        /// thread on a settings toggle or once after login.
+        fn set_search_indexing_enabled(self: &ClientFfi, enabled: bool);
+
+        /// Full-text search the local index for `query`, returning at most
+        /// `limit` hits via `on_search_results(request_id, …)` (or
+        /// `on_search_failed`). A non-empty `room_id` scopes the search to one
+        /// room (in-room find); empty searches the whole active account (global
+        /// overlay). Non-blocking; runs on a worker thread. The C++ controller
+        /// debounces input and drops stale `request_id`s.
+        fn search_messages_async(
+            self: &ClientFfi,
+            request_id: u64,
+            query: &str,
+            room_id: &str,
+            limit: u32,
+        );
+
+        /// Synchronous summary of the local search index (message/room counts,
+        /// oldest indexed timestamp, backfill-complete flag) for the Settings
+        /// panel. Cheap single-aggregate read; not for hot paths.
+        /// `index_bytes` in the returned struct is always 0; use
+        /// `search_index_size_bytes` for the on-disk size (dbstat walk, once on
+        /// panel open only).
+        fn search_index_stats(self: &ClientFfi) -> SearchIndexStats;
+
+        /// On-disk size of the search index in bytes via the SQLite `dbstat`
+        /// virtual table. This is an O(pages) B-tree walk — call only once when
+        /// the Settings panel opens, not on the 2-second refresh poll.
+        fn search_index_size_bytes(self: &ClientFfi) -> u64;
 
         /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying
         /// the `fi.mau.gif` vendor hint. `thumb_bytes` is a static poster image

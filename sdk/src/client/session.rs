@@ -354,7 +354,12 @@ impl ClientFfi {
                 let mut db = self.app_cache_db.lock();
                 *db = None;
             }
+            {
+                let mut db = self.search_db.lock();
+                *db = None;
+            }
             let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
+            let _ = std::fs::remove_file(self.data_dir.join("search_index.db"));
             for sidecar in [
                 "matrix-sdk-event-cache.sqlite3",
                 "matrix-sdk-event-cache.sqlite3-wal",
@@ -378,14 +383,18 @@ impl ClientFfi {
     pub fn logout(&mut self) -> OpResult {
         self.stop_sync();
 
-        // Close the app cache DB before remove_dir_all so WAL frames are
-        // checkpointed and the file handle is released (required on Windows).
+        // Close the cache DBs before remove_dir_all so WAL frames are
+        // checkpointed and file handles are released (required on Windows).
         // Also clear the in-memory backfill cache so nothing stale persists
         // after a re-login on the same process.
         #[cfg(not(test))]
         {
             {
                 let mut db = self.app_cache_db.lock();
+                *db = None;
+            }
+            {
+                let mut db = self.search_db.lock();
                 *db = None;
             }
             {

@@ -36,7 +36,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
-// TimelineChannel and emit helpers
+// TimelineChannel, EmitOp, and emit helpers
 // ---------------------------------------------------------------------------
 
 #[cfg(not(test))]
@@ -46,6 +46,160 @@ pub(crate) enum TimelineChannel {
     Thread(String), // thread root event id
 }
 
+/// Internal (non-FFI) op collected while processing a VectorDiff batch.
+/// Emission is deferred to `emit_timeline_batch` so the whole poll's worth
+/// of diffs can be coalesced into a single FFI call.
+#[cfg(not(test))]
+pub(super) enum EmitOp {
+    Reset(Vec<TimelineEvent>),
+    /// Events in PushFront arrival order (newest-first).  `emit_timeline_batch`
+    /// reverses them to oldest-first before calling `on_messages_prepended`.
+    Prepended(Vec<TimelineEvent>),
+    /// Events in chronological order (oldest-first).
+    Appended(Vec<TimelineEvent>),
+    /// Mid-list single insert at visible-index `idx` (rare).
+    Inserted(u64, TimelineEvent),
+    Updated(u64, TimelineEvent),
+    Removed(u64),
+}
+
+/// Emit a batch of ops collected from one `stream.next()` poll.
+/// Consecutive same-kind ops are coalesced into a single FFI call.
+#[cfg(not(test))]
+pub(super) fn emit_timeline_batch(
+    ops: Vec<EmitOp>,
+    handler: &Arc<Mutex<SendHandler>>,
+    ch: &TimelineChannel,
+    room_id: &str,
+) {
+    if ops.is_empty() {
+        return;
+    }
+
+    // Iterate, accumulating runs of the same kind.
+    // We process ops one at a time through a small state machine that
+    // tracks the pending accumulated batch for the current kind.
+
+    enum Pending {
+        None,
+        Prepended(Vec<TimelineEvent>),
+        Appended(Vec<TimelineEvent>),
+        Updated(Vec<u64>, Vec<TimelineEvent>),
+    }
+
+    let mut pending = Pending::None;
+
+    let flush = |p: Pending, handler: &Arc<Mutex<SendHandler>>, ch: &TimelineChannel, room_id: &str| {
+        match p {
+            Pending::None => {}
+            Pending::Prepended(mut evs) => {
+                evs.reverse(); // arrival order = newest-first; emit oldest-first
+                let g = handler.lock();
+                match ch {
+                    TimelineChannel::Room => g.on_messages_prepended(room_id, &evs),
+                    TimelineChannel::Thread(root) => g.on_thread_messages_prepended(room_id, root, &evs),
+                }
+            }
+            Pending::Appended(evs) => {
+                let g = handler.lock();
+                match ch {
+                    TimelineChannel::Room => g.on_messages_appended(room_id, &evs),
+                    TimelineChannel::Thread(root) => g.on_thread_messages_appended(room_id, root, &evs),
+                }
+            }
+            Pending::Updated(indices, evs) => {
+                if indices.len() == 1 {
+                    let g = handler.lock();
+                    match ch {
+                        TimelineChannel::Room => g.on_message_updated(room_id, indices[0], &evs[0]),
+                        TimelineChannel::Thread(root) => g.on_thread_updated(room_id, root, indices[0], &evs[0]),
+                    }
+                } else {
+                    let g = handler.lock();
+                    match ch {
+                        TimelineChannel::Room => g.on_messages_updated_batch(room_id, &indices, &evs),
+                        // Thread batch-update not yet in the bridge; fall back to singles.
+                        TimelineChannel::Thread(root) => {
+                            for (idx, ev) in indices.iter().zip(evs.iter()) {
+                                g.on_thread_updated(room_id, root, *idx, ev);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    for op in ops {
+        match op {
+            EmitOp::Reset(snap) => {
+                // Flush any accumulated batch before the reset.
+                let prev = std::mem::replace(&mut pending, Pending::None);
+                flush(prev, handler, ch, room_id);
+                let g = handler.lock();
+                match ch {
+                    TimelineChannel::Room => g.on_timeline_reset(room_id, &snap),
+                    TimelineChannel::Thread(root) => g.on_thread_reset(room_id, root, &snap),
+                }
+            }
+            EmitOp::Prepended(evs) => {
+                match &mut pending {
+                    Pending::Prepended(acc) => acc.extend(evs),
+                    _ => {
+                        let prev = std::mem::replace(&mut pending, Pending::Prepended(evs));
+                        flush(prev, handler, ch, room_id);
+                    }
+                }
+            }
+            EmitOp::Appended(evs) => {
+                match &mut pending {
+                    Pending::Appended(acc) => acc.extend(evs),
+                    _ => {
+                        let prev = std::mem::replace(&mut pending, Pending::Appended(evs));
+                        flush(prev, handler, ch, room_id);
+                    }
+                }
+            }
+            EmitOp::Inserted(idx, ev) => {
+                let prev = std::mem::replace(&mut pending, Pending::None);
+                flush(prev, handler, ch, room_id);
+                let g = handler.lock();
+                match ch {
+                    TimelineChannel::Room => g.on_message_inserted(room_id, idx, &ev),
+                    TimelineChannel::Thread(root) => g.on_thread_inserted(room_id, root, idx, &ev),
+                }
+            }
+            EmitOp::Updated(idx, ev) => {
+                match &mut pending {
+                    Pending::Updated(idxs, evs) => {
+                        idxs.push(idx);
+                        evs.push(ev);
+                    }
+                    _ => {
+                        let prev = std::mem::replace(&mut pending, Pending::Updated(vec![idx], vec![ev]));
+                        flush(prev, handler, ch, room_id);
+                    }
+                }
+            }
+            EmitOp::Removed(idx) => {
+                let prev = std::mem::replace(&mut pending, Pending::None);
+                flush(prev, handler, ch, room_id);
+                let g = handler.lock();
+                match ch {
+                    TimelineChannel::Room => g.on_message_removed(room_id, idx),
+                    TimelineChannel::Thread(root) => g.on_thread_removed(room_id, root, idx),
+                }
+            }
+        }
+    }
+
+    // Flush final accumulated batch.
+    flush(pending, handler, ch, room_id);
+}
+
+// Legacy single-event emit helpers — kept for the `refresh_receipts` path
+// which may still emit individual updates, and for any callers outside the
+// main diff loop.
 #[cfg(not(test))]
 pub(super) fn emit_reset(
     g: &SendHandler,
@@ -59,19 +213,6 @@ pub(super) fn emit_reset(
     }
 }
 #[cfg(not(test))]
-pub(super) fn emit_inserted(
-    g: &SendHandler,
-    ch: &TimelineChannel,
-    id: &str,
-    idx: u64,
-    ev: &TimelineEvent,
-) {
-    match ch {
-        TimelineChannel::Room => g.on_message_inserted(id, idx, ev),
-        TimelineChannel::Thread(root) => g.on_thread_inserted(id, root, idx, ev),
-    }
-}
-#[cfg(not(test))]
 pub(super) fn emit_updated(
     g: &SendHandler,
     ch: &TimelineChannel,
@@ -82,13 +223,6 @@ pub(super) fn emit_updated(
     match ch {
         TimelineChannel::Room => g.on_message_updated(id, idx, ev),
         TimelineChannel::Thread(root) => g.on_thread_updated(id, root, idx, ev),
-    }
-}
-#[cfg(not(test))]
-pub(super) fn emit_removed(g: &SendHandler, ch: &TimelineChannel, id: &str, idx: u64) {
-    match ch {
-        TimelineChannel::Room => g.on_message_removed(id, idx),
-        TimelineChannel::Thread(root) => g.on_thread_removed(id, root, idx),
     }
 }
 
@@ -124,8 +258,12 @@ pub(super) fn filter_for_channel(
     }
 }
 
+/// Process one VectorDiff, mutating `visible`/`visible_ids` in place and
+/// pushing the resulting emit operation(s) onto `ops`.  Does **not** cross
+/// the FFI boundary — emission is deferred to `emit_timeline_batch` so the
+/// caller can coalesce an entire `stream.next()` poll into one FFI call.
 #[cfg(not(test))]
-pub(super) async fn handle_timeline_diff(
+pub(super) async fn collect_timeline_ops(
     diff: VectorDiff<Arc<TimelineItem>>,
     visible: &mut Vec<bool>,
     // Event id per slot, parallel to `visible`. Empty string for slots whose
@@ -134,34 +272,40 @@ pub(super) async fn handle_timeline_diff(
     // that are not visible. Used by `refresh_receipts` to verify shadow
     // alignment with matrix-sdk-ui's current `items()` before re-emitting.
     visible_ids: &mut Vec<String>,
-    handler: &Arc<Mutex<SendHandler>>,
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
     _client: &Client,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
+    search_index: &Option<super::search::SearchIndexCtx>,
+    ops: &mut Vec<EmitOp>,
 ) {
     if cancelled.load(Ordering::Acquire) { return; }
     match diff {
         VectorDiff::Append { values } => {
+            // Collect all visible items from the Append batch into one
+            // Appended op so the whole group crosses the FFI in a single call.
+            let mut batch: Vec<TimelineEvent> = Vec::new();
             for item in values {
                 let ev = filter_for_channel(
                     timeline_item_to_ffi(&item, room_id, room, me).await,
                     channel,
                 );
                 if let Some(ev) = ev {
-                    let idx = visible_len(visible);
                     visible.push(true);
                     visible_ids.push(ev.event_id.clone());
-                    {
-                        let g = handler.lock();
-                        emit_inserted(&g, channel, room_id, idx, &ev);
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
                     }
+                    batch.push(ev);
                 } else {
                     visible.push(false);
                     visible_ids.push(String::new());
                 }
+            }
+            if !batch.is_empty() {
+                ops.push(EmitOp::Appended(batch));
             }
         }
         VectorDiff::PushBack { value } => {
@@ -170,13 +314,12 @@ pub(super) async fn handle_timeline_diff(
                 channel,
             );
             if let Some(ev) = ev {
-                let idx = visible_len(visible);
                 visible.push(true);
                 visible_ids.push(ev.event_id.clone());
-                {
-                    let g = handler.lock();
-                    emit_inserted(&g, channel, room_id, idx, &ev);
+                if let Some(ix) = search_index {
+                    ix.index_event(&ev);
                 }
+                ops.push(EmitOp::Appended(vec![ev]));
             } else {
                 visible.push(false);
                 visible_ids.push(String::new());
@@ -190,10 +333,12 @@ pub(super) async fn handle_timeline_diff(
             if let Some(ev) = ev {
                 visible.insert(0, true);
                 visible_ids.insert(0, ev.event_id.clone());
-                {
-                    let g = handler.lock();
-                    emit_inserted(&g, channel, room_id, 0, &ev);
+                if let Some(ix) = search_index {
+                    ix.index_event(&ev);
                 }
+                // Arrival order = newest-first; emit_timeline_batch reverses
+                // before calling on_messages_prepended.
+                ops.push(EmitOp::Prepended(vec![ev]));
             } else {
                 visible.insert(0, false);
                 visible_ids.insert(0, String::new());
@@ -212,9 +357,14 @@ pub(super) async fn handle_timeline_diff(
                 let v_idx = visible_index_of(visible, index);
                 visible.insert(index, true);
                 visible_ids.insert(index, ev.event_id.clone());
-                {
-                    let g = handler.lock();
-                    emit_inserted(&g, channel, room_id, v_idx, &ev);
+                if let Some(ix) = search_index {
+                    ix.index_event(&ev);
+                }
+                if index == 0 {
+                    // Treat explicit Insert-at-0 as a prepend, same as PushFront.
+                    ops.push(EmitOp::Prepended(vec![ev]));
+                } else {
+                    ops.push(EmitOp::Inserted(v_idx, ev));
                 }
             } else {
                 visible.insert(index, false);
@@ -249,10 +399,10 @@ pub(super) async fn handle_timeline_diff(
                     if let Some(slot) = visible_ids.get_mut(index) {
                         *slot = ev.event_id.clone();
                     }
-                    {
-                        let g = handler.lock();
-                        emit_updated(&g, channel, room_id, v_idx, &ev);
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
                     }
+                    ops.push(EmitOp::Updated(v_idx, ev));
                 }
                 (false, Some(ev)) => {
                     let v_idx = visible_index_of(visible, index);
@@ -262,23 +412,30 @@ pub(super) async fn handle_timeline_diff(
                     if let Some(slot) = visible_ids.get_mut(index) {
                         *slot = ev.event_id.clone();
                     }
-                    {
-                        let g = handler.lock();
-                        emit_inserted(&g, channel, room_id, v_idx, &ev);
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
                     }
+                    // Visibility gained — treat as an append or mid-list insert.
+                    let len_before = visible_index_of(visible, index); // already updated
+                    let _ = len_before; // v_idx computed above is correct
+                    ops.push(EmitOp::Inserted(v_idx, ev));
                 }
                 (true, None) => {
                     let v_idx = visible_index_of(visible, index);
                     if let Some(slot) = visible.get_mut(index) {
                         *slot = false;
                     }
+                    // The slot's event is no longer renderable for this channel;
+                    // drop any index entry so its plaintext doesn't linger.
+                    if let Some(ix) = search_index {
+                        if let Some(old_id) = visible_ids.get(index) {
+                            ix.remove_event(old_id);
+                        }
+                    }
                     if let Some(slot) = visible_ids.get_mut(index) {
                         *slot = String::new();
                     }
-                    {
-                        let g = handler.lock();
-                        emit_removed(&g, channel, room_id, v_idx);
-                    }
+                    ops.push(EmitOp::Removed(v_idx));
                 }
                 (false, None) => {}
             }
@@ -291,10 +448,7 @@ pub(super) async fn handle_timeline_diff(
                 if index < visible_ids.len() {
                     visible_ids.remove(index);
                 }
-                {
-                    let g = handler.lock();
-                    emit_removed(&g, channel, room_id, v_idx);
-                }
+                ops.push(EmitOp::Removed(v_idx));
             } else if index < visible.len() {
                 visible.remove(index);
                 if index < visible_ids.len() {
@@ -312,10 +466,7 @@ pub(super) async fn handle_timeline_diff(
                 visible_ids.pop();
                 if was {
                     let v_idx = visible_len(visible);
-                    {
-                        let g = handler.lock();
-                        emit_removed(&g, channel, room_id, v_idx);
-                    }
+                    ops.push(EmitOp::Removed(v_idx));
                 }
             }
         }
@@ -324,10 +475,7 @@ pub(super) async fn handle_timeline_diff(
                 visible_ids.pop();
                 if was {
                     let v_idx = visible_len(visible);
-                    {
-                        let g = handler.lock();
-                        emit_removed(&g, channel, room_id, v_idx);
-                    }
+                    ops.push(EmitOp::Removed(v_idx));
                 }
             }
         }
@@ -338,26 +486,18 @@ pub(super) async fn handle_timeline_diff(
                     visible_ids.remove(0);
                 }
                 if was {
-                    {
-                        let g = handler.lock();
-                        emit_removed(&g, channel, room_id, 0);
-                    }
+                    ops.push(EmitOp::Removed(0));
                 }
             }
         }
         VectorDiff::Clear => {
             visible.clear();
             visible_ids.clear();
-            {
-                let g = handler.lock();
-                let empty: Vec<TimelineEvent> = Vec::new();
-                emit_reset(&g, channel, room_id, &empty);
-            }
+            ops.push(EmitOp::Reset(Vec::new()));
         }
         VectorDiff::Reset { values } => {
             // Atomic snapshot replace. Build the new visibility mirror +
-            // snapshot in one pass before the single `emit_reset`
-            // call so the UI rebuilds in one shot.
+            // snapshot in one pass before emitting a single Reset op.
             visible.clear();
             visible_ids.clear();
             visible.reserve(values.len());
@@ -371,16 +511,16 @@ pub(super) async fn handle_timeline_diff(
                 if let Some(ev) = ev {
                     visible.push(true);
                     visible_ids.push(ev.event_id.clone());
+                    if let Some(ix) = search_index {
+                        ix.index_event(&ev);
+                    }
                     snapshot.push(ev);
                 } else {
                     visible.push(false);
                     visible_ids.push(String::new());
                 }
             }
-            {
-                let g = handler.lock();
-                emit_reset(&g, channel, room_id, &snapshot);
-            }
+            ops.push(EmitOp::Reset(snapshot));
         }
     }
 }
@@ -413,12 +553,17 @@ async fn refresh_receipts(
 ) {
     let items = tl.items().await;
 
+    // Collect all receipt-bearing updates first, then emit as a single batch
+    // instead of N individual on_message_updated calls.
+    let mut batch_indices: Vec<u64> = Vec::new();
+    let mut batch_events: Vec<TimelineEvent> = Vec::new();
+
     for (slot_idx, item) in items.iter().enumerate() {
         if cancelled.load(Ordering::Acquire) { return; }
         // matrix-sdk-ui's snapshot has more slots than our shadow — the
         // streaming task is behind on inserts. Let it catch up.
         if slot_idx >= visible.len() {
-            return;
+            break;
         }
 
         let ev = filter_for_channel(
@@ -430,7 +575,7 @@ async fn refresh_receipts(
         if was_visible_in_shadow != is_visible_now {
             // Visibility transition pending in the diff stream; bail out and
             // let the streaming task apply it.
-            return;
+            break;
         }
         let Some(ev) = ev else { continue; };
 
@@ -440,14 +585,31 @@ async fn refresh_receipts(
         // emit would land at the wrong C++ row.
         let shadow_id = &visible_ids[slot_idx];
         if !shadow_id.is_empty() && shadow_id != &ev.event_id {
-            return;
+            break;
         }
 
         if !ev.read_receipts.is_empty() {
             let v_idx = visible_index_of(visible, slot_idx);
-            {
-                let g = handler.lock();
-                emit_updated(&g, channel, room_id, v_idx, &ev);
+            batch_indices.push(v_idx);
+            batch_events.push(ev);
+        }
+    }
+
+    if batch_indices.is_empty() {
+        return;
+    }
+
+    let g = handler.lock();
+    if batch_indices.len() == 1 {
+        emit_updated(&g, channel, room_id, batch_indices[0], &batch_events[0]);
+    } else {
+        match channel {
+            TimelineChannel::Room => g.on_messages_updated_batch(room_id, &batch_indices, &batch_events),
+            TimelineChannel::Thread(_) => {
+                // Thread batch-update not yet in the bridge; emit individually.
+                for (idx, ev) in batch_indices.iter().zip(batch_events.iter()) {
+                    emit_updated(&g, channel, room_id, *idx, ev);
+                }
             }
         }
     }
@@ -475,6 +637,7 @@ impl ClientFfi {
         rt: &tokio::runtime::Runtime,
         channel: TimelineChannel,
         cancelled: Arc<AtomicBool>,
+        index: Option<super::search::SearchIndexCtx>,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
         let tl = Arc::clone(timeline);
         let h = Arc::clone(handler);
@@ -528,6 +691,11 @@ impl ClientFfi {
                         emit_reset(&guard, &ch, &rid, &snapshot);
                     }
                 }
+                if let Some(ix) = &index {
+                    for e in &snapshot {
+                        ix.index_event(e);
+                    }
+                }
                 drop(snapshot);
 
                 // Holds the receipt-refresh receiver until it has fired once;
@@ -545,20 +713,29 @@ impl ClientFfi {
                         biased;
                         maybe_diffs = stream.next() => {
                             let Some(diffs) = maybe_diffs else { break; };
+                            // Collect all ops from this poll batch before
+                            // touching the FFI — coalesces N PushFront diffs
+                            // (pagination) into a single on_messages_prepended
+                            // call instead of N on_message_inserted calls.
+                            let mut ops: Vec<EmitOp> = Vec::with_capacity(diffs.len());
                             for diff in diffs {
-                                handle_timeline_diff(
+                                collect_timeline_ops(
                                     diff,
                                     &mut visible,
                                     &mut visible_ids,
-                                    &h,
                                     &rid,
                                     &room_clone,
                                     me.as_deref(),
                                     &client_ref,
                                     &ch,
                                     &cancelled_stream,
+                                    &index,
+                                    &mut ops,
                                 )
                                 .await;
+                            }
+                            if !cancelled_stream.load(Ordering::Acquire) {
+                                emit_timeline_batch(ops, &h, &ch, &rid);
                             }
                         }
                         sig = async {
@@ -669,6 +846,7 @@ impl ClientFfi {
                         &self.rt,
                         TimelineChannel::Room,
                         Arc::clone(&new_cancelled),
+                        self.search_index_ctx(),
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
                     existing.cancelled  = new_cancelled;
@@ -726,7 +904,7 @@ impl ClientFfi {
 
         let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled), self.search_index_ctx());
 
         self.timelines.write().insert(
             room_id.clone(),
@@ -1118,7 +1296,7 @@ impl ClientFfi {
 
         let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled), self.search_index_ctx());
 
         self.timelines.write().insert(
             room_id,

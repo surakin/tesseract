@@ -8,6 +8,7 @@
 // the image is not yet in the provider's cache). Name and topic are child
 // tk::Label widgets laid out in arrange().
 
+#include "DatePickerView.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/svg.h"
@@ -15,6 +16,7 @@
 
 #include <tesseract/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -61,9 +63,16 @@ public:
         return show_threads_btn_;
     }
 
+    // Show or hide the search button. Hidden by default; the shell enables it
+    // when the room supports full-text search.
+    void set_show_search_btn(bool show) { show_search_btn_ = show; }
+    bool show_search_btn() const { return show_search_btn_; }
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
+    void paint_overlay(tk::PaintCtx&) override;
+    void on_popup_dismiss() override;
 
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
@@ -75,11 +84,15 @@ public:
     // Fired when a hyperlink in the room topic is clicked.
     std::function<void(const std::string& url)> on_link_clicked;
 
-    // Fired when the user clicks the calendar/jump-to-date button.
-    std::function<void()> on_jump_to_date_requested;
+    // Fired when the user confirms a date in the picker (ms since Unix epoch,
+    // midnight UTC on the selected day). Replaces on_jump_to_date_requested.
+    std::function<void(std::uint64_t ts_ms)> on_date_jump;
 
     // Fired when the user clicks the threads button.
     std::function<void()> on_threads_requested;
+
+    // Fired when the user clicks the search button.
+    std::function<void()> on_search_requested;
 
     // Fired when the user clicks the room name or avatar area (not on a topic
     // hyperlink or calendar button).
@@ -98,23 +111,42 @@ private:
     bool condensed_ = false;
     bool show_calendar_btn_ = false;
     bool show_threads_btn_ = false;
+    bool show_search_btn_ = false;
 
-    // Calendar / threads action buttons. Variant::Icon child buttons own their
-    // hover/press background and click dispatch; this view only draws the vector
-    // glyph centred inside each button's bounds (see paint()).
+    // Calendar / threads / search action buttons. Variant::Icon child buttons
+    // own their hover/press background and click dispatch; this view only draws
+    // the vector glyph centred inside each button's bounds (see paint()).
     tk::Button* calendar_btn_ = nullptr;
     tk::Button* threads_btn_ = nullptr;
+    tk::Button* search_btn_ = nullptr;
 
-    // Lucide jump-to-date / threads icons for calendar_btn_ / threads_btn_,
-    // tinted text_primary (tint-aware so they recolor on theme switch).
+    // Owned date-picker popup (not a widget-tree child — driven via
+    // register_popup / paint_overlay).
+    std::unique_ptr<DatePickerView> date_picker_;
+    bool date_picker_visible_ = false;
+
+    // Helpers.
+    void show_date_picker_();
+    void hide_date_picker_();
+    static std::uint64_t date_to_midnight_utc_ms_(int year, int month, int day);
+
+    // Lucide icons for the action buttons, tinted text_primary
+    // (tint-aware so they recolor on theme switch).
     tk::IconCache calendar_icon_;
     tk::IconCache threads_icon_;
+    tk::IconCache search_icon_;
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.
     tk::Rect threads_btn_rect_for_test() const
     {
         return threads_btn_ ? threads_btn_->bounds() : tk::Rect{};
+    }
+
+    // Test-only accessor for the search button's world-coordinate rect.
+    tk::Rect search_btn_rect_for_test() const
+    {
+        return search_btn_ ? search_btn_->bounds() : tk::Rect{};
     }
 
 private:

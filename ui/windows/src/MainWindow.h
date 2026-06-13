@@ -89,7 +89,6 @@ constexpr UINT WM_TESSERACT_VIDEO_BYTES = WM_APP + 19;
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE = WM_APP + 21;
 constexpr UINT WM_TESSERACT_POST_TO_UI = WM_APP + 22;
-constexpr UINT WM_TESSERACT_JUMP_DONE = WM_APP + 23;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE = WM_APP + 25;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_DONE = WM_APP + 26;
 constexpr UINT WM_TESSERACT_FILE_BYTES = WM_APP + 27;
@@ -187,13 +186,6 @@ private:
     // Posted-message payloads — see WM_TESSERACT_* constants above. The
     // posting code transfers ownership of each heap-allocated payload to
     // the receiving handler.
-    struct JumpDonePayload
-    {
-        bool ok;
-        std::string room_id;
-        std::string event_id;  // valid when ok == true
-        std::string error_msg; // valid when ok == false
-    };
     struct NotificationPayload
     {
         std::string room_id;
@@ -219,9 +211,11 @@ private:
     // hides it, relayouts, and restores focus to the main window.
     void open_quick_switch_();
     void close_quick_switch_();
+    void open_message_search_();
+    void close_message_search_();
+    void open_find_in_room_();
+    void close_find_in_room_();
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
-    void openJumpToDateDialog();
-    void on_tesseract_jump_done(JumpDonePayload* p);
     void on_tesseract_rooms(RoomsPayload* payload);
     void refresh_room_list();
     /// Kick off back-pagination on a worker thread.
@@ -347,6 +341,8 @@ private:
     // Native overlays hosted on main_app_surface_.
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
+    std::unique_ptr<tk::NativeTextField> message_search_field_;
+    std::unique_ptr<tk::NativeTextField> find_in_room_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     bool                                 focus_compose_on_show_ = false;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
@@ -573,6 +569,8 @@ private:
     static constexpr int IDC_QUICK_SWITCH = 130;
     static constexpr int IDC_NAV_BACK = 131;
     static constexpr int IDC_NAV_FWD  = 132;
+    static constexpr int IDC_MESSAGE_SEARCH = 133;
+    static constexpr int IDC_FIND_IN_ROOM = 134;
 
     // Application accelerator table (Ctrl+K → quick switcher). Built in
     // on_create, applied by pre_translate_message so the shortcut fires even

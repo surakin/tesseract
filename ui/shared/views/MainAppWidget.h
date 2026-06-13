@@ -25,6 +25,7 @@
 #include "ImageViewerOverlay.h"
 #include "InviteCard.h"
 #include "QuickSwitcher.h"
+#include "MessageSearchView.h"
 #include "RoomListView.h"
 #include "RoomView.h"
 #include "UserInfo.h"
@@ -90,6 +91,13 @@ public:
     QuickSwitcher* quick_switcher() const { return quick_switcher_; }
     bool     quick_switch_field_visible() const;
     tk::Rect quick_switch_field_rect()    const;
+
+    // ── Message search (Ctrl+Shift+F) ─────────────────────────────────────
+
+    void show_message_search(bool show);
+    MessageSearchView* message_search() const { return message_search_; }
+    bool     message_search_field_visible() const;
+    tk::Rect message_search_field_rect()    const;
 
     EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
 
@@ -160,6 +168,11 @@ public:
     bool room_search_field_visible() const;
     tk::Rect room_search_field_rect() const;
 
+    // Per-room "find in conversation" search bar (Ctrl+F / Cmd+F).
+    // Distinct from room_search_field_* (sidebar room-list filter).
+    bool     in_room_search_field_visible() const;
+    tk::Rect in_room_search_field_rect()    const;
+
     // ── Callbacks ─────────────────────────────────────────────────────────
 
     // Fires when the user taps ← in the space nav bar.
@@ -217,6 +230,10 @@ private:
     // Ctrl+K quick switcher — topmost overlay (added/painted after everything
     // else). Hidden until show_quick_switch(true).
     QuickSwitcher* quick_switcher_ = nullptr;
+
+    // Ctrl+Shift+F message search — topmost overlay alongside the quick
+    // switcher. Hidden until show_message_search(true).
+    MessageSearchView* message_search_ = nullptr;
 
     bool verif_visible_ = false;
 

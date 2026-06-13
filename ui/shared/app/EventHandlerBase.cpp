@@ -152,6 +152,103 @@ void EventHandlerBase::on_thread_removed(
         });
 }
 
+void EventHandlerBase::on_messages_prepended(const std::string& room_id,
+                                             EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(Payload{room_id, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_messages_prepended_ui_(std::move(p->rid),
+                                                 std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_messages_appended(const std::string& room_id,
+                                            EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(Payload{room_id, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_messages_appended_ui_(std::move(p->rid),
+                                                std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_messages_updated_batch(const std::string& room_id,
+                                                 std::vector<std::size_t> indices,
+                                                 EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::vector<std::size_t> idxs;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, std::move(indices), std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_messages_updated_batch_ui_(std::move(p->rid),
+                                                     std::move(p->idxs),
+                                                     std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_thread_messages_prepended(
+    const std::string& room_id, const std::string& thread_root,
+    EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::string root;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, thread_root, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_thread_messages_prepended_ui_(std::move(p->rid),
+                                                        std::move(p->root),
+                                                        std::move(p->evs));
+        });
+}
+
+void EventHandlerBase::on_thread_messages_appended(
+    const std::string& room_id, const std::string& thread_root,
+    EventList events)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::string root;
+        EventList evs;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, thread_root, std::move(events)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]() mutable
+        {
+            shell->handle_thread_messages_appended_ui_(std::move(p->rid),
+                                                       std::move(p->root),
+                                                       std::move(p->evs));
+        });
+}
+
 void EventHandlerBase::on_threads_updated(const std::string& room_id)
 {
     shell()->post_to_ui_(
@@ -205,6 +302,34 @@ void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
         {
             shell->dispatch_gif_failed_to_secondary_windows_(request_id, msg);
             shell->handle_gif_search_failed_ui_(request_id, std::move(msg));
+        });
+}
+
+void EventHandlerBase::on_search_results(std::uint64_t request_id,
+                                         const std::vector<SearchHit>& results)
+{
+    auto r = std::make_shared<std::vector<SearchHit>>(results);
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, r]() mutable
+        {
+            // Route by which pending map owns this id.
+            if (shell->in_room_search_pending_.count(request_id))
+                shell->handle_in_room_search_results_ui_(request_id, std::move(*r));
+            else
+                shell->handle_search_results_ui_(request_id, std::move(*r));
+        });
+}
+
+void EventHandlerBase::on_search_failed(std::uint64_t request_id,
+                                        const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, msg = message]() mutable
+        {
+            if (shell->in_room_search_pending_.count(request_id))
+                shell->handle_in_room_search_failed_ui_(request_id, std::move(msg));
+            else
+                shell->handle_search_failed_ui_(request_id, std::move(msg));
         });
 }
 

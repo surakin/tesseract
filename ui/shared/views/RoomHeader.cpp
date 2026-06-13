@@ -3,6 +3,7 @@
 #include "html_spans.h"
 #include "icons.h"
 #include "media_utils.h"
+#include "tk/host.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 
@@ -56,8 +57,16 @@ RoomHeader::RoomHeader()
                                             tk::Button::Variant::Icon);
     calendar_btn_ = add_child(std::move(cal));
     calendar_btn_->set_visible(false);
-    calendar_btn_->set_on_click(
-        [this] { if (on_jump_to_date_requested) on_jump_to_date_requested(); });
+    calendar_btn_->set_on_click([this] { show_date_picker_(); });
+
+    date_picker_ = std::make_unique<DatePickerView>();
+    date_picker_->on_date_picked = [this](int y, int m, int d)
+    {
+        hide_date_picker_();
+        if (on_date_jump)
+            on_date_jump(date_to_midnight_utc_ms_(y, m, d));
+    };
+    date_picker_->on_dismiss = [this] { hide_date_picker_(); };
 
     auto thr = std::make_unique<tk::Button>("", std::function<void()>{},
                                             tk::Button::Variant::Icon);
@@ -65,6 +74,13 @@ RoomHeader::RoomHeader()
     threads_btn_->set_visible(false);
     threads_btn_->set_on_click(
         [this] { if (on_threads_requested) on_threads_requested(); });
+
+    auto srch = std::make_unique<tk::Button>("", std::function<void()>{},
+                                             tk::Button::Variant::Icon);
+    search_btn_ = add_child(std::move(srch));
+    search_btn_->set_visible(false);
+    search_btn_->set_on_click(
+        [this] { if (on_search_requested) on_search_requested(); });
 }
 
 void RoomHeader::set_room(const tesseract::RoomInfo& info)
@@ -176,6 +192,11 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             threads_btn_->set_visible(false);
             threads_btn_->arrange(ctx, {});
         }
+        if (search_btn_)
+        {
+            search_btn_->set_visible(false);
+            search_btn_->arrange(ctx, {});
+        }
     };
 
     if (condensed_ && bounds.h <= 0.0f)
@@ -274,18 +295,17 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-    // Right-side reserve: each visible action button takes 28 px; when both
-    // are shown they sit 8 px apart. When neither is shown the reserve is just
-    // the outer margin so the topic can use the freed width.
+    // Right-side reserve: each visible action button takes 28 px with 8 px
+    // gaps between them. When no buttons are shown the reserve is just the
+    // outer margin so the topic can use the freed width.
     const int visible_btns =
-        (show_threads_btn_ ? 1 : 0) + (show_calendar_btn_ ? 1 : 0);
+        (show_threads_btn_ ? 1 : 0) + (show_calendar_btn_ ? 1 : 0) +
+        (show_search_btn_ ? 1 : 0);
     const float right_reserve =
         visible_btns == 0
             ? kCalBtnMargin
-            : (visible_btns == 1
-                   ? kCalBtnMargin + kCalBtnSize + kCalBtnMargin
-                   : kCalBtnMargin + kCalBtnSize + 8.0f + kCalBtnSize +
-                         kCalBtnMargin);
+            : kCalBtnMargin + visible_btns * kCalBtnSize +
+                  (visible_btns - 1) * 8.0f + kCalBtnMargin;
     const float text_w = std::max(0.0f, bounds.w - kPadX - kAvatarSize -
                                             kAvatarGap - right_reserve);
 
@@ -381,15 +401,17 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         }
     }
 
-    // Position the calendar / threads action buttons. Calendar takes the
-    // right-most slot; threads sits 8 px to its left (or takes the right-most
-    // slot itself when calendar is hidden). Mirrors the old paint-time layout.
+    // Position the action buttons right-to-left: calendar (right-most), then
+    // threads, then search (left-most of the three).
     const float btn_y = bounds.y + (kHeight - kCalBtnSize) * 0.5f;
+    float right_edge = bounds.x + bounds.w - kCalBtnMargin;
+
+    // Calendar: right-most slot.
     tk::Rect cal_r{};
     if (show_calendar_btn_)
     {
-        cal_r = {bounds.x + bounds.w - kCalBtnMargin - kCalBtnSize, btn_y,
-                 kCalBtnSize, kCalBtnSize};
+        cal_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+        right_edge = cal_r.x - 8.0f;
     }
     if (calendar_btn_)
     {
@@ -397,18 +419,29 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         calendar_btn_->arrange(ctx, show_calendar_btn_ ? cal_r : tk::Rect{});
     }
 
+    // Threads: next slot to the left.
     tk::Rect thr_r{};
     if (show_threads_btn_)
     {
-        const float threads_right =
-            show_calendar_btn_ ? (cal_r.x - 8.0f)
-                               : (bounds.x + bounds.w - kCalBtnMargin);
-        thr_r = {threads_right - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+        thr_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+        right_edge = thr_r.x - 8.0f;
     }
     if (threads_btn_)
     {
         threads_btn_->set_visible(show_threads_btn_);
         threads_btn_->arrange(ctx, show_threads_btn_ ? thr_r : tk::Rect{});
+    }
+
+    // Search: leftmost of the action buttons.
+    tk::Rect srch_r{};
+    if (show_search_btn_)
+    {
+        srch_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+    }
+    if (search_btn_)
+    {
+        search_btn_->set_visible(show_search_btn_);
+        search_btn_->arrange(ctx, show_search_btn_ ? srch_r : tk::Rect{});
     }
 }
 
@@ -502,6 +535,20 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
                            threads_btn_->bounds(), kHeaderIconPx,
                            ctx.theme.palette.text_primary);
     }
+
+    // Search button — shown when the shell enables room search.
+    if (search_btn_ && search_btn_->visible())
+    {
+        search_btn_->paint(ctx);
+        search_icon_.draw(ctx.canvas, ctx.factory, kSearchSvg,
+                          search_btn_->bounds(), kHeaderIconPx,
+                          ctx.theme.palette.text_primary);
+    }
+
+    // Register the date picker as the active popup so the host calls
+    // paint_overlay() on it after the tree paint and routes pointer events.
+    if (date_picker_visible_ && date_picker_ && ctx.host)
+        ctx.host->register_popup(date_picker_.get());
 }
 
 void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
@@ -636,6 +683,64 @@ void RoomHeader::on_pointer_leave()
     }
     hover_topic_ = false;
     // Host calls request_repaint() after dispatching pointer-leave.
+}
+
+void RoomHeader::paint_overlay(tk::PaintCtx& ctx)
+{
+    Widget::paint_overlay(ctx);
+    // DatePickerView is not in the widget tree, so the tree traversal inside
+    // root_->paint_overlay() never reaches it. We must call it explicitly here.
+    if (date_picker_visible_ && date_picker_)
+        date_picker_->paint_overlay(ctx);
+}
+
+void RoomHeader::on_popup_dismiss()
+{
+    hide_date_picker_();
+}
+
+void RoomHeader::show_date_picker_()
+{
+    if (date_picker_visible_)
+    {
+        hide_date_picker_();
+        return;
+    }
+    if (!calendar_btn_ || !date_picker_)
+        return;
+
+    int ty, tm, td;
+    DatePickerView::today(ty, tm, td);
+    date_picker_->set_max_date(ty, tm, td);
+
+    // Position the picker below the calendar button, right-aligned to its
+    // right edge; clamp so it never overlaps the header's left edge.
+    const tk::Rect btn = calendar_btn_->bounds();
+    float px = btn.x + btn.w - DatePickerView::kWidth;
+    px = std::max(px, bounds_.x);
+    date_picker_->open_at(
+        {px, btn.y + btn.h + 4.0f, DatePickerView::kWidth, DatePickerView::kHeight});
+    date_picker_visible_ = true;
+}
+
+void RoomHeader::hide_date_picker_()
+{
+    date_picker_visible_ = false;
+}
+
+/*static*/ std::uint64_t RoomHeader::date_to_midnight_utc_ms_(int y, int m,
+                                                               int d)
+{
+    // Julian Day Number → days since Unix epoch (1970-01-01 = JDN 2440588).
+    // Proleptic Gregorian calendar; valid for all dates we show (1970–2099+).
+    const int a  = (14 - m) / 12;
+    const int yj = y + 4800 - a;
+    const int mj = m + 12 * a - 3;
+    const int jdn =
+        d + (153 * mj + 2) / 5 + 365 * yj + yj / 4 - yj / 100 + yj / 400 -
+        32045;
+    const std::int64_t days = static_cast<std::int64_t>(jdn) - 2440588LL;
+    return static_cast<std::uint64_t>(days) * 86400ULL * 1000ULL;
 }
 
 } // namespace tesseract::views

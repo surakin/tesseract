@@ -961,7 +961,10 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
 {
     if (hStatus_)
+    {
         SetWindowTextW(hStatus_, utf8_to_wstr(msg).c_str());
+        UpdateWindow(hStatus_);
+    }
 }
 
 void MainWindow::on_restore_status_ui_()
@@ -1120,6 +1123,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             self->open_quick_switch_();
         }
+        if (LOWORD(wParam) == IDC_MESSAGE_SEARCH)
+        {
+            self->open_message_search_();
+        }
+        if (LOWORD(wParam) == IDC_FIND_IN_ROOM)
+        {
+            self->open_find_in_room_();
+        }
         if (LOWORD(wParam) == IDC_NAV_BACK)
         {
             self->navigate_history_back();
@@ -1195,13 +1206,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     {
         auto* p = reinterpret_cast<std::string*>(lParam);
         self->on_tesseract_paginate_done(p, wParam != 0);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_JUMP_DONE:
-    {
-        auto* p = reinterpret_cast<JumpDonePayload*>(lParam);
-        self->on_tesseract_jump_done(p);
         delete p;
         return 0;
     }
@@ -1321,6 +1325,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 self->close_quick_switch_();
                 return 0;
             }
+            if (self->main_app_ && self->main_app_->message_search() &&
+                self->main_app_->message_search()->is_open())
+            {
+                self->close_message_search_();
+                return 0;
+            }
             if (self->vid_viewer_ && self->vid_viewer_->is_open())
             {
                 self->vid_viewer_->close();
@@ -1329,6 +1339,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             if (self->img_viewer_ && self->img_viewer_->is_open())
             {
                 self->img_viewer_->close();
+                return 0;
+            }
+            if (self->main_app_ && self->main_app_->room_view() &&
+                self->main_app_->room_view()->room_search_open())
+            {
+                self->close_find_in_room_();
                 return 0;
             }
         }
@@ -1572,7 +1588,7 @@ void MainWindow::on_create(HWND hwnd)
     // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
     // plain key handler only fires when the canvas has focus.
     {
-        ACCEL accs[3]{};
+        ACCEL accs[5]{};
         accs[0].fVirt = FCONTROL | FVIRTKEY;
         accs[0].key   = 'K';
         accs[0].cmd   = IDC_QUICK_SWITCH;
@@ -1582,7 +1598,13 @@ void MainWindow::on_create(HWND hwnd)
         accs[2].fVirt = FALT | FVIRTKEY;
         accs[2].key   = VK_RIGHT;
         accs[2].cmd   = IDC_NAV_FWD;
-        accel_ = CreateAcceleratorTableW(accs, 3);
+        accs[3].fVirt = FCONTROL | FSHIFT | FVIRTKEY;
+        accs[3].key   = 'F';
+        accs[3].cmd   = IDC_MESSAGE_SEARCH;
+        accs[4].fVirt = FCONTROL | FVIRTKEY;
+        accs[4].key   = 'F';
+        accs[4].cmd   = IDC_FIND_IN_ROOM;
+        accel_ = CreateAcceleratorTableW(accs, 5);
     }
 
     Gdiplus::GdiplusStartupInput gsi;
@@ -2170,9 +2192,9 @@ void MainWindow::on_create(HWND hwnd)
                     client_->subscribe_room_at(room, event_id);
                 });
         };
-        room_view_->on_jump_to_date_requested = [this]
+        room_view_->on_date_jump = [this](std::uint64_t ts_ms)
         {
-            openJumpToDateDialog();
+            handle_date_jump_(ts_ms);
         };
         room_view_->on_threads_button_clicked = [this]
         {
@@ -2469,6 +2491,106 @@ void MainWindow::on_create(HWND hwnd)
         if (auto* qs = main_app_->quick_switcher())
         {
             qs->on_close = [this] { close_quick_switch_(); };
+        }
+
+        // Message search (Ctrl+Shift+F) native field — mirrors the switcher.
+        message_search_field_ = main_app_surface_->host().make_text_field();
+        message_search_field_->set_placeholder("Search your messages…");
+        message_search_field_->set_visible(false);
+        message_search_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (auto* ms = main_app_->message_search())
+                {
+                    ms->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        message_search_field_->set_on_submit(
+            [this]
+            {
+                if (auto* ms = main_app_->message_search())
+                {
+                    ms->activate_selected();
+                }
+            });
+        message_search_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* ms = main_app_->message_search();
+                if (!ms || !ms->is_open())
+                {
+                    return false;
+                }
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    ms->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    ms->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_message_search_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (auto* ms = main_app_->message_search())
+        {
+            ms->on_close = [this] { close_message_search_(); };
+        }
+
+        // Per-room "find in conversation" (Ctrl+F) native field.
+        find_in_room_field_ = main_app_surface_->host().make_text_field();
+        find_in_room_field_->set_placeholder("Find in conversation…");
+        find_in_room_field_->set_visible(false);
+        find_in_room_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (auto* rv = main_app_ ? main_app_->room_view() : nullptr)
+                {
+                    if (auto* bar = rv->room_search_bar())
+                    {
+                        bar->set_query(q);
+                        main_app_surface_->relayout();
+                    }
+                }
+            });
+        find_in_room_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+                if (!rv || !rv->room_search_open())
+                {
+                    return false;
+                }
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(-1);
+                    return true;
+                case tk::NavKey::Down:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(+1);
+                    return true;
+                case tk::NavKey::Escape:
+                    close_find_in_room_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (auto* rv = main_app_->room_view())
+        {
+            if (auto* bar = rv->room_search_bar())
+            {
+                bar->on_close = [this] { close_find_in_room_(); };
+            }
         }
 
         room_text_area_ = main_app_surface_->host().make_text_area();
@@ -3267,6 +3389,39 @@ void MainWindow::on_create(HWND hwnd)
                     }
                 }
 
+                // Message search field — same topmost-modal treatment as the
+                // quick switcher (not gated on `hide`).
+                if (message_search_field_)
+                {
+                    bool vis = main_app_->message_search_field_visible();
+                    message_search_field_->set_visible(vis);
+                    if (vis)
+                    {
+                        tk::Rect r = main_app_->message_search_field_rect();
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
+                        message_search_field_->set_rect(r);
+                    }
+                }
+
+                // Per-room find-in-conversation field (Ctrl+F).
+                if (find_in_room_field_)
+                {
+                    bool vis = main_app_->in_room_search_field_visible();
+                    find_in_room_field_->set_visible(vis);
+                    if (vis)
+                    {
+                        tk::Rect r = main_app_->in_room_search_field_rect();
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
+                        find_in_room_field_->set_rect(r);
+                    }
+                }
+
                 // Encryption setup passphrase field.
                 if (enc_passphrase_field_)
                 {
@@ -3359,6 +3514,7 @@ void MainWindow::on_create(HWND hwnd)
             hInst_, hwnd_, tk::Theme::light());
         auto view = std::make_unique<tesseract::views::SettingsView>();
         settings_view_ = view.get();
+        stats_settings_view_ = settings_view_;
         settings_view_->on_close = [this]
         {
             close_settings_();
@@ -3427,6 +3583,10 @@ void MainWindow::on_create(HWND hwnd)
         settings_view_->on_send_presence_changed = [this](bool enabled)
         {
             handle_send_presence_toggle_(enabled);
+        };
+        settings_view_->on_index_messages_changed = [this](bool enabled)
+        {
+            handle_index_messages_toggle_(enabled);
         };
         settings_view_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)
@@ -3569,8 +3729,39 @@ void MainWindow::on_destroy()
     }
     if (pending_login_client_)
         pending_login_client_->stop_sync();
-    pool_.drain();
-    mut_pool_.drain();
+
+    // On Win32 the main thread is an STA (OleInitialize), and some WIC codec
+    // operations inside decode_image_ marshal internally back to the STA via
+    // the message queue.  A plain drain() → join() blocks the STA message
+    // pump, so those WIC calls can never complete → deadlock.
+    // CoWaitForMultipleHandles keeps the STA pump running while we wait,
+    // allowing in-flight WIC decodes to finish.  WorkerPool::~WorkerPool still
+    // calls drain(), but by then every thread is already joined (joinable()
+    // returns false), so it is a no-op.
+    auto com_drain = [](WorkerPool& wp)
+    {
+        {
+            std::lock_guard<std::mutex> lk(wp.mu_);
+            wp.stop_      = true;
+            wp.on_change_ = nullptr;
+            wp.queue_.clear();
+            wp.pending_.store(0, std::memory_order_relaxed);
+        }
+        wp.cv_.notify_all();
+        for (auto& t : wp.threads_)
+        {
+            if (!t.joinable())
+                continue;
+            HANDLE h      = t.native_handle();
+            DWORD  ignored = 0;
+            CoWaitForMultipleHandles(
+                COWAIT_DISPATCH_CALLS | COWAIT_DISPATCH_WINDOW_MESSAGES,
+                INFINITE, 1, &h, &ignored);
+            t.join();
+        }
+    };
+    com_drain(pool_);
+    com_drain(mut_pool_);
 }
 
 // run_async_ is implemented in tesseract::ShellBase.
@@ -3839,6 +4030,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().autoscroll_unread_rooms);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    settings_view_->set_index_messages_pref(
+        tesseract::Settings::instance().index_messages_for_search);
     settings_view_->set_media_previews_pref(
         tesseract::Settings::instance().media_previews);
     settings_view_->set_invite_avatars_pref(
@@ -3872,6 +4065,7 @@ void MainWindow::open_settings_()
     {
         ShowWindow(settings_surface_->hwnd(), SW_SHOW);
     }
+    start_search_index_stats_poll_();
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -3881,6 +4075,7 @@ void MainWindow::open_settings_()
 void MainWindow::close_settings_()
 {
     settings_visible_ = false;
+    stop_search_index_stats_poll_();
     if (settings_surface_ && settings_surface_->hwnd())
     {
         ShowWindow(settings_surface_->hwnd(), SW_HIDE);
@@ -4083,6 +4278,104 @@ void MainWindow::close_quick_switch_()
     }
 }
 
+void MainWindow::open_message_search_()
+{
+    if (!main_app_ || !main_app_->message_search())
+    {
+        return;
+    }
+    // Application-wide accelerator: may fire while a pop-out holds focus. Bring
+    // the main window forward (search lives here) so its field can focus.
+    if (IsIconic(hwnd_))
+    {
+        ShowWindow(hwnd_, SW_RESTORE);
+    }
+    SetForegroundWindow(hwnd_);
+    main_app_->show_message_search(true);
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (message_search_field_)
+    {
+        message_search_field_->set_text("");
+        message_search_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_message_search_()
+{
+    if (main_app_)
+    {
+        main_app_->show_message_search(false);
+    }
+    if (message_search_field_)
+    {
+        message_search_field_->set_visible(false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (room_text_area_ && room_text_area_->visible())
+    {
+        room_text_area_->set_focused(true);
+    }
+    else
+    {
+        SetFocus(hwnd_);
+    }
+}
+
+void MainWindow::open_find_in_room_()
+{
+    auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+    if (!rv || !rv->has_room())
+    {
+        return;
+    }
+    if (IsIconic(hwnd_))
+    {
+        ShowWindow(hwnd_, SW_RESTORE);
+    }
+    SetForegroundWindow(hwnd_);
+    rv->open_room_search();
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_text("");
+        find_in_room_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_find_in_room_()
+{
+    auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+    if (rv)
+    {
+        rv->close_room_search();
+    }
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_visible(false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (room_text_area_ && room_text_area_->visible())
+    {
+        room_text_area_->set_focused(true);
+    }
+    else
+    {
+        SetFocus(hwnd_);
+    }
+}
+
 void MainWindow::navigate_to_room(const std::string& room_id)
 {
     if (room_id.empty())
@@ -4273,243 +4566,6 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     {
         tray_->set_unread(has_unread, has_highlight);
     }
-}
-
-void MainWindow::on_tesseract_jump_done(JumpDonePayload* p)
-{
-    if (!p)
-    {
-        return;
-    }
-    if (!p->ok)
-    {
-        std::wstring msg =
-            L"Jump to date failed: " + utf8_to_wstr(p->error_msg);
-        MessageBoxW(hwnd_, msg.c_str(), L"Jump to Date",
-                    MB_OK | MB_ICONWARNING);
-        return;
-    }
-    begin_focused_subscription_(p->room_id, p->event_id);
-    const std::string room_id = p->room_id;
-    const std::string event_id = p->event_id;
-    run_async_mut_(
-        [this, room_id, event_id]
-        {
-            client_->subscribe_room_at(room_id, event_id);
-        });
-}
-
-namespace
-{
-
-struct JumpPickerState
-{
-    HWND hCal;
-    bool done;
-    bool accepted;
-    SYSTEMTIME result;
-};
-
-LRESULT CALLBACK jump_to_date_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                   LPARAM lParam)
-{
-    auto* ctx = reinterpret_cast<JumpPickerState*>(
-        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-
-    switch (msg)
-    {
-    case WM_CREATE:
-    {
-        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
-        return 0;
-    }
-    case WM_COMMAND:
-        if (!ctx)
-        {
-            break;
-        }
-        if (LOWORD(wParam) == IDOK)
-        {
-            MonthCal_GetCurSel(ctx->hCal, &ctx->result);
-            ctx->result.wHour = ctx->result.wMinute = ctx->result.wSecond =
-                ctx->result.wMilliseconds = 0;
-            ctx->accepted = true;
-            ctx->done = true;
-            DestroyWindow(hwnd);
-        }
-        else if (LOWORD(wParam) == IDCANCEL)
-        {
-            ctx->done = true;
-            DestroyWindow(hwnd);
-        }
-        return 0;
-    case WM_DESTROY:
-        if (ctx)
-        {
-            ctx->done = true;
-        }
-        return 0;
-    }
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-} // anonymous namespace
-
-void MainWindow::openJumpToDateDialog()
-{
-    if (current_room_id_.empty())
-    {
-        return;
-    }
-
-    // Register the picker window class once.
-    static bool s_registered = false;
-    if (!s_registered)
-    {
-        INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_DATE_CLASSES};
-        InitCommonControlsEx(&icc);
-        WNDCLASSEXW wc{};
-        wc.cbSize = sizeof(wc);
-        wc.lpfnWndProc = jump_to_date_proc;
-        wc.hInstance = hInst_;
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1);
-        wc.lpszClassName = L"TesseractJumpToDate";
-        RegisterClassExW(&wc);
-        s_registered = true;
-    }
-
-    JumpPickerState ctx{nullptr, false, false, {}};
-
-    // Compute popup position (centred on the main window).
-    const int kBtnH = 28, kBtnW = 90, kGap = 8;
-    RECT wr{};
-    GetWindowRect(hwnd_, &wr);
-
-    // Create the host popup (placeholder size; resized after MonthCal).
-    HWND hPicker =
-        CreateWindowExW(WS_EX_DLGMODALFRAME, L"TesseractJumpToDate",
-                        L"Jump to Date", WS_POPUP | WS_CAPTION | WS_SYSMENU, 0,
-                        0, 200, 200, hwnd_, nullptr, hInst_, &ctx);
-    if (!hPicker)
-    {
-        return;
-    }
-
-    // Create MonthCal control to get its minimum size.
-    HWND hCal = CreateWindowExW(0, MONTHCAL_CLASS, L"",
-                                WS_CHILD | WS_VISIBLE | MCS_NOTODAY, kGap, kGap,
-                                180, 150, hPicker, nullptr, hInst_, nullptr);
-    if (!hCal)
-    {
-        DestroyWindow(hPicker);
-        return;
-    }
-    ctx.hCal = hCal;
-
-    // Query minimum size and resize popup accordingly.
-    RECT calMin{};
-    MonthCal_GetMinReqRect(hCal, &calMin);
-    const int calW = calMin.right - calMin.left;
-    const int calH = calMin.bottom - calMin.top;
-
-    RECT adjRect{0, 0, calW + kGap * 2, calH + kGap * 3 + kBtnH};
-    AdjustWindowRectEx(&adjRect, WS_POPUP | WS_CAPTION | WS_SYSMENU, FALSE,
-                       WS_EX_DLGMODALFRAME);
-    const int wndW = adjRect.right - adjRect.left;
-    const int wndH = adjRect.bottom - adjRect.top;
-    const int cx = (wr.left + wr.right - wndW) / 2;
-    const int cy = (wr.top + wr.bottom - wndH) / 2;
-
-    SetWindowPos(hPicker, nullptr, cx, cy, wndW, wndH,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    SetWindowPos(hCal, nullptr, kGap, kGap, calW, calH,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-
-    // Set min/max date on the MonthCal: 1970-01-01 … today.
-    SYSTEMTIME range[2]{};
-    range[0].wYear = 1970;
-    range[0].wMonth = 1;
-    range[0].wDay = 1;
-    GetSystemTime(&range[1]); // UTC today
-    range[1].wHour = 0;
-    range[1].wMinute = 0;
-    range[1].wSecond = 0;
-    range[1].wMilliseconds = 0;
-    MonthCal_SetRange(hCal, GDTR_MIN | GDTR_MAX, range);
-
-    // Buttons: OK and Cancel.
-    const int btnTop = kGap + calH + kGap;
-    const int totalBtns = kBtnW * 2 + kGap;
-    const int btnLeft = (calW + kGap * 2 - totalBtns) / 2;
-    CreateWindowW(L"BUTTON", L"OK", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-                  btnLeft, btnTop, kBtnW, kBtnH, hPicker,
-                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)), hInst_,
-                  nullptr);
-    CreateWindowW(L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                  btnLeft + kBtnW + kGap, btnTop, kBtnW, kBtnH, hPicker,
-                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)),
-                  hInst_, nullptr);
-
-    ShowWindow(hPicker, SW_SHOW);
-
-    // Run a nested modal message loop.
-    // RAII guard: re-enable the parent on all exit paths.
-    struct EnableGuard
-    {
-        HWND hwnd;
-        ~EnableGuard()
-        {
-            EnableWindow(hwnd, TRUE);
-        }
-    } guard{hwnd_};
-    EnableWindow(hwnd_, FALSE);
-    MSG m{};
-    BOOL ret;
-    while (!ctx.done && (ret = GetMessageW(&m, nullptr, 0, 0)) != 0)
-    {
-        if (ret == -1)
-        {
-            break; // GetMessage error — abort loop
-        }
-        if (!IsDialogMessageW(hPicker, &m))
-        {
-            TranslateMessage(&m);
-            DispatchMessageW(&m);
-        }
-    }
-    SetForegroundWindow(hwnd_);
-
-    if (!ctx.accepted)
-    {
-        return;
-    }
-
-    // Convert selected UTC date to Unix ms via FILETIME.
-    FILETIME ft{};
-    SystemTimeToFileTime(&ctx.result, &ft);
-    ULARGE_INTEGER ui;
-    ui.LowPart = ft.dwLowDateTime;
-    ui.HighPart = ft.dwHighDateTime;
-    // FILETIME epoch (1601-01-01) to Unix epoch (1970-01-01): 116444736000000000 * 100ns
-    constexpr ULONGLONG kEpochDiff = 116444736000000000ULL;
-    const uint64_t ts_ms = (ui.QuadPart - kEpochDiff) / 10000ULL;
-
-    const std::string room_id = current_room_id_;
-    HWND main_hwnd = hwnd_;
-    tesseract::Client* cl = client_;
-    run_async_mut_(
-        [cl, room_id, ts_ms, main_hwnd]
-        {
-            auto res = cl->timestamp_to_event(room_id, ts_ms, "f");
-            auto* p = new JumpDonePayload{
-                res.ok, room_id, res.ok ? res.message : std::string{},
-                !res.ok ? res.message : std::string{}};
-            PostMessageW(main_hwnd, WM_TESSERACT_JUMP_DONE, 0,
-                         reinterpret_cast<LPARAM>(p));
-        });
 }
 
 void MainWindow::refresh_room_list()
@@ -5392,11 +5448,12 @@ void MainWindow::refresh_sync_status()
         SetWindowTextW(hStatus_, buf);
         return;
     }
-    if (sync_progress_shown_)
-    {
-        sync_progress_shown_ = false;
-        SetWindowTextW(hStatus_, L"Connected");
-    }
+    // Steady state: settle to "Connected" unless a persistent status override
+    // (e.g., "Fetching older messages…" from in-room search) is still active.
+    if (has_status_override_())
+        return;
+    sync_progress_shown_ = false;
+    SetWindowTextW(hStatus_, L"Connected");
 }
 
 // ---------------------------------------------------------------------------

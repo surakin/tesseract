@@ -46,6 +46,11 @@ SettingsWidget::SettingsWidget()
         if (on_send_presence_changed)
             on_send_presence_changed(e);
     };
+    settings_view_->on_index_messages_changed = [this](bool e)
+    {
+        if (on_index_messages_changed)
+            on_index_messages_changed(e);
+    };
     settings_view_->on_media_previews_changed =
         [this](tesseract::Settings::MediaPreviews mode)
     {
@@ -198,6 +203,8 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().prefetch_full_media);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
+    settings_view_->set_index_messages_pref(
+        tesseract::Settings::instance().index_messages_for_search);
     settings_view_->set_media_previews_pref(
         tesseract::Settings::instance().media_previews);
     settings_view_->set_invite_avatars_pref(

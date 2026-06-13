@@ -78,28 +78,6 @@ struct IdlePaginateResult
     std::weak_ptr<bool> alive;
 };
 
-struct IdleJumpResult
-{
-    MainWindow* window;
-    std::string room_id;
-    std::string event_id;
-    std::weak_ptr<bool> alive;
-};
-
-struct IdleJumpError
-{
-    MainWindow* window;
-    std::string message;
-    std::weak_ptr<bool> alive;
-};
-
-struct JumpDlgCtx
-{
-    MainWindow* self;
-    GtkWidget* calendar;
-    GtkWidget* dialog;
-};
-
 // ---------------------------------------------------------------------------
 // EventHandlerBase UI-thread hook implementations (GTK4)
 // ---------------------------------------------------------------------------
@@ -1576,9 +1554,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     client_->subscribe_room_at(room, event_id);
                 });
         };
-        room_view_->on_jump_to_date_requested = [this]
+        room_view_->on_date_jump = [this](std::uint64_t ts_ms)
         {
-            open_jump_to_date_dialog();
+            handle_date_jump_(ts_ms);
         };
         room_view_->on_threads_button_clicked = [this]
         {
@@ -2153,6 +2131,93 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             main_app_->quick_switcher()->on_close = [this]
             { close_quick_switch_(); };
 
+        // Message search (Ctrl+Shift+F) native field — mirrors the switcher.
+        message_search_field_ = main_app_surface_->host().make_text_field();
+        message_search_field_->set_placeholder("Search your messages…");
+        message_search_field_->set_visible(false);
+        message_search_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (main_app_ && main_app_->message_search())
+                {
+                    main_app_->message_search()->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        message_search_field_->set_on_submit(
+            [this]
+            {
+                if (main_app_ && main_app_->message_search())
+                    main_app_->message_search()->activate_selected();
+            });
+        message_search_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* ms = main_app_ ? main_app_->message_search() : nullptr;
+                if (!ms || !ms->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    ms->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    ms->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_message_search_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (main_app_ && main_app_->message_search())
+            main_app_->message_search()->on_close = [this]
+            { close_message_search_(); };
+
+        // Per-room "find in conversation" (Ctrl+F) native field.
+        find_in_room_field_ = main_app_surface_->host().make_text_field();
+        find_in_room_field_->set_placeholder("Find in conversation…");
+        find_in_room_field_->set_visible(false);
+        find_in_room_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (main_app_ && main_app_->room_view() &&
+                    main_app_->room_view()->room_search_bar())
+                {
+                    main_app_->room_view()->room_search_bar()->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        find_in_room_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+                if (!rv || !rv->room_search_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    if (rv->on_room_search_navigate) rv->on_room_search_navigate(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    if (rv->on_room_search_navigate) rv->on_room_search_navigate(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_find_in_room_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (main_app_ && main_app_->room_view())
+            main_app_->room_view()->room_search_bar()->on_close =
+                [this] { close_find_in_room_(); };
+
         // Unified layout callback — positions all native overlays.
         main_app_surface_->set_on_layout(
             [this]
@@ -2181,6 +2246,30 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     {
                         quick_switch_field_->set_rect(
                             main_app_->quick_switch_field_rect());
+                    }
+                }
+
+                if (message_search_field_)
+                {
+                    const bool ms_vis =
+                        main_app_->message_search_field_visible();
+                    message_search_field_->set_visible(ms_vis);
+                    if (ms_vis)
+                    {
+                        message_search_field_->set_rect(
+                            main_app_->message_search_field_rect());
+                    }
+                }
+
+                if (find_in_room_field_)
+                {
+                    const bool fir_vis =
+                        main_app_->in_room_search_field_visible();
+                    find_in_room_field_->set_visible(fir_vis);
+                    if (fir_vis)
+                    {
+                        find_in_room_field_->set_rect(
+                            main_app_->in_room_search_field_rect());
                     }
                 }
 
@@ -2315,9 +2404,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         gtk_widget_set_hexpand(w, TRUE);
         gtk_widget_set_vexpand(w, TRUE);
         gtk_stack_add_named(GTK_STACK(content_stack_), w, "settings");
+        stats_settings_view_ = settings_widget_->settings_view();
 
         settings_widget_->on_close = [this]
         {
+            stop_search_index_stats_poll_();
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
         };
         settings_widget_->on_logout = [this]
@@ -2345,6 +2436,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         settings_widget_->on_send_presence_changed = [this](bool enabled)
         {
             handle_send_presence_toggle_(enabled);
+        };
+        settings_widget_->on_index_messages_changed = [this](bool enabled)
+        {
+            handle_index_messages_toggle_(enabled);
         };
         settings_widget_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)
@@ -2421,6 +2516,24 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             gtk_callback_action_new(on_quick_switch_shortcut_, this, nullptr));
         gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
                                              shortcut);
+
+        // Ctrl+Shift+F: open global message search. GTK normalizes a shifted
+        // key event to the unshifted lowercase keyval before matching, so the
+        // trigger keyval must be lowercase `f` (mirrors the Ctrl+K trigger).
+        GtkShortcut* search_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_f,
+                                   GdkModifierType(GDK_CONTROL_MASK |
+                                                   GDK_SHIFT_MASK)),
+            gtk_callback_action_new(on_message_search_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             search_sc);
+
+        // Ctrl+F: open per-room "find in conversation".
+        GtkShortcut* fir_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_f, GDK_CONTROL_MASK),
+            gtk_callback_action_new(on_find_in_room_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             fir_sc);
 
         GtkShortcut* back_sc = gtk_shortcut_new(
             gtk_keyval_trigger_new(GDK_KEY_Left, GDK_ALT_MASK),
@@ -3203,154 +3316,6 @@ void MainWindow::request_more_history(const std::string& room_id)
                 },
                 p);
         });
-}
-
-void MainWindow::open_jump_to_date_dialog()
-{
-    if (current_room_id_.empty())
-    {
-        return;
-    }
-
-    auto* dlg = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(dlg), _("Jump to Date"));
-    gtk_window_set_modal(GTK_WINDOW(dlg), TRUE);
-    gtk_window_set_transient_for(GTK_WINDOW(dlg), GTK_WINDOW(window_));
-    gtk_window_set_resizable(GTK_WINDOW(dlg), FALSE);
-    gtk_window_set_default_size(GTK_WINDOW(dlg), 300, -1);
-
-    auto* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_margin_start(vbox, 12);
-    gtk_widget_set_margin_end(vbox, 12);
-    gtk_widget_set_margin_top(vbox, 12);
-    gtk_widget_set_margin_bottom(vbox, 12);
-
-    auto* calendar = gtk_calendar_new();
-    gtk_box_append(GTK_BOX(vbox), calendar);
-
-    auto* btn_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_halign(btn_row, GTK_ALIGN_END);
-    auto* cancel_btn = gtk_button_new_with_label(_("Cancel"));
-    auto* ok_btn = gtk_button_new_with_label(_("Jump"));
-    gtk_box_append(GTK_BOX(btn_row), cancel_btn);
-    gtk_box_append(GTK_BOX(btn_row), ok_btn);
-    gtk_box_append(GTK_BOX(vbox), btn_row);
-
-    gtk_window_set_child(GTK_WINDOW(dlg), vbox);
-
-    auto* ctx = new JumpDlgCtx{this, calendar, dlg};
-    g_signal_connect(ok_btn, "clicked", G_CALLBACK(on_jump_dialog_ok_), ctx);
-    g_signal_connect(cancel_btn, "clicked", G_CALLBACK(on_jump_dialog_cancel_),
-                     ctx);
-    // "destroy" fires when the window is torn down (by button OR window-manager X).
-    // It is the single place we free ctx; button callbacks must not free it themselves.
-    g_signal_connect(dlg, "destroy", G_CALLBACK(on_jump_dialog_destroy_), ctx);
-
-    gtk_window_present(GTK_WINDOW(dlg));
-}
-
-void MainWindow::on_jump_dialog_cancel_(GtkButton*, gpointer user_data)
-{
-    auto* ctx = static_cast<JumpDlgCtx*>(user_data);
-    gtk_window_destroy(GTK_WINDOW(ctx->dialog));
-    // ctx freed by on_jump_dialog_destroy_
-}
-
-void MainWindow::on_jump_dialog_ok_(GtkButton*, gpointer user_data)
-{
-    auto* ctx = static_cast<JumpDlgCtx*>(user_data);
-    MainWindow* self = ctx->self;
-
-    // Extract date BEFORE destroying the dialog (which unrefs all children).
-    GDateTime* gdt = gtk_calendar_get_date(GTK_CALENDAR(ctx->calendar));
-    int year, month, day;
-    g_date_time_get_ymd(gdt, &year, &month, &day);
-    g_date_time_unref(gdt);
-
-    const std::string room_id = self->current_room_id_;
-    gtk_window_destroy(GTK_WINDOW(ctx->dialog));
-    // ctx freed by on_jump_dialog_destroy_; do NOT access ctx after this point.
-
-    if (room_id.empty())
-    {
-        return;
-    }
-
-    // Reject pre-epoch dates to avoid uint64_t wrap-around.
-    if (year < 1970)
-    {
-        if (self->status_bar_)
-        {
-            gtk_label_set_text(
-                GTK_LABEL(self->status_bar_),
-                _("Jump to date: please select a date from 1970 onwards"));
-        }
-        return;
-    }
-
-    GTimeZone* utc_tz = g_time_zone_new_utc();
-    GDateTime* midnight = g_date_time_new(utc_tz, year, month, day, 0, 0, 0.0);
-    g_time_zone_unref(utc_tz);
-    const gint64 unix_s = g_date_time_to_unix(midnight);
-    g_date_time_unref(midnight);
-
-    const uint64_t ts_ms = static_cast<uint64_t>(unix_s) * 1000ULL;
-
-    self->run_async_mut_(
-        [self, room_id, ts_ms]
-        {
-            auto res = self->client_->timestamp_to_event(room_id, ts_ms, "f");
-            if (!res.ok)
-            {
-                auto* e = new IdleJumpError{self, res.message, self->alive_};
-                g_idle_add(
-                    [](gpointer p) -> gboolean
-                    {
-                        auto* d = static_cast<IdleJumpError*>(p);
-                        if (auto a = d->alive.lock(); a && *a)
-                        {
-                            if (d->window->status_bar_)
-                            {
-                                gtk_label_set_text(
-                                    GTK_LABEL(d->window->status_bar_),
-                                    d->message.c_str());
-                            }
-                        }
-                        delete d;
-                        return G_SOURCE_REMOVE;
-                    },
-                    e);
-                return;
-            }
-            auto* d = new IdleJumpResult{self, room_id, res.message, self->alive_};
-            g_idle_add(
-                [](gpointer p) -> gboolean
-                {
-                    auto* data = static_cast<IdleJumpResult*>(p);
-                    if (auto a = data->alive.lock(); a && *a)
-                    {
-                        MainWindow* w = data->window;
-                        std::string rid = std::move(data->room_id);
-                        std::string eid = std::move(data->event_id);
-                        delete data;
-                        w->begin_focused_subscription_(rid, eid);
-                        w->run_async_mut_(
-                            [w, rid, eid]
-                            {
-                                w->client_->subscribe_room_at(rid, eid);
-                            });
-                        return G_SOURCE_REMOVE;
-                    }
-                    delete data;
-                    return G_SOURCE_REMOVE;
-                },
-                d);
-        });
-}
-
-void MainWindow::on_jump_dialog_destroy_(GtkWidget*, gpointer user_data)
-{
-    delete static_cast<JumpDlgCtx*>(user_data);
 }
 
 void MainWindow::on_login_clicked(GtkButton*, gpointer user_data)
@@ -4903,11 +4868,12 @@ void MainWindow::refresh_sync_status()
         gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         return;
     }
-    if (sync_progress_shown_)
-    {
-        sync_progress_shown_ = false;
-        gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
-    }
+    // Steady state: settle to "Connected" unless a persistent status override
+    // (e.g., "Fetching older messages…" from in-room search) is still active.
+    if (has_status_override_())
+        return;
+    sync_progress_shown_ = false;
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
 }
 
 // ---------------------------------------------------------------------------
@@ -5005,6 +4971,7 @@ void MainWindow::open_settings_()
     });
 
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
+    start_search_index_stats_poll_();
 }
 
 void MainWindow::do_logout()
@@ -5475,6 +5442,50 @@ gboolean MainWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*,
     return TRUE;
 }
 
+gboolean MainWindow::on_message_search_shortcut_(GtkWidget*, GVariant*,
+                                                 gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->open_message_search_();
+    return TRUE;
+}
+
+void MainWindow::open_find_in_room_()
+{
+    if (!main_app_ || !main_app_->room_view())
+        return;
+    if (current_room_id_.empty())
+        return;
+    main_app_->room_view()->open_room_search();
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_text("");
+        find_in_room_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_find_in_room_()
+{
+    if (main_app_ && main_app_->room_view())
+        main_app_->room_view()->close_room_search();
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_visible(false);
+        find_in_room_field_->set_text("");
+    }
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+}
+
+gboolean MainWindow::on_find_in_room_shortcut_(GtkWidget*, GVariant*,
+                                               gpointer user_data)
+{
+    static_cast<MainWindow*>(user_data)->open_find_in_room_();
+    return TRUE;
+}
+
 gboolean MainWindow::on_nav_back_shortcut_(GtkWidget*, GVariant*,
                                            gpointer user_data)
 {
@@ -5509,6 +5520,30 @@ void MainWindow::close_quick_switch_()
         main_app_->show_quick_switch(false);
     if (quick_switch_field_)
         quick_switch_field_->set_visible(false);
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+}
+
+void MainWindow::open_message_search_()
+{
+    if (!main_app_ || !main_app_->message_search())
+        return;
+    main_app_->show_message_search(true);
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+    if (message_search_field_)
+    {
+        message_search_field_->set_text("");
+        message_search_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_message_search_()
+{
+    if (main_app_)
+        main_app_->show_message_search(false);
+    if (message_search_field_)
+        message_search_field_->set_visible(false);
     if (main_app_surface_)
         main_app_surface_->relayout();
 }
@@ -5562,6 +5597,12 @@ gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
             {
                 self->main_app_surface_->relayout();
             }
+            return TRUE;
+        }
+        if (self->main_app_ && self->main_app_->room_view() &&
+            self->main_app_->room_view()->room_search_open())
+        {
+            self->close_find_in_room_();
             return TRUE;
         }
     }

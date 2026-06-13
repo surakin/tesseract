@@ -940,6 +940,15 @@ public:
 
         bool cont = is_cont(index);
 
+        // Search match tint — subtle accent fill behind the row.
+        // Painted before the hover highlight so hover layers on top.
+        if (!owner_.search_match_ids_.empty() &&
+            !m.event_id.empty() &&
+            owner_.search_match_ids_.count(m.event_id))
+        {
+            ctx.canvas.fill_rect(bounds, ctx.theme.palette.accent.with_alpha(25));
+        }
+
         if (hovered)
         {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.subtle_hover);
@@ -1194,7 +1203,7 @@ public:
                     else
                     {
                         tk::TextStyle est{};
-                        est.role = tk::FontRole::Title;
+                        est.role = tk::FontRole::Body;
                         rxc.glyph_layout = ctx.factory.build_text(r.key, est);
                     }
                 }
@@ -3627,15 +3636,6 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     const bool animated = msg.kind == MessageRowData::Kind::Video &&
                           (msg.video_autoplay || msg.video_gif);
 
-    // Buffer front-inserts during back-pagination so they can be flushed as
-    // one batch when set_paginating(false) is called. Animated rows (autoplay
-    // / gif video) need start_inline_video() and take the normal path.
-    if (index == 0 && paginating_ && !animated)
-    {
-        pending_prepends_.push_back(std::move(msg));
-        return;
-    }
-
     // Suppress the read marker while the SDK catches up to the new position.
     // update_message() clears this flag when it delivers the updated marker.
     using Kind = MessageRowData::Kind;
@@ -3854,6 +3854,24 @@ void MessageListView::set_highlighted_event(const std::string& event_id)
     {
         request_repaint_();
     }
+}
+
+void MessageListView::set_search_matches(std::unordered_set<std::string> ids)
+{
+    if (ids == search_match_ids_)
+        return;
+    search_match_ids_ = std::move(ids);
+    if (request_repaint_)
+        request_repaint_();
+}
+
+void MessageListView::clear_search_matches()
+{
+    if (search_match_ids_.empty())
+        return;
+    search_match_ids_.clear();
+    if (request_repaint_)
+        request_repaint_();
 }
 
 void MessageListView::set_pinned_event_ids(std::unordered_set<std::string> ids)
@@ -4612,46 +4630,62 @@ void MessageListView::set_historical_mode(bool historical)
     invalidate_data();
 }
 
+void MessageListView::prepend_messages(std::vector<MessageRowData> rows)
+{
+    if (rows.empty())
+        return;
+    const std::size_t n = rows.size();
+    for (std::size_t i = 0; i < n; ++i)
+        adapter_->insert_layout_cache_at(0);
+    preserve_top_through(
+        [&]
+        {
+            messages_.insert(messages_.begin(), rows.begin(), rows.end());
+            for (std::size_t i = 0; i < n; ++i)
+                try_acquire_image_(messages_[i]);
+            invalidate_data();
+        });
+}
+
+void MessageListView::append_messages(std::vector<MessageRowData> rows)
+{
+    if (rows.empty())
+        return;
+    // Drop in-thread replies (defence-in-depth; callers should not send them).
+    rows.erase(
+        std::remove_if(rows.begin(), rows.end(),
+                       [](const MessageRowData& r)
+                       { return !r.thread_root_id.empty(); }),
+        rows.end());
+    if (rows.empty())
+        return;
+
+    const bool at_bottom = scroll_y() + bounds().h + 1.0f >= content_height();
+    // New real messages require the read marker to be repositioned.
+    suppress_read_marker_ = true;
+    for (auto& row : rows)
+    {
+        const bool animated = row.kind == MessageRowData::Kind::Video &&
+                              (row.video_autoplay || row.video_gif);
+        if (animated)
+            start_inline_video(row);
+        messages_.push_back(std::move(row));
+        try_acquire_image_(messages_.back());
+        insert_row(messages_.size() - 1);
+    }
+    if (at_bottom)
+        scroll_to_bottom();
+}
+
 void MessageListView::set_paginating(bool paginating)
 {
     if (paginating_ == paginating)
         return;
     paginating_ = paginating;
     if (paginating)
-    {
         paginate_start_ = std::chrono::steady_clock::now();
-    }
-    else
-    {
-        flush_pending_prepends_();
-    }
     if (request_repaint_)
         request_repaint_();
-}
-
-void MessageListView::flush_pending_prepends_()
-{
-    if (pending_prepends_.empty())
-        return;
-    // Insert N cache slots at position 0, one per queued message.
-    // Calling insert_layout_cache_at(0) N times shifts the existing
-    // slots to positions N..N+old, matching the bulk vector insert below.
-    for (std::size_t i = 0; i < pending_prepends_.size(); ++i)
-        adapter_->insert_layout_cache_at(0);
-    // pending_prepends_[0] = first PushFront received (most recent of the
-    // batch); rbegin..rend inserts oldest-first so messages_[0] ends up
-    // being the oldest paginated event, matching chronological order.
-    preserve_top_through(
-        [&]
-        {
-            messages_.insert(messages_.begin(),
-                             pending_prepends_.rbegin(),
-                             pending_prepends_.rend());
-            for (std::size_t i = 0; i < pending_prepends_.size(); ++i)
-                try_acquire_image_(messages_[i]);
-            invalidate_data();
-        });
-    pending_prepends_.clear();
 }
 
 void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx)
@@ -6046,6 +6080,29 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             if (right_w > 0)
                 ctx.canvas.fill_rect({right_x, cutout.y, right_w, cutout.h},
                                      scrim);
+        }
+    }
+
+    // Search match outline — 2px accent stroke around the focused match row.
+    // Only drawn when there is an active search (search_match_ids_ non-empty)
+    // and a focused match (highlighted_event_id_ non-empty).
+    if (!highlighted_event_id_.empty() && !search_match_ids_.empty())
+    {
+        for (std::size_t i = 0; i < messages_.size(); ++i)
+        {
+            if (messages_[i].event_id != highlighted_event_id_)
+                continue;
+            const tk::Rect B = bounds();
+            const tk::Rect r =
+                tk::ListView::row_world_rect(static_cast<int>(i));
+            const float x0 = std::max(B.x, r.x);
+            const float y0 = std::max(B.y, r.y);
+            const float x1 = std::min(B.right(), r.right());
+            const float y1 = std::min(B.bottom(), r.bottom());
+            if (x1 > x0 && y1 > y0)
+                ctx.canvas.stroke_rect({x0, y0, x1 - x0, y1 - y0},
+                                       ctx.theme.palette.accent, 2.0f);
+            break;
         }
     }
 

@@ -136,6 +136,16 @@ void Host::dispatch_pointer_move(Point world)
     }
 }
 
+bool Host::dispatch_wheel(Point world, float dx, float dy)
+{
+    Widget* root = input_root_();
+    if (!root)
+        return false;
+    if (popup_ && popup_->contains_world(world))
+        return popup_->on_wheel(popup_->world_to_local(world), dx, dy);
+    return root->dispatch_wheel(world, dx, dy);
+}
+
 void Host::dispatch_pointer_leave()
 {
     if (hovered_btn_)

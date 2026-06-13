@@ -80,6 +80,7 @@ add_executable(tesseract_tests
     cpp/test_shell_roster_invalidation.cpp
     cpp/test_roomlist_unread.cpp
     cpp/test_message_list_pinning.cpp
+    cpp/test_tk_message_list_search_highlight.cpp
     cpp/test_tk_pinned_banner.cpp
     cpp/test_tk_message_list_threads.cpp
     cpp/test_tk_message_list_layout_cache.cpp
@@ -89,6 +90,7 @@ add_executable(tesseract_tests
     cpp/test_tk_thread_view.cpp
     cpp/test_event_handler_bridge.cpp
     cpp/test_tk_room_header.cpp
+    cpp/test_tk_room_search_bar.cpp
     cpp/test_code_highlight.cpp
     cpp/test_tk_room_view.cpp
     cpp/test_tk_room_view_thread_callbacks.cpp

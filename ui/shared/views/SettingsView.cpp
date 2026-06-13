@@ -112,6 +112,11 @@ SettingsView::SettingsView()
     {
         if (on_send_presence_changed) on_send_presence_changed(v);
     };
+    privacy->on_index_messages_changed = [this](bool v)
+    {
+        if (request_repaint_) request_repaint_();
+        if (on_index_messages_changed) on_index_messages_changed(v);
+    };
     // on_export_keys / on_import_keys are wired in set_controller()
     // once the SettingsController is available.
     privacy_ = privacy.get();
@@ -313,6 +318,23 @@ void SettingsView::set_send_presence_pref(bool enabled)
     if (privacy_)
     {
         privacy_->set_send_presence(enabled);
+    }
+}
+
+void SettingsView::set_index_messages_pref(bool enabled)
+{
+    if (privacy_)
+    {
+        privacy_->set_index_messages(enabled);
+    }
+}
+
+void SettingsView::set_search_index_stats(
+    const tesseract::SearchIndexStats& stats, bool enabled)
+{
+    if (privacy_)
+    {
+        privacy_->set_search_index_stats(stats, enabled);
     }
 }
 

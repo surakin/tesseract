@@ -1,6 +1,6 @@
 # Maintainer: Marco Antonio Alvarez <surakus@pm.me>
 pkgname=tesseract-matrix-git
-pkgver=r1283.6c76191d
+pkgver=r1429.380b0418
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
 arch=('x86_64' 'aarch64')
