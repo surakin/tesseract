@@ -940,6 +940,15 @@ public:
 
         bool cont = is_cont(index);
 
+        // Search match tint — subtle accent fill behind the row.
+        // Painted before the hover highlight so hover layers on top.
+        if (!owner_.search_match_ids_.empty() &&
+            !m.event_id.empty() &&
+            owner_.search_match_ids_.count(m.event_id))
+        {
+            ctx.canvas.fill_rect(bounds, ctx.theme.palette.accent.with_alpha(25));
+        }
+
         if (hovered)
         {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.subtle_hover);
@@ -3847,6 +3856,24 @@ void MessageListView::set_highlighted_event(const std::string& event_id)
     }
 }
 
+void MessageListView::set_search_matches(std::unordered_set<std::string> ids)
+{
+    if (ids == search_match_ids_)
+        return;
+    search_match_ids_ = std::move(ids);
+    if (request_repaint_)
+        request_repaint_();
+}
+
+void MessageListView::clear_search_matches()
+{
+    if (search_match_ids_.empty())
+        return;
+    search_match_ids_.clear();
+    if (request_repaint_)
+        request_repaint_();
+}
+
 void MessageListView::set_pinned_event_ids(std::unordered_set<std::string> ids)
 {
     if (pinned_event_ids_ == ids)
@@ -6053,6 +6080,29 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             if (right_w > 0)
                 ctx.canvas.fill_rect({right_x, cutout.y, right_w, cutout.h},
                                      scrim);
+        }
+    }
+
+    // Search match outline — 2px accent stroke around the focused match row.
+    // Only drawn when there is an active search (search_match_ids_ non-empty)
+    // and a focused match (highlighted_event_id_ non-empty).
+    if (!highlighted_event_id_.empty() && !search_match_ids_.empty())
+    {
+        for (std::size_t i = 0; i < messages_.size(); ++i)
+        {
+            if (messages_[i].event_id != highlighted_event_id_)
+                continue;
+            const tk::Rect B = bounds();
+            const tk::Rect r =
+                tk::ListView::row_world_rect(static_cast<int>(i));
+            const float x0 = std::max(B.x, r.x);
+            const float y0 = std::max(B.y, r.y);
+            const float x1 = std::min(B.right(), r.right());
+            const float y1 = std::min(B.bottom(), r.bottom());
+            if (x1 > x0 && y1 > y0)
+                ctx.canvas.stroke_rect({x0, y0, x1 - x0, y1 - y0},
+                                       ctx.theme.palette.accent, 2.0f);
+            break;
         }
     }
 
