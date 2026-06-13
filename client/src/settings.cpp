@@ -53,7 +53,8 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     room_section_dms_collapsed       = j.value("room_section_dms_collapsed",       false);
     room_section_rooms_collapsed     = j.value("room_section_rooms_collapsed",     false);
     room_section_spaces_collapsed    = j.value("room_section_spaces_collapsed",    false);
-    room_section_inactive_collapsed  = j.value("room_section_inactive_collapsed",  true);
+    room_section_inactive_collapsed        = j.value("room_section_inactive_collapsed",        true);
+    room_section_space_unjoined_collapsed  = j.value("room_section_space_unjoined_collapsed",  false);
 
     if (j.contains("main_window") && j["main_window"].is_object())
     {
@@ -137,7 +138,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"room_section_dms_collapsed",       room_section_dms_collapsed},
         {"room_section_rooms_collapsed",     room_section_rooms_collapsed},
         {"room_section_spaces_collapsed",    room_section_spaces_collapsed},
-        {"room_section_inactive_collapsed",  room_section_inactive_collapsed},
+        {"room_section_inactive_collapsed",        room_section_inactive_collapsed},
+        {"room_section_space_unjoined_collapsed",  room_section_space_unjoined_collapsed},
     };
     j["language"]    = language;
     j["gif_api_key"] = gif_api_key;
