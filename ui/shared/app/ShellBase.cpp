@@ -4388,7 +4388,7 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
     }
     if (!rows.empty())
     {
-        tl->message_list()->prepend_messages(std::move(rows));
+        tl->prepend_messages(std::move(rows));
         schedule_relayout_();
     }
 }
@@ -4415,7 +4415,7 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
     }
     if (!rows.empty())
     {
-        tl->message_list()->append_messages(std::move(rows));
+        tl->append_messages(std::move(rows));
         schedule_relayout_();
     }
 }

@@ -81,6 +81,22 @@ void ThreadView::remove_message(std::size_t index)
     }
 }
 
+void ThreadView::append_messages(std::vector<MessageRowData> rows)
+{
+    for (auto& r : rows)
+        strip_thread_fields(r);
+    if (message_list_)
+        message_list_->append_messages(std::move(rows));
+}
+
+void ThreadView::prepend_messages(std::vector<MessageRowData> rows)
+{
+    for (auto& r : rows)
+        strip_thread_fields(r);
+    if (message_list_)
+        message_list_->prepend_messages(std::move(rows));
+}
+
 // ── layout ────────────────────────────────────────────────────────────────
 
 tk::Size ThreadView::measure(tk::LayoutCtx&, tk::Size constraints)

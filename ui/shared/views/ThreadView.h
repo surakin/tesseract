@@ -38,6 +38,8 @@ public:
     void insert_message(std::size_t index, MessageRowData row);
     void update_message(std::size_t index, MessageRowData row);
     void remove_message(std::size_t index);
+    void append_messages(std::vector<MessageRowData> rows);
+    void prepend_messages(std::vector<MessageRowData> rows);
 
     MessageListView* message_list() { return message_list_; }
 
