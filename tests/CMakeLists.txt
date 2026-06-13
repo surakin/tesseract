@@ -104,6 +104,7 @@ add_executable(tesseract_tests
     cpp/test_tk_host_pointer.cpp
     cpp/test_timeline_media_controller.cpp
     cpp/test_status_links.cpp
+    cpp/test_tk_room_preview.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching
