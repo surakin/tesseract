@@ -3571,11 +3571,18 @@ void ShellBase::request_forward_history_(const std::string& room_id)
 void ShellBase::return_to_live_(const std::string& room_id)
 {
     auto& state = pagination_[room_id];
-    state.is_focused = false;
+    state.is_focused        = false;
     state.focus_event_id.clear();
-    state.reached_end = false;
-    state.fwd_in_flight = false;
-    state.in_flight = true;
+    state.reached_end       = false;
+    state.fwd_in_flight     = false;
+    state.in_flight         = true;
+    state.returning_to_live = true;
+
+    // Clear stale pending-scroll-to-event so handle_timeline_reset_ui_
+    // doesn't re-arm a jump to the historical event on the live timeline.
+    pending_scroll_room_event_id_.clear();
+    if (room_view_ && room_view_->message_list())
+        room_view_->message_list()->set_pending_scroll_event_id({});
 
     // subscribe_room is CPU-bound (&mut); keep it on mut_pool_.
     // paginate_back_async fires a tokio task and returns immediately so
@@ -4669,6 +4676,11 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
             if (pstate.is_focused)
             {
                 list->scroll_to_event_id(pstate.focus_event_id);
+            }
+            if (pstate.returning_to_live)
+            {
+                pagination_[room_id].returning_to_live = false;
+                list->scroll_to_bottom();
             }
             // Restore saved scroll offset when returning to a tab that had
             // been scrolled up from the bottom.
