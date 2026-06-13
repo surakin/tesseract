@@ -63,6 +63,11 @@ public:
         return show_threads_btn_;
     }
 
+    // Show or hide the search button. Hidden by default; the shell enables it
+    // when the room supports full-text search.
+    void set_show_search_btn(bool show) { show_search_btn_ = show; }
+    bool show_search_btn() const { return show_search_btn_; }
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
@@ -86,6 +91,9 @@ public:
     // Fired when the user clicks the threads button.
     std::function<void()> on_threads_requested;
 
+    // Fired when the user clicks the search button.
+    std::function<void()> on_search_requested;
+
     // Fired when the user clicks the room name or avatar area (not on a topic
     // hyperlink or calendar button).
     std::function<void()> on_info_requested;
@@ -103,12 +111,14 @@ private:
     bool condensed_ = false;
     bool show_calendar_btn_ = false;
     bool show_threads_btn_ = false;
+    bool show_search_btn_ = false;
 
-    // Calendar / threads action buttons. Variant::Icon child buttons own their
-    // hover/press background and click dispatch; this view only draws the vector
-    // glyph centred inside each button's bounds (see paint()).
+    // Calendar / threads / search action buttons. Variant::Icon child buttons
+    // own their hover/press background and click dispatch; this view only draws
+    // the vector glyph centred inside each button's bounds (see paint()).
     tk::Button* calendar_btn_ = nullptr;
     tk::Button* threads_btn_ = nullptr;
+    tk::Button* search_btn_ = nullptr;
 
     // Owned date-picker popup (not a widget-tree child — driven via
     // register_popup / paint_overlay).
@@ -120,16 +130,23 @@ private:
     void hide_date_picker_();
     static std::uint64_t date_to_midnight_utc_ms_(int year, int month, int day);
 
-    // Lucide jump-to-date / threads icons for calendar_btn_ / threads_btn_,
-    // tinted text_primary (tint-aware so they recolor on theme switch).
+    // Lucide icons for the action buttons, tinted text_primary
+    // (tint-aware so they recolor on theme switch).
     tk::IconCache calendar_icon_;
     tk::IconCache threads_icon_;
+    tk::IconCache search_icon_;
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.
     tk::Rect threads_btn_rect_for_test() const
     {
         return threads_btn_ ? threads_btn_->bounds() : tk::Rect{};
+    }
+
+    // Test-only accessor for the search button's world-coordinate rect.
+    tk::Rect search_btn_rect_for_test() const
+    {
+        return search_btn_ ? search_btn_->bounds() : tk::Rect{};
     }
 
 private:

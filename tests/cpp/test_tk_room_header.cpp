@@ -174,3 +174,45 @@ TEST_CASE("threads button alone takes the right-most slot when calendar is off",
     // x = 800 - 8 (margin) - 28 (size) = 764.
     CHECK(r.x == 764.0f);
 }
+
+TEST_CASE("search button fires on_search_requested",
+          "[room_header][search]")
+{
+    Stage st;
+    RoomHeader h;
+    h.set_show_search_btn(true);
+    st.arrange(h, {0, 0, 800, 60});
+
+    bool clicked = false;
+    h.on_search_requested = [&] { clicked = true; };
+
+    const tk::Rect r = h.search_btn_rect_for_test();
+    REQUIRE(r.w == 28.0f);
+    REQUIRE(r.h == 28.0f);
+
+    const tk::Point centre{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
+    tk::Widget* claimer = h.dispatch_pointer_down(centre);
+    REQUIRE(claimer != nullptr);
+    claimer->on_pointer_up(claimer->world_to_local(centre), true);
+    CHECK(clicked);
+}
+
+TEST_CASE("search button does NOT fire if release leaves the button rect",
+          "[room_header][search]")
+{
+    Stage st;
+    RoomHeader h;
+    h.set_show_search_btn(true);
+    st.arrange(h, {0, 0, 800, 60});
+
+    bool clicked = false;
+    h.on_search_requested = [&] { clicked = true; };
+
+    const tk::Rect r = h.search_btn_rect_for_test();
+    const tk::Point centre{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
+    const tk::Point outside{0.0f, 0.0f};
+    tk::Widget* claimer = h.dispatch_pointer_down(centre);
+    REQUIRE(claimer != nullptr);
+    claimer->on_pointer_up(claimer->world_to_local(outside), false);
+    CHECK_FALSE(clicked);
+}

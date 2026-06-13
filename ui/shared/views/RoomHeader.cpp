@@ -74,6 +74,13 @@ RoomHeader::RoomHeader()
     threads_btn_->set_visible(false);
     threads_btn_->set_on_click(
         [this] { if (on_threads_requested) on_threads_requested(); });
+
+    auto srch = std::make_unique<tk::Button>("", std::function<void()>{},
+                                             tk::Button::Variant::Icon);
+    search_btn_ = add_child(std::move(srch));
+    search_btn_->set_visible(false);
+    search_btn_->set_on_click(
+        [this] { if (on_search_requested) on_search_requested(); });
 }
 
 void RoomHeader::set_room(const tesseract::RoomInfo& info)
@@ -185,6 +192,11 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             threads_btn_->set_visible(false);
             threads_btn_->arrange(ctx, {});
         }
+        if (search_btn_)
+        {
+            search_btn_->set_visible(false);
+            search_btn_->arrange(ctx, {});
+        }
     };
 
     if (condensed_ && bounds.h <= 0.0f)
@@ -283,18 +295,17 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-    // Right-side reserve: each visible action button takes 28 px; when both
-    // are shown they sit 8 px apart. When neither is shown the reserve is just
-    // the outer margin so the topic can use the freed width.
+    // Right-side reserve: each visible action button takes 28 px with 8 px
+    // gaps between them. When no buttons are shown the reserve is just the
+    // outer margin so the topic can use the freed width.
     const int visible_btns =
-        (show_threads_btn_ ? 1 : 0) + (show_calendar_btn_ ? 1 : 0);
+        (show_threads_btn_ ? 1 : 0) + (show_calendar_btn_ ? 1 : 0) +
+        (show_search_btn_ ? 1 : 0);
     const float right_reserve =
         visible_btns == 0
             ? kCalBtnMargin
-            : (visible_btns == 1
-                   ? kCalBtnMargin + kCalBtnSize + kCalBtnMargin
-                   : kCalBtnMargin + kCalBtnSize + 8.0f + kCalBtnSize +
-                         kCalBtnMargin);
+            : kCalBtnMargin + visible_btns * kCalBtnSize +
+                  (visible_btns - 1) * 8.0f + kCalBtnMargin;
     const float text_w = std::max(0.0f, bounds.w - kPadX - kAvatarSize -
                                             kAvatarGap - right_reserve);
 
@@ -390,15 +401,17 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         }
     }
 
-    // Position the calendar / threads action buttons. Calendar takes the
-    // right-most slot; threads sits 8 px to its left (or takes the right-most
-    // slot itself when calendar is hidden). Mirrors the old paint-time layout.
+    // Position the action buttons right-to-left: calendar (right-most), then
+    // threads, then search (left-most of the three).
     const float btn_y = bounds.y + (kHeight - kCalBtnSize) * 0.5f;
+    float right_edge = bounds.x + bounds.w - kCalBtnMargin;
+
+    // Calendar: right-most slot.
     tk::Rect cal_r{};
     if (show_calendar_btn_)
     {
-        cal_r = {bounds.x + bounds.w - kCalBtnMargin - kCalBtnSize, btn_y,
-                 kCalBtnSize, kCalBtnSize};
+        cal_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+        right_edge = cal_r.x - 8.0f;
     }
     if (calendar_btn_)
     {
@@ -406,18 +419,29 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         calendar_btn_->arrange(ctx, show_calendar_btn_ ? cal_r : tk::Rect{});
     }
 
+    // Threads: next slot to the left.
     tk::Rect thr_r{};
     if (show_threads_btn_)
     {
-        const float threads_right =
-            show_calendar_btn_ ? (cal_r.x - 8.0f)
-                               : (bounds.x + bounds.w - kCalBtnMargin);
-        thr_r = {threads_right - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+        thr_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+        right_edge = thr_r.x - 8.0f;
     }
     if (threads_btn_)
     {
         threads_btn_->set_visible(show_threads_btn_);
         threads_btn_->arrange(ctx, show_threads_btn_ ? thr_r : tk::Rect{});
+    }
+
+    // Search: leftmost of the action buttons.
+    tk::Rect srch_r{};
+    if (show_search_btn_)
+    {
+        srch_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
+    }
+    if (search_btn_)
+    {
+        search_btn_->set_visible(show_search_btn_);
+        search_btn_->arrange(ctx, show_search_btn_ ? srch_r : tk::Rect{});
     }
 }
 
@@ -510,6 +534,15 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         threads_icon_.draw(ctx.canvas, ctx.factory, kThreadListSvg,
                            threads_btn_->bounds(), kHeaderIconPx,
                            ctx.theme.palette.text_primary);
+    }
+
+    // Search button — shown when the shell enables room search.
+    if (search_btn_ && search_btn_->visible())
+    {
+        search_btn_->paint(ctx);
+        search_icon_.draw(ctx.canvas, ctx.factory, kSearchSvg,
+                          search_btn_->bounds(), kHeaderIconPx,
+                          ctx.theme.palette.text_primary);
     }
 
     // Register the date picker as the active popup so the host calls
