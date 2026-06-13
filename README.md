@@ -168,7 +168,6 @@ Tesseract stands on the work of many open-source projects.
 | [cxx](https://github.com/dtolnay/cxx) | Safe Rust ↔ C++ FFI bridge | David Tolnay |
 | [tokio](https://github.com/tokio-rs/tokio) | Async runtime | Tokio project (Carl Lerche et al.) |
 | [reqwest](https://github.com/seanmonstar/reqwest) | HTTP client (rustls-TLS) | Sean McArthur |
-| [tiny_http](https://github.com/tiny-http/tiny-http) | Loopback HTTP server for OAuth | Pierre Krieger |
 | [serde](https://github.com/serde-rs/serde) / serde_json | Serialization framework | David Tolnay & Erick Tryzelaar |
 | [futures-rs](https://github.com/rust-lang/futures-rs) | Async combinators | The Rust `futures-rs` team |
 | [anyhow](https://github.com/dtolnay/anyhow) | Error handling | David Tolnay |
