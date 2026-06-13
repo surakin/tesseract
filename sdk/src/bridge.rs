@@ -464,6 +464,18 @@ pub mod ffi {
         index_bytes: u64,
     }
 
+    /// One row from the `media_backoff` table in `app_cache.db`.
+    /// Loaded at sync-start and used to repopulate `ShellBase::media_fetch_failed_`.
+    struct MediaBackoffEntry {
+        /// MXC URI or HTTP URL that failed to fetch.
+        url: String,
+        /// Clamped attempt count (1–7); determines the next backoff window on
+        /// subsequent failure.
+        attempts: u32,
+        /// Unix epoch seconds (UTC) after which the URL may be retried.
+        deadline_secs: i64,
+    }
+
     /// Snapshot of the server-side key-backup state plus a running counter of
     /// imported room keys for this device. Carried by `on_backup_progress`
     /// callbacks and returned by `backup_state()`.
@@ -1059,6 +1071,28 @@ pub mod ffi {
         fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         fn stop_sync(self: &mut ClientFfi);
         fn clear_caches(self: &mut ClientFfi) -> OpResult;
+
+        // ----- Media backoff persistence -----
+
+        /// Load all rows from the `media_backoff` table in `app_cache.db`.
+        /// Returns an empty vec when the DB is not yet open or on any error.
+        fn load_media_backoff(self: &ClientFfi) -> Vec<MediaBackoffEntry>;
+
+        /// Upsert a backoff entry for `url` (on fetch failure). No-op when the
+        /// DB is not yet open.
+        fn note_media_backoff_failed(
+            self: &ClientFfi,
+            url: &str,
+            attempts: u32,
+            deadline_secs: i64,
+        );
+
+        /// Delete the backoff entry for `url` (on fetch success). No-op when
+        /// the DB is not yet open or the entry does not exist.
+        fn note_media_backoff_ok(self: &ClientFfi, url: &str);
+
+        /// Delete all rows from `media_backoff` (on cache wipe / logout).
+        fn clear_media_backoff_db(self: &ClientFfi);
 
         /// Live count of extra in-flight HTTP operations (excludes the sync
         /// long-poll). Cheap atomic read; safe to call from any thread.

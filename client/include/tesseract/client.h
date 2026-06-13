@@ -883,6 +883,21 @@ public:
     /// Settings panel opens — not on the 2-second poll tick.
     std::uint64_t search_index_size_bytes() const;
 
+    /// Load all persisted media-backoff entries from `app_cache.db`.
+    /// Returns an empty vector when the DB is not open (before sync-start).
+    std::vector<MediaBackoffEntry> load_media_backoff() const;
+
+    /// Upsert a backoff entry for `url` (called on fetch failure).
+    void note_media_backoff_failed(const std::string& url,
+                                   std::uint32_t       attempts,
+                                   std::int64_t        deadline_secs);
+
+    /// Delete the backoff entry for `url` (called on fetch success).
+    void note_media_backoff_ok(const std::string& url);
+
+    /// Delete all media-backoff entries (called on cache wipe / logout).
+    void clear_media_backoff_db();
+
     /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying the
     /// `fi.mau.gif` vendor hint (autoplay/loop/muted). `thumb_bytes` is a
     /// static poster image (`thumb_mime`, e.g. "image/png"; empty to omit).

@@ -584,6 +584,42 @@ impl ClientFfi {
         // stale request after an explicit stop.
         *self.pending_prefetch.lock() = None;
     }
+
+    // ── Media backoff persistence ─────────────────────────────────────────
+
+    pub fn load_media_backoff(&self) -> Vec<crate::ffi::MediaBackoffEntry> {
+        let guard = self.app_cache_db.lock();
+        let Some(conn) = guard.as_ref() else { return vec![] };
+        query_media_backoff(conn)
+            .into_iter()
+            .map(|(url, attempts, deadline_secs)| crate::ffi::MediaBackoffEntry {
+                url,
+                attempts,
+                deadline_secs,
+            })
+            .collect()
+    }
+
+    pub fn note_media_backoff_failed(&self, url: &str, attempts: u32, deadline_secs: i64) {
+        let guard = self.app_cache_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            upsert_media_backoff(conn, url, attempts, deadline_secs);
+        }
+    }
+
+    pub fn note_media_backoff_ok(&self, url: &str) {
+        let guard = self.app_cache_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            delete_media_backoff(conn, url);
+        }
+    }
+
+    pub fn clear_media_backoff_db(&self) {
+        let guard = self.app_cache_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            clear_media_backoff(conn);
+        }
+    }
 }
 
 /// Pure selection logic for unread prefetch, factored out so it can be unit
@@ -738,6 +774,11 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
          CREATE TABLE IF NOT EXISTS backfill_ts (
              room_id TEXT NOT NULL PRIMARY KEY,
              ts_ms   INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS media_backoff (
+             url      TEXT    NOT NULL PRIMARY KEY,
+             attempts INTEGER NOT NULL,
+             deadline INTEGER NOT NULL
          );",
     )
     .ok()?;
@@ -790,6 +831,50 @@ pub(super) fn load_backfill_ts_conn(
             timestamp_ms: ts_ms as u64,
         });
     }
+}
+
+// ── media_backoff DB helpers ──────────────────────────────────────────────
+// Available in test builds (no cfg gate) so the unit-test module can call them.
+
+pub(super) fn query_media_backoff(
+    conn: &rusqlite::Connection,
+) -> Vec<(String, u32, i64)> {
+    let Ok(mut stmt) =
+        conn.prepare("SELECT url, attempts, deadline FROM media_backoff")
+    else {
+        return vec![];
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, u32>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    }) else {
+        return vec![];
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
+
+pub(super) fn upsert_media_backoff(
+    conn: &rusqlite::Connection,
+    url: &str,
+    attempts: u32,
+    deadline: i64,
+) {
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO media_backoff (url, attempts, deadline) \
+         VALUES (?1, ?2, ?3)",
+        rusqlite::params![url, attempts, deadline],
+    );
+}
+
+pub(super) fn delete_media_backoff(conn: &rusqlite::Connection, url: &str) {
+    let _ = conn.execute("DELETE FROM media_backoff WHERE url = ?1", [url]);
+}
+
+pub(super) fn clear_media_backoff(conn: &rusqlite::Connection) {
+    let _ = conn.execute("DELETE FROM media_backoff", []);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -979,5 +1064,78 @@ mod tests {
         let out = select_prefetch_rooms(&ids, &skip, |_| Some(false));
         // Invalid id dropped; the LRU order the shell passed in is preserved.
         assert_eq!(out, vec![rid("!b:ex.org"), rid("!a:ex.org")]);
+    }
+}
+
+#[cfg(test)]
+mod media_backoff_tests {
+    use super::{clear_media_backoff, delete_media_backoff, query_media_backoff,
+                upsert_media_backoff};
+    use rusqlite::Connection;
+
+    fn make_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE media_backoff (
+                 url      TEXT    NOT NULL PRIMARY KEY,
+                 attempts INTEGER NOT NULL,
+                 deadline INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn upsert_and_load_round_trip() {
+        let conn = make_conn();
+        upsert_media_backoff(&conn, "mxc://a/b", 3, 9999);
+        let rows = query_media_backoff(&conn);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], ("mxc://a/b".to_owned(), 3, 9999));
+    }
+
+    #[test]
+    fn upsert_replaces_existing() {
+        let conn = make_conn();
+        upsert_media_backoff(&conn, "mxc://a/b", 2, 1000);
+        upsert_media_backoff(&conn, "mxc://a/b", 4, 3000);
+        let rows = query_media_backoff(&conn);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], ("mxc://a/b".to_owned(), 4, 3000));
+    }
+
+    #[test]
+    fn delete_removes_entry() {
+        let conn = make_conn();
+        upsert_media_backoff(&conn, "mxc://a/b", 2, 1000);
+        delete_media_backoff(&conn, "mxc://a/b");
+        assert!(query_media_backoff(&conn).is_empty());
+    }
+
+    #[test]
+    fn delete_nonexistent_is_noop() {
+        let conn = make_conn();
+        delete_media_backoff(&conn, "mxc://x/y"); // must not panic
+        assert!(query_media_backoff(&conn).is_empty());
+    }
+
+    #[test]
+    fn clear_empties_table() {
+        let conn = make_conn();
+        upsert_media_backoff(&conn, "mxc://a/b", 1, 1000);
+        upsert_media_backoff(&conn, "mxc://c/d", 2, 2000);
+        clear_media_backoff(&conn);
+        assert!(query_media_backoff(&conn).is_empty());
+    }
+
+    #[test]
+    fn expired_deadline_is_returned_with_attempts_intact() {
+        // deadline in the past — entry is still returned; C++ applies max(0, remaining)
+        let conn = make_conn();
+        upsert_media_backoff(&conn, "mxc://x/y", 5, 1); // epoch second 1 = far past
+        let rows = query_media_backoff(&conn);
+        assert_eq!(rows[0].1, 5); // attempts preserved
+        assert_eq!(rows[0].2, 1); // deadline preserved as-is
     }
 }

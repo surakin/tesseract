@@ -334,6 +334,29 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
         });
 }
 
+void ShellBase::note_media_fetch_failed_(const std::string& key)
+{
+    auto& e    = media_fetch_failed_[key];
+    e.attempts = std::min<std::uint32_t>(e.attempts + 1, 7);
+    const auto delay = std::min<std::chrono::seconds>(
+        std::chrono::minutes(5) * (1u << (e.attempts - 1)),
+        std::chrono::minutes(30));
+    e.retry_after = std::chrono::steady_clock::now() + delay;
+
+    const auto deadline_secs =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count()
+        + std::chrono::duration_cast<std::chrono::seconds>(delay).count();
+    client_->note_media_backoff_failed(key, e.attempts, deadline_secs);
+}
+
+void ShellBase::note_media_fetch_ok_(const std::string& key)
+{
+    media_fetch_failed_.erase(key);
+    client_->note_media_backoff_ok(key);
+}
+
 void ShellBase::fetch_media_pipeline_(
     std::string cache_key, std::string disk_key, std::string inflight_key,
     std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
@@ -3888,12 +3911,31 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
         account_manager_.clear_dedicated(active_account_->user_id);
     }
 
+    // Drop per-account backoff state so it can't bleed into the incoming account.
+    media_fetch_failed_.clear();
+
     reset_server_info_();
     active_account_ = new_session;
     auto& sess = *active_account_;
 
     client_ = sess.client.get();
     event_handler_ = sess.bridge.get(); // keep ShellBase's non-owning alias in sync
+
+    // Restore persisted backoff state for the incoming account (DB is open by
+    // the time start_sync returns, which happens before activate_account_).
+    for (const auto& entry : client_->load_media_backoff())
+    {
+        using SC     = std::chrono::system_clock;
+        using Steady = std::chrono::steady_clock;
+        const auto stored    = SC::time_point{std::chrono::seconds{entry.deadline_secs}};
+        const auto remaining = stored - SC::now();
+        MediaFetchBackoff b;
+        b.attempts   = entry.attempts;
+        b.retry_after = Steady::now()
+                      + std::max(std::chrono::seconds::zero(),
+                                 std::chrono::duration_cast<std::chrono::seconds>(remaining));
+        media_fetch_failed_[entry.url] = b;
+    }
 
     my_user_id_ = sess.user_id;
     my_display_name_ = sess.display_name;
@@ -5874,6 +5916,7 @@ void ShellBase::clear_all_caches_(
             account_manager_.anim_cache() = tk::AnimImageCache{};
             media_decode_failed_.clear();
             media_fetch_failed_.clear();
+            client_->clear_media_backoff_db();
             voice_bytes_cache_.clear();
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());

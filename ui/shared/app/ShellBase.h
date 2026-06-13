@@ -495,19 +495,8 @@ protected:
         return it != media_fetch_failed_.end() &&
                std::chrono::steady_clock::now() < it->second.retry_after;
     }
-    void note_media_fetch_failed_(const std::string& key)
-    {
-        auto& e    = media_fetch_failed_[key];
-        e.attempts = std::min<std::uint32_t>(e.attempts + 1, 7);
-        const auto delay = std::min<std::chrono::seconds>(
-            std::chrono::minutes(5) * (1u << (e.attempts - 1)),
-            std::chrono::minutes(30));
-        e.retry_after = std::chrono::steady_clock::now() + delay;
-    }
-    void note_media_fetch_ok_(const std::string& key)
-    {
-        media_fetch_failed_.erase(key);
-    }
+    void note_media_fetch_failed_(const std::string& key);
+    void note_media_fetch_ok_(const std::string& key);
 
     // ── Async media request registry ──────────────────────────────────────────
     // Correlates an outstanding fetch_media_async / get_url_preview_async call

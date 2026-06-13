@@ -25,6 +25,11 @@ inline SearchIndexStats from_ffi(const tesseract_ffi::SearchIndexStats& s)
     return {s.message_count, s.room_count, s.oldest_ts_ms, s.backfill_done, 0};
 }
 
+inline MediaBackoffEntry from_ffi(const tesseract_ffi::MediaBackoffEntry& e)
+{
+    return {std::string(e.url), e.attempts, e.deadline_secs};
+}
+
 inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p)
 {
     BackupState state = BackupState::Unknown;

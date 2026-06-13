@@ -624,6 +624,19 @@ struct SearchIndexStats
     std::uint64_t index_bytes = 0;
 };
 
+/// One persisted media-backoff entry loaded from `app_cache.db` at sync-start.
+/// Mirrors the `MediaBackoffEntry` cxx bridge struct.
+struct MediaBackoffEntry
+{
+    /// MXC URI or HTTP URL that previously failed to fetch.
+    std::string url;
+    /// Clamped attempt count (1–7); determines the next backoff window on
+    /// subsequent failure.
+    std::uint32_t attempts = 0;
+    /// Unix epoch seconds (UTC) after which the URL may be retried.
+    std::int64_t deadline_secs = 0;
+};
+
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via
 /// `IEventHandler::on_room_list_state` so UIs can render a "Syncing
 /// rooms…" indicator while the joined-room set is still being hydrated.
