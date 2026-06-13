@@ -24,6 +24,7 @@
 #include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
 #include "InviteCard.h"
+#include "RoomPreviewView.h"
 #include "QuickSwitcher.h"
 #include "MessageSearchView.h"
 #include "RoomListView.h"
@@ -73,8 +74,14 @@ public:
     void show_invite(const tesseract::InviteInfo& invite,
                      InviteCard::ImageProvider provider);
 
-    // Show RoomView, hiding the invite card.
+    // Show RoomView, hiding the invite card and room preview.
     void show_room();
+
+    // Show the room-preview panel for an unjoined space child, hiding RoomView.
+    void show_room_preview(const tesseract::RoomSummary& s,
+                           RoomPreviewView::AvatarProvider provider);
+    // Hide the room preview and restore RoomView.
+    void hide_room_preview();
 
     // Hide both RoomView and the invite card (nothing selected state).
     void clear_content();
@@ -120,6 +127,10 @@ public:
     InviteCard* invite_card() const
     {
         return invite_card_;
+    }
+    RoomPreviewView* room_preview() const
+    {
+        return room_preview_;
     }
     VerificationBanner* verif_banner() const
     {
@@ -215,8 +226,9 @@ private:
     VerificationBanner* verif_banner_ = nullptr;
     tk::TabBar* tab_bar_ = nullptr;
     bool tab_bar_visible_ = false;
-    RoomView* room_view_ = nullptr;
-    InviteCard* invite_card_ = nullptr;
+    RoomView*        room_view_    = nullptr;
+    InviteCard*      invite_card_  = nullptr;
+    RoomPreviewView* room_preview_ = nullptr;
 
     // Full-surface lightbox overlays (painted last — highest z-order)
     ImageViewerOverlay* img_viewer_ = nullptr;

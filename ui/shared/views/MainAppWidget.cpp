@@ -62,6 +62,11 @@ MainAppWidget::MainAppWidget()
     invite_card_ = add_child(std::move(ic));
     // InviteCard starts invisible (clear() is called in its constructor).
 
+    // Chat panel: room preview (shown for unjoined space-child rooms).
+    auto rp = std::make_unique<RoomPreviewView>();
+    room_preview_ = add_child(std::move(rp));
+    // RoomPreviewView starts invisible (set_visible(false) in its constructor).
+
     // Full-surface lightbox overlays — added last so they win hit-testing
     // and are painted on top of everything else when visible.
     auto img = std::make_unique<ImageViewerOverlay>();
@@ -185,6 +190,30 @@ void MainAppWidget::show_room()
 {
     if (invite_card_)
         invite_card_->clear();
+    if (room_preview_)
+        room_preview_->clear();
+    if (room_view_)
+        room_view_->set_visible(true);
+}
+
+void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
+                                      RoomPreviewView::AvatarProvider provider)
+{
+    if (invite_card_)
+        invite_card_->clear();
+    if (room_view_)
+        room_view_->set_visible(false);
+    if (room_preview_)
+    {
+        room_preview_->set_avatar_provider(std::move(provider));
+        room_preview_->set_summary(s);
+    }
+}
+
+void MainAppWidget::hide_room_preview()
+{
+    if (room_preview_)
+        room_preview_->clear();
     if (room_view_)
         room_view_->set_visible(true);
 }
@@ -193,6 +222,8 @@ void MainAppWidget::clear_content()
 {
     if (invite_card_)
         invite_card_->clear();
+    if (room_preview_)
+        room_preview_->clear();
     if (room_view_)
     {
         room_view_->clear_room();
@@ -441,6 +472,10 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         invite_card_->arrange(ctx, chat_content_rect);
     }
+    if (room_preview_)
+    {
+        room_preview_->arrange(ctx, chat_content_rect);
+    }
 
     // ── Full-surface overlays (always at full widget bounds) ─────────────
 
@@ -559,6 +594,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     if (invite_card_ && invite_card_->visible())
     {
         invite_card_->paint(ctx);
+    }
+    if (room_preview_ && room_preview_->visible())
+    {
+        room_preview_->paint(ctx);
     }
 
     // Lightbox overlays (painted last — on top of everything).
