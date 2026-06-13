@@ -3459,6 +3459,8 @@ void ShellBase::try_scroll_to_room_event_(const std::string& event_id)
     // every intermediate event and can stall the main thread.
     const auto rid = current_room_id_;
     begin_focused_subscription_(rid, event_id);
+    if (auto* ml = room_view_->message_list())
+        ml->begin_nav_loading();
     auto sess = active_account_;
     run_async_mut_([sess, rid, event_id]()
     {
@@ -3516,6 +3518,9 @@ void ShellBase::handle_date_jump_(const std::string& room_id,
                 [this, room_id, event_id]
                 {
                     begin_focused_subscription_(room_id, event_id);
+                    if (room_id == current_room_id_ && room_view_)
+                        if (auto* ml = room_view_->message_list())
+                            ml->begin_nav_loading();
                     run_async_mut_(
                         [this, room_id, event_id]
                         {

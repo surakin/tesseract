@@ -3742,6 +3742,13 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         switch_spinner_due_ = false;
         ++switch_epoch_;
     }
+    // Defence-in-depth: any timeline reset cancels a pending nav-load overlay.
+    if (nav_loading_)
+    {
+        nav_loading_     = false;
+        nav_spinner_due_ = false;
+        ++nav_epoch_;
+    }
 
     // Defence-in-depth: drop any in-thread replies. The main timeline
     // shows only top-level events + thread roots; in-thread replies are
@@ -4495,6 +4502,8 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
     {
         return false; // list not painted yet
     }
+    if (nav_loading_)
+        return false;
 
     // Map zoom: intercept wheel over a Kind::Location map tile area.
     {
@@ -4527,6 +4536,8 @@ void MessageListView::on_pointer_drag(tk::Point local)
     {
         return;
     }
+    if (nav_loading_)
+        return;
     if (press_audio_kind_ == AudioPressKind::ProgressTrack &&
         !press_audio_event_id_.empty())
     {
@@ -4656,6 +4667,8 @@ bool MessageListView::on_pointer_move(tk::Point local)
     {
         return false;
     }
+    if (nav_loading_)
+        return false;
     last_pointer_local_ = local;
     tk::ListView::on_pointer_move(local);
 
@@ -4820,6 +4833,8 @@ tk::Widget* MessageListView::dispatch_pointer_move(tk::Point world, bool* dirty)
 void MessageListView::on_pointer_leave()
 {
     if (gate_blocks_input_())
+        return;
+    if (nav_loading_)
         return;
     if (hover_locked_)
         return;
@@ -4991,6 +5006,54 @@ void MessageListView::end_switch_loading()
         request_repaint_();
 }
 
+void MessageListView::begin_nav_loading()
+{
+    ++nav_epoch_;
+    nav_loading_     = true;
+    nav_spinner_due_ = false;
+    if (request_repaint_)
+        request_repaint_();
+
+    if (post_delayed_)
+    {
+        std::weak_ptr<bool> walive = alive_;
+        const std::uint64_t ep    = nav_epoch_;
+        post_delayed_(kNavSpinnerDelayMs,
+                      [this, walive, ep]()
+                      {
+                          auto live = walive.lock();
+                          if (!live || !*live)
+                              return;
+                          if (ep != nav_epoch_ || !nav_loading_)
+                              return;
+                          nav_spinner_due_   = true;
+                          nav_spinner_start_ = std::chrono::steady_clock::now();
+                          if (request_repaint_)
+                              request_repaint_();
+                      });
+    }
+}
+
+void MessageListView::end_nav_loading()
+{
+    if (!nav_loading_)
+        return;
+    ++nav_epoch_;
+    nav_loading_     = false;
+    nav_spinner_due_ = false;
+    if (request_repaint_)
+        request_repaint_();
+}
+
+void MessageListView::draw_nav_spinner_(tk::PaintCtx& ctx)
+{
+    draw_spinner_dots_(ctx,
+                       bounds_.x + bounds_.w * 0.5f,
+                       bounds_.y + bounds_.h * 0.5f,
+                       nav_spinner_start_,
+                       /*radius=*/12.0f, /*dot_r=*/3.0f);
+}
+
 void MessageListView::draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
                                          std::chrono::steady_clock::time_point
                                              start,
@@ -5085,6 +5148,8 @@ bool MessageListView::on_pointer_down(tk::Point local)
     {
         return false; // list not painted yet
     }
+    if (nav_loading_)
+        return false;
 
     // Scrollbar thumb wins any hit test — it overlaps row content visually.
     if (thumb_hit(local))
@@ -5556,6 +5621,8 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     {
         return;
     }
+    if (nav_loading_)
+        return;
 
     // Selection drag ended.
     if (press_sel_)
@@ -6318,6 +6385,15 @@ void MessageListView::paint(tk::PaintCtx& ctx)
                 ctx.canvas.fill_rect({right_x, cutout.y, right_w, cutout.h},
                                      scrim);
         }
+    }
+
+    // Nav-loading overlay: dim + spinner while subscribe_room_at rebuilds the
+    // focused timeline. Spinner deferred kNavSpinnerDelayMs; fast resolves show
+    // nothing. Rows beneath remain visible through the scrim.
+    if (nav_loading_ && nav_spinner_due_)
+    {
+        ctx.canvas.fill_rect(bounds(), tk::Color::rgba(0, 0, 0, 60));
+        draw_nav_spinner_(ctx);
     }
 
     // Search match outline — 2px accent stroke around the focused match row.
