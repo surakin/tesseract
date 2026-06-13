@@ -197,6 +197,7 @@ impl ClientFfi {
                         let mut db = self.search_db.lock();
                         *db = None; // close any previous session's connection
                     }
+                    self.sdk_media_fetched.lock().clear();
                     if let Some(conn) = open_app_cache_db(&self.data_dir) {
                         load_backfill_ts_conn(&conn, &self.backfill_previews);
                         {

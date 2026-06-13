@@ -578,6 +578,14 @@ pub struct ClientFfi {
     #[cfg(not(test))]
     pub(super) media_tasks:
         Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
+    /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
+    /// SQLite store already holds. `fetch_media_async` uses this to skip the
+    /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
+    /// 10 ms probe always resolves before any real network round-trip. Cleared
+    /// on `start_sync` (account switch) so stale keys from a different session
+    /// never bypass a legitimate download.
+    #[cfg(not(test))]
+    pub(super) sdk_media_fetched: Arc<Mutex<std::collections::HashSet<String>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -846,6 +854,8 @@ impl ClientFfi {
                 MEDIA_BULK_PERMITS, MEDIA_BULK_PERMITS * 2),
             #[cfg(not(test))]
             media_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            sdk_media_fetched: Arc::new(Mutex::new(std::collections::HashSet::new())),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 // Timeline construction collects cached events
