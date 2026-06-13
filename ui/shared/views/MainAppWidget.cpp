@@ -336,6 +336,17 @@ tk::Rect MainAppWidget::message_search_field_rect() const
     return message_search_ ? message_search_->search_field_rect() : tk::Rect{};
 }
 
+bool MainAppWidget::in_room_search_field_visible() const
+{
+    if (any_modal_open_()) return false;
+    return room_view_ && room_view_->room_search_field_visible();
+}
+
+tk::Rect MainAppWidget::in_room_search_field_rect() const
+{
+    return room_view_ ? room_view_->room_search_field_rect() : tk::Rect{};
+}
+
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size MainAppWidget::measure(tk::LayoutCtx&, tk::Size constraints)

@@ -52,6 +52,7 @@ namespace views
 {
 class ComposeBar;
 class MainAppWidget;
+class RoomSearchBar;
 class RoomView;
 class SettingsView;
 }
@@ -184,6 +185,7 @@ public:
         SaveSettings,
         MessageSearch,
         SearchStats,
+        InRoomSearch,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -2511,6 +2513,38 @@ protected:
     // request_id → the query string it was issued for (so a response can be
     // tagged for the overlay's stale-drop check); erased on completion.
     std::unordered_map<std::uint64_t, std::string> search_pending_queries_;
+
+    // ── Per-room "find in conversation" search (Ctrl+F / Cmd+F) ──────────
+    void handle_in_room_search_query_(const std::string& query);
+    void handle_in_room_search_results_ui_(std::uint64_t request_id,
+                                           std::vector<tesseract::SearchHit> results);
+    void handle_in_room_search_failed_ui_(std::uint64_t request_id,
+                                          const std::string& message);
+    void in_room_search_navigate_(int delta);
+    void set_in_room_search_paginate_(bool enabled);
+    void in_room_search_focus_current_();
+    void in_room_search_maybe_paginate_(bool at_oldest_boundary);
+    void in_room_search_apply_highlights_();
+    void in_room_search_clear_();
+    // Returns the active RoomSearchBar, or nullptr when unavailable.
+    views::RoomSearchBar* in_room_search_bar_() const;
+
+    std::uint64_t in_room_search_request_id_ = 0;
+    std::unordered_map<std::uint64_t, std::string> in_room_search_pending_;
+    std::string   in_room_search_room_id_;
+    std::vector<tesseract::SearchHit> in_room_search_matches_;
+    int           in_room_search_current_           = -1;
+    bool          in_room_search_paginate_          = false;
+    // Set when pagination was triggered by the in-room search; cleared when
+    // handle_paginate_result_ui_ re-runs the query.
+    bool          in_room_search_rerun_on_paginate_ = false;
+    // When true, the next results delivery should focus the oldest match (index 0).
+    // Set when UP-at-oldest triggers back-pagination.
+    bool          in_room_search_goto_oldest_       = false;
+    // Set alongside in_room_search_rerun_on_paginate_ so the results handler
+    // can detect a paginate-triggered re-run and continue if no new matches.
+    bool          in_room_search_paginate_rerun_    = false;
+    int           in_room_search_prev_match_count_  = 0;
 
     // Event ID we are currently paginating towards (empty when idle).
     std::string pending_scroll_room_event_id_;

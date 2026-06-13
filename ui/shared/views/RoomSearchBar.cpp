@@ -16,7 +16,6 @@ constexpr float kBtnSize = 28.0f; // icon button size
 constexpr float kBtnGap  =  4.0f; // gap between buttons
 constexpr float kFieldH  = 28.0f; // native text field height within strip
 constexpr float kIconPx  = 16.0f; // glyph render size
-constexpr float kCountW  = 96.0f; // fixed width for count label area
 
 } // namespace
 
@@ -160,8 +159,11 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float paginate_w = 90.0f; // fallback
     if (paginate_cb_)
     {
-        const tk::Size m = paginate_cb_->measure(ctx, {200.0f, kStripH});
-        paginate_w = m.w;
+        // Width=0 → CheckButton returns natural (box + gap + label) width.
+        // ceil + 4px buffer prevents sub-pixel rounding from triggering the
+        // ellipsis when arrange re-constrains to exactly that width.
+        const tk::Size m = paginate_cb_->measure(ctx, {0.0f, kStripH});
+        paginate_w = std::ceil(m.w) + 4.0f;
     }
     const float paginate_right = close_r.x - kBtnGap;
     const tk::Rect paginate_r{paginate_right - paginate_w,
@@ -182,18 +184,25 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (up_btn_)
         up_btn_->arrange(ctx, up_r);
 
-    // Count label: left of up button
+    // Count label: measure natural width then place left of up button.
     const float count_right = up_r.x - kBtnGap;
-    const float count_x = count_right - kCountW;
-    const tk::Rect count_r{count_x,
-                           bounds.y + (kStripH - kFieldH) * 0.5f,
-                           kCountW, kFieldH};
+    float count_w = 0.0f;
     if (count_label_)
+    {
+        const tk::Size lsz = count_label_->measure(ctx, {0.0f, kStripH});
+        count_w = std::ceil(lsz.w) + 4.0f;
+        const tk::Rect count_r{count_right - count_w,
+                               bounds.y + (kStripH - lsz.h) * 0.5f,
+                               count_w, lsz.h};
         count_label_->arrange(ctx, count_r);
+    }
 
     // Native text field rect: from left margin to just left of count label.
-    const float field_w = std::max(0.0f, count_x - kPadX - kBtnGap);
-    field_rect_ = {bounds.x + kPadX,
+    // field_w must account for bounds.x so the field does not overlap the
+    // right-hand controls when the room panel has a non-zero x offset.
+    const float field_left = bounds.x + kPadX;
+    const float field_w    = std::max(0.0f, count_right - count_w - field_left - kBtnGap);
+    field_rect_ = {field_left,
                    bounds.y + (kStripH - kFieldH) * 0.5f,
                    field_w, kFieldH};
 }

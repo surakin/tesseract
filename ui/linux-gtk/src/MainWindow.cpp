@@ -2177,6 +2177,47 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             main_app_->message_search()->on_close = [this]
             { close_message_search_(); };
 
+        // Per-room "find in conversation" (Ctrl+F) native field.
+        find_in_room_field_ = main_app_surface_->host().make_text_field();
+        find_in_room_field_->set_placeholder("Find in conversation…");
+        find_in_room_field_->set_visible(false);
+        find_in_room_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (main_app_ && main_app_->room_view() &&
+                    main_app_->room_view()->room_search_bar())
+                {
+                    main_app_->room_view()->room_search_bar()->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        find_in_room_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+                if (!rv || !rv->room_search_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    if (rv->on_room_search_navigate) rv->on_room_search_navigate(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    if (rv->on_room_search_navigate) rv->on_room_search_navigate(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_find_in_room_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (main_app_ && main_app_->room_view())
+            main_app_->room_view()->room_search_bar()->on_close =
+                [this] { close_find_in_room_(); };
+
         // Unified layout callback — positions all native overlays.
         main_app_surface_->set_on_layout(
             [this]
@@ -2217,6 +2258,18 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     {
                         message_search_field_->set_rect(
                             main_app_->message_search_field_rect());
+                    }
+                }
+
+                if (find_in_room_field_)
+                {
+                    const bool fir_vis =
+                        main_app_->in_room_search_field_visible();
+                    find_in_room_field_->set_visible(fir_vis);
+                    if (fir_vis)
+                    {
+                        find_in_room_field_->set_rect(
+                            main_app_->in_room_search_field_rect());
                     }
                 }
 
@@ -2474,6 +2527,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             gtk_callback_action_new(on_message_search_shortcut_, this, nullptr));
         gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
                                              search_sc);
+
+        // Ctrl+F: open per-room "find in conversation".
+        GtkShortcut* fir_sc = gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_f, GDK_CONTROL_MASK),
+            gtk_callback_action_new(on_find_in_room_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
+                                             fir_sc);
 
         GtkShortcut* back_sc = gtk_shortcut_new(
             gtk_keyval_trigger_new(GDK_KEY_Left, GDK_ALT_MASK),
@@ -4808,11 +4868,10 @@ void MainWindow::refresh_sync_status()
         gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         return;
     }
-    if (sync_progress_shown_)
-    {
-        sync_progress_shown_ = false;
-        gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
-    }
+    // Steady state: always settle to "Connected" so any transient override
+    // (e.g., "Fetching older messages…" from in-room search) is cleared.
+    sync_progress_shown_ = false;
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
 }
 
 // ---------------------------------------------------------------------------
@@ -5389,6 +5448,42 @@ gboolean MainWindow::on_message_search_shortcut_(GtkWidget*, GVariant*,
     return TRUE;
 }
 
+void MainWindow::open_find_in_room_()
+{
+    if (!main_app_ || !main_app_->room_view())
+        return;
+    if (current_room_id_.empty())
+        return;
+    main_app_->room_view()->open_room_search();
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_text("");
+        find_in_room_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_find_in_room_()
+{
+    if (main_app_ && main_app_->room_view())
+        main_app_->room_view()->close_room_search();
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_visible(false);
+        find_in_room_field_->set_text("");
+    }
+    if (main_app_surface_)
+        main_app_surface_->relayout();
+}
+
+gboolean MainWindow::on_find_in_room_shortcut_(GtkWidget*, GVariant*,
+                                               gpointer user_data)
+{
+    static_cast<MainWindow*>(user_data)->open_find_in_room_();
+    return TRUE;
+}
+
 gboolean MainWindow::on_nav_back_shortcut_(GtkWidget*, GVariant*,
                                            gpointer user_data)
 {
@@ -5500,6 +5595,12 @@ gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
             {
                 self->main_app_surface_->relayout();
             }
+            return TRUE;
+        }
+        if (self->main_app_ && self->main_app_->room_view() &&
+            self->main_app_->room_view()->room_search_open())
+        {
+            self->close_find_in_room_();
             return TRUE;
         }
     }

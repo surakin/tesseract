@@ -213,6 +213,8 @@ private:
     void close_quick_switch_();
     void open_message_search_();
     void close_message_search_();
+    void open_find_in_room_();
+    void close_find_in_room_();
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
     void on_tesseract_rooms(RoomsPayload* payload);
     void refresh_room_list();
@@ -340,6 +342,7 @@ private:
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
     std::unique_ptr<tk::NativeTextField> message_search_field_;
+    std::unique_ptr<tk::NativeTextField> find_in_room_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     bool                                 focus_compose_on_show_ = false;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
@@ -567,6 +570,7 @@ private:
     static constexpr int IDC_NAV_BACK = 131;
     static constexpr int IDC_NAV_FWD  = 132;
     static constexpr int IDC_MESSAGE_SEARCH = 133;
+    static constexpr int IDC_FIND_IN_ROOM = 134;
 
     // Application accelerator table (Ctrl+K → quick switcher). Built in
     // on_create, applied by pre_translate_message so the shortcut fires even

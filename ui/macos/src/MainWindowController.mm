@@ -487,6 +487,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_closeQuickSwitch;
 - (void)_openMessageSearch;
 - (void)_closeMessageSearch;
+- (void)_openFindInRoom;
+- (void)_closeFindInRoom;
 - (void)_navigateHistoryBack;
 - (void)_navigateHistoryForward;
 - (void)loginViewDidCancel:(LoginView*)view;
@@ -1728,6 +1730,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
     std::unique_ptr<tk::NativeTextField> _quickSwitchField;
     std::unique_ptr<tk::NativeTextField> _messageSearchField;
+    std::unique_ptr<tk::NativeTextField> _findInRoomField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
 
@@ -4153,6 +4156,63 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     [s _closeMessageSearch];
             };
 
+        // Per-room "find in conversation" (⌘F) native field.
+        _findInRoomField = _mainAppSurface->host().make_text_field();
+        _findInRoomField->set_placeholder("Find in conversation…");
+        _findInRoomField->set_visible(false);
+        _findInRoomField->set_on_changed(
+            [weakSelf](const std::string& q)
+            {
+                MainWindowController* s = weakSelf;
+                auto* rv = (s && s->_mainApp) ? s->_mainApp->room_view()
+                                              : nullptr;
+                if (rv)
+                {
+                    if (auto* bar = rv->room_search_bar())
+                    {
+                        bar->set_query(q);
+                        s->_mainAppSurface->relayout();
+                    }
+                }
+            });
+        _findInRoomField->set_on_popup_nav(
+            [weakSelf](tk::NavKey nk) -> bool
+            {
+                MainWindowController* s = weakSelf;
+                auto* rv = (s && s->_mainApp) ? s->_mainApp->room_view()
+                                              : nullptr;
+                if (!rv || !rv->room_search_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(-1);
+                    return true;
+                case tk::NavKey::Down:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(+1);
+                    return true;
+                case tk::NavKey::Escape:
+                    [s _closeFindInRoom];
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (auto* rv = _mainApp->room_view())
+        {
+            if (auto* bar = rv->room_search_bar())
+            {
+                bar->on_close = [weakSelf]
+                {
+                    MainWindowController* s = weakSelf;
+                    if (s)
+                        [s _closeFindInRoom];
+                };
+            }
+        }
+
         _mainAppSurface->set_on_layout(
             [weakSelf]
             {
@@ -4230,6 +4290,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
                         s->_messageSearchField->set_rect(
                             app->message_search_field_rect());
                 }
+                // Per-room find-in-conversation field (⌘F).
+                if (s->_findInRoomField)
+                {
+                    bool vis = app->in_room_search_field_visible();
+                    s->_findInRoomField->set_visible(vis);
+                    if (vis)
+                        s->_findInRoomField->set_rect(
+                            app->in_room_search_field_rect());
+                }
                 // Encryption setup passphrase field.
                 if (s->_shell->enc_passphrase_field_ && app->encryption_setup())
                 {
@@ -4282,6 +4351,18 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                  [s _openMessageSearch];
                                                  return (NSEvent*)nil;
                                              }
+                                             // ⌘F → open per-room find in conversation.
+                                             if ((event.modifierFlags &
+                                                  NSEventModifierFlagCommand) &&
+                                                 !(event.modifierFlags &
+                                                   NSEventModifierFlagShift) &&
+                                                 [[event.charactersIgnoringModifiers
+                                                     lowercaseString]
+                                                     isEqualToString:@"f"])
+                                             {
+                                                 [s _openFindInRoom];
+                                                 return (NSEvent*)nil;
+                                             }
                                              // ⌘[ → navigate room history back.
                                              if ((event.modifierFlags &
                                                   NSEventModifierFlagCommand) &&
@@ -4319,6 +4400,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                          ->is_open())
                                                  {
                                                      [s _closeMessageSearch];
+                                                     return (NSEvent*)nil;
+                                                 }
+                                                 if (s->_mainApp &&
+                                                     s->_mainApp->room_view() &&
+                                                     s->_mainApp->room_view()
+                                                         ->room_search_open())
+                                                 {
+                                                     [s _closeFindInRoom];
                                                      return (NSEvent*)nil;
                                                  }
                                                  if (s->_vidViewer &&
@@ -6355,6 +6444,34 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _mainApp->show_message_search(false);
     if (_messageSearchField)
         _messageSearchField->set_visible(false);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+}
+
+- (void)_openFindInRoom
+{
+    auto* rv = _mainApp ? _mainApp->room_view() : nullptr;
+    if (!rv || !rv->has_room())
+        return;
+    if (![self.window isKeyWindow])
+        [self.window makeKeyAndOrderFront:nil];
+    rv->open_room_search();
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
+    if (_findInRoomField)
+    {
+        _findInRoomField->set_text("");
+        _findInRoomField->set_focused(true);
+    }
+}
+
+- (void)_closeFindInRoom
+{
+    auto* rv = _mainApp ? _mainApp->room_view() : nullptr;
+    if (rv)
+        rv->close_room_search();
+    if (_findInRoomField)
+        _findInRoomField->set_visible(false);
     if (_mainAppSurface)
         _mainAppSurface->relayout();
 }

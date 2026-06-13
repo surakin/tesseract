@@ -1124,6 +1124,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             self->open_message_search_();
         }
+        if (LOWORD(wParam) == IDC_FIND_IN_ROOM)
+        {
+            self->open_find_in_room_();
+        }
         if (LOWORD(wParam) == IDC_NAV_BACK)
         {
             self->navigate_history_back();
@@ -1332,6 +1336,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             if (self->img_viewer_ && self->img_viewer_->is_open())
             {
                 self->img_viewer_->close();
+                return 0;
+            }
+            if (self->main_app_ && self->main_app_->room_view() &&
+                self->main_app_->room_view()->room_search_open())
+            {
+                self->close_find_in_room_();
                 return 0;
             }
         }
@@ -1575,7 +1585,7 @@ void MainWindow::on_create(HWND hwnd)
     // controls eat WM_KEYDOWN before it reaches this window's wnd_proc, so a
     // plain key handler only fires when the canvas has focus.
     {
-        ACCEL accs[4]{};
+        ACCEL accs[5]{};
         accs[0].fVirt = FCONTROL | FVIRTKEY;
         accs[0].key   = 'K';
         accs[0].cmd   = IDC_QUICK_SWITCH;
@@ -1588,7 +1598,10 @@ void MainWindow::on_create(HWND hwnd)
         accs[3].fVirt = FCONTROL | FSHIFT | FVIRTKEY;
         accs[3].key   = 'F';
         accs[3].cmd   = IDC_MESSAGE_SEARCH;
-        accel_ = CreateAcceleratorTableW(accs, 4);
+        accs[4].fVirt = FCONTROL | FVIRTKEY;
+        accs[4].key   = 'F';
+        accs[4].cmd   = IDC_FIND_IN_ROOM;
+        accel_ = CreateAcceleratorTableW(accs, 5);
     }
 
     Gdiplus::GdiplusStartupInput gsi;
@@ -2528,6 +2541,55 @@ void MainWindow::on_create(HWND hwnd)
             ms->on_close = [this] { close_message_search_(); };
         }
 
+        // Per-room "find in conversation" (Ctrl+F) native field.
+        find_in_room_field_ = main_app_surface_->host().make_text_field();
+        find_in_room_field_->set_placeholder("Find in conversation…");
+        find_in_room_field_->set_visible(false);
+        find_in_room_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (auto* rv = main_app_ ? main_app_->room_view() : nullptr)
+                {
+                    if (auto* bar = rv->room_search_bar())
+                    {
+                        bar->set_query(q);
+                        main_app_surface_->relayout();
+                    }
+                }
+            });
+        find_in_room_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+                if (!rv || !rv->room_search_open())
+                {
+                    return false;
+                }
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(-1);
+                    return true;
+                case tk::NavKey::Down:
+                    if (rv->on_room_search_navigate)
+                        rv->on_room_search_navigate(+1);
+                    return true;
+                case tk::NavKey::Escape:
+                    close_find_in_room_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
+        if (auto* rv = main_app_->room_view())
+        {
+            if (auto* bar = rv->room_search_bar())
+            {
+                bar->on_close = [this] { close_find_in_room_(); };
+            }
+        }
+
         room_text_area_ = main_app_surface_->host().make_text_area();
         room_text_area_->set_placeholder("Message…");
         // All four composer popups (gif > slash > shortcode > mention) are
@@ -3338,6 +3400,22 @@ void MainWindow::on_create(HWND hwnd)
                         r.w -= 4;
                         r.h -= 4;
                         message_search_field_->set_rect(r);
+                    }
+                }
+
+                // Per-room find-in-conversation field (Ctrl+F).
+                if (find_in_room_field_)
+                {
+                    bool vis = main_app_->in_room_search_field_visible();
+                    find_in_room_field_->set_visible(vis);
+                    if (vis)
+                    {
+                        tk::Rect r = main_app_->in_room_search_field_rect();
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
+                        find_in_room_field_->set_rect(r);
                     }
                 }
 
@@ -4231,6 +4309,55 @@ void MainWindow::close_message_search_()
     if (message_search_field_)
     {
         message_search_field_->set_visible(false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (room_text_area_ && room_text_area_->visible())
+    {
+        room_text_area_->set_focused(true);
+    }
+    else
+    {
+        SetFocus(hwnd_);
+    }
+}
+
+void MainWindow::open_find_in_room_()
+{
+    auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+    if (!rv || !rv->has_room())
+    {
+        return;
+    }
+    if (IsIconic(hwnd_))
+    {
+        ShowWindow(hwnd_, SW_RESTORE);
+    }
+    SetForegroundWindow(hwnd_);
+    rv->open_room_search();
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_text("");
+        find_in_room_field_->set_focused(true);
+    }
+}
+
+void MainWindow::close_find_in_room_()
+{
+    auto* rv = main_app_ ? main_app_->room_view() : nullptr;
+    if (rv)
+    {
+        rv->close_room_search();
+    }
+    if (find_in_room_field_)
+    {
+        find_in_room_field_->set_visible(false);
     }
     if (main_app_surface_)
     {
@@ -5318,11 +5445,10 @@ void MainWindow::refresh_sync_status()
         SetWindowTextW(hStatus_, buf);
         return;
     }
-    if (sync_progress_shown_)
-    {
-        sync_progress_shown_ = false;
-        SetWindowTextW(hStatus_, L"Connected");
-    }
+    // Steady state: always settle to "Connected" so any transient override
+    // (e.g., "Fetching older messages…" from in-room search) is cleared.
+    sync_progress_shown_ = false;
+    SetWindowTextW(hStatus_, L"Connected");
 }
 
 // ---------------------------------------------------------------------------

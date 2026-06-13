@@ -11,6 +11,7 @@
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MainAppWidget.h"
 #include "views/RoomListView.h"
+#include "views/RoomSearchBar.h"
 #include "views/SettingsView.h"
 #include "views/RoomView.h"
 #include "views/UserInfo.h"
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <thread>
 
@@ -142,8 +144,11 @@ void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
 {
     const std::uint32_t gen = ++status_msg_gen_;
     post_to_ui_alive_(
-        [this, msg = std::move(msg), allow_links]
+        [this, msg = std::move(msg), allow_links, gen]
         {
+            // Drop if a newer message or a restore has already superseded this.
+            if (status_msg_gen_ != gen)
+                return;
             status_message_allows_links_ = allow_links;
             on_show_status_message_ui_(msg);
         });
@@ -789,6 +794,25 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         ms->on_result_activated =
             [this](const std::string& room_id, const std::string& event_id)
             { handle_search_result_activated_(room_id, event_id); };
+    }
+
+    // Per-room "find in conversation" (Ctrl+F / Cmd+F): callbacks forwarded
+    // from RoomView → ShellBase. The native text field, keyboard accelerator,
+    // and on_close stay per-shell.
+    if (auto* rv = app->room_view())
+    {
+        rv->on_room_search_query =
+            [this](const std::string& q) { handle_in_room_search_query_(q); };
+        rv->on_room_search_navigate =
+            [this](int delta) { in_room_search_navigate_(delta); };
+        rv->on_room_search_paginate_toggled =
+            [this](bool enabled) { set_in_room_search_paginate_(enabled); };
+        rv->on_room_search_closed = [this]()
+        {
+            in_room_search_clear_();
+            ++status_msg_gen_; // cancel any queued "Fetching…" display post
+            on_restore_status_ui_();
+        };
     }
 
     app->room_list_view()->set_sticker_provider(
@@ -2751,6 +2775,35 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
             room_view_->set_paginating(false);
             schedule_relayout_();
         }
+        // If the in-room search bar triggered this paginate, re-run the query
+        // so newly-indexed older events appear in the results.
+        if (in_room_search_rerun_on_paginate_ &&
+            room_id == in_room_search_room_id_ &&
+            room_view_ && room_view_->room_search_open())
+        {
+            in_room_search_rerun_on_paginate_ = false;
+            on_restore_status_ui_(); // clear the "Fetching older messages…" banner
+            // Bypass the user-typing debounce: fire the re-index search
+            // immediately so the next paginate can start without a 120 ms gap.
+            if (auto* bar = in_room_search_bar_())
+            {
+                const std::string& q = bar->query();
+                if (!q.empty() && client_)
+                {
+                    cancel_debounce_(DebounceSlot::InRoomSearch);
+                    // Record state so the results handler knows this search
+                    // was triggered by a paginate batch and can keep looping
+                    // if no new matches appeared.
+                    in_room_search_paginate_rerun_   = true;
+                    in_room_search_prev_match_count_ =
+                        static_cast<int>(in_room_search_matches_.size());
+                    const std::uint64_t id = ++in_room_search_request_id_;
+                    in_room_search_pending_[id] = q;
+                    client_->search_messages(id, q, in_room_search_room_id_, 200);
+                    bar->set_match_status(0, 0, /*searching=*/true, false);
+                }
+            }
+        }
     }
     else
     {
@@ -2933,6 +2986,335 @@ void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
         main_app_->message_search()->set_results({}, for_query);
         schedule_relayout_();
     }
+}
+
+// ── Per-room "find in conversation" search (Ctrl+F / Cmd+F) ──────────────────
+
+views::RoomSearchBar* ShellBase::in_room_search_bar_() const
+{
+    if (!main_app_ || !main_app_->room_view())
+        return nullptr;
+    return main_app_->room_view()->room_search_bar();
+}
+
+void ShellBase::handle_in_room_search_query_(const std::string& query)
+{
+    if (query.empty() || !client_)
+    {
+        cancel_debounce_(DebounceSlot::InRoomSearch);
+        in_room_search_matches_.clear();
+        in_room_search_current_ = -1;
+        in_room_search_apply_highlights_();
+        if (auto* bar = in_room_search_bar_())
+            bar->set_match_status(0, 0, false, false);
+        return;
+    }
+    in_room_search_room_id_ = current_room_id_;
+    debounce_(DebounceSlot::InRoomSearch, 120, [this, query]()
+    {
+        if (query.empty() || !client_)
+            return;
+        if (in_room_search_room_id_ != current_room_id_)
+            return; // room switched during debounce window
+        const std::uint64_t id = ++in_room_search_request_id_;
+        in_room_search_pending_[id] = query;
+        client_->search_messages(id, query, in_room_search_room_id_, 200);
+        if (auto* bar = in_room_search_bar_())
+            bar->set_match_status(0, 0, /*searching=*/true, false);
+    });
+}
+
+void ShellBase::handle_in_room_search_results_ui_(
+    std::uint64_t request_id, std::vector<tesseract::SearchHit> results)
+{
+    auto it = in_room_search_pending_.find(request_id);
+    if (it == in_room_search_pending_.end())
+        return;
+    in_room_search_pending_.erase(it);
+    if (request_id != in_room_search_request_id_)
+        return;
+
+    // Capture paginate-rerun state before any mutations so we can decide
+    // whether to trigger another paginate at the end of this handler.
+    const bool from_paginate_rerun = in_room_search_paginate_rerun_;
+    const bool was_going_to_oldest = in_room_search_goto_oldest_;
+    const int  prev_match_count    = in_room_search_prev_match_count_;
+    in_room_search_paginate_rerun_   = false;
+    in_room_search_prev_match_count_ = 0;
+
+    // Sort ascending by timestamp (index 0 = oldest match).
+    std::sort(results.begin(), results.end(),
+              [](const tesseract::SearchHit& a, const tesseract::SearchHit& b)
+              { return a.timestamp_ms < b.timestamp_ms; });
+
+    // Save focused event id so we can restore focus after results update.
+    std::string prev_focused;
+    if (in_room_search_current_ >= 0 &&
+        in_room_search_current_ <
+            static_cast<int>(in_room_search_matches_.size()))
+    {
+        prev_focused =
+            in_room_search_matches_[static_cast<std::size_t>(
+                in_room_search_current_)].event_id;
+    }
+
+    in_room_search_matches_ = std::move(results);
+    in_room_search_apply_highlights_();
+
+    const int total = static_cast<int>(in_room_search_matches_.size());
+    if (total == 0)
+    {
+        in_room_search_current_ = -1;
+        in_room_search_goto_oldest_ = false;
+        const bool reached_start =
+            pagination_.count(in_room_search_room_id_) &&
+            pagination_.at(in_room_search_room_id_).reached_start;
+        if (auto* bar = in_room_search_bar_())
+            bar->set_match_status(0, 0, false, reached_start);
+        in_room_search_maybe_paginate_(false);
+        return;
+    }
+
+    if (in_room_search_goto_oldest_)
+    {
+        in_room_search_goto_oldest_ = false;
+        in_room_search_current_ = 0;
+    }
+    else
+    {
+        // Restore previously focused event, or default to newest.
+        in_room_search_current_ = total - 1;
+        if (!prev_focused.empty())
+        {
+            for (int i = 0; i < total; ++i)
+            {
+                if (in_room_search_matches_[static_cast<std::size_t>(i)].event_id ==
+                    prev_focused)
+                {
+                    in_room_search_current_ = i;
+                    break;
+                }
+            }
+        }
+    }
+    in_room_search_focus_current_();
+
+    // If this search was triggered by a paginate batch and brought no NEW
+    // matches (the count stayed the same or decreased), keep paginating so
+    // the loop doesn't stop after the first batch that doesn't match.
+    if (from_paginate_rerun && total <= prev_match_count)
+        in_room_search_maybe_paginate_(was_going_to_oldest);
+}
+
+void ShellBase::handle_in_room_search_failed_ui_(std::uint64_t request_id,
+                                                  const std::string&)
+{
+    auto it = in_room_search_pending_.find(request_id);
+    if (it == in_room_search_pending_.end())
+        return;
+    in_room_search_pending_.erase(it);
+    if (request_id != in_room_search_request_id_)
+        return;
+    in_room_search_matches_.clear();
+    in_room_search_current_ = -1;
+    in_room_search_apply_highlights_();
+    const bool reached_start =
+        pagination_.count(in_room_search_room_id_) &&
+        pagination_.at(in_room_search_room_id_).reached_start;
+    if (auto* bar = in_room_search_bar_())
+        bar->set_match_status(0, 0, false, reached_start);
+}
+
+void ShellBase::in_room_search_apply_highlights_()
+{
+    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+    if (!ml)
+        return;
+    if (in_room_search_matches_.empty())
+    {
+        ml->clear_search_matches();
+        ml->set_highlighted_event({});
+        return;
+    }
+    std::unordered_set<std::string> ids;
+    ids.reserve(in_room_search_matches_.size());
+    for (const auto& hit : in_room_search_matches_)
+        ids.insert(hit.event_id);
+    ml->set_search_matches(std::move(ids));
+}
+
+void ShellBase::in_room_search_focus_current_()
+{
+    if (in_room_search_matches_.empty() || in_room_search_current_ < 0)
+        return;
+    const int total = static_cast<int>(in_room_search_matches_.size());
+    if (in_room_search_current_ >= total)
+        in_room_search_current_ = total - 1;
+
+    const auto& hit =
+        in_room_search_matches_[static_cast<std::size_t>(in_room_search_current_)];
+    if (room_view_ && room_view_->message_list())
+        room_view_->message_list()->set_highlighted_event(hit.event_id);
+    try_scroll_to_room_event_(hit.event_id);
+
+    const bool reached_start =
+        pagination_.count(in_room_search_room_id_) &&
+        pagination_.at(in_room_search_room_id_).reached_start;
+    if (auto* bar = in_room_search_bar_())
+        bar->set_match_status(in_room_search_current_ + 1, total, false,
+                              reached_start);
+}
+
+void ShellBase::in_room_search_navigate_(int delta)
+{
+    const int total = static_cast<int>(in_room_search_matches_.size());
+    if (total == 0)
+        return;
+    if (in_room_search_current_ < 0)
+        in_room_search_current_ = total - 1;
+
+    const int next = in_room_search_current_ + delta;
+    if (next < 0)
+    {
+        // At the oldest match, going further UP. Try to paginate back when
+        // enabled and history is not exhausted; otherwise wrap to the newest.
+        const bool can_paginate =
+            in_room_search_paginate_ &&
+            !(pagination_.count(in_room_search_room_id_) &&
+              pagination_.at(in_room_search_room_id_).reached_start);
+        if (can_paginate)
+        {
+            in_room_search_maybe_paginate_(/*at_oldest_boundary=*/true);
+            return;
+        }
+        in_room_search_current_ = total - 1; // wrap to newest
+    }
+    else if (next >= total)
+    {
+        in_room_search_current_ = 0; // wrap to oldest
+    }
+    else
+    {
+        in_room_search_current_ = next;
+    }
+    in_room_search_focus_current_();
+}
+
+void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
+{
+    if (!in_room_search_paginate_)
+    {
+        // Clamp at oldest loaded match.
+        if (at_oldest_boundary && !in_room_search_matches_.empty())
+        {
+            in_room_search_current_ = 0;
+            in_room_search_focus_current_();
+        }
+        return;
+    }
+
+    const bool reached_start =
+        pagination_.count(in_room_search_room_id_) &&
+        pagination_.at(in_room_search_room_id_).reached_start;
+    if (reached_start)
+    {
+        if (at_oldest_boundary && !in_room_search_matches_.empty())
+            in_room_search_current_ = 0;
+        const int total = static_cast<int>(in_room_search_matches_.size());
+        if (auto* bar = in_room_search_bar_())
+            bar->set_match_status(
+                in_room_search_current_ + 1, total, false, /*at_start=*/true);
+        return;
+    }
+
+    auto& state = pagination_[in_room_search_room_id_];
+    if (state.in_flight)
+        return; // paginate already in progress
+
+    state.in_flight = true;
+    in_room_search_rerun_on_paginate_ = true;
+    in_room_search_goto_oldest_ = at_oldest_boundary;
+
+    if (room_view_)
+        room_view_->set_paginating(true);
+
+    // Status bar feedback while fetching.  Show how far back we've reached
+    // using the oldest *loaded event* (front of the message list) — this
+    // advances each batch even when no new matches have appeared yet.
+    {
+        std::string status = "Fetching older messages\xe2\x80\xa6";
+        std::uint64_t ts_ms = 0;
+        {
+            auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+            if (ml && !ml->messages().empty())
+                ts_ms = ml->messages().front().timestamp_ms;
+            else if (!in_room_search_matches_.empty())
+                ts_ms = in_room_search_matches_[0].timestamp_ms;
+        }
+        if (ts_ms > 0)
+        {
+            const std::time_t t   = static_cast<std::time_t>(ts_ms / 1000);
+            const std::time_t now = std::time(nullptr);
+            std::tm tm_val{}, now_tm{};
+#if defined(_WIN32)
+            localtime_s(&tm_val, &t);
+            localtime_s(&now_tm, &now);
+#else
+            localtime_r(&t, &tm_val);
+            localtime_r(&now, &now_tm);
+#endif
+            constexpr const char* kMon[] = {
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+            char buf[32];
+            if (tm_val.tm_year == now_tm.tm_year)
+                std::snprintf(buf, sizeof(buf), " (oldest: %s %d)",
+                              kMon[tm_val.tm_mon], tm_val.tm_mday);
+            else
+                std::snprintf(buf, sizeof(buf), " (oldest: %s %d, %d)",
+                              kMon[tm_val.tm_mon], tm_val.tm_mday,
+                              tm_val.tm_year + 1900);
+            status += buf;
+        }
+        show_status_message_(std::move(status), 0); // persistent
+    }
+
+    const std::uint64_t req_id = next_paginate_id_++;
+    pending_paginates_[req_id] = {in_room_search_room_id_, /*is_backward=*/true};
+    if (client_)
+        client_->paginate_back_async(req_id, in_room_search_room_id_, 50);
+}
+
+void ShellBase::set_in_room_search_paginate_(bool enabled)
+{
+    in_room_search_paginate_ = enabled;
+    if (!enabled)
+    {
+        ++status_msg_gen_; // cancel any queued "Fetching…" display post
+        on_restore_status_ui_();
+        return;
+    }
+    auto* bar = in_room_search_bar_();
+    if (!bar || bar->query().empty())
+        return;
+    // Trigger paginate immediately: no matches yet, or focused at oldest.
+    if (in_room_search_matches_.empty())
+        in_room_search_maybe_paginate_(false);
+    else if (in_room_search_current_ == 0)
+        in_room_search_maybe_paginate_(true);
+}
+
+void ShellBase::in_room_search_clear_()
+{
+    cancel_debounce_(DebounceSlot::InRoomSearch);
+    in_room_search_pending_.clear();
+    in_room_search_matches_.clear();
+    in_room_search_current_           = -1;
+    in_room_search_room_id_.clear();
+    in_room_search_rerun_on_paginate_ = false;
+    in_room_search_goto_oldest_       = false;
+    in_room_search_paginate_rerun_    = false;
+    in_room_search_prev_match_count_  = 0;
 }
 
 void ShellBase::start_search_index_stats_poll_()
@@ -5670,6 +6052,11 @@ void ShellBase::navigate_history_forward()
 
 void ShellBase::after_active_room_changed_()
 {
+    // Cancel any in-room search before changing rooms so stale results can't
+    // bleed into the new room. The RoomView UI side (bar close + highlights)
+    // is handled by RoomView::set_room() when room_changed is true.
+    in_room_search_clear_();
+
     // Navigation history for Alt+Left / Alt+Right. Must be first so it
     // executes in tests (no client_) and before any early return.
     if (!current_room_id_.empty() && !room_nav_in_progress_)

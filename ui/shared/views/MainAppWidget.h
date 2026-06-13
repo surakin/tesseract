@@ -168,6 +168,11 @@ public:
     bool room_search_field_visible() const;
     tk::Rect room_search_field_rect() const;
 
+    // Per-room "find in conversation" search bar (Ctrl+F / Cmd+F).
+    // Distinct from room_search_field_* (sidebar room-list filter).
+    bool     in_room_search_field_visible() const;
+    tk::Rect in_room_search_field_rect()    const;
+
     // ── Callbacks ─────────────────────────────────────────────────────────
 
     // Fires when the user taps ← in the space nav bar.

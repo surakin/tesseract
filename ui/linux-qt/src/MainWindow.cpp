@@ -1746,6 +1746,53 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     if (mainApp_ && mainApp_->message_search())
         mainApp_->message_search()->on_close = [this] { closeMessageSearch_(); };
 
+    // Per-room "find in conversation" (Ctrl+F) native field — docked under the
+    // RoomHeader inside the shared search bar strip. Mirrors messageSearchField_
+    // except: no popup-nav (UP/DOWN are button clicks in the strip), submit is
+    // a no-op, and Escape closes the bar.
+    findInRoomField_ = mainAppSurface_->host().make_text_field();
+    findInRoomField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    findInRoomField_->set_placeholder(
+        tr("Find in conversation\xe2\x80\xa6").toStdString());
+    findInRoomField_->set_visible(false);
+    findInRoomField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (mainApp_ && mainApp_->room_view() &&
+                mainApp_->room_view()->room_search_bar())
+            {
+                mainApp_->room_view()->room_search_bar()->set_query(q);
+                mainAppSurface_->relayout();
+            }
+        });
+    findInRoomField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            auto* rv = mainApp_ ? mainApp_->room_view() : nullptr;
+            if (!rv || !rv->room_search_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                if (rv->on_room_search_navigate) rv->on_room_search_navigate(-1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                if (rv->on_room_search_navigate) rv->on_room_search_navigate(+1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                closeFindInRoom_();
+                return true;
+            default:
+                return false;
+            }
+        });
+    if (mainApp_ && mainApp_->room_view())
+        mainApp_->room_view()->room_search_bar()->on_close =
+            [this] { closeFindInRoom_(); };
+
     // Ctrl+K accelerator. An application-scoped QShortcut fires even when the
     // native compose / search QLineEdit/QTextEdit holds focus — keyPressEvent
     // on the window does not see keys consumed by a focused child widget.
@@ -1762,6 +1809,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this,
                 [this] { openMessageSearch_(); });
+    }
+    // Ctrl+F: open per-room "find in conversation" (application-scoped so it
+    // fires while the compose box holds focus; no-op when no room is open).
+    {
+        auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this,
+                [this] { openFindInRoom_(); });
     }
     // Alt+Left / Alt+Right: navigate room history back / forward.
     // ApplicationShortcut so these fire while the compose box holds focus.
@@ -1809,6 +1864,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 if (vis)
                     messageSearchField_->set_rect(
                         mainApp_->message_search_field_rect());
+            }
+            if (mainApp_ && findInRoomField_)
+            {
+                const bool vis = mainApp_->in_room_search_field_visible();
+                findInRoomField_->set_visible(vis);
+                if (vis)
+                    findInRoomField_->set_rect(
+                        mainApp_->in_room_search_field_rect());
             }
             if (mainApp_ && encPassphraseField_)
             {
@@ -2352,6 +2415,35 @@ void MainWindow::closeMessageSearch_()
         mainAppSurface_->relayout();
 }
 
+void MainWindow::openFindInRoom_()
+{
+    if (!mainApp_ || !mainApp_->room_view())
+        return;
+    if (current_room_id_.empty())
+        return;
+    mainApp_->room_view()->open_room_search();
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+    if (findInRoomField_)
+    {
+        findInRoomField_->set_text("");
+        findInRoomField_->set_focused(true);
+    }
+}
+
+void MainWindow::closeFindInRoom_()
+{
+    if (mainApp_ && mainApp_->room_view())
+        mainApp_->room_view()->close_room_search();
+    if (findInRoomField_)
+    {
+        findInRoomField_->set_visible(false);
+        findInRoomField_->set_text("");
+    }
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
+}
+
 void MainWindow::keyPressEvent(QKeyEvent* ev)
 {
     if (ev->key() == Qt::Key_Escape)
@@ -2377,6 +2469,13 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
             mainApp_->image_viewer()->close();
             mainApp_->show_image_viewer(false);
             mainAppSurface_->relayout();
+            ev->accept();
+            return;
+        }
+        if (mainApp_ && mainApp_->room_view() &&
+            mainApp_->room_view()->room_search_open())
+        {
+            closeFindInRoom_();
             ev->accept();
             return;
         }
@@ -3761,12 +3860,10 @@ void MainWindow::refreshSyncStatus()
                 .arg(static_cast<qulonglong>(last_imported_keys_)));
         return;
     }
-    if (sync_progress_shown_)
-    {
-        // We covered up a prior login message; settle to the steady-state copy.
-        sync_progress_shown_ = false;
-        statusBar()->showMessage(tr("Connected"));
-    }
+    // Steady state: always settle to "Connected" so any transient override
+    // (e.g., "Fetching older messages…" from in-room search) is cleared.
+    sync_progress_shown_ = false;
+    statusBar()->showMessage(tr("Connected"));
 }
 
 // ---------------------------------------------------------------------------

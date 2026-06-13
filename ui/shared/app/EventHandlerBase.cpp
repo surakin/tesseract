@@ -312,7 +312,11 @@ void EventHandlerBase::on_search_results(std::uint64_t request_id,
     shell()->post_to_ui_(
         [shell = shell(), request_id, r]() mutable
         {
-            shell->handle_search_results_ui_(request_id, std::move(*r));
+            // Route by which pending map owns this id.
+            if (shell->in_room_search_pending_.count(request_id))
+                shell->handle_in_room_search_results_ui_(request_id, std::move(*r));
+            else
+                shell->handle_search_results_ui_(request_id, std::move(*r));
         });
 }
 
@@ -322,7 +326,10 @@ void EventHandlerBase::on_search_failed(std::uint64_t request_id,
     shell()->post_to_ui_(
         [shell = shell(), request_id, msg = message]() mutable
         {
-            shell->handle_search_failed_ui_(request_id, std::move(msg));
+            if (shell->in_room_search_pending_.count(request_id))
+                shell->handle_in_room_search_failed_ui_(request_id, std::move(msg));
+            else
+                shell->handle_search_failed_ui_(request_id, std::move(msg));
         });
 }
 
