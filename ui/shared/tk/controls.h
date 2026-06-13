@@ -237,6 +237,7 @@ public:
         return checked_;
     }
     void set_enabled(bool enabled);
+    void set_font_role(FontRole role);
 
     std::function<void(bool)> on_change;
 
@@ -255,6 +256,8 @@ private:
     bool enabled_ = true;
     bool hovered_ = false;
     bool pressed_ = false;
+
+    FontRole font_role_ = FontRole::Body;
 
     std::unique_ptr<TextLayout> label_layout_;
     float cached_max_w_ = -2.0f;

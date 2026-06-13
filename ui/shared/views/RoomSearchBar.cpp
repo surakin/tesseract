@@ -44,6 +44,7 @@ RoomSearchBar::RoomSearchBar()
 
     // Paginate checkbox.
     auto cb = std::make_unique<tk::CheckButton>("Paginate", false);
+    cb->set_font_role(tk::FontRole::Small);
     cb->on_change = [this](bool v) { if (on_paginate_toggled) on_paginate_toggled(v); };
     cb->set_visible(false);
     paginate_cb_ = add_child(std::move(cb));
