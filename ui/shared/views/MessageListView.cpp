@@ -1203,7 +1203,7 @@ public:
                     else
                     {
                         tk::TextStyle est{};
-                        est.role = tk::FontRole::Title;
+                        est.role = tk::FontRole::Body;
                         rxc.glyph_layout = ctx.factory.build_text(r.key, est);
                     }
                 }

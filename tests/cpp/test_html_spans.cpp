@@ -281,6 +281,22 @@ TEST_CASE("entity: allowed whitespace controls survive intact",
           "\xF0\x9F\x98\x80");
 }
 
+TEST_CASE("whitespace: raw newlines and spaces in text nodes collapse",
+          "[html_spans][whitespace]")
+{
+    // Literal \n between words collapses to a single space.
+    CHECK(joined_text(html_to_spans("a\nb", false)) == "a b");
+    // Multiple spaces/newlines collapse to one space.
+    CHECK(joined_text(html_to_spans("a\n   b", false)) == "a b");
+    // Newlines around inline tags are preserved as inter-word spacing.
+    CHECK(joined_text(html_to_spans("pushed\n        <a href=\"https://x\">1 commit</a>\n    to",
+                                    false)) == "pushed 1 commit to");
+    // Trailing whitespace in the last span is emitted but gets trimmed by the
+    // existing trailing-newline cleanup only if it is a '\n' — a trailing
+    // space that collapsed from raw whitespace is left as-is (harmless).
+    CHECK(joined_text(html_to_spans("hello ", false)) == "hello ");
+}
+
 // --- Gap 2: formatting-stack balance under the depth cap ------------------
 //
 // Opening tags past kMaxTagDepth (64) are flattened rather than pushed, but
