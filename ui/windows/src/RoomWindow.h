@@ -102,6 +102,7 @@ private:
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
+    std::unique_ptr<tk::NativeTextField> search_field_;
     HWND mention_popup_hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;

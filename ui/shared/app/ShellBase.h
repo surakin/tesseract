@@ -1897,6 +1897,13 @@ protected:
             post_to_ui_([this, info = std::move(info)] {
                 server_info_ = std::move(info);
                 on_server_info_ready_ui_();
+                for (auto& [rid, w] : secondary_windows_)
+                {
+                    if (auto* rv = w->room_view())
+                        if (auto* h = rv->header())
+                            h->set_jump_to_date_enabled(
+                                server_info_.supports_msc3030);
+                }
             });
         });
     }
@@ -2538,6 +2545,10 @@ protected:
     std::uint64_t in_room_search_request_id_ = 0;
     std::unordered_map<std::uint64_t, std::string> in_room_search_pending_;
     std::string   in_room_search_room_id_;
+    // Non-null while a popout window's search is active; nullptr means the
+    // main window's room_view_ is the search target.
+    views::RoomView*  in_room_search_active_rv_  = nullptr;
+    RoomWindowBase*   in_room_search_active_win_ = nullptr;
     std::vector<tesseract::SearchHit> in_room_search_matches_;
     int           in_room_search_current_           = -1;
     bool          in_room_search_paginate_          = false;
@@ -2561,8 +2572,10 @@ protected:
 
     // MSC3030 jump-to-date: resolve ts_ms to an event and begin a focused
     // subscription. Shared handler wired from all four platform shells via
-    // room_view_->on_date_jump.
+    // room_view_->on_date_jump. The 1-arg overload uses current_room_id_;
+    // the 2-arg overload is used by RoomWindowBase for popout windows.
     void handle_date_jump_(std::uint64_t ts_ms);
+    void handle_date_jump_(const std::string& room_id, std::uint64_t ts_ms);
 
     // MSC3030: clear stale focused-timeline state when (re-)entering a room via
     // the live room-selection path.  Must be called before subscribe_room() so

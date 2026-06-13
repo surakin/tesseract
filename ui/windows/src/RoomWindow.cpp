@@ -481,6 +481,54 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             {
                 text_area_->set_rect(room_view_->compose_text_area_rect());
             }
+            if (room_view_ && search_field_)
+            {
+                const bool vis = room_view_->room_search_field_visible();
+                search_field_->set_visible(vis);
+                if (vis)
+                {
+                    tk::Rect r = room_view_->room_search_field_rect();
+                    r.x += 2; r.y += 2; r.w -= 4; r.h -= 4;
+                    search_field_->set_rect(r);
+                }
+            }
+        });
+
+    // ── In-room search native text field ─────────────────────────────────
+    search_field_ = surface_->host().make_text_field();
+    search_field_->set_placeholder("Find in conversation\xe2\x80\xa6");
+    search_field_->set_visible(false);
+    search_field_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (room_view_)
+                if (auto* bar = room_view_->room_search_bar())
+                {
+                    bar->set_query(q);
+                    if (surface_) surface_->relayout();
+                }
+        });
+    search_field_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            if (!room_view_ || !room_view_->room_search_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                if (room_view_->on_room_search_navigate)
+                    room_view_->on_room_search_navigate(-1);
+                return true;
+            case tk::NavKey::Down:
+                if (room_view_->on_room_search_navigate)
+                    room_view_->on_room_search_navigate(+1);
+                return true;
+            case tk::NavKey::Escape:
+                room_view_->close_room_search();
+                return true;
+            default:
+                return false;
+            }
         });
 
     // ── Platform popups the shared wire_room_view_ can't provide ──────────
@@ -1129,6 +1177,11 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE)
         {
+            if (room_view_ && room_view_->room_search_open())
+            {
+                room_view_->close_room_search();
+                return 0;
+            }
             if (vid_viewer_ && vid_viewer_->is_open())
             {
                 vid_viewer_->close();

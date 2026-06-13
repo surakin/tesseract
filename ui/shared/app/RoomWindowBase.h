@@ -1,4 +1,5 @@
 #pragma once
+#include "app/ThreadPanelController.h"
 #include "views/MentionController.h"
 #include "views/MessageListView.h"
 #include "views/RoomView.h"
@@ -54,6 +55,18 @@ public:
     void on_message_updated(std::size_t idx, views::MessageRowData row);
     void on_message_removed(std::size_t idx);
     void on_typing_changed(const std::string& text, bool visible);
+
+    // Thread view delivery — called by ShellBase when SDK events arrive for
+    // the thread this pop-out has open (popout_thread_root_ matches). Each
+    // method mirrors the corresponding handle_thread_*_ui_ path used by the
+    // main window but targets this window's room_view_->thread_view().
+    const std::string& popout_thread_root() const { return popout_thread_root_; }
+    void apply_thread_reset_(std::vector<views::MessageRowData> rows);
+    void apply_thread_prepend_(std::vector<views::MessageRowData> rows);
+    void apply_thread_append_(std::vector<views::MessageRowData> rows);
+    void apply_thread_insert_(std::size_t index, views::MessageRowData row);
+    void apply_thread_update_(std::size_t index, views::MessageRowData row);
+    void apply_thread_remove_(std::size_t index);
 
     // Fan-in for async GIF search results. ShellBase forwards every result to
     // every open pop-out (the GIF search request_id is process-global, so only
@@ -251,6 +264,16 @@ protected:
     std::function<const tk::Image*(const std::string&, const std::string&)>
     picker_image_provider_(bool is_sticker);
 
+    // Apply the side-effects of a thread-panel transition for this pop-out:
+    // subscribe/unsubscribe on the client, update popout_thread_panel_ state,
+    // drive room_view_->set_thread_panel(), and refresh the thread-list
+    // snapshot when entering List mode.
+    void apply_popout_thread_transition_(
+        const ThreadPanelController::ThreadTransition& t);
+    // Kick a thread-list pagination pass for this pop-out's room, using the
+    // per-popout controller (popout_thread_ctl_) rather than ShellBase's.
+    void paginate_popout_threads_();
+
     ShellBase* shell_;
     std::string room_id_;
     views::RoomView* room_view_ =
@@ -267,6 +290,15 @@ protected:
     // like a room switch); later resets are reconnect/gappy refreshes of the
     // room already shown (refresh in place, no blank).
     bool displayed_once_ = false;
+
+    // Per-popout thread-panel state (separate from ShellBase's main-window
+    // state so each window tracks its own panel independently).
+    using ThreadPanel    = ThreadPanelController::ThreadPanel;
+    using ThreadTrigger  = ThreadPanelController::ThreadTrigger;
+    ThreadPanel popout_thread_panel_      = ThreadPanel::Closed;
+    ThreadPanel popout_thread_panel_prev_ = ThreadPanel::Closed;
+    std::string popout_thread_root_;
+    ThreadPanelController popout_thread_ctl_;
 };
 
 } // namespace tesseract

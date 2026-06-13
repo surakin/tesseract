@@ -78,6 +78,7 @@ private:
     MainWindow* parent_shell_;
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
+    std::unique_ptr<tk::NativeTextField> roomSearchField_;
 
     // Pop-out-local emoji/sticker pickers (parented to this QWidget). The emoji
     // picker doubles as the reaction picker via pendingReactionEventId_.

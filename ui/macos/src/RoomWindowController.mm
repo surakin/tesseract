@@ -56,6 +56,11 @@ public:
     // Called by -keyDown: when Escape is pressed.
     bool on_escape_key()
     {
+        if (room_view_ && room_view_->room_search_open())
+        {
+            room_view_->close_room_search();
+            return true;
+        }
         if (vid_viewer_ && vid_viewer_->is_open())
         {
             vid_viewer_->close();
@@ -98,6 +103,7 @@ private:
     __strong RoomWindowController* controller_ = nil;
     std::unique_ptr<tk::macos::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
+    std::unique_ptr<tk::NativeTextField> search_field_;
     NSPanel* mention_panel_ = nil;
     std::unique_ptr<tk::macos::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
@@ -317,6 +323,54 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
             if (room_view_ && text_area_)
             {
                 text_area_->set_rect(room_view_->compose_text_area_rect());
+            }
+            if (room_view_ && search_field_)
+            {
+                const bool vis = room_view_->room_search_field_visible();
+                search_field_->set_visible(vis);
+                if (vis)
+                {
+                    tk::Rect r = room_view_->room_search_field_rect();
+                    r.x += 2; r.y += 2; r.w -= 4; r.h -= 4;
+                    search_field_->set_rect(r);
+                }
+            }
+        });
+
+    // ── In-room search native text field ─────────────────────────────────
+    search_field_ = surface_->host().make_text_field();
+    search_field_->set_placeholder("Find in conversation\xe2\x80\xa6");
+    search_field_->set_visible(false);
+    search_field_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (room_view_)
+                if (auto* bar = room_view_->room_search_bar())
+                {
+                    bar->set_query(q);
+                    if (surface_) surface_->relayout();
+                }
+        });
+    search_field_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            if (!room_view_ || !room_view_->room_search_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                if (room_view_->on_room_search_navigate)
+                    room_view_->on_room_search_navigate(-1);
+                return true;
+            case tk::NavKey::Down:
+                if (room_view_->on_room_search_navigate)
+                    room_view_->on_room_search_navigate(+1);
+                return true;
+            case tk::NavKey::Escape:
+                room_view_->close_room_search();
+                return true;
+            default:
+                return false;
             }
         });
 
