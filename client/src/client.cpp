@@ -1036,6 +1036,45 @@ std::uint64_t Client::search_index_size_bytes() const
     return impl_->ffi->search_index_size_bytes();
 }
 
+std::vector<MediaBackoffEntry> Client::load_media_backoff() const
+{
+    if (!impl_)
+        return {};
+    SH_FFI;
+    auto ffi_vec = impl_->ffi->load_media_backoff();
+    std::vector<MediaBackoffEntry> out;
+    out.reserve(ffi_vec.size());
+    for (const auto& e : ffi_vec)
+        out.push_back(from_ffi(e));
+    return out;
+}
+
+void Client::note_media_backoff_failed(const std::string& url,
+                                        std::uint32_t       attempts,
+                                        std::int64_t        deadline_secs)
+{
+    if (!impl_)
+        return;
+    SH_FFI;
+    impl_->ffi->note_media_backoff_failed(url, attempts, deadline_secs);
+}
+
+void Client::note_media_backoff_ok(const std::string& url)
+{
+    if (!impl_)
+        return;
+    SH_FFI;
+    impl_->ffi->note_media_backoff_ok(url);
+}
+
+void Client::clear_media_backoff_db()
+{
+    if (!impl_)
+        return;
+    SH_FFI;
+    impl_->ffi->clear_media_backoff_db();
+}
+
 Result Client::send_gif_video(
     const std::string& room_id, const std::vector<uint8_t>& mp4_bytes,
     const std::string& mime_type, const std::string& body, std::uint32_t width,
