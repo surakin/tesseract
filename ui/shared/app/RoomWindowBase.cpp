@@ -50,6 +50,17 @@ void RoomWindowBase::finish_init_()
             break;
         }
     }
+    if (room_view_)
+    {
+        // Apply header button states that the main window receives via
+        // on_server_info_ready_ui_() / apply_threads_list_() but that popout
+        // windows must seed themselves at construction time.
+        if (auto* h = room_view_->header())
+            h->set_jump_to_date_enabled(shell_->server_info_.supports_msc3030);
+        if (shell_->client_)
+            room_view_->set_show_threads_button(
+                !shell_->client_->list_room_threads(room_id_).empty());
+    }
     if (room_view_ && room_view_->message_list())
     {
         room_view_->message_list()->on_retry_send =
@@ -629,6 +640,262 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 });
         };
     }
+
+    // ── Jump-to-date (MSC3030) ────────────────────────────────────────────
+    rv->on_date_jump = [this](std::uint64_t ts_ms)
+    {
+        shell_->handle_date_jump_(room_id_, ts_ms);
+    };
+
+    // ── In-room search ────────────────────────────────────────────────────
+    // Mirror the main window's search wiring (ShellBase::wire_main_app_),
+    // routing through the same ShellBase methods but with this popout's rv
+    // and room_id set as the active search target first. The native text
+    // field overlay is created per-platform in each subclass constructor.
+    rv->on_room_search_query =
+        [this, rv](const std::string& q)
+    {
+        shell_->in_room_search_active_rv_  = rv;
+        shell_->in_room_search_active_win_ = this;
+        shell_->in_room_search_room_id_    = room_id_;
+        shell_->handle_in_room_search_query_(q);
+    };
+    rv->on_room_search_navigate =
+        [this](int delta) { shell_->in_room_search_navigate_(delta); };
+    rv->on_room_search_paginate_toggled =
+        [this](bool enabled) { shell_->set_in_room_search_paginate_(enabled); };
+    rv->on_room_search_closed = [this]()
+    {
+        shell_->in_room_search_clear_();
+        request_relayout(); // hides the native search text field via layout cb
+    };
+
+    // ── Thread panel ──────────────────────────────────────────────────────
+    rv->on_threads_button_clicked = [this]()
+    {
+        auto t = ShellBase::compute_thread_transition_(
+            popout_thread_panel_, popout_thread_panel_prev_,
+            popout_thread_root_, ThreadTrigger::ToggleList, {});
+        apply_popout_thread_transition_(t);
+    };
+    rv->on_thread_open_requested = [this](const std::string& root_event_id)
+    {
+        const auto trigger = (popout_thread_panel_ == ThreadPanel::List)
+                                 ? ThreadTrigger::OpenFromList
+                                 : ThreadTrigger::OpenFromMain;
+        auto t = ShellBase::compute_thread_transition_(
+            popout_thread_panel_, popout_thread_panel_prev_,
+            popout_thread_root_, trigger, root_event_id);
+        apply_popout_thread_transition_(t);
+    };
+    rv->on_thread_close_requested = [this]()
+    {
+        auto t = ShellBase::compute_thread_transition_(
+            popout_thread_panel_, popout_thread_panel_prev_,
+            popout_thread_root_, ThreadTrigger::CloseThread, {});
+        apply_popout_thread_transition_(t);
+    };
+    rv->on_thread_send = [this, rv](const std::string& body,
+                                    const std::string& formatted)
+    {
+        if (!shell_->client_ || room_id_.empty() || popout_thread_root_.empty())
+            return;
+        auto sess = shell_->active_account_;
+        auto rid  = room_id_;
+        auto root = popout_thread_root_;
+        run_async_mut_([sess, rid, root, body, formatted]() mutable {
+            if (!sess || !sess->client) return;
+            sess->client->send_thread_message(rid, root, body, formatted);
+        });
+        if (auto* ta = compose_text_area_())
+            ta->set_text("");
+        rv->set_current_text({});
+    };
+    rv->on_thread_send_reply = [this, rv](const std::string& reply_id,
+                                          const std::string& body,
+                                          const std::string& formatted)
+    {
+        if (!shell_->client_ || room_id_.empty() || popout_thread_root_.empty() ||
+            reply_id.empty())
+            return;
+        auto sess = shell_->active_account_;
+        auto rid  = room_id_;
+        auto root = popout_thread_root_;
+        run_async_mut_([sess, rid, root, reply_id, body, formatted]() mutable {
+            if (!sess || !sess->client) return;
+            sess->client->send_thread_reply(rid, root, reply_id, body, formatted);
+        });
+        if (auto* ta = compose_text_area_())
+            ta->set_text("");
+        rv->set_current_text({});
+    };
+}
+
+void RoomWindowBase::apply_popout_thread_transition_(
+    const ThreadPanelController::ThreadTransition& t)
+{
+    if (shell_->client_)
+    {
+        for (const auto& root : t.threads_to_unsubscribe)
+            shell_->client_->unsubscribe_thread(room_id_, root);
+        if (t.unsubscribe_room_threads_)
+            shell_->client_->unsubscribe_room_threads(room_id_);
+        if (t.subscribe_room_threads_)
+            shell_->client_->subscribe_room_threads(room_id_);
+        for (const auto& root : t.threads_to_subscribe)
+            shell_->client_->subscribe_thread(room_id_, root);
+    }
+
+    popout_thread_panel_      = t.new_state;
+    popout_thread_panel_prev_ = t.new_prev;
+    popout_thread_root_       = t.new_root;
+
+    if (room_view_)
+    {
+        using S = views::RoomView::ThreadPanelState;
+        const S vs = (t.new_state == ThreadPanel::Closed) ? S::Closed
+                   : (t.new_state == ThreadPanel::List)   ? S::List
+                                                          : S::Open;
+        room_view_->set_thread_panel(vs, t.new_root);
+
+        if (auto* tlv = room_view_->thread_list_view())
+            tlv->on_near_top = [this] { paginate_popout_threads_(); };
+
+        // When opening a thread, scroll the main message list to the root so
+        // the user can see which thread they opened.
+        if (t.new_state == ThreadPanel::Open && !t.new_root.empty())
+            if (auto* ml = room_view_->message_list())
+                ml->set_pending_scroll_event_id(t.new_root);
+
+        request_relayout();
+    }
+
+    // If the thread root event isn't in the loaded timeline, subscribe_room_at
+    // to fetch the surrounding context so the scroll can resolve.
+    if (t.new_state == ThreadPanel::Open && !t.new_root.empty() && shell_->client_)
+    {
+        auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+        bool found = false;
+        if (ml)
+            for (const auto& m : ml->messages())
+                if (m.event_id == t.new_root) { found = true; break; }
+        if (!found)
+        {
+            const std::string eid = t.new_root;
+            const std::string rid = room_id_;
+            shell_->begin_focused_subscription_(rid, eid);
+            auto sess = shell_->active_account_;
+            run_async_mut_([sess, rid, eid]() {
+                if (!sess || !sess->client) return;
+                sess->client->subscribe_room_at(rid, eid);
+            });
+        }
+    }
+
+    if (shell_->client_ && t.new_state == ThreadPanel::List)
+    {
+        auto threads = shell_->client_->list_room_threads(room_id_);
+        if (room_view_ && room_view_->thread_list_view())
+        {
+            room_view_->thread_list_view()->set_threads(std::move(threads));
+            room_view_->thread_list_view()->scroll_to_bottom();
+        }
+        popout_thread_ctl_.rearm_backfill();
+        paginate_popout_threads_();
+    }
+}
+
+void RoomWindowBase::paginate_popout_threads_()
+{
+    auto* c = shell_->client_;
+    auto sess = shell_->active_account_;
+    std::weak_ptr<bool> alive_weak = alive_;
+    popout_thread_ctl_.set_run_paginate(
+        [this, c, sess, room_id = room_id_, alive_weak]
+        {
+            run_async_mut_([this, c, sess, room_id, alive_weak]
+            {
+                if (!sess || !sess->client) return;
+                auto r = sess->client->paginate_room_threads(room_id);
+                post_to_ui_([this, c, room_id, reached = r.reached_start,
+                              alive_weak]
+                {
+                    auto alive = alive_weak.lock();
+                    if (!alive || !*alive) return;
+                    if (shell_->client_ != c) return;
+                    const bool want_more =
+                        (popout_thread_panel_ == ThreadPanel::List);
+                    if (popout_thread_ctl_.on_paginate_result(reached, want_more))
+                        paginate_popout_threads_();
+                    if (room_view_ && room_view_->thread_list_view() &&
+                        shell_->client_)
+                    {
+                        auto threads =
+                            shell_->client_->list_room_threads(room_id);
+                        room_view_->thread_list_view()->set_threads(
+                            std::move(threads));
+                        request_relayout();
+                    }
+                });
+            });
+        });
+    popout_thread_ctl_.begin_paginate(popout_thread_panel_ == ThreadPanel::List);
+}
+
+void RoomWindowBase::apply_thread_reset_(std::vector<views::MessageRowData> rows)
+{
+    if (!room_view_) return;
+    auto* tl = room_view_->thread_view();
+    if (!tl) return;
+    tl->set_messages(std::move(rows), /*room_switch=*/true);
+    request_relayout();
+}
+
+void RoomWindowBase::apply_thread_prepend_(std::vector<views::MessageRowData> rows)
+{
+    if (!room_view_) return;
+    auto* tl = room_view_->thread_view();
+    if (!tl || rows.empty()) return;
+    tl->prepend_messages(std::move(rows));
+    request_relayout();
+}
+
+void RoomWindowBase::apply_thread_append_(std::vector<views::MessageRowData> rows)
+{
+    if (!room_view_) return;
+    auto* tl = room_view_->thread_view();
+    if (!tl || rows.empty()) return;
+    tl->append_messages(std::move(rows));
+    request_relayout();
+}
+
+void RoomWindowBase::apply_thread_insert_(std::size_t index,
+                                          views::MessageRowData row)
+{
+    if (!room_view_) return;
+    auto* tl = room_view_->thread_view();
+    if (!tl) return;
+    tl->insert_message(index, std::move(row));
+    request_relayout();
+}
+
+void RoomWindowBase::apply_thread_update_(std::size_t index,
+                                          views::MessageRowData row)
+{
+    if (!room_view_) return;
+    auto* tl = room_view_->thread_view();
+    if (!tl) return;
+    tl->update_message(index, std::move(row));
+    request_relayout();
+}
+
+void RoomWindowBase::apply_thread_remove_(std::size_t index)
+{
+    if (!room_view_) return;
+    auto* tl = room_view_->thread_view();
+    if (!tl) return;
+    tl->remove_message(index);
+    request_relayout();
 }
 
 void RoomWindowBase::handle_file_drop_(std::vector<std::uint8_t> bytes,

@@ -390,6 +390,54 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                 if (!ta.empty())
                     roomTextArea_->set_rect(ta);
             }
+            if (room_view_ && roomSearchField_)
+            {
+                const bool vis = room_view_->room_search_field_visible();
+                roomSearchField_->set_visible(vis);
+                if (vis)
+                {
+                    tk::Rect r = room_view_->room_search_field_rect();
+                    r.x += 2; r.y += 2; r.w -= 4; r.h -= 4;
+                    roomSearchField_->set_rect(r);
+                }
+            }
+        });
+
+    // ── In-room search native text field ─────────────────────────────────
+    roomSearchField_ = surface_->host().make_text_field();
+    roomSearchField_->set_placeholder(tr("Find in conversation\xe2\x80\xa6").toStdString());
+    roomSearchField_->set_visible(false);
+    roomSearchField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (room_view_)
+                if (auto* bar = room_view_->room_search_bar())
+                {
+                    bar->set_query(q);
+                    if (surface_) surface_->relayout();
+                }
+        });
+    roomSearchField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            if (!room_view_ || !room_view_->room_search_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                if (room_view_->on_room_search_navigate)
+                    room_view_->on_room_search_navigate(-1);
+                return true;
+            case tk::NavKey::Down:
+                if (room_view_->on_room_search_navigate)
+                    room_view_->on_room_search_navigate(+1);
+                return true;
+            case tk::NavKey::Escape:
+                room_view_->close_room_search();
+                return true;
+            default:
+                return false;
+            }
         });
 
     // ── Platform popups the shared wire_room_view_ can't provide ──────────
@@ -721,6 +769,11 @@ void RoomWindow::keyPressEvent(QKeyEvent* ev)
 {
     if (ev->key() == Qt::Key_Escape)
     {
+        if (room_view_ && room_view_->room_search_open())
+        {
+            room_view_->close_room_search();
+            return;
+        }
         if (vid_viewer_ && vid_viewer_->is_open())
         {
             vid_viewer_->close();

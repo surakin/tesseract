@@ -2999,9 +2999,10 @@ void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
 
 views::RoomSearchBar* ShellBase::in_room_search_bar_() const
 {
-    if (!main_app_ || !main_app_->room_view())
-        return nullptr;
-    return main_app_->room_view()->room_search_bar();
+    auto* rv = in_room_search_active_rv_
+                   ? in_room_search_active_rv_
+                   : (main_app_ ? main_app_->room_view() : nullptr);
+    return rv ? rv->room_search_bar() : nullptr;
 }
 
 void ShellBase::handle_in_room_search_query_(const std::string& query)
@@ -3016,13 +3017,22 @@ void ShellBase::handle_in_room_search_query_(const std::string& query)
             bar->set_match_status(0, 0, false, false);
         return;
     }
-    in_room_search_room_id_ = current_room_id_;
-    debounce_(DebounceSlot::InRoomSearch, 120, [this, query]()
+    // For the main window, use the current room. For a popout, the room_id
+    // was already set by the on_room_search_query callback before this call.
+    if (!in_room_search_active_rv_)
+        in_room_search_room_id_ = current_room_id_;
+    // Capture context so the debounce lambda can detect a stale query (main
+    // window room switch, or a new search from a different window).
+    const std::string search_room_id = in_room_search_room_id_;
+    auto* search_rv = in_room_search_active_rv_;
+    debounce_(DebounceSlot::InRoomSearch, 120,
+              [this, query, search_room_id, search_rv]()
     {
         if (query.empty() || !client_)
             return;
-        if (in_room_search_room_id_ != current_room_id_)
-            return; // room switched during debounce window
+        if (in_room_search_room_id_ != search_room_id ||
+            in_room_search_active_rv_ != search_rv)
+            return; // room switched or different window started searching
         const std::uint64_t id = ++in_room_search_request_id_;
         in_room_search_pending_[id] = query;
         client_->search_messages(id, query, in_room_search_room_id_, 200);
@@ -3134,7 +3144,9 @@ void ShellBase::handle_in_room_search_failed_ui_(std::uint64_t request_id,
 
 void ShellBase::in_room_search_apply_highlights_()
 {
-    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+    auto* active_rv = in_room_search_active_rv_ ? in_room_search_active_rv_
+                                                 : room_view_;
+    auto* ml = active_rv ? active_rv->message_list() : nullptr;
     if (!ml)
         return;
     if (in_room_search_matches_.empty())
@@ -3160,9 +3172,38 @@ void ShellBase::in_room_search_focus_current_()
 
     const auto& hit =
         in_room_search_matches_[static_cast<std::size_t>(in_room_search_current_)];
-    if (room_view_ && room_view_->message_list())
-        room_view_->message_list()->set_highlighted_event(hit.event_id);
-    try_scroll_to_room_event_(hit.event_id);
+    auto* active_rv = in_room_search_active_rv_ ? in_room_search_active_rv_
+                                                 : room_view_;
+    if (active_rv && active_rv->message_list())
+    {
+        auto* ml = active_rv->message_list();
+        ml->set_highlighted_event(hit.event_id);
+        if (in_room_search_active_win_)
+        {
+            // Popout: scroll the popout's own message list and trigger its
+            // layout. If the event isn't loaded, subscribe_room_at to fetch it.
+            ml->set_pending_scroll_event_id(hit.event_id);
+            bool found = false;
+            for (const auto& m : ml->messages())
+                if (m.event_id == hit.event_id) { found = true; break; }
+            if (!found && client_)
+            {
+                const std::string search_room = in_room_search_room_id_;
+                const std::string eid         = hit.event_id;
+                begin_focused_subscription_(search_room, eid);
+                auto sess = active_account_;
+                run_async_mut_([sess, search_room, eid]() {
+                    if (!sess || !sess->client) return;
+                    sess->client->subscribe_room_at(search_room, eid);
+                });
+            }
+            in_room_search_active_win_->request_relayout();
+        }
+        else
+        {
+            try_scroll_to_room_event_(hit.event_id);
+        }
+    }
 
     const bool reached_start =
         pagination_.count(in_room_search_room_id_) &&
@@ -3330,6 +3371,8 @@ void ShellBase::in_room_search_clear_()
     in_room_search_matches_.clear();
     in_room_search_current_           = -1;
     in_room_search_room_id_.clear();
+    in_room_search_active_rv_         = nullptr;
+    in_room_search_active_win_        = nullptr;
     in_room_search_rerun_on_paginate_ = false;
     in_room_search_goto_oldest_       = false;
     in_room_search_paginate_rerun_    = false;
@@ -3445,9 +3488,14 @@ void ShellBase::clear_focused_state_(const std::string& room_id)
 
 void ShellBase::handle_date_jump_(std::uint64_t ts_ms)
 {
-    if (current_room_id_.empty() || !client_)
+    handle_date_jump_(current_room_id_, ts_ms);
+}
+
+void ShellBase::handle_date_jump_(const std::string& room_id,
+                                  std::uint64_t ts_ms)
+{
+    if (room_id.empty() || !client_)
         return;
-    const std::string room_id = current_room_id_;
     run_async_mut_(
         [this, room_id, ts_ms]
         {
@@ -4771,6 +4819,25 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
                                                      std::string thread_root,
                                                      EventList events)
 {
+    // Fan out to secondary window for this room if it has this thread open.
+    {
+        auto it = secondary_windows_.find(room_id);
+        if (it != secondary_windows_.end() && it->second &&
+            it->second->popout_thread_root() == thread_root)
+        {
+            std::vector<views::MessageRowData> rows;
+            rows.reserve(events.size());
+            for (auto& ev : events)
+            {
+                if (!ev || ev->type == tesseract::EventType::Unhandled)
+                    continue;
+                prep_row_media_(*ev);
+                rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+            }
+            if (!rows.empty())
+                it->second->apply_thread_prepend_(std::move(rows));
+        }
+    }
     if (room_id != current_room_id_ || thread_root != current_thread_root_)
         return;
     if (!room_view_)
@@ -4798,6 +4865,25 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
                                                     std::string thread_root,
                                                     EventList events)
 {
+    // Fan out to secondary window for this room if it has this thread open.
+    {
+        auto it = secondary_windows_.find(room_id);
+        if (it != secondary_windows_.end() && it->second &&
+            it->second->popout_thread_root() == thread_root)
+        {
+            std::vector<views::MessageRowData> rows;
+            rows.reserve(events.size());
+            for (auto& ev : events)
+            {
+                if (!ev || ev->type == tesseract::EventType::Unhandled)
+                    continue;
+                prep_row_media_(*ev);
+                rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+            }
+            if (!rows.empty())
+                it->second->apply_thread_append_(std::move(rows));
+        }
+    }
     if (room_id != current_room_id_ || thread_root != current_thread_root_)
         return;
     if (!room_view_)
@@ -4825,8 +4911,20 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
                                         std::string thread_root,
                                         EventList snapshot)
 {
-    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+    // Determine whether main window and/or a secondary window need this update.
+    const bool main_matches =
+        (room_id == current_room_id_ && thread_root == current_thread_root_);
+    RoomWindowBase* popout_win = nullptr;
+    {
+        auto it = secondary_windows_.find(room_id);
+        if (it != secondary_windows_.end() && it->second &&
+            it->second->popout_thread_root() == thread_root)
+            popout_win = it->second;
+    }
+    if (!main_matches && !popout_win)
         return;
+
+    // Prepare rows once; they may be delivered to main window, popout, or both.
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
     for (auto& ev : snapshot)
@@ -4838,7 +4936,11 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
             ensure_reply_details_(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
-    apply_thread_messages_(thread_root, std::move(rows), /*room_switch=*/true);
+
+    if (popout_win)
+        popout_win->apply_thread_reset_(rows); // copies for popout
+    if (main_matches)
+        apply_thread_messages_(thread_root, std::move(rows), /*room_switch=*/true);
 }
 
 void ShellBase::handle_thread_inserted_ui_(std::string room_id,
@@ -4848,6 +4950,19 @@ void ShellBase::handle_thread_inserted_ui_(std::string room_id,
 {
     if (!ev || ev->type == tesseract::EventType::Unhandled)
         return;
+    // Fan out to secondary window if it has this thread open.
+    {
+        auto it = secondary_windows_.find(room_id);
+        if (it != secondary_windows_.end() && it->second &&
+            it->second->popout_thread_root() == thread_root)
+        {
+            prep_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty())
+                ensure_reply_details_(ev->event_id);
+            it->second->apply_thread_insert_(
+                index, tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+    }
     if (room_id != current_room_id_ || thread_root != current_thread_root_)
         return;
     prep_row_media_(*ev);
@@ -4865,6 +4980,19 @@ void ShellBase::handle_thread_updated_ui_(std::string room_id,
 {
     if (!ev || ev->type == tesseract::EventType::Unhandled)
         return;
+    // Fan out to secondary window if it has this thread open.
+    {
+        auto it = secondary_windows_.find(room_id);
+        if (it != secondary_windows_.end() && it->second &&
+            it->second->popout_thread_root() == thread_root)
+        {
+            prep_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty())
+                ensure_reply_details_(ev->event_id);
+            it->second->apply_thread_update_(
+                index, tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+    }
     if (room_id != current_room_id_ || thread_root != current_thread_root_)
         return;
     prep_row_media_(*ev);
@@ -4879,6 +5007,13 @@ void ShellBase::handle_thread_removed_ui_(std::string room_id,
                                           std::string thread_root,
                                           std::size_t index)
 {
+    // Fan out to secondary window if it has this thread open.
+    {
+        auto it = secondary_windows_.find(room_id);
+        if (it != secondary_windows_.end() && it->second &&
+            it->second->popout_thread_root() == thread_root)
+            it->second->apply_thread_remove_(index);
+    }
     if (room_id != current_room_id_ || thread_root != current_thread_root_)
         return;
     apply_thread_message_remove_(thread_root, index);
@@ -4886,10 +5021,24 @@ void ShellBase::handle_thread_removed_ui_(std::string room_id,
 
 void ShellBase::handle_threads_updated_ui_(std::string room_id)
 {
+    if (!client_)
+        return;
+
+    // Always update the threads button on any secondary window showing this
+    // room (a popout may have a different room_id than current_room_id_).
+    {
+        auto it = secondary_windows_.find(room_id);
+        if (it != secondary_windows_.end() && it->second && it->second->room_view())
+        {
+            it->second->room_view()->set_show_threads_button(
+                !client_->list_room_threads(room_id).empty());
+        }
+    }
+
     // Update visibility regardless of panel state — the threads button needs
     // the latest list to decide whether to render. apply_threads_list_ no-ops
     // cheaply when the thread-list panel widget isn't around.
-    if (room_id != current_room_id_ || !client_)
+    if (room_id != current_room_id_)
         return;
     apply_threads_list_(client_->list_room_threads(room_id));
     // on_near_bottom only fires on user scroll, so it can't bootstrap the
@@ -6014,6 +6163,14 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
     // subscribe), so the button reveals when the SDK paginates non-empty and
     // hides when the list goes empty (e.g., redactions, room switch).
     room_view_->set_show_threads_button(!threads.empty());
+
+    // Fan out to any popout window currently showing the same room.
+    const bool has_threads = !threads.empty();
+    for (auto& [rid, w] : secondary_windows_)
+    {
+        if (rid == current_room_id_ && w->room_view())
+            w->room_view()->set_show_threads_button(has_threads);
+    }
 
     if (room_view_->thread_list_view())
     {

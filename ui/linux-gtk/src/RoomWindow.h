@@ -90,6 +90,7 @@ private:
     GSimpleActionGroup* copy_ctx_actions_ = nullptr;
 
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
+    std::unique_ptr<tk::NativeTextField> room_search_field_;
     GtkWidget* mention_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
