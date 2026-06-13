@@ -697,6 +697,9 @@ protected:
     /// Generation counter for show_status_message_ auto-clear: a late-firing
     /// callback only calls on_restore_status_ui_() if the gen still matches.
     std::uint32_t status_msg_gen_ = 0;
+    /// True while a persistent (auto_clear_ms=0) status override is active.
+    /// refresh_sync_status() checks this to avoid clobbering the override.
+    bool status_override_active_ = false;
 
     // ── Encryption setup overlay ──────────────────────────────────────────────
     // True once show_encryption_setup_overlay_() has been called this session;
@@ -1811,6 +1814,9 @@ protected:
     virtual void on_show_status_message_ui_(const std::string& /*msg*/) {}
     // Called when the auto-clear timer fires to restore normal sync status.
     virtual void on_restore_status_ui_() {}
+    // True while a persistent status override is showing; shells check this
+    // in refresh_sync_status() to avoid overwriting it with "Connected".
+    bool has_status_override_() const { return status_override_active_; }
 
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_()

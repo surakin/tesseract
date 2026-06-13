@@ -7123,6 +7123,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         text = [NSString
             stringWithFormat:@"Downloading encryption keys (%llu)…",
                              (unsigned long long)_shell->last_imported_keys_];
+    else if (_shell->has_status_override_())
+        return; // persistent status override active; don't overwrite with "Connected"
     else
         text = @"Connected";
 

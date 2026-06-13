@@ -143,12 +143,15 @@ void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
                                      bool allow_links)
 {
     const std::uint32_t gen = ++status_msg_gen_;
+    const bool persistent  = (auto_clear_ms <= 0);
     post_to_ui_alive_(
-        [this, msg = std::move(msg), allow_links, gen]
+        [this, msg = std::move(msg), allow_links, gen, persistent]
         {
             // Drop if a newer message or a restore has already superseded this.
             if (status_msg_gen_ != gen)
                 return;
+            if (persistent)
+                status_override_active_ = true;
             status_message_allows_links_ = allow_links;
             on_show_status_message_ui_(msg);
         });
@@ -160,7 +163,10 @@ void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
                       [this, gen]
                       {
                           if (status_msg_gen_ == gen)
+                          {
+                              status_override_active_ = false;
                               on_restore_status_ui_();
+                          }
                       });
 }
 
@@ -811,6 +817,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             in_room_search_clear_();
             ++status_msg_gen_; // cancel any queued "Fetching…" display post
+            status_override_active_ = false;
             on_restore_status_ui_();
         };
     }
@@ -2782,7 +2789,6 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
             room_view_ && room_view_->room_search_open())
         {
             in_room_search_rerun_on_paginate_ = false;
-            on_restore_status_ui_(); // clear the "Fetching older messages…" banner
             // Bypass the user-typing debounce: fire the re-index search
             // immediately so the next paginate can start without a 120 ms gap.
             if (auto* bar = in_room_search_bar_())
@@ -3224,6 +3230,12 @@ void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
         if (auto* bar = in_room_search_bar_())
             bar->set_match_status(
                 in_room_search_current_ + 1, total, false, /*at_start=*/true);
+        // Pagination exhausted — clear the "Fetching…" override if one is active.
+        if (status_override_active_)
+        {
+            status_override_active_ = false;
+            on_restore_status_ui_();
+        }
         return;
     }
 
@@ -3276,7 +3288,12 @@ void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
                               tm_val.tm_year + 1900);
             status += buf;
         }
-        show_status_message_(std::move(status), 0); // persistent
+        // Set synchronously on the UI thread so the text is visible before
+        // paginate_back_async() fires its completion callback via PostMessage.
+        ++status_msg_gen_;
+        status_override_active_          = true;
+        status_message_allows_links_     = false;
+        on_show_status_message_ui_(status);
     }
 
     const std::uint64_t req_id = next_paginate_id_++;
@@ -3291,6 +3308,7 @@ void ShellBase::set_in_room_search_paginate_(bool enabled)
     if (!enabled)
     {
         ++status_msg_gen_; // cancel any queued "Fetching…" display post
+        status_override_active_ = false;
         on_restore_status_ui_();
         return;
     }

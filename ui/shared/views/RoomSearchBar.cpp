@@ -73,7 +73,8 @@ void RoomSearchBar::open()
 void RoomSearchBar::close()
 {
     is_open_ = false;
-    field_rect_ = {};
+    field_rect_        = {};
+    count_label_max_w_ = 0.0f;
 
     if (count_label_) count_label_->set_visible(false);
     if (up_btn_)      up_btn_->set_visible(false);
@@ -184,13 +185,15 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (up_btn_)
         up_btn_->arrange(ctx, up_r);
 
-    // Count label: measure natural width then place left of up button.
+    // Count label: measure natural width but only ever grow the reserved slot
+    // so the text field doesn't jitter as the match count changes during pagination.
     const float count_right = up_r.x - kBtnGap;
     float count_w = 0.0f;
     if (count_label_)
     {
         const tk::Size lsz = count_label_->measure(ctx, {0.0f, kStripH});
-        count_w = std::ceil(lsz.w) + 4.0f;
+        count_label_max_w_ = std::max(count_label_max_w_, std::ceil(lsz.w) + 4.0f);
+        count_w = count_label_max_w_;
         const tk::Rect count_r{count_right - count_w,
                                bounds.y + (kStripH - lsz.h) * 0.5f,
                                count_w, lsz.h};

@@ -4868,8 +4868,10 @@ void MainWindow::refresh_sync_status()
         gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         return;
     }
-    // Steady state: always settle to "Connected" so any transient override
-    // (e.g., "Fetching older messages…" from in-room search) is cleared.
+    // Steady state: settle to "Connected" unless a persistent status override
+    // (e.g., "Fetching older messages…" from in-room search) is still active.
+    if (has_status_override_())
+        return;
     sync_progress_shown_ = false;
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
 }

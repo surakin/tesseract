@@ -84,6 +84,10 @@ private:
     tk::IconCache down_icon_;
     tk::IconCache close_icon_;
 
+    // Widest count_label_ width seen so far; never shrinks so the text field
+    // doesn't jitter as the match count grows during pagination.
+    float count_label_max_w_ = 0.0f;
+
     // World-space rect reported to the host for the native text field overlay.
     tk::Rect field_rect_{};
 };

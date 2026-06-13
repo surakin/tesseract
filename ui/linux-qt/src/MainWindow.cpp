@@ -3860,8 +3860,10 @@ void MainWindow::refreshSyncStatus()
                 .arg(static_cast<qulonglong>(last_imported_keys_)));
         return;
     }
-    // Steady state: always settle to "Connected" so any transient override
-    // (e.g., "Fetching older messages…" from in-room search) is cleared.
+    // Steady state: settle to "Connected" unless a persistent status override
+    // (e.g., "Fetching older messages…" from in-room search) is still active.
+    if (has_status_override_())
+        return;
     sync_progress_shown_ = false;
     statusBar()->showMessage(tr("Connected"));
 }

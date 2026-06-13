@@ -961,7 +961,10 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
 {
     if (hStatus_)
+    {
         SetWindowTextW(hStatus_, utf8_to_wstr(msg).c_str());
+        UpdateWindow(hStatus_);
+    }
 }
 
 void MainWindow::on_restore_status_ui_()
@@ -5445,8 +5448,10 @@ void MainWindow::refresh_sync_status()
         SetWindowTextW(hStatus_, buf);
         return;
     }
-    // Steady state: always settle to "Connected" so any transient override
-    // (e.g., "Fetching older messages…" from in-room search) is cleared.
+    // Steady state: settle to "Connected" unless a persistent status override
+    // (e.g., "Fetching older messages…" from in-room search) is still active.
+    if (has_status_override_())
+        return;
     sync_progress_shown_ = false;
     SetWindowTextW(hStatus_, L"Connected");
 }
