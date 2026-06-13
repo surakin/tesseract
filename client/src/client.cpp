@@ -1541,6 +1541,20 @@ Client::space_children(const std::string& space_id) const
     return result;
 }
 
+std::vector<std::string>
+Client::space_children_all(const std::string& space_id) const
+{
+    SH_FFI;
+    auto raw = impl_->ffi->space_children_all(space_id);
+    std::vector<std::string> result;
+    result.reserve(raw.size());
+    for (const auto& s : raw)
+    {
+        result.push_back(std::string(s));
+    }
+    return result;
+}
+
 bool Client::needs_recovery() const
 {
     SH_FFI;

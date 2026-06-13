@@ -1107,6 +1107,10 @@ public:
     /// or when `space_id` is not a known space.
     std::vector<std::string> space_children(const std::string& space_id) const;
 
+    /// Like `space_children` but returns ALL child room IDs regardless of
+    /// membership — includes rooms the user has not joined.
+    std::vector<std::string> space_children_all(const std::string& space_id) const;
+
     // ------------------------------------------------------------------
     // Recovery / key backup (Step 6)
     // ------------------------------------------------------------------
