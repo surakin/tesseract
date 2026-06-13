@@ -45,7 +45,7 @@ impl ClientFfi {
         Vec::new()
     }
 
-    pub fn space_children(&self, space_id: &str) -> Vec<String> {
+    pub fn space_children_all(&self, space_id: &str) -> Vec<String> {
         #[cfg(not(test))]
         {
             let Some(client) = self.client.as_ref() else {
@@ -57,7 +57,6 @@ impl ClientFfi {
             let Some(space_room) = client.get_room(&room_id) else {
                 return vec![];
             };
-            let client = client.clone();
 
             self.rt.block_on(async move {
                 use matrix_sdk::deserialized_responses::SyncOrStrippedState;
@@ -84,10 +83,33 @@ impl ClientFfi {
                         Ok(SyncOrStrippedState::Stripped(e)) => Some(e.state_key.to_owned()),
                         Err(_) => None,
                     })
-                    .filter(|child_id| client.get_room(child_id).is_some())
                     .map(|id| id.to_string())
                     .collect()
             })
+        }
+        #[cfg(test)]
+        {
+            let _ = space_id;
+            vec![]
+        }
+    }
+
+    pub fn space_children(&self, space_id: &str) -> Vec<String> {
+        #[cfg(not(test))]
+        {
+            let Some(client) = self.client.as_ref() else {
+                return vec![];
+            };
+            self.space_children_all(space_id)
+                .into_iter()
+                .filter(|id| {
+                    if let Ok(rid) = OwnedRoomId::try_from(id.as_str()) {
+                        client.get_room(&rid).is_some()
+                    } else {
+                        false
+                    }
+                })
+                .collect()
         }
         #[cfg(test)]
         {

@@ -2051,6 +2051,10 @@ pub mod ffi {
         /// client is a member of (i.e. present in the room list).
         fn space_children(self: &ClientFfi, space_id: &str) -> Vec<String>;
 
+        /// Like `space_children` but returns ALL child room IDs regardless of
+        /// join/membership status — includes rooms the user has not joined.
+        fn space_children_all(self: &ClientFfi, space_id: &str) -> Vec<String>;
+
         // ----- Recovery / key backup (Step 6) -----
 
         /// Returns true when this device is missing the cross-signing /
