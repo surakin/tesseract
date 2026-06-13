@@ -178,6 +178,7 @@ public:
     // Close the search strip, clear match highlights and focused event.
     void close_room_search();
 
+    bool      has_room()                 const { return has_room_; }
     bool      room_search_open()         const;
     tk::Rect  room_search_field_rect()   const;
     bool      room_search_field_visible() const;
