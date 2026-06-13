@@ -3,10 +3,32 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## Unreleased
+## v0.8.3 — 2026-06-13
+
+Changes since v0.8.0:
 
 ### 2026-06-13
 
+- feat(search): in-room find-in-conversation search bar. **Ctrl+F** (Win32 /
+  Qt6 / GTK4) and **⌘F** (macOS) opens a `RoomSearchBar` anchored below the
+  room header. Results highlight matching rows in the timeline with a tinted
+  accent overlay and arrow-key navigation (↑ / ↓ wraps) jumps to each hit.
+  A **Paginate** checkbox automatically back-paginates when no more matches
+  exist in the current window, fetching older history in a loop until a match
+  is found or the start of the timeline is reached. The bar closes on Esc;
+  the status bar confirms fetch progress. Shared code in `ui/shared/views/`
+  (`RoomSearchBar`, `MessageListView::set_search_matches` /
+  `clear_search_matches`); wired in all four shells. 832 C++ tests.
+- fix(html): collapse raw whitespace in `formatted_body` text nodes. Literal
+  newlines and runs of spaces between inline elements in HTML-formatted messages
+  now collapse to a single space (CSS `white-space: normal` semantics), matching
+  browser and Element rendering. Entity-encoded characters (`&#10;`, `&#9;`) and
+  explicit line breaks (`<br>`, `<p>`) are unaffected.
+- fix(ui): reaction chip key text changed from `FontRole::Title` (15 pt
+  semibold) to `FontRole::Body` (13 pt regular) so long text-based reaction
+  keys (e.g. `● update-go-modules-graph`) no longer appear bold. Chip
+  dimensions are unchanged (height is driven by a settings constant, not the
+  font size).
 - refactor(search): search index moved to its own `search_index.db`. The FTS5
   tables (`message_index`, `message_fts`, `search_state`) now live in a
   dedicated per-account `search_index.db` instead of sharing `app_cache.db`

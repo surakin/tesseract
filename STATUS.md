@@ -1,8 +1,8 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-13** (development branch, unreleased).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-13** (v0.8.3).
 
-> **Full-text message search, incl. encrypted rooms (2026-06-11/13, unreleased).**
+> **Full-text message search, incl. encrypted rooms (2026-06-11/13).**
 > A global search overlay (**Ctrl+Shift+F** / **⌘⇧F**) searches your message
 > history — **including encrypted rooms**, which the Matrix server-side
 > `/search` endpoint cannot do. Search runs against a local **SQLite FTS5**
@@ -23,8 +23,18 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-13
 > `search_index_stats` / `search_index_size_bytes`, `SearchHit`,
 > `on_search_results` / `on_search_failed`. Shared code in `ShellBase` /
 > `EventHandlerBase`; wired in all four shells (Qt6, GTK4, Win32, macOS).
-> 240 Rust + 816 C++ tests. Verified on **Qt6**. *(In-room find bar (Ctrl+F)
-> planned as follow-up.)*
+> 240 Rust + 832 C++ tests. Verified on **Qt6**.
+
+> **In-room find-in-conversation search bar (2026-06-13).**
+> **Ctrl+F** (Win32 / Qt6 / GTK4) and **⌘F** (macOS) opens a `RoomSearchBar`
+> anchored below the room header. Matching rows are highlighted in the timeline
+> with a tinted accent overlay; ↑ / ↓ (wrapping) navigate between hits. A
+> **Paginate** checkbox automatically back-paginates when no more matches remain
+> in the current window, fetching older history in a loop until a match is found
+> or the start of the timeline is reached. The bar closes on Esc; status-bar
+> feedback confirms fetch progress. Shared code in `ui/shared/views/`
+> (`RoomSearchBar`, `MessageListView::set_search_matches` /
+> `clear_search_matches`); wired in all four shells (Qt6, GTK4, Win32, macOS).
 
 > **Shared jump-to-date picker (2026-06-13, unreleased).** The four native date
 > pickers (Win32 `MonthCal`, GTK4 `gtk_calendar`, Qt6 `QCalendarWidget`, macOS
@@ -548,8 +558,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 237 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 816 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 240 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 832 |
 
 ## Platforms
 
