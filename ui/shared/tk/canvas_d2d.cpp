@@ -1820,6 +1820,10 @@ public:
             {
                 layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, tr);
             }
+            if (sp.semibold)
+            {
+                layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, tr);
+            }
             if (sp.italic)
             {
                 layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, tr);

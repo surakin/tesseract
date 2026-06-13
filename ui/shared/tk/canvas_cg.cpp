@@ -1276,7 +1276,7 @@ public:
             {
                 CFRetained<CTFontRef> base{create_font(s.role)};
                 CTFontSymbolicTraits need = 0;
-                if (span.bold)
+                if (span.bold || span.semibold)
                 {
                     need |= kCTFontTraitBold;
                 }

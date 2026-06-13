@@ -3,6 +3,7 @@
 mod client;
 mod highlight;
 mod image_packs;
+mod markdown;
 mod matrix_uri;
 mod media_preview;
 mod oauth;
@@ -21,6 +22,11 @@ pub use bridge::ffi;
 /// `cargo test`. They let unit tests run without a C++ toolchain.
 #[cfg(test)]
 pub mod ffi {
+    #[derive(Debug, PartialEq, Default)]
+    pub struct MarkdownFfiResult {
+        pub formatted_body: String,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct InviteInfo {
         pub room_id: String,

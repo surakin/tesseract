@@ -331,6 +331,7 @@ struct TextSpan
     std::string url;
     std::string spoiler_reason;
     bool bold = false;
+    bool semibold = false;
     bool italic = false;
     bool code = false; // render in monospace (inline `code` or fenced block)
     bool code_block = false; // part of a fenced ```block``` (vs inline code)

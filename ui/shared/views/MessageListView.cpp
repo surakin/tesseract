@@ -35,6 +35,44 @@ static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
     return out;
 }
 
+// Section-aware hit-testing: check sections first, fall back to flat layout.
+static std::string link_at_world(const LinkLayout& le, tk::Point world)
+{
+    if (!le.sections.empty())
+    {
+        for (const auto& sec : le.sections)
+        {
+            if (!sec.layout) continue;
+            tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
+            if (ll.y < 0.0f || ll.y >= sec.height) continue;
+            std::string url = sec.layout->link_at(ll);
+            if (!url.empty()) return url;
+        }
+        return {};
+    }
+    if (!le.layout) return {};
+    return le.layout->link_at({world.x - le.origin.x, world.y - le.origin.y});
+}
+
+static int char_at_world(const LinkLayout& le, tk::Point world)
+{
+    if (!le.sections.empty())
+    {
+        for (const auto& sec : le.sections)
+        {
+            if (!sec.layout) continue;
+            tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
+            if (ll.y < 0.0f || ll.y >= sec.height) continue;
+            int idx = sec.layout->char_index_at(ll);
+            if (idx >= 0) return idx;
+        }
+        return -1;
+    }
+    if (!le.layout) return -1;
+    return le.layout->char_index_at(
+        {world.x - le.origin.x, world.y - le.origin.y});
+}
+
 // If `url` is a matrix.to *user* permalink, return the Matrix user id
 // (e.g. "@alice:example.org"); otherwise return "". Trailing query/fragment
 // (?via=…) is dropped and a leading percent-encoded '@' (%40) is decoded.
@@ -311,6 +349,15 @@ constexpr float kAvatarGap = tesseract::visual::kMsgAvatarGap;        // 8
 constexpr float kSenderH = tesseract::visual::kMsgSenderNameHeight;   // 16
 constexpr float kTimestampH = tesseract::visual::kMsgTimestampHeight; // 14
 constexpr float kChipPadX = 10.0f;
+
+// Block-level rendering constants.
+constexpr float kSectionGap       =  4.0f; // vertical gap between body sections
+constexpr float kBlockquoteIndent = 12.0f; // x-indent per blockquote nesting level
+constexpr float kBlockquoteBarW   =  3.0f; // width of the blockquote accent bar
+constexpr float kBlockquoteBarGap =  6.0f; // gap between bar right edge and text
+constexpr float kListIndent       = 20.0f; // x-indent per list nesting level
+constexpr float kBulletGap        = 10.0f; // gap between bullet/number right edge and text
+constexpr float kHeadingRuleGap   =  4.0f; // space below h1/h2 text before rule
 
 // Read-receipt avatar cluster — painted at the bottom-right of each row,
 // inside the existing bounds. Discs overlap by (kReceiptSize - kReceiptStride)
@@ -2648,6 +2695,29 @@ private:
         return spans;
     }
 
+    std::vector<BodyBlock> prepare_blocks(const MessageRowData& m,
+                                          bool revealed, bool dark) const
+    {
+        auto blocks = html_to_blocks(m.formatted_body, dark);
+        if (!revealed)
+        {
+            for (auto& block : blocks)
+                for (auto& sp : block.spans)
+                {
+                    if (!sp.spoiler)
+                        continue;
+                    sp.text = sp.spoiler_reason.empty()
+                                  ? "[Spoiler]"
+                                  : "[Spoiler: " + sp.spoiler_reason + "]";
+                    sp.bold          = true;
+                    sp.italic        = false;
+                    sp.strikethrough = false;
+                    sp.url           = {};
+                }
+        }
+        return blocks;
+    }
+
     // Build italic TextSpan vector for an m.emote row:
     // "* SenderName body_text" with every span forced italic.
     std::vector<tk::TextSpan> build_emote_spans(const MessageRowData& m,
@@ -2698,6 +2768,21 @@ private:
     // The cache (validity-key check, LRU bump + eviction, max size) lives in
     // LinkLayoutCache; this method supplies the build pipeline as the builder
     // callback so the span machinery stays on the view.
+    // Compute the x-indentation for a block section.
+    static float section_x_offset(const BodyBlock& b)
+    {
+        switch (b.kind)
+        {
+        case BodyBlock::Kind::Blockquote:
+            return static_cast<float>(b.level) * kBlockquoteIndent;
+        case BodyBlock::Kind::UnorderedItem:
+        case BodyBlock::Kind::OrderedItem:
+            return static_cast<float>(b.level) * kListIndent;
+        default:
+            return 0.0f;
+        }
+    }
+
     LinkLayout& body_layout_for(const MessageRowData& m, tk::CanvasFactory& f,
                                 float w, bool dark, bool revealed) const
     {
@@ -2710,23 +2795,98 @@ private:
                 slot.layout.reset();
                 slot.spans.clear();
                 slot.plain.clear();
+                slot.sections.clear();
 
                 if (!m.formatted_body.empty())
                 {
-                    auto spans = prepare_spans(m, revealed, dark);
-                    if (!spans.empty())
+                    auto blocks = prepare_blocks(m, revealed, dark);
+
+                    // Use block-section path when there is real block structure
+                    // (more than a single Paragraph, or a non-Paragraph block).
+                    bool has_structure = false;
+                    if (blocks.size() > 1)
+                        has_structure = true;
+                    else if (blocks.size() == 1 &&
+                             blocks[0].kind != BodyBlock::Kind::Paragraph)
+                        has_structure = true;
+
+                    if (has_structure)
                     {
-                        slot.layout =
-                            f.build_rich_text(spans, body_style(w, eo));
-                        if (slot.layout)
+                        float y_off = 0.0f;
+                        std::string plain_all;
+                        for (auto& b : blocks)
                         {
-                            slot.plain = spans_to_plain(spans);
-                            slot.spans = std::move(spans);
+                            float xo  = section_x_offset(b);
+                            float avw = std::max(1.0f, w - xo);
+                            SectionLayout sec;
+                            sec.kind     = b.kind;
+                            sec.level    = b.level;
+                            sec.index    = b.index;
+                            sec.x_offset = xo;
+                            sec.y_offset = y_off;
+                            sec.spans    = b.spans;
+                            sec.layout =
+                                f.build_rich_text(b.spans, body_style(avw));
+                            if (!sec.layout)
+                                continue;
+                            float sh = sec.layout->measure().h;
+                            // h1/h2 need extra room for the horizontal rule.
+                            if (b.kind == BodyBlock::Kind::Heading &&
+                                b.level <= 2)
+                                sh += kHeadingRuleGap + 1.0f;
+                            sec.height = sh;
+                            y_off += sh + kSectionGap;
+
+                            // Plain text for clipboard — annotate structure.
+                            switch (b.kind)
+                            {
+                            case BodyBlock::Kind::UnorderedItem:
+                                plain_all += "• ";
+                                break;
+                            case BodyBlock::Kind::OrderedItem:
+                                plain_all += std::to_string(b.index) + ". ";
+                                break;
+                            case BodyBlock::Kind::Blockquote:
+                                plain_all +=
+                                    std::string(
+                                        static_cast<std::size_t>(b.level),
+                                        '>') +
+                                    " ";
+                                break;
+                            default:
+                                break;
+                            }
+                            plain_all += spans_to_plain(b.spans);
+                            plain_all += '\n';
+                            slot.sections.push_back(std::move(sec));
+                        }
+                        if (!slot.sections.empty())
+                        {
+                            slot.plain = std::move(plain_all);
+                            // Leave slot.layout null; sections path is active.
+                            return;
+                        }
+                    }
+
+                    // Fallback: single-block or empty — use flat span path.
+                    if (!blocks.empty())
+                    {
+                        auto& b = blocks.front();
+                        if (!b.spans.empty())
+                        {
+                            slot.layout =
+                                f.build_rich_text(b.spans, body_style(w, eo));
+                            if (slot.layout)
+                            {
+                                slot.plain = spans_to_plain(b.spans);
+                                slot.spans = std::move(b.spans);
+                            }
                         }
                     }
                 }
                 // Plain text: autolink bare URLs so they render as rich text.
-                if (!slot.layout && !eo && !m.body.empty())
+                if (!slot.layout && slot.sections.empty() && !eo &&
+                    !m.body.empty())
                 {
                     auto link_spans = autolink_plain_to_spans(m.body);
                     if (!link_spans.empty())
@@ -2741,13 +2901,13 @@ private:
                     }
                 }
                 // Plain text with no URLs — flat layout so selection works.
-                if (!slot.layout)
+                if (!slot.layout && slot.sections.empty())
                 {
                     std::string plain_text =
                         m.body.empty() ? std::string("(empty message)")
                                        : m.body;
                     slot.layout = f.build_text(plain_text, body_style(w, eo));
-                    slot.plain = std::move(plain_text);
+                    slot.plain  = std::move(plain_text);
                     slot.spans.clear();
                 }
             });
@@ -2761,6 +2921,11 @@ private:
         const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
         const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
         LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
+        if (!e.sections.empty())
+        {
+            const SectionLayout& last = e.sections.back();
+            return last.y_offset + last.height;
+        }
         return e.layout ? e.layout->measure().h : 0.0f;
     }
 
@@ -2781,18 +2946,92 @@ private:
         return layout->measure().h;
     }
 
+    // Paint span backgrounds (mention pills, code blocks, inline code) for one
+    // rich-text section at world-space origin (ox, oy).
+    void paint_span_backgrounds(const std::vector<tk::TextSpan>& spans,
+                                tk::TextLayout& layout,
+                                tk::PaintCtx& ctx,
+                                float ox, float oy) const
+    {
+        int boff = 0;
+        for (std::size_t si = 0; si < spans.size();)
+        {
+            const auto& sp  = spans[si];
+            int          len = static_cast<int>(sp.text.size());
+            if (sp.is_mention && sp.has_background && len > 0)
+            {
+                for (const tk::Rect& r :
+                     layout.selection_rects(boff, boff + len))
+                {
+                    tk::Rect pill{r.x + ox - 2.0f, r.y + oy, r.w + 4.0f, r.h};
+                    ctx.canvas.fill_rounded_rect(
+                        pill, std::min(7.0f, pill.h * 0.5f), sp.background);
+                }
+                boff += len;
+                ++si;
+            }
+            else if (sp.code_block)
+            {
+                int run_start = boff;
+                while (si < spans.size() && spans[si].code_block)
+                {
+                    boff += static_cast<int>(spans[si].text.size());
+                    ++si;
+                }
+                bool     any = false;
+                tk::Rect u{};
+                for (const tk::Rect& r :
+                     layout.selection_rects(run_start, boff))
+                {
+                    if (!any)
+                    {
+                        u = r;
+                        any = true;
+                        continue;
+                    }
+                    float x0 = std::min(u.x, r.x);
+                    float y0 = std::min(u.y, r.y);
+                    float x1 = std::max(u.x + u.w, r.x + r.w);
+                    float y1 = std::max(u.y + u.h, r.y + r.h);
+                    u        = {x0, y0, x1 - x0, y1 - y0};
+                }
+                if (any)
+                {
+                    tk::Rect panel{u.x + ox - 6.0f, u.y + oy - 4.0f,
+                                   u.w + 12.0f, u.h + 8.0f};
+                    ctx.canvas.fill_rounded_rect(
+                        panel, 6.0f, ctx.theme.palette.code_bg);
+                }
+            }
+            else if (sp.code && len > 0)
+            {
+                for (const tk::Rect& r :
+                     layout.selection_rects(boff, boff + len))
+                {
+                    ctx.canvas.fill_rect(
+                        {r.x + ox - 2.0f, r.y + oy - 1.0f, r.w + 4.0f,
+                         r.h + 2.0f},
+                        ctx.theme.palette.code_bg);
+                }
+                boff += len;
+                ++si;
+            }
+            else
+            {
+                boff += len;
+                ++si;
+            }
+        }
+    }
+
     // Paint a text message body — uses rich text when formatted_body is
     // present, otherwise falls back to plain text.
     float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx, float x,
                           float y, float w, tk::Color color) const
     {
-        const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
+        const bool dark     = ctx.theme.mode == tk::ThemeMode::Dark;
         const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
         LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
-        if (!e.layout)
-            return 0.0f;
-        tk::TextLayout& layout = *e.layout;
-        e.origin = {x, y}; // refresh draw origin for hit-testing this frame
 
         auto ord     = owner_.selection_ordered();
         int  msg_idx = owner_.message_index_of(m.event_id);
@@ -2803,104 +3042,110 @@ private:
                 msg_idx >= ord->lo_idx && msg_idx <= ord->hi_idx)
             {
                 int lo_b = (msg_idx == ord->lo_idx) ? ord->lo_byte : 0;
-                int hi_b = (msg_idx == ord->hi_idx) ? ord->hi_byte
-                                                     : plain_len;
+                int hi_b =
+                    (msg_idx == ord->hi_idx) ? ord->hi_byte : plain_len;
                 if (lo_b != hi_b)
-                {
                     for (const tk::Rect& r : lay.selection_rects(lo_b, hi_b))
-                    {
-                        ctx.canvas.fill_rect(
-                            {r.x + ox, r.y + oy, r.w, r.h},
-                            ctx.theme.palette.selection);
-                    }
-                }
+                        ctx.canvas.fill_rect({r.x + ox, r.y + oy, r.w, r.h},
+                                             ctx.theme.palette.selection);
             }
             ctx.canvas.draw_text(lay, {ox, oy}, color);
         };
 
-        // Rich layouts carry their spans; draw any mention-pill / code-block /
-        // inline-code backgrounds behind the text. (Autolink-only spans have
-        // none of these flags, so the loop is a harmless no-op for them; the
-        // flat plain-text path stores no spans and skips it entirely.)
-        if (!e.spans.empty())
+        // ── Multi-section path (block structure: headings, lists, etc.) ───────
+        if (!e.sections.empty())
         {
-            const auto& spans = e.spans;
-            // Mention pills: fill a rounded background behind each mention run
-            // before the (selection +) text is painted.
-            int boff = 0;
-            for (std::size_t si = 0; si < spans.size();)
+            float total_h = 0.0f;
+            for (SectionLayout& sec : e.sections)
             {
-                const auto& sp = spans[si];
-                int len = static_cast<int>(sp.text.size());
-                if (sp.is_mention && sp.has_background && len > 0)
+                if (!sec.layout)
+                    continue;
+                const float ox = x + sec.x_offset;
+                const float oy = y + sec.y_offset;
+                sec.origin     = {ox, oy};
+                const float sh = sec.layout->measure().h;
+
+                // Span backgrounds.
+                paint_span_backgrounds(sec.spans, *sec.layout, ctx, ox, oy);
+
+                // Block decoration (behind text).
+                switch (sec.kind)
                 {
-                    for (const tk::Rect& r :
-                         layout.selection_rects(boff, boff + len))
-                    {
-                        tk::Rect pill{r.x + x - 2.0f, r.y + y,
-                                      r.w + 4.0f, r.h};
-                        float radius = std::min(7.0f, pill.h * 0.5f);
-                        ctx.canvas.fill_rounded_rect(pill, radius,
-                                                     sp.background);
-                    }
-                    boff += len;
-                    ++si;
-                }
-                // Fenced ```block```: one rounded panel enclosing the whole
-                // multi-line run (the highlighter splits it into many coloured
-                // spans — gather the contiguous run and union its per-line
-                // rects so the tint is a single box, not a rectangle per line).
-                else if (sp.code_block)
+                case BodyBlock::Kind::Blockquote:
                 {
-                    int run_start = boff;
-                    while (si < spans.size() && spans[si].code_block)
-                    {
-                        boff += static_cast<int>(spans[si].text.size());
-                        ++si;
-                    }
-                    bool any = false;
-                    tk::Rect u{};
-                    for (const tk::Rect& r :
-                         layout.selection_rects(run_start, boff))
-                    {
-                        if (!any) { u = r; any = true; continue; }
-                        float x0 = std::min(u.x, r.x);
-                        float y0 = std::min(u.y, r.y);
-                        float x1 = std::max(u.x + u.w, r.x + r.w);
-                        float y1 = std::max(u.y + u.h, r.y + r.h);
-                        u = {x0, y0, x1 - x0, y1 - y0};
-                    }
-                    if (any)
-                    {
-                        tk::Rect panel{u.x + x - 6.0f, u.y + y - 4.0f,
-                                       u.w + 12.0f, u.h + 8.0f};
-                        ctx.canvas.fill_rounded_rect(
-                            panel, 6.0f, ctx.theme.palette.code_bg);
-                    }
+                    tk::Rect bar{ox - kBlockquoteBarGap - kBlockquoteBarW,
+                                 oy, kBlockquoteBarW, sh};
+                    ctx.canvas.fill_rounded_rect(
+                        bar, kBlockquoteBarW * 0.5f,
+                        ctx.theme.palette.separator);
+                    break;
                 }
-                // Inline `code`: a tight per-run tint (single line).
-                else if (sp.code && len > 0)
+                case BodyBlock::Kind::UnorderedItem:
                 {
-                    for (const tk::Rect& r :
-                         layout.selection_rects(boff, boff + len))
-                    {
-                        tk::Rect bg{r.x + x - 2.0f, r.y + y - 1.0f,
-                                    r.w + 4.0f, r.h + 2.0f};
-                        ctx.canvas.fill_rect(bg, ctx.theme.palette.code_bg);
-                    }
-                    boff += len;
-                    ++si;
+                    tk::TextSpan bullet;
+                    bullet.text = "\xe2\x80\xa2"; // U+2022 BULLET
+                    std::vector<tk::TextSpan> bspans{bullet};
+                    tk::TextStyle st;
+                    st.role      = tk::FontRole::Body;
+                    st.wrap      = false;
+                    st.max_width = kListIndent;
+                    auto blay    = ctx.factory.build_rich_text(bspans, st);
+                    if (blay)
+                        ctx.canvas.draw_text(
+                            *blay,
+                            {ox - kBulletGap - blay->measure().w, oy},
+                            color);
+                    break;
                 }
-                else
+                case BodyBlock::Kind::OrderedItem:
                 {
-                    boff += len;
-                    ++si;
+                    tk::TextSpan num_span;
+                    num_span.text = std::to_string(sec.index) + ".";
+                    std::vector<tk::TextSpan> nspans{num_span};
+                    tk::TextStyle st;
+                    st.role      = tk::FontRole::Body;
+                    st.wrap      = false;
+                    st.max_width = kListIndent;
+                    auto nlay    = ctx.factory.build_rich_text(nspans, st);
+                    if (nlay)
+                        ctx.canvas.draw_text(
+                            *nlay,
+                            {ox - kBulletGap - nlay->measure().w, oy},
+                            color);
+                    break;
                 }
+                default:
+                    break;
+                }
+
+                draw_with_selection(*sec.layout, ox, oy,
+                                    static_cast<int>(spans_to_plain(sec.spans).size()));
+                ctx.canvas.draw_text(*sec.layout, {ox, oy}, color);
+
+                // Post-text decoration: horizontal rule below h1/h2.
+                if (sec.kind == BodyBlock::Kind::Heading && sec.level <= 2)
+                {
+                    float rule_y = oy + sh + kHeadingRuleGap * 0.5f;
+                    ctx.canvas.fill_rect(
+                        {x, rule_y, w, 1.0f},
+                        ctx.theme.palette.separator);
+                }
+
+                total_h = sec.y_offset + sec.height;
             }
+            return total_h;
         }
 
-        draw_with_selection(layout, x, y,
-                            static_cast<int>(e.plain.size()));
+        // ── Flat path (plain/autolink/single-paragraph) ───────────────────────
+        if (!e.layout)
+            return 0.0f;
+        tk::TextLayout& layout = *e.layout;
+        e.origin               = {x, y};
+
+        if (!e.spans.empty())
+            paint_span_backgrounds(e.spans, layout, ctx, x, y);
+
+        draw_with_selection(layout, x, y, static_cast<int>(e.plain.size()));
         return layout.measure().h;
     }
 
@@ -4312,9 +4557,7 @@ void MessageListView::on_pointer_drag(tk::Point local)
                 const LinkLayout* le = link_cache_.peek(m.event_id);
                 if (le)
                 {
-                    tk::Point ll{world.x - le->origin.x,
-                                 world.y - le->origin.y};
-                    int idx = le->layout->char_index_at(ll);
+                    int idx = char_at_world(*le, world);
                     if (idx >= 0)
                     {
                         bool changed = (sel_->head_event_id != m.event_id ||
@@ -4477,9 +4720,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
             const LinkLayout* le = link_cache_.peek(m.event_id);
             if (le)
             {
-                tk::Point ll{world.x - le->origin.x,
-                             world.y - le->origin.y};
-                std::string lurl = le->layout->link_at(ll);
+                std::string lurl = link_at_world(*le, world);
                 if (!lurl.empty())
                 {
                     new_link_url = std::move(lurl);
@@ -5117,9 +5358,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
             const LinkLayout* le = link_cache_.peek(m.event_id);
             if (le)
             {
-                tk::Point ll{world.x - le->origin.x,
-                             world.y - le->origin.y};
-                press_link_url_ = le->layout->link_at(ll);
+                press_link_url_ = link_at_world(*le, world);
                 if (!press_link_url_.empty())
                 {
                     return true;
@@ -5258,9 +5497,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 const LinkLayout* le = link_cache_.peek(m.event_id);
                 if (le)
                 {
-                    tk::Point ll{world.x - le->origin.x,
-                                 world.y - le->origin.y};
-                    int idx = le->layout->char_index_at(ll);
+                    int idx = char_at_world(*le, world);
                     if (idx >= 0)
                     {
                         // Multi-click detection.

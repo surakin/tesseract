@@ -1018,6 +1018,10 @@ public:
             {
                 t = QLatin1String("<b>") + t + QLatin1String("</b>");
             }
+            if (sp.semibold)
+            {
+                t = QLatin1String("<span style=\"font-weight:600\">") + t + QLatin1String("</span>");
+            }
             if (!sp.url.empty())
             {
                 QString href =
