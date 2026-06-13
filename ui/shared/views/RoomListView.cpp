@@ -201,6 +201,23 @@ public:
                                      ctx.theme.palette.separator);
             }
         }
+        else if (item.kind == Item::Kind::SpaceUnjoined)
+        {
+            const auto& unjoined = owner_.space_unjoined_rooms_;
+            if (item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(unjoined.size()))
+            {
+                return;
+            }
+            paint_unjoined_room(unjoined[static_cast<std::size_t>(item.room_idx)],
+                                ctx, bounds, selected, hovered);
+            if (index > 0 &&
+                owner_.items_[index - 1].kind == Item::Kind::SpaceUnjoined)
+            {
+                ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
+                                     ctx.theme.palette.separator);
+            }
+        }
         else
         {
             const auto& rooms = owner_.section_rooms_[item.section];
@@ -773,6 +790,78 @@ private:
         }
     }
 
+    void paint_unjoined_room(const tesseract::RoomSummary& s,
+                             tk::PaintCtx& ctx, tk::Rect bounds,
+                             bool selected, bool hovered)
+    {
+        const auto& pal = ctx.theme.palette;
+
+        if (selected)
+            ctx.canvas.fill_rect(bounds, pal.sidebar_selected);
+        else if (hovered)
+            ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+
+        float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        float avatar_cy = bounds.y + bounds.h * 0.5f;
+
+        const std::string& initials_src = s.name.empty() ? s.room_id : s.name;
+        const tk::Image* avatar = (owner_.avatar_provider_ && !s.avatar_url.empty())
+                                  ? owner_.avatar_provider_(s.avatar_url)
+                                  : nullptr;
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+                    initials_src, pal.avatar_initials_bg, pal.avatar_initials_text);
+
+        float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
+        float text_w = bounds.w - (text_x - bounds.x) - kPadX;
+        if (text_w < 0) text_w = 0;
+
+        // Name + members/join-rule on two lines, muted to signal unjoined.
+        constexpr std::uint8_t kAlpha = 153; // ~60%
+
+        std::string meta = std::to_string(s.num_joined_members) + " members";
+        if (s.join_rule == "knock")       meta += " \xc2\xb7 Knock";
+        else if (s.join_rule == "invite") meta += " \xc2\xb7 Invite-only";
+        else if (s.join_rule == "restricted") meta += " \xc2\xb7 Restricted";
+
+        auto& cache = room_cache_[s.room_id];
+        const std::string& display = s.name.empty() ? s.room_id : s.name;
+        if (cache.display_name != display || cache.text_w != text_w ||
+            cache.preview != meta)
+        {
+            cache.display_name = display;
+            cache.text_w       = text_w;
+            cache.preview      = meta;
+            cache.badge_layout = nullptr;
+
+            tk::TextStyle name_style{};
+            name_style.role      = tk::FontRole::Body;
+            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.max_width = text_w;
+            cache.name_layout    = ctx.factory.build_text(display, name_style);
+
+            tk::TextStyle prev_style{};
+            prev_style.role      = tk::FontRole::SidebarPreview;
+            prev_style.trim      = tk::TextTrim::Ellipsis;
+            prev_style.max_width = text_w;
+            cache.preview_layout = ctx.factory.build_text(meta, prev_style);
+        }
+
+        if (cache.name_layout)
+        {
+            float name_y = bounds.y +
+                           (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
+                                 pal.text_primary.with_alpha(kAlpha));
+        }
+        if (cache.preview_layout)
+        {
+            float prev_y = bounds.y + bounds.h * 0.5f +
+                           (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
+                                 pal.text_secondary.with_alpha(kAlpha));
+        }
+    }
+
     RoomListView& owner_;
 
     // When the factory pointer changes (DPI migration to a new screen) all
@@ -819,6 +908,21 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
             if (on_invite_selected)
             {
                 on_invite_selected(rid);
+            }
+            return;
+        }
+
+        if (item.kind == Item::Kind::SpaceUnjoined)
+        {
+            if (item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(space_unjoined_rooms_.size()))
+            {
+                return;
+            }
+            if (on_unjoined_room_selected)
+            {
+                on_unjoined_room_selected(
+                    space_unjoined_rooms_[static_cast<std::size_t>(item.room_idx)]);
             }
             return;
         }
@@ -883,6 +987,39 @@ void RoomListView::set_invites(const std::vector<tesseract::InviteInfo>* invites
         list_->invalidate_data();
     }
     set_selected_room(selected_room_id_cache_);
+}
+
+void RoomListView::set_space_unjoined_rooms(
+    std::vector<tesseract::RoomSummary> rooms)
+{
+    space_unjoined_rooms_ = std::move(rooms);
+    rebuild_items();
+    if (list_)
+    {
+        list_->invalidate_data();
+    }
+}
+
+void RoomListView::clear_space_unjoined_rooms()
+{
+    space_unjoined_rooms_.clear();
+    rebuild_items();
+    if (list_)
+    {
+        list_->invalidate_data();
+    }
+}
+
+int RoomListView::unjoined_room_count() const
+{
+    return static_cast<int>(space_unjoined_rooms_.size());
+}
+
+bool RoomListView::unjoined_rows_visible() const
+{
+    if (space_unjoined_rooms_.empty())
+        return false;
+    return !collapsed_[kSecSpaceUnjoined];
 }
 
 void RoomListView::refresh()
@@ -1148,10 +1285,12 @@ void RoomListView::rebuild_items()
         }
     }
 
-    // Room sections — kSecInvites slot is skipped (its section_rooms_ is
-    // always empty, but skip explicitly to be safe).
+    // Room sections — kSecInvites and kSecSpaceUnjoined slots are skipped
+    // (they use separate data sources; kSecSpaceUnjoined is appended below).
     for (int s = kSecFavorites; s < kNumSections; ++s)
     {
+        if (s == kSecSpaceUnjoined)
+            continue; // handled separately below
         if (section_rooms_[s].empty())
         {
             continue;
@@ -1173,6 +1312,22 @@ void RoomListView::rebuild_items()
         for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
         {
             items_.push_back({Item::Kind::Room, s, r});
+        }
+    }
+
+    // "Available to Join" — driven by space_unjoined_rooms_, not section_rooms_.
+    // Only shown when the caller has populated it (i.e. drilled into a space).
+    if (!space_unjoined_rooms_.empty())
+    {
+        items_.push_back({Item::Kind::Header, kSecSpaceUnjoined, 0});
+        if (!collapsed_[kSecSpaceUnjoined])
+        {
+            for (int i = 0;
+                 i < static_cast<int>(space_unjoined_rooms_.size()); ++i)
+            {
+                items_.push_back(
+                    {Item::Kind::SpaceUnjoined, kSecSpaceUnjoined, i});
+            }
         }
     }
 }

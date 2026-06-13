@@ -130,19 +130,21 @@ public:
 
     // Section indices (matches array positions throughout the class).
     // kSecInvites is fed from invites_; all others are fed from rooms_.
-    static constexpr int kSecInvites   = 0;
-    static constexpr int kSecFavorites = 1;
-    static constexpr int kSecDMs       = 2;
-    static constexpr int kSecRooms     = 3;
-    static constexpr int kSecSpaces    = 4;
-    static constexpr int kSecInactive  = 5;
-    static constexpr int kNumSections  = 6;
+    // kSecSpaceUnjoined is fed from space_unjoined_rooms_ (not section_rooms_).
+    static constexpr int kSecInvites       = 0;
+    static constexpr int kSecFavorites     = 1;
+    static constexpr int kSecDMs           = 2;
+    static constexpr int kSecRooms         = 3;
+    static constexpr int kSecSpaces        = 4;
+    static constexpr int kSecInactive      = 5;
+    static constexpr int kSecSpaceUnjoined = 6;
+    static constexpr int kNumSections      = 7;
 
     // kSectionTitles[kSecInvites] is a placeholder; the actual header label is
     // "Invitations (N)" and is constructed dynamically in paint_header.
     static constexpr const char* kSectionTitles[kNumSections] = {
         "Invitations", "Favorites", "Direct Messages", "Rooms", "Spaces",
-        "Inactive"};
+        "Inactive", "Available to Join"};
 
     // Programmatically collapse or expand a section (e.g. to restore saved
     // state on launch). No-op if section is out of range or already in the
@@ -161,6 +163,18 @@ public:
     // Fires when the user clicks an invite row.
     std::function<void(const std::string& /*room_id*/)> on_invite_selected;
 
+    // Set / clear the "Available to Join" section data (kSecSpaceUnjoined).
+    // Triggers rebuild_items(). Only shown when non-empty.
+    void set_space_unjoined_rooms(std::vector<tesseract::RoomSummary> rooms);
+    void clear_space_unjoined_rooms();
+
+    // Fired when the user clicks an unjoined space-child row.
+    std::function<void(const tesseract::RoomSummary&)> on_unjoined_room_selected;
+
+    // Test helpers.
+    int  unjoined_room_count() const;
+    bool unjoined_rows_visible() const;
+
     // Re-run section classification (e.g. after a settings change) and repaint.
     void refresh();
 
@@ -176,11 +190,13 @@ private:
         {
             Header,
             Room,
-            Invite
+            Invite,
+            SpaceUnjoined // row into space_unjoined_rooms_
         } kind = Kind::Room;
-        int section  = 0; // which section (0–5)
-        int room_idx = 0; // index within section_rooms_[section] (Room);
-                          // index within *invites_ (Invite)
+        int section  = 0; // which section (0–6)
+        int room_idx = 0; // index within section_rooms_[section] (Room/Header);
+                          // index within *invites_ (Invite);
+                          // index within space_unjoined_rooms_ (SpaceUnjoined)
     };
 
     // Rebuild section_rooms_[kNumSections] from rooms_ + search filter, then
@@ -228,8 +244,11 @@ private:
     // when the data has not yet been wired up.
     const std::vector<tesseract::InviteInfo>* invites_ = nullptr;
     // Per-section filtered room pointers (into rooms_); rebuilt by
-    // rebuild_items(). kSecInvites slot is always empty (invites are separate).
+    // rebuild_items(). kSecInvites and kSecSpaceUnjoined slots are always
+    // empty (they use separate data sources).
     std::vector<const tesseract::RoomInfo*> section_rooms_[kNumSections];
+    // Unjoined space-child rooms; populated only when drilled into a space.
+    std::vector<tesseract::RoomSummary> space_unjoined_rooms_;
     // Flat item list the adapter iterates over.
     std::vector<Item> items_;
     // Collapsed state per section (false = expanded by default).

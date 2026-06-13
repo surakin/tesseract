@@ -861,6 +861,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             s.room_section_rooms_collapsed,
             s.room_section_spaces_collapsed,
             s.room_section_inactive_collapsed,
+            s.room_section_space_unjoined_collapsed,
         };
         for (int sec = 0; sec < views::RoomListView::kNumSections; ++sec)
             app->room_list_view()->set_section_collapsed(sec, init[sec]);
@@ -882,7 +883,9 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         case views::RoomListView::kSecSpaces:
             s.room_section_spaces_collapsed    = collapsed; break;
         case views::RoomListView::kSecInactive:
-            s.room_section_inactive_collapsed  = collapsed; break;
+            s.room_section_inactive_collapsed       = collapsed; break;
+        case views::RoomListView::kSecSpaceUnjoined:
+            s.room_section_space_unjoined_collapsed = collapsed; break;
         default: break;
         }
         s.save_to_disk(tesseract::config_dir());
