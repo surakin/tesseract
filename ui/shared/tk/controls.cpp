@@ -398,6 +398,13 @@ void CheckButton::set_enabled(bool enabled)
     enabled_ = enabled;
 }
 
+void CheckButton::set_font_role(FontRole role)
+{
+    font_role_     = role;
+    label_layout_.reset();
+    cached_max_w_  = -2.0f;
+}
+
 Size CheckButton::measure(LayoutCtx& ctx, Size constraints)
 {
     float avail_w = constraints.w > 0
@@ -409,7 +416,7 @@ Size CheckButton::measure(LayoutCtx& ctx, Size constraints)
     if (!label_layout_ || cached_max_w_ != avail_w)
     {
         TextStyle st{};
-        st.role      = FontRole::Body;
+        st.role      = font_role_;
         st.halign    = TextHAlign::Leading;
         st.valign    = TextVAlign::Top;
         st.trim      = TextTrim::Ellipsis;
@@ -477,7 +484,7 @@ void CheckButton::paint(PaintCtx& ctx)
     {
         float avail_w = std::max(0.0f, bounds_.w - kCbBoxSize - kCbGap);
         TextStyle st{};
-        st.role      = FontRole::Body;
+        st.role      = font_role_;
         st.halign    = TextHAlign::Leading;
         st.valign    = TextVAlign::Top;
         st.trim      = TextTrim::Ellipsis;
