@@ -90,6 +90,7 @@ add_executable(tesseract_tests
     cpp/test_tk_thread_view.cpp
     cpp/test_event_handler_bridge.cpp
     cpp/test_tk_room_header.cpp
+    cpp/test_tk_room_search_bar.cpp
     cpp/test_code_highlight.cpp
     cpp/test_tk_room_view.cpp
     cpp/test_tk_room_view_thread_callbacks.cpp

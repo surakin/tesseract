@@ -124,6 +124,8 @@ set(_tk_sources
     views/QuickSwitcher.cpp
     views/MessageSearchView.h
     views/MessageSearchView.cpp
+    views/RoomSearchBar.h
+    views/RoomSearchBar.cpp
     views/ShortcodeEngine.h
     views/ShortcodeEngine.cpp
     views/SlashCommandEngine.h
