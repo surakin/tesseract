@@ -55,8 +55,9 @@ TEST_CASE("markdown: inline emphasis")
     CHECK(contains(markdown_to_html("**b**").formatted_body,
                    "<strong>b</strong>"));
     CHECK(contains(markdown_to_html("*i*").formatted_body, "<em>i</em>"));
+    // pulldown-cmark (CommonMark) nests *** as <em><strong> (outermost first).
     CHECK(contains(markdown_to_html("***bi***").formatted_body,
-                   "<strong><em>bi</em></strong>"));
+                   "<em><strong>bi</strong></em>"));
     CHECK(contains(markdown_to_html("~~s~~").formatted_body, "<del>s</del>"));
     auto code = markdown_to_html("`x<y`").formatted_body;
     CHECK(contains(code, "<code>x&lt;y</code>")); // escaped inside code
@@ -94,12 +95,22 @@ TEST_CASE("markdown: HTML is escaped (XSS guard)")
 
 TEST_CASE("markdown: blockquote / lists")
 {
-    CHECK(contains(markdown_to_html("> quoted").formatted_body,
-                   "<blockquote>quoted</blockquote>"));
+    // pulldown-cmark wraps blockquote content in <p> per CommonMark spec.
+    auto bq = markdown_to_html("> quoted").formatted_body;
+    CHECK(contains(bq, "<blockquote>"));
+    CHECK(contains(bq, "<p>quoted</p>"));
+    CHECK(contains(bq, "</blockquote>"));
+    // pulldown-cmark emits newlines around list items.
     auto ul = markdown_to_html("- one\n- two").formatted_body;
-    CHECK(contains(ul, "<ul><li>one</li><li>two</li></ul>"));
+    CHECK(contains(ul, "<ul>"));
+    CHECK(contains(ul, "<li>one</li>"));
+    CHECK(contains(ul, "<li>two</li>"));
+    CHECK(contains(ul, "</ul>"));
     auto ol = markdown_to_html("1. a\n2. b").formatted_body;
-    CHECK(contains(ol, "<ol><li>a</li><li>b</li></ol>"));
+    CHECK(contains(ol, "<ol>"));
+    CHECK(contains(ol, "<li>a</li>"));
+    CHECK(contains(ol, "<li>b</li>"));
+    CHECK(contains(ol, "</ol>"));
 }
 
 TEST_CASE("markdown: fenced code block escapes content")

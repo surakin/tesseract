@@ -904,6 +904,10 @@ public:
             {
                 t = "<b>" + t + "</b>";
             }
+            if (sp.semibold)
+            {
+                t = "<span weight=\"600\">" + t + "</span>";
+            }
             if (!sp.url.empty())
             {
                 // Mention pills keep their hit-test range but render without the

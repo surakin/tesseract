@@ -473,6 +473,7 @@ struct FmtState
     std::string spoiler_reason;
     bool spoiler = false;
     bool bold = false;
+    bool semibold = false;
     bool italic = false;
     bool code = false;
     bool strikethrough = false;
@@ -623,7 +624,8 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             tk::TextSpan& prev = spans.back();
             if (prev.url == s.url && prev.spoiler == s.spoiler &&
                 prev.spoiler_reason == s.spoiler_reason &&
-                prev.bold == s.bold && prev.italic == s.italic &&
+                prev.bold == s.bold && prev.semibold == s.semibold &&
+                prev.italic == s.italic &&
                 prev.code == s.code && prev.strikethrough == s.strikethrough &&
                 prev.is_mention == s.is_mention)
             {
@@ -638,6 +640,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         sp.spoiler = s.spoiler;
         sp.spoiler_reason = s.spoiler_reason;
         sp.bold = s.bold;
+        sp.semibold = s.semibold;
         sp.italic = s.italic;
         sp.code = s.code;
         sp.strikethrough = s.strikethrough;
@@ -1082,6 +1085,580 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text)
         spans.push_back(std::move(s));
     }
     return spans;
+}
+
+// ── Block-level parser ───────────────────────────────────────────────────────
+//
+// Parses a Matrix HTML formatted_body into a vector of BodyBlocks.  Each
+// block-level element (heading, list item, blockquote, table row, paragraph)
+// becomes its own BodyBlock; inline formatting within each block works
+// identically to html_to_spans().
+
+std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
+{
+    if (html.empty())
+        return {};
+
+    std::vector<BodyBlock> blocks;
+
+    // ── Block-context stack ──────────────────────────────────────────────────
+    // Tracks open <ul>, <ol>, <blockquote> so nesting depth and list counters
+    // are maintained as we descend into nested structures.
+    struct BlockCtx
+    {
+        enum Kind { BQ, UL, OL };
+        Kind kind;
+        int  level;    // 1-based nesting depth
+        int  counter;  // next item number for OL; unused for BQ/UL
+    };
+    std::vector<BlockCtx> bctx;
+
+    bool in_thead = false; // inside <thead>
+
+    // Current block being assembled.
+    BodyBlock cur;
+    cur.kind  = BodyBlock::Kind::Paragraph;
+    cur.level = 0;
+    cur.index = 0;
+
+    // ── Inline formatting stack ──────────────────────────────────────────────
+    // Mirrors html_to_spans() exactly so inline formatting works per-block.
+    constexpr std::size_t kMaxTagDepth = 64;
+    std::vector<FmtState> stack;
+    stack.push_back(FmtState{});
+    std::size_t dropped_opens = 0;
+
+    std::string cur_text;
+
+    // flush() — emit accumulated text as a span into cur.spans.
+    auto flush = [&]()
+    {
+        if (cur_text.empty())
+            return;
+        const FmtState& s = stack.back();
+        if (!cur.spans.empty())
+        {
+            tk::TextSpan& prev = cur.spans.back();
+            if (prev.url == s.url && prev.spoiler == s.spoiler &&
+                prev.spoiler_reason == s.spoiler_reason &&
+                prev.bold == s.bold && prev.semibold == s.semibold &&
+                prev.italic == s.italic &&
+                prev.code == s.code &&
+                prev.strikethrough == s.strikethrough &&
+                prev.is_mention == s.is_mention)
+            {
+                prev.text += cur_text;
+                cur_text.clear();
+                return;
+            }
+        }
+        tk::TextSpan sp;
+        sp.text          = cur_text;
+        sp.url           = s.url;
+        sp.spoiler       = s.spoiler;
+        sp.spoiler_reason = s.spoiler_reason;
+        sp.bold          = s.bold;
+        sp.semibold      = s.semibold;
+        sp.italic        = s.italic;
+        sp.code          = s.code;
+        sp.strikethrough = s.strikethrough;
+        if (s.is_mention)
+        {
+            sp.is_mention    = true;
+            sp.has_color     = true;
+            sp.color         = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
+                                    : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+            sp.has_background = true;
+            sp.background    = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
+                                    : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+        }
+        cur.spans.push_back(std::move(sp));
+        cur_text.clear();
+    };
+
+    // commit_block() — trim, @room-split, and push cur to blocks; reset cur.
+    auto commit_block = [&]()
+    {
+        flush();
+        if (!cur.spans.empty())
+        {
+            // Trim trailing newlines from the last span.
+            std::string& t = cur.spans.back().text;
+            while (!t.empty() && t.back() == '\n')
+                t.pop_back();
+            if (t.empty())
+                cur.spans.pop_back();
+        }
+        if (!cur.spans.empty())
+        {
+            cur.spans = split_room_mentions(std::move(cur.spans), dark);
+            blocks.push_back(std::move(cur));
+        }
+        cur        = BodyBlock{};
+        cur.kind   = BodyBlock::Kind::Paragraph;
+        cur.level  = 0;
+        cur.index  = 0;
+    };
+
+    // Code-block capture — same as html_to_spans().
+    bool        in_code_block = false;
+    std::string code_buf;
+    std::string code_lang;
+
+    auto emit_code_block = [&]()
+    {
+        // Flush any preceding inline content as its own block first.
+        commit_block();
+        // Build the code-block block.
+        std::vector<tesseract::HighlightSpan> hl;
+        if (!code_lang.empty())
+            hl = tesseract::highlight_code(code_buf, code_lang, dark);
+        if (hl.empty())
+        {
+            tk::TextSpan sp;
+            sp.text       = code_buf;
+            sp.code       = true;
+            sp.code_block = true;
+            cur.spans.push_back(std::move(sp));
+        }
+        else
+        {
+            for (auto& h : hl)
+            {
+                tk::TextSpan sp;
+                sp.text      = std::move(h.text);
+                sp.code      = true;
+                sp.code_block = true;
+                sp.has_color  = true;
+                sp.color      = tk::Color{h.r, h.g, h.b, 255};
+                cur.spans.push_back(std::move(sp));
+            }
+        }
+        commit_block(); // push the code block
+        code_buf.clear();
+        code_lang.clear();
+    };
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    // Return the innermost list context or nullptr.
+    auto inner_list = [&]() -> BlockCtx*
+    {
+        for (int i = static_cast<int>(bctx.size()) - 1; i >= 0; --i)
+            if (bctx[i].kind == BlockCtx::UL || bctx[i].kind == BlockCtx::OL)
+                return &bctx[i];
+        return nullptr;
+    };
+
+    // Return current blockquote nesting depth (0 if not in any).
+    auto bq_depth = [&]() -> int
+    {
+        int d = 0;
+        for (const auto& c : bctx)
+            if (c.kind == BlockCtx::BQ) ++d;
+        return d;
+    };
+
+    // Return current list nesting depth (0 if not in any).
+    auto list_depth = [&]() -> int
+    {
+        int d = 0;
+        for (const auto& c : bctx)
+            if (c.kind == BlockCtx::UL || c.kind == BlockCtx::OL) ++d;
+        return d;
+    };
+
+    // True when inside a list item or blockquote (block container).
+    auto in_block_container = [&]() -> bool
+    {
+        return !bctx.empty();
+    };
+
+    // ── Main loop ─────────────────────────────────────────────────────────────
+
+    const char* p   = html.data();
+    const char* end = p + html.size();
+
+    // Suppress leading paragraph separator inside each block.
+    bool first_in_block = true;
+
+    while (p < end)
+    {
+        // ── Code-block capture ───────────────────────────────────────────────
+        if (in_code_block)
+        {
+            if (*p == '<')
+            {
+                Tag tag = parse_tag(p, end);
+                if (tag.closing && tag.name == "pre")
+                {
+                    emit_code_block();
+                    in_code_block  = false;
+                    first_in_block = true;
+                }
+                else if (!tag.closing && tag.name == "code" &&
+                         code_lang.empty())
+                {
+                    code_lang = tag.code_lang;
+                }
+                continue;
+            }
+            if (*p == '&')
+            {
+                decode_entity(p, end, code_buf);
+                continue;
+            }
+            code_buf += *p++;
+            continue;
+        }
+
+        if (*p != '<')
+        {
+            if (*p == '&')
+            {
+                decode_entity(p, end, cur_text);
+            }
+            else
+            {
+                const char c = *p++;
+                if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+                {
+                    if (cur_text.empty() || cur_text.back() != ' ')
+                        cur_text += ' ';
+                }
+                else
+                {
+                    cur_text += c;
+                }
+            }
+            continue;
+        }
+
+        // ── Tag dispatch ─────────────────────────────────────────────────────
+        Tag tag = parse_tag(p, end);
+        if (tag.name.empty())
+            continue;
+
+        // ── Block-level tags ─────────────────────────────────────────────────
+
+        // Headings.
+        if (tag.name.size() == 2 && tag.name[0] == 'h' &&
+            tag.name[1] >= '1' && tag.name[1] <= '6')
+        {
+            if (!tag.closing)
+            {
+                commit_block();
+                cur.kind  = BodyBlock::Kind::Heading;
+                cur.level = tag.name[1] - '0';
+                // Push semibold so all heading text is semibold.
+                FmtState ns = stack.back();
+                ns.semibold = true;
+                if (stack.size() < kMaxTagDepth)
+                    stack.push_back(ns);
+                else
+                    ++dropped_opens;
+                first_in_block = true;
+            }
+            else
+            {
+                commit_block();
+                if (dropped_opens > 0)
+                    --dropped_opens;
+                else if (stack.size() > 1)
+                    stack.pop_back();
+                cur.kind  = BodyBlock::Kind::Paragraph;
+                cur.level = 0;
+                first_in_block = true;
+            }
+            continue;
+        }
+
+        // Blockquote.
+        if (tag.name == "blockquote")
+        {
+            if (!tag.closing)
+            {
+                commit_block();
+                int depth = bq_depth() + 1;
+                bctx.push_back({BlockCtx::BQ, depth, 0});
+                cur.kind  = BodyBlock::Kind::Blockquote;
+                cur.level = depth;
+                first_in_block = true;
+            }
+            else
+            {
+                commit_block();
+                for (int i = static_cast<int>(bctx.size()) - 1; i >= 0; --i)
+                {
+                    if (bctx[i].kind == BlockCtx::BQ)
+                    {
+                        bctx.erase(bctx.begin() + i);
+                        break;
+                    }
+                }
+                // Restore block kind from remaining context.
+                if (bq_depth() > 0)
+                {
+                    cur.kind  = BodyBlock::Kind::Blockquote;
+                    cur.level = bq_depth();
+                }
+                else
+                {
+                    cur.kind  = BodyBlock::Kind::Paragraph;
+                    cur.level = 0;
+                }
+                first_in_block = true;
+            }
+            continue;
+        }
+
+        // Unordered list.
+        if (tag.name == "ul")
+        {
+            if (!tag.closing)
+            {
+                int depth = list_depth() + 1;
+                bctx.push_back({BlockCtx::UL, depth, 0});
+            }
+            else
+            {
+                for (int i = static_cast<int>(bctx.size()) - 1; i >= 0; --i)
+                {
+                    if (bctx[i].kind == BlockCtx::UL)
+                    {
+                        bctx.erase(bctx.begin() + i);
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Ordered list.
+        if (tag.name == "ol")
+        {
+            if (!tag.closing)
+            {
+                int depth = list_depth() + 1;
+                bctx.push_back({BlockCtx::OL, depth, 0});
+            }
+            else
+            {
+                for (int i = static_cast<int>(bctx.size()) - 1; i >= 0; --i)
+                {
+                    if (bctx[i].kind == BlockCtx::OL)
+                    {
+                        bctx.erase(bctx.begin() + i);
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        // List item.
+        if (tag.name == "li")
+        {
+            if (!tag.closing)
+            {
+                commit_block();
+                BlockCtx* lc = inner_list();
+                if (lc && lc->kind == BlockCtx::OL)
+                {
+                    cur.kind  = BodyBlock::Kind::OrderedItem;
+                    cur.index = ++lc->counter;
+                    cur.level = lc->level;
+                }
+                else
+                {
+                    cur.kind  = BodyBlock::Kind::UnorderedItem;
+                    cur.index = 0;
+                    cur.level = lc ? lc->level : 1;
+                }
+                first_in_block = true;
+            }
+            else
+            {
+                commit_block();
+                cur.kind  = BodyBlock::Kind::Paragraph;
+                cur.level = 0;
+                first_in_block = true;
+            }
+            continue;
+        }
+
+        // Table structure.
+        if (tag.name == "table" || tag.name == "tbody")
+            continue; // no action needed; tr/td drive the output
+
+        if (tag.name == "thead")
+        {
+            in_thead = !tag.closing;
+            continue;
+        }
+
+        if (tag.name == "tr")
+        {
+            if (!tag.closing)
+            {
+                commit_block();
+                cur.kind  = BodyBlock::Kind::TableRow;
+                cur.level = 0;
+                cur.index = in_thead ? 1 : 0;
+                first_in_block = true;
+            }
+            else
+            {
+                commit_block();
+                cur.kind  = BodyBlock::Kind::Paragraph;
+                cur.level = 0;
+                first_in_block = true;
+            }
+            continue;
+        }
+
+        if (tag.name == "td" || tag.name == "th")
+        {
+            if (!tag.closing)
+            {
+                // Insert a cell-separator span before all but the first cell.
+                flush();
+                if (!cur.spans.empty() ||
+                    !cur_text.empty())
+                {
+                    flush();
+                    if (!cur.spans.empty())
+                    {
+                        tk::TextSpan sep;
+                        sep.text = " \xe2\x94\x82 "; // " │ " (U+2502)
+                        cur.spans.push_back(std::move(sep));
+                    }
+                }
+                // Header cells are bold.
+                if (tag.name == "th")
+                {
+                    FmtState ns = stack.back();
+                    ns.bold = true;
+                    if (stack.size() < kMaxTagDepth)
+                        stack.push_back(ns);
+                    else
+                        ++dropped_opens;
+                }
+            }
+            else
+            {
+                flush();
+                if (tag.name == "th")
+                {
+                    if (dropped_opens > 0)
+                        --dropped_opens;
+                    else if (stack.size() > 1)
+                        stack.pop_back();
+                }
+            }
+            continue;
+        }
+
+        // ── Inline-level tags (same logic as html_to_spans()) ────────────────
+
+        if (!tag.closing && !tag.self_closing)
+        {
+            FmtState ns = stack.back();
+            if (tag.name == "b" || tag.name == "strong")
+                ns.bold = true;
+            else if (tag.name == "i" || tag.name == "em")
+                ns.italic = true;
+            else if (tag.name == "code")
+                ns.code = true;
+            else if (tag.name == "pre")
+            {
+                flush();
+                in_code_block = true;
+                code_buf.clear();
+                code_lang = tag.code_lang;
+                continue;
+            }
+            else if (tag.name == "del" || tag.name == "s" ||
+                     tag.name == "strike")
+                ns.strikethrough = true;
+            else if (tag.name == "a" && !tag.href.empty())
+            {
+                ns.url = tag.href;
+                if (is_matrix_to_user_link(tag.href))
+                    ns.is_mention = true;
+            }
+            else if (tag.name == "span" && tag.has_spoiler)
+            {
+                ns.spoiler        = true;
+                ns.spoiler_reason = tag.spoiler_reason;
+            }
+            else if (tag.name == "p")
+            {
+                if (in_block_container())
+                {
+                    // Inside a list item / blockquote: treat <p> as a line
+                    // separator within the block, not a new block.
+                    if (!first_in_block)
+                    {
+                        flush();
+                        cur_text += '\n';
+                    }
+                    first_in_block = false;
+                }
+                else
+                {
+                    // Top-level <p>: start a new paragraph block.
+                    commit_block();
+                    cur.kind = BodyBlock::Kind::Paragraph;
+                    first_in_block = true;
+                }
+                if (stack.size() < kMaxTagDepth)
+                    stack.push_back(ns);
+                else
+                    ++dropped_opens;
+                continue;
+            }
+            flush();
+            first_in_block = false;
+            if (stack.size() < kMaxTagDepth)
+                stack.push_back(ns);
+            else
+                ++dropped_opens;
+        }
+        else if (tag.self_closing || tag.name == "br")
+        {
+            flush();
+            cur_text += '\n';
+        }
+        else
+        {
+            // Closing tag.
+            if (tag.name == "p")
+            {
+                flush();
+                if (in_block_container())
+                    cur_text += '\n';
+                else
+                    cur_text += '\n'; // paragraph end newline
+                flush();
+            }
+            else
+            {
+                flush();
+            }
+            if (dropped_opens > 0)
+                --dropped_opens;
+            else if (stack.size() > 1)
+                stack.pop_back();
+        }
+    }
+
+    // Flush any open code block (missing </pre>).
+    if (in_code_block)
+        emit_code_block();
+
+    commit_block();
+    return blocks;
 }
 
 } // namespace tesseract::views

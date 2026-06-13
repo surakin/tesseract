@@ -32,6 +32,14 @@ pub fn parse_matrix_link(uri: &str) -> ffi::MatrixLinkResult {
     super::matrix_uri::parse_matrix_link(uri)
 }
 
+pub fn markdown_to_html(text: &str) -> ffi::MarkdownFfiResult {
+    super::markdown::markdown_to_html(text)
+}
+
+pub fn markdown_inline_to_html(text: &str) -> String {
+    super::markdown::markdown_inline_to_html(text)
+}
+
 #[cxx::bridge(namespace = "tesseract_ffi")]
 pub mod ffi {
     // -------------------------------------------------------------------------
@@ -595,6 +603,12 @@ pub mod ffi {
         event_id: String,
     }
 
+    /// Returned by `markdown_to_html`. `formatted_body` is empty when the
+    /// input contains no markdown syntax (caller should use the plain body).
+    struct MarkdownFfiResult {
+        formatted_body: String,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -991,6 +1005,18 @@ pub mod ffi {
         /// input.  Both `?via=` and `?action=join` query params are stripped.
         /// Percent-encoded path components are decoded.
         fn parse_matrix_link(uri: &str) -> MatrixLinkResult;
+
+        // ----- Markdown -----
+
+        /// Convert `text` to Matrix HTML using pulldown-cmark.  Returns an
+        /// empty `formatted_body` when no markdown syntax is detected so the
+        /// caller can send the plain-text body without a redundant HTML copy.
+        fn markdown_to_html(text: &str) -> MarkdownFfiResult;
+
+        /// Inline-only variant: always returns HTML (outer `<p>` stripped).
+        /// Even plain text is HTML-escaped, making it safe for use inside
+        /// other HTML elements such as `<span data-mx-spoiler>`.
+        fn markdown_inline_to_html(text: &str) -> String;
 
         // ----- Data directory -----
 

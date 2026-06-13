@@ -3,6 +3,8 @@
 #include "views/html_spans.h"
 
 using tesseract::views::autolink_plain_to_spans;
+using tesseract::views::BodyBlock;
+using tesseract::views::html_to_blocks;
 using tesseract::views::html_to_spans;
 
 namespace
@@ -553,4 +555,256 @@ TEST_CASE("malformed: unterminated <pre> code block is still emitted",
     // rather than silently dropping the captured text.
     auto s = html_to_spans("<pre>let x = 1;", false);
     CHECK(joined_text(s).find("let x = 1;") != std::string::npos);
+}
+
+// ── html_to_blocks ────────────────────────────────────────────────────────────
+//
+// Tests for the block-level parser that drives structured rendering of
+// headings, lists, blockquotes, and tables.
+
+namespace
+{
+// Concatenate the text of every span in a block.
+std::string joined_block_text(const BodyBlock& b)
+{
+    std::string out;
+    for (const auto& sp : b.spans)
+        out += sp.text;
+    return out;
+}
+
+// Find the first block of the given kind, or nullptr.
+const BodyBlock* find_block(const std::vector<BodyBlock>& blocks,
+                            BodyBlock::Kind                kind)
+{
+    for (const auto& b : blocks)
+        if (b.kind == kind)
+            return &b;
+    return nullptr;
+}
+} // namespace
+
+TEST_CASE("blocks: plain paragraph produces one Paragraph block",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("hello world", false);
+    REQUIRE(blocks.size() == 1);
+    CHECK(blocks[0].kind == BodyBlock::Kind::Paragraph);
+    CHECK(joined_block_text(blocks[0]) == "hello world");
+}
+
+TEST_CASE("blocks: empty HTML produces no blocks", "[html_spans][blocks]")
+{
+    CHECK(html_to_blocks("", false).empty());
+}
+
+TEST_CASE("blocks: h1 produces a Heading block with level 1",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<h1>Title</h1>", false);
+    const BodyBlock* h = find_block(blocks, BodyBlock::Kind::Heading);
+    REQUIRE(h != nullptr);
+    CHECK(h->level == 1);
+    CHECK(joined_block_text(*h) == "Title");
+}
+
+TEST_CASE("blocks: h1 through h6 produce correct levels",
+          "[html_spans][blocks]")
+{
+    for (int lv = 1; lv <= 6; ++lv)
+    {
+        std::string html =
+            "<h" + std::to_string(lv) + ">H</h" + std::to_string(lv) + ">";
+        auto blocks = html_to_blocks(html, false);
+        const BodyBlock* h = find_block(blocks, BodyBlock::Kind::Heading);
+        REQUIRE(h != nullptr);
+        CHECK(h->level == lv);
+    }
+}
+
+TEST_CASE("blocks: heading spans are semibold", "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<h2>Semibold heading</h2>", false);
+    const BodyBlock* h = find_block(blocks, BodyBlock::Kind::Heading);
+    REQUIRE(h != nullptr);
+    REQUIRE_FALSE(h->spans.empty());
+    for (const auto& sp : h->spans)
+        if (!sp.text.empty())
+            CHECK(sp.semibold);
+}
+
+TEST_CASE("blocks: heading followed by paragraph produces two blocks",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<h1>Title</h1><p>body</p>", false);
+    bool has_heading = false, has_para = false;
+    for (const auto& b : blocks)
+    {
+        if (b.kind == BodyBlock::Kind::Heading)   has_heading = true;
+        if (b.kind == BodyBlock::Kind::Paragraph) has_para    = true;
+    }
+    CHECK(has_heading);
+    CHECK(has_para);
+}
+
+TEST_CASE("blocks: unordered list produces UnorderedItem blocks",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<ul><li>one</li><li>two</li></ul>", false);
+    int count = 0;
+    for (const auto& b : blocks)
+        if (b.kind == BodyBlock::Kind::UnorderedItem)
+            ++count;
+    REQUIRE(count == 2);
+    // Text of each item is preserved.
+    bool saw_one = false, saw_two = false;
+    for (const auto& b : blocks)
+    {
+        if (b.kind != BodyBlock::Kind::UnorderedItem) continue;
+        std::string t = joined_block_text(b);
+        if (t.find("one") != std::string::npos) saw_one = true;
+        if (t.find("two") != std::string::npos) saw_two = true;
+    }
+    CHECK(saw_one);
+    CHECK(saw_two);
+}
+
+TEST_CASE("blocks: ordered list produces OrderedItem blocks with 1-based indices",
+          "[html_spans][blocks]")
+{
+    auto blocks =
+        html_to_blocks("<ol><li>first</li><li>second</li><li>third</li></ol>",
+                       false);
+    int idx = 1;
+    for (const auto& b : blocks)
+    {
+        if (b.kind != BodyBlock::Kind::OrderedItem) continue;
+        CHECK(b.index == idx++);
+    }
+    CHECK(idx == 4); // consumed all 3 items
+}
+
+TEST_CASE("blocks: list items carry the nesting level", "[html_spans][blocks]")
+{
+    // Top-level items are level 1; nested items are level 2.
+    auto blocks = html_to_blocks(
+        "<ul><li>outer<ul><li>inner</li></ul></li></ul>", false);
+    int depth1 = 0, depth2 = 0;
+    for (const auto& b : blocks)
+    {
+        if (b.kind != BodyBlock::Kind::UnorderedItem) continue;
+        if (b.level == 1) ++depth1;
+        if (b.level == 2) ++depth2;
+    }
+    CHECK(depth1 >= 1);
+    CHECK(depth2 >= 1);
+}
+
+TEST_CASE("blocks: blockquote produces a Blockquote block",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<blockquote>quoted text</blockquote>", false);
+    const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
+    REQUIRE(bq != nullptr);
+    CHECK(joined_block_text(*bq).find("quoted") != std::string::npos);
+}
+
+TEST_CASE("blocks: blockquote level is 1 for a top-level quote",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<blockquote>q</blockquote>", false);
+    const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
+    REQUIRE(bq != nullptr);
+    CHECK(bq->level == 1);
+}
+
+TEST_CASE("blocks: nested blockquote produces level-2 block",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<blockquote>outer<blockquote>inner</blockquote></blockquote>", false);
+    const BodyBlock* inner = nullptr;
+    for (const auto& b : blocks)
+        if (b.kind == BodyBlock::Kind::Blockquote && b.level == 2)
+            inner = &b;
+    REQUIRE(inner != nullptr);
+    CHECK(joined_block_text(*inner).find("inner") != std::string::npos);
+}
+
+TEST_CASE("blocks: blockquote with inner <p> (pulldown-cmark output) works",
+          "[html_spans][blocks]")
+{
+    // pulldown-cmark wraps blockquote body in <p>…</p>.
+    auto blocks =
+        html_to_blocks("<blockquote>\n<p>quoted</p>\n</blockquote>", false);
+    const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
+    REQUIRE(bq != nullptr);
+    CHECK(joined_block_text(*bq).find("quoted") != std::string::npos);
+}
+
+TEST_CASE("blocks: inline formatting within list items is preserved",
+          "[html_spans][blocks]")
+{
+    auto blocks =
+        html_to_blocks("<ul><li><b>bold</b> text</li></ul>", false);
+    const BodyBlock* item = find_block(blocks, BodyBlock::Kind::UnorderedItem);
+    REQUIRE(item != nullptr);
+    bool has_bold = false;
+    for (const auto& sp : item->spans)
+        if (sp.bold) has_bold = true;
+    CHECK(has_bold);
+}
+
+TEST_CASE("blocks: inline formatting within blockquote is preserved",
+          "[html_spans][blocks]")
+{
+    auto blocks =
+        html_to_blocks("<blockquote><em>italic</em></blockquote>", false);
+    const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
+    REQUIRE(bq != nullptr);
+    bool has_italic = false;
+    for (const auto& sp : bq->spans)
+        if (sp.italic) has_italic = true;
+    CHECK(has_italic);
+}
+
+TEST_CASE("blocks: table row produces a TableRow block", "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><tr><td>A</td><td>B</td></tr></table>", false);
+    const BodyBlock* row = find_block(blocks, BodyBlock::Kind::TableRow);
+    REQUIRE(row != nullptr);
+    std::string text = joined_block_text(*row);
+    CHECK(text.find('A') != std::string::npos);
+    CHECK(text.find('B') != std::string::npos);
+    // Cells must be separated by '│'.
+    CHECK(text.find("\xe2\x94\x82") != std::string::npos); // U+2502 BOX DRAWINGS LIGHT VERTICAL
+}
+
+TEST_CASE("blocks: table header row has index=1 and bold cells",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<table><thead><tr><th>Name</th><th>Age</th></tr></thead></table>",
+        false);
+    const BodyBlock* row = find_block(blocks, BodyBlock::Kind::TableRow);
+    REQUIRE(row != nullptr);
+    CHECK(row->index == 1); // header row
+    bool has_bold = false;
+    for (const auto& sp : row->spans)
+        if (sp.bold) has_bold = true;
+    CHECK(has_bold);
+}
+
+TEST_CASE("blocks: link within a list item survives as a hyperlink span",
+          "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<ul><li><a href=\"https://example.org\">link</a></li></ul>", false);
+    const BodyBlock* item = find_block(blocks, BodyBlock::Kind::UnorderedItem);
+    REQUIRE(item != nullptr);
+    bool has_url = false;
+    for (const auto& sp : item->spans)
+        if (!sp.url.empty()) has_url = true;
+    CHECK(has_url);
 }

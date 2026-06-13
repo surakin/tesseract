@@ -33,9 +33,27 @@
 #include <vector>
 
 #include "tk/canvas.h"
+#include "views/html_spans.h"
 
 namespace tesseract::views
 {
+
+// One block-level section within a multi-section body layout.
+// Non-empty when html_to_blocks() produced block structure (headings, lists,
+// blockquotes, table rows).  x_offset / y_offset are set at build time;
+// origin is stamped at paint time for subsequent hit-testing.
+struct SectionLayout
+{
+    BodyBlock::Kind kind  = BodyBlock::Kind::Paragraph;
+    int             level = 0;   // heading: 1-6; blockquote/list: nesting depth
+    int             index = 0;   // ordered list: 1-based item number; table: 0=body,1=header
+    std::shared_ptr<tk::TextLayout> layout;
+    std::vector<tk::TextSpan>       spans;   // for background pass
+    float x_offset = 0.0f;  // indentation from body column x
+    float y_offset = 0.0f;  // cumulative y from body top (build time)
+    float height   = 0.0f;
+    tk::Point origin{};     // world-space draw origin (paint time)
+};
 
 // A cached, shaped body layout for one message, keyed by event_id.
 struct LinkLayout
@@ -45,6 +63,9 @@ struct LinkLayout
     std::string plain;               // concatenated span text for clipboard
     std::vector<tk::TextSpan> spans; // rich spans for background drawing
                                      // (empty => plain build_text path)
+    // Non-empty when block structure was detected (headings, lists, etc.).
+    // When sections is populated, layout/spans/origin above are unused.
+    std::vector<SectionLayout> sections;
     // Validity key (only meaningful when `keyed`).
     float key_w = -1.0f;
     bool key_dark = false;
