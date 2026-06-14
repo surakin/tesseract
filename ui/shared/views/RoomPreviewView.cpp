@@ -1,9 +1,9 @@
 #include "RoomPreviewView.h"
 #include "media_utils.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
-#include <cctype>
 #include <string>
 
 namespace tesseract::views
@@ -14,12 +14,12 @@ namespace tesseract::views
 RoomPreviewView::RoomPreviewView()
 {
     auto join = std::make_unique<tk::Button>(
-        "Join", std::function<void()>{}, tk::Button::Variant::Primary);
+        tk::tr("Join"), std::function<void()>{}, tk::Button::Variant::Primary);
     join->set_on_click([this]() { fire_join_(); });
     join_btn_ = add_child(std::move(join));
 
     auto dismiss = std::make_unique<tk::Button>(
-        "Dismiss", std::function<void()>{}, tk::Button::Variant::Subtle);
+        tk::tr("Dismiss"), std::function<void()>{}, tk::Button::Variant::Subtle);
     dismiss->set_on_click([this]() { if (on_dismiss) on_dismiss(); });
     dismiss_btn_ = add_child(std::move(dismiss));
 
@@ -36,7 +36,7 @@ void RoomPreviewView::set_summary(const tesseract::RoomSummary& s)
     if (join_btn_)
     {
         join_btn_->set_enabled(s.join_rule != "ban");
-        join_btn_->set_label("Join");
+        join_btn_->set_label(tk::tr("Join"));
     }
     set_visible(true);
 }
@@ -77,12 +77,12 @@ std::string RoomPreviewView::join_rule_label_() const
 {
     if (!summary_) return {};
     const auto& jr = summary_->join_rule;
-    if (jr == "public")           return "Public";
-    if (jr == "knock")            return "Knock to join";
-    if (jr == "invite")           return "Invite-only";
-    if (jr == "restricted")       return "Restricted";
-    if (jr == "knock_restricted") return "Knock (restricted)";
-    return "Private";
+    if (jr == "public")           return tk::tr("Public");
+    if (jr == "knock")            return tk::tr("Knock to join");
+    if (jr == "invite")           return tk::tr("Invite-only");
+    if (jr == "restricted")       return tk::tr("Restricted");
+    if (jr == "knock_restricted") return tk::tr("Knock (restricted)");
+    return tk::tr("Private");
 }
 
 void RoomPreviewView::reset_layouts_()
@@ -153,9 +153,9 @@ void RoomPreviewView::paint(tk::PaintCtx& ctx)
         meta_style.role      = tk::FontRole::SidebarPreview;
         meta_style.trim      = tk::TextTrim::Ellipsis;
         meta_style.max_width = kContentW;
-        const std::string meta =
-            std::to_string(s.num_joined_members) + " members \xc2\xb7 " +
-            join_rule_label_();
+        const std::string meta = tk::trf(
+            tk::tr("{0} members \xc2\xb7 {1}"),
+            {std::to_string(s.num_joined_members), join_rule_label_()});
         meta_layout_ = ctx.factory.build_text(meta, meta_style);
 
         if (!s.canonical_alias.empty())

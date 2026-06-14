@@ -1,6 +1,7 @@
 #include "UserProfilePanel.h"
 #include "media_utils.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 namespace tesseract::views
@@ -18,13 +19,13 @@ namespace {
 UserProfilePanel::UserProfilePanel()
 {
     close_btn_ = add_child(
-        std::make_unique<tk::Button>("\xC3\x97", std::function<void()>{},
+        std::make_unique<tk::Button>(tk::tr("\xC3\x97"), std::function<void()>{},
                                      tk::Button::Variant::Icon));
     dm_btn_ = add_child(
-        std::make_unique<tk::Button>("Message", std::function<void()>{},
+        std::make_unique<tk::Button>(tk::tr("Message"), std::function<void()>{},
                                      tk::Button::Variant::Primary));
     ignore_btn_ = add_child(
-        std::make_unique<tk::Button>("Ignore", std::function<void()>{},
+        std::make_unique<tk::Button>(tk::tr("Ignore"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
     close_btn_->set_on_click([this]() { if (on_close) on_close(); });
@@ -90,15 +91,15 @@ void UserProfilePanel::set_dm_button_state(DmButtonState state)
     switch (state)
     {
     case DmButtonState::Normal:
-        dm_btn_->set_label("Message");
+        dm_btn_->set_label(tk::tr("Message"));
         dm_btn_->set_enabled(true);
         break;
     case DmButtonState::HasDM:
-        dm_btn_->set_label("Open DM");
+        dm_btn_->set_label(tk::tr("Open DM"));
         dm_btn_->set_enabled(true);
         break;
     case DmButtonState::Sending:
-        dm_btn_->set_label("Sending\xe2\x80\xa6"); // "Sending…"
+        dm_btn_->set_label(tk::tr("Sending\xe2\x80\xa6")); // "Sending…"
         dm_btn_->set_enabled(false);
         break;
     }
@@ -283,15 +284,15 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     const float ext_max_val_w = kCardW - kPadX * 2.0f - kExtLabelW - kExtFieldGap;
 
     struct ExtRow {
-        const char*                             label;
+        std::string                             label;
         const std::string&                      value;
         std::unique_ptr<tk::TextLayout>&        label_layout;
         std::unique_ptr<tk::TextLayout>&        value_layout;
     };
     ExtRow ext_rows[] = {
-        { "Pronouns", ext_profile_.pronouns,  pronouns_label_layout_, pronouns_value_layout_ },
-        { "Timezone", ext_profile_.tz,        tz_label_layout_,       tz_value_layout_       },
-        { "Bio",      ext_profile_.biography, bio_label_layout_,      bio_value_layout_      },
+        { tk::tr("Pronouns"), ext_profile_.pronouns,  pronouns_label_layout_, pronouns_value_layout_ },
+        { tk::tr("Timezone"), ext_profile_.tz,        tz_label_layout_,       tz_value_layout_       },
+        { tk::tr("Bio"),      ext_profile_.biography, bio_label_layout_,      bio_value_layout_      },
     };
 
     float ext_y = uid_y + kUidH + kPadY + kExtFieldPadTop;

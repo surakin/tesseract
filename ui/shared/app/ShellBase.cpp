@@ -6,6 +6,7 @@
 #include "app/media_preview_policy.h"
 #include "tk/blurhash.h"
 #include "tk/host.h"
+#include "tk/i18n.h"
 #include "tk/text_util.h"
 #include "tk/theme.h"
 #include "views/EncryptionSetupOverlay.h"
@@ -3088,20 +3089,20 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         // the same room and yank the timeline to a stale event.
         if (kind == RoomActionKind::Join)
             pending_event_scroll_after_join_.erase(room_id);
-        const char* verb = "complete room action";
+        std::string verb = tk::tr("complete room action");
         switch (kind)
         {
         case RoomActionKind::Accept:
-            verb = "accept invite";
+            verb = tk::tr("accept invite");
             break;
         case RoomActionKind::Join:
-            verb = "join room";
+            verb = tk::tr("join room");
             break;
         case RoomActionKind::Leave:
-            verb = "leave room";
+            verb = tk::tr("leave room");
             break;
         }
-        std::string status = std::string("Couldn't ") + verb;
+        std::string status = tk::trf(tk::tr("Couldn't {0}"), {verb});
         if (!message.empty())
             status += ": " + message;
         show_status_message_(std::move(status));
@@ -3760,7 +3761,7 @@ void ShellBase::handle_date_jump_(const std::string& room_id,
                     [this, err]
                     {
                         show_status_message_(
-                            "Jump to date failed: " + err, 4000);
+                            tk::trf(tk::tr("Jump to date failed: {0}"), {err}), 4000);
                     });
                 return;
             }
@@ -4384,7 +4385,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     out.ok = static_cast<bool>(res);
     if (!res)
     {
-        show_status_message_("Sign out failed: " + res.message);
+        show_status_message_(tk::trf(tk::tr("Sign out failed: {0}"), {res.message}));
     }
 
     // stop_sync BEFORE remove_account (Phase-1 lifetime ordering: in-flight
@@ -6669,7 +6670,7 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                 {
                     if (!ok)
                     {
-                        show_status_message_("Subscribe failed: " + msg);
+                        show_status_message_(tk::trf(tk::tr("Subscribe failed: {0}"), {msg}));
                         // No timeline reset will arrive, so leave the loading
                         // state — otherwise begin_switch_loading's cleared view
                         // hangs on the spinner forever.
@@ -7152,7 +7153,7 @@ void ShellBase::handle_sync_error_impl_(std::string context,
 
     if (context == "sync_reconnect")
     {
-        show_status_message_("Sync error: reconnecting\xe2\x80\xa6");
+        show_status_message_(tk::tr("Sync error: reconnecting\xe2\x80\xa6"));
         if (affected && affected->client)
         {
             affected->client->stop_sync();
@@ -7169,7 +7170,7 @@ void ShellBase::handle_sync_error_impl_(std::string context,
             if (auto saved =
                     tesseract::SessionStore::load_account(affected->user_id))
             {
-                show_status_message_("Reconnecting session\xe2\x80\xa6");
+                show_status_message_(tk::tr("Reconnecting session\xe2\x80\xa6"));
                 if (affected->client->restore_session(*saved))
                 {
                     // Re-fetch identity onto the AccountSession. This is the
@@ -7188,7 +7189,7 @@ void ShellBase::handle_sync_error_impl_(std::string context,
                     }
                     affected->sync_started = true;
                     affected->client->start_sync(affected->bridge.get());
-                    show_status_message_("Reconnected");
+                    show_status_message_(tk::tr("Reconnected"));
                     return;
                 }
             }
@@ -7203,7 +7204,7 @@ void ShellBase::handle_sync_error_impl_(std::string context,
             }
             affected->sync_started = false;
         }
-        show_status_message_("Session expired; please log in again.");
+        show_status_message_(tk::tr("Session expired; please log in again."));
         request_relogin_(user_id);
         return;
     }

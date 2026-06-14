@@ -3368,7 +3368,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         // Native overlays.
         _roomTextArea = _mainAppSurface->host().make_text_area();
-        _roomTextArea->set_placeholder("Message…");
+        _roomTextArea->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
         _roomTextArea->set_mention_colors(
             _mainAppSurface->theme().palette.accent,
             _mainAppSurface->theme().palette.text_on_accent);
@@ -4171,7 +4171,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                    std::move(m));
                     });
                 if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                    shell->show_status_message_("File exceeds the upload limit");
+                    shell->show_status_message_(tk::tr("File exceeds the upload limit"));
             });
         _mainAppSurface->set_on_file_drop_error(
             [weakSelf](std::string reason)
@@ -4203,7 +4203,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         // Quick switcher (⌘K) search field.
         _quickSwitchField = _mainAppSurface->host().make_text_field();
         _quickSwitchField->set_placeholder(
-            "Jump to a room, or @user to start a chat…");
+            tk::tr("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
         _quickSwitchField->set_visible(false);
         _quickSwitchField->set_on_changed(
             [weakSelf](const std::string& q)
@@ -4257,7 +4257,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         // Message search (⌘⇧F) native field — mirrors the quick switcher.
         _messageSearchField = _mainAppSurface->host().make_text_field();
-        _messageSearchField->set_placeholder("Search your messages…");
+        _messageSearchField->set_placeholder(tk::tr("Search your messages\xe2\x80\xa6"));
         _messageSearchField->set_visible(false);
         _messageSearchField->set_on_changed(
             [weakSelf](const std::string& q)
@@ -4311,7 +4311,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         // Per-room "find in conversation" (⌘F) native field.
         _findInRoomField = _mainAppSurface->host().make_text_field();
-        _findInRoomField->set_placeholder("Find in conversation…");
+        _findInRoomField->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
         _findInRoomField->set_visible(false);
         _findInRoomField->set_on_changed(
             [weakSelf](const std::string& q)
@@ -6073,7 +6073,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     auto& host = _settingsSurface->host();
 
     _settingsPronounsField = host.make_text_field();
-    _settingsPronounsField->set_placeholder("Pronouns");
+    _settingsPronounsField->set_placeholder(tk::tr("Pronouns"));
     _settingsPronounsField->set_visible(false);
     _settingsPronounsField->set_on_submit(
         [ws]
@@ -6094,7 +6094,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         });
 
     _settingsTzField = host.make_text_field();
-    _settingsTzField->set_placeholder("Timezone (e.g. Europe/London)");
+    _settingsTzField->set_placeholder(tk::tr("Timezone (e.g. Europe/London)"));
     _settingsTzField->set_visible(false);
     _settingsTzField->set_on_submit(
         [ws]
@@ -6111,7 +6111,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         });
 
     _settingsBioField = host.make_text_field();
-    _settingsBioField->set_placeholder("Short biography");
+    _settingsBioField->set_placeholder(tk::tr("Short biography"));
     _settingsBioField->set_visible(false);
     _settingsBioField->set_on_submit(
         [ws]
@@ -7245,7 +7245,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _statusLabel.bordered = NO;
     _statusLabel.bezeled = NO;
     _statusLabel.drawsBackground = NO;
-    _statusLabel.stringValue = @"Not logged in";
+    _statusLabel.stringValue = TkTr("Not logged in");
     _statusLabel.font = [NSFont systemFontOfSize:11];
     _statusLabel.textColor = NSColor.secondaryLabelColor;
     _statusLabel.lineBreakMode = NSLineBreakByTruncatingTail;

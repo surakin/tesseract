@@ -1957,7 +1957,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                        std::string m)
                 { extract_drop_media_(gen, std::move(b), std::move(m)); });
             if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                show_status_message_("File exceeds the upload limit");
+                show_status_message_(tr("File exceeds the upload limit").toStdString());
         });
     mainAppSurface_->set_on_file_drop_error(
         [this](std::string reason)

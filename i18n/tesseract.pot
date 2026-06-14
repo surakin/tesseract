@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: tesseract\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-31 22:52+0200\n"
+"POT-Creation-Date: 2026-06-14 20:40+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -23,318 +23,390 @@ msgid "Show App"
 msgstr ""
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxQtTrayIcon.cpp:33
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3693
+#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxQtTrayIcon.cpp:101
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3961
 msgid "Quit"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:459
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:104
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:514
+#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:119
 msgid "Copy"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:689
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:737
 msgid "Send reply failed: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:710
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:758
 msgid "Edit failed: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:750
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:798
 msgid "Image decode failed"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:771
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:819
 msgid "Send image failed: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:802
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:850
 msgid "Send video failed: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:828
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:876
 msgid "Send audio failed: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:853
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:901
 msgid "Send file failed: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:957
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:54
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1005
+#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:69
 msgid "Save image"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:959
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:55
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1007
+#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:70
 msgid "Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1015
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1063
 msgid "Save file"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1017
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1065
 msgid "All files (*.*)"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1084
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1132
 msgid "Failed to set topic: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1142
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:68
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1190
+#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:83
 msgid "Save video"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1144
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:69
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1192
+#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:84
 msgid "Videos (*.mp4 *.webm *.mkv);;All files (*.*)"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1177
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:118
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1225
+#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:148
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:3371
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:2725
 msgid "Message…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1466
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1671
 msgid "Search rooms…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1632
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1693
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:4206
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:2575
+msgid "Jump to a room, or @user to start a chat…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1741
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:4260
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:2626
+msgid "Search your messages…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1792
+#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:408
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:4314
+#: /home/rayden/src/tesseract/ui/macos/src/RoomWindowController.mm:343
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:2677
+#: /home/rayden/src/tesseract/ui/windows/src/RoomWindow.cpp:501
+msgid "Find in conversation…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1960
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:4174
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:2543
+msgid "File exceeds the upload limit"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2002
 msgid "Already in Saved Stickers"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1633
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2003
 msgid "Add to Saved Stickers"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1750
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2132
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2241
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2120
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2610
 msgid "Not logged in"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2136
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2591
 msgid "Restoring sessions…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2161
-msgid "Account %1 expired: %2"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2264
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2473
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3656
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2657
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2741
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3925
 msgid "Connected"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2305
-msgid "Sign-in failed: no user id"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2316
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2716
 msgid "Already signed in as %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2341
-msgid "Sign-in failed: empty session"
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2734
+msgid "Sign-in failed: %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2370
-msgid "Sign-in failed: couldn't persist matrix store: %1"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2383
-msgid "Sign-in failed: couldn't persist session"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2399
-msgid "Sign-in failed at restore: %1"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2684
-msgid "Subscribe failed: %1"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2742
-msgid "Jump to Date"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2775
-msgid "Jump to date failed: %1"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3045
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3242
 msgid "Select image"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3046
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3243
 msgid "Images (*.png *.jpg *.jpeg *.gif *.webp)"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3618
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3628
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3886
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3896
 msgid "Syncing rooms…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3641
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3909
 msgid "Reconnecting…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3648
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3916
 msgid "Downloading encryption keys (%1)…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3684
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3952
 msgid "Add Account…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3685
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3953
 msgid "Settings…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3687
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3955
 msgid "Log Out %1"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3892
-msgid "Sync error: reconnecting…"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3920
-msgid "Reconnecting session…"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3932
-msgid "Reconnected"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3942
-msgid "Session expired; please log in again."
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3948
-msgid "Sync error: %1"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4159
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4393
 msgid "1 request in flight"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4160
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4394
 msgid "%1 requests in flight"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4350
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4397
+msgid ""
+"\n"
+"media: %1 loading · fetch: %2 queued · send: %3 queued"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4587
 msgid "Add Account"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4430
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4628
 msgid "Signed out"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4439
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4634
 msgid "Signed out of %1"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/SettingsWidget.cpp:366
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:6076
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:293
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:4081
+msgid "Pronouns"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/SettingsWidget.cpp:385
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:6097
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:4100
+msgid "Timezone (e.g. Europe/London)"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/SettingsWidget.cpp:399
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:6114
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:4114
+msgid "Short biography"
 msgstr ""
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/StickerPicker.cpp:53
 msgid "Search stickers"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:1687
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:2154
 #, c++-format
 msgid "Log Out {0}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:3092
+msgid "complete room action"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:3096
+msgid "accept invite"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:3099
+msgid "join room"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:3102
+msgid "leave room"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:3105
+#, c++-format
+msgid "Couldn't {0}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:3764
+#, c++-format
+msgid "Jump to date failed: {0}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:4388
+#, c++-format
+msgid "Sign out failed: {0}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:6673
+#, c++-format
+msgid "Subscribe failed: {0}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:7156
+msgid "Sync error: reconnecting…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:7173
+msgid "Reconnecting session…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:7192
+msgid "Reconnected"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:7207
+msgid "Session expired; please log in again."
 msgstr ""
 
 #: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:120
 msgid "Send"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1046
+#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1044
 msgid "Editing message"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1100
+#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1098
 #, c++-format
 msgid "Replying to {0}"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:54
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:55
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:80
 msgid "Public"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:58
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:59
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:842
 msgid "Knock"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:62
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:63
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:844
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:83
 msgid "Restricted"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:66
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:67
 msgid "Knock+Restricted"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:70
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:71
 msgid "Invite only"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:74
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:75
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:85
 msgid "Private"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:76
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:77
 msgid "Unknown"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:84
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:85
 msgid "Look up"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:95
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:96
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:17
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:39
 msgid "Join"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:113
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:70
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:114
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:71
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:170
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:184
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:200
 #: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:217
 msgid "Cancel"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:191
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:192
 msgid "Looking up room…"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:196
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:197
 msgid "Room not found."
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:303
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:304
 msgid "Join a Room"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:407
+#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:402
 #, c++-format
 msgid "{0} member"
 msgid_plural "{0} members"
 msgstr[0] ""
 msgstr[1] ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:41
+#: /home/rayden/src/tesseract/ui/shared/views/LocationMapPanner.cpp:103
+msgid "Loading map…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:42
 msgid "Sign in to Matrix"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:45
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:46
 msgid "We'll open your browser to complete sign-in."
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:49
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:50
 msgid "Homeserver or Matrix ID"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:65
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:66
 msgid "Sign in"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:89
+msgid "New here? Create an account"
 msgstr ""
 
 #: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:182
@@ -345,96 +417,254 @@ msgstr ""
 msgid "Could not reach this server"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:605
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:209
+msgid "matrix.org or @user:matrix.org"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:300
+msgid "Please enter a homeserver."
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:448
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:488
+#, c++-format
+msgid "Sign-in failed: {0}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:500
+msgid "Cancelling…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:583
+msgid "Connection Error"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:585
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1549
+msgid "Retry"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:586
+msgid "Sign In"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MainAppWidget.cpp:565
+msgid "No internet connection — reconnecting…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:650
 #: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp:71
 msgid "Today"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:617
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:662
 #: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp:83
 msgid "Yesterday"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1438
-msgid "Retry"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1701
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1825
 msgid "New messages"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1734
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1858
+#: /home/rayden/src/tesseract/ui/shared/views/RoomSearchBar.cpp:106
 msgid "Start of conversation"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:2089
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:2216
 msgid "Message deleted"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:3005
-msgid "Loading map…"
-msgstr ""
-
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6809
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6578
 msgid "Reacted with :"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6818
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6587
 msgid "Reacted by:"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6822
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6591
 msgid "Reacted with "
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:261
+#: /home/rayden/src/tesseract/ui/shared/views/MessageSearchView.cpp:128
+msgid "Unknown room"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageSearchView.cpp:348
+msgid "Type to search your messages"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageSearchView.cpp:349
+#: /home/rayden/src/tesseract/ui/shared/views/RoomSearchBar.cpp:110
+msgid "No matches"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageSearchView.cpp:350
+#: /home/rayden/src/tesseract/ui/shared/views/RoomSearchBar.cpp:102
+msgid "Searching…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:288
 #, c++-format
 msgid "Invitations ({0})"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:266
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:293
 #, c++-format
 msgid "Inactive ({0})"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:833
+msgid "Loading…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:837
+msgid "Fetching room details…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:841
+msgid "members"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:843
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:82
+msgid "Invite-only"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:22
+msgid "Dismiss"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:81
+msgid "Knock to join"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:84
+msgid "Knock (restricted)"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomPreviewView.cpp:157
+#, c++-format
+msgid "{0} members · {1}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomSearchBar.cpp:47
+msgid "Paginate"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomSearchBar.cpp:65
+msgid "Type to search"
 msgstr ""
 
 #: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:22
 msgid "← Back"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:141
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:150
 msgid "Account"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:142
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:151
 msgid "Sessions"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:143
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:152
 msgid "Appearance"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:144
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:153
 msgid "Notifications"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:145
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:154
 msgid "Media"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:146
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:155
 msgid "Privacy"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:147
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:156
 msgid "Server"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:148
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:157
 msgid "Language"
 msgstr ""
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:149
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:158
 msgid "About"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:167
+msgid "Log out?"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:168
+msgid "You will need to sign in again to access your messages."
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:169
+msgid "Log Out"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:179
+msgid "Clear all caches?"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:180
+msgid ""
+"Downloaded media, voice waveforms, and the local event cache will be "
+"deleted. Content reloads on demand; the event store rebuilds on next startup."
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:183
+msgid "Clear"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:194
+msgid "Reset your cryptographic identity?"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:195
+msgid ""
+"This creates a brand-new identity and replaces your key backup. Your other "
+"sessions and the people you chat with will need to verify you again. You'll "
+"set up a new recovery key right after."
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:199
+msgid "Reset"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:22
+msgid "×"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:25
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:94
+msgid "Message"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:28
+msgid "Ignore"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:98
+msgid "Open DM"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:102
+msgid "Sending…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:294
+msgid "Timezone"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/UserProfilePanel.cpp:295
+msgid "Bio"
 msgstr ""
 
 #: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:37

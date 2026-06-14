@@ -164,10 +164,10 @@ SettingsView::SettingsView()
     account_->on_logout = [this]
     {
         confirm_dialog_->open(
-            {.title         = "Log out?",
-             .body          = "You will need to sign in again to access your messages.",
-             .confirm_label = "Log Out",
-             .cancel_label  = "Cancel",
+            {.title         = tk::tr("Log out?"),
+             .body          = tk::tr("You will need to sign in again to access your messages."),
+             .confirm_label = tk::tr("Log Out"),
+             .cancel_label  = tk::tr("Cancel"),
              .destructive   = true},
             [this] { if (on_logout) on_logout(); });
     };
@@ -176,12 +176,12 @@ SettingsView::SettingsView()
     about_->on_clear_caches = [this]
     {
         confirm_dialog_->open(
-            {.title         = "Clear all caches?",
-             .body          = "Downloaded media, voice waveforms, and the local event "
+            {.title         = tk::tr("Clear all caches?"),
+             .body          = tk::tr("Downloaded media, voice waveforms, and the local event "
                               "cache will be deleted. Content reloads on demand; the "
-                              "event store rebuilds on next startup.",
-             .confirm_label = "Clear",
-             .cancel_label  = "Cancel",
+                              "event store rebuilds on next startup."),
+             .confirm_label = tk::tr("Clear"),
+             .cancel_label  = tk::tr("Cancel"),
              .destructive   = true},
             [this] { if (on_clear_caches) on_clear_caches(); });
     };
@@ -191,13 +191,13 @@ SettingsView::SettingsView()
     privacy_->on_reset_identity = [this]
     {
         confirm_dialog_->open(
-            {.title         = "Reset your cryptographic identity?",
-             .body          = "This creates a brand-new identity and replaces your "
+            {.title         = tk::tr("Reset your cryptographic identity?"),
+             .body          = tk::tr("This creates a brand-new identity and replaces your "
                               "key backup. Your other sessions and the people you "
                               "chat with will need to verify you again. You'll set up "
-                              "a new recovery key right after.",
-             .confirm_label = "Reset",
-             .cancel_label  = "Cancel",
+                              "a new recovery key right after."),
+             .confirm_label = tk::tr("Reset"),
+             .cancel_label  = tk::tr("Cancel"),
              .destructive   = true},
             [this] { if (on_reset_identity) on_reset_identity(); });
     };

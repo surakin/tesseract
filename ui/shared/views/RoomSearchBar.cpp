@@ -1,6 +1,7 @@
 #include "RoomSearchBar.h"
 
 #include "icons.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -43,7 +44,7 @@ RoomSearchBar::RoomSearchBar()
     down_btn_ = add_child(std::move(dn));
 
     // Paginate checkbox.
-    auto cb = std::make_unique<tk::CheckButton>("Paginate", false);
+    auto cb = std::make_unique<tk::CheckButton>(tk::tr("Paginate"), false);
     cb->set_font_role(tk::FontRole::Small);
     cb->on_change = [this](bool v) { if (on_paginate_toggled) on_paginate_toggled(v); };
     cb->set_visible(false);
@@ -61,7 +62,7 @@ void RoomSearchBar::open()
 {
     is_open_ = true;
     query_.clear();
-    count_text_ = "Type to search";
+    count_text_ = tk::tr("Type to search");
 
     if (count_label_) { count_label_->set_text(count_text_); count_label_->set_visible(true); }
     if (up_btn_)      up_btn_->set_visible(true);
@@ -98,15 +99,15 @@ void RoomSearchBar::set_match_status(int current, int total, bool searching,
 {
     if (searching)
     {
-        count_text_ = "Searching…";
+        count_text_ = tk::tr("Searching…");
     }
     else if (at_start && total == 0)
     {
-        count_text_ = "Start of conversation";
+        count_text_ = tk::tr("Start of conversation");
     }
     else if (total == 0)
     {
-        count_text_ = "No matches";
+        count_text_ = tk::tr("No matches");
     }
     else
     {

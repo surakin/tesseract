@@ -1191,7 +1191,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                        std::string m)
                 { extract_drop_media_(gen, std::move(b), std::move(m)); });
             if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                show_status_message_("File exceeds the upload limit");
+                show_status_message_(_("File exceeds the upload limit"));
         };
         main_app_surface_->set_on_file_drop(on_file_drop);
         main_app_surface_->set_on_file_drop_error(
@@ -2154,7 +2154,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         // Quick switcher (Ctrl+K) search field.
         quick_switch_field_ = main_app_surface_->host().make_text_field();
         quick_switch_field_->set_placeholder(
-            "Jump to a room, or @user to start a chat…");
+            _("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
         quick_switch_field_->set_visible(false);
         quick_switch_field_->set_on_changed(
             [this](const std::string& q)
@@ -2200,7 +2200,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Message search (Ctrl+Shift+F) native field — mirrors the switcher.
         message_search_field_ = main_app_surface_->host().make_text_field();
-        message_search_field_->set_placeholder("Search your messages…");
+        message_search_field_->set_placeholder(_("Search your messages\xe2\x80\xa6"));
         message_search_field_->set_visible(false);
         message_search_field_->set_on_changed(
             [this](const std::string& q)
@@ -2246,7 +2246,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Per-room "find in conversation" (Ctrl+F) native field.
         find_in_room_field_ = main_app_surface_->host().make_text_field();
-        find_in_room_field_->set_placeholder("Find in conversation…");
+        find_in_room_field_->set_placeholder(_("Find in conversation\xe2\x80\xa6"));
         find_in_room_field_->set_visible(false);
         find_in_room_field_->set_on_changed(
             [this](const std::string& q)

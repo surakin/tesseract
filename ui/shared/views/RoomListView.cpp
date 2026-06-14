@@ -830,18 +830,18 @@ private:
         // Name + members/join-rule on two lines, muted to signal unjoined.
         constexpr std::uint8_t kAlpha = 153; // ~60%
 
-        const std::string display = loading ? "Loading\xe2\x80\xa6" : s.name;
+        const std::string display = loading ? tk::tr("Loading\xe2\x80\xa6") : s.name;
         std::string meta;
         if (loading)
         {
-            meta = "Fetching room details\xe2\x80\xa6";
+            meta = tk::tr("Fetching room details\xe2\x80\xa6");
         }
         else
         {
-            meta = std::to_string(s.num_joined_members) + " members";
-            if (s.join_rule == "knock")            meta += " \xc2\xb7 Knock";
-            else if (s.join_rule == "invite")      meta += " \xc2\xb7 Invite-only";
-            else if (s.join_rule == "restricted")  meta += " \xc2\xb7 Restricted";
+            meta = std::to_string(s.num_joined_members) + " " + tk::tr("members");
+            if (s.join_rule == "knock")            meta += " \xc2\xb7 " + tk::tr("Knock");
+            else if (s.join_rule == "invite")      meta += " \xc2\xb7 " + tk::tr("Invite-only");
+            else if (s.join_rule == "restricted")  meta += " \xc2\xb7 " + tk::tr("Restricted");
         }
 
         auto& cache = room_cache_[s.room_id];

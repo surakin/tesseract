@@ -4,6 +4,7 @@
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "tk/host_macos.h"
+#include "tk/i18n.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/PopoutRoomWidget.h"
 #include "views/VideoViewerOverlay.h"
@@ -339,7 +340,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── In-room search native text field ─────────────────────────────────
     search_field_ = surface_->host().make_text_field();
-    search_field_->set_placeholder("Find in conversation\xe2\x80\xa6");
+    search_field_->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
     search_field_->set_visible(false);
     search_field_->set_on_changed(
         [this](const std::string& q)

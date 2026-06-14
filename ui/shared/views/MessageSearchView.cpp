@@ -1,5 +1,7 @@
 #include "MessageSearchView.h"
 
+#include "tk/i18n.h"
+
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -123,7 +125,7 @@ public:
         ns.trim = tk::TextTrim::Ellipsis;
         ns.max_width = std::max(0.0f, full_w - time_w);
         const std::string room =
-            hit.room_name.empty() ? std::string("Unknown room") : hit.room_name;
+            hit.room_name.empty() ? tk::tr("Unknown room") : hit.room_name;
         auto room_lo = ctx.factory.build_text(room, ns);
 
         const float pad_y = 8.0f;
@@ -343,9 +345,9 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
         es.role = tk::FontRole::Body;
         const std::string msg =
             query_.empty()
-                ? std::string("Type to search your messages")
-                : (have_searched_ ? std::string("No matches")
-                                  : std::string("Searching…"));
+                ? tk::tr("Type to search your messages")
+                : (have_searched_ ? tk::tr("No matches")
+                                  : tk::tr("Searching…"));
         auto empty_lo = ctx.factory.build_text(msg, es);
         if (empty_lo)
         {

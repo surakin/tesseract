@@ -86,7 +86,7 @@ void LoginView::rebuild_tree()
     sign_in_btn_    = card->add_child(std::move(sign_in));
 
     auto register_link = std::make_unique<tk::Button>(
-        "New here? Create an account", std::function<void()>{},
+        tk::tr("New here? Create an account"), std::function<void()>{},
         tk::Button::Variant::Subtle);
     register_link->set_min_size({0, kButtonHeight});
     register_link->set_on_click([this] { start_oauth_(true); });
@@ -206,7 +206,7 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
 void LoginView::init_with_field(std::unique_ptr<tk::NativeTextField> field)
 {
     hs_field_ = std::move(field);
-    hs_field_->set_placeholder("matrix.org or @user:matrix.org");
+    hs_field_->set_placeholder(tk::tr("matrix.org or @user:matrix.org"));
     hs_field_->set_text("matrix.org");
     hs_field_->set_on_submit([this] { sign_in_(); });
     hs_field_->set_on_changed(
@@ -297,7 +297,7 @@ void LoginView::start_oauth_(bool register_account)
     std::string hs_raw = tesseract::text::trim(hs_field_->text());
     if (hs_raw.empty())
     {
-        set_status("Please enter a homeserver.", tk::Color::rgb(0xB00020));
+        set_status(tk::tr("Please enter a homeserver."), tk::Color::rgb(0xB00020));
         relayout_();
         return;
     }
@@ -445,7 +445,7 @@ void LoginView::begin_completed_(bool ok, std::string url)
     join_worker_();
     if (!ok)
     {
-        set_status("Sign-in failed: " + url, tk::Color::rgb(0xB00020));
+        set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {url}), tk::Color::rgb(0xB00020));
         set_state(State::Form);
         if (hs_field_)
             hs_field_->set_enabled(true);
@@ -485,7 +485,7 @@ void LoginView::await_completed_(bool ok, std::string err)
             on_success_();
         return;
     }
-    set_status("Sign-in failed: " + err, tk::Color::rgb(0xB00020));
+    set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {err}), tk::Color::rgb(0xB00020));
     set_state(State::Form);
     if (hs_field_)
         hs_field_->set_enabled(true);
@@ -497,7 +497,7 @@ void LoginView::cancel_()
     cancelled_.store(true);
     if (client_)
         client_->cancel_oauth();
-    set_status("Cancelling\xe2\x80\xa6");
+    set_status(tk::tr("Cancelling\xe2\x80\xa6"));
     relayout_();
     join_worker_();
     set_status("");

@@ -7,6 +7,8 @@
 
 #include "views/PopoutRoomWidget.h"
 
+#include "tk/i18n.h"
+
 #include <tesseract/client.h>
 #include <tesseract/image_pack.h>
 #include <tesseract/settings.h>
@@ -496,7 +498,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
 
     // ── In-room search native text field ─────────────────────────────────
     search_field_ = surface_->host().make_text_field();
-    search_field_->set_placeholder("Find in conversation\xe2\x80\xa6");
+    search_field_->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
     search_field_->set_visible(false);
     search_field_->set_on_changed(
         [this](const std::string& q)

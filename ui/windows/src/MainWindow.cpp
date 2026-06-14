@@ -11,6 +11,7 @@
 #include "resource.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#include "tk/i18n.h"
 #include "tk/video_decode.h"
 
 #include <thread>
@@ -2539,7 +2540,7 @@ void MainWindow::on_create(HWND hwnd)
                            std::string m)
                     { extract_drop_media_(gen, std::move(b), std::move(m)); });
                 if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                    show_status_message_("File exceeds the upload limit");
+                    show_status_message_(tk::tr("File exceeds the upload limit"));
             });
         main_app_surface_->set_on_file_drop_error(
             [this](std::string reason)
@@ -2571,7 +2572,7 @@ void MainWindow::on_create(HWND hwnd)
         // Quick switcher (Ctrl+K) search field.
         quick_switch_field_ = main_app_surface_->host().make_text_field();
         quick_switch_field_->set_placeholder(
-            "Jump to a room, or @user to start a chat…");
+            tk::tr("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
         quick_switch_field_->set_visible(false);
         quick_switch_field_->set_on_changed(
             [this](const std::string& q)
@@ -2622,7 +2623,7 @@ void MainWindow::on_create(HWND hwnd)
 
         // Message search (Ctrl+Shift+F) native field — mirrors the switcher.
         message_search_field_ = main_app_surface_->host().make_text_field();
-        message_search_field_->set_placeholder("Search your messages…");
+        message_search_field_->set_placeholder(tk::tr("Search your messages\xe2\x80\xa6"));
         message_search_field_->set_visible(false);
         message_search_field_->set_on_changed(
             [this](const std::string& q)
@@ -2673,7 +2674,7 @@ void MainWindow::on_create(HWND hwnd)
 
         // Per-room "find in conversation" (Ctrl+F) native field.
         find_in_room_field_ = main_app_surface_->host().make_text_field();
-        find_in_room_field_->set_placeholder("Find in conversation…");
+        find_in_room_field_->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
         find_in_room_field_->set_visible(false);
         find_in_room_field_->set_on_changed(
             [this](const std::string& q)
@@ -2721,7 +2722,7 @@ void MainWindow::on_create(HWND hwnd)
         }
 
         room_text_area_ = main_app_surface_->host().make_text_area();
-        room_text_area_->set_placeholder("Message…");
+        room_text_area_->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
         // All four composer popups (gif > slash > shortcode > mention) are
         // driven through the shared ComposePopups dispatch; the controllers are
         // created just below (mention, then slash/shortcode) and in the GIF
@@ -4077,7 +4078,7 @@ void MainWindow::bind_settings_controller_()
     static constexpr char kKeyBio[]      = "gay.fomx.biography";
 
     settings_pronouns_field_ = settings_surface_->host().make_text_field();
-    settings_pronouns_field_->set_placeholder("Pronouns");
+    settings_pronouns_field_->set_placeholder(tk::tr("Pronouns"));
     settings_pronouns_field_->set_visible(false);
     settings_pronouns_field_->set_on_submit(
         [this]
@@ -4096,7 +4097,7 @@ void MainWindow::bind_settings_controller_()
         });
 
     settings_tz_field_ = settings_surface_->host().make_text_field();
-    settings_tz_field_->set_placeholder("Timezone (e.g. Europe/London)");
+    settings_tz_field_->set_placeholder(tk::tr("Timezone (e.g. Europe/London)"));
     settings_tz_field_->set_visible(false);
     settings_tz_field_->set_on_submit(
         [this]
@@ -4110,7 +4111,7 @@ void MainWindow::bind_settings_controller_()
         });
 
     settings_bio_field_ = settings_surface_->host().make_text_field();
-    settings_bio_field_->set_placeholder("Short biography");
+    settings_bio_field_->set_placeholder(tk::tr("Short biography"));
     settings_bio_field_->set_visible(false);
     settings_bio_field_->set_on_submit(
         [this]

@@ -9,6 +9,7 @@
 #include <QToolTip>
 
 #include "tk/theme.h"
+#include "tk/i18n.h"
 
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -362,7 +363,7 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
     static constexpr char kKeyBio[]      = "gay.fomx.biography";
 
     pronouns_field_ = surface_->host().make_text_field();
-    pronouns_field_->set_placeholder("Pronouns");
+    pronouns_field_->set_placeholder(tk::tr("Pronouns"));
     pronouns_field_->set_visible(false);
     pronouns_field_->set_on_submit(
         [this]
@@ -381,7 +382,7 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
         });
 
     tz_field_ = surface_->host().make_text_field();
-    tz_field_->set_placeholder("Timezone (e.g. Europe/London)");
+    tz_field_->set_placeholder(tk::tr("Timezone (e.g. Europe/London)"));
     tz_field_->set_visible(false);
     tz_field_->set_on_submit(
         [this]
@@ -395,7 +396,7 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
         });
 
     bio_field_ = surface_->host().make_text_field();
-    bio_field_->set_placeholder("Short biography");
+    bio_field_->set_placeholder(tk::tr("Short biography"));
     bio_field_->set_visible(false);
     bio_field_->set_on_submit(
         [this]
