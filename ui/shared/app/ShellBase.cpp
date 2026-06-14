@@ -767,6 +767,12 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     // Avatars for rooms in collapsed / off-screen sections are never fetched.
     app->room_list_view()->on_room_avatar_needed =
         [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+    app->room_list_view()->on_unjoined_room_avatar_needed =
+        [this](const tesseract::RoomSummary& s)
+        {
+            if (!s.avatar_url.empty())
+                ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
+        };
 
     // Quick switcher (Ctrl+K): data + activation are shared. The native search
     // field, the keyboard accelerator, and on_close stay per-shell.
@@ -2298,11 +2304,6 @@ void ShellBase::fetch_space_unjoined_summaries_(const std::string& space_id)
                 {
                     if (gen != unjoined_fetch_gen_) return;
                     unjoined_summaries_cache_[space_id] = std::move(summaries);
-                    for (const auto& s : unjoined_summaries_cache_[space_id])
-                    {
-                        if (!s.avatar_url.empty())
-                            ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
-                    }
                     on_space_unjoined_summaries_ready_ui_(space_id);
                 });
         });

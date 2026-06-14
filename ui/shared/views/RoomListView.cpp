@@ -805,9 +805,13 @@ private:
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const std::string& initials_src = s.name.empty() ? s.room_id : s.name;
-        const tk::Image* avatar = (owner_.avatar_provider_ && !s.avatar_url.empty())
-                                  ? owner_.avatar_provider_(s.avatar_url)
-                                  : nullptr;
+        const tk::Image* avatar = nullptr;
+        if (owner_.avatar_provider_ && !s.avatar_url.empty())
+        {
+            avatar = owner_.avatar_provider_(s.avatar_url);
+            if (!avatar && owner_.on_unjoined_room_avatar_needed)
+                owner_.on_unjoined_room_avatar_needed(s);
+        }
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
                     initials_src, pal.avatar_initials_bg, pal.avatar_initials_text);
 

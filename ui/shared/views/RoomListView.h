@@ -107,6 +107,9 @@ public:
     // avatars in collapsed or off-screen sections are never requested.
     std::function<void(const tesseract::RoomInfo& /*room*/)> on_room_avatar_needed;
 
+    // Same contract as on_room_avatar_needed but for unjoined space-child rows.
+    std::function<void(const tesseract::RoomSummary& /*summary*/)> on_unjoined_room_avatar_needed;
+
     // Fires when the user clicks the × clear button in the search header.
     // The host should clear the NativeTextField text and reset the search.
     std::function<void()> on_search_clear;
