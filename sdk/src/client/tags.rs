@@ -13,6 +13,7 @@ impl ClientFfi {
         use matrix_sdk::ruma::RoomId;
         let Some(client) = self.client.clone() else { return; };
         let room_id = room_id.to_owned();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         self.rt.block_on(async move {
             let Ok(rid) = RoomId::parse(&room_id) else { return; };
             let Some(room) = client.get_room(&rid) else { return; };
@@ -24,6 +25,7 @@ impl ClientFfi {
         use matrix_sdk::ruma::RoomId;
         let Some(client) = self.client.clone() else { return; };
         let room_id = room_id.to_owned();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         self.rt.block_on(async move {
             let Ok(rid) = RoomId::parse(&room_id) else { return; };
             let Some(room) = client.get_room(&rid) else { return; };

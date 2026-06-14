@@ -127,6 +127,7 @@ impl ClientFfi {
         if image_url.is_empty() {
             return err("image_url is empty");
         }
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         // Encrypted sticker events serialise the full MediaSource as JSON.
         // Decrypt and re-upload as unencrypted media so the saved pack entry
         // is viewable by any client without the original encryption key.
@@ -402,6 +403,7 @@ impl ClientFfi {
         if image_url.is_empty() {
             return err("image_url is empty");
         }
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         let ev_type = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
 

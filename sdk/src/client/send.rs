@@ -419,6 +419,7 @@ impl ClientFfi {
             return err("not logged in");
         };
         let room_id = try_op!(parse_room_id(room_id));
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         // Use the live timeline if subscribed — local echo fires immediately.
         {
             let maybe_tl = {
@@ -498,6 +499,7 @@ impl ClientFfi {
     pub fn abort_send(&self, room_id: &str, txn_id: &str) -> OpResult {
         let room_id = try_op!(parse_room_id(room_id));
         let txn_id: matrix_sdk::ruma::OwnedTransactionId = txn_id.into();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         let timeline = {
             let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
@@ -530,7 +532,10 @@ impl ClientFfi {
             Ok(id) => id,
             Err(_) => return,
         };
+        let in_flight = self.in_flight.clone();
+        let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
             let Some(room) = client.get_room(&room_id) else {
                 return;
             };
@@ -560,6 +565,7 @@ impl ClientFfi {
             return err("not logged in");
         };
         let (_, room) = try_op!(require_room(&client, room_id));
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
@@ -643,6 +649,7 @@ impl ClientFfi {
         {
             return err("invalid in_reply_to id");
         }
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         // When the thread timeline is subscribed, route through it so the
         // local echo arrives via on_thread_inserted immediately:
         // - plain thread send → timeline.send (thread focus auto-tags the relation),
@@ -749,7 +756,10 @@ impl ClientFfi {
             };
             Arc::clone(&handle.timeline)
         };
+        let in_flight = self.in_flight.clone();
+        let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
             let _ = tl.fetch_details_for_event(&event_id).await;
         });
         ok("")
@@ -795,6 +805,7 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         // Animated GIF/WebP path: `send_attachment` strips the MSC4230
         // `is_animated` flag and the `fi.mau.gif` vendor hint, so we
@@ -928,6 +939,7 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         let info = AttachmentInfo::File(BaseFileInfo {
             size: UInt::new(bytes.len() as u64),
@@ -992,6 +1004,7 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         let info = AttachmentInfo::Audio(BaseAudioInfo {
             duration: if duration_ms > 0 {
@@ -1070,6 +1083,7 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         let info = AttachmentInfo::Video(BaseVideoInfo {
             duration: if duration_ms > 0 {
@@ -1570,6 +1584,7 @@ impl ClientFfi {
         }
 
         let mime: mime::Mime = "audio/ogg; codecs=opus".parse().unwrap();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         match self.rt.block_on(async move {
             room.send_attachment("voice-message.ogg".to_owned(), &mime, ogg_bytes, config)

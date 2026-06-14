@@ -152,6 +152,7 @@ impl ClientFfi {
             return err("recovery key or passphrase is empty");
         }
         let key = key_or_passphrase.to_owned();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         match self
             .rt
             .block_on(async move { client.encryption().recovery().recover(&key).await })
@@ -200,6 +201,7 @@ impl ClientFfi {
             return err("sync not started");
         };
         let passphrase = passphrase.to_owned();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         self.rt.block_on(async move {
             // Make the Fresh path self-contained. The login-time auto-bootstrap

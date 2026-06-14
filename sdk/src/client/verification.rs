@@ -173,6 +173,7 @@ impl ClientFfi {
         let flow_users = Arc::clone(&self.verification_flow_users);
         let emoji_cache = Arc::clone(&self.sas_emoji_cache);
         let tasks = Arc::clone(&self.verification_tasks);
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         match self.rt.block_on(async move {
             let user_id = client
@@ -230,6 +231,7 @@ impl ClientFfi {
             None => return err("no pending verification request for this flow_id"),
         };
         let flow_id = flow_id.to_owned();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
             let uid = <&UserId>::try_from(user_id.as_str())?;
@@ -272,6 +274,7 @@ impl ClientFfi {
         };
         let emoji_cache = Arc::clone(&self.sas_emoji_cache);
         let tasks = Arc::clone(&self.verification_tasks);
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
@@ -314,6 +317,7 @@ impl ClientFfi {
             None => return err("no active SAS for this flow_id"),
         };
         let flow_id = flow_id.to_owned();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         match self.rt.block_on(async move {
             use matrix_sdk::encryption::verification::Verification;
             use matrix_sdk::ruma::UserId;
@@ -352,6 +356,7 @@ impl ClientFfi {
             None => return err("no active verification for this flow_id"),
         };
         let flow_id = flow_id.to_owned();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
         match self.rt.block_on(async move {
             use matrix_sdk::encryption::verification::Verification;
             use matrix_sdk::ruma::UserId;

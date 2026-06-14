@@ -29,6 +29,8 @@ impl ClientFfi {
             return err("invalid event_id");
         };
 
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+
         // Read existing m.room.pinned_events (may be absent → start empty).
         let existing: Vec<OwnedEventId> = match self
             .rt
@@ -75,6 +77,8 @@ impl ClientFfi {
         let Ok(target) = event_id.parse::<OwnedEventId>() else {
             return err("invalid event_id");
         };
+
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
 
         let existing: Vec<OwnedEventId> = match self
             .rt
