@@ -29,7 +29,6 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
-#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -1308,6 +1307,13 @@ protected:
     // shell is required to implement it (Tasks 9–12).
     virtual void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) = 0;
+
+    // Start the MSC4108 QR grant login flow: wires all callbacks on QRGrantView
+    // and shows the overlay. Each shell overrides show/hide to manage the native
+    // check-code text field overlay.
+    void start_qr_grant_overlay();
+    virtual void show_qr_grant_overlay_() {}
+    virtual void hide_qr_grant_overlay_() {}
 
     // Wires every platform-agnostic callback on the encryption-setup overlay
     // (recovery/verify actions, clipboard, field readers, layout/dismiss).

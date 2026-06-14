@@ -1101,15 +1101,20 @@ pub mod ffi {
         /// Blocks until the QR bitmap is ready; returns RGBA pixel data.
         fn qr_grant_start(self: &mut ClientFfi) -> QrGrantBitmap;
         /// Blocks until the new device scans the QR code.
-        fn qr_grant_await_scanned(self: &mut ClientFfi) -> OpResult;
+        /// Uses &self so SH_FFI (shared read lock) is held, not MUT_FFI.
+        fn qr_grant_await_scanned(self: &ClientFfi) -> OpResult;
         /// Non-blocking: sends the check code (read from new device) into the running flow.
-        fn qr_grant_submit_check_code(self: &mut ClientFfi, code: u8) -> OpResult;
+        /// Uses &self — see qr_grant_await_scanned.
+        fn qr_grant_submit_check_code(self: &ClientFfi, code: u8) -> OpResult;
         /// Blocks until the flow reaches WaitingForAuth; returns the verification URI.
-        fn qr_grant_await_auth(self: &mut ClientFfi) -> QrGrantAuth;
+        /// Uses &self — see qr_grant_await_scanned.
+        fn qr_grant_await_auth(self: &ClientFfi) -> QrGrantAuth;
         /// Blocks until the grant flow completes (Done or error).
-        fn qr_grant_await_complete(self: &mut ClientFfi) -> OpResult;
+        /// Uses &self — see qr_grant_await_scanned.
+        fn qr_grant_await_complete(self: &ClientFfi) -> OpResult;
         /// Cancel the grant flow at any phase.
-        fn qr_grant_cancel(self: &mut ClientFfi);
+        /// Uses &self so cancellation works even while an await call holds SH_FFI.
+        fn qr_grant_cancel(self: &ClientFfi);
 
         // ----- Session -----
 

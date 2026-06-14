@@ -68,6 +68,8 @@ set(_tk_sources
     views/BrandView.cpp
     views/LoginView.h
     views/LoginView.cpp
+    views/QRGrantView.h
+    views/QRGrantView.cpp
     views/RoomListView.h
     views/RoomListView.cpp
     views/MessageListView.h

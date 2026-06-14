@@ -130,6 +130,42 @@ void Client::cancel_oauth()
     impl_->ffi->oauth_cancel();
 }
 
+Client::QrGrantBitmap Client::begin_qr_grant()
+{
+    MUT_FFI;
+    return from_ffi(impl_->ffi->qr_grant_start());
+}
+
+Result Client::await_qr_scanned()
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->qr_grant_await_scanned());
+}
+
+Result Client::submit_qr_check_code(uint8_t code)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->qr_grant_submit_check_code(code));
+}
+
+Client::QrGrantAuth Client::await_qr_auth()
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->qr_grant_await_auth());
+}
+
+Result Client::await_qr_complete()
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->qr_grant_await_complete());
+}
+
+void Client::cancel_qr_grant()
+{
+    SH_FFI;
+    impl_->ffi->qr_grant_cancel();
+}
+
 bool Client::open_in_browser(const std::string& url)
 {
 #if defined(_WIN32)

@@ -411,7 +411,7 @@ pub struct ClientFfi {
     /// starts just before `stop_sync` takes `stop_tx`.
     pub(super) stop_rx: Option<watch::Receiver<bool>>,
     pub(super) oauth_flow: Option<oauth::PendingFlow>,
-    pub(super) qr_grant: Option<qr_grant::QrGrantHandle>,
+    qr_grant: Option<qr_grant::QrGrantHandle>,
     #[cfg(not(test))]
     pub(super) handler: Option<Arc<Mutex<SendHandler>>>,
     #[cfg(not(test))]

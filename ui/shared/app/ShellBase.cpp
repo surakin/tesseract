@@ -6966,6 +6966,36 @@ void ShellBase::wire_encryption_setup_callbacks_(
     ov.on_layout_changed = [this]() { request_relayout_(); };
 }
 
+void ShellBase::start_qr_grant_overlay()
+{
+    if (!client_ || !main_app_) return;
+    auto* view = main_app_->qr_grant_view();
+    if (!view) return;
+
+    view->set_client(client_);
+    view->set_post_to_ui([this](auto fn) { post_to_ui_(std::move(fn)); });
+    view->set_run_async([this](auto fn) { run_async_mut_(std::move(fn)); });
+    view->set_relayout([this] { request_relayout_(); });
+    view->set_open_browser([](const std::string& url) {
+        tesseract::Client::open_in_browser(url);
+    });
+    view->set_on_done([this] {
+        if (main_app_) main_app_->show_qr_grant(false);
+        hide_qr_grant_overlay_();
+        request_relayout_();
+    });
+    view->set_on_cancel([this] {
+        if (main_app_) main_app_->show_qr_grant(false);
+        hide_qr_grant_overlay_();
+        request_relayout_();
+    });
+
+    show_qr_grant_overlay_();
+    if (main_app_) main_app_->show_qr_grant(true);
+    request_relayout_();
+    view->start();
+}
+
 void ShellBase::check_encryption_setup_()
 {
     if (encryption_setup_shown_ || encryption_setup_dismissed_)

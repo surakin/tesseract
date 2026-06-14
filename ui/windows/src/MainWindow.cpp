@@ -1207,6 +1207,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             self->begin_add_account();
         }
+        if (LOWORD(wParam) == IDM_QR_GRANT)
+        {
+            self->start_qr_grant_overlay();
+        }
         if (LOWORD(wParam) == IDM_QUIT)
         {
             self->quitting_ = true;
@@ -3570,6 +3574,16 @@ void MainWindow::on_create(HWND hwnd)
                     if (vis)
                         enc_key_field_->set_rect(
                             main_app_->encryption_setup_key_field_rect());
+                }
+
+                // QR grant check-code input field.
+                if (qr_check_code_field_)
+                {
+                    bool vis = main_app_->qr_grant_check_code_field_visible();
+                    qr_check_code_field_->set_visible(vis);
+                    if (vis)
+                        qr_check_code_field_->set_rect(
+                            main_app_->qr_grant_check_code_field_rect());
                 }
             });
     }
@@ -6079,6 +6093,7 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, IDM_SETTINGS, L"Settings…");
     AppendMenuW(menu, MF_STRING, IDM_ADD_ACCOUNT, L"Add Account…");
+    AppendMenuW(menu, MF_STRING, IDM_QR_GRANT, L"Add device via QR…");
     std::wstring logout_label = L"Log Out";
     if (!my_display_name_.empty())
     {
@@ -7371,6 +7386,23 @@ void MainWindow::show_encryption_setup_overlay_(
     main_app_->show_encryption_setup(true);
     if (main_app_surface_)
         main_app_surface_->relayout();
+}
+
+void MainWindow::show_qr_grant_overlay_()
+{
+    if (!main_app_) return;
+    auto* view = main_app_->qr_grant_view();
+    if (!view) return;
+    qr_check_code_field_ = main_app_surface_->host().make_text_field();
+    qr_check_code_field_->set_on_changed([view](const std::string& t) {
+        view->set_check_code_text(t);
+    });
+    qr_check_code_field_->set_visible(false);
+}
+
+void MainWindow::hide_qr_grant_overlay_()
+{
+    qr_check_code_field_.reset();
 }
 
 std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const

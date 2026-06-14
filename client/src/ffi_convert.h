@@ -20,6 +20,25 @@ inline PaginateResult from_ffi(const tesseract_ffi::PaginateResult& r)
     return {r.ok, std::string(r.message), r.reached_start, r.reached_end};
 }
 
+inline Client::QrGrantBitmap from_ffi(const tesseract_ffi::QrGrantBitmap& r)
+{
+    return {
+        .ok      = r.ok,
+        .message = std::string(r.message),
+        .pixels  = std::vector<uint8_t>(r.pixels.begin(), r.pixels.end()),
+        .side    = r.side,
+    };
+}
+
+inline Client::QrGrantAuth from_ffi(const tesseract_ffi::QrGrantAuth& r)
+{
+    return {
+        .ok               = r.ok,
+        .message          = std::string(r.message),
+        .verification_uri = std::string(r.verification_uri),
+    };
+}
+
 inline SearchIndexStats from_ffi(const tesseract_ffi::SearchIndexStats& s)
 {
     return {s.message_count, s.room_count, s.oldest_ts_ms, s.backfill_done, 0};

@@ -81,6 +81,12 @@ MainAppWidget::MainAppWidget()
     encryption_setup_ = add_child(std::move(enc));
     encryption_setup_->set_visible(false);
 
+    {
+        auto v = std::make_unique<QRGrantView>();
+        v->set_visible(false);
+        qr_grant_view_ = add_child(std::move(v));
+    }
+
     // Modal confirmation overlay — added after the lightboxes so it paints
     // on top of *everything*. Visibility is gated by ConfirmDialog::open()
     // / close() so an idle dialog doesn't capture hit-tests.
@@ -255,6 +261,22 @@ void MainAppWidget::show_encryption_setup(bool show)
     }
 }
 
+void MainAppWidget::show_qr_grant(bool show)
+{
+    if (qr_grant_view_) qr_grant_view_->set_visible(show);
+}
+
+bool MainAppWidget::qr_grant_check_code_field_visible() const
+{
+    return qr_grant_view_ && qr_grant_view_->check_code_field_visible();
+}
+
+tk::Rect MainAppWidget::qr_grant_check_code_field_rect() const
+{
+    if (!qr_grant_view_) return {};
+    return qr_grant_view_->check_code_field_rect();
+}
+
 void MainAppWidget::show_quick_switch(bool show)
 {
     if (!quick_switcher_)
@@ -318,6 +340,7 @@ bool MainAppWidget::any_modal_open_() const
            (img_viewer_        && img_viewer_->is_open()) ||
            (vid_viewer_        && vid_viewer_->is_open()) ||
            (encryption_setup_  && encryption_setup_->visible()) ||
+           (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open());
 }
@@ -483,6 +506,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     img_viewer_->arrange(ctx, bounds);
     vid_viewer_->arrange(ctx, bounds);
     if (encryption_setup_) encryption_setup_->arrange(ctx, bounds);
+    if (qr_grant_view_) qr_grant_view_->arrange(ctx, bounds);
     if (confirm_dialog_) confirm_dialog_->arrange(ctx, bounds);
     if (quick_switcher_) quick_switcher_->arrange(ctx, bounds);
     if (message_search_) message_search_->arrange(ctx, bounds);
@@ -613,6 +637,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     if (encryption_setup_ && encryption_setup_->visible())
     {
         encryption_setup_->paint(ctx);
+    }
+    if (qr_grant_view_ && qr_grant_view_->visible())
+    {
+        qr_grant_view_->paint(ctx);
     }
     // Modal confirmation — drawn above the lightboxes so destructive prompts
     // are still reachable when the image/video viewer is up.

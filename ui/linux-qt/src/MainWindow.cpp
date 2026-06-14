@@ -1922,6 +1922,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 encKeyField_->set_rect(
                     mainApp_->encryption_setup_key_field_rect());
             }
+            if (mainApp_ && qrCheckCodeField_)
+            {
+                const bool vis = mainApp_->qr_grant_check_code_field_visible();
+                qrCheckCodeField_->set_visible(vis);
+                if (vis)
+                    qrCheckCodeField_->set_rect(
+                        mainApp_->qr_grant_check_code_field_rect());
+            }
             if (mainApp_ && topicTextArea_)
             {
                 const tk::Rect tr =
@@ -3949,8 +3957,9 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
 {
     auto* menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    QAction* addAct = menu->addAction(tr("Add Account…"));
-    QAction* settingsAct = menu->addAction(tr("Settings…"));
+    QAction* addAct = menu->addAction(tr("Add Account\xe2\x80\xa6"));
+    QAction* settingsAct = menu->addAction(tr("Settings\xe2\x80\xa6"));
+    QAction* qrAct = menu->addAction(tr("Add device via QR\xe2\x80\xa6"));
     QString logout_label =
         tr("Log Out %1")
             .arg(my_display_name_.empty()
@@ -3960,7 +3969,7 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
     menu->addSeparator();
     QAction* quitAct = menu->addAction(tr("Quit"));
     QObject::connect(menu, &QMenu::triggered, this,
-                     [this, addAct, settingsAct, logoutAct, quitAct](QAction* a)
+                     [this, addAct, settingsAct, qrAct, logoutAct, quitAct](QAction* a)
                      {
                          if (a == addAct)
                          {
@@ -3969,6 +3978,10 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
                          else if (a == settingsAct)
                          {
                              openSettings();
+                         }
+                         else if (a == qrAct)
+                         {
+                             start_qr_grant_overlay();
                          }
                          else if (a == logoutAct)
                          {
@@ -4800,6 +4813,23 @@ void MainWindow::show_encryption_setup_overlay_(
 
     mainApp_->show_encryption_setup(true);
     mainAppSurface_->relayout();
+}
+
+void MainWindow::show_qr_grant_overlay_()
+{
+    if (!mainApp_) return;
+    auto* view = mainApp_->qr_grant_view();
+    if (!view) return;
+    qrCheckCodeField_ = mainAppSurface_->host().make_text_field();
+    qrCheckCodeField_->set_on_changed([view](const std::string& t) {
+        view->set_check_code_text(t);
+    });
+    qrCheckCodeField_->set_visible(false);
+}
+
+void MainWindow::hide_qr_grant_overlay_()
+{
+    qrCheckCodeField_.reset();
 }
 
 void MainWindow::open_join_room_dialog_ui_(const std::string& prefill)

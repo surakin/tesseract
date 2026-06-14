@@ -355,6 +355,7 @@ private:
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
+    std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
 
     // ── Slash-command popup ───────────────────────────────────────────────
     HWND                                  slash_popup_hwnd_ = nullptr;
@@ -518,6 +519,8 @@ private:
     void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void show_qr_grant_overlay_() override;
+    void hide_qr_grant_overlay_() override;
     void open_join_room_dialog_ui_(const std::string& prefill) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
@@ -575,6 +578,7 @@ private:
     static constexpr int IDM_LOGOUT = 120;
     static constexpr int IDM_ADD_ACCOUNT = 121;
     static constexpr int IDM_QUIT = 122;
+    static constexpr int IDM_QR_GRANT = 123;
     static constexpr int IDC_QUICK_SWITCH = 130;
     static constexpr int IDC_NAV_BACK = 131;
     static constexpr int IDC_NAV_FWD  = 132;

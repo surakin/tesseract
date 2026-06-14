@@ -154,6 +154,27 @@ public:
         }
     };
 
+    /// Result of Client::begin_qr_grant(): RGBA pixel bitmap for QR display.
+    struct QrGrantBitmap
+    {
+        bool ok = false;
+        std::string message;
+        std::vector<uint8_t> pixels; ///< RGBA, side×side×4 bytes
+        uint32_t side = 0;           ///< width == height (QR is square)
+
+        explicit operator bool() const noexcept { return ok; }
+    };
+
+    /// Returned when the QR grant flow reaches WaitingForAuth.
+    struct QrGrantAuth
+    {
+        bool ok = false;
+        std::string message;
+        std::string verification_uri;
+
+        explicit operator bool() const noexcept { return ok; }
+    };
+
     /// Discover the homeserver URL for a server name or Matrix ID.
     /// Accepts: "matrix.org", "@user:matrix.org", "https://matrix.org".
     /// Fetches .well-known/matrix/client and validates the result.
@@ -172,6 +193,34 @@ public:
 
     Result await_oauth();
     void cancel_oauth();
+
+    // ------------------------------------------------------------------
+    // QR grant login (MSC4108)
+    // Generates a QR code on this (logged-in) device for a new device
+    // to scan, completing login on the new device.
+    // All blocking methods must be called from a worker thread.
+    // ------------------------------------------------------------------
+
+    /// Start the QR grant flow. Blocks until the QR bitmap is ready.
+    /// Returns the RGBA pixel data for rendering the QR code.
+    QrGrantBitmap begin_qr_grant();
+
+    /// Blocks until the new device has scanned the QR code.
+    Result await_qr_scanned();
+
+    /// Fast (non-blocking I/O), but still serialised by the FFI lock: sends
+    /// the check code (shown on the new device) into the running flow.
+    Result submit_qr_check_code(uint8_t code);
+
+    /// Blocks until the flow reaches WaitingForAuth. Returns the
+    /// verification URI to open in a browser for OIDC device authorization.
+    QrGrantAuth await_qr_auth();
+
+    /// Blocks until the grant flow completes (Done or error).
+    Result await_qr_complete();
+
+    /// Cancel the QR grant flow at any phase.
+    void cancel_qr_grant();
 
     static bool open_in_browser(const std::string& url);
 

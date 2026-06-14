@@ -239,6 +239,8 @@ private:
                                std::vector<uint8_t> bytes) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void show_qr_grant_overlay_() override;
+    void hide_qr_grant_overlay_() override;
     void open_join_room_dialog_ui_(const std::string& prefill) override;
 
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
@@ -341,6 +343,7 @@ private:
     // Native overlays wired to mainAppSurface_.
     std::unique_ptr<tk::NativeTextField> encPassphraseField_;
     std::unique_ptr<tk::NativeTextField> encKeyField_;
+    std::unique_ptr<tk::NativeTextField> qrCheckCodeField_;
     std::unique_ptr<tk::NativeTextField> roomSearchField_;
     std::unique_ptr<tk::NativeTextField> quickSwitchField_;
     std::unique_ptr<tk::NativeTextField> messageSearchField_;

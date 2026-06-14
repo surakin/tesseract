@@ -169,6 +169,8 @@ private:
                                       GVariant* parameter, gpointer user_data);
     static void on_quit_user_activate_(GSimpleAction* action,
                                        GVariant* parameter, gpointer user_data);
+    static void on_qr_grant_activate_(GSimpleAction* action, GVariant* parameter,
+                                      gpointer user_data);
     void open_settings_();
 
     // Ctrl+K quick switcher — open focuses the native search field; close
@@ -257,6 +259,8 @@ private:
     void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void show_qr_grant_overlay_() override;
+    void hide_qr_grant_overlay_() override;
     void open_join_room_dialog_ui_(const std::string& prefill) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
@@ -455,6 +459,7 @@ private:
     tesseract::views::VerificationBanner* verif_shared_ = nullptr;
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
+    std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
 
     GtkWidget* user_popover_ = nullptr;
 

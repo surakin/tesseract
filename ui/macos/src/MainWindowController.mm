@@ -124,6 +124,8 @@ protected:
     void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
+    void show_qr_grant_overlay_() override;
+    void hide_qr_grant_overlay_() override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& key,
@@ -222,6 +224,7 @@ public:
     using ShellBase::apply_current_theme_;
     using ShellBase::arm_pending_login_;
     using ShellBase::begin_crypto_identity_reset_;
+    using ShellBase::start_qr_grant_overlay;
     using ShellBase::begin_focused_subscription_;
     using ShellBase::build_rows_;
     using ShellBase::cached_emoticons_;
@@ -452,6 +455,9 @@ public:
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
 
+    // Native text field for the QR grant check-code input.
+    std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
+
     // Public forwarder for the protected ShellBase virtual so ObjC++ code can
     // call it through _shell without a friend declaration.
     void show_encryption_setup(
@@ -537,6 +543,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
 - (void)_openSettings;
+- (void)_showQRGrant;
 - (void)_openQuickSwitch;
 - (void)_closeQuickSwitch;
 - (void)_openMessageSearch;
@@ -820,6 +827,23 @@ void MacShell::show_encryption_setup_overlay_(
     main_app_->show_encryption_setup(true);
     if (app_surface_)
         app_surface_->relayout();
+}
+
+void MacShell::show_qr_grant_overlay_()
+{
+    if (!main_app_ || !app_surface_) return;
+    auto* view = main_app_->qr_grant_view();
+    if (!view) return;
+    qr_check_code_field_ = app_surface_->host().make_text_field();
+    qr_check_code_field_->set_on_changed([view](const std::string& t) {
+        view->set_check_code_text(t);
+    });
+    qr_check_code_field_->set_visible(false);
+}
+
+void MacShell::hide_qr_grant_overlay_()
+{
+    qr_check_code_field_.reset();
 }
 
 void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -2165,6 +2189,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                      keyEquivalent:@""];
             [menu addItemWithTitle:logoutTitle
                             action:@selector(_logoutActiveAccount)
+                     keyEquivalent:@""];
+            [menu addItemWithTitle:TkTr("Add device via QR\xe2\x80\xa6")
+                            action:@selector(_showQRGrant)
                      keyEquivalent:@""];
             [menu addItem:[NSMenuItem separatorItem]];
             [menu addItemWithTitle:TkTr("Quit")
@@ -4473,6 +4500,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     if (kfVisible)
                         s->_shell->enc_key_field_->set_rect(
                             ov->key_field_rect_value());
+                }
+                // QR grant check-code input field.
+                if (s->_shell->qr_check_code_field_ && app->qr_grant_view())
+                {
+                    bool vis = app->qr_grant_check_code_field_visible();
+                    s->_shell->qr_check_code_field_->set_visible(vis);
+                    if (vis)
+                        s->_shell->qr_check_code_field_->set_rect(
+                            app->qr_grant_check_code_field_rect());
                 }
                 (void)surf;
             });
@@ -8007,6 +8043,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     auto* ml = _mainApp ? _mainApp->room_view()->message_list() : nullptr;
     if (ml)
         ml->copy_selection();
+}
+
+- (void)_showQRGrant
+{
+    _shell->start_qr_grant_overlay();
 }
 
 @end

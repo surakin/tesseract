@@ -25,17 +25,24 @@ use crate::ffi::{OpResult, QrGrantAuth, QrGrantBitmap};
 // ---------------------------------------------------------------------------
 
 /// Channels kept after `qr_grant_start` returns the bitmap to C++.
+///
+/// All receive-side channels are wrapped in `Mutex<Option<…>>` so the five
+/// "await / submit / cancel" bridge methods can take `&self` (→ SH_FFI on the
+/// C++ side) instead of `&mut self` (→ MUT_FFI).  Holding SH_FFI while
+/// blocking on a channel recv allows other SH_FFI callers (UI-thread reads) to
+/// proceed concurrently — avoiding the deadlock where a long-running grant wait
+/// starves `can_pin_in_room` and similar read calls.
 pub(super) struct QrGrantHandle {
     /// Fires once the new device has scanned the QR code.
-    scanned_rx: Option<oneshot::Receiver<()>>,
-    /// Sender for the check code entered by the user. `Option` so it can be
-    /// taken exactly once by `qr_grant_submit_check_code`.
-    check_code_tx: Option<oneshot::Sender<u8>>,
+    scanned_rx: std::sync::Mutex<Option<oneshot::Receiver<()>>>,
+    /// Sender for the check code entered by the user.
+    check_code_tx: std::sync::Mutex<Option<oneshot::Sender<u8>>>,
     /// Fires once the flow reaches `WaitingForAuth` (carrying the URI).
-    auth_rx: Option<oneshot::Receiver<String>>,
+    auth_rx: std::sync::Mutex<Option<oneshot::Receiver<String>>>,
     /// Fires once the flow is fully done (Ok) or has failed (Err).
-    done_rx: Option<oneshot::Receiver<Result<(), String>>>,
+    done_rx: std::sync::Mutex<Option<oneshot::Receiver<Result<(), String>>>>,
     /// Send `true` to abort the background task at any point.
+    /// `watch::Sender` is `Sync`, so no Mutex needed.
     cancel_tx: watch::Sender<bool>,
 }
 
@@ -77,10 +84,10 @@ impl ClientFfi {
         match self.rt.block_on(bitmap_rx) {
             Ok((pixels, side)) => {
                 self.qr_grant = Some(QrGrantHandle {
-                    scanned_rx: Some(scanned_rx),
-                    check_code_tx: Some(check_tx),
-                    auth_rx: Some(auth_rx),
-                    done_rx: Some(done_rx),
+                    scanned_rx: std::sync::Mutex::new(Some(scanned_rx)),
+                    check_code_tx: std::sync::Mutex::new(Some(check_tx)),
+                    auth_rx: std::sync::Mutex::new(Some(auth_rx)),
+                    done_rx: std::sync::Mutex::new(Some(done_rx)),
                     cancel_tx,
                 });
                 QrGrantBitmap { ok: true, message: String::new(), pixels, side }
@@ -89,12 +96,18 @@ impl ClientFfi {
         }
     }
 
-    pub fn qr_grant_await_scanned(&mut self) -> OpResult {
-        let Some(h) = self.qr_grant.as_mut() else {
+    // The five methods below take `&self` so the C++ side uses SH_FFI (shared
+    // read lock) rather than MUT_FFI (exclusive write lock).  Multiple shared
+    // lock holders can coexist, so a blocking recv here does not prevent the UI
+    // thread from taking SH_FFI for unrelated read calls.
+
+    pub fn qr_grant_await_scanned(&self) -> OpResult {
+        let Some(h) = self.qr_grant.as_ref() else {
             return err("no QR grant flow in progress; call qr_grant_start first");
         };
-        let Some(rx) = h.scanned_rx.take() else {
-            return err("qr_grant_await_scanned already called");
+        let rx = match h.scanned_rx.lock().unwrap().take() {
+            Some(rx) => rx,
+            None => return err("qr_grant_await_scanned already called"),
         };
         match self.rt.block_on(rx) {
             Ok(()) => ok(""),
@@ -102,12 +115,13 @@ impl ClientFfi {
         }
     }
 
-    pub fn qr_grant_submit_check_code(&mut self, code: u8) -> OpResult {
-        let Some(h) = self.qr_grant.as_mut() else {
+    pub fn qr_grant_submit_check_code(&self, code: u8) -> OpResult {
+        let Some(h) = self.qr_grant.as_ref() else {
             return err("no QR grant flow in progress; call qr_grant_start first");
         };
-        let Some(tx) = h.check_code_tx.take() else {
-            return err("check code already submitted");
+        let tx = match h.check_code_tx.lock().unwrap().take() {
+            Some(tx) => tx,
+            None => return err("check code already submitted"),
         };
         match tx.send(code) {
             Ok(()) => ok(""),
@@ -115,12 +129,13 @@ impl ClientFfi {
         }
     }
 
-    pub fn qr_grant_await_auth(&mut self) -> QrGrantAuth {
-        let Some(h) = self.qr_grant.as_mut() else {
+    pub fn qr_grant_await_auth(&self) -> QrGrantAuth {
+        let Some(h) = self.qr_grant.as_ref() else {
             return auth_err("no QR grant flow in progress; call qr_grant_start first");
         };
-        let Some(rx) = h.auth_rx.take() else {
-            return auth_err("qr_grant_await_auth already called");
+        let rx = match h.auth_rx.lock().unwrap().take() {
+            Some(rx) => rx,
+            None => return auth_err("qr_grant_await_auth already called"),
         };
         match self.rt.block_on(rx) {
             Ok(uri) => QrGrantAuth { ok: true, message: String::new(), verification_uri: uri },
@@ -128,12 +143,13 @@ impl ClientFfi {
         }
     }
 
-    pub fn qr_grant_await_complete(&mut self) -> OpResult {
-        let Some(h) = self.qr_grant.as_mut() else {
+    pub fn qr_grant_await_complete(&self) -> OpResult {
+        let Some(h) = self.qr_grant.as_ref() else {
             return err("no QR grant flow in progress; call qr_grant_start first");
         };
-        let Some(rx) = h.done_rx.take() else {
-            return err("qr_grant_await_complete already called");
+        let rx = match h.done_rx.lock().unwrap().take() {
+            Some(rx) => rx,
+            None => return err("qr_grant_await_complete already called"),
         };
         match self.rt.block_on(rx) {
             Ok(Ok(())) => ok(""),
@@ -142,8 +158,8 @@ impl ClientFfi {
         }
     }
 
-    pub fn qr_grant_cancel(&mut self) {
-        if let Some(h) = self.qr_grant.take() {
+    pub fn qr_grant_cancel(&self) {
+        if let Some(h) = self.qr_grant.as_ref() {
             let _ = h.cancel_tx.send(true);
         }
     }

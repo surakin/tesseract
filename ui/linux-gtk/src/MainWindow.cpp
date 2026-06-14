@@ -2385,6 +2385,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                             main_app_->encryption_setup_key_field_rect());
                     }
                 }
+
+                if (qr_check_code_field_)
+                {
+                    const bool vis =
+                        main_app_->qr_grant_check_code_field_visible();
+                    qr_check_code_field_->set_visible(vis);
+                    if (vis)
+                        qr_check_code_field_->set_rect(
+                            main_app_->qr_grant_check_code_field_rect());
+                }
             });
 
         main_app_surface_->set_root(std::move(main_app_owner));
@@ -2400,6 +2410,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         g_menu_append(main_section, _("Settings\xe2\x80\xa6"), "user.settings");
         g_menu_append(main_section, _("Add Account\xe2\x80\xa6"),
                       "user.add_account");
+        g_menu_append(main_section, _("Add device via QR\xe2\x80\xa6"),
+                      "user.qr_grant");
         g_menu_append(main_section, _("Log Out"), "user.logout");
         g_menu_append_section(top, nullptr, G_MENU_MODEL(main_section));
         g_object_unref(main_section);
@@ -2433,6 +2445,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             GSimpleAction* act = g_simple_action_new("logout", nullptr);
             g_signal_connect(act, "activate", G_CALLBACK(on_logout_activate_),
                              this);
+            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+            g_object_unref(act);
+        }
+        {
+            GSimpleAction* act = g_simple_action_new("qr_grant", nullptr);
+            g_signal_connect(act, "activate",
+                             G_CALLBACK(on_qr_grant_activate_), this);
             g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
             g_object_unref(act);
         }
@@ -4770,6 +4789,29 @@ void MainWindow::show_encryption_setup_overlay_(
 
     main_app_->show_encryption_setup(true);
     main_app_surface_->relayout();
+}
+
+void MainWindow::show_qr_grant_overlay_()
+{
+    if (!main_app_) return;
+    auto* view = main_app_->qr_grant_view();
+    if (!view) return;
+    qr_check_code_field_ = main_app_surface_->host().make_text_field();
+    qr_check_code_field_->set_on_changed([view](const std::string& t) {
+        view->set_check_code_text(t);
+    });
+    qr_check_code_field_->set_visible(false);
+}
+
+void MainWindow::hide_qr_grant_overlay_()
+{
+    qr_check_code_field_.reset();
+}
+
+// static
+void MainWindow::on_qr_grant_activate_(GSimpleAction*, GVariant*, gpointer p)
+{
+    static_cast<MainWindow*>(p)->start_qr_grant_overlay();
 }
 
 // ---------------------------------------------------------------------------

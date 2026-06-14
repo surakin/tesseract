@@ -23,6 +23,7 @@
 #include "ConfirmDialog.h"
 #include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
+#include "QRGrantView.h"
 #include "InviteCard.h"
 #include "RoomPreviewView.h"
 #include "QuickSwitcher.h"
@@ -91,6 +92,10 @@ public:
     void show_image_viewer(bool show);
     void show_video_viewer(bool show);
     void show_encryption_setup(bool show);
+    void show_qr_grant(bool show);
+    QRGrantView* qr_grant_view() const { return qr_grant_view_; }
+    bool     qr_grant_check_code_field_visible() const;
+    tk::Rect qr_grant_check_code_field_rect() const;
 
     // ── Quick switcher (Ctrl+K) ───────────────────────────────────────────
 
@@ -234,6 +239,7 @@ private:
     ImageViewerOverlay* img_viewer_ = nullptr;
     VideoViewerOverlay* vid_viewer_ = nullptr;
     EncryptionSetupOverlay* encryption_setup_ = nullptr;
+    QRGrantView* qr_grant_view_ = nullptr;
 
     // Modal confirmation overlay — sits above everything else, including the
     // lightboxes, so destructive prompts are always reachable.
