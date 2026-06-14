@@ -33,6 +33,7 @@ class QMoveEvent;
 #include "views/SlashCommandPopup.h"
 #include "views/GifController.h"
 #include "views/GifPopup.h"
+#include "InflightDotWidget.h"
 
 #include <functional>
 #include <memory>
@@ -350,7 +351,7 @@ private:
     // by 300 ms so quiet restored sessions (Init→Running in <500 ms) don't
     // flash the status bar.
     QTimer* syncStatusDebounce_ = nullptr;
-    QLabel* inflightDot_ = nullptr;
+    InflightDotWidget* inflightDot_ = nullptr;
     // Rich-text label for status messages carrying hyperlinks (see
     // app/status_links.h). Created lazily; hidden while plain messages
     // use statusBar()->showMessage().

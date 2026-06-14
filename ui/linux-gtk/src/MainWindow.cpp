@@ -9,6 +9,7 @@
 #include "app/status_links.h"
 
 #include "tk/canvas_cairo.h"
+#include "tk/inflight_dot.h"
 #include "tk/theme.h"
 #include "tk/video_decode.h"
 #include "views/media_drop.h"
@@ -134,23 +135,31 @@ void MainWindow::on_inflight_ui_()
 {
     if (!inflight_dot_)
         return;
-    const auto   c  = inflight_dot_color_();
     const auto   n  = inflight_total_();
     const size_t fp = pool_pending_count_();
     const size_t sp = mut_pool_pending_count_();
     const size_t mp = pending_media_count_();
-    char buf[64];
-    std::snprintf(buf, sizeof(buf),
-                  "<span color=\"#%02x%02x%02x\">&#x25cf;</span>",
-                  c.r, c.g, c.b);
-    gtk_label_set_markup(GTK_LABEL(inflight_dot_), buf);
+    gtk_widget_queue_draw(inflight_dot_);
     char tip[128];
     std::snprintf(tip, sizeof(tip),
                   "%u request%s in flight\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
                   n, n == 1u ? "" : "s", mp, fp, sp);
     gtk_widget_set_tooltip_text(inflight_dot_, tip);
-    // Force-refresh the tooltip window if it is currently shown over this widget.
     gtk_widget_trigger_tooltip_query(inflight_dot_);
+}
+
+void MainWindow::draw_inflight_dot_(cairo_t* cr)
+{
+    auto       cv      = tk::cairo_pango::make_canvas(cr);
+    const auto dot_col = inflight_dot_color_();
+    constexpr tk::Color ring_col = tk::Color::rgb(0xA0A0A6);
+    const float c = tk::kInflightViewSize / 2.0f;
+    tk::draw_inflight_indicator(*cv, {c, c},
+                                tk::kInflightDotR, tk::kInflightOrbitR,
+                                tk::kInflightRingDotR,
+                                dot_col, ring_col,
+                                inflight_spin_phase_(),
+                                inflight_needs_anim_());
 }
 
 void MainWindow::on_server_info_ready_ui_()
@@ -2605,8 +2614,18 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                                     return TRUE;
                                 }),
                      nullptr);
-    inflight_dot_ = gtk_label_new("●");
-    gtk_widget_set_margin_end(inflight_dot_, 6);
+    inflight_dot_ = gtk_drawing_area_new();
+    gtk_drawing_area_set_draw_func(
+        GTK_DRAWING_AREA(inflight_dot_),
+        [](GtkDrawingArea*, cairo_t* cr, int /*w*/, int /*h*/, gpointer data)
+        {
+            static_cast<MainWindow*>(data)->draw_inflight_dot_(cr);
+        },
+        this, nullptr);
+    gtk_widget_set_size_request(inflight_dot_,
+                               static_cast<int>(tk::kInflightViewSize),
+                               static_cast<int>(tk::kInflightViewSize));
+    gtk_widget_set_margin_end(inflight_dot_, 4);
     gtk_widget_set_margin_bottom(inflight_dot_, 2);
     {
         // Wrap content_stack_ + status row in an outer vbox so the status
@@ -3708,6 +3727,9 @@ void MainWindow::stop_anim_tick_()
 
 void MainWindow::repaint_anim_frame_()
 {
+    if (inflight_dot_ && inflight_needs_anim_())
+        gtk_widget_queue_draw(inflight_dot_);
+
     // GTK4 has no partial-widget invalidation (gtk_widget_queue_draw_area was
     // removed; the render-node model only supports whole-widget queue_draw),
     // so we can't scope the repaint to the animated rects the way Qt6/macOS

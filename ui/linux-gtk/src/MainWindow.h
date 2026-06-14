@@ -115,6 +115,7 @@ private:
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
+    void draw_inflight_dot_(cairo_t* cr);
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;

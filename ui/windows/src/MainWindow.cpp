@@ -497,17 +497,55 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 SelectObject(hdc, old);
             }
         }
-        // Draw the inflight dot — always visible on the right.
+        // Draw the inflight dot and optional spinning ring.
         {
             const COLORREF dot_cr = static_cast<COLORREF>(reinterpret_cast<ULONG_PTR>(
                 GetPropW(hwnd, L"TesseractStatusDot")));
-            const int DOT_R = MulDiv(4, sb_dpi, 96);
-            const int cx = rc.right - MulDiv(12, sb_dpi, 96);
-            const int cy = (rc.top + rc.bottom) / 2;
-            HBRUSH dot_br = CreateSolidBrush(dot_cr);
-            HPEN null_pen = CreatePen(PS_NULL, 0, 0);
-            HBRUSH old_br = static_cast<HBRUSH>(SelectObject(hdc, dot_br));
-            HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
+            const int   DOT_R = static_cast<int>(tk::kInflightDotR * sb_dpi / 96.0f);
+            const int   cx    = rc.right - static_cast<int>((tk::kInflightOrbitR + tk::kInflightRingDotR + 4.0f) * sb_dpi / 96.0f);
+            const int   cy    = (rc.top + rc.bottom) / 2;
+            const float orbit = tk::kInflightOrbitR * sb_dpi / 96.0f;
+            const float rdot  = tk::kInflightRingDotR * sb_dpi / 96.0f;
+
+            // Spinning ring — drawn first so the center dot paints on top.
+            const auto phase_enc = static_cast<uint32_t>(reinterpret_cast<ULONG_PTR>(
+                GetPropW(hwnd, L"TesseractStatusPhase")));
+            if (phase_enc > 0u)
+            {
+                const float phase = static_cast<float>(phase_enc - 1u) / 65535.0f;
+                constexpr int kN = 8;
+                HPEN null_pen = CreatePen(PS_NULL, 0, 0);
+                HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
+                for (int i = 0; i < kN; ++i)
+                {
+                    const float angle =
+                        (i / static_cast<float>(kN) + phase) * 2.0f * 3.14159265f;
+                    const float dx = std::cos(angle) * orbit;
+                    const float dy = std::sin(angle) * orbit;
+                    const float t  = static_cast<float>(i) / kN;
+                    const BYTE  a  = static_cast<BYTE>(40 + 215 * t);
+                    // Ring color 0xA0A0A6 blended with per-dot alpha.
+                    const BYTE r = static_cast<BYTE>(0xA0u * a / 255u);
+                    const BYTE g = static_cast<BYTE>(0xA0u * a / 255u);
+                    const BYTE b = static_cast<BYTE>(0xA6u * a / 255u);
+                    HBRUSH rb = CreateSolidBrush(RGB(r, g, b));
+                    HBRUSH ob = static_cast<HBRUSH>(SelectObject(hdc, rb));
+                    const int rx = static_cast<int>(cx + dx - rdot);
+                    const int ry = static_cast<int>(cy + dy - rdot);
+                    const int rr = static_cast<int>(rdot * 2.0f);
+                    Ellipse(hdc, rx, ry, rx + rr, ry + rr);
+                    SelectObject(hdc, ob);
+                    DeleteObject(rb);
+                }
+                SelectObject(hdc, old_pen);
+                DeleteObject(null_pen);
+            }
+
+            // Center dot — on top of the ring.
+            HBRUSH dot_br  = CreateSolidBrush(dot_cr);
+            HPEN   null_pen = CreatePen(PS_NULL, 0, 0);
+            HBRUSH old_br  = static_cast<HBRUSH>(SelectObject(hdc, dot_br));
+            HPEN   old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
             Ellipse(hdc, cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R);
             SelectObject(hdc, old_br);
             SelectObject(hdc, old_pen);
@@ -917,6 +955,12 @@ void MainWindow::on_inflight_ui_()
     const size_t mp = pending_media_count_();
     SendMessageW(hStatus_, SB_SET_INFLIGHT_COLOR,
                  static_cast<WPARAM>(RGB(c.r, c.g, c.b)), 0);
+    // Update ring phase property; 0 = no ring, 1..65536 = ring + encoded phase.
+    const uint32_t phase_enc = inflight_needs_anim_()
+        ? static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u
+        : 0u;
+    SetPropW(hStatus_, L"TesseractStatusPhase",
+             reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(phase_enc)));
     if (hStatusTip_)
     {
         wchar_t buf[192];
@@ -4812,6 +4856,14 @@ void MainWindow::stop_anim_tick_()
 
 void MainWindow::repaint_anim_frame_()
 {
+    if (hStatus_ && inflight_needs_anim_())
+    {
+        const uint32_t phase_enc =
+            static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u;
+        SetPropW(hStatus_, L"TesseractStatusPhase",
+                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(phase_enc)));
+        InvalidateRect(hStatus_, nullptr, FALSE);
+    }
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
         InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);

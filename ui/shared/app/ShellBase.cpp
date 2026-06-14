@@ -4700,15 +4700,19 @@ ShellBase::cached_gif_source_bytes_(const std::string& url) const
 
 bool ShellBase::tick_anim_()
 {
+    const std::int64_t now = monotonic_ms_();
+    spin_tick_(now);
+
     // Stop once nothing animated is on-screen — entries linger in the cache
     // after scrolling away / switching rooms, so checking emptiness would keep
     // the 60 Hz timer (and its repaints) running forever.
-    if (!account_manager_.anim_cache().any_visible())
+    if (!account_manager_.anim_cache().any_visible() && !inflight_needs_anim_())
     {
         stop_anim_tick_();
         return false;
     }
-    if (account_manager_.anim_cache().advance(monotonic_ms_()))
+    const bool gif_frame = account_manager_.anim_cache().advance(now);
+    if (gif_frame || inflight_needs_anim_())
     {
         repaint_anim_frame_();
         // Pop-out windows have their own surfaces (and pickers) the shell's

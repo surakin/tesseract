@@ -16,6 +16,7 @@
 #include "app/ThreadPanelController.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
+#include "tk/inflight_dot.h"
 #include "tk/theme.h"
 #include "app/RoomWindowBase.h"
 #include "views/EncryptionSetupOverlay.h"
@@ -698,6 +699,9 @@ protected:
     bool offline_             = false;
     /// Extra in-flight HTTP request count (excludes the sync long-poll).
     std::uint32_t last_inflight_ = 0;
+    /// Accumulated rotation phase [0,1) for the inflight ring animation.
+    float         spin_accum_phase_  = 0.0f;
+    std::int64_t  spin_last_tick_ms_ = 0;
     /// Generation counter for show_status_message_ auto-clear: a late-firing
     /// callback only calls on_restore_status_ui_() if the gen still matches.
     std::uint32_t status_msg_gen_ = 0;
@@ -1831,6 +1835,27 @@ protected:
     // status-bar dot can be repainted with the new combined request count.
     virtual void on_inflight_ui_()
     {
+    }
+
+    // True when the inflight ring animation should be running (count >= 2).
+    bool inflight_needs_anim_() const { return inflight_total_() >= 2u; }
+
+    // Current rotation phase in [0,1) for the inflight ring.
+    float inflight_spin_phase_() const { return spin_accum_phase_; }
+
+    // Advance the ring phase accumulator. Call on every animation tick and
+    // whenever the inflight count changes so the phase stays continuous.
+    void spin_tick_(std::int64_t now_ms)
+    {
+        if (spin_last_tick_ms_ > 0 && inflight_needs_anim_())
+        {
+            const float dt = static_cast<float>(now_ms - spin_last_tick_ms_);
+            spin_accum_phase_ =
+                std::fmod(spin_accum_phase_ +
+                              dt * tk::inflight_revs_per_ms(inflight_total_()),
+                          1.0f);
+        }
+        spin_last_tick_ms_ = now_ms;
     }
 
     // Combined in-flight count: extra requests + 1 for the sync long-poll

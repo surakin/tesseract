@@ -20,6 +20,7 @@
 #include "app/status_links.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
+#include "tk/inflight_dot.h"
 #include "tk/video_decode.h"
 #include "tk/host.h"
 #include "tk/host_macos.h"
@@ -470,6 +471,43 @@ using tesseract::macos::trim;
 // Decoded-image cache entries — owned by the controller, referenced by
 // borrowed pointer from the shared views' avatar/image providers.
 using TkImagePtr = std::unique_ptr<tk::Image>;
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Inflight status-bar indicator: center dot + optional spinning ring.
+// ─────────────────────────────────────────────────────────────────────────
+
+@interface InflightDotView : NSView
+@property (nonatomic) uint32_t  inflightCount;
+@property (nonatomic) tk::Color dotColor;
+@property (nonatomic) float     spinPhase;
+@end
+
+@implementation InflightDotView
+- (instancetype)initWithFrame:(NSRect)frame
+{
+    if ((self = [super initWithFrame:frame]))
+    {
+        _dotColor = tk::Color::rgb(0x40BF4D);
+    }
+    return self;
+}
+- (void)drawRect:(NSRect)dirtyRect
+{
+    (void)dirtyRect;
+    CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
+    auto cv = tk::cg::make_canvas(ctx);
+    const CGSize sz  = self.bounds.size;
+    const float  c   = static_cast<float>(sz.width) / 2.0f;
+    constexpr tk::Color kRingColor = tk::Color::rgb(0xA0A0A6);
+    tk::draw_inflight_indicator(*cv, {c, c},
+                                tk::kInflightDotR, tk::kInflightOrbitR,
+                                tk::kInflightRingDotR,
+                                _dotColor, kRingColor,
+                                _spinPhase,
+                                _inflightCount >= 2);
+}
+- (BOOL)isFlipped { return YES; }
+@end
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Internal IBO that the C++ EventBridge calls back into.
@@ -1808,7 +1846,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Status bar: container view, sync-state label, in-flight dot.
     NSView*      _statusBarView;
     NSTextField* _statusLabel;
-    NSTextField* _inflightDotLabel;
+    InflightDotView* _inflightDotView;
 
     NSTimer* _animTimer;
     NSTimer* _markReadTimer;
@@ -7070,21 +7108,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                          forOrientation:NSLayoutConstraintOrientationHorizontal];
     [_statusBarView addSubview:_statusLabel];
 
-    _inflightDotLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    _inflightDotLabel.editable = NO;
-    _inflightDotLabel.selectable = NO;
-    _inflightDotLabel.bordered = NO;
-    _inflightDotLabel.bezeled = NO;
-    _inflightDotLabel.drawsBackground = NO;
-    _inflightDotLabel.stringValue = @"●";
-    _inflightDotLabel.font = [NSFont systemFontOfSize:10];
-    _inflightDotLabel.textColor = NSColor.tertiaryLabelColor;
-    _inflightDotLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [_inflightDotLabel setContentHuggingPriority:NSLayoutPriorityRequired
-                                forOrientation:NSLayoutConstraintOrientationHorizontal];
-    [_inflightDotLabel setContentCompressionResistancePriority:NSLayoutPriorityRequired
-                                              forOrientation:NSLayoutConstraintOrientationHorizontal];
-    [_statusBarView addSubview:_inflightDotLabel];
+    const CGFloat dotViewSz = static_cast<CGFloat>(tk::kInflightViewSize);
+    _inflightDotView = [[InflightDotView alloc]
+        initWithFrame:NSMakeRect(0, 0, dotViewSz, dotViewSz)];
+    _inflightDotView.translatesAutoresizingMaskIntoConstraints = NO;
+    [_statusBarView addSubview:_inflightDotView];
 
     [content addSubview:_statusBarView];
 
@@ -7103,9 +7131,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
             constraintEqualToAnchor:_statusBarView.trailingAnchor],
         [sep.heightAnchor constraintEqualToConstant:1],
 
-        [_inflightDotLabel.trailingAnchor
-            constraintEqualToAnchor:_statusBarView.trailingAnchor constant:-8],
-        [_inflightDotLabel.centerYAnchor
+        [_inflightDotView.widthAnchor constraintEqualToConstant:dotViewSz],
+        [_inflightDotView.heightAnchor constraintEqualToConstant:dotViewSz],
+        [_inflightDotView.trailingAnchor
+            constraintEqualToAnchor:_statusBarView.trailingAnchor constant:-4],
+        [_inflightDotView.centerYAnchor
             constraintEqualToAnchor:_statusBarView.centerYAnchor],
 
         [_statusLabel.leadingAnchor
@@ -7113,8 +7143,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         [_statusLabel.centerYAnchor
             constraintEqualToAnchor:_statusBarView.centerYAnchor],
         [_statusLabel.trailingAnchor
-            constraintEqualToAnchor:_inflightDotLabel.leadingAnchor
-                           constant:-8],
+            constraintEqualToAnchor:_inflightDotView.leadingAnchor
+                           constant:-4],
     ]];
 
     if (_shell)
@@ -7210,22 +7240,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_onInflightChanged
 {
-    if (!_inflightDotLabel || !_shell)
+    if (!_inflightDotView || !_shell)
         return;
-    const auto   c  = _shell->inflight_dot_color_();
+    const auto     c  = _shell->inflight_dot_color_();
     const uint32_t n  = _shell->inflight_total_();
-    const size_t fp = _shell->pool_pending_count_();
-    const size_t sp = _shell->mut_pool_pending_count_();
-    const size_t mp = _shell->pending_media_count_();
-    _inflightDotLabel.textColor =
-        [NSColor colorWithRed:c.r / 255.0
-                        green:c.g / 255.0
-                         blue:c.b / 255.0
-                        alpha:1.0];
+    const size_t   fp = _shell->pool_pending_count_();
+    const size_t   sp = _shell->mut_pool_pending_count_();
+    const size_t   mp = _shell->pending_media_count_();
+    _inflightDotView.dotColor      = c;
+    _inflightDotView.inflightCount = n;
+    _inflightDotView.spinPhase     = _shell->inflight_spin_phase_();
+    [_inflightDotView setNeedsDisplay:YES];
     NSString* first = (n == 1)
                           ? @"1 request in flight"
                           : [NSString stringWithFormat:@"%u requests in flight", n];
-    _inflightDotLabel.toolTip =
+    _inflightDotView.toolTip =
         [NSString stringWithFormat:
                       @"%@\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
                       first, mp, fp, sp];
@@ -7552,7 +7581,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_startAnimTickIfNeeded
 {
-    if (_animTimer || _shell->account_manager_.anim_cache().empty())
+    const bool need_anim = !_shell->account_manager_.anim_cache().empty()
+                           || _shell->inflight_needs_anim_();
+    if (_animTimer || !need_anim)
     {
         return;
     }
@@ -7571,6 +7602,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (_shell)
     {
         _shell->tick_anim_();
+        if (_inflightDotView && _shell->inflight_needs_anim_())
+        {
+            _inflightDotView.spinPhase = _shell->inflight_spin_phase_();
+            [_inflightDotView setNeedsDisplay:YES];
+        }
     }
 }
 

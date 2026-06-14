@@ -2118,8 +2118,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     };
 
     statusBar()->showMessage(tr("Not logged in"));
-    inflightDot_ = new QLabel("●", this);
-    inflightDot_->setContentsMargins(0, 0, 6, 0);
+    inflightDot_ = new InflightDotWidget(this);
+    inflightDot_->setContentsMargins(0, 0, 2, 0);
     statusBar()->addPermanentWidget(inflightDot_);
     init_pool_callbacks_();
     on_inflight_ui_();
@@ -3637,6 +3637,11 @@ void MainWindow::stop_anim_tick_()
 
 void MainWindow::repaint_anim_frame_()
 {
+    if (inflightDot_ && inflight_needs_anim_())
+    {
+        inflightDot_->update_phase(inflight_spin_phase_());
+        inflightDot_->update();
+    }
     if (mainAppSurface_)
     {
         mainAppSurface_->update_anim_regions();
@@ -4370,9 +4375,7 @@ void MainWindow::on_inflight_ui_()
     const auto fp = pool_pending_count_();
     const auto sp = mut_pool_pending_count_();
     const auto mp = pending_media_count_();
-    inflightDot_->setStyleSheet(
-        QStringLiteral("color: rgb(%1,%2,%3);")
-            .arg(c.r).arg(c.g).arg(c.b));
+    inflightDot_->update_state(n, c);
     const QString first = (n == 1) ? tr("1 request in flight")
                                    : tr("%1 requests in flight").arg(n);
     const QString tip =
