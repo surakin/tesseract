@@ -375,6 +375,8 @@ public:
     using ShellBase::has_status_override_;
     using ShellBase::inflight_needs_anim_;
     using ShellBase::inflight_spin_phase_;
+    using ShellBase::handle_profile_field_change_;
+    using ShellBase::own_extended_profile_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
