@@ -1,6 +1,50 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-13** (v0.8.3).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-14** (v0.8.4 unreleased).
+
+> **MSC4133 extended user profiles (2026-06-14, unreleased).**
+> Three new per-user profile fields in the account settings panel and the
+> user-profile info panel: **Pronouns** (`io.fsky.nyx.pronouns`), **Timezone**
+> (`us.cloke.msc4175.tz`), and **Biography** (`gay.fomx.biography`). Each
+> field uses a stable read key (`uk.tcpip.msc4133.<field>`) with an unstable
+> write key; the implementation reads stable then falls back to unstable, and
+> always writes stable so the data is readable by any compliant client. A
+> `get_extended_profile` / `set_extended_profile` FFI pair wraps matrix-sdk's
+> `get_raw_account_data_event` / `set_account_data`; a re-fetch after every
+> write keeps the UI in sync. `AccountSection` and `UserProfilePanel` gain
+> three `NativeTextField` rows. All four shells wired; **283 Rust + 861 C++ tests**.
+
+<!-- -->
+
+> **Unjoined space-children section + `RoomPreviewView` (2026-06-14, unreleased).**
+> When navigating into a space, a collapsible **"Not joined"** section appears
+> below the joined rooms listing every child room the user hasn't yet joined.
+> Clicking an unjoined row opens `RoomPreviewView` — a right-side panel showing
+> the room name, avatar, topic, member count, and a **Join** button — without
+> changing the active room. Under the hood: `space_children_all()` (new Rust SDK
+> function; `space_children()` refactored to delegate) returns both joined and
+> unjoined direct children. MSC3266 summaries for unjoined rooms are fetched
+> concurrently via `join_all` with `InFlightGuard` RAII and a generation counter
+> that cancels in-flight requests when the space changes. `RoomListView` renders
+> the new `kSecSpaceUnjoined` section (collapsible via
+> `room_section_space_unjoined_collapsed`). `MainAppWidget` gains
+> `show_room_preview` / `hide_room_preview` virtual slots; `RoomPreviewView` is
+> a new `ui/shared/views/` widget. Unjoined-row avatars are lazy-loaded on first
+> paint, not eagerly on space navigation (same `on_room_avatar_needed` path as
+> joined rooms). Wired in all four shells (Qt6, GTK4, Win32, macOS).
+
+<!-- -->
+
+> **Block-level Markdown rendering (2026-06-13, unreleased).**
+> Headings (`#` through `######`), unordered and ordered lists (including nested),
+> blockquotes, and tables now render visually in `MessageListView` across all
+> four canvas backends, complementing the existing inline styles (bold, italic,
+> code, strikethrough, links) and code-block syntax highlighting. Headings use
+> `FontRole::UiSemibold`; list items indent with correct bullet / ordinal;
+> blockquotes get an accent left-border stripe; tables use a fixed-width
+> columnar layout.
+
+<!-- -->
 
 > **Full-text message search, incl. encrypted rooms (2026-06-11/13).**
 > A global search overlay (**Ctrl+Shift+F** / **⌘⇧F**) searches your message
@@ -23,7 +67,7 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-13
 > `search_index_stats` / `search_index_size_bytes`, `SearchHit`,
 > `on_search_results` / `on_search_failed`. Shared code in `ShellBase` /
 > `EventHandlerBase`; wired in all four shells (Qt6, GTK4, Win32, macOS).
-> 240 Rust + 832 C++ tests. Verified on **Qt6**.
+> 283 Rust + 861 C++ tests. Verified on **Qt6**.
 
 > **In-room find-in-conversation search bar (2026-06-13).**
 > **Ctrl+F** (Win32 / Qt6 / GTK4) and **⌘F** (macOS) opens a `RoomSearchBar`
@@ -289,16 +333,18 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-06-13
 
 <!-- -->
 
-> **In-flight request indicator.**
-> A small coloured dot in the status bar shows the number of currently
-> in-flight Matrix API requests: green for 0–1, amber for 2–10, red for
-> more than 10. A tooltip on the dot shows the exact count. Wired on Qt6,
-> GTK4, Win32, and macOS. The macOS shell receives its status bar in the same
-> pass (it previously had none), giving all four platforms parity for the
-> sync-state label and in-flight dot. Every extra-sync media fetch is bounded
-> by a per-request timeout (30 s thumbnails/avatars, 120 s full media) so a
-> stalled or endlessly-retrying request can't pin the dot or a worker thread,
-> and the displayed count is re-read from the authoritative Rust atomic
+> **In-flight request indicator (animated spinning ring).**
+> An animated ring in the status bar shows the number of currently in-flight
+> Matrix API requests: green for 0–1, amber for 2–10, red for more than 10. The
+> ring is a set of small dots orbiting a 16 px circle at a constant angular
+> velocity (replaces the earlier static dot). A tooltip shows the exact count.
+> Wired on Qt6, GTK4, Win32, and macOS. The macOS shell receives its status bar
+> in the same pass (it previously had none), giving all four platforms parity for
+> the sync-state label and inflight ring. **71 SDK operations** across room_list,
+> account, send, verification, recovery, image_packs, pins, tags, and timeline
+> are covered by `InFlightGuard` RAII, so the indicator accurately tracks every
+> non-sync HTTP call. Shared draw logic in `tk::draw_inflight_indicator`
+> (`tk/inflight_dot.h`); the count is re-read from the authoritative Rust atomic
 > (`in_flight_count()`) on each change so it stays correct regardless of
 > cross-thread notification ordering.
 
@@ -558,8 +604,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 240 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 832 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 283 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 861 |
 
 ## Platforms
 
@@ -608,9 +654,10 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 ## Spaces (Step 7)
 
 - `is_space: bool` on `RoomInfo`; spaces shown at the bottom of the room list with `#` prefix on Qt6 / GTK4 (top-row dedicated bar on macOS).
-- `space_children(space_id)` FFI returning joined direct children.
+- `space_children(space_id)` FFI returning joined direct children; `space_children_all(space_id)` returning all direct children (joined + unjoined).
 - **Stack-based drill-in navigation** — selecting a space replaces the room list with its children; `←` back button + space name label at the top of the sidebar; recursive sub-spaces; auto-pop to "All rooms" when the stack is empty.
 - **Space children hidden from the root room list** — they appear only when navigating into the parent.
+- **Unjoined space children** — a collapsible "Not joined" section below the joined-rooms list shows every child room the user hasn't joined. Clicking opens `RoomPreviewView` (name, avatar, topic, member count, Join button) without leaving the current room. Summaries fetched concurrently via MSC3266 with generation-based cancellation.
 
 ## Shared UI toolkit (`tesseract_tk`)
 
@@ -634,6 +681,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Read receipts** — `EventTimelineItem::read_receipts()` aggregated via a `collect_read_receipts` helper; `MessageListView` paints up to 5 mini-avatar discs (16 px) with a `+N` overflow pill at the row's bottom-right.
 - **Hover-only `HH:MM` timestamp** — paints under the sender avatar when the row is hovered; no always-visible time column.
 - **MSC2545 sticker decryption** — encrypted-sticker support via direct `ruma = { features = ["compat-encrypted-stickers"] }`; sticker timeline events emit JSON-encoded `MediaSource` for the encrypted variant.
+- **Block-level Markdown rendering** — headings (`#` through `######`), unordered and ordered lists (including nested), blockquotes, and tables render visually in `MessageListView` across all four canvas backends. Headings use `FontRole::UiSemibold`; list items indent with correct bullet / ordinal; blockquotes get an accent left-border stripe; tables use fixed-width columns. Complements the existing inline styles and code-block syntax highlighting.
 
 ## Media
 
@@ -643,7 +691,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Visible-first download priority** — the per-lane FIFO `tokio::Semaphore` is replaced by a `PriorityGate` over a pure `MediaQueue` (priority desc, then FIFO seq). The timeline still eagerly enqueues every row's media at `Normal`, but a `MessageListView::on_visible_range_changed` callback (frame-coalesced, de-duped; re-exposed via `RoomView`, bound once in `wire_main_app_widget_`) calls `prioritize_media(group, ids)` so the media for the rows currently on screen jumps ahead of the off-screen backlog — and re-prioritizes as the user scrolls. Covers all four shells + the thread panel.
 - **Stuck-download reclamation** — matrix-sdk media is a single opaque await with no progress hook, so a stalled fetch would otherwise hold its lane slot until the 30/120 s timeout and freeze the queue. A slot held past an 8 s stall deadline stops counting against the lane limit (the gate grants the next, highest-priority waiter while the stuck download keeps draining in the background), and a hard ceiling (2× the lane) bounds total concurrent connections. Healthy downloads still behave exactly like the old semaphore.
 - **Bounded fetches** — every media download runs under a per-request timeout (30 s thumbnails/avatars, 120 s full files), so a stalled or endlessly-retrying request can't hang a read-pool worker thread or pin the in-flight indicator.
-- **Failed-fetch backoff** — a fetch that returns empty (network error / 5xx / timeout) is recorded in a per-key exponential-backoff cache (30 s → 30 min); the `ensure_*` avatar/media paths skip a key still in cooldown, so an unreachable avatar (e.g. a forgotten DM on a dead homeserver) stops being re-requested on every sync tick. Cleared on success and on cache-wipe.
+- **HTTP/2 multiplexing** — the reqwest media client uses HTTP/2 prior knowledge so parallel MXC downloads share connections; `MEDIA_BULK_PERMITS` is 10 concurrent fetches to take advantage of the extra bandwidth.
+- **Failed-fetch backoff** — a fetch that returns empty (network error / 5xx / timeout) is recorded in a per-key exponential-backoff cache (30 s → 30 min); the `ensure_*` avatar/media paths skip a key still in cooldown, so an unreachable avatar (e.g. a forgotten DM on a dead homeserver) stops being re-requested on every sync tick. The backoff state is persisted to `app_cache.db` across sessions so it survives a restart. Cleared on success and on cache-wipe.
 - **Inline images** — thumbnail to max 320 × 200, MSC2530 caption rule applied, rounded-rect chrome. Bytes are decoded off the UI thread on all four shells (`QImageReader` on Qt6, WIC on Win32, `CGImageSource` on macOS, `GdkPixbuf` on GTK4) and posted back via `post_to_ui_` so large images never stall paint or input.
 - **Media-preview gating (MSC4278)** — a global `media_previews` setting (`Off` / `Private` / `On`, default `On`) backed by the `m.media_preview_config` account-data event controls whether inline image/sticker/video thumbnails auto-load. Suppressed media renders a BlurHash (MSC2448) placeholder behind a click-to-load pill and is not fetched until revealed; `Private` mode suppresses only in public rooms (resolved against each room's cached `join_rule`, with the per-room `m.media_preview_config` override applied on top). The decision is a single pure function (`app/media_preview_policy.h::media_allowed`) consulted at both the receive-time fetch gate and the paint-time placeholder predicate, so a revealed/allowed item is fetched exactly when it is shown. **The user's own media is exempt from public-room suppression in `Private` mode** (you already have it locally and it is never a privacy/safety concern to you), but `Off` still suppresses everything including your own uploads. Wired once in `ShellBase`, so all four shells share it.
 - **File cards** — fixed 56-px-tall rounded card with filename (ellipsis-trimmed) + human-readable size.

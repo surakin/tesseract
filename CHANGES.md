@@ -3,6 +3,102 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased (v0.8.4)
+
+### 2026-06-14
+
+- feat(profile): implement MSC4133 extended user profiles. Three new profile
+  fields are exposed in the account settings panel and the user-profile info
+  panel: **Pronouns** (`io.fsky.nyx.pronouns`), **Timezone**
+  (`us.cloke.msc4175.tz`), and **Biography** (`gay.fomx.biography`). Each uses
+  a stable read key (`uk.tcpip.msc4133.<field>`) with an unstable write key;
+  the implementation reads stable then falls back to unstable, and always writes
+  stable. A `get_extended_profile` / `set_extended_profile` FFI pair wraps
+  matrix-sdk's `get_raw_account_data_event` / `set_account_data`; a re-fetch
+  after write keeps the UI in sync without stale data. `AccountSection` and
+  `UserProfilePanel` each gain three `NativeTextField` rows with a loading /
+  saving state. 283 Rust + 861 C++ tests.
+
+- feat(sdk): enable HTTP/2 multiplexing for media downloads. The reqwest media
+  client is configured with `.http2_prior_knowledge()` so parallel MXC downloads
+  can share a single TCP connection. `MEDIA_BULK_PERMITS` is raised from 6 to 10
+  to take advantage of the extra bandwidth, reducing connection overhead on a
+  busy room open.
+
+- fix(rooms): lazy-load unjoined space-child avatars from paint instead of
+  eagerly on space navigation. The same `on_room_avatar_needed` / `paint_row`
+  callback path used for joined rooms now drives unjoined-room-row avatar
+  fetches, so navigating into a large space no longer fires 500+ avatar requests
+  immediately on fetch.
+
+- feat(spaces): unjoined rooms section + `RoomPreviewView` across all four shells.
+  When navigating into a space, a collapsible **"Not joined"** section appears
+  below the joined rooms, listing every space-child room the user hasn't joined.
+  Clicking an unjoined row opens `RoomPreviewView` — a right-side panel showing
+  the room name, avatar, topic, member count, and a **Join** button — without
+  changing the active room. The feature is built across the full stack: a new
+  `space_children_all()` Rust SDK function (with `space_children()` refactored
+  to delegate to it) returns both joined and unjoined direct children; MSC3266
+  room summaries are fetched concurrently via `join_all` with `InFlightGuard`
+  RAII and a generation counter that cancels in-flight requests when the space
+  changes; `RoomListView` renders the new `kSecSpaceUnjoined` section
+  (collapsible, setting `room_section_space_unjoined_collapsed`); `MainAppWidget`
+  gains `show_room_preview` / `hide_room_preview` virtual slots; `RoomPreviewView`
+  is a new `ui/shared/views/` widget wired in all four shells (Qt6, GTK4, Win32,
+  macOS).
+
+- feat(sdk): extend `InFlightGuard` RAII coverage to all non-sync HTTP calls.
+  Previously only a subset of operations incremented the in-flight count; now 71
+  SDK operations across room_list, account, send, verification, recovery,
+  image_packs, pins, tags, and timeline modules all carry an `InFlightGuard` so
+  the status-bar indicator accurately tracks every in-flight Matrix API call.
+
+- feat(statusbar): animate the in-flight indicator as a spinning ring instead of
+  a static dot. An animated ring (set of small dots on a 16 px orbit animating
+  at a constant angular velocity) replaces the coloured dot; color thresholds are
+  unchanged (green ≤ 1, amber ≤ 10, red > 10). Shared draw logic lives in a new
+  `tk::draw_inflight_indicator` helper in `tk/inflight_dot.h`; each platform
+  backend wraps it in a canvas widget (`InflightDotWidget` on Qt6; analogous
+  implementations on GTK4, Win32, and macOS).
+
+### 2026-06-13
+
+- feat(markdown): block-level rendering in sent and received messages. Headings
+  (`#` through `######`), unordered and ordered lists (including nested),
+  blockquotes, and tables now render visually in `MessageListView` across all
+  four canvas backends. Headings use a heavier weight (`FontRole::UiSemibold`);
+  list items indent with correct bullet / ordinal; blockquotes get an accent
+  left-border stripe; tables lay out in a fixed-width columnar grid. Complements
+  the existing inline styles (bold, italic, code, strikethrough) and syntax
+  highlighting.
+
+- feat(timeline): block scroll and show a deferred scrim + spinner during
+  historical event navigation. When the user jumps to a historical event
+  (jump-to-date, event permalink, pinned message) the timeline freezes scroll
+  input and overlays a translucent scrim with a centered spinner until the SDK
+  delivers the focused event; the scrim then fades and scroll unlocks. Prevents
+  inadvertent position changes during the async load.
+
+- feat(media): persist exponential backoff state for failed media fetches across
+  sessions. The `media_fetch_failed_` in-memory backoff cache (30 s → 30 min) is
+  now serialised to the per-account `app_cache.db` SQLite so a network error at
+  end of session doesn't cause a flood of re-requests on the next startup.
+  Cleared on cache-wipe and on a successful fetch as before.
+
+- fix(timeline): snap to the live bottom when returning from a historical view.
+  After navigating away from the live end (jump-to-date, event permalink) and
+  dismissing the historical context, the timeline now scrolls to the current
+  bottom of the live feed instead of staying anchored at the historical position.
+
+- fix(popout): restore full secondary-window functionality — thread list, thread
+  open, in-room search (Ctrl+F), and jump-to-date now all work inside pop-out
+  room windows. Missing wiring in `RoomWindowBase` prevented the shared
+  `RoomView`-level features from reaching the pop-out's room context.
+
+- feat(tk): make `CheckButton` text `FontRole` configurable. A new
+  `set_font_role(FontRole)` API lets callers override the default label weight /
+  size; used by Settings checkboxes to match the surrounding body text.
+
 ## v0.8.3 — 2026-06-13
 
 Changes since v0.8.0:

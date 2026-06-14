@@ -13,12 +13,12 @@ version) are noted where relevant.
 - System tray with minimize-to-tray (default), unread dot, and mention-state color; clicking the tray icon jumps to the first unread room
 - Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
-- In-flight request indicator in the status bar (green / amber / red dot with tooltip showing the count)
+- In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
 
 ## Messaging
 
 - Send, receive, edit, reply, react, and redact
-- Markdown formatting (send and receive)
+- Markdown formatting — inline (bold, italic, strikethrough, code, links) and block-level (headings, lists, blockquotes, tables)
 - Syntax-highlighted code blocks (bidirectional, theme-aware), rendered on a tinted background (single enclosing panel for fenced blocks, inline tint for `code`)
 - Message rows show the event timestamp (HH:MM) under the avatar — always on the first message of a group, on hover for continuation rows; same-sender messages within 5 minutes group into continuation rows
 - Reactions: Unicode and custom emoji, both send and display
@@ -54,9 +54,9 @@ version) are noted where relevant.
 
 ## Rooms & navigation
 
-- Room list with sections: Favorites, DMs, Rooms, Spaces (tag-aware: `m.favourite`)
+- Room list with sections: Favorites, DMs, Rooms, Spaces (tag-aware: `m.favourite`); spaces show a collapsible "Not joined" sub-section for unjoined child rooms
 - Sticky section headers — the current section's header pins to the top while scrolling (interactive: click to collapse/expand)
-- Space navigation with drill-down and recursive subspace support
+- Space navigation with drill-down and recursive subspace support; unjoined child rooms shown with a preview panel (name, avatar, topic, member count, Join button)
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
 - Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
@@ -95,7 +95,7 @@ version) are noted where relevant.
 ## Account & profile
 
 - Login and logout (SDK-based logout removes the device server-side)
-- Profile editing (display name, avatar)
+- Profile editing: display name, avatar, and extended fields — pronouns, timezone, and biography (MSC4133)
 - Multi-account
 
 ## Settings
