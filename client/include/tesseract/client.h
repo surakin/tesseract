@@ -908,6 +908,18 @@ public:
     /// Delete all media-backoff entries (called on cache wipe / logout).
     void clear_media_backoff_db();
 
+    /// Load all persisted room-summary-backoff entries from `app_cache.db`.
+    /// Returns an empty vector when the DB is not open (before sync-start).
+    std::vector<RoomSummaryBackoffEntry> load_room_summary_backoff() const;
+
+    /// Upsert a backoff entry for `room_id` (called on fetch failure).
+    void note_room_summary_backoff_failed(const std::string& room_id,
+                                          std::uint32_t       attempts,
+                                          std::int64_t        deadline_secs);
+
+    /// Delete the backoff entry for `room_id` (called on fetch success).
+    void note_room_summary_backoff_ok(const std::string& room_id);
+
     /// Send a pre-fetched GIF MP4 into `room_id` as an `m.video` carrying the
     /// `fi.mau.gif` vendor hint (autoplay/loop/muted). `thumb_bytes` is a
     /// static poster image (`thumb_mime`, e.g. "image/png"; empty to omit).

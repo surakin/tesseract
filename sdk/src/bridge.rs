@@ -485,6 +485,17 @@ pub mod ffi {
         deadline_secs: i64,
     }
 
+    /// One row from the `room_summary_backoff` table in `app_cache.db`.
+    /// Loaded at sync-start and used to repopulate `ShellBase::unjoined_fetch_retry_`.
+    struct RoomSummaryBackoffEntry {
+        /// Matrix room ID that failed to fetch a preview.
+        room_id: String,
+        /// Attempt count; determines the next backoff window on subsequent failure.
+        attempts: u32,
+        /// Unix epoch seconds (UTC) after which the room may be retried.
+        deadline_secs: i64,
+    }
+
     /// Snapshot of the server-side key-backup state plus a running counter of
     /// imported room keys for this device. Carried by `on_backup_progress`
     /// callbacks and returned by `backup_state()`.
@@ -1102,6 +1113,23 @@ pub mod ffi {
 
         /// Delete all rows from `media_backoff` (on cache wipe / logout).
         fn clear_media_backoff_db(self: &ClientFfi);
+
+        /// Load all rows from the `room_summary_backoff` table in `app_cache.db`.
+        /// Returns an empty vec when the DB is not yet open or on any error.
+        fn load_room_summary_backoff(self: &ClientFfi) -> Vec<RoomSummaryBackoffEntry>;
+
+        /// Upsert a backoff entry for `room_id` (on fetch failure). No-op when
+        /// the DB is not yet open.
+        fn note_room_summary_backoff_failed(
+            self: &ClientFfi,
+            room_id: &str,
+            attempts: u32,
+            deadline_secs: i64,
+        );
+
+        /// Delete the backoff entry for `room_id` (on fetch success). No-op when
+        /// the DB is not yet open or the entry does not exist.
+        fn note_room_summary_backoff_ok(self: &ClientFfi, room_id: &str);
 
         /// Live count of extra in-flight HTTP operations (excludes the sync
         /// long-poll). Cheap atomic read; safe to call from any thread.

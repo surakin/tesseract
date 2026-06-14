@@ -804,14 +804,22 @@ private:
         float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
-        const std::string& initials_src = s.name.empty() ? s.room_id : s.name;
+        const bool loading = s.name.empty();
+
+        // Per-row lazy fetch: fire once per room_id; host deduplicates in-flight requests.
+        if (loading && owner_.on_unjoined_room_summary_needed)
+            owner_.on_unjoined_room_summary_needed(s.room_id);
+
         const tk::Image* avatar = nullptr;
-        if (owner_.avatar_provider_ && !s.avatar_url.empty())
+        if (!loading && owner_.avatar_provider_ && !s.avatar_url.empty())
         {
             avatar = owner_.avatar_provider_(s.avatar_url);
             if (!avatar && owner_.on_unjoined_room_avatar_needed)
                 owner_.on_unjoined_room_avatar_needed(s);
         }
+        // Use room_id for the initials disc even while loading so each row has a
+        // distinct placeholder colour.
+        const std::string& initials_src = loading ? s.room_id : s.name;
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
                     initials_src, pal.avatar_initials_bg, pal.avatar_initials_text);
 
@@ -822,13 +830,21 @@ private:
         // Name + members/join-rule on two lines, muted to signal unjoined.
         constexpr std::uint8_t kAlpha = 153; // ~60%
 
-        std::string meta = std::to_string(s.num_joined_members) + " members";
-        if (s.join_rule == "knock")       meta += " \xc2\xb7 Knock";
-        else if (s.join_rule == "invite") meta += " \xc2\xb7 Invite-only";
-        else if (s.join_rule == "restricted") meta += " \xc2\xb7 Restricted";
+        const std::string display = loading ? "Loading\xe2\x80\xa6" : s.name;
+        std::string meta;
+        if (loading)
+        {
+            meta = "Fetching room details\xe2\x80\xa6";
+        }
+        else
+        {
+            meta = std::to_string(s.num_joined_members) + " members";
+            if (s.join_rule == "knock")            meta += " \xc2\xb7 Knock";
+            else if (s.join_rule == "invite")      meta += " \xc2\xb7 Invite-only";
+            else if (s.join_rule == "restricted")  meta += " \xc2\xb7 Restricted";
+        }
 
         auto& cache = room_cache_[s.room_id];
-        const std::string& display = s.name.empty() ? s.room_id : s.name;
         if (cache.display_name != display || cache.text_w != text_w ||
             cache.preview != meta)
         {
@@ -1012,6 +1028,20 @@ void RoomListView::clear_space_unjoined_rooms()
     {
         list_->invalidate_data();
     }
+}
+
+void RoomListView::update_unjoined_room_summary(const tesseract::RoomSummary& s)
+{
+    for (auto& entry : space_unjoined_rooms_)
+    {
+        if (entry.room_id == s.room_id)
+        {
+            entry = s;
+            break;
+        }
+    }
+    if (list_)
+        list_->invalidate_data();
 }
 
 int RoomListView::unjoined_room_count() const

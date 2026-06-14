@@ -773,6 +773,19 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             if (!s.avatar_url.empty())
                 ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
         };
+    app->room_list_view()->on_unjoined_room_summary_needed =
+        [this](const std::string& room_id)
+        {
+            if (active_space_id_.empty() ||
+                unjoined_fetch_pending_.count(room_id))
+                return;
+            auto retry_it = unjoined_fetch_retry_.find(room_id);
+            if (retry_it != unjoined_fetch_retry_.end() &&
+                std::chrono::steady_clock::now() < retry_it->second.next_retry)
+                return;
+            unjoined_fetch_pending_.insert(room_id);
+            fetch_single_room_summary_(active_space_id_, room_id);
+        };
 
     // Quick switcher (Ctrl+K): data + activation are shared. The native search
     // field, the keyboard accelerator, and on_close stay per-shell.
@@ -2214,6 +2227,8 @@ void ShellBase::update_space_children_cache_()
     {
         space_children_cache_.clear();
         unjoined_space_children_cache_.clear();
+        unjoined_summaries_cache_.clear();
+        unjoined_fetch_pending_.clear();
         return;
     }
     std::vector<std::string> space_ids;
@@ -2228,6 +2243,8 @@ void ShellBase::update_space_children_cache_()
     {
         space_children_cache_.clear();
         unjoined_space_children_cache_.clear();
+        unjoined_summaries_cache_.clear();
+        unjoined_fetch_pending_.clear();
         return;
     }
     auto sess = active_account_;
@@ -2284,27 +2301,60 @@ void ShellBase::update_space_children_cache_()
         });
 }
 
-void ShellBase::fetch_space_unjoined_summaries_(const std::string& space_id)
+void ShellBase::fetch_single_room_summary_(const std::string& space_id,
+                                           const std::string& room_id)
 {
-    auto it = unjoined_space_children_cache_.find(space_id);
-    if (it == unjoined_space_children_cache_.end() || it->second.empty())
-        return;
-
-    std::vector<std::string> ids = it->second;
     auto sess = active_account_;
-    const std::uint64_t gen = ++unjoined_fetch_gen_;
+    const std::uint64_t gen = unjoined_fetch_gen_;
     run_async_(
-        [this, sess, space_id, ids = std::move(ids), gen]()
+        [this, sess, space_id, room_id, gen]()
         {
             if (!sess || !sess->client) return;
             auto summaries =
-                sess->client->get_space_child_summaries_batch(space_id, ids);
+                sess->client->get_space_child_summaries_batch(space_id, {room_id});
             post_to_ui_alive_(
-                [this, space_id, summaries = std::move(summaries), gen]() mutable
+                [this, space_id, room_id, gen, summaries = std::move(summaries)]() mutable
                 {
+                    // Always erase from pending so the slot is freed even on cancel.
+                    unjoined_fetch_pending_.erase(room_id);
                     if (gen != unjoined_fetch_gen_) return;
-                    unjoined_summaries_cache_[space_id] = std::move(summaries);
-                    on_space_unjoined_summaries_ready_ui_(space_id);
+                    if (summaries.empty())
+                    {
+                        // Exponential backoff: 5s, 10s, 20s … capped at 5 min.
+                        auto& rs = unjoined_fetch_retry_[room_id];
+                        ++rs.attempts;
+                        using SC = std::chrono::system_clock;
+                        using sc = std::chrono::steady_clock;
+                        using s  = std::chrono::seconds;
+                        const auto delay =
+                            std::min(s(5) * (1 << std::min(rs.attempts - 1, 6)),
+                                     s(300));
+                        rs.next_retry = sc::now() + delay;
+                        if (client_)
+                        {
+                            const auto deadline_sys = SC::now() + delay;
+                            client_->note_room_summary_backoff_failed(
+                                room_id,
+                                static_cast<std::uint32_t>(rs.attempts),
+                                std::chrono::duration_cast<s>(
+                                    deadline_sys.time_since_epoch()).count());
+                        }
+                        return;
+                    }
+                    auto& cached = unjoined_summaries_cache_[space_id];
+                    for (auto& entry : cached)
+                    {
+                        if (entry.room_id == room_id)
+                        {
+                            entry = std::move(summaries.front());
+                            if (client_)
+                                client_->note_room_summary_backoff_ok(room_id);
+                            if (main_app_)
+                                if (auto* rl = main_app_->room_list_view())
+                                    rl->update_unjoined_room_summary(entry);
+                            break;
+                        }
+                    }
                 });
         });
 }
@@ -2312,12 +2362,35 @@ void ShellBase::fetch_space_unjoined_summaries_(const std::string& space_id)
 const std::vector<tesseract::RoomSummary>&
 ShellBase::get_cached_unjoined_summaries_(const std::string& space_id)
 {
-    static const std::vector<tesseract::RoomSummary> kEmpty;
-    auto it = unjoined_summaries_cache_.find(space_id);
-    if (it != unjoined_summaries_cache_.end())
-        return it->second;
-    fetch_space_unjoined_summaries_(space_id);
-    return kEmpty;
+    if (active_space_id_ != space_id)
+    {
+        active_space_id_ = space_id;
+        ++unjoined_fetch_gen_;
+        unjoined_fetch_pending_.clear();
+        unjoined_fetch_retry_.clear();
+    }
+    auto& summaries = unjoined_summaries_cache_[space_id];
+    auto child_it = unjoined_space_children_cache_.find(space_id);
+    if (child_it != unjoined_space_children_cache_.end())
+    {
+        // Add placeholder entries for any room IDs not yet in the cache.
+        // Real data is filled in per-row as rows become visible via
+        // fetch_single_room_summary_.
+        std::unordered_set<std::string> have;
+        have.reserve(summaries.size());
+        for (const auto& s : summaries)
+            have.insert(s.room_id);
+        for (const auto& id : child_it->second)
+        {
+            if (!have.count(id))
+            {
+                tesseract::RoomSummary s;
+                s.room_id = id;
+                summaries.push_back(std::move(s));
+            }
+        }
+    }
+    return summaries;
 }
 
 void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
@@ -4050,6 +4123,9 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     active_tab_idx_ = 0;
     space_stack_.clear();
     ++unjoined_fetch_gen_;
+    unjoined_fetch_pending_.clear();
+    unjoined_fetch_retry_.clear();
+    active_space_id_.clear();
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
@@ -4098,6 +4174,23 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
                       + std::max(std::chrono::seconds::zero(),
                                  std::chrono::duration_cast<std::chrono::seconds>(remaining));
         media_fetch_failed_[entry.url] = b;
+    }
+    for (const auto& entry : client_->load_room_summary_backoff())
+    {
+        using SC     = std::chrono::system_clock;
+        using Steady = std::chrono::steady_clock;
+        const auto stored    = SC::time_point{std::chrono::seconds{entry.deadline_secs}};
+        const auto remaining = stored - SC::now();
+        if (remaining <= std::chrono::seconds::zero())
+        {
+            client_->note_room_summary_backoff_ok(entry.room_id); // prune expired row
+            continue;
+        }
+        UnjoinedRetryState rs;
+        rs.attempts  = static_cast<int>(entry.attempts);
+        rs.next_retry = Steady::now()
+                      + std::chrono::duration_cast<Steady::duration>(remaining);
+        unjoined_fetch_retry_[entry.room_id] = rs;
     }
 
     my_user_id_ = sess.user_id;
@@ -4322,6 +4415,9 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // refresh_account_ui_after_switch_, the empty branch via the login view).
     space_stack_.clear();
     ++unjoined_fetch_gen_;
+    unjoined_fetch_pending_.clear();
+    unjoined_fetch_retry_.clear();
+    active_space_id_.clear();
     my_user_id_.clear();
     my_display_name_.clear();
     my_avatar_url_.clear();
@@ -6121,6 +6217,9 @@ void ShellBase::restart_sdk_()
     tabs_.clear();
     space_stack_.clear();
     ++unjoined_fetch_gen_;
+    unjoined_fetch_pending_.clear();
+    unjoined_fetch_retry_.clear();
+    active_space_id_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
     // MSC4278 per-account gating state.

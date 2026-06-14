@@ -110,6 +110,16 @@ public:
     // Same contract as on_room_avatar_needed but for unjoined space-child rows.
     std::function<void(const tesseract::RoomSummary& /*summary*/)> on_unjoined_room_avatar_needed;
 
+    // Fires from paint for each placeholder unjoined row (name empty, summary
+    // not yet fetched). The host should start a per-room summary fetch.
+    // The host guards against duplicate in-flight requests.
+    std::function<void(const std::string& /*room_id*/)> on_unjoined_room_summary_needed;
+
+    // Called by the host when a single room summary fetch completes. Updates
+    // the matching row in space_unjoined_rooms_ and triggers a repaint without
+    // rebuilding the full item list.
+    void update_unjoined_room_summary(const tesseract::RoomSummary& s);
+
     // Fires when the user clicks the × clear button in the search header.
     // The host should clear the NativeTextField text and reset the search.
     std::function<void()> on_search_clear;

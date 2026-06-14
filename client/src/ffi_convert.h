@@ -30,6 +30,11 @@ inline MediaBackoffEntry from_ffi(const tesseract_ffi::MediaBackoffEntry& e)
     return {std::string(e.url), e.attempts, e.deadline_secs};
 }
 
+inline RoomSummaryBackoffEntry from_ffi(const tesseract_ffi::RoomSummaryBackoffEntry& e)
+{
+    return {std::string(e.room_id), e.attempts, e.deadline_secs};
+}
+
 inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p)
 {
     BackupState state = BackupState::Unknown;

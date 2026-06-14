@@ -620,6 +620,40 @@ impl ClientFfi {
             clear_media_backoff(conn);
         }
     }
+
+    // ── Room summary backoff persistence ─────────────────────────────────
+
+    pub fn load_room_summary_backoff(&self) -> Vec<crate::ffi::RoomSummaryBackoffEntry> {
+        let guard = self.app_cache_db.lock();
+        let Some(conn) = guard.as_ref() else { return vec![] };
+        query_room_summary_backoff(conn)
+            .into_iter()
+            .map(|(room_id, attempts, deadline_secs)| crate::ffi::RoomSummaryBackoffEntry {
+                room_id,
+                attempts,
+                deadline_secs,
+            })
+            .collect()
+    }
+
+    pub fn note_room_summary_backoff_failed(
+        &self,
+        room_id: &str,
+        attempts: u32,
+        deadline_secs: i64,
+    ) {
+        let guard = self.app_cache_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            upsert_room_summary_backoff(conn, room_id, attempts, deadline_secs);
+        }
+    }
+
+    pub fn note_room_summary_backoff_ok(&self, room_id: &str) {
+        let guard = self.app_cache_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            delete_room_summary_backoff(conn, room_id);
+        }
+    }
 }
 
 /// Pure selection logic for unread prefetch, factored out so it can be unit
@@ -779,6 +813,11 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
              url      TEXT    NOT NULL PRIMARY KEY,
              attempts INTEGER NOT NULL,
              deadline INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS room_summary_backoff (
+             room_id  TEXT    NOT NULL PRIMARY KEY,
+             attempts INTEGER NOT NULL,
+             deadline INTEGER NOT NULL
          );",
     )
     .ok()?;
@@ -875,6 +914,48 @@ pub(super) fn delete_media_backoff(conn: &rusqlite::Connection, url: &str) {
 
 pub(super) fn clear_media_backoff(conn: &rusqlite::Connection) {
     let _ = conn.execute("DELETE FROM media_backoff", []);
+}
+
+// ── room_summary_backoff DB helpers ───────────────────────────────────────
+
+pub(super) fn query_room_summary_backoff(
+    conn: &rusqlite::Connection,
+) -> Vec<(String, u32, i64)> {
+    let Ok(mut stmt) =
+        conn.prepare("SELECT room_id, attempts, deadline FROM room_summary_backoff")
+    else {
+        return vec![];
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, u32>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    }) else {
+        return vec![];
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
+
+pub(super) fn upsert_room_summary_backoff(
+    conn: &rusqlite::Connection,
+    room_id: &str,
+    attempts: u32,
+    deadline: i64,
+) {
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO room_summary_backoff (room_id, attempts, deadline) \
+         VALUES (?1, ?2, ?3)",
+        rusqlite::params![room_id, attempts, deadline],
+    );
+}
+
+pub(super) fn delete_room_summary_backoff(conn: &rusqlite::Connection, room_id: &str) {
+    let _ = conn.execute(
+        "DELETE FROM room_summary_backoff WHERE room_id = ?1",
+        rusqlite::params![room_id],
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────

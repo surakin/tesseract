@@ -627,6 +627,15 @@ struct SearchIndexStats
     std::uint64_t index_bytes = 0;
 };
 
+/// One persisted room-summary-backoff entry loaded from `app_cache.db` at sync-start.
+/// Mirrors the `RoomSummaryBackoffEntry` cxx bridge struct.
+struct RoomSummaryBackoffEntry
+{
+    std::string room_id;
+    std::uint32_t attempts = 0;
+    std::int64_t deadline_secs = 0;
+};
+
 /// One persisted media-backoff entry loaded from `app_cache.db` at sync-start.
 /// Mirrors the `MediaBackoffEntry` cxx bridge struct.
 struct MediaBackoffEntry

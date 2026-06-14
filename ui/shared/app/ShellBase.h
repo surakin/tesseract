@@ -371,15 +371,27 @@ protected:
     std::unordered_map<std::string, std::vector<std::string>>
         unjoined_space_children_cache_;
 
-    // space_id → MSC3266 summaries for unjoined children.
-    // Fetched lazily via fetch_space_unjoined_summaries_().
+    // space_id → per-room summaries for unjoined children.
+    // Entries are initially placeholder (room_id only, name empty); real data
+    // is filled in per-room as rows are painted via fetch_single_room_summary_.
     std::unordered_map<std::string, std::vector<tesseract::RoomSummary>>
         unjoined_summaries_cache_;
-    // Incremented each time a new batch fetch is dispatched or cancelled.
-    // Each worker captures the generation at dispatch time; on arrival the
-    // callback is silently dropped if the gen has since advanced (navigation
-    // or account switch happened while the batch was in flight).
+    // Room IDs whose individual summary fetch is currently in flight.
+    std::unordered_set<std::string> unjoined_fetch_pending_;
+    // Per-room exponential backoff for rooms that returned an error (403/404/…).
+    // Cleared whenever the active space changes so stale failure state doesn't
+    // persist if the user re-enters the same space later.
+    struct UnjoinedRetryState
+    {
+        int attempts = 0;
+        std::chrono::steady_clock::time_point next_retry{};
+    };
+    std::unordered_map<std::string, UnjoinedRetryState> unjoined_fetch_retry_;
+    // Bumped whenever the active space changes; captured by each
+    // fetch_single_room_summary_ call so stale completions are discarded.
     std::uint64_t unjoined_fetch_gen_ = 0;
+    // Space ID whose unjoined section is currently displayed in the room list.
+    std::string active_space_id_;
     std::string current_room_id_;
     // Most-recently-visited room IDs in visit order (front = most recent),
     // recorded in after_active_room_changed_(). Feeds the Ctrl+K quick
@@ -1928,7 +1940,8 @@ protected:
     // Fetch MSC3266 summaries for unjoined children of space_id via the
     // worker pool. Stores in unjoined_summaries_cache_ and fires
     // on_space_unjoined_summaries_ready_ui_().
-    void fetch_space_unjoined_summaries_(const std::string& space_id);
+    void fetch_single_room_summary_(const std::string& space_id,
+                                    const std::string& room_id);
 
     // ── Extended profile (MSC4133) helpers ────────────────────────────────────
 

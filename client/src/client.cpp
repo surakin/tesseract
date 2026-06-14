@@ -1075,6 +1075,37 @@ void Client::clear_media_backoff_db()
     impl_->ffi->clear_media_backoff_db();
 }
 
+std::vector<RoomSummaryBackoffEntry> Client::load_room_summary_backoff() const
+{
+    if (!impl_)
+        return {};
+    SH_FFI;
+    auto ffi_vec = impl_->ffi->load_room_summary_backoff();
+    std::vector<RoomSummaryBackoffEntry> out;
+    out.reserve(ffi_vec.size());
+    for (const auto& e : ffi_vec)
+        out.push_back(from_ffi(e));
+    return out;
+}
+
+void Client::note_room_summary_backoff_failed(const std::string& room_id,
+                                               std::uint32_t       attempts,
+                                               std::int64_t        deadline_secs)
+{
+    if (!impl_)
+        return;
+    SH_FFI;
+    impl_->ffi->note_room_summary_backoff_failed(room_id, attempts, deadline_secs);
+}
+
+void Client::note_room_summary_backoff_ok(const std::string& room_id)
+{
+    if (!impl_)
+        return;
+    SH_FFI;
+    impl_->ffi->note_room_summary_backoff_ok(room_id);
+}
+
 Result Client::send_gif_video(
     const std::string& room_id, const std::vector<uint8_t>& mp4_bytes,
     const std::string& mime_type, const std::string& body, std::uint32_t width,
