@@ -91,7 +91,8 @@ void RoomPreviewView::reset_layouts_()
     alias_layout_.reset();
     topic_layout_.reset();
     meta_layout_.reset();
-    factory_seen_ = nullptr;
+    factory_seen_  = nullptr;
+    last_bounds_h_ = -1.0f;
 }
 
 void RoomPreviewView::fire_join_()
@@ -112,24 +113,12 @@ void RoomPreviewView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     bounds_ = bounds;
     if (!summary_) return;
 
-    // Estimate button row y (same heuristic as InviteCard — rebuilt in paint).
-    constexpr float kNameH    = 20.0f;
-    constexpr float kAliasH   = 16.0f;
-    constexpr float kTopicH   = 48.0f; // 3 lines × 16
-    constexpr float kMetaH    = 16.0f;
-
-    const float cx = bounds.x + (bounds.w - kContentW) * 0.5f;
-    float cy = bounds.y + kPadY + kAvatarD + kGap
-             + kNameH + kGap * 0.5f;
-    if (!summary_->canonical_alias.empty())
-        cy += kAliasH + kGap * 0.5f;
-    if (!summary_->topic.empty())
-        cy += kTopicH + kGap;
-    cy += kMetaH + kGap;
-
-    const float btn_w = (kContentW - kBtnGap) * 0.5f;
-    if (join_btn_)    join_btn_->arrange(lc, {cx, cy, btn_w, kBtnH});
-    if (dismiss_btn_) dismiss_btn_->arrange(lc, {cx + btn_w + kBtnGap, cy, btn_w, kBtnH});
+    // Pin buttons to the bottom of the panel so the topic can grow freely.
+    const float cx      = bounds.x + (bounds.w - kContentW) * 0.5f;
+    const float btn_y   = bounds.y + bounds.h - kPadY - kBtnH;
+    const float btn_w   = (kContentW - kBtnGap) * 0.5f;
+    if (join_btn_)    join_btn_->arrange(lc, {cx, btn_y, btn_w, kBtnH});
+    if (dismiss_btn_) dismiss_btn_->arrange(lc, {cx + btn_w + kBtnGap, btn_y, btn_w, kBtnH});
 }
 
 // ── paint ────────────────────────────────────────────────────────────────────
@@ -149,6 +138,8 @@ void RoomPreviewView::paint(tk::PaintCtx& ctx)
         reset_layouts_();
         factory_seen_ = &ctx.factory;
     }
+
+    // Fixed single-line layouts (don't depend on available height).
     if (!name_layout_)
     {
         tk::TextStyle name_style{};
@@ -175,14 +166,31 @@ void RoomPreviewView::paint(tk::PaintCtx& ctx)
             alias_style.max_width = kContentW;
             alias_layout_ = ctx.factory.build_text(s.canonical_alias, alias_style);
         }
-        if (!s.topic.empty())
-        {
-            tk::TextStyle topic_style{};
-            topic_style.role      = tk::FontRole::Body;
-            topic_style.trim      = tk::TextTrim::Ellipsis;
-            topic_style.max_width = kContentW;
-            topic_layout_ = ctx.factory.build_text(s.topic, topic_style);
-        }
+    }
+
+    // Topic layout depends on available vertical space; rebuild when height changes.
+    if (!s.topic.empty() && (bounds_.h != last_bounds_h_ || !topic_layout_))
+    {
+        last_bounds_h_ = bounds_.h;
+        topic_layout_.reset();
+
+        // Compute how far down the content starts at the topic row.
+        float cy_topic = bounds_.y + kPadY + kAvatarD + kGap;
+        if (name_layout_)  cy_topic += name_layout_->measure().h  + kGap * 0.5f;
+        if (alias_layout_) cy_topic += alias_layout_->measure().h + kGap * 0.5f;
+
+        // Reserve space below: gap + meta + gap + buttons + bottom pad.
+        const float meta_h   = meta_layout_ ? meta_layout_->measure().h : 16.0f;
+        const float btn_y    = bounds_.y + bounds_.h - kPadY - kBtnH;
+        const float max_h    = btn_y - kGap - meta_h - kGap - cy_topic;
+
+        tk::TextStyle ts{};
+        ts.role       = tk::FontRole::Body;
+        ts.trim       = tk::TextTrim::Ellipsis;
+        ts.wrap       = true;
+        ts.max_width  = kContentW;
+        ts.max_height = std::max(16.0f, max_h);
+        topic_layout_ = ctx.factory.build_text(s.topic, ts);
     }
 
     const float cx = bounds_.x + (bounds_.w - kContentW) * 0.5f;
@@ -234,12 +242,15 @@ void RoomPreviewView::paint(tk::PaintCtx& ctx)
     }
 
     // ── Meta: member count + join rule ────────────────────────────────────
+    // Pinned just above the button row so it stays anchored to the bottom
+    // regardless of how much vertical space the topic occupies.
 
     if (meta_layout_)
     {
-        const auto mt = meta_layout_->measure();
+        const auto  mt    = meta_layout_->measure();
+        const float btn_y = bounds_.y + bounds_.h - kPadY - kBtnH;
         cv.draw_text(*meta_layout_,
-                     {cx + (kContentW - mt.w) * 0.5f, cy},
+                     {cx + (kContentW - mt.w) * 0.5f, btn_y - kGap - mt.h},
                      pal.text_secondary);
     }
 

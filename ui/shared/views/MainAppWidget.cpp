@@ -327,7 +327,8 @@ tk::Rect MainAppWidget::compose_text_area_rect() const
     // While a modal covers the canvas the native textarea must not steal
     // focus or clicks — report an empty rect so the shell hides the overlay.
     if (any_modal_open_()) return {};
-    return room_view_ ? room_view_->compose_text_area_rect() : tk::Rect{};
+    if (!room_view_ || !room_view_->visible()) return {};
+    return room_view_->compose_text_area_rect();
 }
 
 bool MainAppWidget::room_search_field_visible() const

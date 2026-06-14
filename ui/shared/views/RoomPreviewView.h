@@ -63,7 +63,8 @@ private:
     mutable std::unique_ptr<tk::TextLayout> alias_layout_;
     mutable std::unique_ptr<tk::TextLayout> topic_layout_;
     mutable std::unique_ptr<tk::TextLayout> meta_layout_;
-    mutable tk::CanvasFactory*              factory_seen_ = nullptr;
+    mutable tk::CanvasFactory*              factory_seen_    = nullptr;
+    mutable float                           last_bounds_h_   = -1.0f;
 
     static constexpr float kAvatarD  = 72.0f;
     static constexpr float kContentW = 300.0f;
