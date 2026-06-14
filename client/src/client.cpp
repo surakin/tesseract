@@ -1285,30 +1285,23 @@ RoomSummary Client::get_room_summary(const std::string& room_id_or_alias)
         std::string(impl_->ffi->get_room_summary(room_id_or_alias)));
 }
 
-std::vector<RoomSummary>
-Client::get_space_child_summaries_batch(const std::string&              space_id,
-                                        const std::vector<std::string>& child_ids)
+std::optional<tesseract::RoomSummary>
+Client::get_space_child_summary(const std::string& space_id,
+                                const std::string& room_id)
 {
     SH_FFI;
     const std::string json = std::string(
-        impl_->ffi->get_space_child_summaries_batch(space_id, child_ids));
-    if (json.empty() || json == "[]")
-        return {};
-    std::vector<RoomSummary> result;
+        impl_->ffi->get_space_child_summary(space_id, room_id));
+    if (json.empty())
+        return std::nullopt;
     try
     {
-        auto arr = nlohmann::json::parse(json);
-        if (arr.is_array())
-        {
-            result.reserve(arr.size());
-            for (const auto& item : arr)
-                result.push_back(parse_room_summary_json(item.dump()));
-        }
+        return parse_room_summary_json(json);
     }
     catch (...)
     {
+        return std::nullopt;
     }
-    return result;
 }
 
 std::string Client::join_room(const std::string& room_id_or_alias)

@@ -202,93 +202,72 @@ impl ClientFfi {
         })
     }
 
-    /// Fetch MSC3266 summaries for a batch of unjoined space child rooms in a
-    /// single blocking FFI call.  All N `get_room_preview` requests are issued
-    /// concurrently inside tokio, so wall time ≈ the slowest individual request
-    /// rather than the sum.  A single `InFlightGuard` covers the whole batch so
-    /// the status-bar dot stays lit while any request is in flight.
+    /// Fetch the MSC3266 room preview for a single unjoined space child.
+    /// Returns a JSON-serialised `RoomSummaryJson`, or an empty string on
+    /// failure (timeout after 30 s, server error, or stop signal).
     #[cfg(not(test))]
-    pub fn get_space_child_summaries_batch(
-        &self,
-        space_id: &str,
-        child_ids: &cxx::CxxVector<cxx::CxxString>,
-    ) -> String {
+    pub fn get_space_child_summary(&self, space_id: &str, room_id: &str) -> String {
         use matrix_sdk::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
         use matrix_sdk::ruma::events::SyncStateEvent;
         use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName};
-        use std::collections::HashMap;
 
-        let Some(client) = self.client.clone() else { return "[]".to_owned(); };
-        if child_ids.is_empty() { return "[]".to_owned(); }
-
-        let ids: Vec<String> = child_ids.iter().map(|s| s.to_string()).collect();
-        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else { return "[]".to_owned(); };
+        let Some(client) = self.client.clone() else { return String::new(); };
+        let Ok(rid) = OwnedRoomId::try_from(room_id) else { return String::new(); };
+        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else { return String::new(); };
+        let room_id_or_alias: OwnedRoomOrAliasId = rid.clone().into();
         let stop_rx = self.stop_rx.clone();
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
             #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/get_space_child_summaries_batch".to_string(),
+            #[cfg(debug_assertions)] format!("room_list/space_child/{}", room_id),
         );
 
+        // Per-request deadline: a homeserver that never replies would otherwise
+        // block block_on — and the C++ worker thread it runs on — forever.
+        const PREVIEW_TIMEOUT_SECS: u64 = 30;
+
         self.rt.block_on(async move {
-            // Step 1: read all via-server lists from local state — no network.
-            let mut via_map: HashMap<OwnedRoomId, Vec<OwnedServerName>> = HashMap::new();
-            if let Some(space_room) = client.get_room(&space_room_id) {
-                if let Ok(events) = space_room
-                    .get_state_events_static::<SpaceChildEventContent>()
-                    .await
-                {
-                    for ev in events {
-                        match ev.deserialize() {
-                            Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e))) => {
-                                via_map.insert(e.state_key.to_owned(), e.content.via);
-                            }
-                            Ok(SyncOrStrippedState::Stripped(e)) => {
-                                via_map.insert(
-                                    e.state_key.to_owned(),
-                                    e.content.via.unwrap_or_default(),
-                                );
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-
-            // Step 2: fire all N room-preview requests concurrently.
-            let futures_vec: Vec<_> = ids
-                .into_iter()
-                .map(|child_id| {
-                    let client = client.clone();
-                    let stop_rx = stop_rx.clone();
-                    let roa: Result<OwnedRoomOrAliasId, _> = child_id.as_str().try_into();
-                    let via = roa
-                        .as_ref()
+            // Read via-server list from local space state — no network.
+            let via: Vec<OwnedServerName> =
+                if let Some(space_room) = client.get_room(&space_room_id) {
+                    space_room
+                        .get_state_events_static::<SpaceChildEventContent>()
+                        .await
                         .ok()
-                        .and_then(|id| OwnedRoomId::try_from(id.as_str()).ok())
-                        .and_then(|rid| via_map.get(&rid).cloned())
-                        .unwrap_or_default();
-                    async move {
-                        let Ok(id) = roa else { return None; };
-                        tokio::select! {
-                            result = client.get_room_preview(&id, via) => {
-                                result.ok().map(RoomSummaryJson::from)
-                            }
-                            _ = stop_fut(stop_rx) => None,
-                        }
-                    }
-                })
-                .collect();
+                        .and_then(|evs| {
+                            evs.into_iter().find_map(|ev| match ev.deserialize() {
+                                Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e)))
+                                    if e.state_key == rid =>
+                                {
+                                    Some(e.content.via)
+                                }
+                                Ok(SyncOrStrippedState::Stripped(e))
+                                    if e.state_key == rid =>
+                                {
+                                    Some(e.content.via.unwrap_or_default())
+                                }
+                                _ => None,
+                            })
+                        })
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
 
-            let results: Vec<RoomSummaryJson> = futures_util::future::join_all(futures_vec)
-                .await
-                .into_iter()
-                .flatten()
-                .collect();
+            let result = tokio::select! {
+                timed = tokio::time::timeout(
+                    std::time::Duration::from_secs(PREVIEW_TIMEOUT_SECS),
+                    client.get_room_preview(&room_id_or_alias, via),
+                ) => timed.ok().and_then(|r| r.ok()).map(RoomSummaryJson::from),
+                _ = stop_fut(stop_rx) => None,
+            };
 
-            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_owned())
+            match result {
+                Some(s) => serde_json::to_string(&s).unwrap_or_default(),
+                None => String::new(),
+            }
         })
     }
 
@@ -298,12 +277,12 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn get_space_child_summaries_batch(
+    pub fn get_space_child_summary(
         &self,
         _space_id: &str,
-        _child_ids: &cxx::CxxVector<cxx::CxxString>,
+        _room_id: &str,
     ) -> String {
-        "[]".to_owned()
+        String::new()
     }
 
     #[cfg(not(test))]

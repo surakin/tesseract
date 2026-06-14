@@ -2310,15 +2310,15 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
         [this, sess, space_id, room_id, gen]()
         {
             if (!sess || !sess->client) return;
-            auto summaries =
-                sess->client->get_space_child_summaries_batch(space_id, {room_id});
+            auto summary =
+                sess->client->get_space_child_summary(space_id, room_id);
             post_to_ui_alive_(
-                [this, space_id, room_id, gen, summaries = std::move(summaries)]() mutable
+                [this, space_id, room_id, gen, summary = std::move(summary)]() mutable
                 {
                     // Always erase from pending so the slot is freed even on cancel.
                     unjoined_fetch_pending_.erase(room_id);
                     if (gen != unjoined_fetch_gen_) return;
-                    if (summaries.empty())
+                    if (!summary)
                     {
                         // Exponential backoff: 5s, 10s, 20s … capped at 5 min.
                         auto& rs = unjoined_fetch_retry_[room_id];
@@ -2346,7 +2346,7 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                     {
                         if (entry.room_id == room_id)
                         {
-                            entry = std::move(summaries.front());
+                            entry = std::move(*summary);
                             if (client_)
                                 client_->note_room_summary_backoff_ok(room_id);
                             if (main_app_)

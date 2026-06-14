@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -972,12 +973,13 @@ public:
     /// Blocks the calling thread — invoke only from a worker thread.
     RoomSummary get_room_summary(const std::string& room_id_or_alias);
     /// Fetch MSC3266 summaries for multiple unjoined space child rooms in one
-    /// call.  All N requests run concurrently inside tokio (single SH_FFI hold,
-    /// single InFlightGuard).  Returns every summary whose fetch succeeded;
-    /// failed rooms are silently omitted.
-    std::vector<RoomSummary>
-    get_space_child_summaries_batch(const std::string&              space_id,
-                                    const std::vector<std::string>& child_ids);
+    /// Fetch the MSC3266 room preview for a single unjoined space child.
+    /// Returns the summary on success, std::nullopt on failure (timeout /
+    /// server error / stop signal). Blocks the calling thread up to 30 s —
+    /// invoke only from a worker thread.
+    std::optional<RoomSummary>
+    get_space_child_summary(const std::string& space_id,
+                            const std::string& room_id);
 
     /// Join a room by its ID or alias.
     /// Returns the canonical room ID (e.g. `!id:server`) on success, or an
