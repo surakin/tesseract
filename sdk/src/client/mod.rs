@@ -96,9 +96,10 @@ impl Drop for InFlightGuard {
 #[cfg(not(test))]
 pub(super) const MEDIA_FG_PERMITS: usize = 12;
 /// Max concurrent bulk media downloads (full-size source, URL previews, tiles,
-/// audio prefetch). Narrow so a stalled large download cannot starve the rest.
+/// audio prefetch). With HTTP/2 multiplexing these share one connection, so the
+/// old TCP-connection pressure is gone and a wider lane is safe.
 #[cfg(not(test))]
-pub(super) const MEDIA_BULK_PERMITS: usize = 6;
+pub(super) const MEDIA_BULK_PERMITS: usize = 10;
 
 #[cfg(not(test))]
 use crate::ffi::EventHandlerBridge;
@@ -828,6 +829,7 @@ impl ClientFfi {
                 .user_agent("Tesseract/0.1 (Matrix client)")
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(10))
+                .http2_adaptive_window(true)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),

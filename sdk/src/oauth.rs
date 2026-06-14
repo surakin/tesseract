@@ -86,6 +86,13 @@ pub(crate) fn build_sdk_http_client() -> matrix_sdk::reqwest::Client {
         .user_agent(build_user_agent())
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(60))
+        .http2_adaptive_window(true)
+        // Default H2 stream window is 64 KB — too small for large media; 4 MB eliminates
+        // WINDOW_UPDATE stalls on multi-megabyte images and videos.
+        .http2_initial_stream_window_size(4 * 1024 * 1024)
+        // 16 MB connection window allows all 18 concurrent streams to saturate the pipe
+        // without the connection-level flow-control becoming the bottleneck.
+        .http2_initial_connection_window_size(16 * 1024 * 1024)
         .build()
         .unwrap_or_else(|_| matrix_sdk::reqwest::Client::new())
 }
