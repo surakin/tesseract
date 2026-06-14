@@ -447,6 +447,7 @@ impl ClientFfi {
         let in_flight = std::sync::Arc::clone(&self.in_flight);
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        #[cfg(debug_assertions)]
         let mxc_label = mxc_url.to_owned();
         let handler = self.handler.clone();
         self.rt.block_on(async move {
@@ -505,6 +506,7 @@ impl ClientFfi {
         let in_flight = std::sync::Arc::clone(&self.in_flight);
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        #[cfg(debug_assertions)]
         let source_label = source.to_owned();
         let handler = self.handler.clone();
         self.rt.block_on(async move {

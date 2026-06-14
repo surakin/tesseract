@@ -88,6 +88,7 @@ impl ClientFfi {
                     #[cfg(debug_assertions)]
                     let in_flight_urls = Arc::clone(&in_flight_urls);
                     let handler_ref = handler.clone();
+                    #[cfg(debug_assertions)]
                     let rid_label = rid.to_string();
                     joinset.spawn(async move {
                         let _permit = match sem.acquire_owned().await {
@@ -508,6 +509,7 @@ impl ClientFfi {
                         #[cfg(debug_assertions)]
                         let in_flight_urls = Arc::clone(&in_flight_urls);
                         let handler_ref = handler.clone();
+                        #[cfg(debug_assertions)]
                         let rid_label = rid.to_string();
                         joinset.spawn(async move {
                             let _permit = match sem.acquire_owned().await {

@@ -7,7 +7,7 @@ use super::{err, ok, ClientFfi};
 
 use crate::ffi::OpResult;
 
-#[cfg(not(test))]
+#[cfg(all(not(test), debug_assertions))]
 use std::sync::Arc;
 
 #[cfg(not(test))]
