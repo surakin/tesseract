@@ -413,6 +413,21 @@ pub mod ffi {
         redirect_uri: String,
     }
 
+    /// First-phase result of a QR grant flow: the RGBA pixel bitmap for display.
+    struct QrGrantBitmap {
+        ok: bool,
+        message: String,
+        pixels: Vec<u8>,   // RGBA, side×side×4 bytes
+        side: u32,         // width == height (QR is always square)
+    }
+
+    /// Returned when the QR grant flow reaches the WaitingForAuth phase.
+    struct QrGrantAuth {
+        ok: bool,
+        message: String,
+        verification_uri: String,
+    }
+
     /// One of the 7 emoji displayed during an SAS device-verification flow.
     /// `symbol` is the Unicode emoji string (one or more codepoints);
     /// `description` is the English label from the Matrix spec table (e.g. "Dog").
@@ -1079,6 +1094,22 @@ pub mod ffi {
 
         fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
         fn oauth_cancel(self: &mut ClientFfi);
+
+        // ----- QR grant login (MSC4108) -----
+
+        /// Start a QR grant flow (existing device generates QR for new device to scan).
+        /// Blocks until the QR bitmap is ready; returns RGBA pixel data.
+        fn qr_grant_start(self: &mut ClientFfi) -> QrGrantBitmap;
+        /// Blocks until the new device scans the QR code.
+        fn qr_grant_await_scanned(self: &mut ClientFfi) -> OpResult;
+        /// Non-blocking: sends the check code (read from new device) into the running flow.
+        fn qr_grant_submit_check_code(self: &mut ClientFfi, code: u8) -> OpResult;
+        /// Blocks until the flow reaches WaitingForAuth; returns the verification URI.
+        fn qr_grant_await_auth(self: &mut ClientFfi) -> QrGrantAuth;
+        /// Blocks until the grant flow completes (Done or error).
+        fn qr_grant_await_complete(self: &mut ClientFfi) -> OpResult;
+        /// Cancel the grant flow at any phase.
+        fn qr_grant_cancel(self: &mut ClientFfi);
 
         // ----- Session -----
 

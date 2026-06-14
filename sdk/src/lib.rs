@@ -276,6 +276,21 @@ pub mod ffi {
         pub event_id: String,
     }
 
+    #[derive(Debug, PartialEq, Default)]
+    pub struct QrGrantBitmap {
+        pub ok: bool,
+        pub message: String,
+        pub pixels: Vec<u8>,
+        pub side: u32,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct QrGrantAuth {
+        pub ok: bool,
+        pub message: String,
+        pub verification_uri: String,
+    }
+
     pub struct EventHandlerBridge;
     impl EventHandlerBridge {
         pub fn on_timeline_reset(&self, _room_id: &str, _snapshot: &Vec<TimelineEvent>) {}

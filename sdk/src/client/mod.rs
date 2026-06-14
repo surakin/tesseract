@@ -12,6 +12,7 @@ use crate::oauth;
 
 mod account;
 mod backfill;
+mod qr_grant;
 mod crypto_reset;
 mod profile_fields;
 pub(crate) mod gif;
@@ -410,6 +411,7 @@ pub struct ClientFfi {
     /// starts just before `stop_sync` takes `stop_tx`.
     pub(super) stop_rx: Option<watch::Receiver<bool>>,
     pub(super) oauth_flow: Option<oauth::PendingFlow>,
+    pub(super) qr_grant: Option<qr_grant::QrGrantHandle>,
     #[cfg(not(test))]
     pub(super) handler: Option<Arc<Mutex<SendHandler>>>,
     #[cfg(not(test))]
@@ -830,6 +832,7 @@ impl ClientFfi {
             stop_tx: None,
             stop_rx: None,
             oauth_flow: None,
+            qr_grant: None,
             #[cfg(not(test))]
             handler: None,
             #[cfg(not(test))]
