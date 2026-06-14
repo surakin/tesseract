@@ -16,6 +16,10 @@ A full featured desktop multiplatform (Linux, Windows, Mac) Matrix client built 
 - **Multi account support**
 - **All the fun details and functionality of popular chat apps.**
 
+## Discussion room
+
+Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-client:matrix.org)!
+
 ---
 
 ## Screenshots
