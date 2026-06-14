@@ -4,6 +4,29 @@
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
+namespace
+{
+
+// Minimal JSON string escaper: produces a JSON-quoted string literal.
+// Only escapes backslash and double-quote, which is sufficient for all
+// profile field values (IANA tz IDs, pronoun summaries, bio plain text).
+std::string json_quote(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size() + 2);
+    out += '"';
+    for (char c : s)
+    {
+        if (c == '\\') out += "\\\\";
+        else if (c == '"') out += "\\\"";
+        else out += c;
+    }
+    out += '"';
+    return out;
+}
+
+} // namespace
+
 namespace gtk4
 {
 
@@ -154,6 +177,27 @@ SettingsWidget::SettingsWidget()
                 if (!r.empty())
                     name_field_->set_rect(r);
             }
+            if (pronouns_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->pronouns_field_rect();
+                pronouns_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    pronouns_field_->set_rect(r);
+            }
+            if (tz_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->tz_field_rect();
+                tz_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    tz_field_->set_rect(r);
+            }
+            if (bio_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->bio_field_rect();
+                bio_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    bio_field_->set_rect(r);
+            }
         });
 }
 
@@ -278,7 +322,107 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
         if (on_local_avatar_changed) on_local_avatar_changed(std::move(mxc));
     };
 
+    // Create NativeTextField overlays for the three extended profile fields.
+    // The on_submit handlers serialise the text to the MSC-specified JSON
+    // shape and forward to the shell via on_profile_field_changed.
+    static constexpr char kKeyPronouns[] = "io.fsky.nyx.pronouns";
+    static constexpr char kKeyTz[]       = "us.cloke.msc4175.tz";
+    static constexpr char kKeyBio[]      = "gay.fomx.biography";
+
+    pronouns_field_ = surface_->host().make_text_field();
+    pronouns_field_->set_compact(true);
+    pronouns_field_->set_placeholder("Pronouns");
+    pronouns_field_->set_visible(false);
+    pronouns_field_->set_on_submit(
+        [this]
+        {
+            const std::string text = pronouns_field_->text();
+            std::string value_json;
+            if (text.empty())
+                value_json = "null";
+            else
+                value_json = "[{\"summary\":" + json_quote(text) +
+                             ",\"language\":\"en\"}]";
+            settings_view_->set_profile_field_busy(kKeyPronouns, true);
+            if (on_profile_field_changed)
+                on_profile_field_changed(kKeyPronouns, std::move(value_json));
+            surface_->relayout();
+        });
+
+    tz_field_ = surface_->host().make_text_field();
+    tz_field_->set_compact(true);
+    tz_field_->set_placeholder("Timezone (e.g. Europe/London)");
+    tz_field_->set_visible(false);
+    tz_field_->set_on_submit(
+        [this]
+        {
+            const std::string text = tz_field_->text();
+            std::string value_json = text.empty() ? "null" : json_quote(text);
+            settings_view_->set_profile_field_busy(kKeyTz, true);
+            if (on_profile_field_changed)
+                on_profile_field_changed(kKeyTz, std::move(value_json));
+            surface_->relayout();
+        });
+
+    bio_field_ = surface_->host().make_text_field();
+    bio_field_->set_compact(true);
+    bio_field_->set_placeholder("Short biography");
+    bio_field_->set_visible(false);
+    bio_field_->set_on_submit(
+        [this]
+        {
+            const std::string text = bio_field_->text();
+            std::string value_json;
+            if (text.empty())
+                value_json = "null";
+            else
+                value_json = "{\"m.text\":[{\"body\":" + json_quote(text) + "}]}";
+            settings_view_->set_profile_field_busy(kKeyBio, true);
+            if (on_profile_field_changed)
+                on_profile_field_changed(kKeyBio, std::move(value_json));
+            surface_->relayout();
+        });
+
+    // Wire SettingsView's re-exported on_profile_field_changed so the shell
+    // only needs to wire one callback (on this wrapper) rather than reaching
+    // into settings_view_ directly.
+    settings_view_->on_profile_field_changed =
+        [this](std::string key, std::string value_json)
+    {
+        if (on_profile_field_changed)
+            on_profile_field_changed(std::move(key), std::move(value_json));
+    };
+
     surface_->relayout();
+}
+
+void SettingsWidget::set_extended_profile(const tesseract::ExtendedProfile& profile)
+{
+    if (settings_view_)
+        settings_view_->set_extended_profile(profile);
+    // Seed the NativeTextField overlays with the current values so the
+    // user sees what is stored when they open the Account tab.
+    if (pronouns_field_) pronouns_field_->set_text(profile.pronouns);
+    if (tz_field_)       tz_field_->set_text(profile.tz);
+    if (bio_field_)      bio_field_->set_text(profile.biography);
+    if (surface_)        surface_->relayout();
+}
+
+void SettingsWidget::set_profile_field_busy(const std::string& key, bool busy)
+{
+    if (settings_view_)
+        settings_view_->set_profile_field_busy(key, busy);
+    if (surface_)
+        surface_->relayout();
+}
+
+void SettingsWidget::set_profile_field_error(const std::string& key,
+                                              std::string error)
+{
+    if (settings_view_)
+        settings_view_->set_profile_field_error(key, std::move(error));
+    if (surface_)
+        surface_->relayout();
 }
 
 void SettingsWidget::set_group_inactive_pref(bool enabled)

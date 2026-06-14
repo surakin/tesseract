@@ -59,6 +59,14 @@ struct SpecVersion
     }
 };
 
+/// Extended profile fields from MSC4133 companion proposals.
+/// Populated by Client::get_extended_profile().
+struct ExtendedProfile {
+    std::string pronouns;   ///< MSC4247 summary text, empty if not set
+    std::string tz;         ///< MSC4175 IANA timezone string, empty if not set
+    std::string biography;  ///< MSC4440 plain-text body, empty if not set
+};
+
 /// Information about the connected homeserver fetched after login.
 /// Bool capability fields default to `true` (permissive) when absent —
 /// old servers omit capabilities they support.
@@ -66,10 +74,12 @@ struct ServerInfo
 {
     std::string homeserver_url;
     std::vector<SpecVersion> spec_versions;  ///< parsed from e.g. ["v1.1","v1.6"]
-    bool supports_msc3030    = false;        ///< Jump-to-Date; true if server advertises MSC3030 or spec >= v1.6
-    bool can_change_password = true;
-    bool can_set_displayname = true;
-    bool can_set_avatar      = true;
+    bool supports_msc3030          = false;  ///< Jump-to-Date; true if server advertises MSC3030 or spec >= v1.6
+    bool can_change_password       = true;
+    bool can_set_displayname       = true;
+    bool can_set_avatar            = true;
+    bool supports_profile_fields   = false;  ///< server advertises uk.tcpip.msc4133
+    bool profile_fields_enabled    = true;   ///< m.profile_fields.enabled capability
     std::string default_room_version;        ///< e.g. "10"; empty when absent
 
     /// Parse from the JSON blob returned by `Client::get_server_info()`.
@@ -1047,6 +1057,23 @@ public:
     /// no profile for the mxid.
     /// Blocks the calling thread — call from a worker thread.
     UserProfile resolve_user_profile(const std::string& user_id);
+
+    /// Fetch extended profile fields (MSC4133) for any user. Falls back
+    /// gracefully when the server does not support MSC4133 — fields are empty.
+    /// Blocks the calling thread — call from a worker thread.
+    ExtendedProfile get_extended_profile(const std::string& user_id) const;
+
+    /// Set a single extended profile field. `key` is the MSC key (e.g.
+    /// `"io.fsky.nyx.pronouns"`), `value_json` is already-serialised JSON.
+    /// Returns an error if the server does not support MSC4133.
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_profile_field(const std::string& key,
+                             const std::string& value_json) const;
+
+    /// Delete a single extended profile field. Returns an error if the
+    /// server does not support MSC4133.
+    /// Blocks the calling thread — call from a worker thread.
+    Result delete_profile_field(const std::string& key) const;
 
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)

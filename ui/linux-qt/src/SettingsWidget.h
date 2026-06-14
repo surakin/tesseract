@@ -42,6 +42,15 @@ public:
     /// Forward server capability info into the shared SettingsView.
     void set_server_info(const tesseract::ServerInfo& info);
 
+    /// Push the fetched extended profile into the Account section.
+    void set_extended_profile(const tesseract::ExtendedProfile& profile);
+
+    /// Mark a profile field as busy (in-flight write) or idle.
+    void set_profile_field_busy(const std::string& key, bool busy);
+
+    /// Show an inline error for the given profile field. Pass "" to clear.
+    void set_profile_field_error(const std::string& key, std::string error);
+
     /// Update the Storage size labels and hit/miss stats in the About section.
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
                          uint64_t memory_bytes,
@@ -69,6 +78,9 @@ signals:
     // UserInfo strip — the shared SettingsView only updates its own
     // AccountSection chip.
     void localAvatarChanged(QString new_mxc);
+    // Fired when the user submits an extended profile field (MSC4133).
+    // key = MSC unstable key string, value_json = JSON value or "null".
+    void profileFieldChanged(QString key, QString value_json);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
@@ -78,6 +90,10 @@ private:
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     tesseract::SettingsController* controller_ = nullptr;
     std::unique_ptr<tk::NativeTextField> name_field_;
+    // Extended-profile NativeTextField overlays (MSC4133).
+    std::unique_ptr<tk::NativeTextField> pronouns_field_;
+    std::unique_ptr<tk::NativeTextField> tz_field_;
+    std::unique_ptr<tk::NativeTextField> bio_field_;
 };
 
 } // namespace qt6

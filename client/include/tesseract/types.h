@@ -88,6 +88,9 @@ struct UserProfile
     std::string user_id;
     std::string display_name; ///< resolves to user_id localpart when unset
     std::string avatar_url;   ///< mxc:// or empty
+    std::string pronouns;     ///< MSC4247 summary text, empty if not set
+    std::string tz;           ///< MSC4175 IANA timezone string, empty if not set
+    std::string biography;    ///< MSC4440 plain-text body, empty if not set
 };
 
 struct Event

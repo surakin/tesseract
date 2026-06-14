@@ -4079,6 +4079,13 @@ void MainWindow::openSettings()
                     populateUserStrip();
                 });
 
+        connect(settingsWidget_, &SettingsWidget::profileFieldChanged, this,
+                [this](const QString& key, const QString& value_json)
+                {
+                    handle_profile_field_change_(key.toStdString(),
+                                                 value_json.toStdString());
+                });
+
         // server_info_ may have already arrived before this lazy widget was
         // created — apply it now so capability gating is correct on first open.
         settingsWidget_->set_server_info(server_info_);
@@ -4094,6 +4101,13 @@ void MainWindow::openSettings()
     if (settings_controller_)
         settingsWidget_->set_controller(settings_controller_.get(),
                                         my_display_name_);
+
+    // set_controller creates the NativeTextField overlays; push extended profile
+    // after so set_text calls land on live fields.
+    if (!own_extended_profile_.pronouns.empty() ||
+        !own_extended_profile_.tz.empty() ||
+        !own_extended_profile_.biography.empty())
+        settingsWidget_->set_extended_profile(own_extended_profile_);
 
     // Refresh storage sizes each time settings opens.
     compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,
@@ -4397,6 +4411,22 @@ void MainWindow::on_server_info_ready_ui_()
             server_info_.supports_msc3030);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
+}
+
+void MainWindow::on_own_extended_profile_ready_ui_()
+{
+    if (settingsWidget_)
+        settingsWidget_->set_extended_profile(own_extended_profile_);
+}
+
+void MainWindow::on_profile_field_result_ui_(const std::string& key,
+                                              bool ok,
+                                              const std::string& error)
+{
+    if (!settingsWidget_) return;
+    settingsWidget_->set_profile_field_busy(key, false);
+    if (!ok)
+        settingsWidget_->set_profile_field_error(key, error);
 }
 
 void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)

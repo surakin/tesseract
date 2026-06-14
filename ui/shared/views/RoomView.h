@@ -154,6 +154,10 @@ public:
     {
         return room_info_panel_;
     }
+    UserProfilePanel* user_profile_panel() const
+    {
+        return user_profile_panel_;
+    }
     ThreadView* thread_view() const
     {
         return thread_view_;

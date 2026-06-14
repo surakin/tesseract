@@ -157,6 +157,9 @@ public:
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
+    void on_own_extended_profile_ready_ui_() override;
+    void on_profile_field_result_ui_(const std::string& key, bool ok,
+                                     const std::string& error) override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
@@ -331,6 +334,10 @@ private:
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     bool settings_visible_ = false;
     std::unique_ptr<tk::NativeTextField> settings_name_field_;
+    // Extended-profile NativeTextField overlays (MSC4133).
+    std::unique_ptr<tk::NativeTextField> settings_pronouns_field_;
+    std::unique_ptr<tk::NativeTextField> settings_tz_field_;
+    std::unique_ptr<tk::NativeTextField> settings_bio_field_;
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
     tesseract::views::RoomListView* room_list_view_ = nullptr;

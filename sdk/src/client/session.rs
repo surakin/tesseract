@@ -234,6 +234,7 @@ impl ClientFfi {
         };
         let client = client.clone();
         let http = self.http_client.clone();
+        let prefix_slot = self.profile_fields_prefix.clone();
 
         self.rt.block_on(async move {
             let base = {
@@ -268,6 +269,24 @@ impl ClientFfi {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
+            let supports_msc4133_stable = versions_json
+                .pointer("/unstable_features/uk.tcpip.msc4133.stable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let supports_msc4133_unstable = versions_json
+                .pointer("/unstable_features/uk.tcpip.msc4133")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let supports_msc4133 = supports_msc4133_stable || supports_msc4133_unstable;
+
+            *prefix_slot.write().unwrap() = if supports_msc4133_stable {
+                Some("/_matrix/client/v3".to_owned())
+            } else if supports_msc4133_unstable {
+                Some("/_matrix/client/unstable/uk.tcpip.msc4133".to_owned())
+            } else {
+                None
+            };
+
             let caps: serde_json::Value = match caps_resp {
                 Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
                 Err(_) => serde_json::Value::Null,
@@ -283,6 +302,10 @@ impl ClientFfi {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_owned();
+            let profile_fields_enabled = caps
+                .pointer("/capabilities/m.profile_fields/enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
 
             serde_json::json!({
                 "homeserver": base,
@@ -291,7 +314,9 @@ impl ClientFfi {
                 "can_change_password": cap_bool("m.change_password"),
                 "can_set_displayname": cap_bool("m.set_displayname"),
                 "can_set_avatar": cap_bool("m.set_avatar_url"),
-                "default_room_version": default_room_ver
+                "default_room_version": default_room_ver,
+                "supports_profile_fields": supports_msc4133,
+                "profile_fields_enabled": profile_fields_enabled
             })
             .to_string()
         })
@@ -428,6 +453,7 @@ impl ClientFfi {
                 .store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
         }
         self.media_upload_limit.store(0, Ordering::Relaxed);
+        *self.profile_fields_prefix.write().unwrap() = None;
 
         let Some(client) = self.client.take() else {
             let _ = std::fs::remove_dir_all(&self.data_dir);

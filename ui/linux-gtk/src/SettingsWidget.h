@@ -43,6 +43,20 @@ public:
     // Forward server capability info into the shared SettingsView.
     void set_server_info(const tesseract::ServerInfo& info);
 
+    // Push the fetched extended profile into the Account section.
+    void set_extended_profile(const tesseract::ExtendedProfile& profile);
+
+    // Mark a profile field as busy (in-flight write) or idle.
+    void set_profile_field_busy(const std::string& key, bool busy);
+
+    // Show an inline error for the given profile field. Pass "" to clear.
+    void set_profile_field_error(const std::string& key, std::string error);
+
+    // Callback — set by MainWindow; fires when the user edits a field.
+    // key = MSC key string, value_json = serialised JSON or "null".
+    std::function<void(std::string key, std::string value_json)>
+        on_profile_field_changed;
+
     // Update the Storage size labels and hit/miss stats in the About section.
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
                          uint64_t memory_bytes,
@@ -84,6 +98,10 @@ private:
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     tesseract::SettingsController* controller_ = nullptr;
     std::unique_ptr<tk::NativeTextField> name_field_;
+    // Extended-profile NativeTextField overlays (MSC4133).
+    std::unique_ptr<tk::NativeTextField> pronouns_field_;
+    std::unique_ptr<tk::NativeTextField> tz_field_;
+    std::unique_ptr<tk::NativeTextField> bio_field_;
     GtkWidget* cache_tooltip_popover_ = nullptr; // lazy-created GtkPopover
     GtkWidget* cache_tooltip_label_   = nullptr; // borrowed child of popover
 };

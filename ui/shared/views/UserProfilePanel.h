@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tesseract/client.h>
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/widget.h"
@@ -31,6 +32,13 @@ public:
 
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     void set_avatar_provider(ImageProvider p);
+
+    // Set extended profile fields (called async after open())
+    void set_extended_profile(const tesseract::ExtendedProfile& profile);
+
+    // Fired from open() so the shell can fetch extended fields async
+    // and call set_extended_profile() when done
+    std::function<void(std::string user_id)> on_extended_profile_requested;
 
     // Callbacks wired by shell
     std::function<void(std::string user_id)> on_open_dm;
@@ -81,6 +89,15 @@ private:
     // Cached text layouts (rebuilt lazily in paint)
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> uid_layout_;
+
+    // Extended profile (MSC4133) — set async after open()
+    tesseract::ExtendedProfile ext_profile_;
+    std::unique_ptr<tk::TextLayout> pronouns_label_layout_;
+    std::unique_ptr<tk::TextLayout> pronouns_value_layout_;
+    std::unique_ptr<tk::TextLayout> tz_label_layout_;
+    std::unique_ptr<tk::TextLayout> tz_value_layout_;
+    std::unique_ptr<tk::TextLayout> bio_label_layout_;
+    std::unique_ptr<tk::TextLayout> bio_value_layout_;
 
     bool press_backdrop_ = false;
     bool press_avatar_   = false;

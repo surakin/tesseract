@@ -6,6 +6,13 @@
 namespace tesseract::views
 {
 
+namespace {
+    constexpr float kExtFieldPadTop = 8.0f;
+    constexpr float kExtRowH        = 22.0f;
+    constexpr float kExtLabelW      = 60.0f;
+    constexpr float kExtFieldGap    = 6.0f;
+}
+
 // ── constructor ───────────────────────────────────────────────────────────
 
 UserProfilePanel::UserProfilePanel()
@@ -50,6 +57,14 @@ void UserProfilePanel::open(std::string user_id, std::string display_name,
     // user, so stale Sending state from a prior open doesn't leak through.
     const bool has_dm = on_check_has_dm && on_check_has_dm(user_id_);
     set_dm_button_state(has_dm ? DmButtonState::HasDM : DmButtonState::Normal);
+
+    // Clear extended profile from any previous open; shell will repopulate async.
+    ext_profile_ = {};
+    pronouns_label_layout_.reset(); pronouns_value_layout_.reset();
+    tz_label_layout_.reset();       tz_value_layout_.reset();
+    bio_label_layout_.reset();      bio_value_layout_.reset();
+    if (on_extended_profile_requested)
+        on_extended_profile_requested(user_id_);
 
     // Tells the shell to re-query rect accessors so the compose textarea +
     // room-search NativeTextField overlays hide while the panel is up.
@@ -99,6 +114,18 @@ bool UserProfilePanel::dm_button_enabled() const
     return dm_btn_ ? dm_btn_->enabled() : false;
 }
 
+void UserProfilePanel::set_extended_profile(const tesseract::ExtendedProfile& profile)
+{
+    if (!open_) return;
+    ext_profile_ = profile;
+    pronouns_label_layout_.reset(); pronouns_value_layout_.reset();
+    tz_label_layout_.reset();       tz_value_layout_.reset();
+    bio_label_layout_.reset();      bio_value_layout_.reset();
+    // Trigger a repaint via the layout-changed chain — same mechanism used
+    // everywhere else in this panel to invalidate the surface from shared code.
+    if (on_layout_changed) on_layout_changed();
+}
+
 // ── layout ────────────────────────────────────────────────────────────────
 
 tk::Size UserProfilePanel::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -114,10 +141,20 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // Card height: header + avatar + spacing + name row + uid row + buttons
     constexpr float kNameH    = 20.0f; // estimated single-line title height
     constexpr float kUidH     = 16.0f; // estimated small-font line height
+
+    // Count non-empty extended fields to reserve height for them.
+    const int ext_count = (!ext_profile_.pronouns.empty() ? 1 : 0)
+                        + (!ext_profile_.tz.empty()       ? 1 : 0)
+                        + (!ext_profile_.biography.empty() ? 1 : 0);
+    const float ext_section_h = ext_count > 0
+                                ? kExtFieldPadTop + ext_count * kExtRowH
+                                : 0.0f;
+
     const float card_h = kHeaderH
                        + kAvatarD + kPadY
                        + kNameH   + kPadY * 0.5f
                        + kUidH    + kPadY
+                       + ext_section_h
                        + kButtonH + kPadY * 0.5f
                        + kButtonH + kPadY;
 
@@ -143,13 +180,17 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // Invalidate caches so paint() rebuilds them at the correct width.
     name_layout_.reset();
     uid_layout_.reset();
+    pronouns_label_layout_.reset(); pronouns_value_layout_.reset();
+    tz_label_layout_.reset();       tz_value_layout_.reset();
+    bio_label_layout_.reset();      bio_value_layout_.reset();
 
-    // Buttons: full inner width, stacked below text rows.
+    // Buttons: full inner width, stacked below text rows (and extended fields).
     const float btn_x = card_rect_.x + kPadX;
     const float btn_w = kCardW - kPadX * 2.0f;
     const float btn_y_dm = av_y + kAvatarD + kPadY
                          + kNameH + kPadY * 0.5f
-                         + kUidH  + kPadY;
+                         + kUidH  + kPadY
+                         + ext_section_h;
     const float btn_y_ignore = btn_y_dm + kButtonH + kPadY * 0.5f;
 
     if (dm_btn_)
@@ -236,6 +277,58 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
         const tk::Size sz = uid_layout_->measure();
         const float tx    = card_rect_.x + (kCardW - sz.w) * 0.5f;
         cv.draw_text(*uid_layout_, {tx, uid_y}, pal.text_muted);
+    }
+
+    // Extended profile fields (MSC4133) — painted as label+value rows below uid.
+    const float ext_max_val_w = kCardW - kPadX * 2.0f - kExtLabelW - kExtFieldGap;
+
+    struct ExtRow {
+        const char*                             label;
+        const std::string&                      value;
+        std::unique_ptr<tk::TextLayout>&        label_layout;
+        std::unique_ptr<tk::TextLayout>&        value_layout;
+    };
+    ExtRow ext_rows[] = {
+        { "Pronouns", ext_profile_.pronouns,  pronouns_label_layout_, pronouns_value_layout_ },
+        { "Timezone", ext_profile_.tz,        tz_label_layout_,       tz_value_layout_       },
+        { "Bio",      ext_profile_.biography, bio_label_layout_,      bio_value_layout_      },
+    };
+
+    float ext_y = uid_y + kUidH + kPadY + kExtFieldPadTop;
+    const float label_x = card_rect_.x + kPadX;
+    const float value_x = label_x + kExtLabelW + kExtFieldGap;
+
+    for (auto& row : ext_rows)
+    {
+        if (row.value.empty()) continue;
+
+        if (!row.label_layout)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Small;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = kExtLabelW;
+            row.label_layout = ctx.factory.build_text(row.label, st);
+        }
+        if (row.label_layout)
+        {
+            cv.draw_text(*row.label_layout, {label_x, ext_y}, pal.text_secondary);
+        }
+
+        if (!row.value_layout)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = ext_max_val_w;
+            row.value_layout = ctx.factory.build_text(row.value, st);
+        }
+        if (row.value_layout)
+        {
+            cv.draw_text(*row.value_layout, {value_x, ext_y}, pal.text_primary);
+        }
+
+        ext_y += kExtRowH;
     }
 
     // Child buttons.

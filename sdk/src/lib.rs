@@ -105,6 +105,9 @@ pub mod ffi {
         pub user_id: String,
         pub display_name: String,
         pub avatar_url: String,
+        pub pronouns: String,
+        pub tz: String,
+        pub biography: String,
     }
 
     #[derive(Debug, PartialEq, Default)]

@@ -1419,7 +1419,32 @@ UserProfile Client::resolve_user_profile(const std::string& user_id)
     SH_FFI;
     auto p = impl_->ffi->resolve_user_profile(user_id);
     return UserProfile{p.exists, std::string(p.user_id),
-                       std::string(p.display_name), std::string(p.avatar_url)};
+                       std::string(p.display_name), std::string(p.avatar_url),
+                       std::string(p.pronouns), std::string(p.tz),
+                       std::string(p.biography)};
+}
+
+ExtendedProfile Client::get_extended_profile(const std::string& user_id) const
+{
+    if (user_id.empty())
+        return {};
+    SH_FFI;
+    auto p = impl_->ffi->get_extended_profile(user_id);
+    return ExtendedProfile{std::string(p.pronouns), std::string(p.tz),
+                           std::string(p.biography)};
+}
+
+Result Client::set_profile_field(const std::string& key,
+                                 const std::string& value_json) const
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_profile_field(key, value_json));
+}
+
+Result Client::delete_profile_field(const std::string& key) const
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->delete_profile_field(key));
 }
 
 Client::DiscoveryResult
@@ -1451,10 +1476,12 @@ tesseract::ServerInfo tesseract::ServerInfo::from_json(const std::string& json)
     // MSC3030 (Jump to Date) was stabilised in spec v1.6.
     for (const auto& sv : info.spec_versions)
         if (sv.at_least(1, 6)) { info.supports_msc3030 = true; break; }
-    info.can_change_password  = js_bool(j, "can_change_password", true);
-    info.can_set_displayname  = js_bool(j, "can_set_displayname", true);
-    info.can_set_avatar       = js_bool(j, "can_set_avatar", true);
-    info.default_room_version = js_str(j, "default_room_version");
+    info.can_change_password       = js_bool(j, "can_change_password", true);
+    info.can_set_displayname       = js_bool(j, "can_set_displayname", true);
+    info.can_set_avatar            = js_bool(j, "can_set_avatar", true);
+    info.supports_profile_fields   = js_bool(j, "supports_profile_fields", false);
+    info.profile_fields_enabled    = js_bool(j, "profile_fields_enabled", true);
+    info.default_room_version      = js_str(j, "default_room_version");
     return info;
 }
 

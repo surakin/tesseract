@@ -13,6 +13,11 @@
 #include <functional>
 #include <string>
 
+namespace tesseract
+{
+struct ExtendedProfile;
+} // namespace tesseract
+
 namespace tesseract::views
 {
 
@@ -49,15 +54,35 @@ public:
 
     tk::Rect name_field_rect() const;
 
+    // ----- Extended profile fields (MSC4133) --------------------------------
+
+    void set_extended_profile(const tesseract::ExtendedProfile& profile);
+    void set_profile_fields_editable(bool editable);
+
+    // key is the MSC unstable key string (e.g. "io.fsky.nyx.pronouns")
+    void set_profile_field_busy(const std::string& key, bool busy);
+    void set_profile_field_error(const std::string& key, std::string error);
+
+    // Rect accessors for NativeTextField overlays (empty when not editable/busy)
+    tk::Rect pronouns_field_rect() const;
+    tk::Rect tz_field_rect() const;
+    tk::Rect bio_field_rect() const;
+
     // ----- Callbacks (wired by the shell) -----------------------------------
 
     std::function<void()> on_avatar_upload_clicked;
     std::function<void()> on_avatar_remove_clicked;
     std::function<void()> on_logout;
 
+    // key = MSC unstable key string, value_json = serialised JSON or "null"
+    std::function<void(std::string key, std::string value_json)>
+        on_profile_field_changed;
+
 private:
-    class Content; // defined in AccountSection.cpp
-    Content* content_ = nullptr;
+    class Content;         // defined in AccountSection.cpp
+    class ExtendedFields;  // defined in AccountSection.cpp
+    Content*        content_    = nullptr;
+    ExtendedFields* ext_fields_ = nullptr;
 };
 
 } // namespace tesseract::views

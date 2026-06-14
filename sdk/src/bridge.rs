@@ -204,6 +204,15 @@ pub mod ffi {
         user_id: String,
         display_name: String,
         avatar_url: String,
+        /// Pronouns summary text (e.g. "she/her"), empty if not set.
+        /// Parsed from `m.pronouns` (stable) or `io.fsky.nyx.pronouns` (unstable).
+        pronouns: String,
+        /// IANA timezone string (e.g. "Europe/Madrid"), empty if not set.
+        /// Parsed from `m.tz` (stable) or `us.cloke.msc4175.tz` (unstable).
+        tz: String,
+        /// Plain-text biography body, empty if not set.
+        /// Parsed from `m.biography` (stable) or `gay.fomx.biography` (unstable).
+        biography: String,
     }
 
     /// A single timeline event (message).
@@ -2035,6 +2044,28 @@ pub mod ffi {
         /// error or when the homeserver has no profile for the mxid.
         /// Blocks — worker thread.
         fn resolve_user_profile(self: &ClientFfi, user_id: &str) -> UserProfile;
+
+        /// Fetch extended profile fields for a user via
+        /// `GET /_matrix/client/v3/profile/{user_id}`. Returns a `UserProfile`
+        /// populated with displayname, avatar_url, and the three MSC4133
+        /// extended fields (pronouns, tz, biography). Falls back gracefully:
+        /// `exists` is false on parse error or when the server reports no such
+        /// user. Blocks — worker thread.
+        fn get_extended_profile(self: &ClientFfi, user_id: &str) -> UserProfile;
+
+        /// Write a single profile field via MSC4133.
+        /// `key` is the unstable key (e.g. `"io.fsky.nyx.pronouns"`).
+        /// `value_json` is a JSON string encoding the field value.
+        /// Returns an error result if the server does not advertise
+        /// `uk.tcpip.msc4133` in its unstable features, or on network error.
+        /// Blocks — worker thread.
+        fn set_profile_field(self: &ClientFfi, key: &str, value_json: &str) -> OpResult;
+
+        /// Delete a single profile field via MSC4133.
+        /// `key` is the unstable key (e.g. `"io.fsky.nyx.pronouns"`).
+        /// Returns an error result if the server does not support MSC4133.
+        /// Blocks — worker thread.
+        fn delete_profile_field(self: &ClientFfi, key: &str) -> OpResult;
 
         /// Discover the homeserver URL for a server name or Matrix ID.
         /// Accepts "matrix.org", "@user:matrix.org", or "https://matrix.org".

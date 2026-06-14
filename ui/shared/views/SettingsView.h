@@ -135,6 +135,33 @@ public:
     // name NativeTextField overlay. Empty when not editable.
     tk::Rect name_field_rect() const;
 
+    // ----- Extended profile fields (MSC4133) --------------------------------
+
+    // Push the currently-fetched extended profile into the Account section.
+    void set_extended_profile(const tesseract::ExtendedProfile& profile);
+
+    // Enable / disable all extended-profile NativeTextField overlays.
+    // Called from set_server_info() and forwarded to AccountSection.
+    void set_profile_fields_editable(bool editable);
+
+    // Mark a specific field as in-flight (busy spinner / disabled overlay).
+    // key is the MSC unstable key string (e.g. "io.fsky.nyx.pronouns").
+    void set_profile_field_busy(const std::string& key, bool busy);
+
+    // Show an inline error under the given field. Pass "" to clear.
+    void set_profile_field_error(const std::string& key, std::string error);
+
+    // Rect accessors for the NativeTextField overlays (empty when not
+    // editable or when Account tab is not visible).
+    tk::Rect pronouns_field_rect() const;
+    tk::Rect tz_field_rect() const;
+    tk::Rect bio_field_rect() const;
+
+    // Fired when a profile field value changes (on_submit from a
+    // NativeTextField). key = MSC key string, value_json = JSON or "null".
+    std::function<void(std::string key, std::string value_json)>
+        on_profile_field_changed;
+
     // Fired when the user clicks the avatar disc (for shell to delegate to controller).
     std::function<void()> on_avatar_upload_requested;
 

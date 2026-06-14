@@ -56,6 +56,7 @@ class MainAppWidget;
 class RoomSearchBar;
 class RoomView;
 class SettingsView;
+class UserProfilePanel;
 }
 
 // ShellBase holds all state and platform-agnostic logic that is identical
@@ -690,6 +691,9 @@ protected:
     // ── Server capabilities ───────────────────────────────────────────────────
     tesseract::ServerInfo server_info_;        ///< populated after first sync
     bool server_info_fetch_started_ = false;  ///< guards begin_server_info_fetch_
+    /// Last fetched own extended profile (MSC4133). Populated by
+    /// fetch_own_extended_profile_async_() after server_info_ confirms support.
+    tesseract::ExtendedProfile own_extended_profile_;
 
     // ── Sync / backup state ───────────────────────────────────────────────────
     RoomListState last_room_list_state_ = RoomListState::Init;
@@ -1891,6 +1895,17 @@ protected:
     /// Override in shells that gate UI elements on server capabilities.
     virtual void on_server_info_ready_ui_() {}
 
+    /// Called on the UI thread after `own_extended_profile_` has been
+    /// refreshed. Override to push the profile into the platform settings
+    /// widget (e.g. `settings_widget_->set_extended_profile(...)`).
+    virtual void on_own_extended_profile_ready_ui_() {}
+
+    /// Called on the UI thread after a set_profile_field / delete_profile_field
+    /// call completes. Override to clear the busy state and surface errors.
+    virtual void on_profile_field_result_ui_(const std::string& /*key*/,
+                                              bool /*ok*/,
+                                              const std::string& /*error*/) {}
+
     // Called on the UI thread after space_children_cache_ has been refreshed.
     // Each shell overrides to call its refresh_room_list().
     virtual void on_space_children_cache_ready_ui_() {}
@@ -1915,6 +1930,24 @@ protected:
     // on_space_unjoined_summaries_ready_ui_().
     void fetch_space_unjoined_summaries_(const std::string& space_id);
 
+    // ── Extended profile (MSC4133) helpers ────────────────────────────────────
+
+    /// Fetch the signed-in user's extended profile on a worker thread.
+    /// Stores the result in own_extended_profile_ and fires
+    /// on_own_extended_profile_ready_ui_() on the UI thread.
+    void fetch_own_extended_profile_async_();
+
+    /// Write (or delete when value_json == "null") a single profile field on
+    /// a worker thread. Fires on_profile_field_result_ui_() on the UI thread.
+    void handle_profile_field_change_(const std::string& key,
+                                       const std::string& value_json);
+
+    /// Fetch another user's extended profile on a worker thread and push the
+    /// result into panel via set_extended_profile(). panel must outlive the
+    /// async call (guaranteed because it is owned by the main widget tree).
+    void fetch_user_extended_profile_async_(const std::string& user_id,
+                                             views::UserProfilePanel* panel);
+
     // Returns cached summaries if present; triggers a fetch and returns {}
     // otherwise. Call from refresh_room_list() while drilled into a space.
     const std::vector<tesseract::RoomSummary>&
@@ -1931,6 +1964,7 @@ protected:
     {
         server_info_fetch_started_ = false;
         server_info_ = tesseract::ServerInfo{};
+        own_extended_profile_ = {};
     }
 
     /// Spawn a detached thread to call Client::get_server_info(), then
@@ -1954,6 +1988,11 @@ protected:
                             h->set_jump_to_date_enabled(
                                 server_info_.supports_msc3030);
                 }
+                // Kick off the MSC4133 own-profile fetch now that we know
+                // whether the server supports extended profile fields.
+                if (server_info_.supports_profile_fields &&
+                    server_info_.profile_fields_enabled)
+                    fetch_own_extended_profile_async_();
             });
         });
     }

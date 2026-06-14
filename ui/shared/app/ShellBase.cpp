@@ -2437,6 +2437,18 @@ void ShellBase::setup_dm_callbacks()
     {
         return !find_existing_dm_(user_id).empty();
     };
+
+    // Wire the UserProfilePanel extended-profile fetch. The panel is owned by
+    // the widget tree (always live while room_view_ exists), so it is safe to
+    // capture the raw pointer.
+    if (auto* panel = room_view_->user_profile_panel())
+    {
+        panel->on_extended_profile_requested =
+            [this, panel](std::string user_id)
+        {
+            fetch_user_extended_profile_async_(user_id, panel);
+        };
+    }
 }
 
 void ShellBase::handle_open_dm_(const std::string& user_id)
@@ -2486,6 +2498,55 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
                     request_repaint_();
                 }
             }
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Extended profile helpers (MSC4133)
+// ---------------------------------------------------------------------------
+
+void ShellBase::fetch_own_extended_profile_async_()
+{
+    if (!client_) return;
+    auto sess = active_account_;
+    run_async_([this, sess]() {
+        if (!sess || !sess->client) return;
+        auto prof = sess->client->get_extended_profile(my_user_id_);
+        post_to_ui_alive_([this, prof = std::move(prof)]() mutable {
+            own_extended_profile_ = std::move(prof);
+            on_own_extended_profile_ready_ui_();
+        });
+    });
+}
+
+void ShellBase::handle_profile_field_change_(const std::string& key,
+                                              const std::string& value_json)
+{
+    if (!client_) return;
+    auto sess = active_account_;
+    run_async_([this, sess, key, value_json]() {
+        if (!sess || !sess->client) return;
+        tesseract::Result r = (value_json == "null")
+            ? sess->client->delete_profile_field(key)
+            : sess->client->set_profile_field(key, value_json);
+        post_to_ui_alive_([this, key, ok = r.ok, msg = std::move(r.message)]() mutable {
+            on_profile_field_result_ui_(key, ok, msg);
+            if (ok) fetch_own_extended_profile_async_();
+        });
+    });
+}
+
+void ShellBase::fetch_user_extended_profile_async_(const std::string& user_id,
+                                                    views::UserProfilePanel* panel)
+{
+    if (!client_ || !panel) return;
+    auto sess = active_account_;
+    run_async_([this, sess, user_id, panel]() {
+        if (!sess || !sess->client) return;
+        auto ep = sess->client->get_extended_profile(user_id);
+        post_to_ui_alive_([panel, ep = std::move(ep)]() mutable {
+            panel->set_extended_profile(ep);
         });
     });
 }

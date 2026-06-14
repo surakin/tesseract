@@ -89,6 +89,42 @@ TEST_CASE("ServerInfo::from_json: spec_versions array", "[server][info]")
     CHECK(info.supports_msc3030 == true);
 }
 
+TEST_CASE("ServerInfo::from_json: supports_profile_fields defaults false", "[server][info]")
+{
+    const std::string json = R"({"homeserver":"https://example.com","spec_versions":[]})";
+    ServerInfo info = ServerInfo::from_json(json);
+    CHECK(info.supports_profile_fields == false);
+}
+
+TEST_CASE("ServerInfo::from_json: supports_profile_fields true when set", "[server][info]")
+{
+    const std::string json = R"({
+        "homeserver": "https://example.com",
+        "spec_versions": [],
+        "supports_profile_fields": true
+    })";
+    ServerInfo info = ServerInfo::from_json(json);
+    CHECK(info.supports_profile_fields == true);
+}
+
+TEST_CASE("ServerInfo::from_json: profile_fields_enabled defaults true", "[server][info]")
+{
+    const std::string json = R"({"homeserver":"https://example.com","spec_versions":[]})";
+    ServerInfo info = ServerInfo::from_json(json);
+    CHECK(info.profile_fields_enabled == true);
+}
+
+TEST_CASE("ServerInfo::from_json: profile_fields_enabled false when set", "[server][info]")
+{
+    const std::string json = R"({
+        "homeserver": "https://example.com",
+        "spec_versions": [],
+        "profile_fields_enabled": false
+    })";
+    ServerInfo info = ServerInfo::from_json(json);
+    CHECK(info.profile_fields_enabled == false);
+}
+
 TEST_CASE("ServerSection: empty before set_server_info", "[server][ui]")
 {
     Stage st;

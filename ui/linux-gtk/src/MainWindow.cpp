@@ -173,6 +173,22 @@ void MainWindow::on_server_info_ready_ui_()
         main_app_surface_->relayout();
 }
 
+void MainWindow::on_own_extended_profile_ready_ui_()
+{
+    if (settings_widget_)
+        settings_widget_->set_extended_profile(own_extended_profile_);
+}
+
+void MainWindow::on_profile_field_result_ui_(const std::string& key,
+                                              bool ok,
+                                              const std::string& error)
+{
+    if (!settings_widget_) return;
+    settings_widget_->set_profile_field_busy(key, false);
+    if (!ok)
+        settings_widget_->set_profile_field_error(key, error);
+}
+
 void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 {
     if (room_view_)
@@ -2537,6 +2553,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             }
             populate_user_strip();
         };
+        settings_widget_->on_profile_field_changed =
+            [this](std::string key, std::string value_json)
+        {
+            handle_profile_field_change_(key, value_json);
+        };
     }
 
     // Escape key: close viewer overlays. Attached to the window so it fires
@@ -3101,8 +3122,14 @@ void MainWindow::bind_settings_controller_()
     // dialog hooks and bind it to the native settings widget.
     wire_key_dialog_callbacks_();
     if (settings_widget_)
+    {
         settings_widget_->set_controller(settings_controller_.get(),
                                          my_display_name_);
+        if (!own_extended_profile_.pronouns.empty() ||
+            !own_extended_profile_.tz.empty() ||
+            !own_extended_profile_.biography.empty())
+            settings_widget_->set_extended_profile(own_extended_profile_);
+    }
 }
 
 void MainWindow::wire_key_dialog_callbacks_()

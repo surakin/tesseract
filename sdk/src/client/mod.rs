@@ -13,6 +13,7 @@ use crate::oauth;
 mod account;
 mod backfill;
 mod crypto_reset;
+mod profile_fields;
 pub(crate) mod gif;
 mod image_packs;
 mod media;
@@ -586,6 +587,11 @@ pub struct ClientFfi {
     /// never bypass a legitimate download.
     #[cfg(not(test))]
     pub(super) sdk_media_fetched: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// Endpoint prefix for MSC4133 profile field writes, populated by
+    /// `get_server_info` when the server advertises
+    /// `unstable_features["uk.tcpip.msc4133"] == true`.
+    /// `None` = server does not support MSC4133 (writes disabled).
+    pub(super) profile_fields_prefix: std::sync::Arc<std::sync::RwLock<Option<String>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -856,6 +862,7 @@ impl ClientFfi {
             media_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sdk_media_fetched: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 // Timeline construction collects cached events

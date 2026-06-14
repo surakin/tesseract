@@ -172,6 +172,9 @@ protected:
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_server_info_ready_ui_() override;
+    void on_own_extended_profile_ready_ui_() override;
+    void on_profile_field_result_ui_(const std::string& key, bool ok,
+                                     const std::string& error) override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
@@ -616,6 +619,10 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
 - (void)_onServerInfoReady;
+- (void)_onOwnExtendedProfileReady;
+- (void)_onProfileFieldResult:(const std::string&)key
+                           ok:(bool)ok
+                        error:(const std::string&)error;
 - (void)_buildStatusBar:(NSView*)content;
 - (void)_refreshSyncStatus;
 - (void)_setStatusLabelText:(NSString*)text;
@@ -651,6 +658,22 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 namespace
 {
+
+// Minimal JSON string escaper for profile field values.
+std::string json_quote(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size() + 2);
+    out += '"';
+    for (char c : s)
+    {
+        if (c == '\\') out += "\\\\";
+        else if (c == '"') out += "\\\"";
+        else out += c;
+    }
+    out += '"';
+    return out;
+}
 
 // ── MacShell method implementations ──────────────────────────────────────
 
@@ -1572,6 +1595,22 @@ void MacShell::on_server_info_ready_ui_()
     }
 }
 
+void MacShell::on_own_extended_profile_ready_ui_()
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+        [c _onOwnExtendedProfileReady];
+}
+
+void MacShell::on_profile_field_result_ui_(const std::string& key,
+                                            bool ok,
+                                            const std::string& error)
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+        [c _onProfileFieldResult:key ok:ok error:error];
+}
+
 void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/)
 {
     // Typing-indicator visibility is driven by set_typing_text content inside
@@ -1797,6 +1836,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     // Settings name field — positioned via _settingsSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _settingsNameField;
+    // Extended-profile NativeTextField overlays (MSC4133).
+    std::unique_ptr<tk::NativeTextField> _settingsPronounsField;
+    std::unique_ptr<tk::NativeTextField> _settingsTzField;
+    std::unique_ptr<tk::NativeTextField> _settingsBioField;
 
     // Join Room sheet — NSWindow hosting JoinRoomView, presented as a sheet.
     NSWindow* _joinRoomWindow;
@@ -6021,6 +6064,104 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [s _populateUserStrip];
         };
     }
+
+    // Captured by value in each on_submit lambda; ws is __weak so safe across
+    // surface teardown.
+    auto& host = _settingsSurface->host();
+
+    _settingsPronounsField = host.make_text_field();
+    _settingsPronounsField->set_placeholder("Pronouns");
+    _settingsPronounsField->set_visible(false);
+    _settingsPronounsField->set_on_submit(
+        [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            const std::string text = s->_settingsPronounsField->text();
+            static constexpr char kKey[] = "io.fsky.nyx.pronouns";
+            std::string value_json;
+            if (text.empty())
+                value_json = "null";
+            else
+                value_json = "[{\"summary\":" + json_quote(text) + ",\"language\":\"en\"}]";
+            if (s->_settingsView)
+                s->_settingsView->set_profile_field_busy(kKey, true);
+            s->_shell->handle_profile_field_change_(kKey, value_json);
+            if (s->_settingsSurface) s->_settingsSurface->relayout();
+        });
+
+    _settingsTzField = host.make_text_field();
+    _settingsTzField->set_placeholder("Timezone (e.g. Europe/London)");
+    _settingsTzField->set_visible(false);
+    _settingsTzField->set_on_submit(
+        [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            const std::string text = s->_settingsTzField->text();
+            static constexpr char kKey[] = "us.cloke.msc4175.tz";
+            std::string value_json = text.empty() ? "null" : json_quote(text);
+            if (s->_settingsView)
+                s->_settingsView->set_profile_field_busy(kKey, true);
+            s->_shell->handle_profile_field_change_(kKey, value_json);
+            if (s->_settingsSurface) s->_settingsSurface->relayout();
+        });
+
+    _settingsBioField = host.make_text_field();
+    _settingsBioField->set_placeholder("Short biography");
+    _settingsBioField->set_visible(false);
+    _settingsBioField->set_on_submit(
+        [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            const std::string text = s->_settingsBioField->text();
+            static constexpr char kKey[] = "gay.fomx.biography";
+            std::string value_json;
+            if (text.empty())
+                value_json = "null";
+            else
+                value_json = "{\"m.text\":[{\"body\":" + json_quote(text) + "}]}";
+            if (s->_settingsView)
+                s->_settingsView->set_profile_field_busy(kKey, true);
+            s->_shell->handle_profile_field_change_(kKey, value_json);
+            if (s->_settingsSurface) s->_settingsSurface->relayout();
+        });
+
+    _settingsSurface->set_on_layout(
+        [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_settingsView) return;
+            if (s->_settingsNameField)
+            {
+                const tk::Rect r = s->_settingsView->name_field_rect();
+                s->_settingsNameField->set_visible(!r.empty());
+                if (!r.empty())
+                    s->_settingsNameField->set_rect(r);
+            }
+            if (s->_settingsPronounsField)
+            {
+                const tk::Rect r = s->_settingsView->pronouns_field_rect();
+                s->_settingsPronounsField->set_visible(!r.empty());
+                if (!r.empty())
+                    s->_settingsPronounsField->set_rect(r);
+            }
+            if (s->_settingsTzField)
+            {
+                const tk::Rect r = s->_settingsView->tz_field_rect();
+                s->_settingsTzField->set_visible(!r.empty());
+                if (!r.empty())
+                    s->_settingsTzField->set_rect(r);
+            }
+            if (s->_settingsBioField)
+            {
+                const tk::Rect r = s->_settingsView->bio_field_rect();
+                s->_settingsBioField->set_visible(!r.empty());
+                if (!r.empty())
+                    s->_settingsBioField->set_rect(r);
+            }
+        });
 }
 
 - (void)loginViewDidSucceed:(LoginView*)view
@@ -7290,6 +7431,32 @@ void MacShell::set_compose_draft_(const std::string& draft)
             _shell->server_info_.supports_msc3030);
     if (_mainAppSurface)
         _mainAppSurface->relayout();
+}
+
+- (void)_onOwnExtendedProfileReady
+{
+    if (_settingsView)
+        _settingsView->set_extended_profile(_shell->own_extended_profile_);
+    if (_settingsPronounsField)
+        _settingsPronounsField->set_text(_shell->own_extended_profile_.pronouns);
+    if (_settingsTzField)
+        _settingsTzField->set_text(_shell->own_extended_profile_.tz);
+    if (_settingsBioField)
+        _settingsBioField->set_text(_shell->own_extended_profile_.biography);
+    if (_settingsSurface)
+        _settingsSurface->relayout();
+}
+
+- (void)_onProfileFieldResult:(const std::string&)key
+                           ok:(bool)ok
+                        error:(const std::string&)error
+{
+    if (!_settingsView) return;
+    _settingsView->set_profile_field_busy(key, false);
+    if (!ok)
+        _settingsView->set_profile_field_error(key, error);
+    if (_settingsSurface)
+        _settingsSurface->relayout();
 }
 
 - (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight

@@ -186,6 +186,22 @@ std::wstring prompt_passphrase_w32(HWND parent, const wchar_t* title)
     return ctx.result;
 }
 
+// Minimal JSON string escaper for profile field values.
+std::string json_quote(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size() + 2);
+    out += '"';
+    for (char c : s)
+    {
+        if (c == '\\') out += "\\\\";
+        else if (c == '"') out += "\\\"";
+        else out += c;
+    }
+    out += '"';
+    return out;
+}
+
 } // namespace
 
 namespace win32
@@ -992,6 +1008,32 @@ void MainWindow::on_server_info_ready_ui_()
             server_info_.supports_msc3030);
     if (main_app_surface_)
         main_app_surface_->relayout();
+}
+
+void MainWindow::on_own_extended_profile_ready_ui_()
+{
+    if (settings_view_)
+        settings_view_->set_extended_profile(own_extended_profile_);
+    if (settings_pronouns_field_)
+        settings_pronouns_field_->set_text(own_extended_profile_.pronouns);
+    if (settings_tz_field_)
+        settings_tz_field_->set_text(own_extended_profile_.tz);
+    if (settings_bio_field_)
+        settings_bio_field_->set_text(own_extended_profile_.biography);
+    if (settings_surface_)
+        settings_surface_->relayout();
+}
+
+void MainWindow::on_profile_field_result_ui_(const std::string& key,
+                                              bool ok,
+                                              const std::string& error)
+{
+    if (!settings_view_) return;
+    settings_view_->set_profile_field_busy(key, false);
+    if (!ok)
+        settings_view_->set_profile_field_error(key, error);
+    if (settings_surface_)
+        settings_surface_->relayout();
 }
 
 void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
@@ -4022,6 +4064,98 @@ void MainWindow::bind_settings_controller_()
         settings_surface_->relayout();
         populate_user_strip();
     };
+
+    // Create NativeTextField overlays for the three extended profile fields.
+    static constexpr char kKeyPronouns[] = "io.fsky.nyx.pronouns";
+    static constexpr char kKeyTz[]       = "us.cloke.msc4175.tz";
+    static constexpr char kKeyBio[]      = "gay.fomx.biography";
+
+    settings_pronouns_field_ = settings_surface_->host().make_text_field();
+    settings_pronouns_field_->set_placeholder("Pronouns");
+    settings_pronouns_field_->set_visible(false);
+    settings_pronouns_field_->set_on_submit(
+        [this]
+        {
+            const std::string text = settings_pronouns_field_->text();
+            std::string value_json;
+            if (text.empty())
+                value_json = "null";
+            else
+                value_json = "[{\"summary\":" + json_quote(text) +
+                             ",\"language\":\"en\"}]";
+            if (settings_view_)
+                settings_view_->set_profile_field_busy(kKeyPronouns, true);
+            handle_profile_field_change_(kKeyPronouns, value_json);
+            if (settings_surface_) settings_surface_->relayout();
+        });
+
+    settings_tz_field_ = settings_surface_->host().make_text_field();
+    settings_tz_field_->set_placeholder("Timezone (e.g. Europe/London)");
+    settings_tz_field_->set_visible(false);
+    settings_tz_field_->set_on_submit(
+        [this]
+        {
+            const std::string text = settings_tz_field_->text();
+            std::string value_json = text.empty() ? "null" : json_quote(text);
+            if (settings_view_)
+                settings_view_->set_profile_field_busy(kKeyTz, true);
+            handle_profile_field_change_(kKeyTz, value_json);
+            if (settings_surface_) settings_surface_->relayout();
+        });
+
+    settings_bio_field_ = settings_surface_->host().make_text_field();
+    settings_bio_field_->set_placeholder("Short biography");
+    settings_bio_field_->set_visible(false);
+    settings_bio_field_->set_on_submit(
+        [this]
+        {
+            const std::string text = settings_bio_field_->text();
+            std::string value_json;
+            if (text.empty())
+                value_json = "null";
+            else
+                value_json = "{\"m.text\":[{\"body\":" + json_quote(text) + "}]}";
+            if (settings_view_)
+                settings_view_->set_profile_field_busy(kKeyBio, true);
+            handle_profile_field_change_(kKeyBio, value_json);
+            if (settings_surface_) settings_surface_->relayout();
+        });
+
+    // Also expand the set_on_layout callback to position the new overlays.
+    // The existing callback was set during settings-surface construction;
+    // we append our own relayout hook here by resetting it with full coverage.
+    settings_surface_->set_on_layout(
+        [this]
+        {
+            if (settings_name_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->name_field_rect();
+                settings_name_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    settings_name_field_->set_rect(r);
+            }
+            if (settings_pronouns_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->pronouns_field_rect();
+                settings_pronouns_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    settings_pronouns_field_->set_rect(r);
+            }
+            if (settings_tz_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->tz_field_rect();
+                settings_tz_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    settings_tz_field_->set_rect(r);
+            }
+            if (settings_bio_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->bio_field_rect();
+                settings_bio_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    settings_bio_field_->set_rect(r);
+            }
+        });
 }
 
 void MainWindow::on_login_succeeded()

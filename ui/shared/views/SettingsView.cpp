@@ -344,8 +344,13 @@ void SettingsView::set_server_info(const tesseract::ServerInfo& info)
     {
         server_section_->set_server_info(info);
     }
-    account_->set_editable(info.can_set_displayname);
-    account_->set_avatar_editable(info.can_set_avatar);
+    if (account_)
+    {
+        account_->set_editable(info.can_set_displayname);
+        account_->set_avatar_editable(info.can_set_avatar);
+        account_->set_profile_fields_editable(
+            info.supports_profile_fields && info.profile_fields_enabled);
+    }
 }
 
 void SettingsView::set_current_device_id(std::string id)
@@ -489,6 +494,15 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
             on_avatar_remove_requested();
     };
 
+    // Re-expose the extended-profile field change callback so the shell can
+    // wire it in one place on SettingsView rather than reaching into account_.
+    account_->on_profile_field_changed =
+        [this](std::string key, std::string value_json)
+    {
+        if (on_profile_field_changed)
+            on_profile_field_changed(std::move(key), std::move(value_json));
+    };
+
     // Wire controller → DevicesSection state. Each callback that mutates
     // widget-tree state must trigger a repaint via request_repaint_ — the
     // shared layer has no other way to invalidate the surface from an
@@ -589,6 +603,55 @@ tk::Rect SettingsView::name_field_rect() const
     if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
         return {};
     return account_->name_field_rect();
+}
+
+// ---------------------------------------------------------------------------
+// Extended profile (MSC4133) — thin delegation to AccountSection
+// ---------------------------------------------------------------------------
+
+void SettingsView::set_extended_profile(const tesseract::ExtendedProfile& profile)
+{
+    if (account_)
+        account_->set_extended_profile(profile);
+}
+
+void SettingsView::set_profile_fields_editable(bool editable)
+{
+    if (account_)
+        account_->set_profile_fields_editable(editable);
+}
+
+void SettingsView::set_profile_field_busy(const std::string& key, bool busy)
+{
+    if (account_)
+        account_->set_profile_field_busy(key, busy);
+}
+
+void SettingsView::set_profile_field_error(const std::string& key, std::string error)
+{
+    if (account_)
+        account_->set_profile_field_error(key, std::move(error));
+}
+
+tk::Rect SettingsView::pronouns_field_rect() const
+{
+    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
+        return {};
+    return account_->pronouns_field_rect();
+}
+
+tk::Rect SettingsView::tz_field_rect() const
+{
+    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
+        return {};
+    return account_->tz_field_rect();
+}
+
+tk::Rect SettingsView::bio_field_rect() const
+{
+    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
+        return {};
+    return account_->bio_field_rect();
 }
 
 } // namespace tesseract::views
