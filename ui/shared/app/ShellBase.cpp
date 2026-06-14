@@ -1992,8 +1992,16 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // visible slice) has its last_activity_ts populated so the inactive
     // section can classify all rooms correctly. Idempotent: Rust skips rooms
     // already in backfill_ts and returns immediately if a task is running.
+    // Dispatched to the mutable worker pool so the UI thread is never blocked
+    // waiting for MUT_FFI (which can be held-off by SH_FFI network calls).
     if (client_ && tesseract::Settings::instance().group_inactive_rooms)
-        client_->start_background_backfill_all_uncached();
+    {
+        auto sess = active_account_;
+        run_async_mut_([sess]() {
+            if (sess && sess->client)
+                sess->client->start_background_backfill_all_uncached();
+        });
+    }
 
     // Proactively warm the event cache for quiet-unread rooms so opening them is
     // instant. push_rooms_ fires on every sync tick, so we gate the FFI call on a
@@ -2278,22 +2286,23 @@ void ShellBase::fetch_space_unjoined_summaries_(const std::string& space_id)
 
     std::vector<std::string> ids = it->second;
     auto sess = active_account_;
+    const std::uint64_t gen = ++unjoined_fetch_gen_;
     run_async_(
-        [this, sess, space_id, ids = std::move(ids)]()
+        [this, sess, space_id, ids = std::move(ids), gen]()
         {
             if (!sess || !sess->client) return;
-            std::vector<tesseract::RoomSummary> summaries;
-            summaries.reserve(ids.size());
-            for (const auto& id : ids)
-            {
-                auto s = sess->client->get_room_summary(id);
-                if (s.ok())
-                    summaries.push_back(std::move(s));
-            }
+            auto summaries =
+                sess->client->get_space_child_summaries_batch(space_id, ids);
             post_to_ui_alive_(
-                [this, space_id, summaries = std::move(summaries)]() mutable
+                [this, space_id, summaries = std::move(summaries), gen]() mutable
                 {
+                    if (gen != unjoined_fetch_gen_) return;
                     unjoined_summaries_cache_[space_id] = std::move(summaries);
+                    for (const auto& s : unjoined_summaries_cache_[space_id])
+                    {
+                        if (!s.avatar_url.empty())
+                            ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
+                    }
                     on_space_unjoined_summaries_ready_ui_(space_id);
                 });
         });
@@ -3978,6 +3987,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     tabs_.clear();
     active_tab_idx_ = 0;
     space_stack_.clear();
+    ++unjoined_fetch_gen_;
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
     reply_details_requested_.clear();
@@ -4249,6 +4259,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // shell: the remaining-account branch repaints via
     // refresh_account_ui_after_switch_, the empty branch via the login view).
     space_stack_.clear();
+    ++unjoined_fetch_gen_;
     my_user_id_.clear();
     my_display_name_.clear();
     my_avatar_url_.clear();
@@ -6043,6 +6054,7 @@ void ShellBase::restart_sdk_()
     current_room_id_.clear();
     tabs_.clear();
     space_stack_.clear();
+    ++unjoined_fetch_gen_;
     pagination_.clear();
     reply_details_requested_.clear();
     // MSC4278 per-account gating state.
@@ -6950,7 +6962,11 @@ void ShellBase::restart_account_sync_(const std::string& user_id)
     if (sess && !sess->sync_started && sess->client)
     {
         sess->sync_started = true;
-        sess->client->start_sync(sess->bridge.get());
+        run_async_mut_([sess]()
+        {
+            if (sess && sess->client)
+                sess->client->start_sync(sess->bridge.get());
+        });
     }
 }
 

@@ -249,6 +249,8 @@ private:
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
+    void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
+    void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void open_join_room_dialog_ui_(const std::string& prefill) override;

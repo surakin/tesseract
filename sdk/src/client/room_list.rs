@@ -15,6 +15,54 @@ use super::{
 #[cfg(not(test))]
 use matrix_sdk::ruma::OwnedRoomId;
 
+/// Serialisation target for `get_room_summary` / `get_space_child_summaries_batch`.
+/// Matches the JSON shape consumed by `parse_room_summary_json` in client.cpp.
+#[cfg(not(test))]
+#[derive(serde::Serialize)]
+struct RoomSummaryJson {
+    room_id:            String,
+    canonical_alias:    String,
+    name:               String,
+    topic:              String,
+    avatar_url:         String,
+    num_joined_members: u64,
+    join_rule:          String,
+    world_readable:     bool,
+    is_space:           bool,
+    membership:         String,
+}
+
+#[cfg(not(test))]
+impl From<matrix_sdk::room_preview::RoomPreview> for RoomSummaryJson {
+    fn from(p: matrix_sdk::room_preview::RoomPreview) -> Self {
+        use matrix_sdk::ruma::room::RoomType;
+        use matrix_sdk_base::RoomState;
+
+        RoomSummaryJson {
+            room_id:            p.room_id.to_string(),
+            canonical_alias:    p.canonical_alias.map(|a| a.to_string()).unwrap_or_default(),
+            name:               p.name.unwrap_or_default(),
+            topic:              p.topic.unwrap_or_default(),
+            avatar_url:         p.avatar_url.map(|u| u.to_string()).unwrap_or_default(),
+            num_joined_members: p.num_joined_members,
+            join_rule:          p.join_rule
+                                    .as_ref()
+                                    .map(|j| j.as_str().to_owned())
+                                    .unwrap_or_else(|| "public".to_owned()),
+            world_readable:     p.is_world_readable.unwrap_or(false),
+            is_space:           matches!(p.room_type, Some(RoomType::Space)),
+            membership:         match p.state {
+                Some(RoomState::Joined)  => "join".to_owned(),
+                Some(RoomState::Left)    => "leave".to_owned(),
+                Some(RoomState::Invited) => "invite".to_owned(),
+                Some(RoomState::Knocked) => "knock".to_owned(),
+                Some(RoomState::Banned)  => "ban".to_owned(),
+                None                     => String::new(),
+            },
+        }
+    }
+}
+
 impl ClientFfi {
     pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
         #[cfg(not(test))]
@@ -120,52 +168,23 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn get_room_summary(&self, room_id_or_alias: &str) -> String {
-        use matrix_sdk::ruma::api::client::room::get_summary::v1::Request;
-        use matrix_sdk::ruma::room::RoomType;
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
-        let Some(client) = self.client.clone() else {
-            return String::new();
-        };
-        if room_id_or_alias.is_empty() {
-            return String::new();
-        }
+        let Some(client) = self.client.clone() else { return String::new(); };
+        if room_id_or_alias.is_empty() { return String::new(); }
 
         let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
             Ok(id) => id,
             Err(_) => return String::new(),
         };
+
         let stop_rx = self.stop_rx.clone();
         self.rt.block_on(async move {
-            let req = Request::new(id, vec![]);
             tokio::select! {
-                result = client.send(req) => {
+                result = client.get_room_preview(&id, vec![]) => {
                     match result {
-                        Ok(resp) => {
-                            let s = &resp.summary;
-                            let join_rule = s.join_rule.as_str();
-                            let encryption = s.encryption.as_ref()
-                                .map(|e| e.as_str())
-                                .unwrap_or("");
-                            let is_space = matches!(s.room_type, Some(RoomType::Space));
-                            let membership = resp.membership.as_ref()
-                                .map(|m| m.as_str())
-                                .unwrap_or("");
-                            serde_json::json!({
-                                "room_id":            s.room_id.as_str(),
-                                "canonical_alias":    s.canonical_alias.as_ref().map(|a| a.as_str()).unwrap_or(""),
-                                "name":               s.name.as_deref().unwrap_or(""),
-                                "topic":              s.topic.as_deref().unwrap_or(""),
-                                "avatar_url":         s.avatar_url.as_ref().map(|u| u.as_str()).unwrap_or(""),
-                                "num_joined_members": u64::from(s.num_joined_members),
-                                "join_rule":          join_rule,
-                                "world_readable":     s.world_readable,
-                                "guest_can_join":     s.guest_can_join,
-                                "encryption":         encryption,
-                                "is_space":           is_space,
-                                "membership":         membership,
-                            }).to_string()
-                        }
+                        Ok(preview) => serde_json::to_string(&RoomSummaryJson::from(preview))
+                            .unwrap_or_default(),
                         Err(_) => String::new(),
                     }
                 }
@@ -174,9 +193,103 @@ impl ClientFfi {
         })
     }
 
+    /// Fetch MSC3266 summaries for a batch of unjoined space child rooms in a
+    /// single blocking FFI call.  All N `get_room_preview` requests are issued
+    /// concurrently inside tokio, so wall time ≈ the slowest individual request
+    /// rather than the sum.  A single `InFlightGuard` covers the whole batch so
+    /// the status-bar dot stays lit while any request is in flight.
+    #[cfg(not(test))]
+    pub fn get_space_child_summaries_batch(
+        &self,
+        space_id: &str,
+        child_ids: &cxx::CxxVector<cxx::CxxString>,
+    ) -> String {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+        use matrix_sdk::ruma::events::SyncStateEvent;
+        use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName};
+        use std::collections::HashMap;
+
+        let Some(client) = self.client.clone() else { return "[]".to_owned(); };
+        if child_ids.is_empty() { return "[]".to_owned(); }
+
+        let ids: Vec<String> = child_ids.iter().map(|s| s.to_string()).collect();
+        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else { return "[]".to_owned(); };
+        let stop_rx = self.stop_rx.clone();
+        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+
+        self.rt.block_on(async move {
+            // Step 1: read all via-server lists from local state — no network.
+            let mut via_map: HashMap<OwnedRoomId, Vec<OwnedServerName>> = HashMap::new();
+            if let Some(space_room) = client.get_room(&space_room_id) {
+                if let Ok(events) = space_room
+                    .get_state_events_static::<SpaceChildEventContent>()
+                    .await
+                {
+                    for ev in events {
+                        match ev.deserialize() {
+                            Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e))) => {
+                                via_map.insert(e.state_key.to_owned(), e.content.via);
+                            }
+                            Ok(SyncOrStrippedState::Stripped(e)) => {
+                                via_map.insert(
+                                    e.state_key.to_owned(),
+                                    e.content.via.unwrap_or_default(),
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            // Step 2: fire all N room-preview requests concurrently.
+            let futures_vec: Vec<_> = ids
+                .into_iter()
+                .map(|child_id| {
+                    let client = client.clone();
+                    let stop_rx = stop_rx.clone();
+                    let roa: Result<OwnedRoomOrAliasId, _> = child_id.as_str().try_into();
+                    let via = roa
+                        .as_ref()
+                        .ok()
+                        .and_then(|id| OwnedRoomId::try_from(id.as_str()).ok())
+                        .and_then(|rid| via_map.get(&rid).cloned())
+                        .unwrap_or_default();
+                    async move {
+                        let Ok(id) = roa else { return None; };
+                        tokio::select! {
+                            result = client.get_room_preview(&id, via) => {
+                                result.ok().map(RoomSummaryJson::from)
+                            }
+                            _ = stop_fut(stop_rx) => None,
+                        }
+                    }
+                })
+                .collect();
+
+            let results: Vec<RoomSummaryJson> = futures_util::future::join_all(futures_vec)
+                .await
+                .into_iter()
+                .flatten()
+                .collect();
+
+            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_owned())
+        })
+    }
+
     #[cfg(test)]
     pub fn get_room_summary(&self, _room_id_or_alias: &str) -> String {
         String::new()
+    }
+
+    #[cfg(test)]
+    pub fn get_space_child_summaries_batch(
+        &self,
+        _space_id: &str,
+        _child_ids: &cxx::CxxVector<cxx::CxxString>,
+    ) -> String {
+        "[]".to_owned()
     }
 
     #[cfg(not(test))]

@@ -220,14 +220,21 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             connect(scrollDebounce, &QTimer::timeout, this,
                     [this]
                     {
-                        if (!mainApp_ || !client_)
+                        if (!mainApp_ || !active_account_)
                         {
                             return;
                         }
                         auto ids =
                             mainApp_->room_list_view()->visible_room_ids();
-                        client_->stop_background_backfill();
-                        client_->start_background_backfill(ids);
+                        auto sess = active_account_;
+                        run_async_mut_([sess, ids = std::move(ids)]() mutable
+                        {
+                            if (sess && sess->client)
+                            {
+                                sess->client->stop_background_backfill();
+                                sess->client->start_background_backfill(ids);
+                            }
+                        });
                     });
         }
         mainApp_->room_list_view()->on_search_clear = [this]
@@ -251,6 +258,34 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 joinRoomDialog_->openDialog();
             }
         };
+        mainApp_->room_list_view()->on_unjoined_room_selected =
+            [this](const tesseract::RoomSummary& s)
+        {
+            if (!s.avatar_url.empty())
+                ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
+            if (mainApp_)
+            {
+                mainApp_->show_room_preview(s, make_avatar_image_provider_());
+                request_relayout_();
+            }
+        };
+        if (auto* rp = mainApp_->room_preview())
+        {
+            rp->on_avatar_needed = [this](const std::string& mxc)
+            {
+                ensure_media_thumbnail_(mxc, 64, 64, false);
+            };
+            rp->on_join = [this, rp](const std::string& room_id)
+            {
+                rp->set_state(tesseract::views::RoomPreviewView::State::Joining);
+                join_room_command_(room_id);
+            };
+            rp->on_dismiss = [this]
+            {
+                if (mainApp_)
+                    mainApp_->hide_room_preview();
+            };
+        }
 
         // ---- Tab bar ----
         mainApp_->tab_bar()->on_tab_selected =
@@ -3016,6 +3051,18 @@ void MainWindow::on_space_children_cache_ready_ui_()
     refreshRoomList();
 }
 
+void MainWindow::on_space_unjoined_summaries_ready_ui_(const std::string&)
+{
+    refreshRoomList();
+}
+
+void MainWindow::on_join_room_outcome_ui_(bool ok, const std::string&)
+{
+    if (!ok && mainApp_ && mainApp_->room_preview())
+        mainApp_->room_preview()->set_state(
+            tesseract::views::RoomPreviewView::State::Idle);
+}
+
 void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
 {
     if (tray_)
@@ -3706,6 +3753,7 @@ void MainWindow::refreshRoomList()
         if (mainApp_)
         {
             mainApp_->set_space_nav(false);
+            mainApp_->room_list_view()->clear_space_unjoined_rooms();
         }
         showRooms(filtered);
     }
@@ -3740,6 +3788,10 @@ void MainWindow::refreshRoomList()
                 }
             }
             mainApp_->set_space_nav(true, space_name, space_avatar);
+            const auto& unjoined =
+                get_cached_unjoined_summaries_(space_stack_.back());
+            mainApp_->room_list_view()->set_space_unjoined_rooms(
+                std::vector<tesseract::RoomSummary>(unjoined));
         }
         showRooms(filtered);
     }
@@ -3748,9 +3800,9 @@ void MainWindow::refreshRoomList()
 void MainWindow::onSpaceBack()
 {
     if (!space_stack_.empty())
-    {
         space_stack_.pop_back();
-    }
+    if (mainApp_)
+        mainApp_->hide_room_preview();
     refreshRoomList();
 }
 

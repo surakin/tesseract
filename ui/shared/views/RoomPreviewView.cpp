@@ -109,7 +109,7 @@ tk::Size RoomPreviewView::measure(tk::LayoutCtx&, tk::Size constraints)
 
 void RoomPreviewView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
-    tk::Widget::arrange(lc, bounds);
+    bounds_ = bounds;
     if (!summary_) return;
 
     // Estimate button row y (same heuristic as InviteCard — rebuilt in paint).

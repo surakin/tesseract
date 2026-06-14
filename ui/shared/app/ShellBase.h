@@ -373,6 +373,11 @@ protected:
     // Fetched lazily via fetch_space_unjoined_summaries_().
     std::unordered_map<std::string, std::vector<tesseract::RoomSummary>>
         unjoined_summaries_cache_;
+    // Incremented each time a new batch fetch is dispatched or cancelled.
+    // Each worker captures the generation at dispatch time; on arrival the
+    // callback is silently dropped if the gen has since advanced (navigation
+    // or account switch happened while the batch was in flight).
+    std::uint64_t unjoined_fetch_gen_ = 0;
     std::string current_room_id_;
     // Most-recently-visited room IDs in visit order (front = most recent),
     // recorded in after_active_room_changed_(). Feeds the Ctrl+K quick

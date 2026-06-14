@@ -119,6 +119,8 @@ public:
 protected:
     void on_rooms_updated_() override;
     void on_space_children_cache_ready_ui_() override;
+    void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
+    void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void show_encryption_setup_overlay_(
         tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
@@ -347,6 +349,9 @@ public:
     using ShellBase::wire_main_app_viewers_;
     using ShellBase::wire_main_app_widget_;
     using ShellBase::wire_voice_capture_;
+    using ShellBase::ensure_media_thumbnail_;
+    using ShellBase::join_room_command_;
+    using ShellBase::get_cached_unjoined_summaries_;
     using ShellBase::reset_server_info_;
     using ShellBase::server_info_;
     using ShellBase::show_status_message_;
@@ -704,6 +709,21 @@ void MacShell::on_space_children_cache_ready_ui_()
     {
         [ctrl_ _refreshRoomList];
     }
+}
+
+void MacShell::on_space_unjoined_summaries_ready_ui_(const std::string&)
+{
+    if (ctrl_)
+    {
+        [ctrl_ _refreshRoomList];
+    }
+}
+
+void MacShell::on_join_room_outcome_ui_(bool ok, const std::string&)
+{
+    if (!ok && main_app_ && main_app_->room_preview())
+        main_app_->room_preview()->set_state(
+            tesseract::views::RoomPreviewView::State::Idle);
 }
 
 void MacShell::show_encryption_setup_overlay_(
@@ -2160,6 +2180,52 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 [s _openJoinRoomSheet];
             }
         };
+        _mainApp->room_list_view()->on_unjoined_room_selected =
+            [weakSelf](const tesseract::RoomSummary& s)
+        {
+            MainWindowController* self = weakSelf;
+            if (!self)
+                return;
+            if (!s.avatar_url.empty())
+                self->_shell->ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
+            if (self->_mainApp)
+            {
+                __weak MainWindowController* ws = self;
+                self->_mainApp->show_room_preview(
+                    s,
+                    [ws](const std::string& mxc) -> const tk::Image*
+                    {
+                        MainWindowController* c = ws;
+                        if (!c) return nullptr;
+                        return c->_shell->account_manager_
+                                   .thumbnail_cache().peek(mxc);
+                    });
+                self->_shell->request_relayout_();
+            }
+        };
+        if (auto* rp = _mainApp->room_preview())
+        {
+            rp->on_avatar_needed = [weakSelf](const std::string& mxc)
+            {
+                MainWindowController* s = weakSelf;
+                if (s)
+                    s->_shell->ensure_media_thumbnail_(mxc, 64, 64, false);
+            };
+            rp->on_join = [weakSelf, rp](const std::string& room_id)
+            {
+                MainWindowController* s = weakSelf;
+                if (!s)
+                    return;
+                rp->set_state(tesseract::views::RoomPreviewView::State::Joining);
+                s->_shell->join_room_command_(room_id);
+            };
+            rp->on_dismiss = [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->hide_room_preview();
+            };
+        }
 
         // VerificationBanner callbacks.
         _mainApp->verif_banner()->on_verify = [weakSelf]
@@ -6479,21 +6545,28 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_onRoomScrollDebounce
 {
-    if (!_roomListView || !_shell->client_)
+    if (!_roomListView || !_shell->active_account_)
     {
         return;
     }
-    auto ids = _roomListView->visible_room_ids();
-    _shell->client_->stop_background_backfill();
-    _shell->client_->start_background_backfill(ids);
+    auto ids  = _roomListView->visible_room_ids();
+    auto sess = _shell->active_account_;
+    _shell->run_async_mut_([sess, ids = std::move(ids)]() mutable
+    {
+        if (sess && sess->client)
+        {
+            sess->client->stop_background_backfill();
+            sess->client->start_background_backfill(ids);
+        }
+    });
 }
 
 - (void)_onSpaceBack
 {
     if (!_shell->space_stack_.empty())
-    {
         _shell->space_stack_.pop_back();
-    }
+    if (_mainApp)
+        _mainApp->hide_room_preview();
     [self _refreshRoomList];
 }
 
@@ -7245,6 +7318,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         if (_mainApp)
         {
             _mainApp->set_space_nav(false);
+            _mainApp->room_list_view()->clear_space_unjoined_rooms();
         }
     }
     else
@@ -7278,6 +7352,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
         if (_mainApp)
         {
             _mainApp->set_space_nav(true, space_name, space_avatar);
+            const auto& unjoined =
+                _shell->get_cached_unjoined_summaries_(_shell->space_stack_.back());
+            _mainApp->room_list_view()->set_space_unjoined_rooms(
+                std::vector<tesseract::RoomSummary>(unjoined));
         }
     }
     // Avatars load lazily as rows are painted (RoomListView's

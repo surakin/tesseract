@@ -1895,7 +1895,6 @@ pub mod ffi {
         /// alias (`#alias:server`). Returns a JSON object on success or an
         /// empty string on error. Blocks the calling thread.
         fn get_room_summary(self: &ClientFfi, room_id_or_alias: &str) -> String;
-
         /// Join a room by its ID or alias. Returns the canonical room ID
         /// (e.g. `!id:server`) on success, or an empty string on failure.
         /// Blocks the calling thread — call only from a worker thread.
@@ -2054,6 +2053,15 @@ pub mod ffi {
         /// Like `space_children` but returns ALL child room IDs regardless of
         /// join/membership status — includes rooms the user has not joined.
         fn space_children_all(self: &ClientFfi, space_id: &str) -> Vec<String>;
+
+        /// Fetch MSC3266 summaries for multiple unjoined space child rooms in
+        /// one call.  All requests run concurrently inside tokio; returns a
+        /// JSON array of RoomSummaryJson objects (empty array on error).
+        fn get_space_child_summaries_batch(
+            self: &ClientFfi,
+            space_id: &str,
+            child_ids: &CxxVector<CxxString>,
+        ) -> String;
 
         // ----- Recovery / key backup (Step 6) -----
 

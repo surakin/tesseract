@@ -1226,30 +1226,58 @@ si_parse_spec_versions(const nlohmann::json& j)
 // MSC3266 room summary / join
 // ---------------------------------------------------------------------------
 
+static RoomSummary parse_room_summary_json(const std::string& json)
+{
+    if (json.empty())
+        return {};
+    nlohmann::json j = parse_json_obj(json);
+    RoomSummary s;
+    s.room_id            = js_str(j, "room_id");
+    s.canonical_alias    = js_str(j, "canonical_alias");
+    s.name               = js_str(j, "name");
+    s.topic              = js_str(j, "topic");
+    s.avatar_url         = js_str(j, "avatar_url");
+    s.num_joined_members = js_uint(j, "num_joined_members");
+    s.join_rule          = js_str(j, "join_rule");
+    s.world_readable     = js_bool(j, "world_readable", false);
+    s.guest_can_join     = js_bool(j, "guest_can_join", false);
+    s.encryption         = js_str(j, "encryption");
+    s.is_space           = js_bool(j, "is_space", false);
+    s.membership         = js_str(j, "membership");
+    return s;
+}
+
 RoomSummary Client::get_room_summary(const std::string& room_id_or_alias)
 {
     SH_FFI;
-    std::string json =
-        std::string(impl_->ffi->get_room_summary(room_id_or_alias));
-    if (json.empty())
-    {
+    return parse_room_summary_json(
+        std::string(impl_->ffi->get_room_summary(room_id_or_alias)));
+}
+
+std::vector<RoomSummary>
+Client::get_space_child_summaries_batch(const std::string&              space_id,
+                                        const std::vector<std::string>& child_ids)
+{
+    SH_FFI;
+    const std::string json = std::string(
+        impl_->ffi->get_space_child_summaries_batch(space_id, child_ids));
+    if (json.empty() || json == "[]")
         return {};
+    std::vector<RoomSummary> result;
+    try
+    {
+        auto arr = nlohmann::json::parse(json);
+        if (arr.is_array())
+        {
+            result.reserve(arr.size());
+            for (const auto& item : arr)
+                result.push_back(parse_room_summary_json(item.dump()));
+        }
     }
-    nlohmann::json j = parse_json_obj(json);
-    RoomSummary s;
-    s.room_id = js_str(j, "room_id");
-    s.canonical_alias = js_str(j, "canonical_alias");
-    s.name = js_str(j, "name");
-    s.topic = js_str(j, "topic");
-    s.avatar_url = js_str(j, "avatar_url");
-    s.num_joined_members = js_uint(j, "num_joined_members");
-    s.join_rule = js_str(j, "join_rule");
-    s.world_readable = js_bool(j, "world_readable", false);
-    s.guest_can_join = js_bool(j, "guest_can_join", false);
-    s.encryption = js_str(j, "encryption");
-    s.is_space = js_bool(j, "is_space", false);
-    s.membership = js_str(j, "membership");
-    return s;
+    catch (...)
+    {
+    }
+    return result;
 }
 
 std::string Client::join_room(const std::string& room_id_or_alias)

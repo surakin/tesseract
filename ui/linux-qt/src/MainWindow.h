@@ -227,6 +227,8 @@ private:
     void on_rooms_updated_() override;
     void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
+    void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
+    void on_join_room_outcome_ui_(bool ok, const std::string& room_id) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,

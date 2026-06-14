@@ -1372,11 +1372,18 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         if (wParam == kScrollDebounceTimerId)
         {
             KillTimer(hwnd, kScrollDebounceTimerId);
-            if (self->room_list_view_ && self->client_)
+            if (self->room_list_view_ && self->active_account_)
             {
-                auto ids = self->room_list_view_->visible_room_ids();
-                self->client_->stop_background_backfill();
-                self->client_->start_background_backfill(ids);
+                auto ids  = self->room_list_view_->visible_room_ids();
+                auto sess = self->active_account_;
+                self->run_async_mut_([sess, ids = std::move(ids)]() mutable
+                {
+                    if (sess && sess->client)
+                    {
+                        sess->client->stop_background_backfill();
+                        sess->client->start_background_backfill(ids);
+                    }
+                });
             }
             return 0;
         }
@@ -1742,6 +1749,34 @@ void MainWindow::on_create(HWND hwnd)
         {
             open_join_room_dialog();
         };
+        room_list_view_->on_unjoined_room_selected =
+            [this](const tesseract::RoomSummary& s)
+        {
+            if (!s.avatar_url.empty())
+                ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
+            if (main_app_)
+            {
+                main_app_->show_room_preview(s, make_avatar_image_provider_());
+                request_relayout_();
+            }
+        };
+        if (auto* rp = main_app_->room_preview())
+        {
+            rp->on_avatar_needed = [this](const std::string& mxc)
+            {
+                ensure_media_thumbnail_(mxc, 64, 64, false);
+            };
+            rp->on_join = [this, rp](const std::string& room_id)
+            {
+                rp->set_state(tesseract::views::RoomPreviewView::State::Joining);
+                join_room_command_(room_id);
+            };
+            rp->on_dismiss = [this]
+            {
+                if (main_app_)
+                    main_app_->hide_room_preview();
+            };
+        }
 
         // ── RoomView shortcode wiring (avatar/image/preview via helper) ────
         room_view_->set_shortcode_provider(
@@ -4560,6 +4595,18 @@ void MainWindow::on_space_children_cache_ready_ui_()
     refresh_room_list();
 }
 
+void MainWindow::on_space_unjoined_summaries_ready_ui_(const std::string&)
+{
+    refresh_room_list();
+}
+
+void MainWindow::on_join_room_outcome_ui_(bool ok, const std::string&)
+{
+    if (!ok && main_app_ && main_app_->room_preview())
+        main_app_->room_preview()->set_state(
+            tesseract::views::RoomPreviewView::State::Idle);
+}
+
 void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
 {
     if (tray_)
@@ -4582,6 +4629,7 @@ void MainWindow::refresh_room_list()
         if (main_app_)
         {
             main_app_->set_space_nav(false);
+            main_app_->room_list_view()->clear_space_unjoined_rooms();
         }
 
         if (!pending_search_text_.empty())
@@ -4649,6 +4697,10 @@ void MainWindow::refresh_room_list()
         if (main_app_)
         {
             main_app_->set_space_nav(true, space_name, space_avatar);
+            const auto& unjoined =
+                get_cached_unjoined_summaries_(space_stack_.back());
+            main_app_->room_list_view()->set_space_unjoined_rooms(
+                std::vector<tesseract::RoomSummary>(unjoined));
         }
 
         static const std::vector<std::string> kNoChildren;
@@ -4681,9 +4733,9 @@ void MainWindow::refresh_room_list()
 void MainWindow::on_space_back()
 {
     if (!space_stack_.empty())
-    {
         space_stack_.pop_back();
-    }
+    if (main_app_)
+        main_app_->hide_room_preview();
     refresh_room_list();
 }
 
