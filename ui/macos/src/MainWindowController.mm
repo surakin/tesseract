@@ -367,6 +367,8 @@ public:
     using ShellBase::LogoutResult;
     using ShellBase::handle_date_jump_;
     using ShellBase::has_status_override_;
+    using ShellBase::inflight_needs_anim_;
+    using ShellBase::inflight_spin_phase_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
