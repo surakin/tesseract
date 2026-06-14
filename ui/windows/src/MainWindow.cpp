@@ -989,6 +989,12 @@ void MainWindow::on_inflight_ui_()
                           L"%u requests in flight\nmedia: %zu loading \xB7 fetch: %zu queued \xB7 send: %zu queued",
                           n, mp, fp, sp);
         inflight_tip_text_ = buf;
+#ifndef NDEBUG
+        if (!last_inflight_urls_.empty()) {
+            inflight_tip_text_ += L"\n── requests ──\n";
+            inflight_tip_text_ += utf8_to_wstr(last_inflight_urls_);
+        }
+#endif
         TOOLINFOW ti{};
         ti.cbSize = TTTOOLINFOW_V1_SIZE;
         ti.hwnd = hStatus_;

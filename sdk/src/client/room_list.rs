@@ -8,6 +8,9 @@ use super::{err, ok, ClientFfi};
 use crate::ffi::OpResult;
 
 #[cfg(not(test))]
+use std::sync::Arc;
+
+#[cfg(not(test))]
 use super::{
     build_invite_infos, build_room_infos, require_room, stop_fut, try_op,
 };
@@ -179,7 +182,12 @@ impl ClientFfi {
         };
 
         let stop_rx = self.stop_rx.clone();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/get_summary".to_string(),
+        );
         self.rt.block_on(async move {
             tokio::select! {
                 result = client.get_room_preview(&id, vec![]) => {
@@ -217,7 +225,12 @@ impl ClientFfi {
         let ids: Vec<String> = child_ids.iter().map(|s| s.to_string()).collect();
         let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else { return "[]".to_owned(); };
         let stop_rx = self.stop_rx.clone();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/get_space_child_summaries_batch".to_string(),
+        );
 
         self.rt.block_on(async move {
             // Step 1: read all via-server lists from local state — no network.
@@ -309,7 +322,12 @@ impl ClientFfi {
             Err(_) => return String::new(),
         };
         let stop_rx = self.stop_rx.clone();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/join".to_string(),
+        );
         self.rt.block_on(async move {
             tokio::select! {
                 result = client.join_room_by_id_or_alias(&id, &[]) => {
@@ -340,7 +358,12 @@ impl ClientFfi {
             return err("not logged in");
         };
         let (_, room) = try_op!(require_room(client, room_id));
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/leave".to_string(),
+        );
         match self.rt.block_on(room.leave()) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -380,9 +403,16 @@ impl ClientFfi {
         };
 
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "room_list/accept_invite".to_string(),
+            );
             let Some(room) = client.get_room(&room_id_parsed) else {
                 deliver(false, "", "room not found");
                 return;
@@ -409,9 +439,16 @@ impl ClientFfi {
             Err(_) => return,
         };
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "room_list/decline_invite".to_string(),
+            );
             if let Some(room) = client.get_room(&room_id_parsed) {
                 let _ = room.leave().await;
             }
@@ -430,9 +467,16 @@ impl ClientFfi {
         };
         let Ok(uid) = matrix_sdk::ruma::UserId::parse(inviter_user_id) else { return; };
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "room_list/block_invite".to_string(),
+            );
             if let Some(room) = client.get_room(&room_id_parsed) {
                 let _ = room.leave().await;
             }
@@ -467,9 +511,16 @@ impl ClientFfi {
         };
 
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "room_list/join".to_string(),
+            );
             let result = tokio::select! {
                 r = client.join_room_by_id_or_alias(&id, &[]) => {
                     r.ok().map(|r| r.room_id().to_string())
@@ -507,9 +558,16 @@ impl ClientFfi {
         };
 
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "room_list/leave".to_string(),
+            );
             let Some(room) = client.get_room(&room_id_parsed) else {
                 deliver(false, "room not found");
                 return;
@@ -534,9 +592,16 @@ impl ClientFfi {
         };
         let Ok(uid) = UserId::parse(user_id) else { return; };
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "room_list/invite_user".to_string(),
+            );
             if let Some(room) = client.get_room(&room_id_parsed) {
                 let _ = room.invite_user_by_id(&uid).await;
             }
@@ -560,7 +625,12 @@ impl ClientFfi {
         let Some(room) = client.get_room(&room_id) else {
             return Vec::new();
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/get_members".to_string(),
+        );
         match self.rt.block_on(room.members(matrix_sdk::RoomMemberships::JOIN)) {
             Ok(members) => members
                 .into_iter()
@@ -593,7 +663,12 @@ impl ClientFfi {
         };
         let (_, room) = try_op!(require_room(client, room_id));
         let content = RoomTopicEventContent::new(topic.to_owned());
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/set_topic".to_string(),
+        );
         match self.rt.block_on(room.send_state_event(content)) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -618,7 +693,12 @@ impl ClientFfi {
             return err("not logged in");
         };
         let (_, room) = try_op!(require_room(client, room_id));
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/set_display_name".to_string(),
+        );
 
         let mut content = match self.rt.block_on(room.get_member(user_id)) {
             Ok(Some(m)) => match m.event().as_sync() {
@@ -663,7 +743,12 @@ impl ClientFfi {
             Ok(u)  => u,
             Err(_) => return err("invalid mxc URI"),
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "room_list/set_avatar".to_string(),
+        );
 
         let mut content = match self.rt.block_on(room.get_member(user_id)) {
             Ok(Some(m)) => match m.event().as_sync() {

@@ -969,7 +969,12 @@ impl ClientFfi {
             Arc::clone(&handle.timeline)
         };
         let stop_rx = self.stop_rx.clone();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "timeline/paginate".to_string(),
+        );
 
         // Race the network round-trip against the shutdown signal so that
         // `stop_sync()` unblocks any worker threads waiting in this call.
@@ -1051,9 +1056,16 @@ impl ClientFfi {
         let stop_rx = self.stop_rx.clone();
         let handler = self.handler.clone();
         let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
 
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "timeline/paginate".to_string(),
+            );
             let deliver = move |ok: bool, reached_start: bool, msg: &str| {
                 if let Some(h) = &handler {
                     {
@@ -1132,9 +1144,16 @@ impl ClientFfi {
         let stop_rx = self.stop_rx.clone();
         let handler = self.handler.clone();
         let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
 
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "timeline/paginate".to_string(),
+            );
             let deliver = move |ok: bool, reached_end: bool, msg: &str| {
                 if let Some(h) = &handler {
                     {
@@ -1214,7 +1233,12 @@ impl ClientFfi {
         };
 
         let req = Request::new(room_id, ts, direction);
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "timeline/load".to_string(),
+        );
 
         // No shutdown-race here: timestamp lookups are typically fast (single HTTP
         // round-trip) and not in a loop, so blocking the thread is acceptable.

@@ -455,6 +455,20 @@ void EventHandlerBridge::on_inflight_changed(std::uint32_t count) const
           });
 }
 
+void EventHandlerBridge::on_inflight_changed_debug(std::uint32_t count,
+                                                    rust::Str urls) const
+{
+#ifndef NDEBUG
+    with_handler("on_inflight_changed_debug", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_inflight_changed_debug(count, std::string(urls));
+          });
+#else
+    (void)count; (void)urls;
+#endif
+}
+
 void EventHandlerBridge::on_image_packs_updated() const
 {
     with_handler("on_image_packs_updated", slot_,

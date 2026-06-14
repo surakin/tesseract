@@ -140,11 +140,18 @@ void MainWindow::on_inflight_ui_()
     const size_t sp = mut_pool_pending_count_();
     const size_t mp = pending_media_count_();
     gtk_widget_queue_draw(inflight_dot_);
-    char tip[128];
-    std::snprintf(tip, sizeof(tip),
+    char buf[128];
+    std::snprintf(buf, sizeof(buf),
                   "%u request%s in flight\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
                   n, n == 1u ? "" : "s", mp, fp, sp);
-    gtk_widget_set_tooltip_text(inflight_dot_, tip);
+    std::string tip(buf);
+#ifndef NDEBUG
+    if (!last_inflight_urls_.empty()) {
+        tip += "\n── requests ──\n";
+        tip += last_inflight_urls_;
+    }
+#endif
+    gtk_widget_set_tooltip_text(inflight_dot_, tip.c_str());
     gtk_widget_trigger_tooltip_query(inflight_dot_);
 }
 

@@ -142,7 +142,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return Vec::new();
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/load_prefs".to_string(),
+        );
         let entries = self
             .rt
             .block_on(async move { read_recent_emoji_entries(&client).await });
@@ -176,12 +181,19 @@ impl ClientFfi {
         let glyph = glyph.to_owned();
         let ad_lock = Arc::clone(&self.account_data_lock);
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
             use matrix_sdk::ruma::events::GlobalAccountDataEventType;
             use matrix_sdk::ruma::serde::Raw;
 
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/save_prefs".to_string(),
+            );
             // Serialize the whole GET→modify→PUT against other account-data
             // writers so rapid bumps build on each other instead of racing.
             let _ad_guard = ad_lock.lock().await;
@@ -217,7 +229,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return "{}".to_owned();
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/load_prefs".to_string(),
+        );
         self.rt.block_on(async move {
             use matrix_sdk::ruma::events::GlobalAccountDataEventType;
             let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
@@ -244,12 +261,19 @@ impl ClientFfi {
         };
         let json = json.to_owned();
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
             use matrix_sdk::ruma::events::GlobalAccountDataEventType;
             use matrix_sdk::ruma::serde::Raw;
 
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/save_prefs".to_string(),
+            );
             let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(&json) else {
                 return;
             };
@@ -281,7 +305,12 @@ impl ClientFfi {
                 invite_avatars: true,
             };
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/get_media_preview_config".to_string(),
+        );
         let cfg = self
             .rt
             .block_on(async move { read_media_preview_config(&client).await });
@@ -322,7 +351,12 @@ impl ClientFfi {
         let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
             return none();
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/room_media_preview_override".to_string(),
+        );
         self.rt.block_on(async move {
             use matrix_sdk::ruma::events::RoomAccountDataEventType;
             use serde_json::Value;
@@ -385,12 +419,19 @@ impl ClientFfi {
         };
         let ad_lock = Arc::clone(&self.account_data_lock);
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
             use matrix_sdk::ruma::events::GlobalAccountDataEventType;
             use matrix_sdk::ruma::serde::Raw;
 
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/set_media_preview_config".to_string(),
+            );
             let _ad_guard = ad_lock.lock().await;
             let content = crate::media_preview::serialize(cfg);
             let raw = match Raw::new(&content) {
@@ -426,7 +467,12 @@ impl ClientFfi {
             return String::new();
         };
         #[cfg(not(test))]
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/get_display_name".to_string(),
+        );
         self.rt.block_on(async move {
             client
                 .account()
@@ -443,7 +489,12 @@ impl ClientFfi {
             return String::new();
         };
         #[cfg(not(test))]
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/get_avatar_url".to_string(),
+        );
         self.rt.block_on(async move {
             client
                 .account()
@@ -469,7 +520,12 @@ impl ClientFfi {
         let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
             return err("invalid user id");
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/ignore_user".to_string(),
+        );
         match self.rt.block_on(client.account().ignore_user(&uid)) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -490,7 +546,12 @@ impl ClientFfi {
         let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
             return err("invalid user id");
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/unignore_user".to_string(),
+        );
         match self.rt.block_on(client.account().unignore_user(&uid)) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -505,7 +566,12 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn set_display_name(&self, name: &str) -> OpResult {
         let Some(client) = self.client.as_ref() else { return err("not logged in"); };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/set_display_name".to_string(),
+        );
         match self.rt.block_on(client.account().set_display_name(Some(name))) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -522,7 +588,12 @@ impl ClientFfi {
             Ok(m) => m,
             Err(_) => return err(format!("invalid mime type: {mime_type}")),
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/upload_avatar".to_string(),
+        );
         match self.rt.block_on(async {
             let mxc = upload_bytes(&client, data, &mime).await?;
             client.account().set_avatar_url(Some(&mxc)).await?;
@@ -545,7 +616,12 @@ impl ClientFfi {
             Ok(m) => m,
             Err(_) => return err(format!("invalid mime type: {mime_type}")),
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/upload_media".to_string(),
+        );
         match self.rt.block_on(upload_bytes(&client, data, &mime)) {
             Ok(mxc) => ok(mxc.to_string()),
             Err(e)  => err(e.to_string()),
@@ -557,7 +633,12 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn remove_avatar(&self) -> OpResult {
         let Some(client) = self.client.as_ref() else { return err("not logged in"); };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/remove_avatar".to_string(),
+        );
         match self.rt.block_on(client.account().set_avatar_url(None)) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -583,7 +664,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else { return Vec::new(); };
         let current_device = client.device_id().map(|d| d.to_owned());
         let user_id = client.user_id().map(|u| u.to_owned());
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/list_devices".to_string(),
+        );
         self.rt.block_on(async move {
             let response = match client.devices().await {
                 Ok(r) => r,
@@ -638,7 +724,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else { return err("not logged in"); };
         let owned: OwnedDeviceId = device_id.into();
         let trimmed = name.to_owned();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/set_device_display_name".to_string(),
+        );
         let result = self
             .rt
             .block_on(async move { client.rename_device(&owned, &trimmed).await });
@@ -666,7 +757,12 @@ impl ClientFfi {
         };
         let homeserver = client.homeserver().to_string();
         let owned: OwnedDeviceId = device_id.into();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/begin_delete_device".to_string(),
+        );
         self.rt.block_on(async move {
             match client.delete_devices(&[owned], None).await {
                 Ok(_) => crate::ffi::DeleteDeviceBegin {
@@ -730,7 +826,12 @@ impl ClientFfi {
         let auth = uiaa::AuthData::FallbackAcknowledgement(
             uiaa::FallbackAcknowledgement::new(session.to_owned()),
         );
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/complete_delete_device".to_string(),
+        );
         match self.rt.block_on(client.delete_devices(&[owned], Some(auth))) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -759,7 +860,12 @@ impl ClientFfi {
         let Some(user_id) = client.user_id().map(|u| u.to_owned()) else {
             return err("not logged in");
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/set_presence".to_string(),
+        );
         let result = self.rt.block_on(async move {
             let req = v3::Request::new(user_id, presence);
             client.send(req).await
@@ -787,7 +893,12 @@ impl ClientFfi {
         let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
             return String::new();
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/get_or_create_dm".to_string(),
+        );
         self.rt.block_on(async {
             // Look for an existing DM with this user. Functional members
             // (bridge bots, per MSC4171) are excluded from the member count
@@ -906,7 +1017,12 @@ impl ClientFfi {
         }
 
         let server = server.to_owned();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "account/discover_homeserver".to_string(),
+        );
         self.rt.block_on(async move {
             let http = match reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))

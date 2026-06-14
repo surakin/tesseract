@@ -111,6 +111,9 @@ public:
     void on_crypto_reset_result(bool ok, const std::string& message) final;
     void on_room_list_state(RoomListState state) override;
     void on_inflight_changed(uint32_t count) override;
+#ifndef NDEBUG
+    void on_inflight_changed_debug(std::uint32_t count, std::string urls) override;
+#endif
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
     void on_media_preview_config_updated(const std::string& json) override;

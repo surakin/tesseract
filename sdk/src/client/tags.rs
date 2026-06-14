@@ -13,7 +13,12 @@ impl ClientFfi {
         use matrix_sdk::ruma::RoomId;
         let Some(client) = self.client.clone() else { return; };
         let room_id = room_id.to_owned();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "tags/add".to_string(),
+        );
         self.rt.block_on(async move {
             let Ok(rid) = RoomId::parse(&room_id) else { return; };
             let Some(room) = client.get_room(&rid) else { return; };
@@ -25,7 +30,12 @@ impl ClientFfi {
         use matrix_sdk::ruma::RoomId;
         let Some(client) = self.client.clone() else { return; };
         let room_id = room_id.to_owned();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "tags/remove".to_string(),
+        );
         self.rt.block_on(async move {
             let Ok(rid) = RoomId::parse(&room_id) else { return; };
             let Some(room) = client.get_room(&rid) else { return; };

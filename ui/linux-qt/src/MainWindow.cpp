@@ -4392,10 +4392,16 @@ void MainWindow::on_inflight_ui_()
     inflightDot_->update_state(n, c);
     const QString first = (n == 1) ? tr("1 request in flight")
                                    : tr("%1 requests in flight").arg(n);
-    const QString tip =
+    QString tip =
         first +
         tr("\nmedia: %1 loading · fetch: %2 queued · send: %3 queued")
             .arg(mp).arg(fp).arg(sp);
+#ifndef NDEBUG
+    if (!last_inflight_urls_.empty()) {
+        tip += QString("\n── requests ──\n");
+        tip += QString::fromStdString(last_inflight_urls_);
+    }
+#endif
     inflightDot_->setToolTip(tip);
     // Force-refresh the tooltip window if it is currently shown over this widget.
     if (inflightDot_->underMouse())

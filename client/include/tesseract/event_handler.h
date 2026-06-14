@@ -189,6 +189,16 @@ public:
     {
     }
 
+    /// Debug-only alternative to on_inflight_changed. In debug builds only
+    /// this callback fires (not on_inflight_changed); it carries the count
+    /// plus a newline-separated list of active operation labels. In release
+    /// builds neither this callback nor its Rust caller are compiled.
+    /// Default no-op in all builds.
+    virtual void on_inflight_changed_debug(std::uint32_t /*count*/,
+                                           std::string /*urls*/)
+    {
+    }
+
     /// Fired when the cached set of MSC2545 image packs changes (user-pack
     /// edit, room-pack subscription, or live state-event update on a
     /// referenced room). UIs re-query via `Client::list_image_packs` and

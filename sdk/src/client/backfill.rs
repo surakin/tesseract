@@ -63,6 +63,8 @@ impl ClientFfi {
         let preview_cache = Arc::clone(&self.backfill_previews);
         let db_conn = Arc::clone(&self.app_cache_db);
         let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         // Shared with the unread prefetch so combined warm-up concurrency is
         // bounded, not summed.
         let semaphore = Arc::clone(&self.warm_semaphore);
@@ -83,13 +85,21 @@ impl ClientFfi {
                     let preview_cache = preview_cache.clone();
                     let db_conn = Arc::clone(&db_conn);
                     let in_flight = Arc::clone(&in_flight);
+                    #[cfg(debug_assertions)]
+                    let in_flight_urls = Arc::clone(&in_flight_urls);
                     let handler_ref = handler.clone();
+                    let rid_label = rid.to_string();
                     joinset.spawn(async move {
                         let _permit = match sem.acquire_owned().await {
                             Ok(p) => p,
                             Err(_) => return,
                         };
-                        let _guard = super::InFlightGuard::new(&in_flight, &handler_ref);
+                        let _guard = super::InFlightGuard::new(
+                            &in_flight,
+                            &handler_ref,
+                            #[cfg(debug_assertions)] &in_flight_urls,
+                            #[cfg(debug_assertions)] format!("backfill/{}", rid_label),
+                        );
                         let preview =
                             backfill_room_silent(&client, &rid, 50).await.ok().flatten();
                         // Always record in preview_cache — even on failure — so
@@ -478,6 +488,8 @@ impl ClientFfi {
         initial: Vec<OwnedRoomId>,
     ) -> tokio::task::AbortHandle {
         let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler = self.handler.clone();
         // Shared with the inactive-grouping backfill so combined warm-up
         // concurrency is bounded, not summed.
@@ -493,14 +505,21 @@ impl ClientFfi {
                         let client = client.clone();
                         let sem = semaphore.clone();
                         let in_flight = Arc::clone(&in_flight);
+                        #[cfg(debug_assertions)]
+                        let in_flight_urls = Arc::clone(&in_flight_urls);
                         let handler_ref = handler.clone();
+                        let rid_label = rid.to_string();
                         joinset.spawn(async move {
                             let _permit = match sem.acquire_owned().await {
                                 Ok(p) => p,
                                 Err(_) => return,
                             };
-                            let _guard =
-                                super::InFlightGuard::new(&in_flight, &handler_ref);
+                            let _guard = super::InFlightGuard::new(
+                                &in_flight,
+                                &handler_ref,
+                                #[cfg(debug_assertions)] &in_flight_urls,
+                                #[cfg(debug_assertions)] format!("backfill/{}", rid_label),
+                            );
                             // Warm the SDK event cache so the next open of this
                             // unread room renders from cache without a fetch
                             // hitch. The returned preview is intentionally unused

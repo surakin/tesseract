@@ -419,7 +419,12 @@ impl ClientFfi {
             return err("not logged in");
         };
         let room_id = try_op!(parse_room_id(room_id));
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/message".to_string(),
+        );
         // Use the live timeline if subscribed — local echo fires immediately.
         {
             let maybe_tl = {
@@ -499,7 +504,12 @@ impl ClientFfi {
     pub fn abort_send(&self, room_id: &str, txn_id: &str) -> OpResult {
         let room_id = try_op!(parse_room_id(room_id));
         let txn_id: matrix_sdk::ruma::OwnedTransactionId = txn_id.into();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/abort".to_string(),
+        );
         let timeline = {
             let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
@@ -533,9 +543,16 @@ impl ClientFfi {
             Err(_) => return,
         };
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "send/typing".to_string(),
+            );
             let Some(room) = client.get_room(&room_id) else {
                 return;
             };
@@ -565,7 +582,12 @@ impl ClientFfi {
             return err("not logged in");
         };
         let (_, room) = try_op!(require_room(&client, room_id));
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/reply".to_string(),
+        );
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
@@ -649,7 +671,12 @@ impl ClientFfi {
         {
             return err("invalid in_reply_to id");
         }
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/thread_message".to_string(),
+        );
         // When the thread timeline is subscribed, route through it so the
         // local echo arrives via on_thread_inserted immediately:
         // - plain thread send → timeline.send (thread focus auto-tags the relation),
@@ -757,9 +784,16 @@ impl ClientFfi {
             Arc::clone(&handle.timeline)
         };
         let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         self.rt.spawn(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_for_guard);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "send/fetch_reply_details".to_string(),
+            );
             let _ = tl.fetch_details_for_event(&event_id).await;
         });
         ok("")
@@ -805,7 +839,12 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/image".to_string(),
+        );
 
         // Animated GIF/WebP path: `send_attachment` strips the MSC4230
         // `is_animated` flag and the `fi.mau.gif` vendor hint, so we
@@ -939,7 +978,12 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/file".to_string(),
+        );
 
         let info = AttachmentInfo::File(BaseFileInfo {
             size: UInt::new(bytes.len() as u64),
@@ -1004,7 +1048,12 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/audio".to_string(),
+        );
 
         let info = AttachmentInfo::Audio(BaseAudioInfo {
             duration: if duration_ms > 0 {
@@ -1083,7 +1132,12 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/video".to_string(),
+        );
 
         let info = AttachmentInfo::Video(BaseVideoInfo {
             duration: if duration_ms > 0 {
@@ -1584,7 +1638,12 @@ impl ClientFfi {
         }
 
         let mime: mime::Mime = "audio/ogg; codecs=opus".parse().unwrap();
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "send/voice".to_string(),
+        );
 
         match self.rt.block_on(async move {
             room.send_attachment("voice-message.ogg".to_owned(), &mime, ogg_bytes, config)

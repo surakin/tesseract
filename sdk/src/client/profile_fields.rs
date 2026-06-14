@@ -103,7 +103,12 @@ impl ClientFfi {
             return empty();
         }
 
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "profile_fields/get_extended_profile".to_string(),
+        );
 
         let Some(client) = self.client.as_ref() else {
             return empty();
@@ -181,7 +186,12 @@ impl ClientFfi {
             return crate::ffi::OpResult { ok: false, message: "key must not be empty".to_owned() };
         }
 
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] format!("profile_fields/set/{key}"),
+        );
 
         let prefix = match self.profile_fields_prefix.read().unwrap().clone() {
             Some(p) => p,
@@ -244,7 +254,12 @@ impl ClientFfi {
             return crate::ffi::OpResult { ok: false, message: "key must not be empty".to_owned() };
         }
 
-        let _guard = super::InFlightGuard::new(&self.in_flight, &self.handler);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "profile_fields/delete".to_string(),
+        );
 
         let prefix = match self.profile_fields_prefix.read().unwrap().clone() {
             Some(p) => p,

@@ -817,6 +817,10 @@ pub mod ffi {
         /// Running or Recovering. Fires on every increment and decrement so
         /// the status-bar dot tracks the exact concurrent-request count.
         fn on_inflight_changed(self: &EventHandlerBridge, count: u32);
+        /// Fired (debug builds only) in place of `on_inflight_changed`, carrying
+        /// the same count plus a newline-joined list of active operation labels so
+        /// the status-bar dot tooltip can show which requests are in flight.
+        fn on_inflight_changed_debug(self: &EventHandlerBridge, count: u32, urls: &str);
         /// Fired when the cached set of MSC2545 image packs changes
         /// (user-pack edit, room-pack subscription edit, or live state-event
         /// update on a referenced room). The UI re-queries via

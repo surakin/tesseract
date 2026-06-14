@@ -462,6 +462,24 @@ void EventHandlerBase::on_inflight_changed(uint32_t count)
         });
 }
 
+#ifndef NDEBUG
+void EventHandlerBase::on_inflight_changed_debug(uint32_t count, std::string urls)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), n = count, u = std::move(urls)]() mutable
+        {
+            shell->last_inflight_ = shell->client_
+                                        ? shell->client_->in_flight_count()
+                                        : n;
+            shell->last_inflight_urls_ = std::move(u);
+            shell->spin_tick_(shell->monotonic_ms_());
+            if (shell->inflight_needs_anim_())
+                shell->start_anim_tick_();
+            shell->on_inflight_ui_();
+        });
+}
+#endif
+
 void EventHandlerBase::on_image_packs_updated()
 {
     shell()->post_to_ui_(

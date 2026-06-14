@@ -270,6 +270,9 @@ public:
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
     using ShellBase::last_inflight_;
+#ifndef NDEBUG
+    using ShellBase::last_inflight_urls_;
+#endif
     using ShellBase::last_room_list_state_;
     using ShellBase::last_tray_highlight_;
     using ShellBase::last_tray_unread_;
@@ -7397,10 +7400,17 @@ void MacShell::set_compose_draft_(const std::string& draft)
     NSString* first = (n == 1)
                           ? @"1 request in flight"
                           : [NSString stringWithFormat:@"%u requests in flight", n];
-    _inflightDotView.toolTip =
+    NSString* tip =
         [NSString stringWithFormat:
                       @"%@\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
                       first, mp, fp, sp];
+#ifndef NDEBUG
+    if (!_shell->last_inflight_urls_.empty()) {
+        tip = [tip stringByAppendingFormat:@"\n── requests ──\n%@",
+               [NSString stringWithUTF8String:_shell->last_inflight_urls_.c_str()]];
+    }
+#endif
+    _inflightDotView.toolTip = tip;
 }
 
 - (void)_onRoomListStateChanged

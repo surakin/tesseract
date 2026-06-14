@@ -715,6 +715,12 @@ protected:
     bool offline_             = false;
     /// Extra in-flight HTTP request count (excludes the sync long-poll).
     std::uint32_t last_inflight_ = 0;
+#ifndef NDEBUG
+    /// Newline-joined list of active in-flight operation labels (debug builds
+    /// only). Set by EventHandlerBase::on_inflight_changed_debug and read by
+    /// on_inflight_ui_() to append to the tooltip.
+    std::string last_inflight_urls_;
+#endif
     /// Accumulated rotation phase [0,1) for the inflight ring animation.
     float         spin_accum_phase_  = 0.0f;
     std::int64_t  spin_last_tick_ms_ = 0;

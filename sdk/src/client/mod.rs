@@ -59,26 +59,62 @@ use backfill::{
 /// firing `on_inflight_changed` through `handler` both times so the UI dot
 /// tracks the exact number of concurrent extra-sync HTTP operations.
 #[cfg(not(test))]
-pub(crate) struct InFlightGuard(
-    Arc<std::sync::atomic::AtomicU32>,
-    Option<Arc<Mutex<SendHandler>>>,
-);
+pub(crate) struct InFlightGuard {
+    counter: Arc<std::sync::atomic::AtomicU32>,
+    handler: Option<Arc<Mutex<SendHandler>>>,
+    /// Human-readable label for this operation (e.g. the URL being fetched).
+    /// Shared with `ClientFfi::in_flight_urls` so the debug tooltip can list
+    /// which operations are currently in flight.
+    #[cfg(debug_assertions)]
+    urls: Arc<Mutex<Vec<String>>>,
+    #[cfg(debug_assertions)]
+    label: String,
+}
 
 #[cfg(not(test))]
 impl InFlightGuard {
     pub(crate) fn new(
         counter: &Arc<std::sync::atomic::AtomicU32>,
         handler: &Option<Arc<Mutex<SendHandler>>>,
+        #[cfg(debug_assertions)] urls: &Arc<Mutex<Vec<String>>>,
+        #[cfg(debug_assertions)] label: String,
     ) -> Self {
         let prev = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self::notify(handler, prev + 1);
-        Self(counter.clone(), handler.clone())
+        let new_count = prev + 1;
+        #[cfg(debug_assertions)]
+        {
+            let mut list = urls.lock();
+            list.push(label.clone());
+            Self::notify(handler, new_count, &list);
+        }
+        #[cfg(not(debug_assertions))]
+        Self::notify(handler, new_count);
+        InFlightGuard {
+            counter: counter.clone(),
+            handler: handler.clone(),
+            #[cfg(debug_assertions)]
+            urls: urls.clone(),
+            #[cfg(debug_assertions)]
+            label,
+        }
     }
 
+    /// Release build: notify the UI with just the count.
+    #[cfg(not(debug_assertions))]
     fn notify(handler: &Option<Arc<Mutex<SendHandler>>>, count: u32) {
         if let Some(h) = handler {
             let g = h.lock();
             g.on_inflight_changed(count);
+        }
+    }
+
+    /// Debug build: notify the UI with the count and the newline-joined list of
+    /// in-flight operation labels.
+    #[cfg(debug_assertions)]
+    fn notify(handler: &Option<Arc<Mutex<SendHandler>>>, count: u32, urls: &[String]) {
+        if let Some(h) = handler {
+            let g = h.lock();
+            g.on_inflight_changed_debug(count, &urls.join("\n"));
         }
     }
 }
@@ -86,8 +122,20 @@ impl InFlightGuard {
 #[cfg(not(test))]
 impl Drop for InFlightGuard {
     fn drop(&mut self) {
-        let prev = self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        Self::notify(&self.1, prev.saturating_sub(1));
+        #[cfg(debug_assertions)]
+        {
+            let mut list = self.urls.lock();
+            if let Some(pos) = list.iter().position(|l| l == &self.label) {
+                list.swap_remove(pos);
+            }
+            let prev = self.counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            Self::notify(&self.handler, prev.saturating_sub(1), &list);
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let prev = self.counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            Self::notify(&self.handler, prev.saturating_sub(1));
+        }
     }
 }
 
@@ -420,6 +468,11 @@ pub struct ClientFfi {
     /// Running). Wrapped in Arc so it can be cloned into spawned tasks.
     #[cfg(not(test))]
     pub(super) in_flight: Arc<std::sync::atomic::AtomicU32>,
+    /// Active in-flight operation labels for debug builds. Shared with every
+    /// `InFlightGuard` so the tooltip shows which operations are running.
+    #[cfg(not(test))]
+    #[cfg(debug_assertions)]
+    pub(super) in_flight_urls: Arc<Mutex<Vec<String>>>,
     /// Room-list previews derived from back-pagination, keyed by room ID.
     /// `room.latest_event()` is only updated by the live sync loop; for rooms
     /// whose latest event arrived only through back-pagination the sync-backed
@@ -799,6 +852,9 @@ impl ClientFfi {
             crypto_reset_handle: None,
             #[cfg(not(test))]
             in_flight: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            #[cfg(not(test))]
+            #[cfg(debug_assertions)]
+            in_flight_urls: Arc::new(Mutex::new(Vec::new())),
             #[cfg(not(test))]
             backfill_previews: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]

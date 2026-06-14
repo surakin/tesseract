@@ -445,9 +445,17 @@ impl ClientFfi {
         };
         let stop_rx = self.stop_rx.clone();
         let in_flight = std::sync::Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let mxc_label = mxc_url.to_owned();
         let handler = self.handler.clone();
         self.rt.block_on(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] format!("media/mxc/{}", mxc_label),
+            );
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
@@ -495,9 +503,17 @@ impl ClientFfi {
         };
         let stop_rx = self.stop_rx.clone();
         let in_flight = std::sync::Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let source_label = source.to_owned();
         let handler = self.handler.clone();
         self.rt.block_on(async move {
-            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] format!("media/source/{}", source_label),
+            );
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
@@ -554,10 +570,12 @@ impl ClientFfi {
             return;
         }
         let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let url = url.to_owned();
         let stop_rx = self.stop_rx.clone();
         let gate = Arc::clone(&self.media_gate_bulk);
         let client = self.http_client.clone();
-        let url = url.to_owned();
 
         let handle = self.rt.spawn(async move {
             let _permit = match gate
@@ -570,7 +588,12 @@ impl ClientFfi {
                     return;
                 }
             };
-            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] format!("media/url/{}", url),
+            );
             let bytes = tokio::select! {
                 b = download_url(&client, &url, MAX_URL_BYTES) => b,
                 _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
@@ -609,6 +632,8 @@ impl ClientFfi {
             return;
         };
         let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let stop_rx = self.stop_rx.clone();
         // Full-size downloads are slow and low-priority → the narrow bulk lane.
         // Avatars/thumbnails are small and interactive → the wide fg lane.
@@ -664,7 +689,12 @@ impl ClientFfi {
                 }
             };
             // Tracks the activity dot for the duration of the actual download.
-            let _guard = super::InFlightGuard::new(&in_flight, &handler);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] format!("media/source/{}", source),
+            );
             let bytes = tokio::select! {
                 b = download_media(&client, kind, &source, w, h, animated) => b,
                 _ = tokio::time::sleep(timeout) => Vec::new(),
@@ -744,6 +774,8 @@ impl ClientFfi {
             return;
         }
         let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let stop_rx = self.stop_rx.clone();
         let gate = Arc::clone(&self.media_gate_bulk);
         let url_str = url.to_owned();
@@ -768,7 +800,12 @@ impl ClientFfi {
                     return;
                 }
             };
-            let _guard = super::InFlightGuard::new(&in_flight, &handler_task);
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_task,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] format!("media/url/{}", url_str),
+            );
             let req = Request::new(url_str);
             let json = tokio::select! {
                 result = async { client.send(req).await } => match result {

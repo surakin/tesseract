@@ -114,6 +114,7 @@ public:
     void on_crypto_reset_result(bool ok, rust::Str message) const;
     void on_room_list_state(std::uint8_t state) const;
     void on_inflight_changed(std::uint32_t count) const;
+    void on_inflight_changed_debug(std::uint32_t count, rust::Str urls) const;
     void on_image_packs_updated() const;
     void on_threads_updated(rust::Str room_id) const;
     void on_media_ready(std::uint64_t request_id,
