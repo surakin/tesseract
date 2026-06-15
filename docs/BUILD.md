@@ -9,7 +9,8 @@ producing distributable installers (`.exe`/`.dmg`/`.deb`/`PKGBUILD`), see
 ### Linux / Qt6
 
 ```bash
-sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake sqlite3 libsqlite3-dev golang perl
+sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake golang perl \
+                 libopus-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 # also requires a Rust toolchain: rustup
 ```
 
@@ -17,15 +18,24 @@ Notes on the less obvious deps:
 
 - **golang + perl** are build-only deps for `aws-lc-sys`'s CMake builder.
 - **qt6-multimedia-dev** powers MSC3245 voice-message playback via `QMediaPlayer`.
-- For **GTK4** builds also install: `libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev`
-  (gst-plugins-base provides the opus decoder voice messages use).
+- **libopus-dev** is the Opus codec library; it is linked directly by both the Qt6 and GTK4 shells.
+- **libgstreamer1.0-dev + libgstreamer-plugins-base1.0-dev** are required by the shared toolkit's
+  off-thread video-frame decoder (used for GIF animation strips) in both the Qt6 and GTK4 builds.
+- **libsecret-1-dev** is optional but recommended on Linux: without it, session tokens fall back to
+  plaintext storage. Install with `sudo apt install libsecret-1-dev`.
+- **libwayland-dev + qt6-base-private-dev** are optional for the Qt6 build: together they enable
+  xdg-activation-v1 Wayland window activation (correct window raising from notifications/links on
+  Wayland compositors). The build degrades gracefully without them — xdg-activation is simply
+  omitted. Install with `sudo apt install libwayland-dev qt6-base-private-dev`.
+- For **GTK4** builds also install: `libgtk-4-dev`
+  (the gstreamer packages above are already included; gst-plugins-base delivers the Opus decoder at runtime).
 - The GTK4 system tray is a pure StatusNotifierItem D-Bus implementation, so no
   appindicator/GTK3 package is needed.
 
 ### macOS / AppKit
 
 ```bash
-brew install ninja cmake go
+brew install ninja cmake go opus
 xcode-select --install   # Xcode Command Line Tools
 # Rust toolchain + native macOS targets (pick the one matching the preset):
 #   rustup toolchain install stable

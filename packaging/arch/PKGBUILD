@@ -4,7 +4,7 @@ pkgver=r1429.380b0418
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
 arch=('x86_64' 'aarch64')
-url="https://gitlab.westeros.lan/surak/matrix-client"
+url="https://github.com/surakin/tesseract"
 license=('MIT')
 # The binary is installed as `tesseract-matrix` (not `tesseract`) so this
 # package can coexist with the unrelated Tesseract OCR engine, which owns
@@ -13,7 +13,9 @@ provides=('tesseract-matrix')
 depends=(
     'qt6-base'
     'qt6-multimedia'
-    'gst-plugins-base'   # opus decoder for MSC3245 voice messages
+    'opus'               # Opus codec (voice messages)
+    'gstreamer'          # GStreamer core runtime
+    'gst-plugins-base'   # Opus decoder for MSC3245 voice messages + gstreamer-app
     'gst-plugins-good'   # additional codec support
 )
 makedepends=(
@@ -22,8 +24,12 @@ makedepends=(
     'rust'
     'go'
     'perl'
-    'qt6-base'
+    'qt6-base'           # includes private headers (GuiPrivate)
     'qt6-multimedia'
+    'wayland'            # optional: enables xdg-activation Wayland window focus
+    'opus'
+    'gstreamer'
+    'gst-plugins-base'
 )
 source=()
 sha256sums=()

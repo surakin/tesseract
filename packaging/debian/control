@@ -14,7 +14,7 @@ Build-Depends:
  rustc (>= 1.75)
 Rules-Requires-Root: no
 Standards-Version: 4.6.2
-Homepage: https://gitlab.westeros.lan/surak/matrix-client
+Homepage: https://github.com/surakin/tesseract
 
 Package: tesseract
 Architecture: amd64 arm64

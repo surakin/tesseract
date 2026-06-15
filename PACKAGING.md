@@ -151,8 +151,10 @@ releases install Rust via `rustup` before building.
 ```bash
 # Debian/Ubuntu build deps
 sudo apt install debhelper cmake ninja-build \
-                 qt6-base-dev qt6-multimedia-dev \
+                 qt6-base-dev qt6-multimedia-dev qt6-base-private-dev \
+                 libwayland-dev \
                  libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+                 libopus-dev \
                  golang-go perl cargo rustc
 ```
 
@@ -191,7 +193,8 @@ targets the Qt6 variant.
 ### Arch prerequisites
 
 ```bash
-sudo pacman -S cmake ninja rust go perl qt6-base qt6-multimedia
+sudo pacman -S cmake ninja rust go perl qt6-base qt6-multimedia \
+               opus gstreamer gst-plugins-base
 ```
 
 ### Arch build
@@ -209,7 +212,7 @@ git variant:
 # In PKGBUILD, replace:
 #   source=("$pkgname-$pkgver.tar.gz::…")
 # with:
-#   source=("git+https://gitlab.westeros.lan/surak/matrix-client.git")
+#   source=("git+https://github.com/surakin/tesseract")
 #   sha256sums=('SKIP')
 # and rename the package to tesseract-git.
 ```
