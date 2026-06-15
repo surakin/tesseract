@@ -1068,6 +1068,23 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             if (t.empty())
                 cur.spans.pop_back();
         }
+        // Trim CSS-collapsible leading whitespace from the first span so that
+        // all text-layout backends share identical byte offsets in
+        // paint_span_backgrounds/selection_rects.  Qt's HTML parser strips
+        // block-start spaces; Pango/CoreText/D2D do not — this normalises them.
+        while (!cur.spans.empty())
+        {
+            std::string& t   = cur.spans.front().text;
+            const auto   nsp = t.find_first_not_of(' ');
+            if (nsp == std::string::npos)
+            {
+                cur.spans.erase(cur.spans.begin());
+                continue;
+            }
+            if (nsp > 0)
+                t.erase(0, nsp);
+            break;
+        }
         if (!cur.spans.empty())
         {
             cur.spans = split_room_mentions(std::move(cur.spans), dark);

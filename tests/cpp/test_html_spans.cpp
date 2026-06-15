@@ -876,3 +876,19 @@ TEST_CASE("blocks: link within a list item survives as a hyperlink span",
         if (!sp.url.empty()) has_url = true;
     CHECK(has_url);
 }
+
+TEST_CASE("blocks: indented list-item content has no leading space span",
+          "[html_spans][blocks]")
+{
+    // Indented HTML whitespace (\n + spaces) between <li> and the first
+    // inline element must be stripped so that all canvas backends share
+    // the same byte offsets when painting span backgrounds.
+    auto blocks = html_to_blocks(
+        "<ul><li>\n    <a href=\"https://example.org\"><code>abc</code></a>"
+        "\n</li></ul>",
+        false);
+    const BodyBlock* item = find_block(blocks, BodyBlock::Kind::UnorderedItem);
+    REQUIRE(item != nullptr);
+    REQUIRE(!item->spans.empty());
+    CHECK(item->spans.front().text.front() != ' ');
+}
