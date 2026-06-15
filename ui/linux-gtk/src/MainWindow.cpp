@@ -1502,7 +1502,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         room_view_->on_add_reaction_requested =
             [this](const std::string& event_id, tk::Rect anchor)
         {
-            if (!emoji_popover_ || current_room_id_.empty())
+            if (current_room_id_.empty())
             {
                 return;
             }
@@ -1662,12 +1662,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 room_text_area_->set_text("");
             room_view_->set_current_text({});
         };
+        build_emoji_popover();
+        build_sticker_popover();
         room_view_->on_emoji = [this](tk::Rect btn)
         {
-            if (!emoji_popover_)
-            {
-                return;
-            }
             if (gtk_widget_get_visible(emoji_popover_))
             {
                 gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
@@ -1679,10 +1677,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         };
         room_view_->on_sticker = [this](tk::Rect btn)
         {
-            if (!sticker_popover_)
-            {
-                return;
-            }
             if (gtk_widget_get_visible(sticker_popover_))
             {
                 gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
