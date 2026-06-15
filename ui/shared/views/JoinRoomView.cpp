@@ -1,5 +1,6 @@
 #include "JoinRoomView.h"
 
+#include "html_spans.h"
 #include "media_utils.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
@@ -147,6 +148,8 @@ void JoinRoomView::set_state(State s)
 void JoinRoomView::set_preview(const tesseract::RoomSummary& summary)
 {
     preview_ = summary;
+    topic_layout_.reset();
+    topic_spans_ = autolink_plain_to_spans(preview_.topic);
     state_ = State::Preview;
     error_msg_.clear();
     apply_state();
@@ -425,17 +428,25 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             float topic_y =
                 preview_card_rect_.y + kCardPadY + kAvatarSize + kSmallGap;
             float topic_w = preview_card_rect_.w - kCardPadX * 2.0f;
-            tk::TextStyle ts;
-            ts.role = tk::FontRole::Body;
-            ts.halign = tk::TextHAlign::Leading;
-            ts.wrap = true;
-            ts.max_width = topic_w;
-            ts.max_height = kTopicMaxH;
-            ts.trim = tk::TextTrim::Ellipsis;
-            auto lo = ctx.factory.build_text(preview_.topic, ts);
-            if (lo)
+            if (!topic_layout_)
             {
-                ctx.canvas.draw_text(*lo, {cx, topic_y}, pal.text_secondary);
+                tk::TextStyle ts;
+                ts.role = tk::FontRole::Body;
+                ts.halign = tk::TextHAlign::Leading;
+                ts.wrap = true;
+                ts.max_width = topic_w;
+                ts.max_height = kTopicMaxH;
+                ts.trim = tk::TextTrim::Ellipsis;
+                if (!topic_spans_.empty())
+                    topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
+                else
+                    topic_layout_ = ctx.factory.build_text(preview_.topic, ts);
+            }
+            if (topic_layout_)
+            {
+                ctx.canvas.draw_text(*topic_layout_, {cx, topic_y}, pal.text_secondary);
+                topic_rect_ = {cx, topic_y,
+                               topic_layout_->measure().w, topic_layout_->measure().h};
             }
         }
     }
@@ -454,6 +465,74 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
     if (lookup_btn_ && lookup_btn_->visible())
     {
         lookup_btn_->paint(ctx);
+    }
+}
+
+bool JoinRoomView::on_pointer_down(tk::Point local)
+{
+    if (state_ != State::Preview || !topic_layout_)
+        return false;
+
+    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+    if (!rect_contains(topic_rect_, w))
+        return false;
+
+    const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+    std::string url = topic_layout_->link_at(ll);
+    if (url.empty())
+        return false;
+
+    press_link_url_ = std::move(url);
+    return true;
+}
+
+void JoinRoomView::on_pointer_up(tk::Point local, bool inside_self)
+{
+    if (press_link_url_.empty())
+        return;
+
+    std::string url = std::move(press_link_url_);
+    press_link_url_.clear();
+
+    if (!inside_self || !on_link_clicked || !topic_layout_)
+        return;
+
+    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+    if (!rect_contains(topic_rect_, w))
+        return;
+
+    const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+    if (topic_layout_->link_at(ll) == url)
+        on_link_clicked(std::move(url));
+}
+
+bool JoinRoomView::on_pointer_move(tk::Point local)
+{
+    if (state_ != State::Preview || !topic_layout_)
+        return false;
+
+    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+    std::string new_link_url;
+    if (rect_contains(topic_rect_, w))
+    {
+        const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+        new_link_url = topic_layout_->link_at(ll);
+    }
+    const bool changed = (new_link_url != hover_link_url_);
+    if (changed)
+    {
+        hover_link_url_ = new_link_url;
+        if (on_link_hovered) on_link_hovered(hover_link_url_);
+    }
+    return changed;
+}
+
+void JoinRoomView::on_pointer_leave()
+{
+    if (!hover_link_url_.empty())
+    {
+        hover_link_url_.clear();
+        if (on_link_hovered) on_link_hovered({});
     }
 }
 

@@ -135,6 +135,19 @@ JoinRoomDialog::JoinRoomDialog(QWidget* parent)
         hide();
     };
 
+    shared_->on_link_clicked = [this](std::string url)
+    {
+        if (onOpenUrl)
+            onOpenUrl(url);
+        else
+            tesseract::Client::open_in_browser(url);
+    };
+    shared_->on_link_hovered = [this](std::string url)
+    {
+        if (surface_)
+            surface_->setCursor(url.empty() ? Qt::ArrowCursor : Qt::PointingHandCursor);
+    };
+
     surface_->set_root(std::move(jrv));
 
     alias_field_ = surface_->host().make_text_field();

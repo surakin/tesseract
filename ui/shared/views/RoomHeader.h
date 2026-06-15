@@ -83,6 +83,9 @@ public:
 
     // Fired when a hyperlink in the room topic is clicked.
     std::function<void(const std::string& url)> on_link_clicked;
+    // Fired when the pointer enters or leaves a hyperlink in the topic.
+    // Passes the URL while hovering, empty string when leaving.
+    std::function<void(const std::string& url)> on_link_hovered;
 
     // Fired when the user confirms a date in the picker (ms since Unix epoch,
     // midnight UTC on the selected day). Replaces on_jump_to_date_requested.
@@ -156,6 +159,7 @@ private:
 
     bool press_info_ = false; // true when header area (not calendar) is pressed
     bool hover_topic_ = false;
+    std::string hover_link_url_; // non-empty while pointer is over a topic link
     bool topic_truncated_ = false;
     bool topic_dirty_ = true;
     float last_topic_w_ = -1.0f;

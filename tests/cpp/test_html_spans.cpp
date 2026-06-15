@@ -125,6 +125,74 @@ TEST_CASE("autolink: multiple URLs each become their own span",
     CHECK(s[2].url == "https://b.org");
 }
 
+// --- matrix: URIs -------------------------------------------------------
+
+TEST_CASE("autolink: bare matrix:u/ URI is linkified", "[html_spans][autolink]")
+{
+    auto s = autolink_plain_to_spans("join matrix:u/alice:example.org today");
+    REQUIRE(s.size() == 3);
+    CHECK(s[1].url   == "matrix:u/alice:example.org");
+    CHECK(s[1].text  == "matrix:u/alice:example.org");
+}
+
+TEST_CASE("autolink: matrix:r/ room alias is linkified", "[html_spans][autolink]")
+{
+    auto s = autolink_plain_to_spans("try matrix:r/general:example.org");
+    REQUIRE(s.size() == 2);
+    CHECK(s[1].url == "matrix:r/general:example.org");
+}
+
+TEST_CASE("autolink: matrix:roomid/ room ID is linkified", "[html_spans][autolink]")
+{
+    auto s = autolink_plain_to_spans("matrix:roomid/abc123:example.com");
+    REQUIRE(s.size() == 1);
+    CHECK(s[0].url == "matrix:roomid/abc123:example.com");
+}
+
+TEST_CASE("autolink: matrix: word boundary guard — preceded by alphanumeric not linked",
+          "[html_spans][autolink]")
+{
+    CHECK(autolink_plain_to_spans("xmatrix:r/general:example.org").empty());
+    CHECK(autolink_plain_to_spans("1matrix:r/general:example.org").empty());
+}
+
+TEST_CASE("autolink: matrix: URI trailing punctuation stripped", "[html_spans][autolink]")
+{
+    auto s = autolink_plain_to_spans("see matrix:r/general:example.org.");
+    REQUIRE(s.size() >= 1);
+    bool found = false;
+    for (const auto& span : s)
+    {
+        if (!span.url.empty())
+        {
+            CHECK(span.url == "matrix:r/general:example.org");
+            found = true;
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("autolink: unknown matrix: segment not linked", "[html_spans][autolink]")
+{
+    CHECK(autolink_plain_to_spans("matrix:bogus/whatever").empty());
+}
+
+TEST_CASE("autolink: mixed http and matrix: URIs each become spans",
+          "[html_spans][autolink]")
+{
+    auto s = autolink_plain_to_spans(
+        "see https://example.org and matrix:u/alice:example.org");
+    REQUIRE(s.size() >= 2);
+    bool has_http = false, has_matrix = false;
+    for (const auto& span : s)
+    {
+        if (span.url == "https://example.org")  has_http   = true;
+        if (span.url == "matrix:u/alice:example.org") has_matrix = true;
+    }
+    CHECK(has_http);
+    CHECK(has_matrix);
+}
+
 // --- mention pills ------------------------------------------------------
 
 TEST_CASE("mention: matrix.to user link is flagged as a mention pill",

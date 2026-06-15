@@ -136,14 +136,39 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
         }
         else
         {
-            topic_spans_.clear();
-            topic_display_spans_.clear();
-            const auto nl = topic_.find('\n');
-            topic_multiline_ = (nl != std::string::npos);
-            const std::string display =
-                topic_multiline_ ? topic_.substr(0, nl) + "…" : topic_;
-            topic_label_->set_text(display);
-            topic_label_->set_visible(!topic_.empty());
+            topic_spans_ = autolink_plain_to_spans(topic_);
+            if (!topic_spans_.empty())
+            {
+                // Plain-text topic contains URLs — use the rich-text path so
+                // links are clickable (same truncation logic as the HTML path).
+                topic_display_spans_ = {};
+                for (const auto& span : topic_spans_)
+                {
+                    const auto nl = span.text.find('\n');
+                    if (nl != std::string::npos)
+                    {
+                        topic_multiline_ = true;
+                        tk::TextSpan trunc = span;
+                        trunc.text = span.text.substr(0, nl) + "…";
+                        topic_display_spans_.push_back(std::move(trunc));
+                        break;
+                    }
+                    topic_display_spans_.push_back(span);
+                }
+                if (!topic_multiline_)
+                    topic_display_spans_ = topic_spans_;
+                topic_label_->set_visible(false);
+            }
+            else
+            {
+                topic_display_spans_.clear();
+                const auto nl = topic_.find('\n');
+                topic_multiline_ = (nl != std::string::npos);
+                const std::string display =
+                    topic_multiline_ ? topic_.substr(0, nl) + "…" : topic_;
+                topic_label_->set_text(display);
+                topic_label_->set_visible(!topic_.empty());
+            }
         }
     }
 }
@@ -670,6 +695,20 @@ bool RoomHeader::on_pointer_move(tk::Point local)
         }
     }
     hover_topic_ = new_hover_topic;
+
+    // Cursor: switch to pointer when hovering a link in the topic layout.
+    std::string new_link_url;
+    if (new_hover_topic && topic_layout_)
+    {
+        const tk::Point ll{world.x - topic_rect_.x, world.y - topic_rect_.y};
+        new_link_url = topic_layout_->link_at(ll);
+    }
+    if (new_link_url != hover_link_url_)
+    {
+        hover_link_url_ = new_link_url;
+        if (on_link_hovered) on_link_hovered(hover_link_url_);
+    }
+
     return true;
 }
 
@@ -682,6 +721,11 @@ void RoomHeader::on_pointer_leave()
         on_hide_tooltip();
     }
     hover_topic_ = false;
+    if (!hover_link_url_.empty())
+    {
+        hover_link_url_.clear();
+        if (on_link_hovered) on_link_hovered({});
+    }
     // Host calls request_repaint() after dispatching pointer-leave.
 }
 

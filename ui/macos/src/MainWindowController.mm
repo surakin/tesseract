@@ -6518,6 +6518,37 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [s.window endSheet:s->_joinRoomWindow];
     };
 
+    _joinRoomView->on_link_clicked = [ws](std::string url)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        if (tesseract::Client::parse_matrix_link(url).kind !=
+            tesseract::Client::MatrixLink::Kind::Unknown)
+            s->_shell->open_matrix_link(url);
+        else
+            tesseract::Client::open_in_browser(url);
+    };
+    {
+        auto hovered = std::make_shared<bool>(false);
+        _joinRoomView->on_link_hovered = [hovered, ws](std::string url)
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_joinRoomSurface) return;
+            if (!url.empty() && !*hovered)
+            {
+                *hovered = true;
+                [s->_joinRoomSurface->nsview() addCursorRect:s->_joinRoomSurface->nsview().bounds
+                                                      cursor:[NSCursor pointingHandCursor]];
+                [[NSCursor pointingHandCursor] push];
+            }
+            else if (url.empty() && *hovered)
+            {
+                *hovered = false;
+                [NSCursor pop];
+            }
+        };
+    }
+
     _joinRoomSurface->set_root(std::move(jrv));
     _joinRoomSurface->set_theme(tk::Theme::light());
 

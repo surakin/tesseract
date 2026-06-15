@@ -65,6 +65,8 @@ public:
                        std::string avatar_url)>             on_member_clicked;
     std::function<void(std::string avatar_url,
                        std::string display_name)>           on_avatar_clicked;
+    std::function<void(std::string url)>                    on_link_clicked;
+    std::function<void(std::string url)>                    on_link_hovered;
     std::function<void()>                                   on_close;
 
     // tk::Widget overrides
@@ -86,6 +88,7 @@ private:
     std::string avatar_url_;
     std::string topic_;
     std::string topic_html_;
+    std::vector<tk::TextSpan> topic_spans_; // non-empty when plain topic has links
     bool        is_encrypted_      = false;
     std::string history_visibility_;
 
@@ -136,6 +139,8 @@ private:
 
     bool  press_backdrop_  = false;
     bool  press_avatar_    = false;
+    std::string press_link_url_;
+    std::string hover_link_url_; // non-empty while pointer is over a topic link
     int   hover_member_    = -1;
     int   press_member_    = -1;
     float scroll_offset_   = 0.0f; // pixels scrolled from top of scrollable content

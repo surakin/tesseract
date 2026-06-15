@@ -38,6 +38,7 @@ rusqlite      = "0.37"
 # (fancy-regex) to avoid the oniguruma C dependency.
 syntect       = { version = "5", default-features = false, features = ["default-fancy"] }
 pulldown-cmark = { version = "0.13", features = ["html"] }
+linkify        = "0.11"
 
 [dev-dependencies]
 # test-util enables the paused/auto-advancing clock (#[tokio::test(start_paused)]

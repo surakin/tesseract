@@ -32,6 +32,10 @@ pub fn parse_matrix_link(uri: &str) -> ffi::MatrixLinkResult {
     super::matrix_uri::parse_matrix_link(uri)
 }
 
+pub fn find_url_spans(text: &str) -> Vec<ffi::UrlSpan> {
+    super::text_utils::find_url_spans(text)
+}
+
 pub fn markdown_to_html(text: &str) -> ffi::MarkdownFfiResult {
     super::markdown::markdown_to_html(text)
 }
@@ -656,6 +660,15 @@ pub mod ffi {
         formatted_body: String,
     }
 
+    /// One linkable URI span inside a plain-text string.
+    /// `start` and `end` are byte offsets into the source string (UTF-8).
+    /// `url` is the verbatim URI text (identical to `source[start..end]`).
+    struct UrlSpan {
+        start: usize,
+        end:   usize,
+        url:   String,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -1056,6 +1069,13 @@ pub mod ffi {
         /// input.  Both `?via=` and `?action=join` query params are stripped.
         /// Percent-encoded path components are decoded.
         fn parse_matrix_link(uri: &str) -> MatrixLinkResult;
+
+        // ----- Plain-text URL detection -----
+
+        /// Find all http(s) and `matrix:` URIs in `text`.
+        /// Returns byte-offset spans sorted by `start`.  Used by the C++
+        /// autolinker to build clickable TextSpan lists from plain-text bodies.
+        fn find_url_spans(text: &str) -> Vec<UrlSpan>;
 
         // ----- Markdown -----
 

@@ -37,6 +37,9 @@ public:
 
     /// Fired when join succeeds; shell should navigate to this room ID.
     std::function<void(const std::string& room_id)> onJoined;
+    /// Fired when the user clicks a link in the room topic; shell should
+    /// route http(s) URLs to the browser and matrix: URIs in-app.
+    std::function<void(const std::string& url)> onOpenUrl;
 
 protected:
     void showEvent(QShowEvent* e) override;

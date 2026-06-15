@@ -6317,6 +6317,23 @@ void MainWindow::build_join_room_dialog()
         }
     };
 
+    join_room_shared_->on_link_clicked = [this](std::string url)
+    {
+        if (tesseract::Client::parse_matrix_link(url).kind !=
+            tesseract::Client::MatrixLink::Kind::Unknown)
+            open_matrix_link(url);
+        else
+            tesseract::Client::open_in_browser(url);
+    };
+    join_room_shared_->on_link_hovered = [this](std::string url)
+    {
+        if (join_room_surface_)
+        {
+            GtkWidget* w = join_room_surface_->widget();
+            gtk_widget_set_cursor_from_name(w, url.empty() ? "default" : "pointer");
+        }
+    };
+
     join_room_surface_->set_root(std::move(jrv));
 
     join_room_alias_field_ = join_room_surface_->host().make_text_field();
