@@ -6,6 +6,7 @@ mod image_packs;
 mod markdown;
 mod matrix_uri;
 mod media_preview;
+mod text_utils;
 mod oauth;
 mod recent_emoji;
 mod waveform;
@@ -274,6 +275,13 @@ pub mod ffi {
         pub kind: u8,
         pub primary: String,
         pub event_id: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct UrlSpan {
+        pub start: usize,
+        pub end:   usize,
+        pub url:   String,
     }
 
     #[derive(Debug, PartialEq, Default)]

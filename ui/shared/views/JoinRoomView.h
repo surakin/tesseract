@@ -92,10 +92,18 @@ public:
     std::function<void(const std::string& room_id_or_alias)> on_join_requested;
     // Fired when the user clicks "Cancel" / "✕".
     std::function<void()> on_cancel;
+    // Fired when the user clicks an http(s) or matrix: link in the room topic.
+    std::function<void(std::string url)> on_link_clicked;
+    // Fired when the pointer enters or leaves a link in the topic.
+    std::function<void(std::string url)> on_link_hovered;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
 
 private:
     void apply_state();
@@ -115,6 +123,14 @@ private:
     // Layout rects (world-space, valid after arrange()).
     tk::Rect alias_field_rect_{};
     tk::Rect preview_card_rect_{};
+    tk::Rect topic_rect_{};  // world-space rect of the topic text block
+
+    // Cached topic layout and its source spans (rebuilt on set_preview).
+    std::unique_ptr<tk::TextLayout>    topic_layout_;
+    std::vector<tk::TextSpan>          topic_spans_;
+
+    std::string press_link_url_;
+    std::string hover_link_url_;
 };
 
 } // namespace tesseract::views

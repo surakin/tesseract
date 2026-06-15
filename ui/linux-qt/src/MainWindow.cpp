@@ -2124,6 +2124,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     {
         navigate_to_room(room_id);
     };
+    joinRoomDialog_->onOpenUrl = [this](const std::string& url)
+    {
+        if (tesseract::Client::parse_matrix_link(url).kind !=
+            tesseract::Client::MatrixLink::Kind::Unknown)
+            open_matrix_link(url);
+        else
+            tesseract::Client::open_in_browser(url);
+    };
 
     statusBar()->showMessage(tr("Not logged in"));
     inflightDot_ = new InflightDotWidget(this);

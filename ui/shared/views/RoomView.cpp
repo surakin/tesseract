@@ -464,6 +464,10 @@ void RoomView::wire_internal_callbacks()
             on_reply_focus();
         }
     };
+    header_->on_link_hovered = [this](const std::string& url)
+    {
+        if (on_link_hovered) on_link_hovered(url);
+    };
     message_list_->on_near_top = [this]
     {
         if (on_near_top)
@@ -568,6 +572,14 @@ void RoomView::wire_internal_callbacks()
     room_info_panel_->on_hide_tooltip = [this]()
     {
         if (on_hide_tooltip) on_hide_tooltip();
+    };
+    room_info_panel_->on_link_clicked = [this](std::string url)
+    {
+        if (on_link_clicked) on_link_clicked(std::move(url));
+    };
+    room_info_panel_->on_link_hovered = [this](std::string url)
+    {
+        if (on_link_hovered) on_link_hovered(std::move(url));
     };
     room_info_panel_->on_fetch_members = [this](std::string room_id)
     {

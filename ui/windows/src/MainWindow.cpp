@@ -7063,6 +7063,21 @@ void MainWindow::ensure_join_room_created()
         }
     };
 
+    join_room_shared_->on_link_clicked = [this](std::string url)
+    {
+        if (tesseract::Client::parse_matrix_link(url).kind !=
+            tesseract::Client::MatrixLink::Kind::Unknown)
+            open_matrix_link(url);
+        else
+            tesseract::Client::open_in_browser(url);
+    };
+    join_room_shared_->on_link_hovered = [this](std::string url)
+    {
+        if (join_room_surface_)
+            join_room_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
+                                                       : tk::win32::Cursor::Pointer);
+    };
+
     join_room_surface_->set_root(std::move(jrv));
 
     if (HWND s = join_room_surface_->hwnd())

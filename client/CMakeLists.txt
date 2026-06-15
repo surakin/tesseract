@@ -17,6 +17,7 @@ add_library(tesseract_client STATIC
     src/settings.cpp
     src/waveform_cache.cpp
     src/highlight.cpp
+    src/autolink.cpp
 )
 
 # ── SecretStore: platform credential backend ────────────────────────────────

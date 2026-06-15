@@ -132,6 +132,8 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     badge_enc_layout_.reset();
     badge_hist_layout_.reset();
     topic_layout_.reset();
+    topic_spans_ = topic_html_.empty() ? autolink_plain_to_spans(topic_) :
+                                         std::vector<tk::TextSpan>{};
 
     expand_btn_->set_label("Show all \xE2\x96\xBE");
 
@@ -166,6 +168,8 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
         topic_      = info.topic;
         topic_html_ = info.topic_html;
         topic_layout_.reset();
+        topic_spans_ = topic_html_.empty() ? autolink_plain_to_spans(topic_) :
+                                             std::vector<tk::TextSpan>{};
     }
     name_layout_.reset();
     badge_enc_layout_.reset();
@@ -236,6 +240,8 @@ float RoomInfoPanel::measure_topic_height_(tk::CanvasFactory& factory, float max
     {
         if (!topic_html_.empty())
             topic_layout_ = factory.build_rich_text(html_to_spans(topic_html_), st);
+        else if (!topic_spans_.empty())
+            topic_layout_ = factory.build_rich_text(topic_spans_, st);
         else if (!topic_.empty())
             topic_layout_ = factory.build_text(topic_, st);
     }
@@ -544,6 +550,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
                 const auto spans = html_to_spans(topic_html_);
                 topic_layout_ = ctx.factory.build_rich_text(spans, st);
             }
+            else if (!topic_spans_.empty())
+            {
+                topic_layout_ = ctx.factory.build_rich_text(topic_spans_, st);
+            }
             else if (!topic_.empty())
             {
                 topic_layout_ = ctx.factory.build_text(topic_, st);
@@ -777,6 +787,18 @@ bool RoomInfoPanel::on_pointer_down(tk::Point local)
             press_avatar_ = true;
             return true;
         }
+        // Hit-test topic links before member rows.
+        if (topic_layout_ && rect_contains(topic_rect_, w))
+        {
+            const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+            std::string url = topic_layout_->link_at(ll);
+            if (!url.empty())
+            {
+                press_link_url_ = std::move(url);
+                return true;
+            }
+        }
+
         // Hit-test direct-painted member rows first (not child widgets).
         for (int i = 0; i < static_cast<int>(member_rects_.size()); ++i)
         {
@@ -797,6 +819,23 @@ bool RoomInfoPanel::on_pointer_down(tk::Point local)
 
 void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
 {
+    if (!press_link_url_.empty())
+    {
+        std::string url = std::move(press_link_url_);
+        press_link_url_.clear();
+        if (inside_self && on_link_clicked)
+        {
+            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (rect_contains(topic_rect_, w) && topic_layout_)
+            {
+                const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+                if (topic_layout_->link_at(ll) == url)
+                    on_link_clicked(url);
+            }
+        }
+        return;
+    }
+
     if (press_avatar_)
     {
         press_avatar_ = false;
@@ -866,6 +905,20 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
         if (on_hide_tooltip) on_hide_tooltip();
     }
 
+    // Cursor: pointer when hovering a link in the topic.
+    std::string new_link_url;
+    if (!editing_topic_ && topic_layout_ && rect_contains(topic_rect_, w))
+    {
+        const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
+        new_link_url = topic_layout_->link_at(ll);
+    }
+    const bool link_changed = (new_link_url != hover_link_url_);
+    if (link_changed)
+    {
+        hover_link_url_ = new_link_url;
+        if (on_link_hovered) on_link_hovered(hover_link_url_);
+    }
+
     int prev_hover = hover_member_;
     hover_member_  = -1;
 
@@ -878,7 +931,7 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
         }
     }
 
-    return hover_member_ != prev_hover;
+    return hover_member_ != prev_hover || link_changed;
 }
 
 void RoomInfoPanel::on_pointer_leave()
@@ -889,6 +942,11 @@ void RoomInfoPanel::on_pointer_leave()
     press_member_   = -1;
     if (hover_topic_ && on_hide_tooltip) on_hide_tooltip();
     hover_topic_    = false;
+    if (!hover_link_url_.empty())
+    {
+        hover_link_url_.clear();
+        if (on_link_hovered) on_link_hovered({});
+    }
 }
 
 bool RoomInfoPanel::on_wheel(tk::Point local, float /*dx*/, float dy)

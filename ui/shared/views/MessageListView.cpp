@@ -1074,7 +1074,7 @@ public:
         // uses one rounded background and one outer stroke. The trailing +
         // chip at the end of the reactions strip (painted below) is a
         // secondary entry point to the same reaction picker.
-        if (hovered)
+        if (hovered && m.pending_state == MessageRowData::PendingState::None)
         {
             static_cache_.ensure(ctx.factory);
 
