@@ -1955,6 +1955,10 @@ protected:
     void fetch_single_room_summary_(const std::string& space_id,
                                     const std::string& room_id);
 
+    // Cancel all in-flight unjoined-room summary fetches and reset per-space
+    // fetch state. Call whenever the user exits a space.
+    void cancel_unjoined_summaries_();
+
     // ── Extended profile (MSC4133) helpers ────────────────────────────────────
 
     /// Fetch the signed-in user's extended profile on a worker thread.

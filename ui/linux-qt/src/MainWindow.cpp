@@ -3775,6 +3775,7 @@ void MainWindow::refreshRoomList()
         {
             mainApp_->set_space_nav(false);
             mainApp_->room_list_view()->clear_space_unjoined_rooms();
+            cancel_unjoined_summaries_();
         }
         showRooms(filtered);
     }

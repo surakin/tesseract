@@ -362,6 +362,7 @@ public:
     using ShellBase::ensure_media_thumbnail_;
     using ShellBase::join_room_command_;
     using ShellBase::get_cached_unjoined_summaries_;
+    using ShellBase::cancel_unjoined_summaries_;
     using ShellBase::reset_server_info_;
     using ShellBase::server_info_;
     using ShellBase::show_status_message_;
@@ -7597,6 +7598,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             _mainApp->set_space_nav(false);
             _mainApp->room_list_view()->clear_space_unjoined_rooms();
+            _shell->cancel_unjoined_summaries_();
         }
     }
     else

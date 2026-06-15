@@ -128,10 +128,12 @@ impl ClientFfi {
                     .into_iter()
                     .filter_map(|ev| match ev.deserialize() {
                         Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e))) => {
-                            Some(e.state_key.to_owned())
+                            if e.content.via.is_empty() { None } else { Some(e.state_key.to_owned()) }
                         }
                         Ok(SyncOrStrippedState::Sync(SyncStateEvent::Redacted(_))) => None,
-                        Ok(SyncOrStrippedState::Stripped(e)) => Some(e.state_key.to_owned()),
+                        Ok(SyncOrStrippedState::Stripped(e)) => {
+                            if e.content.via.as_ref().map_or(true, |v| v.is_empty()) { None } else { Some(e.state_key.to_owned()) }
+                        }
                         Err(_) => None,
                     })
                     .map(|id| id.to_string())

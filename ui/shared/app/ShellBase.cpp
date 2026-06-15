@@ -2279,19 +2279,30 @@ void ShellBase::update_space_children_cache_()
                  fresh_joined   = std::move(fresh_joined),
                  fresh_unjoined = std::move(fresh_unjoined)]() mutable
                 {
-                    if (fresh_joined != space_children_cache_)
+                    if (fresh_joined   != space_children_cache_ ||
+                        fresh_unjoined != unjoined_space_children_cache_)
                     {
                         space_children_cache_          = std::move(fresh_joined);
                         unjoined_space_children_cache_ = std::move(fresh_unjoined);
 
-                        // Evict summaries for rooms that are now joined.
+                        // Evict summaries for rooms that are now joined or are no
+                        // longer listed as space children (e.g. via-less tombstones).
                         for (auto& [space_id, summaries] : unjoined_summaries_cache_)
                         {
+                            const auto child_it =
+                                unjoined_space_children_cache_.find(space_id);
+                            const std::unordered_set<std::string> child_set =
+                                child_it != unjoined_space_children_cache_.end()
+                                    ? std::unordered_set<std::string>(
+                                          child_it->second.begin(),
+                                          child_it->second.end())
+                                    : std::unordered_set<std::string>{};
                             summaries.erase(
                                 std::remove_if(
                                     summaries.begin(), summaries.end(),
-                                    [this](const tesseract::RoomSummary& s) {
-                                        return room_by_id_(s.room_id) != nullptr;
+                                    [this, &child_set](const tesseract::RoomSummary& s) {
+                                        return room_by_id_(s.room_id) != nullptr ||
+                                               !child_set.count(s.room_id);
                                     }),
                                 summaries.end());
                         }
@@ -2305,27 +2316,29 @@ void ShellBase::update_space_children_cache_()
 void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                                            const std::string& room_id)
 {
-    // Phase 1: populate from cache immediately before any network activity.
+    // Phase 1: show SQLite-cached summary immediately, before any network fetch.
     if (client_)
     {
         if (auto cached = client_->get_cached_room_summary(room_id))
         {
             auto& summaries = unjoined_summaries_cache_[space_id];
+            bool found = false;
             for (auto& entry : summaries)
             {
-                if (entry.room_id == room_id)
-                {
-                    entry = *cached;
-                    break;
-                }
+                if (entry.room_id == room_id) { entry = *cached; found = true; break; }
             }
+            if (!found)
+                summaries.push_back(*cached);
             if (main_app_)
                 if (auto* rl = main_app_->room_list_view())
-                    rl->update_unjoined_room_summary(*cached);
+                    rl->set_space_unjoined_rooms(
+                        std::vector<tesseract::RoomSummary>(summaries));
+            if (!cached->avatar_url.empty())
+                ensure_media_thumbnail_(cached->avatar_url, 64, 64, false);
         }
     }
 
-    // Phase 2: background network fetch — overwrites cache entry with fresh data.
+    // Phase 2: background network fetch — adds/updates the entry with fresh data.
     auto sess = active_account_;
     const std::uint64_t gen = unjoined_fetch_gen_;
     run_async_(
@@ -2343,6 +2356,8 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                     if (!summary)
                     {
                         // Exponential backoff: 5s, 10s, 20s … capped at 5 min.
+                        // The room simply won't appear; it will be retried on the
+                        // next space entry (cancel_unjoined_summaries_ clears state).
                         auto& rs = unjoined_fetch_retry_[room_id];
                         ++rs.attempts;
                         using SC = std::chrono::system_clock;
@@ -2363,22 +2378,36 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                         }
                         return;
                     }
+                    // Upsert: add the room if it isn't already loaded, update otherwise.
                     auto& cached = unjoined_summaries_cache_[space_id];
+                    bool found = false;
                     for (auto& entry : cached)
                     {
                         if (entry.room_id == room_id)
                         {
                             entry = std::move(*summary);
-                            if (client_)
-                                client_->note_room_summary_backoff_ok(room_id);
-                            if (main_app_)
-                                if (auto* rl = main_app_->room_list_view())
-                                    rl->update_unjoined_room_summary(entry);
+                            found = true;
                             break;
                         }
                     }
+                    if (!found)
+                        cached.push_back(std::move(*summary));
+                    if (client_)
+                        client_->note_room_summary_backoff_ok(room_id);
+                    if (main_app_)
+                        if (auto* rl = main_app_->room_list_view())
+                            rl->set_space_unjoined_rooms(
+                                std::vector<tesseract::RoomSummary>(cached));
                 });
         });
+}
+
+void ShellBase::cancel_unjoined_summaries_()
+{
+    ++unjoined_fetch_gen_;
+    unjoined_fetch_pending_.clear();
+    unjoined_fetch_retry_.clear();
+    active_space_id_.clear();
 }
 
 const std::vector<tesseract::RoomSummary>&
@@ -2391,25 +2420,37 @@ ShellBase::get_cached_unjoined_summaries_(const std::string& space_id)
         unjoined_fetch_pending_.clear();
         unjoined_fetch_retry_.clear();
     }
+
     auto& summaries = unjoined_summaries_cache_[space_id];
+
+    // Prune any leftover stubs (name empty) from previous behaviour.
+    summaries.erase(
+        std::remove_if(summaries.begin(), summaries.end(),
+            [](const tesseract::RoomSummary& s) { return s.name.empty(); }),
+        summaries.end());
+
     auto child_it = unjoined_space_children_cache_.find(space_id);
     if (child_it != unjoined_space_children_cache_.end())
     {
-        // Add placeholder entries for any room IDs not yet in the cache.
-        // Real data is filled in per-row as rows become visible via
-        // fetch_single_room_summary_.
-        std::unordered_set<std::string> have;
-        have.reserve(summaries.size());
+        // Build set of already-loaded room IDs so we don't double-fetch.
+        std::unordered_set<std::string> loaded;
+        loaded.reserve(summaries.size());
         for (const auto& s : summaries)
-            have.insert(s.room_id);
+            loaded.insert(s.room_id);
+
+        // Proactively kick off a fetch for every unloaded child.
+        // Rooms that are already in-flight or currently in backoff are skipped;
+        // they will be retried on the next space entry.
         for (const auto& id : child_it->second)
         {
-            if (!have.count(id))
-            {
-                tesseract::RoomSummary s;
-                s.room_id = id;
-                summaries.push_back(std::move(s));
-            }
+            if (loaded.count(id) || unjoined_fetch_pending_.count(id))
+                continue;
+            auto retry_it = unjoined_fetch_retry_.find(id);
+            if (retry_it != unjoined_fetch_retry_.end() &&
+                std::chrono::steady_clock::now() < retry_it->second.next_retry)
+                continue;
+            unjoined_fetch_pending_.insert(id);
+            fetch_single_room_summary_(space_id, id);
         }
     }
     return summaries;
