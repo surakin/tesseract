@@ -6537,8 +6537,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (!url.empty() && !*hovered)
             {
                 *hovered = true;
-                [s->_joinRoomSurface->nsview() addCursorRect:s->_joinRoomSurface->nsview().bounds
-                                                      cursor:[NSCursor pointingHandCursor]];
+                NSView* jrv = (__bridge NSView*)s->_joinRoomSurface->view_handle();
+                [jrv addCursorRect:jrv.bounds cursor:[NSCursor pointingHandCursor]];
                 [[NSCursor pointingHandCursor] push];
             }
             else if (url.empty() && *hovered)
