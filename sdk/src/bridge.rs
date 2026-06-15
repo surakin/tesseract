@@ -1972,6 +1972,10 @@ pub mod ffi {
         /// alias (`#alias:server`). Returns a JSON object on success or an
         /// empty string on error. Blocks the calling thread.
         fn get_room_summary(self: &ClientFfi, room_id_or_alias: &str) -> String;
+        /// Return the cached MSC3266 room summary for `room_id` from
+        /// `app_cache.db`, or an empty string when no entry exists.
+        /// Synchronous, DB-only — no network. Safe to call from any thread.
+        fn get_cached_room_summary(self: &ClientFfi, room_id: &str) -> String;
         /// Join a room by its ID or alias. Returns the canonical room ID
         /// (e.g. `!id:server`) on success, or an empty string on failure.
         /// Blocks the calling thread — call only from a worker thread.

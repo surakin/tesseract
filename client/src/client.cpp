@@ -1340,6 +1340,18 @@ Client::get_space_child_summary(const std::string& space_id,
     }
 }
 
+std::optional<tesseract::RoomSummary>
+Client::get_cached_room_summary(const std::string& room_id) const
+{
+    if (!impl_) return std::nullopt;
+    SH_FFI;
+    const std::string json =
+        std::string(impl_->ffi->get_cached_room_summary(room_id));
+    if (json.empty()) return std::nullopt;
+    try { return parse_room_summary_json(json); }
+    catch (...) { return std::nullopt; }
+}
+
 std::string Client::join_room(const std::string& room_id_or_alias)
 {
     SH_FFI;

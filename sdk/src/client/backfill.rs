@@ -839,7 +839,14 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
              room_id  TEXT    NOT NULL PRIMARY KEY,
              attempts INTEGER NOT NULL,
              deadline INTEGER NOT NULL
-         );",
+         );
+         CREATE TABLE IF NOT EXISTS room_summary_cache (
+             room_id         TEXT    NOT NULL PRIMARY KEY,
+             summary_json    TEXT    NOT NULL,
+             fetched_at_secs INTEGER NOT NULL
+         );
+         DELETE FROM room_summary_cache
+             WHERE fetched_at_secs < strftime('%s','now') - 2592000;",
     )
     .ok()?;
     Some(conn)
@@ -977,6 +984,34 @@ pub(super) fn delete_room_summary_backoff(conn: &rusqlite::Connection, room_id: 
         "DELETE FROM room_summary_backoff WHERE room_id = ?1",
         rusqlite::params![room_id],
     );
+}
+
+// ── room_summary_cache DB helpers ─────────────────────────────────────────
+
+pub(super) fn store_room_summary_conn(
+    conn: &rusqlite::Connection,
+    room_id: &str,
+    summary_json: &str,
+    fetched_at_secs: i64,
+) {
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO room_summary_cache \
+         (room_id, summary_json, fetched_at_secs) VALUES (?1, ?2, ?3)",
+        rusqlite::params![room_id, summary_json, fetched_at_secs],
+    );
+}
+
+pub(super) fn load_room_summary_conn(
+    conn: &rusqlite::Connection,
+    room_id: &str,
+) -> String {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT summary_json FROM room_summary_cache WHERE room_id = ?1",
+    ) else {
+        return String::new();
+    };
+    stmt.query_row(rusqlite::params![room_id], |row| row.get::<_, String>(0))
+        .unwrap_or_default()
 }
 
 // ──────────────────────────────────────────────────────────────────────────

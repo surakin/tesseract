@@ -2305,6 +2305,27 @@ void ShellBase::update_space_children_cache_()
 void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                                            const std::string& room_id)
 {
+    // Phase 1: populate from cache immediately before any network activity.
+    if (client_)
+    {
+        if (auto cached = client_->get_cached_room_summary(room_id))
+        {
+            auto& summaries = unjoined_summaries_cache_[space_id];
+            for (auto& entry : summaries)
+            {
+                if (entry.room_id == room_id)
+                {
+                    entry = *cached;
+                    break;
+                }
+            }
+            if (main_app_)
+                if (auto* rl = main_app_->room_list_view())
+                    rl->update_unjoined_room_summary(*cached);
+        }
+    }
+
+    // Phase 2: background network fetch — overwrites cache entry with fresh data.
     auto sess = active_account_;
     const std::uint64_t gen = unjoined_fetch_gen_;
     run_async_(

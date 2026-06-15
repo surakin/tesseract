@@ -188,7 +188,7 @@ impl ClientFfi {
             #[cfg(debug_assertions)] &self.in_flight_urls,
             #[cfg(debug_assertions)] "room_list/get_summary".to_string(),
         );
-        self.rt.block_on(async move {
+        let json = self.rt.block_on(async move {
             tokio::select! {
                 result = client.get_room_preview(&id, vec![]) => {
                     match result {
@@ -199,7 +199,18 @@ impl ClientFfi {
                 }
                 _ = stop_fut(stop_rx) => String::new(),
             }
-        })
+        });
+        if !json.is_empty() {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            if let Some(ref conn) = *self.app_cache_db.lock() {
+                super::backfill::store_room_summary_conn(conn, room_id_or_alias, &json, now);
+            }
+        }
+        json
     }
 
     /// Fetch the MSC3266 room preview for a single unjoined space child.
@@ -228,7 +239,7 @@ impl ClientFfi {
         // block block_on — and the C++ worker thread it runs on — forever.
         const PREVIEW_TIMEOUT_SECS: u64 = 30;
 
-        self.rt.block_on(async move {
+        let json = self.rt.block_on(async move {
             // Read via-server list from local space state — no network.
             let via: Vec<OwnedServerName> =
                 if let Some(space_room) = client.get_room(&space_room_id) {
@@ -268,7 +279,18 @@ impl ClientFfi {
                 Some(s) => serde_json::to_string(&s).unwrap_or_default(),
                 None => String::new(),
             }
-        })
+        });
+        if !json.is_empty() {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            if let Some(ref conn) = *self.app_cache_db.lock() {
+                super::backfill::store_room_summary_conn(conn, room_id, &json, now);
+            }
+        }
+        json
     }
 
     #[cfg(test)]
@@ -282,6 +304,18 @@ impl ClientFfi {
         _space_id: &str,
         _room_id: &str,
     ) -> String {
+        String::new()
+    }
+
+    #[cfg(not(test))]
+    pub fn get_cached_room_summary(&self, room_id: &str) -> String {
+        let guard = self.app_cache_db.lock();
+        let Some(ref conn) = *guard else { return String::new() };
+        super::backfill::load_room_summary_conn(conn, room_id)
+    }
+
+    #[cfg(test)]
+    pub fn get_cached_room_summary(&self, _room_id: &str) -> String {
         String::new()
     }
 

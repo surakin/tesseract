@@ -1030,6 +1030,10 @@ public:
     std::optional<RoomSummary>
     get_space_child_summary(const std::string& space_id,
                             const std::string& room_id);
+    /// Return the locally-cached MSC3266 room summary for `room_id`, or
+    /// std::nullopt when no cached entry exists. No network, safe on any thread.
+    std::optional<RoomSummary>
+    get_cached_room_summary(const std::string& room_id) const;
 
     /// Join a room by its ID or alias.
     /// Returns the canonical room ID (e.g. `!id:server`) on success, or an
