@@ -1044,8 +1044,10 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
             ctx.factory.build_text(tk::tr("Editing message"), label_style);
         if (label_layout)
         {
-            ctx.canvas.draw_text(*label_layout,
-                                 {text_x, edit_band_rect_.y + kEditPadY},
+            tk::Size sz = label_layout->measure();
+            float text_y = edit_band_rect_.y +
+                           (edit_band_rect_.h - sz.h) * 0.5f;
+            ctx.canvas.draw_text(*label_layout, {text_x, text_y},
                                  ctx.theme.palette.text_secondary);
         }
 

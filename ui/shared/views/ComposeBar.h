@@ -57,7 +57,7 @@ public:
     static constexpr float kPreviewBandGap = 8.0f;
     static constexpr float kReplyBandH = 44.0f;
     static constexpr float kReplyBandGap = 4.0f;
-    static constexpr float kEditBandH = 44.0f;
+    static constexpr float kEditBandH = 30.0f;
     static constexpr float kEditBandGap = 4.0f;
 
     /// Rect inside the compose bar (widget-local coordinates, same space
