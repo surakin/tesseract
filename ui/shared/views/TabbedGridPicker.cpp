@@ -79,7 +79,6 @@ void TabbedGridPicker::invalidate_image_cache()
 
 void TabbedGridPicker::refresh_grid()
 {
-    hovered_grid_cell_ = -1;
     if (grid_)
     {
         grid_->set_selected_index(-1);
@@ -143,10 +142,10 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
     }
 
     // Shortcode tooltip: shown when a grid cell is hovered.
-    if (hovered_grid_cell_ >= 0)
+    if (grid_ && grid_->hovered_index() >= 0)
     {
-        std::string sc = cell_tooltip(hovered_grid_cell_);
-        if (!sc.empty() && grid_)
+        std::string sc = cell_tooltip(grid_->hovered_index());
+        if (!sc.empty())
         {
             tk::TextStyle small_style{};
             small_style.role = tk::FontRole::Small;
@@ -156,7 +155,7 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
                 tk::Size tsz = layout->measure();
                 constexpr float kPad = 4.0f;
                 constexpr float kRadius = 4.0f;
-                tk::Rect cell_r = grid_->rect_at(hovered_grid_cell_);
+                tk::Rect cell_r = grid_->rect_at(grid_->hovered_index());
                 float tx = cell_r.x + (cell_r.w - tsz.w) / 2.0f - kPad;
                 float ty = cell_r.y - tsz.h - kPad * 2 - 2.0f;
                 if (ty < bounds_.y)
@@ -270,43 +269,6 @@ void TabbedGridPicker::on_pointer_up(tk::Point local, bool inside_self)
         return;
     }
     on_tab_clicked(hit);
-}
-
-bool TabbedGridPicker::on_pointer_move(tk::Point local)
-{
-    int cell = -1;
-    if (grid_)
-    {
-        float lx = local.x - grid_rect_.x;
-        float ly = local.y - grid_rect_.y;
-        if (lx >= 0 && ly >= 0 && lx < grid_rect_.w && ly < grid_rect_.h)
-        {
-            cell = grid_->index_at({lx, ly});
-        }
-    }
-    if (cell == hovered_grid_cell_)
-    {
-        return false;
-    }
-    hovered_grid_cell_ = cell;
-    if (grid_)
-    {
-        grid_->invalidate_data();
-    }
-    return true;
-}
-
-void TabbedGridPicker::on_pointer_leave()
-{
-    if (hovered_grid_cell_ == -1)
-    {
-        return;
-    }
-    hovered_grid_cell_ = -1;
-    if (grid_)
-    {
-        grid_->invalidate_data();
-    }
 }
 
 bool TabbedGridPicker::on_wheel(tk::Point local, float dx, float dy)
