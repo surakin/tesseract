@@ -75,15 +75,15 @@ UINT post_to_ui_message()
 }
 
 // Process-wide font for native EDIT overlays — matches FontRole::Body
-// ("Segoe UI Variable Text", Settings::font_body pt, regular weight) so
-// text input fields render in the same face and size as message body text.
+// ("Segoe UI Variable Text", system body pt, regular weight) so text input
+// fields render in the same face and size as message body text.
 // On systems without "Segoe UI Variable Text" (pre-Win11) GDI silently
 // substitutes "Segoe UI" at the same size, which is visually identical.
 HFONT body_font()
 {
     static HFONT cached = []() -> HFONT
     {
-        const int pt = tesseract::Settings::instance().font_body;
+        const int pt = tk::d2d::win32_system_base_pt();
         HDC hdc = GetDC(nullptr);
         int h = -MulDiv(pt, GetDeviceCaps(hdc, LOGPIXELSY), 72);
         ReleaseDC(nullptr, hdc);
@@ -1391,12 +1391,12 @@ public:
         if (!s_create)
             return;
 
-        // Default character format: Segoe UI Variable Text, font_body pt.
+        // Default character format: Segoe UI Variable Text, system body pt.
         char_fmt_.cbSize    = sizeof(char_fmt_);
         char_fmt_.dwMask    = CFM_FACE | CFM_SIZE | CFM_CHARSET | CFM_COLOR;
         char_fmt_.dwEffects = CFE_AUTOCOLOR;
         // yHeight is in twips (1 pt = 20 twips).
-        char_fmt_.yHeight  = tesseract::Settings::instance().font_body * 20;
+        char_fmt_.yHeight  = tk::d2d::win32_system_base_pt() * 20;
         char_fmt_.bCharSet = DEFAULT_CHARSET;
         wcscpy_s(char_fmt_.szFaceName, L"Segoe UI Variable Text");
 
@@ -1429,7 +1429,7 @@ public:
         if (dwrite)
         {
             const float dip_size =
-                tesseract::Settings::instance().font_body * (96.f / 72.f);
+                static_cast<float>(tk::d2d::win32_system_base_pt()) * (96.f / 72.f);
             dwrite->CreateTextFormat(L"Segoe UI Variable Text", nullptr,
                 DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL, dip_size, L"",
@@ -2020,8 +2020,7 @@ public:
         const float s = dip_scale();
         // Floor: one line of body text expressed in DIPs.
         const float min_dip =
-            static_cast<float>(tesseract::Settings::instance().font_body) *
-            (96.f / 72.f);
+            static_cast<float>(tk::d2d::win32_system_base_pt()) * (96.f / 72.f);
 
         // TxGetNaturalSize(TXTNS_FITTOCONTENT) returns stale or zero values in
         // TXTBIT_D2DDWRITE mode and cannot be used to drive compose-bar growth.

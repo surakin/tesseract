@@ -1,7 +1,5 @@
 #include "canvas_d2d.h"
 
-#include <tesseract/settings.h>
-
 #include <d2d1_1.h>
 #include <d2d1_1helper.h>
 #include <d2d1_3.h>
@@ -27,6 +25,28 @@ using Microsoft::WRL::ComPtr;
 
 namespace tk::d2d
 {
+
+// Returns the Windows system body font size in pt from SPI_GETNONCLIENTMETRICS
+// (reflects Accessibility → Text size). Cached on first call.
+int win32_system_base_pt()
+{
+    static int base = []() -> int {
+        NONCLIENTMETRICSW ncm{};
+        ncm.cbSize = sizeof(ncm);
+        if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
+            return 9;
+        int h = ncm.lfMessageFont.lfHeight;
+        if (h == 0) return 9;
+        // lfHeight is in device pixels at the system DPI. Dividing by 96
+        // instead of the real DPI double-counts the scale on HiDPI displays.
+        HDC screen = GetDC(nullptr);
+        const int dpi = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
+        if (screen) ReleaseDC(nullptr, screen);
+        int pt = MulDiv(std::abs(h), 72, dpi);
+        return pt > 0 ? pt : 9;
+    }();
+    return base;
+}
 
 namespace
 {
@@ -108,51 +128,15 @@ struct FontDesc
 
 static FontDesc desc_for(FontRole r)
 {
-    const auto& s = tesseract::Settings::instance();
-    // The "semibold for emphasis" rule is shared policy
-    // (tk::font_role_is_semibold); the family + point size stay native (note
-    // Title uses the Display face, the only per-role family difference).
+    const float pt = static_cast<float>(font_role_pt(r, win32_system_base_pt()));
     const DWRITE_FONT_WEIGHT weight = font_role_is_semibold(r)
                                           ? DWRITE_FONT_WEIGHT_SEMI_BOLD
                                           : DWRITE_FONT_WEIGHT_REGULAR;
-    switch (r)
-    {
-    case FontRole::Small:
-        return {L"Segoe UI Variable Text", static_cast<float>(s.font_small),
-                weight};
-    case FontRole::Body:
-        return {L"Segoe UI Variable Text", static_cast<float>(s.font_body),
-                weight};
-    case FontRole::SenderName:
-        return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_sender_name), weight};
-    case FontRole::Timestamp:
-        return {L"Segoe UI Variable Text", static_cast<float>(s.font_timestamp),
-                weight};
-    case FontRole::SidebarName:
-        return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_sidebar_name), weight};
-    case FontRole::SidebarPreview:
-        return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_sidebar_preview), weight};
-    case FontRole::UnreadBadge:
-        return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_unread_badge), weight};
-    case FontRole::Title:
-        return {L"Segoe UI Variable Display", static_cast<float>(s.font_title),
-                weight};
-    case FontRole::UiSemibold:
-        return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_ui_semibold), weight};
-    case FontRole::BigEmoji:
-        return {L"Segoe UI Variable Text", static_cast<float>(s.font_big_emoji),
-                weight};
-    case FontRole::EmojiPickerCell:
-        return {L"Segoe UI Variable Text",
-                static_cast<float>(s.font_emoji_picker_cell), weight};
-    }
-    return {L"Segoe UI", static_cast<float>(s.font_body),
-            DWRITE_FONT_WEIGHT_REGULAR};
+    // Title uses the Display optical face; all other roles use Text.
+    const wchar_t* family = (r == FontRole::Title)
+                                ? L"Segoe UI Variable Display"
+                                : L"Segoe UI Variable Text";
+    return {family, pt, weight};
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 #include "canvas_qpainter.h"
 
-#include <tesseract/settings.h>
+#include <QtWidgets/QApplication>
 
 #include <QtGui/QBrush>
 #include <QtGui/QColor>
@@ -46,51 +46,14 @@ QRectF to_qrect(Rect r)
     return QRectF(r.x, r.y, r.w, r.h);
 }
 
-// Map FontRole → QFont. Pulls the application default family (whatever
-// QApplication::font() resolved to via the platform theme) and modifies
-// the size + weight per role. Sizes come from tesseract::Settings.
+// Map FontRole → QFont. Base size is the application font (whatever
+// QApplication::font() resolved from the platform theme — e.g. 11pt
+// Noto Sans on KDE). Per-role sizes are offsets via tk::font_role_pt().
 QFont font_for(FontRole role)
 {
-    const auto& s = tesseract::Settings::instance();
-    QFont f;
-    int pt = s.font_body;
-    switch (role)
-    {
-    case FontRole::Small:
-        pt = s.font_small;
-        break;
-    case FontRole::Body:
-        pt = s.font_body;
-        break;
-    case FontRole::SenderName:
-        pt = s.font_sender_name;
-        break;
-    case FontRole::Timestamp:
-        pt = s.font_timestamp;
-        break;
-    case FontRole::SidebarName:
-        pt = s.font_sidebar_name;
-        break;
-    case FontRole::SidebarPreview:
-        pt = s.font_sidebar_preview;
-        break;
-    case FontRole::UnreadBadge:
-        pt = s.font_unread_badge;
-        break;
-    case FontRole::Title:
-        pt = s.font_title;
-        break;
-    case FontRole::UiSemibold:
-        pt = s.font_ui_semibold;
-        break;
-    case FontRole::BigEmoji:
-        pt = s.font_big_emoji;
-        break;
-    case FontRole::EmojiPickerCell:
-        pt = s.font_emoji_picker_cell;
-        break;
-    }
-    f.setPointSize(pt);
+    const int base = std::max(QApplication::font().pointSize(), 8);
+    QFont f; // inherits app family from platform theme
+    f.setPointSize(font_role_pt(role, base));
     f.setWeight(font_role_is_semibold(role) ? QFont::DemiBold : QFont::Normal);
     return f;
 }
@@ -791,14 +754,14 @@ private:
 class QtFactory : public CanvasFactory
 {
     static constexpr std::size_t kNumRoles =
-        static_cast<std::size_t>(FontRole::EmojiPickerCell) + 1;
+        static_cast<std::size_t>(FontRole::ReactionEmoji) + 1;
     std::array<QFont, kNumRoles> font_cache_;
 
 public:
     QtFactory()
     {
         static_assert(
-            static_cast<int>(FontRole::EmojiPickerCell) == 10,
+            static_cast<int>(FontRole::ReactionEmoji) == 11,
             "FontRole layout changed — verify font_cache_ index mapping");
         for (std::size_t i = 0; i < kNumRoles; ++i)
         {

@@ -16,6 +16,7 @@
 #include <QtGui/QPaintEvent>
 #include <QtGui/QResizeEvent>
 #include <QtGui/QWheelEvent>
+#include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QTextEdit>
 #include <QtGui/QTextDocument>
@@ -536,32 +537,12 @@ public:
     void set_font_role(tk::FontRole role) override
     {
         if (!edit_)
-        {
             return;
-        }
-        const auto& s = tesseract::Settings::instance();
+        const int base = std::max(QApplication::font().pointSize(), 8);
         QFont f; // inherits app family
-        switch (role)
-        {
-        case tk::FontRole::Body:
-            f.setPointSize(s.font_body);
-            f.setWeight(QFont::Normal);
-            break;
-        case tk::FontRole::Small:
-            f.setPointSize(s.font_small);
-            f.setWeight(QFont::Normal);
-            break;
-        case tk::FontRole::Title:
-            f.setPointSize(s.font_title);
-            f.setWeight(QFont::DemiBold);
-            break;
-        case tk::FontRole::SidebarName:
-            f.setPointSize(s.font_sidebar_name);
-            f.setWeight(QFont::DemiBold);
-            break;
-        default:
-            return;
-        }
+        f.setPointSize(tk::font_role_pt(role, base));
+        f.setWeight(tk::font_role_is_semibold(role) ? QFont::DemiBold
+                                                    : QFont::Normal);
         edit_->setFont(f);
     }
     void set_text_color(Color c) override

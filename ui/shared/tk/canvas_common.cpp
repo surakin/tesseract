@@ -27,6 +27,7 @@ bool font_role_is_semibold(FontRole role)
     case FontRole::SidebarPreview:
     case FontRole::BigEmoji:
     case FontRole::EmojiPickerCell:
+    case FontRole::ReactionEmoji:
         return false;
     }
     return false;

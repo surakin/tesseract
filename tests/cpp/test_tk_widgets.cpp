@@ -430,3 +430,29 @@ TEST_CASE("Settings has expected defaults", "[settings]")
     CHECK(s.reaction_chip_height == 28);
     CHECK(s.reaction_chip_gap == 6);
 }
+
+TEST_CASE("font_role_pt scales relative to body base", "[font_role]")
+{
+    // At body=12pt the computed sizes must reproduce the legacy hardcoded values.
+    CHECK(tk::font_role_pt(tk::FontRole::Small,           12) ==  8);
+    CHECK(tk::font_role_pt(tk::FontRole::Body,            12) == 12);
+    CHECK(tk::font_role_pt(tk::FontRole::SenderName,      12) == 11);
+    CHECK(tk::font_role_pt(tk::FontRole::Timestamp,       12) ==  9);
+    CHECK(tk::font_role_pt(tk::FontRole::SidebarName,     12) == 12);
+    CHECK(tk::font_role_pt(tk::FontRole::SidebarPreview,  12) == 10);
+    CHECK(tk::font_role_pt(tk::FontRole::UnreadBadge,     12) == 10);
+    CHECK(tk::font_role_pt(tk::FontRole::Title,           12) == 14);
+    CHECK(tk::font_role_pt(tk::FontRole::UiSemibold,      12) == 10);
+    CHECK(tk::font_role_pt(tk::FontRole::BigEmoji,        12) == 24);
+    CHECK(tk::font_role_pt(tk::FontRole::EmojiPickerCell, 12) == 17);
+
+    // At body=11pt (typical KDE Noto Sans) every role scales down by 1,
+    // except BigEmoji which is 2×body.
+    CHECK(tk::font_role_pt(tk::FontRole::Small,           11) ==  7);
+    CHECK(tk::font_role_pt(tk::FontRole::Body,            11) == 11);
+    CHECK(tk::font_role_pt(tk::FontRole::Title,           11) == 13);
+    CHECK(tk::font_role_pt(tk::FontRole::BigEmoji,        11) == 22);
+
+    // Sizes are clamped to at least 6pt.
+    CHECK(tk::font_role_pt(tk::FontRole::Small,            6) ==  6); // 6-4=2, clamped
+}

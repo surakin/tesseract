@@ -1,11 +1,10 @@
 #include "canvas_cairo.h"
 
-#include <tesseract/settings.h>
-
 #include <cairo.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gdk/gdk.h>
 #include <glib.h>
+#include <gtk/gtk.h>
 #include <pango/pango-attributes.h>
 #include <pango/pango-layout.h>
 #include <pango/pangocairo.h>
@@ -22,54 +21,42 @@ namespace tk::cairo_pango
 namespace
 {
 
-// Map FontRole → Pango font description. Family is left to the GTK theme
-// (we don't pin "Sans" so the user's preferred system font still wins).
+// Query the GTK theme body font once at first call (family and size won't
+// change while the process runs). Returns the system font family name and pt.
+struct SystemFont { std::string family; int pt; };
+
+const SystemFont& gtk_system_font()
+{
+    static const SystemFont sf = []() -> SystemFont {
+        GtkSettings* settings = gtk_settings_get_default();
+        if (!settings)
+            return {"Sans", 11};
+        gchar* font_name = nullptr;
+        g_object_get(settings, "gtk-font-name", &font_name, nullptr);
+        if (!font_name)
+            return {"Sans", 11};
+        PangoFontDescription* d = pango_font_description_from_string(font_name);
+        g_free(font_name);
+        if (!d)
+            return {"Sans", 11};
+        const char* fam = pango_font_description_get_family(d);
+        int size        = pango_font_description_get_size(d);
+        int pt          = (size > 0) ? std::max(size / PANGO_SCALE, 8) : 11;
+        SystemFont result{fam ? fam : "Sans", pt};
+        pango_font_description_free(d);
+        return result;
+    }();
+    return sf;
+}
+
+// Map FontRole → PangoFontDescription. Family and base size come from the
+// GTK theme (GtkSettings gtk-font-name); per-role sizes via font_role_pt().
 PangoFontDescription* desc_for(FontRole role)
 {
-    const auto& s = tesseract::Settings::instance();
+    const SystemFont& sf = gtk_system_font();
     PangoFontDescription* d = pango_font_description_new();
-    pango_font_description_set_family(d, "Sans");
-    int pt;
-    switch (role)
-    {
-    case FontRole::Small:
-        pt = s.font_small;
-        break;
-    case FontRole::Body:
-        pt = s.font_body;
-        break;
-    case FontRole::SenderName:
-        pt = s.font_sender_name;
-        break;
-    case FontRole::Timestamp:
-        pt = s.font_timestamp;
-        break;
-    case FontRole::SidebarName:
-        pt = s.font_sidebar_name;
-        break;
-    case FontRole::SidebarPreview:
-        pt = s.font_sidebar_preview;
-        break;
-    case FontRole::UnreadBadge:
-        pt = s.font_unread_badge;
-        break;
-    case FontRole::Title:
-        pt = s.font_title;
-        break;
-    case FontRole::UiSemibold:
-        pt = s.font_ui_semibold;
-        break;
-    case FontRole::BigEmoji:
-        pt = s.font_big_emoji;
-        break;
-    case FontRole::EmojiPickerCell:
-        pt = s.font_emoji_picker_cell;
-        break;
-    default:
-        pt = s.font_body;
-        break;
-    }
-    pango_font_description_set_size(d, pt * PANGO_SCALE);
+    pango_font_description_set_family(d, sf.family.c_str());
+    pango_font_description_set_size(d, font_role_pt(role, sf.pt) * PANGO_SCALE);
     pango_font_description_set_weight(d, font_role_is_semibold(role)
                                             ? PANGO_WEIGHT_SEMIBOLD
                                             : PANGO_WEIGHT_NORMAL);

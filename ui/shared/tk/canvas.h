@@ -91,6 +91,7 @@ enum class FontRole
     UiSemibold,     // 11 pt semibold — button label
     BigEmoji,           // 24 pt regular — emoji-only message body (2× Body)
     EmojiPickerCell,    // 17 pt regular — emoji picker grid cells
+    ReactionEmoji,      // body+2 regular — emoji glyph inside reaction chips
 };
 
 // ── Shared FontRole + avatar policy (canvas_common.cpp) ────────────────────
@@ -102,11 +103,35 @@ enum class FontRole
 // glyph drawing). See docs/UI-PARITY.md.
 
 // True for the roles drawn semibold (DemiBold / SEMI_BOLD / emphasized UI
-// font), false for the regular-weight roles. The per-role point size still
-// comes from tesseract::Settings in each backend (and the family may differ
-// per backend, e.g. D2D's Title uses the Display face) — only the weight
-// classification is shared here.
+// font), false for the regular-weight roles. Per-role point sizes are
+// computed via font_role_pt() from the platform system font base (Qt6:
+// QApplication::font; GTK4: GtkSettings gtk-font-name; D2D/CG: Settings).
+// Family may also differ per backend (e.g. D2D uses Segoe UI Variable).
 bool font_role_is_semibold(FontRole role);
+
+// Returns the pt size for `role` given the system body font size `base_pt`.
+// All roles are expressed as additive offsets from body except BigEmoji (2×).
+// Minimum returned size is 6pt to prevent zero/negative sizes at tiny base.
+inline int font_role_pt(FontRole role, int base_pt)
+{
+    int offset = 0;
+    switch (role)
+    {
+    case FontRole::Small:          offset = -4; break;
+    case FontRole::Body:           offset =  0; break;
+    case FontRole::SenderName:     offset = -1; break;
+    case FontRole::Timestamp:      offset = -3; break;
+    case FontRole::SidebarName:    offset =  0; break;
+    case FontRole::SidebarPreview: offset = -2; break;
+    case FontRole::UnreadBadge:    offset = -2; break;
+    case FontRole::Title:          offset = +2; break;
+    case FontRole::UiSemibold:     offset = -2; break;
+    case FontRole::BigEmoji:       return std::max(base_pt * 2, 6);
+    case FontRole::EmojiPickerCell:offset = +5; break;
+    case FontRole::ReactionEmoji:  offset = +2; break;
+    }
+    return std::max(base_pt + offset, 6);
+}
 
 // Avatar initials disc: the glyph point size as a fraction of the circle
 // diameter. Shared so the four backends can't drift (Qt previously used

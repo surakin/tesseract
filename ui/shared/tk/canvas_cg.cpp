@@ -1,7 +1,5 @@
 #include "canvas_cg.h"
 
-#include <tesseract/settings.h>
-
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreText/CoreText.h>
@@ -114,53 +112,30 @@ CGPathRef rounded_rect_path(Rect r, float radius)
     return p;
 }
 
-struct FontDesc
+// Query the macOS system body font size once at startup. Passing 0.0 to
+// CTFontCreateUIFontForLanguage requests the "appropriate size for the UI
+// font type" — typically 13pt on macOS, but respects accessibility settings.
+int macos_system_base_pt()
 {
-    CGFloat size_pt;
-    bool bold; // semibold/bold use the emphasized UI font
-};
-
-FontDesc desc_for(FontRole role)
-{
-    const auto& s = tesseract::Settings::instance();
-    // The "semibold for emphasis" rule is shared policy
-    // (tk::font_role_is_semibold); only the per-role point size is native.
-    const bool bold = font_role_is_semibold(role);
-    switch (role)
-    {
-    case FontRole::Small:
-        return {static_cast<CGFloat>(s.font_small), bold};
-    case FontRole::Body:
-        return {static_cast<CGFloat>(s.font_body), bold};
-    case FontRole::SenderName:
-        return {static_cast<CGFloat>(s.font_sender_name), bold};
-    case FontRole::Timestamp:
-        return {static_cast<CGFloat>(s.font_timestamp), bold};
-    case FontRole::SidebarName:
-        return {static_cast<CGFloat>(s.font_sidebar_name), bold};
-    case FontRole::SidebarPreview:
-        return {static_cast<CGFloat>(s.font_sidebar_preview), bold};
-    case FontRole::UnreadBadge:
-        return {static_cast<CGFloat>(s.font_unread_badge), bold};
-    case FontRole::Title:
-        return {static_cast<CGFloat>(s.font_title), bold};
-    case FontRole::UiSemibold:
-        return {static_cast<CGFloat>(s.font_ui_semibold), bold};
-    case FontRole::BigEmoji:
-        return {static_cast<CGFloat>(s.font_big_emoji), bold};
-    case FontRole::EmojiPickerCell:
-        return {static_cast<CGFloat>(s.font_emoji_picker_cell), bold};
-    }
-    return {static_cast<CGFloat>(s.font_body), bold};
+    static int base = []() -> int {
+        CFRetained<CTFontRef> f{
+            CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, 0.0, nullptr)};
+        if (!f.get())
+            return 13;
+        return static_cast<int>(std::round(CTFontGetSize(f.get())));
+    }();
+    return base;
 }
 
 CTFontRef create_font(FontRole role)
 {
-    FontDesc d = desc_for(role);
+    const CGFloat size =
+        static_cast<CGFloat>(font_role_pt(role, macos_system_base_pt()));
+    const bool bold = font_role_is_semibold(role);
     CTFontUIFontType ui =
-        d.bold ? kCTFontUIFontEmphasizedSystem : kCTFontUIFontSystem;
+        bold ? kCTFontUIFontEmphasizedSystem : kCTFontUIFontSystem;
     CFRetained<CTFontRef> base{
-        CTFontCreateUIFontForLanguage(ui, d.size_pt, nullptr)};
+        CTFontCreateUIFontForLanguage(ui, size, nullptr)};
     if (!base.get())
         return nullptr;
 
@@ -169,8 +144,7 @@ CTFontRef create_font(FontRole role)
     // characters always fall through to the system colour-emoji font instead
     // of reaching .LastResort and rendering as hex-codepoint boxes.
     CFRetained<CTFontDescriptorRef> emoji_fd{
-        CTFontDescriptorCreateWithNameAndSize(CFSTR("Apple Color Emoji"),
-                                             d.size_pt)};
+        CTFontDescriptorCreateWithNameAndSize(CFSTR("Apple Color Emoji"), size)};
     if (!emoji_fd.get())
         return base.release();
 
@@ -198,7 +172,7 @@ CTFontRef create_font(FontRole role)
         return base.release();
 
     CTFontRef result =
-        CTFontCreateCopyWithAttributes(base.get(), d.size_pt, nullptr, desc.get());
+        CTFontCreateCopyWithAttributes(base.get(), size, nullptr, desc.get());
     return result ? result : base.release();
 }
 
@@ -1240,7 +1214,8 @@ public:
             return nullptr;
         }
 
-        FontDesc base_desc = desc_for(s.role);
+        const CGFloat base_size =
+            static_cast<CGFloat>(font_role_pt(s.role, macos_system_base_pt()));
         std::vector<CTLayout::UrlRange> url_ranges;
         CFIndex char_offset = 0;
         std::string plain_utf8;
@@ -1266,7 +1241,7 @@ public:
             if (span.code)
             {
                 span_font = CFRetained<CTFontRef>{CTFontCreateWithName(
-                    CFSTR("Menlo"), base_desc.size_pt, nullptr)};
+                    CFSTR("Menlo"), base_size, nullptr)};
                 if (!span_font.get())
                 {
                     span_font = CFRetained<CTFontRef>{create_font(s.role)};

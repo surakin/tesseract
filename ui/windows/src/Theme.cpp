@@ -1,6 +1,7 @@
 #include "Theme.h"
 
-#include <tesseract/settings.h>
+#include "tk/canvas_d2d.h"
+#include "tk/canvas.h"
 
 #include <commctrl.h>
 #include <dwmapi.h>
@@ -178,33 +179,31 @@ HFONT make_font(FontRole role)
 {
     // Point size → device units relative to a 96-DPI logical inch (the OS
     // already accounts for DPI on per-monitor-aware processes).
-    // This legacy GDI theme has its own 5-value FontRole; we route the
-    // sizes through tesseract::Settings so a future settings dialog
-    // mutates both this path and the shared toolkit. Title converges to
-    // the toolkit value (15→14); other roles preserve their numeric size.
-    const auto& s = tesseract::Settings::instance();
-    int pt = s.font_sender_name;
+    // This GDI theme has its own 5-value FontRole mapped to tk::FontRole
+    // equivalents so font_role_pt() applies the same system-base offsets.
+    const int base = tk::d2d::win32_system_base_pt();
+    int pt = tk::font_role_pt(tk::FontRole::SenderName, base);
     LONG weight = FW_NORMAL;
     switch (role)
     {
     case FontRole::Small:
-        pt = s.font_timestamp;
+        pt = tk::font_role_pt(tk::FontRole::Timestamp, base);
         weight = FW_NORMAL;
         break;
     case FontRole::Body:
-        pt = s.font_sidebar_preview;
+        pt = tk::font_role_pt(tk::FontRole::SidebarPreview, base);
         weight = FW_NORMAL;
         break;
     case FontRole::Ui:
-        pt = s.font_sender_name;
+        pt = tk::font_role_pt(tk::FontRole::SenderName, base);
         weight = FW_NORMAL;
         break;
     case FontRole::UiSemibold:
-        pt = s.font_sender_name;
+        pt = tk::font_role_pt(tk::FontRole::SenderName, base);
         weight = FW_SEMIBOLD;
         break;
     case FontRole::Title:
-        pt = s.font_title;
+        pt = tk::font_role_pt(tk::FontRole::Title, base);
         weight = FW_SEMIBOLD;
         break;
     }

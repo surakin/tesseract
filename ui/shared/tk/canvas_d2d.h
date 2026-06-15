@@ -158,4 +158,10 @@ std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
 std::vector<AnimatedFrame>
 decode_animation(Backend&, std::span<const std::uint8_t> bytes);
 
+// Returns the Windows system body font size in pt, derived from
+// SPI_GETNONCLIENTMETRICS (reflects Accessibility → Text size changes).
+// Uses the real system DPI so HiDPI displays don't double-count the scale.
+// Cached on first call; the system font does not change at runtime.
+int win32_system_base_pt();
+
 } // namespace tk::d2d
