@@ -62,7 +62,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 
 - Room list with Favorites, DMs, Rooms, and Spaces (tag-aware)
 - Sticky, collapsible section headers
-- Space and subspace navigation
+- Space and subspace navigation, with unjoined child rooms shown as a preview panel
 - Open multiple rooms in tabs and/or separate windows
 - Back / forward room history (Alt+Left / Alt+Right; ⌘[ / ⌘] on macOS)
 - Automatic grouping of inactive rooms (configurable)
@@ -70,7 +70,8 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Unread indicators and last-message previews (including media)
 - Auto-scroll to the most-recent unread room when new messages arrive (optional)
 - Direct messages
-- Ctrl+K quick switcher
+- Ctrl+K quick switcher with recently-visited strip
+- Full-text message search across all rooms, including encrypted rooms (Ctrl+Shift+F / ⌘⇧F) — opt-in local index
 - Room search (filter by name)
 - Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif)
 - Room tags (favorite, low priority)
@@ -97,7 +98,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 ### Platform integration
 
 - System tray with unread/mention indicator and minimize-to-tray (clicking the icon jumps to the first unread room)
-- Multi-account, with profile editing (display name and avatar)
+- Multi-account, with profile editing (display name, avatar, pronouns, timezone, and biography — MSC4133)
 - Single-instance behavior (relaunching restores the running window)
 - Session restore (all open room tabs and the active account)
 - In-flight request indicator in the status bar

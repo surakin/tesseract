@@ -90,6 +90,7 @@ version) are noted where relevant.
 - Privacy controls, including presence send/poll toggles
 - Device & session management (list sessions with verified status, sign out remote sessions)
 - Undecryptable-message states surfaced in the UI
+- Cryptographic identity reset
 - Clear-cache action (excludes the crypto/session store)
 
 ## Account & profile

@@ -3,7 +3,27 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## Unreleased (v0.8.4)
+## v0.8.4 — 2026-06-15
+
+Changes since v0.8.3:
+
+### 2026-06-15
+
+- feat(spaces): persist MSC3266 space-child summaries to `app_cache.db` for
+  instant display. Fetched summaries are written to the per-account SQLite
+  cache on arrival and reloaded on startup, so the "Not joined" section
+  populates from disk before any network round-trips complete; live fetches
+  still update both the cache and the view.
+
+- feat(msc4108): gate the "Sign in with QR code" UI on server capability.
+  The login-view button is shown only when the homeserver advertises the
+  required `m.login.token` / device-authorization grant flows, so the option
+  never appears on servers that don't support MSC4108.
+
+- fix(pickers): emoji shortcode tooltip no longer vanishes immediately on
+  hover. `TabbedGridPicker` rebuilt its hover-tracking state on every paint,
+  clearing the hovered index before the tooltip timer could fire; replaced
+  with a stable tracked index so tooltips appear and persist correctly.
 
 ### 2026-06-14
 
@@ -60,6 +80,34 @@ Tagged releases summarize all changes since the previous tag.
   `tk::draw_inflight_indicator` helper in `tk/inflight_dot.h`; each platform
   backend wraps it in a canvas widget (`InflightDotWidget` on Qt6; analogous
   implementations on GTK4, Win32, and macOS).
+
+- feat(debug): label every `InFlightGuard` with a short human-readable operation
+  name; hovering the status-bar spinner shows a tooltip listing all currently
+  in-flight operations by name (e.g. "upload media", "paginate backward",
+  "fetch profile"), making it easy to identify slow or stuck requests.
+
+- fix(rooms): replace the all-at-once MSC3266 batch fetch with lazy per-room
+  summary fetching and per-room exponential backoff. The unjoined space-child
+  section now requests one room's summary at a time as rows scroll into view;
+  the previous batch used a single concurrent `join_all` with no escape hatch,
+  so one slow child blocked the whole section — replaced with a single-room
+  `get_space_child_summary` call that fails fast and retries with backoff.
+
+- fix(preview): `RoomPreviewView` now hides the compose-bar native-text overlay
+  while open, and wraps a long room topic in a scrollable container so it
+  doesn't overflow the panel.
+
+- feat(login): MSC4108 QR-code login — an existing logged-in device can scan
+  a QR code displayed on a new device to grant it a session without re-entering
+  credentials. A new `QRGrantView` shared widget shows the QR code and walks
+  through the confirm step; `ShellBase` runs the Rust `qr_grant` state machine
+  (`check_qr_grant_state` polling, `on_qr_grant_state` callbacks). Wired on all
+  four shells (Qt6, GTK4, Win32, macOS).
+
+- i18n: all previously untranslated user-facing strings are now wrapped in the
+  appropriate i18n helper and the `.pot` template is regenerated (~310 → ~520
+  translatable entries). Affected surfaces include the shared views, all four
+  platform shells, and the settings / login / search / compose areas.
 
 ### 2026-06-13
 
