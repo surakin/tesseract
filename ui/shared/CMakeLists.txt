@@ -222,6 +222,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         tk/audio_capture_qt.cpp
         tk/video_qt.cpp
         tk/video_decode_gst.cpp
+        tk/gst_hw_probe.cpp
     )
 elseif(TESSERACT_UI STREQUAL "gtk")
     list(APPEND _tk_sources

@@ -1,8 +1,10 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QIcon>
 #include <QLocalSocket>
 #include <QLocale>
+#include <QStandardPaths>
 #include <cstdlib>
 #include <fcntl.h>
 #include <string>
@@ -10,6 +12,7 @@
 #include <unistd.h>
 #include "MainWindow.h"
 #include "app/AccountManager.h"
+#include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
 #include <tesseract/client.h>
 #include <tesseract/paths.h>
@@ -71,6 +74,13 @@ int main(int argc, char* argv[])
     }
     app.setOrganizationName("tesseract");
     app.setWindowIcon(QIcon(":/icons/tesseract.svg"));
+
+    {
+        const QString cache_dir =
+            QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        QDir().mkpath(cache_dir);
+        tk::gst::apply_hw_decoder_cache(cache_dir.toStdString());
+    }
 
     tesseract::AccountManager account_manager;
     qt6::MainWindow window{account_manager};
