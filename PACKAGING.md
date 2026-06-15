@@ -209,7 +209,7 @@ git variant:
 # In PKGBUILD, replace:
 #   source=("$pkgname-$pkgver.tar.gz::…")
 # with:
-#   source=("git+https://gitlab.westeros.lan/surak/matrix-client.git")
+#   source=("git+https://github.com/surakin/tesseract")
 #   sha256sums=('SKIP')
 # and rename the package to tesseract-git.
 ```

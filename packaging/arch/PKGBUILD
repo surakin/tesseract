@@ -4,7 +4,7 @@ pkgver=r1429.380b0418
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
 arch=('x86_64' 'aarch64')
-url="https://gitlab.westeros.lan/surak/matrix-client"
+url="https://github.com/surakin/tesseract"
 license=('MIT')
 # The binary is installed as `tesseract-matrix` (not `tesseract`) so this
 # package can coexist with the unrelated Tesseract OCR engine, which owns
