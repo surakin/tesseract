@@ -6969,6 +6969,7 @@ void ShellBase::wire_encryption_setup_callbacks_(
 void ShellBase::start_qr_grant_overlay()
 {
     if (!client_ || !main_app_) return;
+    if (!server_info_.supports_qr_grant) return;
     auto* view = main_app_->qr_grant_view();
     if (!view) return;
 

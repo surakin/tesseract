@@ -2190,9 +2190,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [menu addItemWithTitle:logoutTitle
                             action:@selector(_logoutActiveAccount)
                      keyEquivalent:@""];
-            [menu addItemWithTitle:TkTr("Add device via QR\xe2\x80\xa6")
-                            action:@selector(_showQRGrant)
-                     keyEquivalent:@""];
+            if (s->_shell->server_info_.supports_qr_grant)
+                [menu addItemWithTitle:TkTr("Add device via QR\xe2\x80\xa6")
+                                action:@selector(_showQRGrant)
+                         keyEquivalent:@""];
             [menu addItem:[NSMenuItem separatorItem]];
             [menu addItemWithTitle:TkTr("Quit")
                             action:@selector(terminate:)

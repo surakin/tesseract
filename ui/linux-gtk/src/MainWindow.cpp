@@ -176,6 +176,8 @@ void MainWindow::on_server_info_ready_ui_()
     if (main_app_ && main_app_->room_view())
         main_app_->room_view()->header()->set_jump_to_date_enabled(
             server_info_.supports_msc3030);
+    if (qr_grant_action_)
+        g_simple_action_set_enabled(qr_grant_action_, server_info_.supports_qr_grant);
     if (main_app_surface_)
         main_app_surface_->relayout();
 }
@@ -2450,9 +2452,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         }
         {
             GSimpleAction* act = g_simple_action_new("qr_grant", nullptr);
+            g_simple_action_set_enabled(act, FALSE);  // enabled in on_server_info_ready_ui_
             g_signal_connect(act, "activate",
                              G_CALLBACK(on_qr_grant_activate_), this);
             g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+            qr_grant_action_ = act;  // group holds the ref; pointer valid for our lifetime
             g_object_unref(act);
         }
         {

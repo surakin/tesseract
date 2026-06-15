@@ -6093,7 +6093,8 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, IDM_SETTINGS, L"Settings…");
     AppendMenuW(menu, MF_STRING, IDM_ADD_ACCOUNT, L"Add Account…");
-    AppendMenuW(menu, MF_STRING, IDM_QR_GRANT, L"Add device via QR…");
+    if (server_info_.supports_qr_grant)
+        AppendMenuW(menu, MF_STRING, IDM_QR_GRANT, L"Add device via QR…");
     std::wstring logout_label = L"Log Out";
     if (!my_display_name_.empty())
     {

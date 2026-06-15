@@ -279,6 +279,11 @@ impl ClientFfi {
                 .unwrap_or(false);
             let supports_msc4133 = supports_msc4133_stable || supports_msc4133_unstable;
 
+            let supports_qr_grant = versions_json
+                .pointer("/unstable_features/org.matrix.msc4108")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
             *prefix_slot.write().unwrap() = if supports_msc4133_stable {
                 Some("/_matrix/client/v3".to_owned())
             } else if supports_msc4133_unstable {
@@ -316,7 +321,8 @@ impl ClientFfi {
                 "can_set_avatar": cap_bool("m.set_avatar_url"),
                 "default_room_version": default_room_ver,
                 "supports_profile_fields": supports_msc4133,
-                "profile_fields_enabled": profile_fields_enabled
+                "profile_fields_enabled": profile_fields_enabled,
+                "supports_qr_grant": supports_qr_grant
             })
             .to_string()
         })

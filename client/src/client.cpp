@@ -1541,6 +1541,7 @@ tesseract::ServerInfo tesseract::ServerInfo::from_json(const std::string& json)
     info.can_set_avatar            = js_bool(j, "can_set_avatar", true);
     info.supports_profile_fields   = js_bool(j, "supports_profile_fields", false);
     info.profile_fields_enabled    = js_bool(j, "profile_fields_enabled", true);
+    info.supports_qr_grant         = js_bool(j, "supports_qr_grant", false);
     info.default_room_version      = js_str(j, "default_room_version");
     return info;
 }

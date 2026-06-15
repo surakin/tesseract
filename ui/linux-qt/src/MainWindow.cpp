@@ -3959,7 +3959,9 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
     menu->setAttribute(Qt::WA_DeleteOnClose);
     QAction* addAct = menu->addAction(tr("Add Account\xe2\x80\xa6"));
     QAction* settingsAct = menu->addAction(tr("Settings\xe2\x80\xa6"));
-    QAction* qrAct = menu->addAction(tr("Add device via QR\xe2\x80\xa6"));
+    QAction* qrAct = server_info_.supports_qr_grant
+                         ? menu->addAction(tr("Add device via QR\xe2\x80\xa6"))
+                         : nullptr;
     QString logout_label =
         tr("Log Out %1")
             .arg(my_display_name_.empty()

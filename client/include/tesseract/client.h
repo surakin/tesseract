@@ -81,6 +81,7 @@ struct ServerInfo
     bool can_set_avatar            = true;
     bool supports_profile_fields   = false;  ///< server advertises uk.tcpip.msc4133
     bool profile_fields_enabled    = true;   ///< m.profile_fields.enabled capability
+    bool supports_qr_grant         = false;  ///< server advertises org.matrix.msc4108 (QR grant login)
     std::string default_room_version;        ///< e.g. "10"; empty when absent
 
     /// Parse from the JSON blob returned by `Client::get_server_info()`.

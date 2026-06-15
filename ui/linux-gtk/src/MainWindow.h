@@ -461,7 +461,8 @@ private:
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
     std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
 
-    GtkWidget* user_popover_ = nullptr;
+    GtkWidget*       user_popover_      = nullptr;
+    GSimpleAction*   qr_grant_action_   = nullptr;  ///< enabled once server_info_ confirms MSC4108
 
     // Account-picker popover (left-click, only when ≥2 accounts).
     GtkWidget* account_picker_popover_ = nullptr;
