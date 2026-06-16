@@ -401,7 +401,10 @@ protected:
             }
             // Fall through to default behaviour if image extraction failed.
         }
-        QTextEdit::insertFromMimeData(source);
+        // QTextEdit::insertFromMimeData honours text/html and would render
+        // formatting in a plain-text composer. Extract plain text only.
+        if (source && source->hasText())
+            textCursor().insertText(source->text());
     }
 };
 
