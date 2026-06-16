@@ -266,6 +266,10 @@ protected:
     // static_cast<int>(DebounceSlot); a fire is honoured only if its captured
     // generation still matches the slot's current value.
     std::unordered_map<int, std::uint64_t> debounce_gen_;
+    // Set at the top of ~ShellBase() so that any save_settings_debounced_()
+    // calls from ~RoomWindowBase() skip the debounce (which calls the pure-
+    // virtual post_to_ui_after_()) instead of crashing.
+    bool tearing_down_ = false;
 
     // Push the current room's pinned_events + can_pin bit to room_view_,
     // looking up the RoomInfo in the rooms_ cache. Called from push_rooms_

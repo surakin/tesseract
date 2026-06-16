@@ -2701,7 +2701,7 @@ void MainWindow::finishLoginUi_(const std::string& uid)
                     navigate_tray_unread_();
                 }
             },
-            [] { qApp->quit(); },
+            [this] { do_quit_(); },
             this);
         if (tray_->is_available())
         {
@@ -2788,7 +2788,7 @@ void MainWindow::onLoginSucceeded()
                     navigate_tray_unread_();
                 }
             },
-            [] { qApp->quit(); },
+            [this] { do_quit_(); },
             this);
         if (tray_->is_available())
         {
@@ -2819,9 +2819,17 @@ void MainWindow::onLoginCancelled()
     }
 }
 
+void MainWindow::do_quit_()
+{
+    // Explicit quit (tray menu or userinfo "Quit"): bypass the hide-to-tray
+    // logic in closeEvent so the app actually exits instead of just hiding.
+    explicitly_quitting_ = true;
+    qApp->quit();
+}
+
 void MainWindow::closeEvent(QCloseEvent* ev)
 {
-    if (tray_ && tray_->is_available())
+    if (!explicitly_quitting_ && tray_ && tray_->is_available())
     {
         ev->ignore();
         hide();
@@ -4011,7 +4019,7 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
                          }
                          else if (a == quitAct)
                          {
-                             qApp->quit();
+                             do_quit_();
                          }
                      });
     menu->popup(global_pos);

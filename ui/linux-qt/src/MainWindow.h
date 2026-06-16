@@ -99,6 +99,7 @@ private slots:
     void onSendClicked();
     void onSpaceBack();
     void onUserStripContextMenu(const QPoint& pos);
+    void do_quit_();
     void onLoginCancelled();
     void onAccountSelected(const std::string& user_id);
     void onPaginateFinished(QString roomId, bool reached_start);
@@ -351,6 +352,7 @@ private:
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     std::unique_ptr<tk::NativeTextArea> topicTextArea_;
     bool topicTextAreaVisible_ = false; // mirrors topicTextArea_ visibility for transition detection
+    bool explicitly_quitting_ = false;  // set before quit actions to bypass hide-to-tray in closeEvent
 
     // Sync-progress status text (initial room hydration + key backfill).
     // Single-shot timer that defers entering the "Syncing rooms…" message

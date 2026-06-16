@@ -76,6 +76,8 @@ void ShellBase::populate_pending_restore_popouts_()
 
 void ShellBase::save_settings_debounced_()
 {
+    if (tearing_down_)
+        return;
     debounce_(DebounceSlot::SaveSettings, 500,
               []() {
                   tesseract::Settings::instance().save_to_disk(
@@ -4601,6 +4603,10 @@ ShellBase::~ShellBase()
     // thread-pool join below would block until the sweep completes.
     if (roster_build_cancel_)
         roster_build_cancel_->store(true);
+
+    // Prevent save_settings_debounced_() from calling post_to_ui_after_()
+    // (pure virtual at this point in teardown) when ~RoomWindowBase runs below.
+    tearing_down_ = true;
 
     // Tear down pop-out windows while the registries they unregister from are
     // still alive. Members are destroyed in reverse declaration order, so the
