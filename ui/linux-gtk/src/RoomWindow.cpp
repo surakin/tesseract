@@ -227,6 +227,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── Compose text area overlay + @mention autocomplete ─────────────────
     room_text_area_ = surface_->host().make_text_area();
+    room_text_area_->set_font_role(tk::FontRole::Body);
     room_text_area_->set_mention_colors(surface_->theme().palette.accent,
                                         surface_->theme().palette.text_on_accent);
     room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));

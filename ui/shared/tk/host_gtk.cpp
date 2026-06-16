@@ -365,6 +365,7 @@ public:
             gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_),
                                        placeholder_label_);
         }
+        g_clear_object(&font_css_);
         if (pill_css_)
         {
             if (GdkDisplay* dpy = gdk_display_get_default())
@@ -703,6 +704,39 @@ public:
         }
     }
 
+    void set_font_role(FontRole role) override
+    {
+        // Read base pt from the GTK system font — mirrors gtk_system_font() in
+        // canvas_cairo.cpp so the NativeTextArea size matches FontRole rendering.
+        int base_pt = 11;
+        GtkSettings* settings = gtk_settings_get_default();
+        if (settings)
+        {
+            gchar* font_name = nullptr;
+            g_object_get(settings, "gtk-font-name", &font_name, nullptr);
+            if (font_name)
+            {
+                PangoFontDescription* d =
+                    pango_font_description_from_string(font_name);
+                g_free(font_name);
+                if (d)
+                {
+                    const int sz = pango_font_description_get_size(d);
+                    if (sz > 0) base_pt = std::max(sz / PANGO_SCALE, 8);
+                    pango_font_description_free(d);
+                }
+            }
+        }
+        const int pt = font_role_pt(role, base_pt);
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "textview { font-size: %dpt; }", pt);
+        if (!font_css_) font_css_ = gtk_css_provider_new();
+        gtk_css_provider_load_from_string(font_css_, buf);
+        gtk_style_context_add_provider(gtk_widget_get_style_context(view_),
+                                       GTK_STYLE_PROVIDER(font_css_),
+                                       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+
 private:
     struct MentionData
     {
@@ -931,6 +965,7 @@ private:
     GtkTextBuffer* buffer_ = nullptr;
     gulong changed_id_ = 0;
     gulong paste_id_ = 0;
+    GtkCssProvider* font_css_ = nullptr;
     GtkCssProvider* pill_css_ = nullptr;
     std::string mention_bg_hex_ = "#2E3B5E";
     std::string mention_fg_hex_ = "#A8C5FF";

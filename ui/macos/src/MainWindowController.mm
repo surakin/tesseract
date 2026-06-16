@@ -3753,6 +3753,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         // Native overlays.
         _roomTextArea = _mainAppSurface->host().make_text_area();
+        _roomTextArea->set_font_role(tk::FontRole::Body);
         _roomTextArea->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
         _roomTextArea->set_mention_colors(
             _mainAppSurface->theme().palette.accent,

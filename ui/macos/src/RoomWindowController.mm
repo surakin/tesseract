@@ -269,6 +269,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── NativeTextArea overlay ────────────────────────────────────────────────
     text_area_ = surface_->host().make_text_area();
+    text_area_->set_font_role(tk::FontRole::Body);
     text_area_->set_placeholder("Message\xe2\x80\xa6");
     text_area_->set_mention_colors(surface_->theme().palette.accent,
                                    surface_->theme().palette.text_on_accent);

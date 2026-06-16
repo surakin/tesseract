@@ -74,16 +74,16 @@ UINT post_to_ui_message()
     return msg;
 }
 
-// Process-wide font for native EDIT overlays — matches FontRole::Body
-// ("Segoe UI Variable Text", system body pt, regular weight) so text input
-// fields render in the same face and size as message body text.
+// Process-wide font for native EDIT overlays — sized to FontRole::Body so
+// text input fields render at the same size as message body text.
 // On systems without "Segoe UI Variable Text" (pre-Win11) GDI silently
 // substitutes "Segoe UI" at the same size, which is visually identical.
 HFONT body_font()
 {
     static HFONT cached = []() -> HFONT
     {
-        const int pt = tk::d2d::win32_system_base_pt();
+        const int pt =
+            tk::font_role_pt(tk::FontRole::Body, tk::d2d::win32_system_base_pt());
         HDC hdc = GetDC(nullptr);
         int h = -MulDiv(pt, GetDeviceCaps(hdc, LOGPIXELSY), 72);
         ReleaseDC(nullptr, hdc);

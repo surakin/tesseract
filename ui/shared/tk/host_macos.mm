@@ -757,6 +757,15 @@ public:
                         const std::string& display_name, bool is_room) override;
     std::vector<tesseract::MentionSeg> mention_draft() const override;
     void set_mention_colors(Color bg, Color fg) override;
+    void set_font_role(FontRole role) override
+    {
+        const int base = static_cast<int>(std::round([NSFont systemFontSize]));
+        const auto pt  = static_cast<CGFloat>(font_role_pt(role, base));
+        NSFont* f = font_role_is_semibold(role) ? [NSFont boldSystemFontOfSize:pt]
+                                                : [NSFont systemFontOfSize:pt];
+        view_.font = f;
+        if (placeholder_) placeholder_.font = f;
+    }
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
     {
         popup_nav_ = std::move(fn);
@@ -985,7 +994,6 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     view_.richText = NO;
     view_.usesFontPanel = NO;
     view_.allowsUndo = YES;
-    view_.font = [NSFont systemFontOfSize:13];
     view_.textContainerInset = NSMakeSize(4, 6);
 
     scroll_.documentView = view_;
@@ -995,7 +1003,9 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     // is set. Positioned as a sibling of scroll_ above it in z-order so it
     // appears inside the text area at the first-line origin.
     placeholder_ = [NSTextField labelWithString:@""];
-    placeholder_.font = view_.font;
+    // Apply FontRole::Body so both view_ and placeholder_ get the correct size
+    // in one call (set_font_role sets both). placeholder_ must exist first.
+    set_font_role(FontRole::Body);
     placeholder_.textColor = NSColor.placeholderTextColor;
     placeholder_.hidden = YES;
     [superview_ addSubview:placeholder_];

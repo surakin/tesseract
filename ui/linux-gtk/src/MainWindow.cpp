@@ -746,6 +746,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Compose text area overlay.
         room_text_area_ = main_app_surface_->host().make_text_area();
+        room_text_area_->set_font_role(tk::FontRole::Body);
         room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
         room_text_area_->set_mention_colors(
             main_app_surface_->theme().palette.accent,
