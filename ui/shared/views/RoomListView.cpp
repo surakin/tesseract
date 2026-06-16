@@ -333,7 +333,7 @@ private:
             cache.valid                = true;
 
             tk::TextStyle ts{};
-            ts.role            = tk::FontRole::Small;
+            ts.role            = tk::FontRole::Caption;
             cache.title_layout = ctx.factory.build_text(title, ts);
 
             const char*   chevron = collapsed ? "\xE2\x96\xB8" : "\xE2\x96\xBE";

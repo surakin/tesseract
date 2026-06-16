@@ -22,6 +22,7 @@ bool font_role_is_semibold(FontRole role)
     case FontRole::UiSemibold:
         return true;
     case FontRole::Small:
+    case FontRole::Caption:
     case FontRole::Body:
     case FontRole::Timestamp:
     case FontRole::SidebarPreview:

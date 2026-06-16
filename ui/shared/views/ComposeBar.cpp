@@ -1093,7 +1093,7 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         // pair vertically within the band. Both are single-line, ellipsized,
         // and width-bounded so a multiline/long original can't overflow.
         tk::TextStyle label_style{};
-        label_style.role = tk::FontRole::Small;
+        label_style.role = tk::FontRole::Caption;
         label_style.trim = tk::TextTrim::Ellipsis;
         label_style.max_width = text_w;
         auto label_layout = ctx.factory.build_text(
@@ -1101,7 +1101,7 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
             label_style);
 
         tk::TextStyle body_style{};
-        body_style.role = tk::FontRole::Small;
+        body_style.role = tk::FontRole::Caption;
         body_style.trim = tk::TextTrim::Ellipsis;
         body_style.max_width = text_w;
         auto body_layout =

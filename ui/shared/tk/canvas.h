@@ -80,18 +80,19 @@ struct Color
 // and apply the role's weight + size.
 enum class FontRole
 {
-    Small,          //  9 pt regular — hint text
-    Body,           // 13 pt regular — message body
-    SenderName,     // 12 pt semibold — message sender row
-    Timestamp,      // 10 pt regular  — HH:MM right-side footer
-    SidebarName,    // 13 pt semibold — room name in the room list
-    SidebarPreview, // 11 pt regular  — last-message preview
-    UnreadBadge,    // 11 pt semibold — number inside the accent pill
-    Title,          // 15 pt semibold — room header
-    UiSemibold,     // 11 pt semibold — button label
-    BigEmoji,           // 24 pt regular — emoji-only message body (2× Body)
-    EmojiPickerCell,    // 17 pt regular — emoji picker grid cells
-    ReactionEmoji,      // body+2 regular — emoji glyph inside reaction chips
+    Small,          // base−3 regular  — hint text
+    Caption,        // base−1 regular  — section labels, secondary metadata
+    Body,           // base+1 regular  — message body
+    SenderName,     // base   semibold — message sender row
+    Timestamp,      // base−2 regular  — HH:MM right-side footer
+    SidebarName,    // base+1 semibold — room name in the room list
+    SidebarPreview, // base−1 regular  — last-message preview
+    UnreadBadge,    // base−1 semibold — number inside the accent pill
+    Title,          // base+3 semibold — room header
+    UiSemibold,     // base−1 semibold — button label
+    BigEmoji,       // base×2 regular  — emoji-only message body
+    EmojiPickerCell,// base+6 regular  — emoji picker grid cells
+    ReactionEmoji,  // base+3 regular  — emoji glyph inside reaction chips
 };
 
 // ── Shared FontRole + avatar policy (canvas_common.cpp) ────────────────────
@@ -118,6 +119,7 @@ inline int font_role_pt(FontRole role, int base_pt)
     switch (role)
     {
     case FontRole::Small:          offset = -3; break;
+    case FontRole::Caption:        offset = -1; break;
     case FontRole::Body:           offset =  1; break;
     case FontRole::SenderName:     offset =  0; break;
     case FontRole::Timestamp:      offset = -2; break;
