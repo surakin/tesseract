@@ -140,13 +140,17 @@ public:
 
     // Read a previously-built entry (paint/selection/hit-test that expect it to
     // exist this frame). Returns nullptr when absent or when its layout has not
-    // been built, matching the original `find() && it->second.layout` guard.
+    // been built. An entry is considered built when it has a flat layout OR
+    // non-empty sections (block-structure path leaves layout null intentionally).
     const LinkLayout* peek(const std::string& event_id) const
     {
         auto it = cache_.find(event_id);
-        if (it == cache_.end() || !it->second.layout)
+        if (it == cache_.end())
             return nullptr;
-        return &it->second;
+        const LinkLayout& le = it->second;
+        if (!le.layout && le.sections.empty())
+            return nullptr;
+        return &le;
     }
 
     // Drop a single entry (e.g. local-echo -> remote event_id swap).
