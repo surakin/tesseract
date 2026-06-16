@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.25)
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia DBus Concurrent Network)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
 # qt_standard_project_setup() requires Qt >= 6.3; Ubuntu 22.04 ships 6.2.4.
 # Set the equivalent properties manually so the build works on both.
 set(CMAKE_AUTOMOC ON)
@@ -91,6 +93,7 @@ target_link_libraries(tesseract_qt PRIVATE
     Qt6::Concurrent
     Qt6::Network
     opus
+    PkgConfig::AVUTIL
 )
 
 if(WAYLAND_CLIENT_LIB AND Qt6GuiPrivate_FOUND)

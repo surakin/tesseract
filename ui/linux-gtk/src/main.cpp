@@ -1,5 +1,9 @@
 #include <clocale>
+#include <cstdlib>
 #include <filesystem>
+extern "C" {
+#include <libavutil/log.h>
+}
 #include <memory>
 #include <string>
 #include <unistd.h>
@@ -27,6 +31,12 @@ static std::string locale_dir()
 int main(int argc, char** argv)
 {
     setlocale(LC_ALL, "");
+
+    // Silence FFmpeg / gst-libav diagnostic output (e.g. "Input #0, mov,mp4...")
+    // before GStreamer (and its av_log hook) are initialised.
+    av_log_set_level(AV_LOG_QUIET);
+    if (!getenv("GST_DEBUG"))
+        setenv("GST_DEBUG", "0", 1);
 
     // Load persisted settings before set_locale so the saved language
     // preference is available when choosing the locale.
