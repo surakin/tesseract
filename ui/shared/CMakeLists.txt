@@ -317,7 +317,7 @@ target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 # slug passed to the GitHub Releases API. When left empty (the default),
 # trigger_update_check_() is a no-op and no network request is made.
 if(TESSERACT_GITHUB_REPO)
-    target_compile_definitions(tesseract_tk PRIVATE
+    target_compile_definitions(tesseract_tk PUBLIC
         TESSERACT_GITHUB_REPO="${TESSERACT_GITHUB_REPO}"
     )
 endif()
