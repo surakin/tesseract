@@ -10,7 +10,8 @@ producing distributable installers (`.exe`/`.dmg`/`.deb`/`PKGBUILD`), see
 
 ```bash
 sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake golang perl \
-                 libopus-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+                 libopus-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+                 libavutil-dev
 # also requires a Rust toolchain: rustup
 ```
 
@@ -21,6 +22,8 @@ Notes on the less obvious deps:
 - **libopus-dev** is the Opus codec library; it is linked directly by both the Qt6 and GTK4 shells.
 - **libgstreamer1.0-dev + libgstreamer-plugins-base1.0-dev** are required by the shared toolkit's
   off-thread video-frame decoder (used for GIF animation strips) in both the Qt6 and GTK4 builds.
+- **libavutil-dev** (from the `ffmpeg` package family) is linked by both Linux shells to silence
+  FFmpeg/gst-libav diagnostic output at startup via `av_log_set_level`.
 - **libsecret-1-dev** is optional but recommended on Linux: without it, session tokens fall back to
   plaintext storage. Install with `sudo apt install libsecret-1-dev`.
 - **libwayland-dev + qt6-base-private-dev** are optional for the Qt6 build: together they enable

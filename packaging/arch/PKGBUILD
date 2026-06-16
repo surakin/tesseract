@@ -17,6 +17,7 @@ depends=(
     'gstreamer'          # GStreamer core runtime
     'gst-plugins-base'   # Opus decoder for MSC3245 voice messages + gstreamer-app
     'gst-plugins-good'   # additional codec support
+    'ffmpeg'             # libavutil: silence av_log output at startup
 )
 makedepends=(
     'cmake'
@@ -30,6 +31,7 @@ makedepends=(
     'opus'
     'gstreamer'
     'gst-plugins-base'
+    'ffmpeg'             # libavutil headers
 )
 source=()
 sha256sums=()
