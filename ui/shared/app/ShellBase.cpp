@@ -4185,6 +4185,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     tabs_.clear();
     active_tab_idx_ = 0;
     space_stack_.clear();
+    space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
     unjoined_fetch_retry_.clear();
@@ -4477,6 +4478,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // shell: the remaining-account branch repaints via
     // refresh_account_ui_after_switch_, the empty branch via the login view).
     space_stack_.clear();
+    space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
     unjoined_fetch_retry_.clear();
@@ -4927,7 +4929,14 @@ bool ShellBase::tick_anim_()
     // Stop once nothing animated is on-screen — entries linger in the cache
     // after scrolling away / switching rooms, so checking emptiness would keep
     // the 60 Hz timer (and its repaints) running forever.
-    if (!account_manager_.anim_cache().any_visible() && !inflight_needs_anim_())
+    // Also keep running while the back-pagination spinner is visible: that
+    // spinner self-chains via request_repaint_() → setNeedsDisplay:, but on
+    // macOS the AppKit run loop sleeps without a timer to wake it, so the
+    // scheduled display update is never processed until mouse movement.
+    const bool spinner_active = room_view_ && room_view_->message_list() &&
+                                room_view_->message_list()->paginating();
+    if (!account_manager_.anim_cache().any_visible() && !inflight_needs_anim_() &&
+        !spinner_active)
     {
         stop_anim_tick_();
         return false;
@@ -6279,6 +6288,7 @@ void ShellBase::restart_sdk_()
     current_room_id_.clear();
     tabs_.clear();
     space_stack_.clear();
+    space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
     unjoined_fetch_retry_.clear();
@@ -7304,6 +7314,40 @@ void ShellBase::handle_sync_error_impl_(std::string context,
 
     // Any other sync error: surface the description.
     show_status_message_(std::move(description));
+}
+
+// ---------------------------------------------------------------------------
+// SpaceNavFrame helpers
+// ---------------------------------------------------------------------------
+
+ShellBase::SpaceNavFrame
+ShellBase::SpaceNavFrame::capture(views::RoomListView* rlv)
+{
+    SpaceNavFrame f;
+    if (rlv)
+    {
+        f.collapsed = rlv->collapsed_state();
+        f.scroll_fraction = rlv->scroll_fraction();
+    }
+    return f;
+}
+
+void ShellBase::SpaceNavFrame::restore(views::RoomListView* rlv) const
+{
+    if (!rlv)
+        return;
+    for (int i = 0; i < views::RoomListView::kNumSections; ++i)
+        rlv->set_section_collapsed(i, collapsed[i]);
+    rlv->scroll_to_offset(scroll_fraction);
+}
+
+void ShellBase::SpaceNavFrame::enter(views::RoomListView* rlv)
+{
+    if (!rlv)
+        return;
+    for (int i = 0; i < views::RoomListView::kNumSections; ++i)
+        rlv->set_section_collapsed(i, false);
+    rlv->scroll_to_offset(0.f);
 }
 
 } // namespace tesseract

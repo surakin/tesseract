@@ -22,7 +22,9 @@
 #include "views/EncryptionSetupOverlay.h"
 #include "views/MessageListView.h"
 #include "views/QuickSwitcher.h"
+#include "views/RoomListView.h"
 
+#include <array>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -246,6 +248,17 @@ public:
     void on_pin_requested(const std::string& event_id);
     void on_unpin_requested(const std::string& event_id);
 
+    // Saved room-list state for one level of space navigation.
+    // Declared public so all shells (including ObjC++) can name the type.
+    struct SpaceNavFrame {
+        std::array<bool, views::RoomListView::kNumSections> collapsed = {};
+        float scroll_fraction = 0.f;
+
+        static SpaceNavFrame capture(views::RoomListView* rlv);
+        void restore(views::RoomListView* rlv) const;
+        static void enter(views::RoomListView* rlv);
+    };
+
 protected:
     // Per-slot debounce generation counters (see debounce_). Keyed by
     // static_cast<int>(DebounceSlot); a fire is honoured only if its captured
@@ -426,6 +439,11 @@ protected:
     // Platform shells call this right after setting pending_restore_rooms_.
     void populate_pending_restore_popouts_();
     std::vector<std::string> space_stack_;
+
+    // Saved room-list state for each level of space navigation (parallel to
+    // space_stack_). The top entry holds the parent's collapse + scroll state,
+    // restored when the user presses back.
+    std::vector<SpaceNavFrame> space_nav_frames_;
 
     // ── Thread panel state ────────────────────────────────────────────────────
     // STAY ON ShellBase: the four native shells read thread_panel_ and

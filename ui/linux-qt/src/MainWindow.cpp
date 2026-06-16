@@ -196,8 +196,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             {
                 if (r.id == room_id && r.is_space)
                 {
+                    space_nav_frames_.push_back(
+                        SpaceNavFrame::capture(mainApp_->room_list_view()));
                     space_stack_.push_back(room_id);
                     refreshRoomList();
+                    SpaceNavFrame::enter(mainApp_->room_list_view());
                     return;
                 }
             }
@@ -2867,8 +2870,11 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     // Drill into a space if the clicked row is one.
     if (const auto* r = room_by_id_(room_id); r && r->is_space)
     {
+        space_nav_frames_.push_back(
+            SpaceNavFrame::capture(mainApp_->room_list_view()));
         space_stack_.push_back(room_id);
         refreshRoomList();
+        SpaceNavFrame::enter(mainApp_->room_list_view());
         return;
     }
 
@@ -3826,6 +3832,11 @@ void MainWindow::onSpaceBack()
     if (mainApp_)
         mainApp_->hide_room_preview();
     refreshRoomList();
+    if (!space_nav_frames_.empty())
+    {
+        space_nav_frames_.back().restore(mainApp_->room_list_view());
+        space_nav_frames_.pop_back();
+    }
 }
 
 // ---------------------------------------------------------------------------

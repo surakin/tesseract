@@ -24,6 +24,7 @@
 
 #include <tesseract/types.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -167,6 +168,13 @@ public:
     // Fired whenever the user toggles a section header. section is one of
     // the kSec* constants; collapsed is the new state after the toggle.
     std::function<void(int section, bool collapsed)> on_section_toggled;
+
+    // Fractional scroll position [0,1] for save/restore across space navigation.
+    float scroll_fraction() const;
+    void scroll_to_offset(float t);
+
+    // Snapshot of current section collapse state for save/restore.
+    std::array<bool, kNumSections> collapsed_state() const;
 
     // Invitations data source. The pointer is not owned; the caller must
     // keep it alive for the lifetime of the view (or until replaced / cleared).

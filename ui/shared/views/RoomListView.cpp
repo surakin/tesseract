@@ -1080,6 +1080,24 @@ void RoomListView::set_section_collapsed(int section, bool collapsed)
         on_scroll();
 }
 
+float RoomListView::scroll_fraction() const
+{
+    return list_ ? list_->scroll_fraction() : 0.f;
+}
+
+void RoomListView::scroll_to_offset(float t)
+{
+    if (list_)
+        list_->scroll_to_offset(t);
+}
+
+std::array<bool, RoomListView::kNumSections> RoomListView::collapsed_state() const
+{
+    std::array<bool, kNumSections> s;
+    std::copy(collapsed_, collapsed_ + kNumSections, s.begin());
+    return s;
+}
+
 void RoomListView::set_avatar_provider(AvatarProvider p)
 {
     avatar_provider_ = std::move(p);

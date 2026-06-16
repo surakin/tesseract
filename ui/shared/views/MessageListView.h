@@ -658,6 +658,7 @@ public:
     // Show/hide the back-pagination spinner. Pass true when a back-paginate
     // request is in flight, false when it completes.
     void set_paginating(bool paginating);
+    bool paginating() const { return paginating_; }
 
     // Enter the room-switch "loading" state: clear the previous room's rows at
     // once (so they never show under the new room's header) and hold a clean

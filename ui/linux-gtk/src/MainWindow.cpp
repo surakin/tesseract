@@ -585,6 +585,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             if (main_app_)
                 main_app_->hide_room_preview();
             refresh_room_list();
+            if (!space_nav_frames_.empty())
+            {
+                space_nav_frames_.back().restore(room_list_view_);
+                space_nav_frames_.pop_back();
+            }
         };
 
         room_list_view_->on_room_selected = [this](const std::string& room_id)
@@ -596,8 +601,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             {
                 if (r.id == room_id && r.is_space)
                 {
+                    space_nav_frames_.push_back(SpaceNavFrame::capture(room_list_view_));
                     space_stack_.push_back(room_id);
                     refresh_room_list();
+                    SpaceNavFrame::enter(room_list_view_);
                     return;
                 }
             }
@@ -3308,8 +3315,10 @@ void MainWindow::on_room_selected(const std::string& room_id)
     // Drill into a space if the clicked row is one.
     if (const auto* r = room_by_id_(room_id); r && r->is_space)
     {
+        space_nav_frames_.push_back(SpaceNavFrame::capture(room_list_view_));
         space_stack_.push_back(room_id);
         refresh_room_list();
+        SpaceNavFrame::enter(room_list_view_);
         return;
     }
 

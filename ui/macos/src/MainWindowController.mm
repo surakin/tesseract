@@ -300,6 +300,7 @@ public:
     using ShellBase::populate_pending_restore_popouts_;
     using ShellBase::persist_room_layout_pref_;
     using ShellBase::save_settings_debounced_;
+    using ShellBase::schedule_relayout_;
     using ShellBase::settings_controller_;
     using ShellBase::ensure_settings_controller_;
     using ShellBase::clamp_to_screens_;
@@ -336,6 +337,7 @@ public:
     using ShellBase::run_async_mut_;
     using ShellBase::apply_space_child_counts_;
     using ShellBase::space_children_cache_;
+    using ShellBase::space_nav_frames_;
     using ShellBase::space_stack_;
     using ShellBase::start_room_subscription_;
     using ShellBase::sticker_fetches_in_flight_;
@@ -2256,8 +2258,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 if (r.id == room_id && r.is_space)
                 {
+                    s->_shell->space_nav_frames_.push_back(
+                        tesseract::ShellBase::SpaceNavFrame::capture(s->_roomListView));
                     s->_shell->space_stack_.push_back(room_id);
                     [s _refreshRoomList];
+                    tesseract::ShellBase::SpaceNavFrame::enter(s->_roomListView);
                     return;
                 }
             }
@@ -6823,6 +6828,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (_mainApp)
         _mainApp->hide_room_preview();
     [self _refreshRoomList];
+    if (!_shell->space_nav_frames_.empty())
+    {
+        _shell->space_nav_frames_.back().restore(_roomListView);
+        _shell->space_nav_frames_.pop_back();
+    }
 }
 
 - (void)_openAccountPicker
@@ -7687,8 +7697,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     if (const auto* r = _shell->room_by_id_(roomId); r && r->is_space)
     {
+        _shell->space_nav_frames_.push_back(
+            tesseract::ShellBase::SpaceNavFrame::capture(_roomListView));
         _shell->space_stack_.push_back(roomId);
         [self _refreshRoomList];
+        tesseract::ShellBase::SpaceNavFrame::enter(_roomListView);
         return;
     }
     [self hideSlashPopup];
@@ -7765,6 +7778,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     state.in_flight = true;
     if (_shell->room_view_)
         _shell->room_view_->set_paginating(true);
+    [self _startAnimTickIfNeeded];
 
     // Run the blocking paginate call on a background queue; marshal the
     // result back to the main thread.
@@ -7789,6 +7803,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     it->second.reached_start = reached;
     if (roomId == _shell->current_room_id_ && _roomView)
     {
+        _roomView->message_list()->set_paginating(false);
+        _shell->schedule_relayout_();
         _roomView->message_list()->reset_near_top_latch();
     }
 }

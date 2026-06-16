@@ -3749,6 +3749,11 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         nav_spinner_due_ = false;
         ++nav_epoch_;
     }
+    // Defence-in-depth: a room switch invalidates any carried-over pagination
+    // spinner state from the previous room (the new room's shell path manages
+    // its own paginating flag via set_paginating()).
+    if (room_switch && paginating_)
+        paginating_ = false;
 
     // Defence-in-depth: drop any in-thread replies. The main timeline
     // shows only top-level events + thread roots; in-thread replies are
