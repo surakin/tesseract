@@ -470,8 +470,17 @@ public:
 
     const tk::Image* current_frame() const override
     {
-        std::lock_guard lk(frame_mutex_);
-        return current_frame_.get();
+        // Swap the latest decoded frame into display_frame_ under the mutex,
+        // then return a pointer into display_frame_.  display_frame_ is only
+        // ever read or replaced here on the UI thread, so the raw pointer
+        // stays valid for the entire paint call — the decode thread can write
+        // current_frame_ at any point but never touches display_frame_.
+        {
+            std::lock_guard lk(frame_mutex_);
+            if (current_frame_)
+                display_frame_ = std::move(current_frame_);
+        }
+        return display_frame_.get();
     }
 
 private:
@@ -907,18 +916,26 @@ private:
 
                 // A/V sync: for non-looping videos with a running audio
                 // engine, wait until the audio clock reaches this frame's
-                // presentation timestamp.
+                // presentation timestamp.  Guard on audio > 0: the engine is
+                // async and GetCurrentTime() returns 0 while it is still
+                // buffering.  Without the guard every frame's PTS is compared
+                // against 0, producing an ever-growing sleep that makes the
+                // video appear to play in slow motion and stalls the progress
+                // bar (which also reads GetCurrentTime()).
                 if (!loop_.load() && engine_ &&
                     !engine_->IsPaused() && !engine_->IsEnded())
                 {
                     const double pts   = static_cast<double>(ts) / 1.0e7;
                     const double audio = engine_->GetCurrentTime();
-                    const long   wait  =
-                        static_cast<long>((pts - audio) * 1000.0);
-                    if (wait > 0 && wait < 2000)
-                        sleep_ms = static_cast<DWORD>(wait);
-                    else if (wait <= 0)
-                        sleep_ms = 0; // video behind audio — display now
+                    if (audio > 0.0)
+                    {
+                        const long wait =
+                            static_cast<long>((pts - audio) * 1000.0);
+                        if (wait > 0 && wait < 2000)
+                            sleep_ms = static_cast<DWORD>(wait);
+                        else if (wait <= 0)
+                            sleep_ms = 0; // video behind audio — display now
+                    }
                 }
 
                 if (sleep_ms > 0)
@@ -979,7 +996,8 @@ private:
     std::thread decode_thread_;
 
     mutable std::mutex frame_mutex_;
-    std::unique_ptr<tk::Image> current_frame_;
+    mutable std::unique_ptr<tk::Image> current_frame_; // decode thread → UI thread handoff
+    mutable std::unique_ptr<tk::Image> display_frame_; // UI thread only — never touched by decode thread
 };
 
 // ─────────────────────────────────────────────────────────────────────────
