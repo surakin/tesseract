@@ -820,11 +820,16 @@ pub(crate) fn encode_voice_ogg(
 
 
 impl ClientFfi {
-    pub fn new() -> Self {
+    pub fn new(log_level: &str) -> Self {
+        // Build a "matrix_sdk=<level>" directive from the caller-supplied level.
+        // Falls back to "warn" on an unrecognised value. RUST_LOG overrides this.
+        let directive = format!("matrix_sdk={}", log_level)
+            .parse()
+            .unwrap_or_else(|_| "matrix_sdk=warn".parse().unwrap());
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive("matrix_sdk=info".parse().unwrap()),
+                    .add_directive(directive),
             )
             .try_init();
 

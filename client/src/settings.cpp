@@ -102,6 +102,12 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         gif_api_key = gif_key;
     }
 
+    {
+        auto lvl = j.value("sdk_log_level", std::string{});
+        if (!lvl.empty())
+            sdk_log_level = lvl;
+    }
+
     } // try (field reading)
     catch (const nlohmann::json::exception&)
     {

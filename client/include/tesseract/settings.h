@@ -199,6 +199,12 @@ public:
     // Default on. No-op when TESSERACT_GITHUB_REPO is not set at build time.
     bool check_for_updates = true;
 
+    // Minimum log level forwarded by the Rust/matrix-sdk tracing subscriber.
+    // Accepted values: "error", "warn", "info", "debug", "trace".
+    // Overridden at runtime by the RUST_LOG environment variable.
+    // Default "warn" suppresses routine INFO chatter from the SDK.
+    std::string sdk_log_level = "warn";
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.

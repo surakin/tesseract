@@ -1,6 +1,7 @@
 #include "tesseract/client.h"
 #include "tesseract/event_handler_bridge.h"
 #include "tesseract/markdown.h"
+#include "tesseract/settings.h"
 
 // cxx-generated header (produced by corrosion_add_cxxbridge)
 #include "ffi_convert.h"
@@ -69,7 +70,9 @@ struct Client::Impl
     // `mutable` so the lock can be taken inside `const` reader methods.
     mutable std::shared_mutex ffi_mu;
 
-    explicit Impl() : ffi(tesseract_ffi::client_create())
+    explicit Impl()
+        : ffi(tesseract_ffi::client_create(
+              Settings::instance().sdk_log_level.c_str()))
     {
     }
 };

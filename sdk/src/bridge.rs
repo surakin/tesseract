@@ -1,7 +1,7 @@
 pub use super::client::ClientFfi;
 
-pub fn client_create() -> Box<ClientFfi> {
-    Box::new(ClientFfi::new())
+pub fn client_create(log_level: &str) -> Box<ClientFfi> {
+    Box::new(ClientFfi::new(log_level))
 }
 
 pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
@@ -1043,7 +1043,7 @@ pub mod ffi {
     extern "Rust" {
         type ClientFfi;
 
-        fn client_create() -> Box<ClientFfi>;
+        fn client_create(log_level: &str) -> Box<ClientFfi>;
 
         // ----- Local waveform generation -----
 
