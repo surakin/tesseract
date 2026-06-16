@@ -213,176 +213,211 @@ protected:
     }
     void open_join_room_dialog_ui_(const std::string& prefill) override;
 
-    // Expose ShellBase protected members so MainWindowController ObjC++ code
-    // can reach them through _shell (composition, not inheritance).
+    // Public C++ API for ObjC++ code — add new features here rather than
+    // extending the legacy using-block below.
+public:
+    // Room messaging
+    bool send_room_message(std::string body, std::string formatted);
+    void send_reply(std::string reply_event_id, std::string body);
+    void send_edit(std::string event_id, std::string new_body);
+    void send_reaction(std::string event_id, std::string key,
+                       std::string source_mxc);
+    void redact_event(std::string event_id);
+    void send_sticker(std::string body, std::string url, std::string info_json);
+    void send_read_receipt(std::string event_id);
+    std::string shortcode_for_mxc(const std::string& mxc) const;
+
+    // Window / presence
+    void on_window_closing();
+    void notify_window_active(bool active);
+    void notify_user_activity();
+    void notify_presence_tick();
+    void handle_send_presence_toggle(bool enabled);
+    void handle_index_messages_toggle(bool enabled);
+
+    // Current-room actions (operate on current_room_id_ internally)
+    void handle_compose_text_changed(const std::string& text);
+    void handle_compose_room_leaving();
+    void mark_room_read();
+    void request_forward_history();
+    void return_to_live();
+    void handle_date_jump(std::uint64_t ts_ms);
+
+    // Account / crypto
+    void begin_crypto_identity_reset();
+    void on_account_picker_select(const std::string& uid);
+
+    // Room list / space
+    void join_room_command(const std::string& room_id);
+    void cancel_unjoined_summaries();
+    const std::vector<tesseract::RoomSummary>& cached_unjoined_summaries();
+
+    // Tray
+    bool focus_tray_unread_popout();
+    void navigate_tray_unread();
+
+    // Media / asset fetching
+    void ensure_user_avatar(const std::string& mxc);
+    void ensure_room_avatar(const tesseract::RoomInfo& r);
+    void ensure_media_image(const std::string& url, int max_w, int max_h,
+                            std::uint64_t group_id = 0);
+    void ensure_media_thumbnail(const std::string& url, int w, int h,
+                                bool animated, std::uint64_t group_id = 0);
+    void ensure_viewer_fullres(const std::string& url);
+    void ensure_picker_image(const std::string& url, bool is_sticker);
+    void ensure_tile(int z, int x, int y);
+    std::vector<std::uint8_t> voice_bytes_or_fetch(const std::string& token,
+                                                    std::function<void()> on_ready);
+
+    // Theme / settings init (called during setup or on preference change)
+    void apply_current_theme();
+    void save_settings_debounced();
+    void set_theme_preference(tesseract::Settings::ThemePreference pref);
+    void set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock);
+    void apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms);
+    void handle_profile_field_change(const std::string& key,
+                                     const std::string& value_json);
+    void clear_focused_state(const std::string& room_id);
+    void persist_room_layout_pref();
+
+    // User profile (read; my_avatar_url_ also settable)
+    const std::string& display_name()  const { return my_display_name_; }
+    const std::string& user_id()       const { return my_user_id_; }
+    const std::string& avatar_url()    const { return my_avatar_url_; }
+    void set_avatar_url(std::string u) { my_avatar_url_ = std::move(u); }
+
+    // Misc state accessors
+    bool foreign_cross_signing_identity() const
+        { return foreign_cross_signing_identity_(); }
+    const tesseract::ExtendedProfile& own_extended_profile() const
+        { return own_extended_profile_; }
+    void set_stats_settings_view(tesseract::views::SettingsView* v)
+        { stats_settings_view_ = v; }
+
+    // Status bar / inflight dot snapshots
+    struct SyncStatusInfo {
+        tesseract::RoomListState room_list_state;
+        tesseract::BackupState   backup_state;
+        std::uint64_t            imported_keys;
+        bool                     has_override;
+    };
+    SyncStatusInfo sync_status_info() const;
+    void           set_sync_progress_shown(bool b);
+    struct InflightInfo {
+        tk::Color     dot_color;
+        std::uint32_t count;
+        float         spin_phase;
+        std::size_t   pool_pending;
+        std::size_t   mut_pool_pending;
+        std::size_t   media_pending;
+        std::string   urls; // debug; empty in release
+    };
+    InflightInfo inflight_info() const;
+    bool inflight_needs_anim() const;
+    std::vector<tesseract::StatusSegment> parse_status(const std::string& raw) const;
+    bool tray_unread()    const { return last_tray_unread_; }
+    bool tray_highlight() const { return last_tray_highlight_; }
+
+    // Account management
+    tesseract::ShellBase::FinalizeLoginResult finalize_login();
+    tesseract::ShellBase::LogoutResult        logout_active_account();
+    bool switch_account(const std::string& user_id);
+    tesseract::ShellBase::RestoreResult       restore_all_accounts();
+    bool try_restore_tab_session(const std::vector<std::string>& rooms,
+                                 const std::string& preferred);
+    // Run the deferred room-restore after sync reaches Running; returns true when
+    // a session was restored and the pending list was cleared.
+    bool maybe_restore_rooms();
+
+    // Room list
+    void start_room_subscription(const std::string& room_id,
+                                 std::vector<std::string> visible_ids);
+    void request_more_history(const std::string& room_id);
+    void handle_paginate_result(const std::string& room_id, bool reached_start);
+
+    // Settings / session
+    void ensure_settings_controller();
+    void show_status_message(std::string msg);
+    void start_search_stats_poll();
+    void stop_search_stats_poll();
+    bool verification_banner_dismissed() const;
+    bool is_secondary_window_startup() const;
+    bool is_pinned_window() const;
+    void set_verification_banner_dismissed(bool b);
+
+    // Misc one-liners
+    void init_pool_callbacks();
+    bool tick_anim();
+    tesseract::Settings::WindowGeometry clamp_to_screens(
+        const tesseract::Settings::WindowGeometry& saved,
+        int default_w, int default_h);
+    void begin_focused_subscription(const std::string& room_id,
+                                    const std::string& event_id);
+    void apply_media_preview_config(tesseract::Settings::MediaPreviews mode,
+                                    bool invite_avatars);
+    void wire_main_app_widget(tesseract::views::MainAppWidget* app);
+    void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
+                               tk::Host& host,
+                               std::function<void()> request_relayout,
+                               std::function<void()> on_image_close = {},
+                               std::function<void()> on_video_close = {});
+    void wire_voice_capture(tesseract::views::RoomView* rv,
+                            std::function<void()> request_repaint,
+                            std::function<std::string()> get_room_id,
+                            std::function<void()> clear_text_fn);
+    void schedule_relayout();
+    const std::vector<tesseract::ImagePackImage>& cached_emoticons() const;
+    std::string gif_src_disk_key(const std::string& url) const;
+    const tesseract::ServerInfo& server_info_ref() const;
+    using CacheSizeCallback =
+        std::function<void(uint64_t, uint64_t, uint64_t, uint64_t,
+                           uint64_t, uint64_t, uint64_t)>;
+    void compute_cache_sizes(CacheSizeCallback cb);
+    void clear_all_caches(CacheSizeCallback cb);
+    void start_qr_grant_overlay_public();
+
+    // Space navigation
+    // push_space captures nav frame + pushes room onto space_stack_.
+    // Caller must call SpaceNavFrame::enter() (or refresh) after if needed.
+    void push_space(const std::string& room_id, tesseract::views::RoomListView* rlv);
+    void pop_space(tesseract::views::RoomListView* rlv);
+    bool space_stack_empty() const;
+    const std::string& current_space() const;
+    const std::vector<std::string>* space_children(const std::string& id) const;
+
+    // Verification
+    const std::string& verification_flow_id() const;
+
+    // Misc one-shot state
+    const std::vector<tesseract::InviteInfo>* invites_ptr() const;
+    void clear_reply_details();
+    void drain_pools();
+    void set_capture(std::unique_ptr<tk::AudioCapture> c);
+    const tesseract::RoomInfo* room_by_id(const std::string& id) const;
+
+    // LEGACY: do not add new entries here. Add a public C++ method above instead.
 public:
     using ShellBase::account_manager_;
     using ShellBase::active_account_;
-    using ShellBase::active_tab_idx_;
-    using ShellBase::active_verification_flow_id_;
     using ShellBase::add_account_return_idx_;
-    using ShellBase::apply_current_theme_;
-    using ShellBase::arm_pending_login_;
-    using ShellBase::begin_crypto_identity_reset_;
-    using ShellBase::start_qr_grant_overlay;
-    using ShellBase::begin_focused_subscription_;
-    using ShellBase::build_rows_;
-    using ShellBase::cached_emoticons_;
-    using ShellBase::cancel_debounce_;
-    using ShellBase::clear_all_caches_;
-    using ShellBase::clear_focused_state_;
     using ShellBase::client_;
-    using ShellBase::compose_typing_active_;
-    using ShellBase::compute_cache_sizes_;
     using ShellBase::current_room_id_;
-    using ShellBase::current_thread_root_;
     using ShellBase::DecodedImage;
-    using ShellBase::debounce_;
-    using ShellBase::DebounceSlot;
-    using ShellBase::dispatch_room_send_;
-    using ShellBase::RoomSendOutcome;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     void bind_settings_controller_() override;
-    using ShellBase::emoji_fetches_in_flight_;
-    using ShellBase::ensure_media_image_;
-    using ShellBase::ensure_picker_image_;
-    using ShellBase::ensure_reply_details_;
-    using ShellBase::ensure_room_avatar_;
-    using ShellBase::ensure_row_media_;
-    using ShellBase::ensure_tile_async;
-    using ShellBase::ensure_user_avatar_;
-    using ShellBase::ensure_viewer_fullres_;
-    using ShellBase::event_handler_;
-    using ShellBase::find_existing_dm_;
-    using ShellBase::gif_src_disk_key_;
-    using ShellBase::handle_compose_room_leaving_;
-    using ShellBase::handle_compose_text_changed_;
-    using ShellBase::handle_send_presence_toggle_;
-    using ShellBase::handle_index_messages_toggle_;
-    using ShellBase::apply_media_preview_config_;
-    using ShellBase::stats_settings_view_;
-    using ShellBase::start_search_index_stats_poll_;
-    using ShellBase::stop_search_index_stats_poll_;
-    using ShellBase::inflight_dot_color_;
-    using ShellBase::inflight_total_;
-    using ShellBase::is_pinned_window_;
-    using ShellBase::is_secondary_window_startup_;
-    using ShellBase::last_backup_state_;
-    using ShellBase::last_imported_keys_;
-    using ShellBase::last_inflight_;
 #ifndef NDEBUG
-    using ShellBase::last_inflight_urls_;
 #endif
-    using ShellBase::last_room_list_state_;
-    using ShellBase::last_tray_highlight_;
-    using ShellBase::last_tray_unread_;
-    using ShellBase::mark_room_read_;
-    using ShellBase::navigate_tray_unread_;
-    using ShellBase::focus_tray_unread_popout_;
-    using ShellBase::maybe_send_read_receipt_;
     // media_disk_cache_ is accessed via account_manager_.media_disk_cache()
-    using ShellBase::media_fetches_in_flight_;
-    using ShellBase::my_avatar_url_;
-    using ShellBase::my_display_name_;
-    using ShellBase::my_user_id_;
-    using ShellBase::notify_presence_logout_;
-    using ShellBase::notify_presence_tick_;
-    using ShellBase::pagination_;
-    using ShellBase::parse_status_message_;
     using ShellBase::pending_login_client_;
     using ShellBase::pending_login_is_add_account_;
     using ShellBase::pending_login_temp_dir_;
-    using ShellBase::pending_restore_rooms_;
-    using ShellBase::pending_restore_popouts_;
-    using ShellBase::populate_pending_restore_popouts_;
-    using ShellBase::persist_room_layout_pref_;
-    using ShellBase::save_settings_debounced_;
-    using ShellBase::schedule_relayout_;
     using ShellBase::settings_controller_;
-    using ShellBase::ensure_settings_controller_;
-    using ShellBase::clamp_to_screens_;
-    using ShellBase::try_restore_tab_session_;
-    using ShellBase::per_account_rooms_;
-    using ShellBase::per_account_invites_;
-    using ShellBase::current_invite_;
-    using ShellBase::pick_and_set_room_avatar_;
-    using ShellBase::push_paginate_result_;
-    using ShellBase::push_room_list_state_;
-    using ShellBase::notify_tray_unread_;
-    using ShellBase::notify_user_activity_;
-    using ShellBase::notify_window_active_;
-    using ShellBase::push_rooms_;
-    using ShellBase::encryption_setup_shown_;
-    using ShellBase::encryption_setup_dismissed_;
-    using ShellBase::reply_details_requested_;
-    using ShellBase::request_forward_history_;
-    using ShellBase::return_to_live_;
-    using ShellBase::room_by_id_;
-    using ShellBase::room_subscription_refs_;
-    using ShellBase::invites_;
     using ShellBase::rooms_;
     using ShellBase::run_async_;
-    using ShellBase::set_screen_lock_;
-    using ShellBase::set_theme_preference_;
-    using ShellBase::shortcode_for_mxc_;
-    using ShellBase::pool_;
-    using ShellBase::mut_pool_;
-    using ShellBase::init_pool_callbacks_;
-    using ShellBase::pool_pending_count_;
-    using ShellBase::mut_pool_pending_count_;
-    using ShellBase::pending_media_count_;
     using ShellBase::run_async_mut_;
-    using ShellBase::apply_space_child_counts_;
-    using ShellBase::space_children_cache_;
-    using ShellBase::space_nav_frames_;
-    using ShellBase::space_stack_;
-    using ShellBase::start_room_subscription_;
-    using ShellBase::sticker_fetches_in_flight_;
-    using ShellBase::sync_progress_shown_;
-    using ShellBase::tab_close;
-    using ShellBase::tab_navigate_room;
-    using ShellBase::tab_open_room;
-    using ShellBase::tab_select_room;
-    using ShellBase::tabs_;
-    using ShellBase::ThreadPanel;
-    using ShellBase::thread_panel_;
-    using ShellBase::tick_anim_;
-    using ShellBase::url_preview_data_;
-    using ShellBase::verification_banner_dismissed_;
-    using ShellBase::foreign_cross_signing_identity_;
-    using ShellBase::video_thumb_in_flight_;
-    using ShellBase::view_displayed_room_id_;
-    using ShellBase::voice_bytes_or_fetch_;
-    using ShellBase::voice_prefetched_;
-    using ShellBase::capture_;
-    using ShellBase::wire_main_app_viewers_;
-    using ShellBase::wire_main_app_widget_;
-    using ShellBase::wire_voice_capture_;
-    using ShellBase::ensure_media_thumbnail_;
-    using ShellBase::join_room_command_;
-    using ShellBase::get_cached_unjoined_summaries_;
-    using ShellBase::cancel_unjoined_summaries_;
-    using ShellBase::reset_server_info_;
-    using ShellBase::server_info_;
-    using ShellBase::show_status_message_;
-    using ShellBase::on_account_picker_select_;
-    using ShellBase::on_window_closing_;
-    using ShellBase::restore_all_accounts_;
-    using ShellBase::RestoreResult;
-    using ShellBase::finalize_login_;
-    using ShellBase::FinalizeLoginResult;
-    using ShellBase::switch_active_account_impl_;
-    using ShellBase::logout_active_account_impl_;
-    using ShellBase::LogoutResult;
-    using ShellBase::handle_date_jump_;
-    using ShellBase::has_status_override_;
-    using ShellBase::inflight_needs_anim_;
-    using ShellBase::inflight_spin_phase_;
-    using ShellBase::handle_profile_field_change_;
-    using ShellBase::own_extended_profile_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -1830,6 +1865,369 @@ void MacShell::set_compose_draft_(const std::string& draft)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MacShell public messaging API
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool MacShell::send_room_message(std::string body, std::string formatted)
+{
+    if (current_room_id_.empty())
+        return false;
+    auto outcome = dispatch_room_send_(current_room_id_, std::move(body),
+                                       std::move(formatted));
+    return outcome.handled_as_command || bool(outcome.send_result);
+}
+
+void MacShell::send_reply(std::string reply_event_id, std::string body)
+{
+    if (current_room_id_.empty() || !client_)
+        return;
+    client_->send_reply(current_room_id_, std::move(reply_event_id),
+                        std::move(body));
+}
+
+void MacShell::send_edit(std::string event_id, std::string new_body)
+{
+    if (current_room_id_.empty() || !client_)
+        return;
+    client_->send_edit(current_room_id_, std::move(event_id),
+                       std::move(new_body));
+}
+
+void MacShell::send_reaction(std::string event_id, std::string key,
+                              std::string source_mxc)
+{
+    if (current_room_id_.empty() || !client_)
+        return;
+    if (!source_mxc.empty())
+    {
+        const std::string sc = shortcode_for_mxc_(source_mxc);
+        const std::string shortcode = sc.empty() ? std::string() : ":" + sc + ":";
+        client_->send_reaction_custom(current_room_id_, event_id, source_mxc,
+                                      shortcode);
+        return;
+    }
+    client_->send_reaction(current_room_id_, std::move(event_id), std::move(key));
+}
+
+void MacShell::redact_event(std::string event_id)
+{
+    if (current_room_id_.empty() || !client_)
+        return;
+    client_->redact_event(current_room_id_, std::move(event_id));
+}
+
+void MacShell::send_sticker(std::string body, std::string url,
+                             std::string info_json)
+{
+    if (current_room_id_.empty() || !client_)
+        return;
+    if (thread_panel_ == ShellBase::ThreadPanel::Open &&
+        !current_thread_root_.empty())
+    {
+        client_->send_thread_sticker(current_room_id_, current_thread_root_,
+                                     body, url, info_json);
+    }
+    else
+    {
+        client_->send_sticker(current_room_id_, body, url, info_json);
+    }
+}
+
+void MacShell::send_read_receipt(std::string event_id)
+{
+    if (current_room_id_.empty())
+        return;
+    maybe_send_read_receipt_(current_room_id_, std::move(event_id));
+}
+
+std::string MacShell::shortcode_for_mxc(const std::string& mxc) const
+{
+    return shortcode_for_mxc_(mxc);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MacShell public event / action API
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MacShell::on_window_closing()        { on_window_closing_(); }
+void MacShell::notify_window_active(bool active) { notify_window_active_(active); }
+void MacShell::notify_user_activity()     { notify_user_activity_(); }
+void MacShell::notify_presence_tick()     { notify_presence_tick_(); }
+void MacShell::handle_send_presence_toggle(bool enabled)
+    { handle_send_presence_toggle_(enabled); }
+void MacShell::handle_index_messages_toggle(bool enabled)
+    { handle_index_messages_toggle_(enabled); }
+void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
+void MacShell::on_account_picker_select(const std::string& uid)
+    { on_account_picker_select_(uid); }
+void MacShell::join_room_command(const std::string& room_id)
+    { join_room_command_(room_id); }
+void MacShell::handle_date_jump(std::uint64_t ts_ms) { handle_date_jump_(ts_ms); }
+void MacShell::handle_compose_text_changed(const std::string& text)
+    { handle_compose_text_changed_(text); }
+void MacShell::handle_compose_room_leaving()
+    { handle_compose_room_leaving_(current_room_id_); }
+void MacShell::mark_room_read()     { mark_room_read_(current_room_id_); }
+void MacShell::request_forward_history() { request_forward_history_(current_room_id_); }
+void MacShell::return_to_live()          { return_to_live_(current_room_id_); }
+void MacShell::cancel_unjoined_summaries() { cancel_unjoined_summaries_(); }
+bool MacShell::focus_tray_unread_popout() { return focus_tray_unread_popout_(); }
+void MacShell::navigate_tray_unread()    { navigate_tray_unread_(); }
+const std::vector<tesseract::RoomSummary>& MacShell::cached_unjoined_summaries()
+{
+    return get_cached_unjoined_summaries_(space_stack_.back());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MacShell public media / asset API
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MacShell::ensure_user_avatar(const std::string& mxc)
+    { ensure_user_avatar_(mxc); }
+void MacShell::ensure_room_avatar(const tesseract::RoomInfo& r)
+    { ensure_room_avatar_(r); }
+void MacShell::ensure_media_image(const std::string& url, int max_w, int max_h,
+                                   std::uint64_t group_id)
+    { ensure_media_image_(url, max_w, max_h, group_id); }
+void MacShell::ensure_media_thumbnail(const std::string& url, int w, int h,
+                                       bool animated, std::uint64_t group_id)
+    { ensure_media_thumbnail_(url, w, h, animated, group_id); }
+void MacShell::ensure_viewer_fullres(const std::string& url)
+    { ensure_viewer_fullres_(url); }
+void MacShell::ensure_picker_image(const std::string& url, bool is_sticker)
+    { ensure_picker_image_(url, is_sticker); }
+void MacShell::ensure_tile(int z, int x, int y)
+    { ensure_tile_async(z, x, y); }
+std::vector<std::uint8_t> MacShell::voice_bytes_or_fetch(
+    const std::string& token, std::function<void()> on_ready)
+{
+    return voice_bytes_or_fetch_(token, std::move(on_ready));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MacShell public settings / theme / layout API
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MacShell::apply_current_theme()    { apply_current_theme_(); }
+void MacShell::save_settings_debounced() { save_settings_debounced_(); }
+void MacShell::set_theme_preference(tesseract::Settings::ThemePreference pref)
+    { set_theme_preference_(pref); }
+void MacShell::set_screen_lock(std::unique_ptr<tesseract::IScreenLock> lock)
+    { set_screen_lock_(std::move(lock)); }
+void MacShell::apply_space_child_counts(std::vector<tesseract::RoomInfo>& rooms)
+    { apply_space_child_counts_(rooms); }
+void MacShell::handle_profile_field_change(const std::string& key,
+                                            const std::string& value_json)
+    { handle_profile_field_change_(key, value_json); }
+void MacShell::clear_focused_state(const std::string& room_id)
+    { clear_focused_state_(room_id); }
+void MacShell::persist_room_layout_pref() { persist_room_layout_pref_(); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MacShell public status-bar / inflight snapshot API
+// ─────────────────────────────────────────────────────────────────────────────
+
+MacShell::SyncStatusInfo MacShell::sync_status_info() const
+{
+    return {last_room_list_state_, last_backup_state_,
+            last_imported_keys_,   has_status_override_()};
+}
+void MacShell::set_sync_progress_shown(bool b) { sync_progress_shown_ = b; }
+
+MacShell::InflightInfo MacShell::inflight_info() const
+{
+    InflightInfo i;
+    i.dot_color        = inflight_dot_color_();
+    i.count            = inflight_total_();
+    i.spin_phase       = inflight_spin_phase_();
+    i.pool_pending     = pool_pending_count_();
+    i.mut_pool_pending = mut_pool_pending_count_();
+    i.media_pending    = pending_media_count_();
+#ifndef NDEBUG
+    i.urls             = last_inflight_urls_;
+#endif
+    return i;
+}
+bool MacShell::inflight_needs_anim() const { return inflight_needs_anim_(); }
+std::vector<tesseract::StatusSegment>
+MacShell::parse_status(const std::string& raw) const
+{
+    return parse_status_message_(raw);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MacShell public account-management API
+// ─────────────────────────────────────────────────────────────────────────────
+
+tesseract::ShellBase::FinalizeLoginResult MacShell::finalize_login()
+    { return finalize_login_(); }
+tesseract::ShellBase::LogoutResult MacShell::logout_active_account()
+    { return logout_active_account_impl_(); }
+bool MacShell::switch_account(const std::string& user_id)
+    { return switch_active_account_impl_(user_id); }
+tesseract::ShellBase::RestoreResult MacShell::restore_all_accounts()
+    { return restore_all_accounts_(); }
+bool MacShell::try_restore_tab_session(const std::vector<std::string>& rooms,
+                                        const std::string& preferred)
+    { return try_restore_tab_session_(rooms, preferred); }
+bool MacShell::maybe_restore_rooms()
+{
+    if (pending_restore_rooms_.empty())
+        return false;
+    if (!try_restore_tab_session_(pending_restore_rooms_, pending_restore_rooms_[0]))
+        return false;
+    pending_restore_rooms_.clear();
+    return true;
+}
+
+void MacShell::start_room_subscription(const std::string& room_id,
+                                        std::vector<std::string> visible_ids)
+    { start_room_subscription_(room_id, std::move(visible_ids)); }
+
+void MacShell::request_more_history(const std::string& room_id)
+{
+    if (room_id.empty())
+        return;
+    auto& state = pagination_[room_id];
+    if (state.in_flight || state.reached_start)
+        return;
+    state.in_flight = true;
+    if (room_view_)
+        room_view_->set_paginating(true);
+    start_anim_tick_();
+
+    __weak MainWindowController* wc = ctrl_;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        auto pr = client_->paginate_back_with_status(room_id, 50);
+        BOOL reached = pr.ok && pr.reached_start;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (MainWindowController* c = wc)
+                [c handlePaginateResultForRoom:room_id reached_start:reached];
+        });
+    });
+}
+
+void MacShell::handle_paginate_result(const std::string& room_id,
+                                       bool reached_start)
+{
+    auto it = pagination_.find(room_id);
+    if (it == pagination_.end())
+        return;
+    it->second.in_flight    = false;
+    it->second.reached_start = reached_start;
+    if (room_id == current_room_id_ && room_view_)
+    {
+        room_view_->message_list()->set_paginating(false);
+        schedule_relayout_();
+        room_view_->message_list()->reset_near_top_latch();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MacShell public settings / misc API
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MacShell::ensure_settings_controller() { ensure_settings_controller_(); }
+void MacShell::show_status_message(std::string msg)
+    { show_status_message_(std::move(msg)); }
+void MacShell::start_search_stats_poll() { start_search_index_stats_poll_(); }
+void MacShell::stop_search_stats_poll()  { stop_search_index_stats_poll_(); }
+bool MacShell::verification_banner_dismissed() const
+    { return verification_banner_dismissed_; }
+bool MacShell::is_secondary_window_startup() const
+    { return is_secondary_window_startup_(); }
+bool MacShell::is_pinned_window() const    { return is_pinned_window_; }
+void MacShell::set_verification_banner_dismissed(bool b)
+    { verification_banner_dismissed_ = b; }
+void MacShell::init_pool_callbacks() { init_pool_callbacks_(); }
+bool MacShell::tick_anim()           { return tick_anim_(); }
+tesseract::Settings::WindowGeometry MacShell::clamp_to_screens(
+    const tesseract::Settings::WindowGeometry& saved, int default_w, int default_h)
+{
+    return clamp_to_screens_(saved, default_w, default_h, get_screen_work_areas_());
+}
+void MacShell::begin_focused_subscription(const std::string& room_id,
+                                           const std::string& event_id)
+    { begin_focused_subscription_(room_id, event_id); }
+void MacShell::apply_media_preview_config(tesseract::Settings::MediaPreviews mode,
+                                           bool invite_avatars)
+    { apply_media_preview_config_(mode, invite_avatars); }
+void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
+    { wire_main_app_widget_(app); }
+void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
+                                      tk::Host& host,
+                                      std::function<void()> request_relayout,
+                                      std::function<void()> on_image_close,
+                                      std::function<void()> on_video_close)
+{
+    wire_main_app_viewers_(app, host, std::move(request_relayout),
+                           std::move(on_image_close), std::move(on_video_close));
+}
+void MacShell::wire_voice_capture(tesseract::views::RoomView* rv,
+                                   std::function<void()> request_repaint,
+                                   std::function<std::string()> get_room_id,
+                                   std::function<void()> clear_text_fn)
+{
+    wire_voice_capture_(rv, std::move(request_repaint), std::move(get_room_id),
+                        std::move(clear_text_fn));
+}
+void MacShell::schedule_relayout() { schedule_relayout_(); }
+const std::vector<tesseract::ImagePackImage>& MacShell::cached_emoticons() const
+    { return cached_emoticons_; }
+std::string MacShell::gif_src_disk_key(const std::string& url) const
+    { return gif_src_disk_key_(url); }
+const tesseract::ServerInfo& MacShell::server_info_ref() const
+    { return server_info_; }
+void MacShell::compute_cache_sizes(CacheSizeCallback cb)
+    { compute_cache_sizes_(std::move(cb)); }
+void MacShell::clear_all_caches(CacheSizeCallback cb)
+    { clear_all_caches_(std::move(cb)); }
+void MacShell::start_qr_grant_overlay_public()
+    { start_qr_grant_overlay(); }
+void MacShell::push_space(const std::string& room_id,
+                           tesseract::views::RoomListView* rlv)
+{
+    space_nav_frames_.push_back(SpaceNavFrame::capture(rlv));
+    space_stack_.push_back(room_id);
+}
+void MacShell::pop_space(tesseract::views::RoomListView* rlv)
+{
+    if (!space_stack_.empty())
+        space_stack_.pop_back();
+    if (!space_nav_frames_.empty())
+    {
+        space_nav_frames_.back().restore(rlv);
+        space_nav_frames_.pop_back();
+    }
+}
+const std::string& MacShell::verification_flow_id() const
+    { return active_verification_flow_id_; }
+const std::vector<tesseract::InviteInfo>* MacShell::invites_ptr() const
+    { return &invites_; }
+bool MacShell::space_stack_empty() const { return space_stack_.empty(); }
+const std::string& MacShell::current_space() const
+{
+    static const std::string empty;
+    return space_stack_.empty() ? empty : space_stack_.back();
+}
+const std::vector<std::string>* MacShell::space_children(const std::string& id) const
+{
+    auto it = space_children_cache_.find(id);
+    return it != space_children_cache_.end() ? &it->second : nullptr;
+}
+void MacShell::clear_reply_details()
+    { reply_details_requested_.clear(); }
+void MacShell::drain_pools()
+{
+    pool_.drain();
+    mut_pool_.drain();
+}
+void MacShell::set_capture(std::unique_ptr<tk::AudioCapture> c)
+    { capture_ = std::move(c); }
+const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
+    { return room_by_id_(id); }
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 } // namespace
 
@@ -1995,7 +2393,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     tesseract::AccountManager& mgr =
         _sharedAccountManager ? *_sharedAccountManager : _accountManager;
     _shell = std::make_unique<MacShell>(mgr, self);
-    _shell->set_screen_lock_(std::make_unique<mac::MacScreenLock>());
+    _shell->set_screen_lock(std::make_unique<mac::MacScreenLock>());
     _accountPickerShared = nullptr;
     window.delegate = self;
     // Load saved settings before _buildChrome wires the main app widget.
@@ -2018,8 +2416,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                   saved.w,
                                   saved.h);
             // Validate with clamp_to_screens_: re-centre if off-screen.
-            auto clamped = _shell->clamp_to_screens_(
-                saved, 1100, 768, _shell->get_screen_work_areas_());
+            auto clamped = _shell->clamp_to_screens(saved, 1100, 768);
             if (clamped.valid)
             {
                 f = NSMakeRect(clamped.x,
@@ -2037,7 +2434,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     [self _buildChrome];
     // Apply the loaded theme to all surfaces created by _buildChrome.
-    _shell->apply_current_theme_();
+    _shell->apply_current_theme();
 
     // Re-apply when the OS switches light/dark (only in System mode).
     [NSApp addObserver:self
@@ -2074,7 +2471,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     g.w     = static_cast<int>(f.size.width);
     g.h     = static_cast<int>(f.size.height);
     g.valid = (g.w > 0 && g.h > 0);
-    _shell->save_settings_debounced_();
+    _shell->save_settings_debounced();
 }
 
 - (void)windowDidEndLiveResize:(NSNotification*)notification
@@ -2099,7 +2496,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     // Hand this window's account bridge back to the primary, release its
     // dedicated mapping and tray ownership (multi-window), then unregister.
-    _shell->on_window_closing_();
+    _shell->on_window_closing();
     _shell->account_manager_.unregister_window(_shell.get());
     if (_shell->account_manager_.window_count() == 0)
     {
@@ -2121,7 +2518,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _mainAppSurface->set_anim_cache(&_shell->account_manager_.anim_cache());
     // Feed pointer / wheel events into the PresenceTracker.
     _mainAppSurface->host().set_on_user_activity(
-        [shell = _shell.get()] { if (shell) shell->notify_user_activity_(); });
+        [shell = _shell.get()] { if (shell) shell->notify_user_activity(); });
 
     // 30 s periodic tick for the idle-decay check.
     __weak MainWindowController* weakSelf = self;
@@ -2132,7 +2529,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                               MainWindowController* s = weakSelf;
                                               if (s && s->_shell)
                                               {
-                                                  s->_shell->notify_presence_tick_();
+                                                  s->_shell->notify_presence_tick();
                                               }
                                           }];
     [[NSRunLoop currentRunLoop] addTimer:_presenceTickTimer
@@ -2176,9 +2573,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            const std::string& _name_ref = s->_shell->my_display_name_.empty()
-                ? s->_shell->my_user_id_
-                : s->_shell->my_display_name_;
+            const std::string& _name_ref = s->_shell->display_name().empty()
+                ? s->_shell->user_id()
+                : s->_shell->display_name();
             NSString* logoutTitle = [NSString
                 stringWithUTF8String:tk::trf(tk::tr("Log Out {0}"),
                                              {_name_ref})
@@ -2193,7 +2590,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [menu addItemWithTitle:logoutTitle
                             action:@selector(_logoutActiveAccount)
                      keyEquivalent:@""];
-            if (s->_shell->server_info_.supports_qr_grant)
+            if (s->_shell->server_info_ref().supports_qr_grant)
                 [menu addItemWithTitle:TkTr("Add device via QR\xe2\x80\xa6")
                                 action:@selector(_showQRGrant)
                          keyEquivalent:@""];
@@ -2241,7 +2638,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         // Space nav + RoomListView avatar providers.
         // Provider wiring (avatar/image/sticker/preview/user-info).
-        _shell->wire_main_app_widget_(_mainApp);
+        _shell->wire_main_app_widget(_mainApp);
 
         _mainApp->room_list_view()->on_room_selected =
             [weakSelf](const std::string& room_id)
@@ -2258,9 +2655,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 if (r.id == room_id && r.is_space)
                 {
-                    s->_shell->space_nav_frames_.push_back(
-                        tesseract::ShellBase::SpaceNavFrame::capture(s->_roomListView));
-                    s->_shell->space_stack_.push_back(room_id);
+                    s->_shell->push_space(room_id, s->_roomListView);
                     [s _refreshRoomList];
                     tesseract::ShellBase::SpaceNavFrame::enter(s->_roomListView);
                     return;
@@ -2309,7 +2704,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (!self)
                 return;
             if (!s.avatar_url.empty())
-                self->_shell->ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
+                self->_shell->ensure_media_thumbnail(s.avatar_url, 64, 64, false);
             if (self->_mainApp)
             {
                 __weak MainWindowController* ws = self;
@@ -2331,7 +2726,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 MainWindowController* s = weakSelf;
                 if (s)
-                    s->_shell->ensure_media_thumbnail_(mxc, 64, 64, false);
+                    s->_shell->ensure_media_thumbnail(mxc, 64, 64, false);
             };
             rp->on_join = [weakSelf, rp](const std::string& room_id)
             {
@@ -2339,7 +2734,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 if (!s)
                     return;
                 rp->set_state(tesseract::views::RoomPreviewView::State::Joining);
-                s->_shell->join_room_command_(room_id);
+                s->_shell->join_room_command(room_id);
             };
             rp->on_dismiss = [weakSelf]
             {
@@ -2366,9 +2761,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 return;
             }
             s->_shell->client_->accept_verification(
-                s->_shell->active_verification_flow_id_);
+                s->_shell->verification_flow_id());
             s->_shell->client_->start_sas(
-                s->_shell->active_verification_flow_id_);
+                s->_shell->verification_flow_id());
         };
         _mainApp->verif_banner()->on_match = [weakSelf]
         {
@@ -2378,7 +2773,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 return;
             }
             s->_shell->client_->confirm_sas(
-                s->_shell->active_verification_flow_id_);
+                s->_shell->verification_flow_id());
             if (s->_verifShared)
             {
                 s->_verifShared->set_state(
@@ -2395,7 +2790,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (s && s->_shell->client_)
             {
                 s->_shell->client_->cancel_verification(
-                    s->_shell->active_verification_flow_id_);
+                    s->_shell->verification_flow_id());
             }
         };
         _mainApp->verif_banner()->on_cancel = [weakSelf]
@@ -2404,7 +2799,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             if (s && s->_shell->client_)
             {
                 s->_shell->client_->cancel_verification(
-                    s->_shell->active_verification_flow_id_);
+                    s->_shell->verification_flow_id());
             }
         };
         _mainApp->verif_banner()->on_dismiss = [weakSelf]
@@ -2414,7 +2809,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            s->_shell->verification_banner_dismissed_ = true;
+            s->_shell->set_verification_banner_dismissed(true);
             s->_mainApp->show_verif_banner(false);
             s->_mainAppSurface->relayout();
         };
@@ -2445,7 +2840,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         // Image + video viewers — providers / repaint / on_close.
         // The shell-passed on_*_close callable restores compose focus when
         // the overlay closes (matches Qt6 behavior).
-        _shell->wire_main_app_viewers_(
+        _shell->wire_main_app_viewers(
             _mainApp, _mainAppSurface->host(),
             [weakSelf]
             {
@@ -2550,7 +2945,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             [weakSelf](const std::string& mxc) -> std::string
             {
                 MainWindowController* s = weakSelf;
-                return s ? s->_shell->shortcode_for_mxc_(mxc) : std::string();
+                return s ? s->_shell->shortcode_for_mxc(mxc) : std::string();
             });
         _mainApp->room_view()->set_voice_bytes_provider(
             [weakSelf](
@@ -2564,7 +2959,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 // Non-blocking: warmed bytes or empty + async fetch (repaint on
                 // arrival) so playback never freezes the UI thread.
                 MacShell* shell = s->_shell.get();
-                return shell->voice_bytes_or_fetch_(
+                return shell->voice_bytes_or_fetch(
                     source_json, [shell] { shell->request_relayout_(); });
             });
         _mainApp->room_view()->set_video_player_factory(
@@ -2602,10 +2997,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             _mainApp->room_view()->set_audio_player(std::move(player));
         }
-        _shell->capture_ = _mainAppSurface->host().make_audio_capture();
+        _shell->set_capture(_mainAppSurface->host().make_audio_capture());
         {
             __weak MainWindowController* ws = self;
-            _shell->wire_voice_capture_(
+            _shell->wire_voice_capture(
                 _mainApp->room_view(),
                 [ws]() { if (ws) [ws _relayoutChatSurface]; },
                 [shell = _shell.get()]() { return shell->current_room_id_; },
@@ -2646,9 +3041,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            auto outcome = s->_shell->dispatch_room_send_(
-                s->_shell->current_room_id_, msg.body, msg.formatted_body);
-            if (outcome.handled_as_command || outcome.send_result)
+            if (s->_shell->send_room_message(msg.body, msg.formatted_body))
             {
                 if (s->_roomTextArea)
                 {
@@ -2665,39 +3058,25 @@ void MacShell::set_compose_draft_(const std::string& draft)
                        const std::string& body)
         {
             MainWindowController* s = weakSelf;
-            if (!s || body.empty() || s->_shell->current_room_id_.empty())
-            {
+            if (!s || body.empty())
                 return;
-            }
-            s->_shell->client_->send_reply(s->_shell->current_room_id_,
-                                           reply_event_id, body);
+            s->_shell->send_reply(reply_event_id, body);
             if (s->_roomTextArea)
-            {
                 s->_roomTextArea->set_text("");
-            }
             if (s->_roomView)
-            {
                 s->_roomView->set_current_text({});
-            }
         };
         _mainApp->room_view()->on_send_edit =
             [weakSelf](const std::string& event_id, const std::string& new_body)
         {
             MainWindowController* s = weakSelf;
-            if (!s || new_body.empty() || s->_shell->current_room_id_.empty())
-            {
+            if (!s || new_body.empty())
                 return;
-            }
-            s->_shell->client_->send_edit(s->_shell->current_room_id_, event_id,
-                                          new_body);
+            s->_shell->send_edit(event_id, new_body);
             if (s->_roomTextArea)
-            {
                 s->_roomTextArea->set_text("");
-            }
             if (s->_roomView)
-            {
                 s->_roomView->set_current_text({});
-            }
         };
         _mainApp->room_view()->on_send_image =
             [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
@@ -2782,40 +3161,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _mainApp->room_view()->on_delete_requested =
             [weakSelf](const std::string& event_id)
         {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            s->_shell->client_->redact_event(s->_shell->current_room_id_,
-                                             event_id);
+            if (MainWindowController* s = weakSelf)
+                s->_shell->redact_event(event_id);
         };
         _mainApp->room_view()->on_reaction_toggled =
             [weakSelf](const std::string& event_id, const std::string& key,
                        const std::string& source_mxc)
         {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty())
-            {
-                return;
-            }
-            if (!source_mxc.empty())
-            {
-                // For MSC4027 chips matrix-sdk aggregates by the mxc:// key
-                // (so `key` IS the mxc URI). Look up the shortcode locally
-                // so the outgoing event carries `:shortcode:` rather than
-                // re-broadcasting the URI as its own shortcode.
-                std::string sc =
-                    s->_shell->shortcode_for_mxc_(source_mxc);
-                std::string shortcode =
-                    sc.empty() ? std::string() : ":" + sc + ":";
-                s->_shell->client_->send_reaction_custom(
-                    s->_shell->current_room_id_, event_id, source_mxc,
-                    shortcode);
-                return;
-            }
-            s->_shell->client_->send_reaction(s->_shell->current_room_id_,
-                                              event_id, key);
+            if (MainWindowController* s = weakSelf)
+                s->_shell->send_reaction(event_id, key, source_mxc);
         };
         _mainApp->room_view()->on_add_reaction_requested =
             [weakSelf](const std::string& event_id, tk::Rect anchor)
@@ -2831,13 +3185,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _mainApp->room_view()->on_receipt_needed =
             [weakSelf](const std::string& eid)
         {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            s->_shell->maybe_send_read_receipt_(s->_shell->current_room_id_,
-                                                eid);
+            if (MainWindowController* s = weakSelf)
+                s->_shell->send_read_receipt(eid);
         };
         _mainApp->room_view()->message_list()->on_tile_needed =
             [weakSelf](int z, int x, int y)
@@ -2845,7 +3194,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = weakSelf;
             if (s)
             {
-                s->_shell->ensure_tile_async(z, x, y);
+                s->_shell->ensure_tile(z, x, y);
             }
         };
         _mainApp->room_view()->message_list()->on_show_copy_menu =
@@ -2881,7 +3230,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                 hit.natural_w, hit.natural_h);
             s->_mainApp->show_image_viewer(true);
             s->_mainAppSurface->relayout();
-            s->_shell->ensure_viewer_fullres_(src_tok);
+            s->_shell->ensure_viewer_fullres(src_tok);
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         };
@@ -2902,7 +3251,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             s->_imgViewer->open(url, url, name, 0, 0);
             s->_mainApp->show_image_viewer(true);
             s->_mainAppSurface->relayout();
-            s->_shell->ensure_viewer_fullres_(url);
+            s->_shell->ensure_viewer_fullres(url);
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         };
@@ -3074,7 +3423,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            s->_shell->request_forward_history_(s->_shell->current_room_id_);
+            s->_shell->request_forward_history();
         };
         _mainApp->room_view()->on_return_to_live = [weakSelf]
         {
@@ -3083,7 +3432,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            s->_shell->return_to_live_(s->_shell->current_room_id_);
+            s->_shell->return_to_live();
         };
         _mainApp->room_view()->on_scroll_to_original =
             [weakSelf](const std::string& event_id)
@@ -3095,7 +3444,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             }
             std::string room = s->_shell->current_room_id_;
             std::string ev = event_id;
-            s->_shell->begin_focused_subscription_(room, ev);
+            s->_shell->begin_focused_subscription(room, ev);
             dispatch_async(
                 dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                     MainWindowController* s2 = weakSelf;
@@ -3109,7 +3458,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             MainWindowController* s = weakSelf;
             if (s)
-                s->_shell->handle_date_jump_(ts_ms);
+                s->_shell->handle_date_jump(ts_ms);
         };
         _mainApp->room_view()->on_threads_button_clicked = [weakSelf]
         {
@@ -3267,7 +3616,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                         if (!s2 || !s2->_mainApp)
                             return;
                         for (const auto& m : *members_holder)
-                            s2->_shell->ensure_user_avatar_(m.avatar_url);
+                            s2->_shell->ensure_user_avatar(m.avatar_url);
                         s2->_mainApp->room_view()->set_room_members(
                             std::move(*members_holder));
                     });
@@ -3474,7 +3823,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             hooks.fetch_avatar = [mc](const std::string& mxc)
             {
                 if (MainWindowController* c = mc)
-                    c->_shell->ensure_user_avatar_(mxc);
+                    c->_shell->ensure_user_avatar(mxc);
             };
             // Resolve candidate avatars from the shared avatar cache.
             _mentionPopupWidget->set_image_provider(
@@ -3553,7 +3902,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                 // until the video appears instead of the
                                 // thumbnail first.
                                 const std::string disk_key =
-                                    shell->gif_src_disk_key_(url);
+                                    shell->gif_src_disk_key(url);
                                 std::vector<std::uint8_t> bytes =
                                     shell->account_manager_.media_disk_cache().load(disk_key);
                                 if (bytes.empty() && shell->client_)
@@ -3611,7 +3960,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                 // Source bytes: disk cache first, else download
                                 // and persist so the send path reuses them.
                                 const std::string disk_key =
-                                    shell->gif_src_disk_key_(anim_url);
+                                    shell->gif_src_disk_key(anim_url);
                                 std::vector<std::uint8_t> bytes =
                                     shell->account_manager_.media_disk_cache().load(disk_key);
                                 if (bytes.empty() && shell->client_)
@@ -3829,7 +4178,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     return {};
                 // Reuse the source bytes the strip persisted to disk on fetch.
                 return c->_shell->account_manager_.media_disk_cache().load(
-                    c->_shell->gif_src_disk_key_(url));
+                    c->_shell->gif_src_disk_key(url));
             };
             _gifController = std::make_unique<tesseract::views::GifController>(
                 _roomTextArea.get(), _gifPopupWidget, std::move(gh));
@@ -3867,7 +4216,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     return;
                 }
-                c->_shell->handle_compose_text_changed_(s);
+                c->_shell->handle_compose_text_changed(s);
                 if (c->_roomView)
                 {
                     c->_roomView->set_current_text(s);
@@ -3979,7 +4328,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 if (complete)
                 {
                     auto hits = c->_shell->shortcode_engine_.lookup(
-                        complete->prefix, c->_shell->cached_emoticons_, 1);
+                        complete->prefix, c->_shell->cached_emoticons(), 1);
                     std::string r =
                         (!hits.empty() && !hits.front().glyph.empty())
                             ? hits.front().glyph
@@ -3998,7 +4347,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 {
                     c->_shell->shortcode_current_suggestions_ =
                         c->_shell->shortcode_engine_.lookup(
-                            prefix_match->prefix, c->_shell->cached_emoticons_);
+                            prefix_match->prefix, c->_shell->cached_emoticons());
                     if (!c->_shell->shortcode_current_suggestions_.empty())
                     {
                         [c hideMentionPopup];
@@ -4008,7 +4357,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                         {
                             if (!sugg.emoticon.url.empty())
                             {
-                                c->_shell->ensure_media_image_(
+                                c->_shell->ensure_media_image(
                                     sugg.emoticon.url, 28, 28);
                             }
                         }
@@ -4207,7 +4556,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                    std::move(m));
                     });
                 if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                    shell->show_status_message_(tk::tr("File exceeds the upload limit"));
+                    shell->show_status_message(tk::tr("File exceeds the upload limit"));
             });
         _mainAppSurface->set_on_file_drop_error(
             [weakSelf](std::string reason)
@@ -4215,7 +4564,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 MainWindowController* c = weakSelf;
                 if (!c || !c->_shell)
                     return;
-                c->_shell->show_status_message_(std::move(reason));
+                c->_shell->show_status_message(std::move(reason));
             });
 
         _roomSearchField = _mainAppSurface->host().make_text_field();
@@ -4231,7 +4580,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 }
                 s->_pendingSearchText = q;
                 s->_shell->debounce_(
-                    MacShell::DebounceSlot::RoomSearch,
+                    tesseract::ShellBase::DebounceSlot::RoomSearch,
                     tesseract::views::RoomListView::kSearchDebounceMs,
                     [s] { [s _applySearchFilter]; });
             });
@@ -4677,7 +5026,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             std::make_unique<tk::macos::Surface>(tk::Theme::light());
         auto view = std::make_unique<tesseract::views::SettingsView>();
         _settingsView = view.get();
-        _shell->stats_settings_view_ = _settingsView;
+        _shell->set_stats_settings_view(_settingsView);
         __weak MainWindowController* ws = self;
         _settingsView->on_close = [ws]
         {
@@ -4686,7 +5035,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 return;
             }
-            s->_shell->stop_search_index_stats_poll_();
+            s->_shell->stop_search_stats_poll();
             NSView* mainAppView =
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
@@ -4705,7 +5054,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
-            s->_shell->begin_crypto_identity_reset_();
+            s->_shell->begin_crypto_identity_reset();
         };
         _settingsView->on_logout = [ws]
         {
@@ -4726,7 +5075,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             MainWindowController* s = ws;
             if (s)
             {
-                s->_shell->set_theme_preference_(pref);
+                s->_shell->set_theme_preference(pref);
             }
         };
         _settingsView->on_notifications_changed = [ws](bool enabled)
@@ -4810,26 +5159,26 @@ void MacShell::set_compose_draft_(const std::string& draft)
         _settingsView->on_send_presence_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
-            if (s) s->_shell->handle_send_presence_toggle_(enabled);
+            if (s) s->_shell->handle_send_presence_toggle(enabled);
         };
         _settingsView->on_index_messages_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
-            if (s) s->_shell->handle_index_messages_toggle_(enabled);
+            if (s) s->_shell->handle_index_messages_toggle(enabled);
         };
         _settingsView->on_media_previews_changed =
             [ws](tesseract::Settings::MediaPreviews mode)
         {
             MainWindowController* s = ws;
             if (s)
-                s->_shell->apply_media_preview_config_(
+                s->_shell->apply_media_preview_config(
                     mode, tesseract::Settings::instance().invite_avatars);
         };
         _settingsView->on_invite_avatars_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
             if (s)
-                s->_shell->apply_media_preview_config_(
+                s->_shell->apply_media_preview_config(
                     tesseract::Settings::instance().media_previews, enabled);
         };
         _settingsView->on_tab_changed = [ws] {
@@ -4840,7 +5189,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             MainWindowController* s = ws;
             if (!s || !s->_shell) return;
-            s->_shell->clear_all_caches_(
+            s->_shell->clear_all_caches(
                 [ws](uint64_t local, uint64_t sdk, uint64_t memory,
                      uint64_t mh, uint64_t mm, uint64_t dh, uint64_t dm)
             {
@@ -5007,7 +5356,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         if (_shell && tesseract::Settings::instance().theme_pref ==
                           tesseract::Settings::ThemePreference::System)
         {
-            _shell->apply_current_theme_();
+            _shell->apply_current_theme();
         }
     }
     else
@@ -5084,7 +5433,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // accounts' background sync (its destruction == app shutdown). A secondary
     // (pinned) window closing must leave every account syncing for the survivors;
     // it still drains its own per-window pools below.
-    if (!_shell->is_pinned_window_)
+    if (!_shell->is_pinned_window())
     {
         for (auto& acc : _shell->account_manager_.accounts())
         {
@@ -5092,8 +5441,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 acc->client->stop_sync();
         }
     }
-    _shell->pool_.drain();
-    _shell->mut_pool_.drain();
+    _shell->drain_pools();
+    ;
 }
 
 - (void)openMatrixLink:(NSString*)uri
@@ -5149,57 +5498,37 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_shell->current_room_id_.empty())
-            {
-                s->_shell->client_->send_reaction(
-                    s->_shell->current_room_id_, ev,
-                    std::string(glyph.UTF8String ?: ""));
-            }
+            s->_shell->send_reaction(ev, std::string(glyph.UTF8String ?: ""), {});
             [weakPanel close];
             return;
         }
         if (!s->_roomTextArea)
-        {
             return;
-        }
         s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
         if (s->_roomView)
-        {
             s->_roomView->set_current_text(s->_roomTextArea->text());
-        }
         s->_roomTextArea->set_focused(true);
     };
     panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
         MainWindowController* s = weakSelf;
         if (!s || img.url.empty())
-        {
             return;
-        }
         // Reaction mode (parallel to onSelect above): send an MSC4027
         // custom-image reaction.
         if (!s->_pendingReactionEventId.empty())
         {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_shell->current_room_id_.empty())
-            {
-                s->_shell->client_->send_reaction_custom(
-                    s->_shell->current_room_id_, ev, img.url,
-                    ":" + img.shortcode + ":");
-            }
+            s->_shell->send_reaction(ev, {}, img.url);
             [weakPanel close];
             return;
         }
         // Compose mode: insert `:shortcode:` text.
         if (!s->_roomTextArea)
-        {
             return;
-        }
         s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
         if (s->_roomView)
-        {
             s->_roomView->set_current_text(s->_roomTextArea->text());
-        }
         s->_roomTextArea->set_focused(true);
     };
     NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
@@ -5676,54 +6005,34 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_shell->current_room_id_.empty())
-            {
-                s->_shell->client_->send_reaction(
-                    s->_shell->current_room_id_, ev,
-                    std::string(glyph.UTF8String ?: ""));
-            }
+            s->_shell->send_reaction(ev, std::string(glyph.UTF8String ?: ""), {});
             [weakPanel close];
             return;
         }
         if (!s->_roomTextArea)
-        {
             return;
-        }
         s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
         if (s->_roomView)
-        {
             s->_roomView->set_current_text(s->_roomTextArea->text());
-        }
         s->_roomTextArea->set_focused(true);
     };
     panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
         MainWindowController* s = weakSelf;
         if (!s || img.url.empty())
-        {
             return;
-        }
         if (!s->_pendingReactionEventId.empty())
         {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_shell->current_room_id_.empty())
-            {
-                s->_shell->client_->send_reaction_custom(
-                    s->_shell->current_room_id_, ev, img.url,
-                    ":" + img.shortcode + ":");
-            }
+            s->_shell->send_reaction(ev, {}, img.url);
             [weakPanel close];
             return;
         }
         if (!s->_roomTextArea)
-        {
             return;
-        }
         s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
         if (s->_roomView)
-        {
             s->_roomView->set_current_text(s->_roomTextArea->text());
-        }
         s->_roomTextArea->set_focused(true);
     };
     NSView* anchorView = (__bridge NSView*)_mainAppSurface->view_handle();
@@ -5896,17 +6205,17 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Secondary (spawned) window: the shared AccountManager is already populated
     // and syncing, and set_initial_account() pinned the account to display. Bind
     // the UI to it without touching disk, restoring, or re-adding accounts.
-    if (_shell->is_secondary_window_startup_())
+    if (_shell->is_secondary_window_startup())
     {
         [self _switchActiveAccount:_shell->active_account_->user_id];
-        _shell->ensure_settings_controller_();
+        _shell->ensure_settings_controller();
         return;
     }
 
     // Migrate + restore every stored account (shared loop in ShellBase). macOS
     // has no in-app notifier or UnifiedPush connector, so install_account_*
     // are no-ops on MacShell.
-    auto restore = _shell->restore_all_accounts_();
+    auto restore = _shell->restore_all_accounts();
 
     std::string restore_error = restore.restore_error;
     bool any_restore_failed = restore.any_restore_failed;
@@ -5940,7 +6249,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 
     [self _switchActiveAccount:restore.active_uid];
-    _shell->ensure_settings_controller_();
+    _shell->ensure_settings_controller();
 }
 
 // Native (AppKit) binding for settings_controller_. Invoked from
@@ -6035,7 +6344,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     };
 
     _settingsNameField = _settingsSurface->host().make_text_field();
-    _settingsNameField->set_text(_shell->my_display_name_);
+    _settingsNameField->set_text(_shell->display_name());
     _settingsNameField->set_placeholder("Display name");
     _settingsNameField->set_visible(false);
 
@@ -6101,11 +6410,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             MainWindowController* s = ws;
             if (!s) return;
-            s->_shell->my_avatar_url_ = mxc;
+            s->_shell->set_avatar_url(mxc);
             if (s->_shell->active_account_)
             {
                 s->_shell->active_account_->avatar_url =
-                    s->_shell->my_avatar_url_;
+                    s->_shell->avatar_url();
             }
             s->_settingsView->set_avatar_url(mxc);
             if (s->_settingsSurface) s->_settingsSurface->relayout();
@@ -6134,7 +6443,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 value_json = "[{\"summary\":" + json_quote(text) + ",\"language\":\"en\"}]";
             if (s->_settingsView)
                 s->_settingsView->set_profile_field_busy(kKey, true);
-            s->_shell->handle_profile_field_change_(kKey, value_json);
+            s->_shell->handle_profile_field_change(kKey, value_json);
             if (s->_settingsSurface) s->_settingsSurface->relayout();
         });
 
@@ -6151,7 +6460,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             std::string value_json = text.empty() ? "null" : json_quote(text);
             if (s->_settingsView)
                 s->_settingsView->set_profile_field_busy(kKey, true);
-            s->_shell->handle_profile_field_change_(kKey, value_json);
+            s->_shell->handle_profile_field_change(kKey, value_json);
             if (s->_settingsSurface) s->_settingsSurface->relayout();
         });
 
@@ -6172,7 +6481,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 value_json = "{\"m.text\":[{\"body\":" + json_quote(text) + "}]}";
             if (s->_settingsView)
                 s->_settingsView->set_profile_field_busy(kKey, true);
-            s->_shell->handle_profile_field_change_(kKey, value_json);
+            s->_shell->handle_profile_field_change(kKey, value_json);
             if (s->_settingsSurface) s->_settingsSurface->relayout();
         });
 
@@ -6224,7 +6533,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [_loginView setClient:nullptr];
 
     // Agnostic add-account core (see ShellBase::finalize_login_).
-    const auto fin = _shell->finalize_login_();
+    const auto fin = _shell->finalize_login();
 
     // Reject if this account is already signed in.
     if (fin.rejected_duplicate)
@@ -6249,7 +6558,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _shell->add_account_return_idx_ = -1;
 
     [self _switchActiveAccount:fin.user_id];
-    _shell->ensure_settings_controller_();
+    _shell->ensure_settings_controller();
 }
 
 - (void)loginViewDidCancel:(LoginView*)view
@@ -6279,7 +6588,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // pending restores, swap rooms_/invites_ snapshots, persist the index)
     // lives in ShellBase. Returns false (no-op) when the account isn't found
     // or is already active with a bound client.
-    if (!_shell->switch_active_account_impl_(user_id))
+    if (!_shell->switch_account(user_id))
     {
         return;
     }
@@ -6329,7 +6638,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     }
                     // If the unread room is popped out, raise that window
                     // instead of toggling/raising the main window.
-                    if (strong->_shell->focus_tray_unread_popout_())
+                    if (strong->_shell->focus_tray_unread_popout())
                     {
                         return;
                     }
@@ -6342,7 +6651,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     {
                         [win makeKeyAndOrderFront:nil];
                         [NSApp activateIgnoringOtherApps:YES];
-                        strong->_shell->navigate_tray_unread_();
+                        strong->_shell->navigate_tray_unread();
                     }
                 });
             },
@@ -6357,8 +6666,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             // Seed the new tray with the current aggregate so an already-
             // unread state shows immediately rather than waiting for the next
             // sync tick to flip on_tray_unread_changed_.
-            _tray->set_unread(_shell->last_tray_unread_,
-                              _shell->last_tray_highlight_);
+            _tray->set_unread(_shell->tray_unread(), _shell->tray_highlight());
         }
     }
 
@@ -6627,7 +6935,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     __weak MainWindowController* ws = self;
     _settingsView->set_account_info(
-        _shell->my_display_name_, _shell->my_user_id_, _shell->my_avatar_url_);
+        _shell->display_name(), _shell->user_id(), _shell->avatar_url());
     _settingsView->set_image_provider(
         [ws](const std::string& mxc) -> const tk::Image*
         {
@@ -6663,7 +6971,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         tesseract::Settings::instance().invite_avatars);
     _settingsSurface->relayout();
 
-    _shell->compute_cache_sizes_(
+    _shell->compute_cache_sizes(
         [ws](uint64_t local, uint64_t sdk, uint64_t memory,
              uint64_t mh, uint64_t mm, uint64_t dh, uint64_t dm)
     {
@@ -6676,7 +6984,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     mainAppView.hidden = YES;
     ((__bridge NSView*)_settingsSurface->view_handle()).hidden = NO;
-    _shell->start_search_index_stats_poll_();
+    _shell->start_search_stats_poll();
 }
 
 - (void)_populateUserStrip
@@ -6685,12 +6993,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         return;
     }
-    _mainApp->user_info()->set_display_name(_shell->my_display_name_);
-    _mainApp->user_info()->set_user_id(_shell->my_user_id_);
-    _mainApp->user_info()->set_avatar_url(_shell->my_avatar_url_);
-    if (!_shell->my_avatar_url_.empty())
+    _mainApp->user_info()->set_display_name(_shell->display_name());
+    _mainApp->user_info()->set_user_id(_shell->user_id());
+    _mainApp->user_info()->set_avatar_url(_shell->avatar_url());
+    if (!_shell->avatar_url().empty())
     {
-        _shell->ensure_user_avatar_(_shell->my_avatar_url_);
+        _shell->ensure_user_avatar(_shell->avatar_url());
     }
     if (_mainAppSurface)
     {
@@ -6823,16 +7131,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_onSpaceBack
 {
-    if (!_shell->space_stack_.empty())
-        _shell->space_stack_.pop_back();
+    _shell->pop_space(_roomListView);
     if (_mainApp)
         _mainApp->hide_room_preview();
     [self _refreshRoomList];
-    if (!_shell->space_nav_frames_.empty())
-    {
-        _shell->space_nav_frames_.back().restore(_roomListView);
-        _shell->space_nav_frames_.pop_back();
-    }
 }
 
 - (void)_openAccountPicker
@@ -6860,7 +7162,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 return;
             }
             [s->_accountPickerPopover close];
-            s->_shell->on_account_picker_select_(uid);
+            s->_shell->on_account_picker_select(uid);
         };
         _accountPickerShared->set_image_provider(
             [weakSelf](const std::string& mxc) -> const tk::Image*
@@ -6901,7 +7203,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         entries.push_back(std::move(e));
         if (!s->avatar_url.empty())
         {
-            _shell->ensure_user_avatar_(s->avatar_url);
+            _shell->ensure_user_avatar(s->avatar_url);
         }
     }
     _accountPickerShared->set_entries(std::move(entries));
@@ -6932,7 +7234,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // state, tray refresh, index update, and — when other accounts remain — the
     // switch to a survivor via switch_active_account_impl_ +
     // refresh_account_ui_after_switch_) lives in ShellBase.
-    const auto result = _shell->logout_active_account_impl_();
+    const auto result = _shell->logout_active_account();
     if (!result.logged_out)
     {
         return;
@@ -6995,7 +7297,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
     if (_shell)
     {
-        _shell->notify_window_active_(true);
+        _shell->notify_window_active(true);
     }
 }
 
@@ -7004,7 +7306,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     (void)notification;
     if (_shell)
     {
-        _shell->notify_window_active_(false);
+        _shell->notify_window_active(false);
     }
 }
 
@@ -7197,8 +7499,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // fresh/only device our own login-time bootstrap holds the cross-signing
     // keys, so "verify this device" is a dead end — check_encryption_setup_
     // drives the Fresh setup overlay instead.
-    if (!isVerified && !_shell->verification_banner_dismissed_
-        && _shell->foreign_cross_signing_identity_())
+    if (!isVerified && !_shell->verification_banner_dismissed()
+        && _shell->foreign_cross_signing_identity())
     {
         if (!_verifShared->visible())
         {
@@ -7232,7 +7534,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
             tesseract::views::VerificationBanner::State::Waiting);
         if (_shell->client_)
         {
-            _shell->client_->start_sas(_shell->active_verification_flow_id_);
+            _shell->client_->start_sas(_shell->verification_flow_id());
         }
     }
     _mainApp->show_verif_banner(true);
@@ -7375,7 +7677,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     ]];
 
     if (_shell)
-        _shell->init_pool_callbacks_();
+        _shell->init_pool_callbacks();
     [self _onInflightChanged];
 }
 
@@ -7393,7 +7695,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Opt-in gate (server/error text → plain) lives in ShellBase; fall back to
     // plain when the shell isn't attached yet.
     const auto segs =
-        _shell ? _shell->parse_status_message_(raw)
+        _shell ? _shell->parse_status(raw)
                : std::vector<tesseract::StatusSegment>{{raw, std::string{}}};
     if (!tesseract::status_has_links(segs))
     {
@@ -7438,12 +7740,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
         return;
     using RLS = tesseract::RoomListState;
     using BS = tesseract::BackupState;
+    const auto ss = _shell->sync_status_info();
 
-    const bool room_busy = (_shell->last_room_list_state_ == RLS::Init ||
-                             _shell->last_room_list_state_ == RLS::SettingUp);
-    const bool reconnecting =
-        (_shell->last_room_list_state_ == RLS::Recovering);
-    const bool keys_busy = (_shell->last_backup_state_ == BS::Downloading);
+    const bool room_busy    = (ss.room_list_state == RLS::Init ||
+                                ss.room_list_state == RLS::SettingUp);
+    const bool reconnecting = (ss.room_list_state == RLS::Recovering);
+    const bool keys_busy    = (ss.backup_state == BS::Downloading);
 
     NSString* text;
     if (room_busy)
@@ -7451,44 +7753,36 @@ void MacShell::set_compose_draft_(const std::string& draft)
     else if (reconnecting)
         text = @"Reconnecting…";
     else if (keys_busy)
-        text = [NSString
-            stringWithFormat:@"Downloading encryption keys (%llu)…",
-                             (unsigned long long)_shell->last_imported_keys_];
-    else if (_shell->has_status_override_())
+        text = [NSString stringWithFormat:@"Downloading encryption keys (%llu)…",
+                         (unsigned long long)ss.imported_keys];
+    else if (ss.has_override)
         return; // persistent status override active; don't overwrite with "Connected"
     else
         text = @"Connected";
 
-    // Funnel through _setStatusLabelText: so the selectable /
-    // allowsEditingTextAttributes resets from a prior linked message apply.
     [self _setStatusLabelText:text];
-    _shell->sync_progress_shown_ = room_busy || reconnecting || keys_busy;
+    _shell->set_sync_progress_shown(room_busy || reconnecting || keys_busy);
 }
 
 - (void)_onInflightChanged
 {
     if (!_inflightDotView || !_shell)
         return;
-    const auto     c  = _shell->inflight_dot_color_();
-    const uint32_t n  = _shell->inflight_total_();
-    const size_t   fp = _shell->pool_pending_count_();
-    const size_t   sp = _shell->mut_pool_pending_count_();
-    const size_t   mp = _shell->pending_media_count_();
-    _inflightDotView.dotColor      = c;
-    _inflightDotView.inflightCount = n;
-    _inflightDotView.spinPhase     = _shell->inflight_spin_phase_();
+    const auto info = _shell->inflight_info();
+    _inflightDotView.dotColor      = info.dot_color;
+    _inflightDotView.inflightCount = info.count;
+    _inflightDotView.spinPhase     = info.spin_phase;
     [_inflightDotView setNeedsDisplay:YES];
-    NSString* first = (n == 1)
-                          ? @"1 request in flight"
-                          : [NSString stringWithFormat:@"%u requests in flight", n];
-    NSString* tip =
-        [NSString stringWithFormat:
-                      @"%@\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
-                      first, mp, fp, sp];
+    NSString* first = (info.count == 1)
+        ? @"1 request in flight"
+        : [NSString stringWithFormat:@"%u requests in flight", info.count];
+    NSString* tip = [NSString stringWithFormat:
+        @"%@\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
+        first, info.media_pending, info.pool_pending, info.mut_pool_pending];
 #ifndef NDEBUG
-    if (!_shell->last_inflight_urls_.empty()) {
+    if (!info.urls.empty()) {
         tip = [tip stringByAppendingFormat:@"\n── requests ──\n%@",
-               [NSString stringWithUTF8String:_shell->last_inflight_urls_.c_str()]];
+               [NSString stringWithUTF8String:info.urls.c_str()]];
     }
 #endif
     _inflightDotView.toolTip = tip;
@@ -7503,23 +7797,20 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // to avoid subscribing to a room during initial sync, which triggers the
     // imbl promote_front data race in matrix-sdk-ui).
     using RLS = tesseract::RoomListState;
-    if (_shell->last_room_list_state_ == RLS::Running &&
-        _shell->current_room_id_.empty() &&
-        !_shell->pending_restore_rooms_.empty())
+    if (_shell->sync_status_info().room_list_state == RLS::Running &&
+        _shell->current_room_id_.empty())
     {
-        if (_shell->try_restore_tab_session_(_shell->pending_restore_rooms_,
-                                              _shell->pending_restore_rooms_[0]))
-            _shell->pending_restore_rooms_.clear();
+        _shell->maybe_restore_rooms();
     }
 }
 
 - (void)_onServerInfoReady
 {
     if (_settingsView)
-        _settingsView->set_server_info(_shell->server_info_);
+        _settingsView->set_server_info(_shell->server_info_ref());
     if (_mainApp && _mainApp->room_view())
         _mainApp->room_view()->header()->set_jump_to_date_enabled(
-            _shell->server_info_.supports_msc3030);
+            _shell->server_info_ref().supports_msc3030);
     if (_mainAppSurface)
         _mainAppSurface->relayout();
 }
@@ -7527,13 +7818,13 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)_onOwnExtendedProfileReady
 {
     if (_settingsView)
-        _settingsView->set_extended_profile(_shell->own_extended_profile_);
+        _settingsView->set_extended_profile(_shell->own_extended_profile());
     if (_settingsPronounsField)
-        _settingsPronounsField->set_text(_shell->own_extended_profile_.pronouns);
+        _settingsPronounsField->set_text(_shell->own_extended_profile().pronouns);
     if (_settingsTzField)
-        _settingsTzField->set_text(_shell->own_extended_profile_.tz);
+        _settingsTzField->set_text(_shell->own_extended_profile().tz);
     if (_settingsBioField)
-        _settingsBioField->set_text(_shell->own_extended_profile_.biography);
+        _settingsBioField->set_text(_shell->own_extended_profile().biography);
     if (_settingsSurface)
         _settingsSurface->relayout();
 }
@@ -7570,7 +7861,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)_refreshRoomList
 {
     std::vector<tesseract::RoomInfo> filtered;
-    if (_shell->space_stack_.empty())
+    if (_shell->space_stack_empty())
     {
         std::unordered_set<std::string> in_space;
         for (const auto& r : _shell->rooms_)
@@ -7579,13 +7870,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
             {
                 continue;
             }
-            auto sc_it = _shell->space_children_cache_.find(r.id);
-            if (sc_it != _shell->space_children_cache_.end())
+            if (const auto* children = _shell->space_children(r.id))
             {
-                for (const auto& id : sc_it->second)
-                {
+                for (const auto& id : *children)
                     in_space.insert(id);
-                }
             }
         }
         filtered.reserve(_shell->rooms_.size());
@@ -7603,22 +7891,19 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 filtered.push_back(r);
             }
         }
-        _shell->apply_space_child_counts_(filtered);
+        _shell->apply_space_child_counts(filtered);
         if (_mainApp)
         {
             _mainApp->set_space_nav(false);
             _mainApp->room_list_view()->clear_space_unjoined_rooms();
-            _shell->cancel_unjoined_summaries_();
+            _shell->cancel_unjoined_summaries();
         }
     }
     else
     {
         static const std::vector<std::string> kNoChildren;
-        const auto sc_it =
-            _shell->space_children_cache_.find(_shell->space_stack_.back());
-        const auto& child_ids =
-            sc_it != _shell->space_children_cache_.end() ? sc_it->second
-                                                         : kNoChildren;
+        const auto* sc_ptr = _shell->space_children(_shell->current_space());
+        const auto& child_ids = sc_ptr ? *sc_ptr : kNoChildren;
         for (const auto& r : _shell->rooms_)
         {
             if (std::find(child_ids.begin(), child_ids.end(), r.id) !=
@@ -7631,11 +7916,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         std::string space_avatar;
         for (const auto& r : _shell->rooms_)
         {
-            if (r.id == _shell->space_stack_.back())
+            if (r.id == _shell->current_space())
             {
                 space_name = r.name;
                 space_avatar = r.avatar_url;
-                _shell->ensure_room_avatar_(r);
+                _shell->ensure_room_avatar(r);
                 break;
             }
         }
@@ -7643,7 +7928,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         {
             _mainApp->set_space_nav(true, space_name, space_avatar);
             const auto& unjoined =
-                _shell->get_cached_unjoined_summaries_(_shell->space_stack_.back());
+                _shell->cached_unjoined_summaries();
             _mainApp->room_list_view()->set_space_unjoined_rooms(
                 std::vector<tesseract::RoomSummary>(unjoined));
         }
@@ -7665,7 +7950,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 {
     if (_roomListView)
     {
-        _roomListView->set_invites(&_shell->invites_);
+        _roomListView->set_invites(_shell->invites_ptr());
     }
     if (_mainAppSurface)
     {
@@ -7695,22 +7980,20 @@ void MacShell::set_compose_draft_(const std::string& draft)
     {
         return;
     }
-    if (const auto* r = _shell->room_by_id_(roomId); r && r->is_space)
+    if (const auto* r = _shell->room_by_id(roomId); r && r->is_space)
     {
-        _shell->space_nav_frames_.push_back(
-            tesseract::ShellBase::SpaceNavFrame::capture(_roomListView));
-        _shell->space_stack_.push_back(roomId);
+        _shell->push_space(roomId, _roomListView);
         [self _refreshRoomList];
         tesseract::ShellBase::SpaceNavFrame::enter(_roomListView);
         return;
     }
     [self hideSlashPopup];
     [self hideShortcodePopup];
-    _shell->handle_compose_room_leaving_(_shell->current_room_id_);
+    _shell->handle_compose_room_leaving();
     // (No unsubscribe-on-leave here: ShellBase::prune_warm_subscriptions_ owns
     // timeline lifecycle via the warm-subscription LRU.)
     _shell->current_room_id_ = roomId;
-    _shell->clear_focused_state_(roomId);
+    _shell->clear_focused_state(roomId);
     [_markReadTimer invalidate];
     double delayS =
         tesseract::Settings::instance().mark_as_read_delay_ms / 1000.0;
@@ -7722,12 +8005,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                      MainWindowController* c = weakSelf;
                                      if (c)
                                      {
-                                         c->_shell->mark_room_read_(
-                                             c->_shell->current_room_id_);
+                                         c->_shell->mark_room_read();
                                      }
                                  }];
-    _shell->reply_details_requested_.clear();
-    _shell->persist_room_layout_pref_();
+    _shell->clear_reply_details();
+    _shell->persist_room_layout_pref();
     if (_roomView)
     {
         _roomView->compose_bar()->clear_reply();
@@ -7760,53 +8042,19 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::vector<std::string> visibleIds =
         _roomListView ? _roomListView->visible_room_ids()
                       : std::vector<std::string>{};
-    _shell->start_room_subscription_(_shell->current_room_id_,
-                                     std::move(visibleIds));
+    _shell->start_room_subscription(_shell->current_room_id_,
+                                    std::move(visibleIds));
 }
 
 - (void)requestMoreHistoryForRoom:(std::string)roomId
 {
-    if (roomId.empty())
-    {
-        return;
-    }
-    auto& state = _shell->pagination_[roomId];
-    if (state.in_flight || state.reached_start)
-    {
-        return;
-    }
-    state.in_flight = true;
-    if (_shell->room_view_)
-        _shell->room_view_->set_paginating(true);
-    [self _startAnimTickIfNeeded];
-
-    // Run the blocking paginate call on a background queue; marshal the
-    // result back to the main thread.
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        auto pr = self->_shell->client_->paginate_back_with_status(roomId, 50);
-        BOOL reached = pr.ok && pr.reached_start;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self handlePaginateResultForRoom:roomId reached_start:reached];
-        });
-    });
+    _shell->request_more_history(roomId);
 }
 
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached
 {
-    auto it = _shell->pagination_.find(roomId);
-    if (it == _shell->pagination_.end())
-    {
-        return;
-    }
-    it->second.in_flight = false;
-    it->second.reached_start = reached;
-    if (roomId == _shell->current_room_id_ && _roomView)
-    {
-        _roomView->message_list()->set_paginating(false);
-        _shell->schedule_relayout_();
-        _roomView->message_list()->reset_near_top_latch();
-    }
+    _shell->handle_paginate_result(roomId, (bool)reached);
 }
 
 // Note: _ensureRowMedia is now handled by ShellBase::ensure_row_media_() via
@@ -7849,7 +8097,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)_startAnimTickIfNeeded
 {
     const bool need_anim = !_shell->account_manager_.anim_cache().empty()
-                           || _shell->inflight_needs_anim_();
+                           || _shell->inflight_needs_anim();
     if (_animTimer || !need_anim)
     {
         return;
@@ -7868,10 +8116,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
 {
     if (_shell)
     {
-        _shell->tick_anim_();
-        if (_inflightDotView && _shell->inflight_needs_anim_())
+        _shell->tick_anim();
+        if (_inflightDotView && _shell->inflight_needs_anim())
         {
-            _inflightDotView.spinPhase = _shell->inflight_spin_phase_();
+            _inflightDotView.spinPhase = _shell->inflight_info().spin_phase;
             [_inflightDotView setNeedsDisplay:YES];
         }
     }
@@ -7885,12 +8133,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_ensureStickerImageAsync:(std::string)url
 {
-    _shell->ensure_picker_image_(url, /*is_sticker=*/true);
+    _shell->ensure_picker_image(url, true);
 }
 
 - (void)_ensureEmojiImageAsync:(std::string)url
 {
-    _shell->ensure_picker_image_(url, /*is_sticker=*/false);
+    _shell->ensure_picker_image(url, false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -7943,24 +8191,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
     __weak StickerPickerPanel* weakPanel = panel;
     panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
         MainWindowController* s = weakSelf;
-        if (!s || s->_shell->current_room_id_.empty())
-        {
+        if (!s)
             return;
-        }
-        std::string u = url.UTF8String ?: "";
-        std::string b = body.UTF8String ?: "";
-        std::string j = infoJson.UTF8String ?: "{}";
-        if (s->_shell->thread_panel_ == tesseract::ShellBase::ThreadPanel::Open &&
-            !s->_shell->current_thread_root_.empty())
-        {
-            s->_shell->client_->send_thread_sticker(
-                s->_shell->current_room_id_, s->_shell->current_thread_root_,
-                b, u, j);
-        }
-        else
-        {
-            s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
-        }
+        s->_shell->send_sticker(body.UTF8String ?: "", url.UTF8String ?: "",
+                                infoJson.UTF8String ?: "{}");
         [weakPanel orderOut:nil];
     };
 
@@ -8007,24 +8241,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
     __weak StickerPickerPanel* weakPanel = panel;
     panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
         MainWindowController* s = weakSelf;
-        if (!s || s->_shell->current_room_id_.empty())
-        {
+        if (!s)
             return;
-        }
-        std::string u = url.UTF8String ?: "";
-        std::string b = body.UTF8String ?: "";
-        std::string j = infoJson.UTF8String ?: "{}";
-        if (s->_shell->thread_panel_ == tesseract::ShellBase::ThreadPanel::Open &&
-            !s->_shell->current_thread_root_.empty())
-        {
-            s->_shell->client_->send_thread_sticker(
-                s->_shell->current_room_id_, s->_shell->current_thread_root_,
-                b, u, j);
-        }
-        else
-        {
-            s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
-        }
+        s->_shell->send_sticker(body.UTF8String ?: "", url.UTF8String ?: "",
+                                infoJson.UTF8String ?: "{}");
         [weakPanel orderOut:nil];
     };
 
@@ -8097,7 +8317,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 - (void)_showQRGrant
 {
-    _shell->start_qr_grant_overlay();
+    _shell->start_qr_grant_overlay_public();
 }
 
 @end
