@@ -829,7 +829,8 @@ impl ClientFfi {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive(directive),
+                    .add_directive(directive)
+                    .add_directive("matrix_sdk::http_client=off".parse().unwrap()),
             )
             .try_init();
 
