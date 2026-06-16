@@ -76,6 +76,9 @@ public:
     std::function<void(bool)> on_notifications_changed;
     std::function<void(bool)> on_send_presence_changed;
     std::function<void(bool)> on_index_messages_changed;
+#ifdef TESSERACT_GITHUB_REPO
+    std::function<void(bool)> on_check_for_updates_changed;
+#endif
     std::function<void(tesseract::Settings::MediaPreviews)>
         on_media_previews_changed;
     std::function<void(bool)> on_invite_avatars_changed;

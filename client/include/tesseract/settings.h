@@ -195,6 +195,10 @@ public:
     // enabled(): enabling lazily backfills history, disabling clears the index.
     bool index_messages_for_search = false;
 
+    // When true, check GitHub for a newer release once per session on sync-ready.
+    // Default on. No-op when TESSERACT_GITHUB_REPO is not set at build time.
+    bool check_for_updates = true;
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.

@@ -109,6 +109,18 @@ PrivacySection::PrivacySection()
     search_date_label_ = search_group->add_widget(std::move(date_lbl));
     search_date_label_->set_visible(false);
 
+    // ── Updates ───────────────────────────────────────────────────────────────
+#ifdef TESSERACT_GITHUB_REPO
+    auto* updates_group = add_group("Updates");
+    auto updates_cb = std::make_unique<tk::CheckButton>(
+        "Check for updates automatically", s.check_for_updates);
+    check_updates_cb_ = updates_group->add_widget(std::move(updates_cb));
+    check_updates_cb_->on_change = [this](bool v)
+    {
+        if (on_check_for_updates_changed) on_check_for_updates_changed(v);
+    };
+#endif
+
     // ── Encryption ────────────────────────────────────────────────────────────
     auto* enc_group = add_group("Encryption");
 
@@ -135,6 +147,13 @@ void PrivacySection::set_index_messages(bool enabled)
 {
     search_index_cb_->set_checked(enabled);
 }
+
+#ifdef TESSERACT_GITHUB_REPO
+void PrivacySection::set_check_for_updates(bool enabled)
+{
+    check_updates_cb_->set_checked(enabled);
+}
+#endif
 
 void PrivacySection::set_search_index_stats(
     const tesseract::SearchIndexStats& stats, bool enabled)

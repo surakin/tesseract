@@ -46,6 +46,14 @@ public:
     // Client::set_search_indexing_enabled().
     std::function<void(bool)> on_index_messages_changed;
 
+#ifdef TESSERACT_GITHUB_REPO
+    // Silently update the "check for updates" checkbox without firing.
+    void set_check_for_updates(bool enabled);
+
+    // Fired with the new state when the "check for updates" checkbox is toggled.
+    std::function<void(bool)> on_check_for_updates_changed;
+#endif
+
     // Fired when the user clicks "Export room keys…".
     std::function<void()> on_export_keys;
 
@@ -60,6 +68,9 @@ private:
     tk::CheckButton* search_index_cb_ = nullptr;
     tk::Label* search_stats_label_ = nullptr; // counts + status
     tk::Label* search_date_label_ = nullptr;  // "covers messages since …"
+#ifdef TESSERACT_GITHUB_REPO
+    tk::CheckButton* check_updates_cb_ = nullptr;
+#endif
 };
 
 } // namespace tesseract::views

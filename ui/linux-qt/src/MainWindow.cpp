@@ -4067,6 +4067,13 @@ void MainWindow::openSettings()
                 {
                     handle_index_messages_toggle_(enabled);
                 });
+#ifdef TESSERACT_GITHUB_REPO
+        connect(settingsWidget_, &SettingsWidget::checkForUpdatesChanged, this,
+                [this](bool enabled)
+                {
+                    handle_check_for_updates_toggle_(enabled);
+                });
+#endif
         connect(settingsWidget_, &SettingsWidget::mediaPreviewsChanged, this,
                 [this](tesseract::Settings::MediaPreviews mode)
                 {

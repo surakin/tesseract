@@ -67,6 +67,9 @@ signals:
     void notificationsChanged(bool enabled);
     void presenceChanged(bool enabled);
     void indexMessagesChanged(bool enabled);
+#ifdef TESSERACT_GITHUB_REPO
+    void checkForUpdatesChanged(bool enabled);
+#endif
     void mediaPreviewsChanged(tesseract::Settings::MediaPreviews mode);
     void inviteAvatarsChanged(bool enabled);
     void roomListGroupingChanged();

@@ -117,6 +117,12 @@ SettingsView::SettingsView()
         if (request_repaint_) request_repaint_();
         if (on_index_messages_changed) on_index_messages_changed(v);
     };
+#ifdef TESSERACT_GITHUB_REPO
+    privacy->on_check_for_updates_changed = [this](bool v)
+    {
+        if (on_check_for_updates_changed) on_check_for_updates_changed(v);
+    };
+#endif
     // on_export_keys / on_import_keys are wired in set_controller()
     // once the SettingsController is available.
     privacy_ = privacy.get();
@@ -328,6 +334,16 @@ void SettingsView::set_index_messages_pref(bool enabled)
         privacy_->set_index_messages(enabled);
     }
 }
+
+#ifdef TESSERACT_GITHUB_REPO
+void SettingsView::set_check_for_updates_pref(bool enabled)
+{
+    if (privacy_)
+    {
+        privacy_->set_check_for_updates(enabled);
+    }
+}
+#endif
 
 void SettingsView::set_search_index_stats(
     const tesseract::SearchIndexStats& stats, bool enabled)

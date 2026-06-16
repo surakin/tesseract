@@ -77,6 +77,13 @@ SettingsWidget::SettingsWidget()
         if (on_index_messages_changed)
             on_index_messages_changed(e);
     };
+#ifdef TESSERACT_GITHUB_REPO
+    settings_view_->on_check_for_updates_changed = [this](bool e)
+    {
+        if (on_check_for_updates_changed)
+            on_check_for_updates_changed(e);
+    };
+#endif
     settings_view_->on_media_previews_changed =
         [this](tesseract::Settings::MediaPreviews mode)
     {
@@ -252,6 +259,10 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().send_presence);
     settings_view_->set_index_messages_pref(
         tesseract::Settings::instance().index_messages_for_search);
+#ifdef TESSERACT_GITHUB_REPO
+    settings_view_->set_check_for_updates_pref(
+        tesseract::Settings::instance().check_for_updates);
+#endif
     settings_view_->set_media_previews_pref(
         tesseract::Settings::instance().media_previews);
     settings_view_->set_invite_avatars_pref(

@@ -2533,6 +2533,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         {
             handle_index_messages_toggle_(enabled);
         };
+#ifdef TESSERACT_GITHUB_REPO
+        settings_widget_->on_check_for_updates_changed = [this](bool enabled)
+        {
+            handle_check_for_updates_toggle_(enabled);
+        };
+#endif
         settings_widget_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)
         {

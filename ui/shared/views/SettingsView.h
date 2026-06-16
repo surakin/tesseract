@@ -96,6 +96,11 @@ public:
     // Silently initialise the "index messages for search" checkbox.
     void set_index_messages_pref(bool enabled);
 
+#ifdef TESSERACT_GITHUB_REPO
+    // Silently initialise the "check for updates" checkbox.
+    void set_check_for_updates_pref(bool enabled);
+#endif
+
     // Update the search-index stats line under the checkbox (shown only while
     // enabled). Driven by the shell on settings-open and a slow poll.
     void set_search_index_stats(const tesseract::SearchIndexStats& stats,
@@ -213,6 +218,11 @@ public:
     // Fired when the user toggles "Index messages for search". The shell
     // persists the setting and calls Client::set_search_indexing_enabled().
     std::function<void(bool)> on_index_messages_changed;
+
+#ifdef TESSERACT_GITHUB_REPO
+    // Fired when the user toggles "Check for updates automatically".
+    std::function<void(bool)> on_check_for_updates_changed;
+#endif
 
     // Fired when the active settings tab changes (so shells can relayout
     // native overlays whose visibility depends on the selected tab).

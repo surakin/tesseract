@@ -2128,6 +2128,11 @@ protected:
     // every logged-in account (enable → lazy backfill; disable → clear index).
     void handle_index_messages_toggle_(bool enabled);
 
+#ifdef TESSERACT_GITHUB_REPO
+    // Persists the "check for updates automatically" preference.
+    void handle_check_for_updates_toggle_(bool enabled);
+#endif
+
     // Resume live search indexing for a freshly-synced account if the global
     // "index messages for search" preference is enabled. Called after start_sync.
     void apply_search_indexing_pref_(tesseract::AccountSession& session);

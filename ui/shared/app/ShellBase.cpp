@@ -3938,7 +3938,8 @@ void ShellBase::return_to_live_(const std::string& room_id)
 void ShellBase::push_room_list_state_(RoomListState state)
 {
     last_room_list_state_ = state;
-    if (state == RoomListState::Running)
+    if (state == RoomListState::Running
+            && tesseract::Settings::instance().check_for_updates)
         trigger_update_check_();
 }
 
@@ -5789,6 +5790,15 @@ void ShellBase::handle_index_messages_toggle_(bool enabled)
             sess->client->set_search_indexing_enabled(enabled);
     }
 }
+
+#ifdef TESSERACT_GITHUB_REPO
+void ShellBase::handle_check_for_updates_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.check_for_updates = enabled;
+    s.save_to_disk(tesseract::config_dir());
+}
+#endif
 
 void ShellBase::apply_search_indexing_pref_(tesseract::AccountSession& session)
 {

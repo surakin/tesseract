@@ -234,6 +234,9 @@ public:
     void notify_presence_tick();
     void handle_send_presence_toggle(bool enabled);
     void handle_index_messages_toggle(bool enabled);
+#ifdef TESSERACT_GITHUB_REPO
+    void handle_check_for_updates_toggle(bool enabled);
+#endif
 
     // Current-room actions (operate on current_room_id_ internally)
     void handle_compose_text_changed(const std::string& text);
@@ -1957,6 +1960,10 @@ void MacShell::handle_send_presence_toggle(bool enabled)
     { handle_send_presence_toggle_(enabled); }
 void MacShell::handle_index_messages_toggle(bool enabled)
     { handle_index_messages_toggle_(enabled); }
+#ifdef TESSERACT_GITHUB_REPO
+void MacShell::handle_check_for_updates_toggle(bool enabled)
+    { handle_check_for_updates_toggle_(enabled); }
+#endif
 void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
 void MacShell::on_account_picker_select(const std::string& uid)
     { on_account_picker_select_(uid); }
@@ -5167,6 +5174,13 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = ws;
             if (s) s->_shell->handle_index_messages_toggle(enabled);
         };
+#ifdef TESSERACT_GITHUB_REPO
+        _settingsView->on_check_for_updates_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_check_for_updates_toggle(enabled);
+        };
+#endif
         _settingsView->on_media_previews_changed =
             [ws](tesseract::Settings::MediaPreviews mode)
         {
@@ -6966,6 +6980,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         tesseract::Settings::instance().send_presence);
     _settingsView->set_index_messages_pref(
         tesseract::Settings::instance().index_messages_for_search);
+#ifdef TESSERACT_GITHUB_REPO
+    _settingsView->set_check_for_updates_pref(
+        tesseract::Settings::instance().check_for_updates);
+#endif
     _settingsView->set_media_previews_pref(
         tesseract::Settings::instance().media_previews);
     _settingsView->set_invite_avatars_pref(
