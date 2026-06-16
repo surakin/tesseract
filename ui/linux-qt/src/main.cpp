@@ -4,6 +4,7 @@
 #include <QIcon>
 #include <QLocalSocket>
 #include <QLocale>
+#include <QLoggingCategory>
 #include <QStandardPaths>
 #include <cstdlib>
 #include <fcntl.h>
@@ -23,6 +24,25 @@ extern "C" {
 
 int main(int argc, char* argv[])
 {
+#ifdef NDEBUG
+    // Silence Qt multimedia category noise (FFmpeg backend banner).
+    QLoggingCategory::setFilterRules("qt.multimedia.*=false");
+    // "spaVisitChoice: parse error ..." is a bare qWarning() inside Qt's
+    // PipeWire SPA code — not a named category — so filter rules can't catch
+    // it.  Install a handler that drops those lines and writes everything else
+    // to stderr via qFormatLogMessage (replicates the Qt default handler).
+    qInstallMessageHandler([](QtMsgType type, const QMessageLogContext& ctx,
+                              const QString& msg) {
+        if (msg.startsWith(QLatin1String("spaVisitChoice:")))
+            return;
+        fprintf(stderr, "%s\n",
+                qFormatLogMessage(type, ctx, msg).toLocal8Bit().constData());
+        fflush(stderr);
+        if (type == QtFatalMsg)
+            abort();
+    });
+#endif
+
     // Single-instance guard via a per-user lock file.
     // flock() releases automatically when the process exits or the fd closes.
     std::string lock_path =
