@@ -127,7 +127,9 @@ msgstr ""
 
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1960
 #: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:4174
+#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:4567
 #: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:2543
+#: /home/rayden/src/tesseract/ui/windows/src/MainWindow.cpp:2549
 msgid "File exceeds the upload limit"
 msgstr ""
 
@@ -740,4 +742,41 @@ msgstr ""
 
 #: /home/rayden/src/tesseract/ui/shared/views/settings/LanguageSection.cpp:30
 msgid "Changes take effect after restart."
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3991
+msgid "Add device via QR…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:49
+msgid "Confirm"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:73
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:152
+msgid "Close"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:79
+msgid "Try again"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:116
+msgid "Setting up secure channel…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:120
+msgid "Scan this QR code with your Matrix app"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:128
+msgid "Enter the numeric code shown on the new device:"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:138
+msgid "Approve the sign-in in your browser…"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:144
+msgid "Device added successfully."
 msgstr ""
