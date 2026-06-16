@@ -349,13 +349,26 @@ void ShellBase::note_media_fetch_failed_(const std::string& key)
             std::chrono::system_clock::now().time_since_epoch())
             .count()
         + std::chrono::duration_cast<std::chrono::seconds>(delay).count();
-    client_->note_media_backoff_failed(key, e.attempts, deadline_secs);
+    // Dispatch SH_FFI off the UI thread (ffi_mu must not be acquired on the
+    // UI thread while SH_FFI network calls may be holding it shared).
+    const auto attempts = e.attempts;
+    auto sess = active_account_;
+    run_async_([sess, key, attempts, deadline_secs]()
+    {
+        if (sess && sess->client)
+            sess->client->note_media_backoff_failed(key, attempts, deadline_secs);
+    });
 }
 
 void ShellBase::note_media_fetch_ok_(const std::string& key)
 {
     media_fetch_failed_.erase(key);
-    client_->note_media_backoff_ok(key);
+    auto sess = active_account_;
+    run_async_([sess, key]()
+    {
+        if (sess && sess->client)
+            sess->client->note_media_backoff_ok(key);
+    });
 }
 
 void ShellBase::fetch_media_pipeline_(
@@ -2316,39 +2329,55 @@ void ShellBase::update_space_children_cache_()
 void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                                            const std::string& room_id)
 {
-    // Phase 1: show SQLite-cached summary immediately, before any network fetch.
-    if (client_)
-    {
-        if (auto cached = client_->get_cached_room_summary(room_id))
-        {
-            auto& summaries = unjoined_summaries_cache_[space_id];
-            bool found = false;
-            for (auto& entry : summaries)
-            {
-                if (entry.room_id == room_id) { entry = *cached; found = true; break; }
-            }
-            if (!found)
-                summaries.push_back(*cached);
-            if (main_app_)
-                if (auto* rl = main_app_->room_list_view())
-                    rl->set_space_unjoined_rooms(
-                        std::vector<tesseract::RoomSummary>(summaries));
-            if (!cached->avatar_url.empty())
-                ensure_media_thumbnail_(cached->avatar_url, 64, 64, false);
-        }
-    }
-
-    // Phase 2: background network fetch — adds/updates the entry with fresh data.
+    // Both the SQLite cache lookup (Phase 1) and the network fetch (Phase 2) run
+    // off the UI thread so that ffi_mu is never acquired on the UI thread.
+    // Phase 1 posts its result back immediately; Phase 2 follows once the network
+    // call returns.  The visible behaviour is identical to the previous design
+    // except the cache display is delayed by one thread-scheduling round-trip
+    // (~0 ms in practice) instead of happening synchronously on the UI thread.
     auto sess = active_account_;
     const std::uint64_t gen = unjoined_fetch_gen_;
     run_async_(
         [this, sess, space_id, room_id, gen]()
         {
             if (!sess || !sess->client) return;
+
+            // Phase 1: show SQLite-cached summary before the network fetch.
+            if (auto cached = sess->client->get_cached_room_summary(room_id))
+            {
+                post_to_ui_alive_(
+                    [this, space_id, room_id, gen,
+                     cached = std::move(*cached)]() mutable
+                    {
+                        if (gen != unjoined_fetch_gen_) return;
+                        auto& summaries = unjoined_summaries_cache_[space_id];
+                        bool found = false;
+                        for (auto& entry : summaries)
+                        {
+                            if (entry.room_id == room_id)
+                            {
+                                entry = cached;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found)
+                            summaries.push_back(cached);
+                        if (main_app_)
+                            if (auto* rl = main_app_->room_list_view())
+                                rl->set_space_unjoined_rooms(
+                                    std::vector<tesseract::RoomSummary>(summaries));
+                        if (!cached.avatar_url.empty())
+                            ensure_media_thumbnail_(cached.avatar_url, 64, 64, false);
+                    });
+            }
+
+            // Phase 2: network fetch — adds/updates the entry with fresh data.
             auto summary =
                 sess->client->get_space_child_summary(space_id, room_id);
             post_to_ui_alive_(
-                [this, space_id, room_id, gen, summary = std::move(summary)]() mutable
+                [this, sess, space_id, room_id, gen,
+                 summary = std::move(summary)]() mutable
                 {
                     // Always erase from pending so the slot is freed even on cancel.
                     unjoined_fetch_pending_.erase(room_id);
@@ -2367,15 +2396,21 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                             std::min(s(5) * (1 << std::min(rs.attempts - 1, 6)),
                                      s(300));
                         rs.next_retry = sc::now() + delay;
-                        if (client_)
+                        // Notify the Rust-side backoff tracker off the UI thread
+                        // (SH_FFI must not be acquired on the UI thread).
+                        const auto deadline_sys = SC::now() + delay;
+                        const auto attempts     = rs.attempts;
+                        const auto deadline_s   =
+                            std::chrono::duration_cast<s>(
+                                deadline_sys.time_since_epoch()).count();
+                        run_async_([sess, room_id, attempts, deadline_s]()
                         {
-                            const auto deadline_sys = SC::now() + delay;
-                            client_->note_room_summary_backoff_failed(
-                                room_id,
-                                static_cast<std::uint32_t>(rs.attempts),
-                                std::chrono::duration_cast<s>(
-                                    deadline_sys.time_since_epoch()).count());
-                        }
+                            if (sess && sess->client)
+                                sess->client->note_room_summary_backoff_failed(
+                                    room_id,
+                                    static_cast<std::uint32_t>(attempts),
+                                    deadline_s);
+                        });
                         return;
                     }
                     // Upsert: add the room if it isn't already loaded, update otherwise.
@@ -2392,8 +2427,12 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                     }
                     if (!found)
                         cached.push_back(std::move(*summary));
-                    if (client_)
-                        client_->note_room_summary_backoff_ok(room_id);
+                    // Notify the Rust-side backoff tracker off the UI thread.
+                    run_async_([sess, room_id]()
+                    {
+                        if (sess && sess->client)
+                            sess->client->note_room_summary_backoff_ok(room_id);
+                    });
                     if (main_app_)
                         if (auto* rl = main_app_->room_list_view())
                             rl->set_space_unjoined_rooms(
@@ -5742,20 +5781,30 @@ void ShellBase::handle_compose_text_changed_(const std::string& text)
         return;
     }
     compose_typing_active_ = typing;
-    if (!current_room_id_.empty() && client_)
+    if (!current_room_id_.empty())
     {
-        client_->send_typing_notice(current_room_id_, typing);
+        auto sess = active_account_;
+        run_async_([sess, room_id = current_room_id_, typing]()
+        {
+            if (sess && sess->client)
+                sess->client->send_typing_notice(room_id, typing);
+        });
     }
 }
 
 void ShellBase::handle_compose_room_leaving_(const std::string& old_room_id)
 {
-    if (!compose_typing_active_ || old_room_id.empty() || !client_)
+    if (!compose_typing_active_ || old_room_id.empty())
     {
         return;
     }
     compose_typing_active_ = false;
-    client_->send_typing_notice(old_room_id, false);
+    auto sess = active_account_;
+    run_async_([sess, old_room_id]()
+    {
+        if (sess && sess->client)
+            sess->client->send_typing_notice(old_room_id, false);
+    });
 }
 
 void ShellBase::apply_current_theme_()

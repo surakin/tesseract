@@ -443,15 +443,12 @@ void EventHandlerBase::on_inflight_changed(uint32_t count)
     shell()->post_to_ui_(
         [shell = shell(), n = count]()
         {
-            // Re-read the authoritative atomic on the UI thread rather than
-            // trusting the snapshot `n`: notifications from different worker
-            // threads can be delivered out of order (or dropped if the Rust
-            // handler mutex is contended), which would otherwise leave the
-            // activity dot stuck above the true count. The live read makes the
-            // displayed value converge regardless of delivery order.
-            shell->last_inflight_ = shell->client_
-                                        ? shell->client_->in_flight_count()
-                                        : n;
+            // Use the count that Rust passed at callback time.  A live re-read
+            // via in_flight_count() (SH_FFI) would block the UI thread whenever
+            // a MUT_FFI caller is queued, causing visible freezes.  Out-of-order
+            // delivery is possible in theory but self-corrects on the next
+            // callback; a briefly stale spinner is far preferable to a freeze.
+            shell->last_inflight_ = n;
             // Advance the spin phase accumulator to keep it continuous across
             // speed changes, then ensure the animation ticker is running when
             // there are enough in-flight requests to show the ring.
@@ -468,9 +465,7 @@ void EventHandlerBase::on_inflight_changed_debug(uint32_t count, std::string url
     shell()->post_to_ui_(
         [shell = shell(), n = count, u = std::move(urls)]() mutable
         {
-            shell->last_inflight_ = shell->client_
-                                        ? shell->client_->in_flight_count()
-                                        : n;
+            shell->last_inflight_ = n;
             shell->last_inflight_urls_ = std::move(u);
             shell->spin_tick_(shell->monotonic_ms_());
             if (shell->inflight_needs_anim_())
