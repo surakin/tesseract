@@ -857,6 +857,9 @@ public:
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
     {
+        const int emoji_pt =
+            font_role_pt(FontRole::InlineEmoji, gtk_system_font().pt);
+
         std::string markup;
         markup.reserve(256);
         std::vector<PangoRichTextLayout::UrlRange> url_ranges;
@@ -908,6 +911,12 @@ public:
                 url_ranges.push_back(
                     {byte_offset,
                      byte_offset + static_cast<int>(sp.text.size()), sp.url});
+            }
+            if (sp.is_emoji_run)
+            {
+                t = "<span size=\"" +
+                    std::to_string(emoji_pt * PANGO_SCALE) + "\">" +
+                    t + "</span>";
             }
             markup += t;
             byte_offset += static_cast<int>(sp.text.size());

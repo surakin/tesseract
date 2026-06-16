@@ -90,7 +90,8 @@ enum class FontRole
     UnreadBadge,    // base−1 semibold — number inside the accent pill
     Title,          // base+3 semibold — room header
     UiSemibold,     // base−1 semibold — button label
-    BigEmoji,       // base×2 regular  — emoji-only message body
+    BigEmoji,       // base×2 regular   — emoji-only message body
+    InlineEmoji,    // (base+1)×5/4 regular — emoji within mixed-text body
     EmojiPickerCell,// base+6 regular  — emoji picker grid cells
     ReactionEmoji,  // base+3 regular  — emoji glyph inside reaction chips
 };
@@ -129,6 +130,7 @@ inline int font_role_pt(FontRole role, int base_pt)
     case FontRole::Title:          offset = +3; break;
     case FontRole::UiSemibold:     offset = -1; break;
     case FontRole::BigEmoji:       return std::max(base_pt * 2, 6);
+    case FontRole::InlineEmoji:    return std::max((base_pt + 1) * 5 / 4, 6);
     case FontRole::EmojiPickerCell:offset = +6; break;
     case FontRole::ReactionEmoji:  offset = +3; break;
     }
@@ -375,6 +377,9 @@ struct TextSpan
     bool  is_mention = false;
     bool  has_background = false;
     Color background{};
+    // True for emoji grapheme clusters within mixed text/emoji spans.
+    // Backends render these runs at FontRole::InlineEmoji size (~125% body).
+    bool  is_emoji_run = false;
 };
 
 // Per-platform factory for backend-owned resources. The platform host

@@ -761,7 +761,7 @@ public:
     QtFactory()
     {
         static_assert(
-            static_cast<int>(FontRole::ReactionEmoji) == 12,
+            static_cast<int>(FontRole::ReactionEmoji) == 13,
             "FontRole layout changed — verify font_cache_ index mapping");
         for (std::size_t i = 0; i < kNumRoles; ++i)
         {
@@ -944,6 +944,9 @@ public:
                                                 const TextStyle& s) override
     {
         QFont base = font_cache_[static_cast<std::size_t>(s.role)];
+        const int emoji_pt =
+            font_cache_[static_cast<std::size_t>(FontRole::InlineEmoji)]
+                .pointSize();
 
         QString html;
         html.reserve(256);
@@ -1007,6 +1010,12 @@ public:
                     t = QLatin1String("<a href=\"") + href +
                         QLatin1String("\">") + t + QLatin1String("</a>");
                 }
+            }
+            if (sp.is_emoji_run)
+            {
+                t = QLatin1String("<span style=\"font-size:") +
+                    QString::number(emoji_pt) +
+                    QLatin1String("pt;\">") + t + QLatin1String("</span>");
             }
             html += t;
         }

@@ -1249,7 +1249,8 @@ public:
             }
             else
             {
-                CFRetained<CTFontRef> base{create_font(s.role)};
+                FontRole span_role = span.is_emoji_run ? FontRole::InlineEmoji : s.role;
+                CFRetained<CTFontRef> base{create_font(span_role)};
                 CTFontSymbolicTraits need = 0;
                 if (span.bold || span.semibold)
                 {

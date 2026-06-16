@@ -1793,6 +1793,11 @@ public:
             }
         }
 
+        const float emoji_size_dip =
+            static_cast<float>(font_role_pt(FontRole::InlineEmoji,
+                                            win32_system_base_pt())) *
+            (96.0f / 72.0f);
+
         // Apply per-span formatting.
         std::vector<DWriteLayout::UrlRange> url_ranges;
         std::vector<DWriteLayout::ColorRange> color_ranges;
@@ -1800,6 +1805,10 @@ public:
         {
             const TextSpan& sp = *wr.sp;
             DWRITE_TEXT_RANGE tr{wr.start, wr.end - wr.start};
+            if (sp.is_emoji_run)
+            {
+                layout->SetFontSize(emoji_size_dip, tr);
+            }
             if (sp.bold)
             {
                 layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, tr);
