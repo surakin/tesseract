@@ -73,7 +73,7 @@ jobs:
         # Force CMake to use the same Python interpreter we installed
         # resvg-py into; otherwise FindPython3 picks the newest version
         # available on the runner (3.14) regardless of PATH.
-        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
 
       - name: Build
         run: cmake --build build/windows-release
@@ -118,7 +118,7 @@ jobs:
           workspaces: sdk -> ../build/macos-appkit-arm64-release
 
       - name: Configure (Release, arm64)
-        run: cmake --preset macos-appkit-arm64-release
+        run: cmake --preset macos-appkit-arm64-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
 
       - name: Build
         run: cmake --build build/macos-appkit-arm64-release
@@ -174,7 +174,7 @@ jobs:
           workspaces: sdk -> ../build/macos-appkit-x86_64-release
 
       - name: Configure (Release, x86_64)
-        run: cmake --preset macos-appkit-x86_64-release
+        run: cmake --preset macos-appkit-x86_64-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
 
       - name: Build
         run: cmake --build build/macos-appkit-x86_64-release
@@ -228,7 +228,7 @@ jobs:
           workspaces: sdk -> ../build/linux-qt6-release
 
       - name: Configure (Release)
-        run: cmake --preset linux-qt6-release
+        run: cmake --preset linux-qt6-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
 
       - name: Build
         run: cmake --build build/linux-qt6-release
@@ -293,7 +293,7 @@ jobs:
           workspaces: sdk -> ../build/linux-qt6-release
 
       - name: Configure (Release)
-        run: cmake --preset linux-qt6-release
+        run: cmake --preset linux-qt6-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
 
       - name: Build
         run: cmake --build build/linux-qt6-release

@@ -10,10 +10,12 @@
 #include <tesseract/visual.h>
 #include <tesseract/waveform_cache.h>
 #include "app/AccountManager.h"
+#include "app/GithubUpdateChecker.h"
 #include "app/PresenceTracker.h"
 #include "app/SettingsController.h"
 #include "app/status_links.h"
 #include "app/ThreadPanelController.h"
+#include "app/UpdateChecker.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
@@ -1877,6 +1879,10 @@ protected:
     virtual void on_room_list_state_ui_()
     {
     }
+
+    // Trigger a one-shot background update check once sync first reaches the
+    // Running state. Guarded internally so repeated calls are safe.
+    void trigger_update_check_();
     // Called whenever last_inflight_ or last_room_list_state_ changes so the
     // status-bar dot can be repainted with the new combined request count.
     virtual void on_inflight_ui_()
@@ -2085,6 +2091,11 @@ protected:
     // actually synced. Shells feed it activity, focus, periodic ticks, and
     // logout via the public notify_* helpers below.
     std::unique_ptr<PresenceTracker> presence_tracker_;
+
+    // Owned update checker. Created and triggered once when sync first reaches
+    // RoomListState::Running; destroyed (and not recreated) on logout.
+    std::unique_ptr<IUpdateChecker> update_checker_;
+    bool update_check_triggered_ = false;
 
     // Called by the shell when the user does something in our window —
     // either a Host input event (wired through Host::set_on_user_activity)

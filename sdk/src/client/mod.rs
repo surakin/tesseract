@@ -33,6 +33,7 @@ mod tags;
 mod thread;
 mod timeline;
 mod timeline_convert;
+mod update;
 mod verification;
 
 use session::PersistedSession;

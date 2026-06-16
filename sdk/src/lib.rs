@@ -180,6 +180,13 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct UpdateResult {
+        pub has_update: bool,
+        pub version: String,
+        pub url: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct PaginateResult {
         pub ok: bool,
         pub message: String,

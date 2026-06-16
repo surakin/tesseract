@@ -394,6 +394,16 @@ pub mod ffi {
         message: String,
     }
 
+    /// Result of a GitHub release update check.
+    /// `has_update` is `true` when a newer version than the running one was
+    /// found. `version` is the release tag (leading `v` stripped) and `url`
+    /// is the GitHub release page. Both are empty when `has_update` is false.
+    struct UpdateResult {
+        has_update: bool,
+        version: String,
+        url: String,
+    }
+
     /// Outcome of a back-pagination or forward-pagination call.
     /// `reached_start` is `true` when matrix-sdk-ui reports the timeline has
     /// no further history to load (the room's first event has been seen). UIs
@@ -1853,6 +1863,12 @@ pub mod ffi {
         /// Sets User-Agent to "Tesseract/0.1 (Matrix client)" per OSM tile policy.
         /// Capped at 1 MiB — intended for thumbnails / map tiles, not video.
         fn fetch_url_bytes(self: &ClientFfi, url: &str) -> Vec<u8>;
+
+        /// Check the GitHub Releases API for a newer version than `current_version`.
+        /// `repo` is the `owner/repo` slug. Blocks the calling thread (call from a
+        /// worker, never from the UI thread). Returns `UpdateResult::has_update ==
+        /// false` on any network error, rate limit, or when already up-to-date.
+        fn check_for_update(self: &ClientFfi, repo: &str, current_version: &str) -> UpdateResult;
 
         /// Like `fetch_url_bytes` but capped at the full-media size (64 MiB)
         /// with the generous full-download timeout — for fetching a `/gif`

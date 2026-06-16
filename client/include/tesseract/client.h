@@ -841,6 +841,25 @@ public:
     std::vector<uint8_t> fetch_gif_bytes(const std::string& url);
 
     // ------------------------------------------------------------------
+    // Update checking
+    // ------------------------------------------------------------------
+
+    /// Result of a GitHub release update check.
+    struct UpdateResult
+    {
+        bool has_update = false;
+        std::string version; ///< latest release tag (leading 'v' stripped); empty when no update
+        std::string url;     ///< GitHub release page URL; empty when no update
+    };
+
+    /// Check the GitHub Releases API for a newer version than `current_version`.
+    /// `repo` is the `owner/repo` slug (e.g. `"acme/tesseract"`).
+    /// Blocks the calling thread — call from a worker pool thread, never the UI thread.
+    /// Returns `has_update == false` on any network error or when already up-to-date.
+    UpdateResult check_for_update(const std::string& repo,
+                                  const std::string& current_version);
+
+    // ------------------------------------------------------------------
     // Async media downloads (non-blocking; complete via IEventHandler)
     // ------------------------------------------------------------------
 

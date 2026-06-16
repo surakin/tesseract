@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include <tesseract/version.h>
 #include "app/RoomWindowBase.h"
 #include "app/SlashCommands.h"
 #include "app/UnreadPrefetch.h"
@@ -3937,6 +3938,32 @@ void ShellBase::return_to_live_(const std::string& room_id)
 void ShellBase::push_room_list_state_(RoomListState state)
 {
     last_room_list_state_ = state;
+    if (state == RoomListState::Running)
+        trigger_update_check_();
+}
+
+void ShellBase::trigger_update_check_()
+{
+#ifndef TESSERACT_GITHUB_REPO
+    return; // no repo configured at build time — update checks disabled
+#else
+    if (std::exchange(update_check_triggered_, true))
+        return;
+    // kVersion is generated from PROJECT_VERSION in CMakeLists.txt via version.h.in.
+    // TESSERACT_GITHUB_REPO is set at configure time with -DTESSERACT_GITHUB_REPO=owner/repo.
+    update_checker_ = std::make_unique<GithubUpdateChecker>(
+        *client_,
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); },
+        [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
+        TESSERACT_GITHUB_REPO,
+        kVersion);
+    update_checker_->check_async([this](std::string version, std::string url) {
+        show_status_message_(
+            "[Tesseract " + version + " available](" + url + ")",
+            0,
+            true);
+    });
+#endif
 }
 
 // ── Secondary window registry ─────────────────────────────────────────────────

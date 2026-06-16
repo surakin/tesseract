@@ -26,6 +26,9 @@ set(_tk_sources
     app/SlashCommands.cpp
     app/status_links.h
     app/status_links.cpp
+    app/UpdateChecker.h
+    app/GithubUpdateChecker.h
+    app/GithubUpdateChecker.cpp
     tk/audio.h
     tk/audio_capture.h
     tk/video.h
@@ -309,6 +312,15 @@ add_custom_target(tesseract_icons DEPENDS "${_icons_h}")
 add_dependencies(tesseract_tk tesseract_icons)
 
 target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+
+# Update-checker configuration. TESSERACT_GITHUB_REPO is the "owner/repo"
+# slug passed to the GitHub Releases API. When left empty (the default),
+# trigger_update_check_() is a no-op and no network request is made.
+if(TESSERACT_GITHUB_REPO)
+    target_compile_definitions(tesseract_tk PRIVATE
+        TESSERACT_GITHUB_REPO="${TESSERACT_GITHUB_REPO}"
+    )
+endif()
 
 target_compile_features(tesseract_tk PUBLIC cxx_std_20)
 
