@@ -761,7 +761,7 @@ public:
     QtFactory()
     {
         static_assert(
-            static_cast<int>(FontRole::ReactionEmoji) == 11,
+            static_cast<int>(FontRole::ReactionEmoji) == 12,
             "FontRole layout changed — verify font_cache_ index mapping");
         for (std::size_t i = 0; i < kNumRoles; ++i)
         {
