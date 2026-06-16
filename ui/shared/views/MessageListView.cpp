@@ -1982,7 +1982,8 @@ private:
             float h = sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
-                h += 4.0f + measure_text_height(m.body, ctx, col_w);
+                h += 4.0f + measure_text_height(m.body, ctx, col_w,
+                                                is_emoji_only(m.body));
             }
             return quote_h + h;
         }
@@ -2029,7 +2030,8 @@ private:
             float h = sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
-                h += 4.0f + measure_text_height(m.body, ctx, col_w);
+                h += 4.0f + measure_text_height(m.body, ctx, col_w,
+                                                is_emoji_only(m.body));
             }
             return quote_h + h;
         }
@@ -2278,8 +2280,10 @@ private:
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
+                const bool cap_eo = is_emoji_only(m.body);
                 float ch = paint_wrapped_text(m.body, ctx, x, cursor, col_w,
-                                              ctx.theme.palette.text_primary);
+                                              ctx.theme.palette.text_primary,
+                                              cap_eo);
                 cursor += ch;
             }
             return cursor;
@@ -2383,8 +2387,10 @@ private:
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
+                const bool cap_eo = is_emoji_only(m.body);
                 float ch = paint_wrapped_text(m.body, ctx, x, cursor, col_w,
-                                              ctx.theme.palette.text_primary);
+                                              ctx.theme.palette.text_primary,
+                                              cap_eo);
                 cursor += ch;
             }
             return cursor;
