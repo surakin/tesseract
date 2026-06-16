@@ -19,11 +19,14 @@ pub fn find_url_spans(text: &str) -> Vec<UrlSpan> {
     // ── http(s) via linkify ───────────────────────────────────────────────────
     let finder = LinkFinder::new();
     for link in finder.links(text) {
-        if link.kind() == &LinkKind::Url {
+        let s = link.as_str();
+        if link.kind() == &LinkKind::Url
+            && (s.starts_with("https://") || s.starts_with("http://"))
+        {
             spans.push(UrlSpan {
                 start: link.start(),
                 end:   link.end(),
-                url:   link.as_str().to_string(),
+                url:   s.to_string(),
             });
         }
     }

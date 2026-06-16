@@ -201,7 +201,7 @@ impl ClientFfi {
             device_display_name: device_display_name.to_owned(),
             profile_tag: None,
         };
-        match self.rt.block_on(client.pusher().set(pusher.into())) {
+        match self.rt.block_on(client.pusher().set(pusher.into(), true)) {
             Ok(()) => ok(""),
             Err(e) => err(e.to_string()),
         }
