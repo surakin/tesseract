@@ -106,9 +106,9 @@ TEST_CASE("autolink: word-boundary guard rejects mid-token schemes",
 TEST_CASE("autolink: http:// works and a scheme with no host does not",
           "[html_spans][autolink]")
 {
-    auto s = autolink_plain_to_spans("http://a.b");
+    auto s = autolink_plain_to_spans("http://example.org");
     REQUIRE(s.size() == 1);
-    CHECK(s[0].url == "http://a.b");
+    CHECK(s[0].url == "http://example.org");
 
     CHECK(autolink_plain_to_spans("http://").empty());
     CHECK(autolink_plain_to_spans("https:// not a link").empty());

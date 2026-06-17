@@ -119,20 +119,20 @@ inline int font_role_pt(FontRole role, int base_pt)
     int offset = 0;
     switch (role)
     {
-    case FontRole::Small:          offset = -3; break;
-    case FontRole::Caption:        offset = -1; break;
-    case FontRole::Body:           offset =  1; break;
-    case FontRole::SenderName:     offset =  0; break;
-    case FontRole::Timestamp:      offset = -2; break;
-    case FontRole::SidebarName:    offset =  1; break;
-    case FontRole::SidebarPreview: offset = -1; break;
-    case FontRole::UnreadBadge:    offset = -1; break;
-    case FontRole::Title:          offset = +3; break;
-    case FontRole::UiSemibold:     offset = -1; break;
+    case FontRole::Small:          offset = -4; break;
+    case FontRole::Caption:        offset = -2; break;
+    case FontRole::Body:           offset =  0; break;
+    case FontRole::SenderName:     offset = -1; break;
+    case FontRole::Timestamp:      offset = -3; break;
+    case FontRole::SidebarName:    offset =  0; break;
+    case FontRole::SidebarPreview: offset = -2; break;
+    case FontRole::UnreadBadge:    offset = -2; break;
+    case FontRole::Title:          offset = +2; break;
+    case FontRole::UiSemibold:     offset = -2; break;
     case FontRole::BigEmoji:       return std::max(base_pt * 2, 6);
     case FontRole::InlineEmoji:    return std::max((base_pt + 1) * 5 / 4, 6);
-    case FontRole::EmojiPickerCell:offset = +6; break;
-    case FontRole::ReactionEmoji:  offset = +3; break;
+    case FontRole::EmojiPickerCell:offset = +5; break;
+    case FontRole::ReactionEmoji:  offset = +2; break;
     }
     return std::max(base_pt + offset, 6);
 }
