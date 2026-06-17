@@ -36,7 +36,7 @@ cmake --build build/windows-release --target package
 ```
 
 The installer lands at
-`build/windows-release/Tesseract-0.8.6-AMD64.exe`.
+`build/windows-release/Tesseract-0.8.7-AMD64.exe`.
 
 ### What the installer does
 
@@ -92,12 +92,12 @@ cmake --build build/macos-appkit-x86_64-release --target package
 ```
 
 Each preset produces one arch-specific DMG, e.g.
-`build/macos-appkit-arm64-release/Tesseract-0.8.6-arm64.dmg`. There is no
+`build/macos-appkit-arm64-release/Tesseract-0.8.7-arm64.dmg`. There is no
 universal-binary preset today; ship both DMGs or add a `lipo`-merge step.
 
 ### What the installer does
 
-- Mounts a volume named "Tesseract 0.8.6".
+- Mounts a volume named "Tesseract 0.8.7".
 - Contains `Tesseract.app` plus a symlink to `/Applications`.
 - The user drags the app over to install. No admin prompt; no system-wide
   install paths (use a PKG generator if you need one).
@@ -171,9 +171,9 @@ dpkg-buildpackage -us -uc -b
 The `.deb` files land one level above the source tree. Install with:
 
 ```bash
-sudo apt install ../tesseract_0.8.6-1_amd64.deb
+sudo apt install ../tesseract_0.8.7-1_amd64.deb
 # or the GTK4 variant:
-sudo apt install ../tesseract-gtk_0.8.6-1_amd64.deb
+sudo apt install ../tesseract-gtk_0.8.7-1_amd64.deb
 ```
 
 ### Runtime dependencies installed automatically
