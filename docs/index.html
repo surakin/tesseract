@@ -470,6 +470,55 @@
   .ctx-item:hover { background: var(--accent); color: var(--text-on-accent); }
   .ctx-sep { height: 1px; margin: 5px 6px; background: var(--separator); }
 
+  /* ===== Emoji / sticker picker popups ===== */
+  .picker-popup {
+    position: absolute; z-index: 30; width: 308px;
+    background: var(--bg); border: 1px solid var(--popup-border);
+    border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.26);
+    display: none; flex-direction: column-reverse; overflow: hidden;
+  }
+  .picker-popup.open { display: flex; }
+  .picker-tabs {
+    display: flex; align-items: flex-end; flex: none;
+    border-top: 1px solid var(--separator); background: var(--chrome-bg);
+    padding: 4px 6px 0; gap: 2px; overflow-x: auto; overflow-y: hidden;
+  }
+  .picker-tab {
+    padding: 5px 9px; border: none; background: transparent;
+    border-radius: 6px 6px 0 0; cursor: pointer;
+    font-size: 16px; color: var(--text-secondary); flex: none;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .picker-tab:hover { background: var(--sidebar-hover); }
+  .picker-tab.active { border-bottom-color: var(--accent); }
+  .emoji-grid {
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    gap: 1px; padding: 6px; max-height: 214px; overflow-y: scroll; flex: 1;
+  }
+  .picker-cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; border-radius: 6px; cursor: pointer; border: none; background: transparent;
+  }
+  .picker-cell:hover { background: var(--sidebar-hover); }
+  .sticker-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 8px; padding: 10px; max-height: 232px; overflow-y: scroll; flex: 1;
+  }
+  .sticker-cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 30px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--separator); background: var(--sidebar-selected);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .sticker-cell:hover { transform: scale(1.06); box-shadow: 0 4px 14px rgba(0,0,0,.20); border-color: var(--popup-border); }
+  /* Sticker in timeline */
+  .sticker-msg {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 110px; height: 110px; border-radius: 14px; margin-top: 4px;
+    background: var(--sidebar-selected); border: 1px solid var(--separator);
+    font-size: 68px;
+  }
+
   @media (max-width: 900px) {
     .sim-row { flex-direction: column; }
     .sim-downloads { width: 100%; }
@@ -615,13 +664,25 @@
 
           <div class="timeline" id="timeline"></div>
 
+          <!-- Emoji picker popup -->
+          <div class="picker-popup" id="emojiPicker">
+            <div class="picker-tabs" id="emojiTabs"></div>
+            <div class="emoji-grid" id="emojiGrid"></div>
+          </div>
+
+          <!-- Sticker picker popup -->
+          <div class="picker-popup" id="stickerPicker">
+            <div class="picker-tabs" id="stickerTabs"></div>
+            <div class="sticker-grid" id="stickerGrid"></div>
+          </div>
+
           <form class="compose" id="composeForm" autocomplete="off">
             <div class="compose-card">
               <input class="field" id="composeInput" type="text" placeholder="Send a message…" aria-label="Message">
-              <button class="icon-btn" type="button" title="Emoji" tabindex="-1">
+              <button class="icon-btn" id="emojiBtn" type="button" title="Emoji" tabindex="-1">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M18 13a6 6 0 0 1-6 5 6 6 0 0 1-6-5h12Z"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>
               </button>
-              <button class="icon-btn" type="button" title="Sticker" tabindex="-1">
+              <button class="icon-btn" id="stickerBtn" type="button" title="Sticker" tabindex="-1">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><path d="M15 3v5a1 1 0 0 0 1 1h5"/><path d="M8 13h.01"/><path d="M16 13h.01"/><path d="M10 16s.8 1 2 1c1.3 0 2-1 2-1"/></svg>
               </button>
               <button class="icon-btn" type="button" title="Voice message" tabindex="-1">
@@ -903,6 +964,9 @@
       if (m.media) {
         inner += '<div class="media-tile"><canvas></canvas><div class="media-cap">' + esc(m.mediaCap || "") + '</div></div>';
       }
+      if (m.sticker) {
+        inner += '<div class="sticker-msg">' + m.sticker + '</div>';
+      }
       if (m.reactions && m.reactions.length) {
         inner += '<div class="reactions">' + m.reactions.map(function (rx, i) {
           return '<span class="chip' + (i === 0 ? ' me' : '') + '">' + esc(rx) + '</span>';
@@ -924,6 +988,7 @@
     r.unread = 0;
     closeInfo();
     rsClose();
+    closePickers();
     renderSidebar();
     renderRoom();
   }
@@ -1107,7 +1172,7 @@
     if (!userMenu.contains(e.target)) closeMenu();
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { closeMenu(); closeInfo(); rsClose(); }
+    if (e.key === "Escape") { closeMenu(); closeInfo(); rsClose(); closePickers(); }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "f") {
       var sim = document.getElementById("sim");
       if (sim && sim.contains(document.activeElement)) {
@@ -1117,6 +1182,237 @@
     }
   });
   window.addEventListener("blur", closeMenu);
+
+  /* ---------- Emoji + sticker pickers ---------- */
+  var emojiPicker   = document.getElementById("emojiPicker");
+  var stickerPicker = document.getElementById("stickerPicker");
+  var emojiBtn      = document.getElementById("emojiBtn");
+  var stickerBtn    = document.getElementById("stickerBtn");
+  var emojiTabsEl   = document.getElementById("emojiTabs");
+  var emojiGridEl   = document.getElementById("emojiGrid");
+  var stickerTabsEl = document.getElementById("stickerTabs");
+  var stickerGridEl = document.getElementById("stickerGrid");
+
+  var recentEmoji = ["👍","❤️","😂","😊","🎉","🚀","🔥","👏","🙌","🥺","😍","🤣"];
+
+  var SHORTCODES = {
+    "😀":":grinning:","😃":":smiley:","😄":":smile:","😁":":grin:","😅":":sweat_smile:",
+    "😂":":joy:","🤣":":rofl:","😊":":blush:","😇":":innocent:","🙂":":slightly_smiling_face:",
+    "😉":":wink:","😍":":heart_eyes:","🥰":":smiling_face_with_three_hearts:","😘":":kissing_heart:",
+    "😋":":yum:","😛":":stuck_out_tongue:","😝":":stuck_out_tongue_closed_eyes:",
+    "😜":":stuck_out_tongue_winking_eye:","🤪":":zany_face:","😎":":sunglasses:",
+    "🥳":":partying_face:","😏":":smirk:","😒":":unamused:","😔":":pensive:",
+    "😟":":worried:","😕":":confused:","🙁":":slightly_frowning_face:","😣":":persevere:",
+    "😩":":weary:","🥺":":pleading_face:","😢":":cry:","😭":":sob:","😤":":triumph:",
+    "😠":":angry:","😡":":rage:","🤯":":exploding_head:","😳":":flushed:","😱":":scream:",
+    "😨":":fearful:","😰":":cold_sweat:","😓":":sweat:",
+    "👋":":wave:","🤚":":raised_back_of_hand:","🖐️":":raised_hand_with_fingers_splayed:",
+    "✋":":raised_hand:","👌":":ok_hand:","✌️":":v:","🤞":":crossed_fingers:",
+    "👍":":thumbsup:","👎":":thumbsdown:","✊":":fist:","👊":":facepunch:","👏":":clap:",
+    "🙌":":raised_hands:","🙏":":pray:","🤝":":handshake:","💪":":muscle:",
+    "🦾":":mechanical_arm:","🤲":":palms_up_together:","👐":":open_hands:",
+    "🤜":":right_facing_fist:","🤛":":left_facing_fist:","🤙":":call_me_hand:",
+    "☝️":":point_up:","👆":":point_up_2:","👇":":point_down:","👈":":point_left:",
+    "👉":":point_right:","🖖":":vulcan_salute:","🤘":":metal:","🤟":":love_you_gesture:",
+    "🌱":":seedling:","🌿":":herb:","🍀":":four_leaf_clover:","🌺":":hibiscus:",
+    "🌸":":cherry_blossom:","🌼":":blossom:","🌻":":sunflower:","🌹":":rose:",
+    "🥀":":wilted_flower:","🌷":":tulip:","🍁":":maple_leaf:","🍂":":fallen_leaf:",
+    "🍃":":leaves:","🌾":":ear_of_rice:","🍄":":mushroom:","🌊":":ocean:","🌈":":rainbow:",
+    "⭐":":star:","🌙":":crescent_moon:","☀️":":sunny:","❄️":":snowflake:","🔥":":fire:",
+    "💧":":droplet:","🌍":":earth_africa:","🌤️":":partly_sunny:","⛅":":partly_cloudy:",
+    "🌦️":":sun_behind_rain_cloud:","🌧️":":cloud_with_rain:","⛈️":":thunder_cloud_and_rain:",
+    "🌪️":":tornado:","🌵":":cactus:","🌴":":palm_tree:","🐾":":paw_prints:",
+    "🦋":":butterfly:","🐝":":bee:","🐞":":beetle:",
+    "🍕":":pizza:","🍔":":hamburger:","🌮":":taco:","🌯":":burrito:","🍜":":ramen:",
+    "🍣":":sushi:","🍱":":bento:","🍩":":doughnut:","🎂":":birthday:","🍰":":cake:",
+    "🧁":":cupcake:","🍫":":chocolate_bar:","🍭":":lollipop:","🍿":":popcorn:",
+    "🥤":":cup_with_straw:","☕":":coffee:","🍺":":beer:","🍻":":beers:",
+    "🥂":":clinking_glasses:","🍷":":wine_glass:","🍸":":cocktail:","🍹":":tropical_drink:",
+    "🧃":":beverage_box:","🥛":":milk_glass:","🍦":":icecream:","🧋":":bubble_tea:",
+    "🥞":":pancakes:","🧇":":waffle:","🥐":":croissant:","🥖":":baguette_bread:",
+    "🫔":":tamale:","🥙":":stuffed_flatbread:",
+    "💻":":computer:","📱":":iphone:","⌨️":":keyboard:","🖥️":":desktop_computer:",
+    "🖨️":":printer:","🖱️":":computer_mouse:","💾":":floppy_disk:","💿":":cd:",
+    "📷":":camera:","📸":":camera_flash:","📹":":video_camera:","📺":":tv:",
+    "📻":":radio:","🎵":":musical_note:","🎶":":notes:","🎸":":guitar:",
+    "🎹":":musical_keyboard:","🎤":":microphone:","🎧":":headphones:","🎮":":video_game:",
+    "🕹️":":joystick:","📚":":books:","✏️":":pencil2:","📝":":memo:","📌":":pushpin:",
+    "📎":":paperclip:","🔑":":key:","🔒":":lock:","🔓":":unlock:","💡":":bulb:",
+    "🔭":":telescope:","🔬":":microscope:","⚙️":":gear:","🛠️":":hammer_and_wrench:",
+    "🧰":":toolbox:",
+    "🎉":":tada:","🎊":":confetti_ball:","🎈":":balloon:","🎀":":ribbon:","🎁":":gift:",
+    "🏆":":trophy:","🥇":":first_place_medal:","⚽":":soccer:","🏀":":basketball:",
+    "🎾":":tennis:","🏈":":football:","🎯":":dart:","🎱":":8ball:","♟️":":chess_pawn:",
+    "🃏":":black_joker:","🎲":":game_die:","✨":":sparkles:","💫":":dizzy:","⚡":":zap:",
+    "🌟":":star2:","💥":":boom:","❤️":":heart:","🧡":":orange_heart:","💛":":yellow_heart:",
+    "💚":":green_heart:","💙":":blue_heart:","💜":":purple_heart:","🖤":":black_heart:",
+    "🤍":":white_heart:","💔":":broken_heart:","❣️":":heart_exclamation:","💕":":two_hearts:",
+    "💞":":revolving_hearts:","💓":":heartbeat:","💗":":heartpulse:","💖":":sparkling_heart:",
+    "💘":":cupid:","🔴":":red_circle:","🟠":":orange_circle:","🟡":":yellow_circle:",
+    "🟢":":green_circle:","🔵":":blue_circle:","🟣":":purple_circle:",
+    "⬛":":black_large_square:","⬜":":white_large_square:",
+    "🐰":":rabbit:","🐸":":frog:","🦊":":fox_face:","🐼":":panda_face:","🦁":":lion:",
+    "🐨":":koala:","🐧":":penguin:","🦄":":unicorn:","🐮":":cow_face:","🐯":":tiger_face:",
+    "🚀":":rocket:","💎":":gem:","🧠":":brain:",
+  };
+
+  var emojiCats = [
+    { label: "🕐", name: "Recent",  get emojis() { return recentEmoji.slice(); } },
+    { label: "😊", name: "Smileys", emojis: ["😀","😃","😄","😁","😅","😂","🤣","😊","😇","🙂","😉","😍","🥰","😘","😋","😛","😝","😜","🤪","😎","🥳","😏","😒","😔","😟","😕","🙁","😣","😩","🥺","😢","😭","😤","😠","😡","🤯","😳","😱","😨","😰","😓"] },
+    { label: "👋", name: "People",  emojis: ["👋","🤚","🖐️","✋","👌","✌️","🤞","👍","👎","✊","👊","👏","🙌","🙏","🤝","💪","🦾","🤲","👐","🤜","🤛","🤙","☝️","👆","👇","👈","👉","🖖","🤘","🤟"] },
+    { label: "🌱", name: "Nature",  emojis: ["🌱","🌿","🍀","🌺","🌸","🌼","🌻","🌹","🥀","🌷","🍁","🍂","🍃","🌾","🍄","🌊","🌈","⭐","🌙","☀️","❄️","🔥","💧","🌍","🌤️","⛅","🌦️","🌧️","⛈️","🌪️","🌵","🌴","🐾","🦋","🐝","🐞"] },
+    { label: "🍕", name: "Food",    emojis: ["🍕","🍔","🌮","🌯","🍜","🍣","🍱","🍩","🎂","🍰","🧁","🍫","🍭","🍿","🥤","☕","🍺","🍻","🥂","🍷","🍸","🍹","🧃","🥛","🍦","🧋","🥞","🧇","🥐","🥖","🫔","🥙"] },
+    { label: "💻", name: "Objects", emojis: ["💻","📱","⌨️","🖥️","🖨️","🖱️","💾","💿","📷","📸","📹","📺","📻","🎵","🎶","🎸","🎹","🎤","🎧","🎮","🕹️","📚","✏️","📝","📌","📎","🔑","🔒","🔓","💡","🔭","🔬","⚙️","🛠️","🧰"] },
+    { label: "🎉", name: "Symbols", emojis: ["🎉","🎊","🎈","🎀","🎁","🏆","🥇","⚽","🏀","🎾","🏈","🎯","🎱","♟️","🃏","🎲","✨","💫","⚡","🌟","💥","❤️","🧡","💛","💚","💙","💜","🖤","🤍","💔","❣️","💕","💞","💓","💗","💖","💘","🔴","🟠","🟡","🟢","🔵","🟣","⬛","⬜"] },
+  ];
+  var activeCatIdx = 0;
+
+  var stickerPacks = [
+    { name: "Matrix Critters", icon: "🐰", stickers: ["🐰","🐸","🦊","🐼","🦁","🐨","🦋","🐧","🦄","🐮","🐯","🦊"] },
+    { name: "Tesseract Vibes", icon: "🚀", stickers: ["🚀","🎉","💪","🤝","🔥","✨","💎","🏆","🎯","🧠","⚡","🌟"] },
+  ];
+  var activePack = 0;
+
+  function positionPickerAbove(popup, anchorBtn) {
+    var panel = popup.parentElement;
+    var panelRect  = panel.getBoundingClientRect();
+    var btnRect    = anchorBtn.getBoundingClientRect();
+    var popupH = popup.offsetHeight || 280;
+    var popupW = popup.offsetWidth  || 308;
+    // bottom edge of popup aligns just above the button; expressed as distance from panel bottom
+    var fromBottom = panelRect.bottom - btnRect.top + 6;
+    // right edge of popup aligns with right edge of button
+    var fromRight  = panelRect.right  - btnRect.right;
+    popup.style.bottom = fromBottom + "px";
+    popup.style.right  = Math.max(4, fromRight) + "px";
+    // clamp so it doesn't bleed off the left edge of the panel
+    var leftEdge = btnRect.right - popupW;
+    if (leftEdge < panelRect.left + 4) {
+      popup.style.right = (panelRect.right - panelRect.left - popupW - 4) + "px";
+    }
+  }
+
+  function renderEmojiCat(idx) {
+    activeCatIdx = idx;
+    var tabs = emojiTabsEl.querySelectorAll(".picker-tab");
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", i === idx);
+    var cat = emojiCats[idx];
+    emojiGridEl.innerHTML = "";
+    (cat.emojis || []).forEach(function (em) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "picker-cell"; btn.textContent = em;
+      btn.title = SHORTCODES[em] || em;
+      btn.addEventListener("click", function () { insertEmoji(em); });
+      emojiGridEl.appendChild(btn);
+    });
+    if (emojiPicker.classList.contains("open")) positionPickerAbove(emojiPicker, emojiBtn);
+  }
+
+  function buildEmojiTabs() {
+    emojiTabsEl.innerHTML = "";
+    emojiCats.forEach(function (cat, i) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "picker-tab" + (i === activeCatIdx ? " active" : "");
+      btn.textContent = cat.label; btn.title = cat.name;
+      btn.addEventListener("click", function () { renderEmojiCat(i); });
+      emojiTabsEl.appendChild(btn);
+    });
+    renderEmojiCat(activeCatIdx);
+  }
+
+  function renderStickerPack(idx) {
+    activePack = idx;
+    var tabs = stickerTabsEl.querySelectorAll(".picker-tab");
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", i === idx);
+    var pack = stickerPacks[idx];
+    stickerGridEl.innerHTML = "";
+    pack.stickers.forEach(function (em) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "sticker-cell"; btn.textContent = em;
+      btn.title = SHORTCODES[em] || em;
+      btn.addEventListener("click", function () { sendSticker(em); });
+      stickerGridEl.appendChild(btn);
+    });
+    if (stickerPicker.classList.contains("open")) positionPickerAbove(stickerPicker, stickerBtn);
+  }
+
+  function buildStickerTabs() {
+    stickerTabsEl.innerHTML = "";
+    stickerPacks.forEach(function (pack, i) {
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "picker-tab" + (i === activePack ? " active" : "");
+      btn.textContent = pack.icon; btn.title = pack.name;
+      btn.addEventListener("click", function () { renderStickerPack(i); });
+      stickerTabsEl.appendChild(btn);
+    });
+    renderStickerPack(activePack);
+  }
+
+  function insertEmoji(em) {
+    var field = document.getElementById("composeInput");
+    var start = field.selectionStart, end = field.selectionEnd;
+    var val = field.value;
+    field.value = val.slice(0, start) + em + val.slice(end);
+    field.selectionStart = field.selectionEnd = start + em.length;
+    field.dispatchEvent(new Event("input"));
+    field.focus();
+    // track recent
+    recentEmoji = [em].concat(recentEmoji.filter(function (e) { return e !== em; })).slice(0, 16);
+  }
+
+  function sendSticker(em) {
+    var r = roomById(activeId);
+    var now = new Date();
+    var hh = String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
+    r.messages.push({ sender: "Tesseractor", initials: "T", time: hh, me: true, text: "", sticker: em });
+    r.preview = em + " Sticker";
+    closePickers();
+    renderRoom();
+    renderSidebar();
+  }
+
+  function openEmojiPicker() {
+    buildEmojiTabs();
+    stickerPicker.classList.remove("open");
+    emojiPicker.classList.add("open");
+    emojiBtn.classList.add("rs-active");
+    stickerBtn.classList.remove("rs-active");
+    // measure after making visible
+    positionPickerAbove(emojiPicker, emojiBtn);
+  }
+
+  function openStickerPicker() {
+    buildStickerTabs();
+    emojiPicker.classList.remove("open");
+    stickerPicker.classList.add("open");
+    stickerBtn.classList.add("rs-active");
+    emojiBtn.classList.remove("rs-active");
+    positionPickerAbove(stickerPicker, stickerBtn);
+  }
+
+  function closePickers() {
+    emojiPicker.classList.remove("open");
+    stickerPicker.classList.remove("open");
+    emojiBtn.classList.remove("rs-active");
+    stickerBtn.classList.remove("rs-active");
+  }
+
+  emojiBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (emojiPicker.classList.contains("open")) closePickers(); else openEmojiPicker();
+  });
+  stickerBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (stickerPicker.classList.contains("open")) closePickers(); else openStickerPicker();
+  });
+
+  // Close pickers on outside click
+  document.addEventListener("click", function (e) {
+    if (!emojiPicker.contains(e.target) && !emojiBtn.contains(e.target) &&
+        !stickerPicker.contains(e.target) && !stickerBtn.contains(e.target)) {
+      closePickers();
+    }
+  });
 
   /* ---------- Boot ---------- */
   renderSidebar();
