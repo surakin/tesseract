@@ -1,10 +1,10 @@
-tesseract (@PROJECT_VERSION@-1) unstable; urgency=low
+tesseract-matrix (@PROJECT_VERSION@-1) unstable; urgency=low
 
   * Update to @PROJECT_VERSION@.
 
  -- Marco Antonio Alvarez <surakus@pm.me>  @PACKAGE_DATE@
 
-tesseract (0.1.0-1) unstable; urgency=low
+tesseract-matrix (0.1.0-1) unstable; urgency=low
 
   * Initial Debian packaging.
 

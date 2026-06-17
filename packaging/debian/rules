@@ -27,16 +27,8 @@ override_dh_auto_test:
 	ctest --test-dir debian/build-qt --output-on-failure
 
 override_dh_auto_install:
-	DESTDIR=$(CURDIR)/debian/tesseract     cmake --install debian/build-qt
-	DESTDIR=$(CURDIR)/debian/tesseract-gtk cmake --install debian/build-gtk
-	# The GTK binary is also named "tesseract"; rename it to avoid conflict.
-	mv debian/tesseract-gtk/usr/bin/tesseract \
-	   debian/tesseract-gtk/usr/bin/tesseract-gtk
-	# Adjust the GTK desktop file to reflect the renamed binary.
-	sed -i 's|^Exec=tesseract$$|Exec=tesseract-gtk|' \
-	    debian/tesseract-gtk/usr/share/applications/tesseract.desktop
-	mv debian/tesseract-gtk/usr/share/applications/tesseract.desktop \
-	   debian/tesseract-gtk/usr/share/applications/tesseract-gtk.desktop
+	DESTDIR=$(CURDIR)/debian/tesseract-matrix     cmake --install debian/build-qt
+	DESTDIR=$(CURDIR)/debian/tesseract-matrix-gtk cmake --install debian/build-gtk
 
 override_dh_auto_clean:
 	rm -rf debian/build-qt debian/build-gtk debian/.cargo

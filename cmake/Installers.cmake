@@ -71,23 +71,49 @@ endif()
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB;RPM")
 
+    # Avoid clashing with the unrelated Tesseract OCR engine (/usr/bin/tesseract).
+    # The binary is renamed by install(CODE) in the UI CMakeLists; package names
+    # follow the same convention.  The two UI variants conflict with each other
+    # because only one Matrix client should provide the desktop entry.
+    if(TESSERACT_UI STREQUAL "gtk")
+        set(_cpack_pkg       "tesseract-matrix-gtk")
+        set(_cpack_conflicts "tesseract-matrix")
+        set(_cpack_summary   "Matrix chat client (GTK4)")
+        set(_cpack_deb_deps  "libgtk-4-1, libopus0 (>= 1.1), gstreamer1.0-plugins-base")
+        set(_cpack_rpm_deps  "gtk4 >= 4.0, opus >= 1.1, gstreamer1 >= 1.0")
+    else()
+        set(_cpack_pkg       "tesseract-matrix")
+        set(_cpack_conflicts "tesseract-matrix-gtk")
+        set(_cpack_summary   "Matrix chat client (Qt6)")
+        set(_cpack_deb_deps
+            "libqt6core6 (>= 6.2), libqt6gui6 (>= 6.2), libqt6widgets6 (>= 6.2), \
+libqt6multimedia6 (>= 6.2), libqt6dbus6 (>= 6.2), libqt6network6 (>= 6.2), \
+libopus0 (>= 1.1)")
+        set(_cpack_rpm_deps  "qt6-qtbase >= 6.2, qt6-qtmultimedia >= 6.2, opus >= 1.1")
+    endif()
+    set(_cpack_description
+"Tesseract is a cross-platform Matrix chat client with end-to-end encryption, \
+voice messages (MSC3245), image packs (MSC2545), replies, message editing, \
+threads, spaces, and sticker support. This package provides the ${_cpack_summary}.")
+
     # DEB (Debian / Ubuntu)
-    set(CPACK_DEBIAN_PACKAGE_NAME        "tesseract")
+    set(CPACK_DEBIAN_PACKAGE_NAME        "${_cpack_pkg}")
+    set(CPACK_DEBIAN_PACKAGE_CONFLICTS   "${_cpack_conflicts}")
+    set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "${_cpack_description}")
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER  "Tesseract <https://github.com/<TBD>>")
     set(CPACK_DEBIAN_PACKAGE_SECTION     "net")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY    "optional")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS
-        "libqt6core6 (>= 6.2), libqt6gui6 (>= 6.2), libqt6widgets6 (>= 6.2), \
-libqt6multimedia6 (>= 6.2), libqt6dbus6 (>= 6.2), libqt6network6 (>= 6.2), \
-libopus0 (>= 1.1)")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS     "${_cpack_deb_deps}")
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS   OFF)  # we list deps explicitly above
 
     # RPM (Fedora / RHEL / openSUSE)
-    set(CPACK_RPM_PACKAGE_NAME           "tesseract")
+    set(CPACK_RPM_PACKAGE_NAME           "${_cpack_pkg}")
+    set(CPACK_RPM_PACKAGE_SUMMARY        "${_cpack_summary}")
+    set(CPACK_RPM_PACKAGE_CONFLICTS      "${_cpack_conflicts}")
+    set(CPACK_RPM_PACKAGE_DESCRIPTION    "${_cpack_description}")
     set(CPACK_RPM_PACKAGE_GROUP          "Applications/Internet")
     set(CPACK_RPM_PACKAGE_LICENSE        "GPLv3")
-    set(CPACK_RPM_PACKAGE_REQUIRES
-        "qt6-qtbase >= 6.2, qt6-qtmultimedia >= 6.2, opus >= 1.1")
+    set(CPACK_RPM_PACKAGE_REQUIRES       "${_cpack_rpm_deps}")
     set(CPACK_RPM_PACKAGE_AUTOREQ        OFF)   # we list requires explicitly above
 endif()
 
