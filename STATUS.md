@@ -1,6 +1,45 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-14** (v0.8.4 unreleased).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-17** (v0.8.5).
+
+> **Async space-summary and server-info FFI (2026-06-17, v0.8.5).**
+> `get_space_child_summary` and `get_server_info` converted from blocking Rust
+> `block_on` (which pinned a C++ worker thread for the full HTTP round-trip) to
+> async FFI: tokio tasks run HTTP on Rust's own thread pool and deliver results
+> via `EventHandlerBridge` callback. The C++ worker pool is reduced from 4 → 2
+> threads. Eliminates the scenario where four concurrent 30-second-timeout
+> summary fetches could saturate the pool and make the client unresponsive.
+> `RoomSummary::from_json` added to deserialise callback payloads. **870 C++ tests**.
+
+<!-- -->
+
+> **System font scaling across all four backends (2026-06-15/16, v0.8.5).**
+> Tesseract now reads the OS body font size at startup — `QApplication::font()`
+> (Qt6), `GtkSettings gtk-font-name` (GTK4), `SystemParametersInfo
+> NONCLIENTMETRICS` (Win32), `NSFont.systemFontSize` (macOS) — and derives all
+> per-role sizes as additive offsets from that base (`FontRole::Body` = base,
+> `FontRole::Small` = base−4, `FontRole::Title` = base+2, etc.; `FontRole::BigEmoji`
+> = 2×base; `FontRole::InlineEmoji` = `(base+1)×5/4`). The UI therefore scales
+> naturally with the user's accessibility font-size setting without any manual
+> slider in Settings.
+
+<!-- -->
+
+> **Inline emoji scaling (2026-06-16, v0.8.5).**
+> Unicode emoji in message bodies now render at ~125% of the body font size
+> (`FontRole::InlineEmoji`). Emoji-only captions beneath images, stickers, and
+> other media render at 2× body size (`FontRole::BigEmoji`) instead of body text
+> size, matching the display size of standalone emoji messages.
+
+<!-- -->
+
+> **Automatic update checker (2026-06-16, v0.8.5).**
+> A background checker queries the GitHub releases API at startup (and
+> periodically) and shows an in-app banner when a newer version is available.
+> Controlled by a "Check for updates automatically" toggle in Settings →
+> Privacy; disabled by default on builds that set `TESSERACT_GITHUB_REPO=""`.
+
+<!-- -->
 
 > **MSC4133 extended user profiles (2026-06-14, unreleased).**
 > Three new per-user profile fields in the account settings panel and the

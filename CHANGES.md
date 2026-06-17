@@ -3,6 +3,99 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.5 — 2026-06-17
+
+Changes since v0.8.4:
+
+### 2026-06-17
+
+- perf(spaces): convert `get_space_child_summary` and `get_server_info` network
+  calls from blocking Rust `block_on` (which pins a C++ worker thread for the
+  full HTTP round-trip) to async FFI. Rust spawns tokio tasks that run HTTP on
+  Rust's own thread pool and deliver results via `EventHandlerBridge` callback;
+  no C++ thread is pinned during the wait. With the previous design, four
+  concurrent 30-second-timeout summary fetches could saturate the 4-thread pool
+  and make the entire client unresponsive. The worker pool is reduced from 4 → 2
+  threads; it now only serves fast synchronous SQLite reads. `RoomSummary::from_json`
+  added to deserialise callback payloads. 870 C++ tests.
+
+### 2026-06-16
+
+- fix(spaces): unjoined-room summaries are now fetched proactively on space
+  entry rather than waiting for the room list to scroll a row into view.
+  Stub rows whose summary has not yet arrived are hidden rather than shown as
+  empty entries; cancelled fetches (on space exit or account switch) are
+  tracked by a generation counter so late callbacks are discarded.
+
+- fix(spaces): room-list scroll position and selection are restored when
+  returning from a space drill-in. macOS pagination spinner no longer stalls
+  after the first page.
+
+- fix(spaces): eliminated UI-thread `SH_FFI` lock acquisitions that blocked
+  on concurrent worker-thread `block_on` calls, causing visible freezes while
+  space summaries were loading.
+
+- feat: automatic GitHub release update checker. Runs at startup and on a
+  timer; displays a banner when a newer release is available. A "Check for
+  updates automatically" toggle in Settings → Privacy controls whether the
+  check fires at all.
+
+- feat(emoji): render Unicode emoji in message bodies at ~125% body font size
+  (`FontRole::InlineEmoji`, `(base+1)×5/4` pt, minimum 6 pt). Emoji-only
+  captions under images, stickers, and other media render at 2× body size
+  (`FontRole::BigEmoji`) rather than body text size.
+
+- feat(fonts): inherit the system body font size on all four backends — Qt6
+  `QApplication::font()`, GTK4 `GtkSettings gtk-font-name`, Win32
+  `SystemParametersInfo NONCLIENTMETRICS`, macOS `NSFont.systemFontSize`. All
+  per-role sizes are additive offsets from the live base, so the UI scales
+  with the user's accessibility font-size setting.
+
+- feat(logging): `sdk_log_level` key in `app_settings.json` controls the Rust
+  tracing subscriber level (default `warn`). Noisy log sources suppressed by
+  default in release builds: `matrix_sdk::http_client` tracing, Qt multimedia
+  FFmpeg/PipeWire SPA warnings, and FFmpeg `av_log` output.
+
+- feat(sdk): upgrade matrix-rust-sdk 0.17 → 0.18.
+
+- fix: crash and hide-instead-of-quit when quitting with a pop-out window open.
+  `ShellBase` sets a `tearing_down_` flag on destruction to suppress virtual
+  callbacks from the debounce timer; `MainWindow` tracks `explicitly_quitting_`
+  to bypass the hide-to-tray behaviour that normally intercepts the close event.
+
+- fix(win32): video playback was running slower than real-time due to a frame
+  pacing bug; also fixed a crash-on-paint race condition in the Win32 video
+  renderer.
+
+- fix(compose): pasting rich text from the clipboard into the composer on Qt6
+  now inserts plain text only, preserving the room's own formatting pipeline.
+
+- fix(compose): composer input font now matches message body text (`FontRole::Body`,
+  i.e. system base size) instead of a hardcoded pixel size.
+
+- fix: add `FontRole::Caption` for section headers and reply-to preview text;
+  correct all `font_role_pt` offsets back to the legacy hardcoded values (a
+  prior commit had shifted every role +1 pt incorrectly).
+
+- fix(gtk4): emoji and sticker pickers now initialise at widget construction so
+  they are ready on the first key-press rather than on first explicit open.
+
+- fix(qt6): font cache index-mapping assertion eliminated.
+
+- fix: hyperlinks inside block-structured messages (headings, lists, blockquotes)
+  are now clickable; the block parser was dropping `href` attributes.
+
+- fix: code-block background left-alignment on Qt6; leading whitespace stripped
+  in `html_to_blocks` so backgrounds start at the correct indent.
+
+- fix: edit-banner height in `ComposeBar` reduced to a single text row.
+
+- i18n: QR-code grant flow and upload-limit strings added to the translation
+  table (`tesseract.pot`).
+
+- refactor(macos): 144 of 159 `using`-block bridge entries replaced with
+  explicit `MacShell` C++ API declarations, reducing ObjC++ coupling.
+
 ## v0.8.4 — 2026-06-15
 
 Changes since v0.8.3:
