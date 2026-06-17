@@ -506,6 +506,9 @@ struct RoomSummary
     {
         return join_rule == "public" || join_rule == "knock";
     }
+    /// Deserialise a JSON string produced by the Rust `get_space_child_summary_async`
+    /// callback. Returns an empty (ok()==false) summary on parse failure or empty input.
+    static RoomSummary from_json(const std::string& json);
 };
 
 /// MSC4278 media-preview controls, stored in the global

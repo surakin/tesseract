@@ -387,6 +387,23 @@ public:
                                      PresenceState /*state*/)
     {
     }
+
+    /// Fired when an async space-child summary fetch
+    /// (`Client::get_space_child_summary_async`) completes. `summary_json`
+    /// matches the synchronous `get_space_child_summary` shape (empty on
+    /// failure). Default no-op.
+    virtual void on_space_child_summary_ready(std::uint64_t /*request_id*/,
+                                              const std::string& /*summary_json*/)
+    {
+    }
+
+    /// Fired when an async server-info fetch (`Client::get_server_info_async`)
+    /// completes. `info_json` matches the synchronous `get_server_info` shape
+    /// (empty on failure or when not logged in). Default no-op.
+    virtual void on_server_info_ready(std::uint64_t /*request_id*/,
+                                      const std::string& /*info_json*/)
+    {
+    }
 };
 
 } // namespace tesseract

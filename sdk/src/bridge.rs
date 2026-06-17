@@ -979,6 +979,22 @@ pub mod ffi {
             message: &str,
         );
 
+        /// Fired when an async space-child summary fetch started via
+        /// `get_space_child_summary_async` completes. `summary_json` is the
+        /// same JSON shape as the synchronous `get_space_child_summary` return
+        /// value (empty string on failure or timeout).
+        fn on_space_child_summary_ready(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            summary_json: &str,
+        );
+
+        /// Fired when an async server-info fetch started via
+        /// `get_server_info_async` completes. `info_json` is the same JSON
+        /// shape as the synchronous `get_server_info` return value (empty
+        /// string on failure or when not logged in).
+        fn on_server_info_ready(self: &EventHandlerBridge, request_id: u64, info_json: &str);
+
         /// Fired when an async full-text search started via
         /// `search_messages_async` completes successfully. `request_id` is the
         /// correlation token the caller passed; the C++ side drops results
@@ -2201,6 +2217,21 @@ pub mod ffi {
             space_id: &str,
             room_id: &str,
         ) -> String;
+
+        /// Async counterpart of `get_space_child_summary`. Spawns the fetch on
+        /// the tokio runtime and fires `on_space_child_summary_ready(
+        /// request_id, summary_json)` on completion. Does not pin a thread.
+        fn get_space_child_summary_async(
+            self: &ClientFfi,
+            request_id: u64,
+            space_id: &str,
+            room_id: &str,
+        );
+
+        /// Async counterpart of `get_server_info`. Spawns the fetch on the
+        /// tokio runtime and fires `on_server_info_ready(request_id, info_json)`
+        /// on completion. Does not pin a thread.
+        fn get_server_info_async(self: &ClientFfi, request_id: u64);
 
         // ----- Recovery / key backup (Step 6) -----
 

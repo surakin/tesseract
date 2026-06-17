@@ -546,6 +546,27 @@ void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_space_child_summary_ready(std::uint64_t request_id,
+                                                      rust::Str summary_json) const
+{
+    with_handler("on_space_child_summary_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_space_child_summary_ready(request_id,
+                                                     std::string(summary_json));
+          });
+}
+
+void EventHandlerBridge::on_server_info_ready(std::uint64_t request_id,
+                                              rust::Str info_json) const
+{
+    with_handler("on_server_info_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_server_info_ready(request_id, std::string(info_json));
+          });
+}
+
 void EventHandlerBridge::on_search_results(std::uint64_t request_id,
                                            const rust::Vec<SearchHit>& results) const
 {

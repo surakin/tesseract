@@ -1351,6 +1351,20 @@ Client::get_space_child_summary(const std::string& space_id,
     }
 }
 
+void Client::get_space_child_summary_async(std::uint64_t request_id,
+                                           const std::string& space_id,
+                                           const std::string& room_id)
+{
+    SH_FFI;
+    impl_->ffi->get_space_child_summary_async(request_id, space_id, room_id);
+}
+
+void Client::get_server_info_async(std::uint64_t request_id)
+{
+    SH_FFI;
+    impl_->ffi->get_server_info_async(request_id);
+}
+
 std::optional<tesseract::RoomSummary>
 Client::get_cached_room_summary(const std::string& room_id) const
 {
@@ -1573,6 +1587,30 @@ ServerInfo Client::get_server_info() const
 {
     SH_FFI;
     return ServerInfo::from_json(std::string(impl_->ffi->get_server_info()));
+}
+
+// RoomSummary
+// ---------------------------------------------------------------------------
+
+RoomSummary RoomSummary::from_json(const std::string& json)
+{
+    if (json.empty())
+        return {};
+    nlohmann::json j = parse_json_obj(json);
+    RoomSummary s;
+    s.room_id            = js_str(j, "room_id");
+    if (s.room_id.empty())
+        return {};
+    s.canonical_alias    = js_str(j, "canonical_alias");
+    s.name               = js_str(j, "name");
+    s.topic              = js_str(j, "topic");
+    s.avatar_url         = js_str(j, "avatar_url");
+    s.num_joined_members = js_uint(j, "num_joined_members");
+    s.join_rule          = js_str(j, "join_rule");
+    s.world_readable     = js_bool(j, "world_readable", false);
+    s.is_space           = js_bool(j, "is_space", false);
+    s.membership         = js_str(j, "membership");
+    return s;
 }
 
 Client::UrlPreview Client::parse_url_preview(const std::string& json)

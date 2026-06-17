@@ -305,6 +305,26 @@ void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_space_child_summary_ready(std::uint64_t request_id,
+                                                    const std::string& summary_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, json = summary_json]() mutable
+        {
+            shell->handle_space_child_summary_ready_ui_(request_id, std::move(json));
+        });
+}
+
+void EventHandlerBase::on_server_info_ready(std::uint64_t request_id,
+                                            const std::string& info_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, json = info_json]() mutable
+        {
+            shell->handle_server_info_async_ready_ui_(request_id, std::move(json));
+        });
+}
+
 void EventHandlerBase::on_search_results(std::uint64_t request_id,
                                          const std::vector<SearchHit>& results)
 {

@@ -295,6 +295,116 @@ impl ClientFfi {
         json
     }
 
+    /// Async counterpart of `get_space_child_summary`. Spawns the fetch on the
+    /// tokio runtime and fires `on_space_child_summary_ready(request_id, json)`
+    /// on completion (empty string on failure or timeout). Does not pin a thread.
+    #[cfg(not(test))]
+    pub fn get_space_child_summary_async(
+        &self,
+        request_id: u64,
+        space_id: &str,
+        room_id: &str,
+    ) {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+        use matrix_sdk::ruma::events::SyncStateEvent;
+        use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName};
+
+        let deliver = |json: String| {
+            if let Some(ref h) = self.handler {
+                let g = h.lock();
+                g.on_space_child_summary_ready(request_id, &json);
+            }
+        };
+
+        let Some(client) = self.client.clone() else { deliver(String::new()); return; };
+        let Ok(rid) = OwnedRoomId::try_from(room_id) else { deliver(String::new()); return; };
+        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else { deliver(String::new()); return; };
+        let room_id_or_alias: OwnedRoomOrAliasId = rid.clone().into();
+
+        let handler = self.handler.clone();
+        let stop_rx = self.stop_rx.clone();
+        let app_cache_db = self.app_cache_db.clone();
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        let room_id_owned = room_id.to_owned();
+
+        self.rt.spawn(async move {
+            let json = {
+                let _guard = super::InFlightGuard::new(
+                    &in_flight,
+                    &handler,
+                    #[cfg(debug_assertions)] &in_flight_urls,
+                    #[cfg(debug_assertions)]
+                    format!("room_list/space_child/{}", room_id_owned),
+                );
+
+                const PREVIEW_TIMEOUT_SECS: u64 = 30;
+
+                let via: Vec<OwnedServerName> =
+                    if let Some(space_room) = client.get_room(&space_room_id) {
+                        space_room
+                            .get_state_events_static::<SpaceChildEventContent>()
+                            .await
+                            .ok()
+                            .and_then(|evs| {
+                                evs.into_iter().find_map(|ev| match ev.deserialize() {
+                                    Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e)))
+                                        if e.state_key == rid =>
+                                    {
+                                        Some(e.content.via)
+                                    }
+                                    Ok(SyncOrStrippedState::Stripped(e))
+                                        if e.state_key == rid =>
+                                    {
+                                        Some(e.content.via.unwrap_or_default())
+                                    }
+                                    _ => None,
+                                })
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+
+                let result = tokio::select! {
+                    timed = tokio::time::timeout(
+                        std::time::Duration::from_secs(PREVIEW_TIMEOUT_SECS),
+                        client.get_room_preview(&room_id_or_alias, via),
+                    ) => timed.ok().and_then(|r| r.ok()).map(RoomSummaryJson::from),
+                    _ = stop_fut(stop_rx) => None,
+                };
+
+                match result {
+                    Some(s) => serde_json::to_string(&s).unwrap_or_default(),
+                    None => String::new(),
+                }
+            }; // _guard drops here; inflight count decrements before callback
+
+            if !json.is_empty() {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                if let Some(ref conn) = *app_cache_db.lock() {
+                    super::backfill::store_room_summary_conn(
+                        conn,
+                        &room_id_owned,
+                        &json,
+                        now,
+                    );
+                }
+            }
+
+            if let Some(h) = handler {
+                let g = h.lock();
+                g.on_space_child_summary_ready(request_id, &json);
+            }
+        });
+    }
+
     #[cfg(test)]
     pub fn get_room_summary(&self, _room_id_or_alias: &str) -> String {
         String::new()
@@ -307,6 +417,15 @@ impl ClientFfi {
         _room_id: &str,
     ) -> String {
         String::new()
+    }
+
+    #[cfg(test)]
+    pub fn get_space_child_summary_async(
+        &self,
+        _request_id: u64,
+        _space_id: &str,
+        _room_id: &str,
+    ) {
     }
 
     #[cfg(not(test))]

@@ -1049,10 +1049,21 @@ public:
     std::optional<RoomSummary>
     get_space_child_summary(const std::string& space_id,
                             const std::string& room_id);
+    /// Async counterpart of `get_space_child_summary`. Spawns the fetch on the
+    /// tokio runtime; result delivered via
+    /// IEventHandler::on_space_child_summary_ready. Does not pin a thread.
+    void get_space_child_summary_async(std::uint64_t request_id,
+                                       const std::string& space_id,
+                                       const std::string& room_id);
     /// Return the locally-cached MSC3266 room summary for `room_id`, or
     /// std::nullopt when no cached entry exists. No network, safe on any thread.
     std::optional<RoomSummary>
     get_cached_room_summary(const std::string& room_id) const;
+
+    /// Async counterpart of `get_server_info`. Spawns the fetch on the tokio
+    /// runtime; result delivered via IEventHandler::on_server_info_ready.
+    /// Does not pin a thread.
+    void get_server_info_async(std::uint64_t request_id);
 
     /// Join a room by its ID or alias.
     /// Returns the canonical room ID (e.g. `!id:server`) on success, or an

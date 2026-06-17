@@ -125,6 +125,10 @@ public:
                         const rust::Vec<GifResult>& results) const;
     void on_gif_search_failed(std::uint64_t request_id,
                               rust::Str message) const;
+    void on_space_child_summary_ready(std::uint64_t request_id,
+                                      rust::Str summary_json) const;
+    void on_server_info_ready(std::uint64_t request_id,
+                              rust::Str info_json) const;
     void on_search_results(std::uint64_t request_id,
                            const rust::Vec<SearchHit>& results) const;
     void on_search_failed(std::uint64_t request_id,

@@ -408,6 +408,16 @@ protected:
     // Bumped whenever the active space changes; captured by each
     // fetch_single_room_summary_ call so stale completions are discarded.
     std::uint64_t unjoined_fetch_gen_ = 0;
+    // Monotonically increasing counter for async FFI request IDs. UI-thread-only.
+    std::uint64_t next_request_id_ = 0;
+    // In-flight get_space_child_summary_async requests keyed by request_id.
+    struct PendingSummaryRequest
+    {
+        std::string space_id;
+        std::string room_id;
+        std::uint64_t gen = 0;
+    };
+    std::unordered_map<std::uint64_t, PendingSummaryRequest> pending_summaries_;
     // Space ID whose unjoined section is currently displayed in the room list.
     std::string active_space_id_;
     std::string current_room_id_;
@@ -883,7 +893,7 @@ protected:
         // Posted outside mu_ whenever pending_ changes. Cleared in drain().
         std::function<void()>             on_change_;
     };
-    WorkerPool pool_{4};
+    WorkerPool pool_{2};
     WorkerPool mut_pool_{1};
 
     // ── Media kind tag ────────────────────────────────────────────────────────
@@ -1642,6 +1652,14 @@ protected:
     // and runs its registered bytes-completion. Concrete shared logic.
     void handle_media_ready_ui_(std::uint64_t request_id,
                                 std::vector<std::uint8_t> bytes);
+    // Completion for an async get_space_child_summary_async fetch. Applies the
+    // result (or failure) to unjoined_summaries_cache_ and notifies the view.
+    void handle_space_child_summary_ready_ui_(std::uint64_t request_id,
+                                              std::string summary_json);
+    // Completion for an async get_server_info_async fetch. Populates
+    // server_info_ and drives the same post-processing as the sync path.
+    void handle_server_info_async_ready_ui_(std::uint64_t request_id,
+                                            std::string info_json);
     // Completion for an async get_url_preview_async fetch.
     void handle_url_preview_ready_ui_(std::uint64_t request_id,
                                       std::string preview_json);
@@ -2024,34 +2042,14 @@ protected:
         own_extended_profile_ = {};
     }
 
-    /// Spawn a detached thread to call Client::get_server_info(), then
-    /// marshal the result back to the UI thread. Only fetches once per session.
+    /// Fire an async server-info fetch. Result arrives via
+    /// handle_server_info_async_ready_ui_(). Only fetches once per session.
     void begin_server_info_fetch_()
     {
         if (server_info_fetch_started_ || !client_)
             return;
         server_info_fetch_started_ = true;
-        auto sess = active_account_;
-        run_async_([this, sess] {
-            if (!sess || !sess->client) return;
-            auto info = sess->client->get_server_info();
-            post_to_ui_([this, info = std::move(info)] {
-                server_info_ = std::move(info);
-                on_server_info_ready_ui_();
-                for (auto& [rid, w] : secondary_windows_)
-                {
-                    if (auto* rv = w->room_view())
-                        if (auto* h = rv->header())
-                            h->set_jump_to_date_enabled(
-                                server_info_.supports_msc3030);
-                }
-                // Kick off the MSC4133 own-profile fetch now that we know
-                // whether the server supports extended profile fields.
-                if (server_info_.supports_profile_fields &&
-                    server_info_.profile_fields_enabled)
-                    fetch_own_extended_profile_async_();
-            });
-        });
+        client_->get_server_info_async(next_request_id_++);
     }
 
     // ── Verification banner hooks (default no-op) ──────────────────────────────

@@ -2246,6 +2246,7 @@ void ShellBase::update_space_children_cache_()
         unjoined_space_children_cache_.clear();
         unjoined_summaries_cache_.clear();
         unjoined_fetch_pending_.clear();
+        pending_summaries_.clear();
         return;
     }
     std::vector<std::string> space_ids;
@@ -2262,6 +2263,7 @@ void ShellBase::update_space_children_cache_()
         unjoined_space_children_cache_.clear();
         unjoined_summaries_cache_.clear();
         unjoined_fetch_pending_.clear();
+        pending_summaries_.clear();
         return;
     }
     auto sess = active_account_;
@@ -2332,20 +2334,15 @@ void ShellBase::update_space_children_cache_()
 void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                                            const std::string& room_id)
 {
-    // Both the SQLite cache lookup (Phase 1) and the network fetch (Phase 2) run
-    // off the UI thread so that ffi_mu is never acquired on the UI thread.
-    // Phase 1 posts its result back immediately; Phase 2 follows once the network
-    // call returns.  The visible behaviour is identical to the previous design
-    // except the cache display is delayed by one thread-scheduling round-trip
-    // (~0 ms in practice) instead of happening synchronously on the UI thread.
     auto sess = active_account_;
     const std::uint64_t gen = unjoined_fetch_gen_;
+
+    // Phase 1: show SQLite-cached summary while the async network fetch is
+    // in-flight. SQLite reads acquire ffi_mu, so they run on the I/O pool.
     run_async_(
         [this, sess, space_id, room_id, gen]()
         {
             if (!sess || !sess->client) return;
-
-            // Phase 1: show SQLite-cached summary before the network fetch.
             if (auto cached = sess->client->get_cached_room_summary(room_id))
             {
                 post_to_ui_alive_(
@@ -2374,80 +2371,109 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                             ensure_media_thumbnail_(cached.avatar_url, 64, 64, false);
                     });
             }
-
-            // Phase 2: network fetch — adds/updates the entry with fresh data.
-            auto summary =
-                sess->client->get_space_child_summary(space_id, room_id);
-            post_to_ui_alive_(
-                [this, sess, space_id, room_id, gen,
-                 summary = std::move(summary)]() mutable
-                {
-                    // Always erase from pending so the slot is freed even on cancel.
-                    unjoined_fetch_pending_.erase(room_id);
-                    if (gen != unjoined_fetch_gen_) return;
-                    if (!summary)
-                    {
-                        // Exponential backoff: 5s, 10s, 20s … capped at 5 min.
-                        // The room simply won't appear; it will be retried on the
-                        // next space entry (cancel_unjoined_summaries_ clears state).
-                        auto& rs = unjoined_fetch_retry_[room_id];
-                        ++rs.attempts;
-                        using SC = std::chrono::system_clock;
-                        using sc = std::chrono::steady_clock;
-                        using s  = std::chrono::seconds;
-                        const auto delay =
-                            std::min(s(5) * (1 << std::min(rs.attempts - 1, 6)),
-                                     s(300));
-                        rs.next_retry = sc::now() + delay;
-                        // Notify the Rust-side backoff tracker off the UI thread
-                        // (SH_FFI must not be acquired on the UI thread).
-                        const auto deadline_sys = SC::now() + delay;
-                        const auto attempts     = rs.attempts;
-                        const auto deadline_s   =
-                            std::chrono::duration_cast<s>(
-                                deadline_sys.time_since_epoch()).count();
-                        run_async_([sess, room_id, attempts, deadline_s]()
-                        {
-                            if (sess && sess->client)
-                                sess->client->note_room_summary_backoff_failed(
-                                    room_id,
-                                    static_cast<std::uint32_t>(attempts),
-                                    deadline_s);
-                        });
-                        return;
-                    }
-                    // Upsert: add the room if it isn't already loaded, update otherwise.
-                    auto& cached = unjoined_summaries_cache_[space_id];
-                    bool found = false;
-                    for (auto& entry : cached)
-                    {
-                        if (entry.room_id == room_id)
-                        {
-                            entry = std::move(*summary);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                        cached.push_back(std::move(*summary));
-                    // Notify the Rust-side backoff tracker off the UI thread.
-                    run_async_([sess, room_id]()
-                    {
-                        if (sess && sess->client)
-                            sess->client->note_room_summary_backoff_ok(room_id);
-                    });
-                    if (main_app_)
-                        if (auto* rl = main_app_->room_list_view())
-                            rl->set_space_unjoined_rooms(
-                                std::vector<tesseract::RoomSummary>(cached));
-                });
         });
+
+    // Phase 2: async network fetch — no thread is pinned during HTTP.
+    // Register the pending entry before calling _async so the callback can
+    // resolve it even if the tokio task fires before this function returns.
+    if (!sess || !sess->client)
+    {
+        unjoined_fetch_pending_.erase(room_id);
+        return;
+    }
+    const auto req_id = next_request_id_++;
+    pending_summaries_[req_id] = {space_id, room_id, gen};
+    sess->client->get_space_child_summary_async(req_id, space_id, room_id);
+}
+
+void ShellBase::handle_space_child_summary_ready_ui_(std::uint64_t request_id,
+                                                      std::string summary_json)
+{
+    auto it = pending_summaries_.find(request_id);
+    if (it == pending_summaries_.end())
+        return;
+    auto [space_id, room_id, gen] = std::move(it->second);
+    pending_summaries_.erase(it);
+
+    // Always free the in-flight slot so the room can be retried on re-entry.
+    unjoined_fetch_pending_.erase(room_id);
+
+    if (gen != unjoined_fetch_gen_) return;
+
+    auto summary = tesseract::RoomSummary::from_json(summary_json);
+    auto sess    = active_account_;
+
+    if (!summary.ok())
+    {
+        // Exponential backoff: 5s, 10s, 20s … capped at 5 min.
+        auto& rs = unjoined_fetch_retry_[room_id];
+        ++rs.attempts;
+        using SC = std::chrono::system_clock;
+        using sc = std::chrono::steady_clock;
+        using s  = std::chrono::seconds;
+        const auto delay =
+            std::min(s(5) * (1 << std::min(rs.attempts - 1, 6)), s(300));
+        rs.next_retry       = sc::now() + delay;
+        const auto deadline = SC::now() + delay;
+        const auto attempts = rs.attempts;
+        const auto deadline_s =
+            std::chrono::duration_cast<s>(deadline.time_since_epoch()).count();
+        run_async_([sess, room_id, attempts, deadline_s]()
+        {
+            if (sess && sess->client)
+                sess->client->note_room_summary_backoff_failed(
+                    room_id, static_cast<std::uint32_t>(attempts), deadline_s);
+        });
+        return;
+    }
+
+    auto& cached = unjoined_summaries_cache_[space_id];
+    bool found = false;
+    for (auto& entry : cached)
+    {
+        if (entry.room_id == room_id)
+        {
+            entry = std::move(summary);
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        cached.push_back(std::move(summary));
+
+    run_async_([sess, room_id]()
+    {
+        if (sess && sess->client)
+            sess->client->note_room_summary_backoff_ok(room_id);
+    });
+
+    if (main_app_)
+        if (auto* rl = main_app_->room_list_view())
+            rl->set_space_unjoined_rooms(
+                std::vector<tesseract::RoomSummary>(cached));
+}
+
+void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
+                                                    std::string info_json)
+{
+    server_info_ = tesseract::ServerInfo::from_json(info_json);
+    on_server_info_ready_ui_();
+    for (auto& [rid, w] : secondary_windows_)
+    {
+        if (auto* rv = w->room_view())
+            if (auto* h = rv->header())
+                h->set_jump_to_date_enabled(server_info_.supports_msc3030);
+    }
+    if (server_info_.supports_profile_fields &&
+        server_info_.profile_fields_enabled)
+        fetch_own_extended_profile_async_();
 }
 
 void ShellBase::cancel_unjoined_summaries_()
 {
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
+    pending_summaries_.clear();
     unjoined_fetch_retry_.clear();
     active_space_id_.clear();
 }
@@ -2460,6 +2486,7 @@ ShellBase::get_cached_unjoined_summaries_(const std::string& space_id)
         active_space_id_ = space_id;
         ++unjoined_fetch_gen_;
         unjoined_fetch_pending_.clear();
+        pending_summaries_.clear();
         unjoined_fetch_retry_.clear();
     }
 
@@ -4257,6 +4284,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
+    pending_summaries_.clear();
     unjoined_fetch_retry_.clear();
     active_space_id_.clear();
     pagination_.clear();
@@ -4550,6 +4578,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
+    pending_summaries_.clear();
     unjoined_fetch_retry_.clear();
     active_space_id_.clear();
     my_user_id_.clear();
@@ -6383,6 +6412,7 @@ void ShellBase::restart_sdk_()
     space_nav_frames_.clear();
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
+    pending_summaries_.clear();
     unjoined_fetch_retry_.clear();
     active_space_id_.clear();
     pagination_.clear();

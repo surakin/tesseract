@@ -85,6 +85,10 @@ public:
                         const std::vector<GifResult>& results) override;
     void on_gif_search_failed(std::uint64_t request_id,
                               const std::string& message) override;
+    void on_space_child_summary_ready(std::uint64_t request_id,
+                                      const std::string& summary_json) override;
+    void on_server_info_ready(std::uint64_t request_id,
+                              const std::string& info_json) override;
     void on_search_results(std::uint64_t request_id,
                            const std::vector<SearchHit>& results) override;
     void on_search_failed(std::uint64_t request_id,
