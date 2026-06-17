@@ -99,8 +99,10 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 
 - System tray with unread/mention indicator and minimize-to-tray (clicking the icon jumps to the first unread room)
 - Multi-account, with profile editing (display name, avatar, pronouns, timezone, and biography — MSC4133)
+- QR-code login (MSC4108; shown only when the server supports it)
 - Single-instance behavior (relaunching restores the running window)
 - Session restore (all open room tabs and the active account)
+- Automatic update checker (opt-in; Settings → Privacy)
 - In-flight request indicator in the status bar
 - Light / dark / system themes
 

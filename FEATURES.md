@@ -13,6 +13,8 @@ version) are noted where relevant.
 - System tray with minimize-to-tray (default), unread dot, and mention-state color; clicking the tray icon jumps to the first unread room
 - Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
+- System font size inherited from the OS on all four backends (`QApplication::font`, `GtkSettings gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`); all per-role sizes scale with the user's accessibility font-size setting
+- Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy)
 - In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
 
 ## Messaging
@@ -33,7 +35,8 @@ version) are noted where relevant.
 - Decryption retry as keys arrive (no permanent "unable to decrypt" placeholders)
 - Pinned messages — full support (pin/unpin) with power-level checks
 - Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`; extensible)
-- Media captions (MSC2530)
+- Media captions (MSC2530); emoji-only captions render at 2× body size
+- Inline Unicode emoji in message bodies rendered at ~125% of body font size
 
 ## Media
 
@@ -96,6 +99,7 @@ version) are noted where relevant.
 ## Account & profile
 
 - Login and logout (SDK-based logout removes the device server-side)
+- QR-code login (MSC4108; gated on server capability advertisement)
 - Profile editing: display name, avatar, and extended fields — pronouns, timezone, and biography (MSC4133)
 - Multi-account
 
@@ -105,7 +109,7 @@ version) are noted where relevant.
 - Sessions / devices
 - Notifications (per-room)
 - Appearance (light / dark / system theme; room-list inactive grouping; auto-scroll to unread rooms)
-- Privacy (presence controls; search index toggle with live stats and on-disk size)
+- Privacy (presence controls; search index toggle with live stats and on-disk size; update-checker opt-in)
 - Media (automatic full-media fetch)
 - About (version, with branded view)
 
@@ -129,7 +133,7 @@ version) are noted where relevant.
 - **Localization**: English only (i18n architecture in place)
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)
 - **Spaces management** beyond navigation (creating / editing space structure)
-- **QR-code login**, **3PID management**, **account deactivation**, **identity server settings**
+- **3PID management**, **account deactivation**, **identity server settings**
 
 ## Possible / planned polish
 
