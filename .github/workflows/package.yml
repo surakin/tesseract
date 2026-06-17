@@ -207,6 +207,7 @@ jobs:
             ninja-build \
             libgl-dev \
             libopus-dev \
+            libavutil-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             golang perl \
@@ -269,6 +270,7 @@ jobs:
             ninja-build \
             libgl-dev \
             libopus-dev \
+            libavutil-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             golang perl \
