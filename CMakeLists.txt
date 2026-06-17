@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Tesseract VERSION 0.8.5 LANGUAGES CXX)
+project(Tesseract VERSION 0.8.6 LANGUAGES CXX)
 
 # Generate version.h from the project() version so C++ code can read it
 # without any hardcoding.  The output lands in the build tree so it is
@@ -15,6 +15,33 @@ configure_file(
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/tesseract.desktop.in"
     "${CMAKE_CURRENT_BINARY_DIR}/packaging/tesseract.desktop"
+    @ONLY
+)
+
+# RFC 2822 timestamp for the Debian changelog entry header.
+string(TIMESTAMP PACKAGE_DATE "%a, %d %b %Y %H:%M:%S +0000" UTC)
+
+# Debian changelog — generated to the build tree so the source tree stays
+# clean; packaging/debian/rules copies it into debian/ during dpkg-buildpackage.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/changelog.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/packaging/debian/changelog"
+    @ONLY
+)
+
+# Arch PKGBUILD — generated in-source so `cp packaging/arch/PKGBUILD .` works
+# without needing to reference the build tree.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/arch/PKGBUILD.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/arch/PKGBUILD"
+    @ONLY
+)
+
+# PACKAGING.md — generated in-source so it stays readable in the repo without
+# requiring a build.  Edit PACKAGING.md.in; this file is overwritten by CMake.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/PACKAGING.md.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PACKAGING.md"
     @ONLY
 )
 

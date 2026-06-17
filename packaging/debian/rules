@@ -17,6 +17,7 @@ override_dh_auto_configure:
 	      -DCMAKE_BUILD_TYPE=Release \
 	      -DCMAKE_INSTALL_PREFIX=/usr \
 	      -DTESSERACT_UI=gtk
+	cp debian/build-qt/packaging/debian/changelog debian/changelog
 
 override_dh_auto_build:
 	cmake --build debian/build-qt

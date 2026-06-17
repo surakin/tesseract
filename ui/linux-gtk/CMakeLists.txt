@@ -10,7 +10,6 @@ pkg_check_modules(GIO  REQUIRED gio-2.0)
 # loading libgtk-3 into a GTK4 process makes gtk_init() abort.)
 pkg_check_modules(GDKPIXBUF REQUIRED gdk-pixbuf-2.0)
 pkg_check_modules(CAIRO     REQUIRED cairo)
-pkg_check_modules(AVUTIL    REQUIRED IMPORTED_TARGET libavutil)
 
 add_executable(tesseract_gtk
     src/main.cpp
@@ -71,7 +70,6 @@ target_link_libraries(tesseract_gtk PRIVATE
     ${GDKPIXBUF_LIBRARIES}
     ${CAIRO_LIBRARIES}
     opus
-    PkgConfig::AVUTIL
 )
 
 set_target_properties(tesseract_gtk PROPERTIES
