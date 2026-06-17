@@ -3007,8 +3007,24 @@ void ShellBase::invalidate_known_users_()
     user_resolve_gen_.fetch_add(1);
 }
 
+uint64_t ShellBase::compute_dock_notification_count_() const
+{
+    uint64_t total = 0;
+    for (const auto& [uid, rooms] : per_account_rooms_)
+        for (const auto& r : rooms)
+            total += r.notification_count;
+    return total;
+}
+
 void ShellBase::notify_tray_unread_()
 {
+    const uint64_t badge = compute_dock_notification_count_();
+    if (badge != last_dock_badge_count_)
+    {
+        last_dock_badge_count_ = badge;
+        on_dock_badge_changed_(badge);
+    }
+
     auto [u, h] = compute_tray_unread(per_account_rooms_);
     if (u == last_tray_unread_ && h == last_tray_highlight_)
     {

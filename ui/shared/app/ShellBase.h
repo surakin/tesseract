@@ -331,6 +331,10 @@ protected:
     bool last_tray_unread_    = false;
     bool last_tray_highlight_ = false;
 
+    // Last dock badge count pushed to on_dock_badge_changed_().  UINT64_MAX
+    // is used as a sentinel meaning "never sent" so the first call always fires.
+    uint64_t last_dock_badge_count_ = UINT64_MAX;
+
     // Owns the per-account settings controller. Rebuilt on every login /
     // account switch via ensure_settings_controller_(); the native widget +
     // dialog-hook binding is delegated to bind_settings_controller_().
@@ -1410,6 +1414,11 @@ protected:
                                          bool /*has_highlight*/)
     {
     }
+
+    // Called on the UI thread when the total notification_count across all
+    // signed-in accounts changes. Shells that expose a dock/taskbar badge
+    // override this; others leave the default no-op.
+    virtual void on_dock_badge_changed_(uint64_t /*count*/) {}
 
     // Navigate to the highest-priority unread room in the active account,
     // or no-op if none. Call on the UI thread from tray-click handlers.
@@ -2596,9 +2605,12 @@ protected:
                                         const std::string& formatted_body);
 
     // Recompute the aggregate from per_account_rooms_ and fire
-    // on_tray_unread_changed_ only when the value differs from the last call.
-    // Called from push_rooms_ and mark_room_read_.
+    // on_tray_unread_changed_ / on_dock_badge_changed_ only when the values
+    // differ from the last call.  Called from push_rooms_ and mark_room_read_.
     void notify_tray_unread_();
+
+    // Sum notification_count across every room in every signed-in account.
+    uint64_t compute_dock_notification_count_() const;
 
     // find_existing_dm() against the active account's cached rooms_.
     std::string find_existing_dm_(const std::string& user_id) const;

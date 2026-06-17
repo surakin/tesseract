@@ -128,6 +128,7 @@ protected:
     void hide_qr_grant_overlay_() override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
+    void on_dock_badge_changed_(uint64_t count) override;
     void on_media_bytes_ready_(const std::string& key,
                                ShellBase::MediaKind kind,
                                std::vector<uint8_t> bytes) override;
@@ -895,6 +896,14 @@ void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
         return;
     }
     [c _updateTrayUnread:has_unread highlight:has_highlight];
+}
+
+void MacShell::on_dock_badge_changed_(uint64_t count)
+{
+    NSString* label = count > 0
+        ? [NSString stringWithFormat:@"%llu", (unsigned long long)count]
+        : @"";
+    [NSApp.dockTile setBadgeLabel:label];
 }
 
 void MacShell::on_media_bytes_ready_(const std::string& key,
@@ -5465,6 +5474,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     if (uri && _shell)
     {
         _shell->open_matrix_link([uri UTF8String]);
+    }
+}
+
+- (void)navigateToUnread
+{
+    if (_shell)
+    {
+        _shell->navigate_tray_unread();
     }
 }
 

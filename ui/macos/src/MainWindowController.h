@@ -28,4 +28,8 @@
 /// Navigate to the target described by a matrix.to or matrix: URI.
 - (void)openMatrixLink:(NSString*)uri;
 
+/// Navigate to the highest-priority unread room across all signed-in accounts.
+/// No-op when there is nothing unread.
+- (void)navigateToUnread;
+
 @end
