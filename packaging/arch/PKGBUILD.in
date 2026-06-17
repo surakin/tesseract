@@ -51,22 +51,8 @@ check() {
 }
 
 package() {
+    # CMake's install(CODE) in ui/linux-qt/CMakeLists.txt already renames
+    # the binary, desktop file, and icon from `tesseract` to `tesseract-matrix`
+    # and patches the desktop file's Exec/Icon/StartupWMClass fields.
     DESTDIR="$pkgdir" cmake --install "$srcdir/build"
-
-    # Rename installed artifacts away from the bare `tesseract` name so this
-    # package does not clash with the Tesseract OCR engine's /usr/bin/tesseract.
-    local _appdir="$pkgdir/usr/share/applications"
-    local _icondir="$pkgdir/usr/share/icons/hicolor/scalable/apps"
-
-    mv "$pkgdir/usr/bin/tesseract" "$pkgdir/usr/bin/tesseract-matrix"
-    mv "$_appdir/tesseract.desktop" "$_appdir/tesseract-matrix.desktop"
-    mv "$_icondir/tesseract.svg" "$_icondir/tesseract-matrix.svg"
-
-    # Point the launcher at the renamed binary/icon. StartupWMClass tracks the
-    # Qt build's WM_CLASS, which derives from the executable basename (argv[0]).
-    sed -i \
-        -e 's/^Exec=tesseract %U$/Exec=tesseract-matrix %U/' \
-        -e 's/^Icon=tesseract$/Icon=tesseract-matrix/' \
-        -e 's/^StartupWMClass=tesseract$/StartupWMClass=tesseract-matrix/' \
-        "$_appdir/tesseract-matrix.desktop"
 }
