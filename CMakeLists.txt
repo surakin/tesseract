@@ -18,6 +18,33 @@ configure_file(
     @ONLY
 )
 
+# RFC 2822 timestamp for the Debian changelog entry header.
+string(TIMESTAMP PACKAGE_DATE "%a, %d %b %Y %H:%M:%S +0000" UTC)
+
+# Debian changelog — generated to the build tree so the source tree stays
+# clean; packaging/debian/rules copies it into debian/ during dpkg-buildpackage.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/changelog.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/packaging/debian/changelog"
+    @ONLY
+)
+
+# Arch PKGBUILD — generated in-source so `cp packaging/arch/PKGBUILD .` works
+# without needing to reference the build tree.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/arch/PKGBUILD.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/arch/PKGBUILD"
+    @ONLY
+)
+
+# PACKAGING.md — generated in-source so it stays readable in the repo without
+# requiring a build.  Edit PACKAGING.md.in; this file is overwritten by CMake.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/PACKAGING.md.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PACKAGING.md"
+    @ONLY
+)
+
 # OBJCXX must be enabled at root scope; enabling it from a subdirectory leaves
 # CMAKE_OBJCXX_COMPILE_OBJECT unset in CMake 4.x.
 if(APPLE)

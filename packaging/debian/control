@@ -10,8 +10,7 @@ Build-Depends:
  qt6-multimedia-dev,
  golang-go,
  perl,
- cargo (>= 0.75),
- rustc (>= 1.75)
+ rustup
 Rules-Requires-Root: no
 Standards-Version: 4.6.2
 Homepage: https://github.com/surakin/tesseract
@@ -27,12 +26,14 @@ Depends:
  gstreamer1.0-plugins-base
 Recommends:
  gstreamer1.0-plugins-good
+Conflicts: tesseract-gtk
 Description: Matrix chat client (Qt6)
  Tesseract is a cross-platform Matrix/chat client with end-to-end
  encryption, image packs (MSC2545), voice messages (MSC3245), replies,
  message editing, and sticker support.
  .
- This package provides the Qt6 Widgets variant.
+ This package provides the Qt6 Widgets variant and conflicts with
+ tesseract-gtk; remove it before installing this package.
 
 Package: tesseract-gtk
 Architecture: amd64 arm64
@@ -43,10 +44,11 @@ Depends:
  gstreamer1.0-plugins-base
 Recommends:
  gstreamer1.0-plugins-good
+Conflicts: tesseract
 Description: Matrix chat client (GTK4)
  Tesseract is a cross-platform Matrix/chat client with end-to-end
  encryption, image packs (MSC2545), voice messages (MSC3245), replies,
  message editing, and sticker support.
  .
- This package provides the GTK4 variant. The binary is named
- tesseract-gtk to avoid conflicting with the tesseract package.
+ This package provides the GTK4 variant and conflicts with tesseract;
+ remove it before installing this package.
