@@ -3,6 +3,13 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.7 — unreleased
+
+- fix(privacy): remove machine hostname from MAS device display name and HTTP
+  User-Agent. Device sessions now appear as "Tesseract on Linux/macOS/Windows"
+  in the homeserver session list; the User-Agent is
+  `Tesseract/<version> (<os>)`. Drops the `hostname` crate.
+
 ## v0.8.6 — 2026-06-17
 
 Changes since v0.8.5:
