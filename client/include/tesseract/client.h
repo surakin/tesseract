@@ -869,11 +869,13 @@ public:
     /// Scheduling priority for `fetch_media_async`. Within a lane, a pending
     /// fetch with higher priority is granted a free download slot first, so the
     /// media for a row the user is looking at jumps ahead of the off-screen
-    /// backlog. Keep in sync with the Rust PRIO_* constants in media_queue.rs.
+    /// backlog. Keep in sync with the Rust PRIO_BACKOFF/PRIO_NORMAL/PRIO_VISIBLE
+    /// constants in media_queue.rs.
     enum class MediaPriority : std::uint8_t
     {
-        Normal  = 0, ///< eager whole-timeline prefetch
-        Visible = 1, ///< backs a currently-visible row
+        Backoff = 0, ///< backed-off retry (prior failure); never raised by prioritize_media
+        Normal  = 1, ///< eager whole-timeline prefetch
+        Visible = 2, ///< backs a currently-visible row
     };
 
     /// Start an async media download. Returns immediately; the bytes arrive via

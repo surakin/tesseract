@@ -400,8 +400,13 @@ void ShellBase::fetch_media_pipeline_(
     spec.should_deliver_ = [this, group_id]
     { return group_id == 0 || group_id == active_media_group_; };
     spec.start_fetch_ =
-        [this, group_id, kind, source, w, h, animated](std::uint64_t id)
-    { client_->fetch_media_async(id, group_id, kind, source, w, h, animated); };
+        [this, group_id, kind, source, w, h, animated, cache_key](std::uint64_t id)
+    {
+        const auto prio = media_fetch_failed_.count(cache_key)
+            ? tesseract::Client::MediaPriority::Backoff
+            : tesseract::Client::MediaPriority::Normal;
+        client_->fetch_media_async(id, group_id, kind, source, w, h, animated, prio);
+    };
     spec.on_empty_ = [this, cache_key, out_kind]
     {
         note_media_fetch_failed_(cache_key);
