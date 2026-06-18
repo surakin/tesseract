@@ -3102,7 +3102,6 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // Called on the UI thread (already posted via post_to_ui_ in ShellBase).
     if (bytes.empty())
     {
-        mediaImageSizes_.erase(cache_key);
         return;
     }
 
@@ -3182,24 +3181,25 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
 
-    // MediaImage / MediaThumbnail — decode off the UI thread (QImageReader is
-    // thread-safe), then store + repaint on the UI thread. Mirrors GTK4 and
-    // ensure_picker_image_; pickers already use this pattern so all paths are
-    // now consistent.
+    // MediaImage / MediaThumbnail / Sticker / Reaction — decode off the UI
+    // thread (QImageReader is thread-safe), then store + repaint on the UI
+    // thread. Mirrors GTK4 and ensure_picker_image_; pickers already use this
+    // pattern so all paths are now consistent.
     const bool is_thumb = (kind == MediaKind::MediaThumbnail);
     if ((is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache()).contains(cache_key) ||
         account_manager_.anim_cache().has(cache_key))
     {
-        mediaImageSizes_.erase(cache_key);
         return;
     }
-    int max_w = kMaxImageWidth, max_h = kMaxImageHeight;
-    if (auto sit = mediaImageSizes_.find(cache_key);
-        sit != mediaImageSizes_.end())
+    int max_w, max_h;
+    switch (kind)
     {
-        max_w = sit->second.first;
-        max_h = sit->second.second;
-        mediaImageSizes_.erase(sit);
+    case MediaKind::Sticker:
+        max_w = max_h = kMaxStickerSize; break;
+    case MediaKind::Reaction:
+        max_w = max_h = 20; break;
+    default:
+        max_w = kMaxImageWidth; max_h = kMaxImageHeight; break;
     }
     run_async_(
         [this, cache_key, kind, is_thumb, max_w, max_h,
@@ -3843,34 +3843,6 @@ void MainWindow::onSpaceBack()
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::prep_row_media_(const tesseract::Event& ev)
-{
-    // Store decode size hints before delegating to the ShellBase helper.
-    if (ev.type == tesseract::EventType::Image)
-    {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        if (img.source)
-            mediaImageSizes_[img.source->fetch_token()] = {kMaxImageWidth, kMaxImageHeight};
-    }
-    else if (ev.type == tesseract::EventType::Sticker)
-    {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        if (s.source)
-            mediaImageSizes_[s.source->fetch_token()] = {kMaxStickerSize, kMaxStickerSize};
-    }
-    else if (ev.type == tesseract::EventType::Video)
-    {
-        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        if (vid.thumbnail)
-            mediaImageSizes_[vid.thumbnail->fetch_token()] = {kMaxImageWidth, kMaxImageHeight};
-    }
-    for (const auto& r : ev.reactions)
-    {
-        if (r.source)
-            mediaImageSizes_[r.source->fetch_token()] = {20, 20};
-    }
-    ensure_row_media_(ev);
-}
 
 void MainWindow::refreshSyncStatus()
 {

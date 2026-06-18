@@ -87,7 +87,7 @@ struct InsertShell : WithAccountManager, ShellBase
     // the in-thread guard *before* MessageListView's own defence-in-depth drop —
     // i.e. it fails if the guard is removed, which the old Win/macOS overrides
     // did.
-    void prep_row_media_(const tesseract::Event& ev) override
+    void prep_row_media_(const tesseract::Event& ev, bool /*fetch_avatars*/ = true) override
     {
         prepped_event_ids.push_back(ev.event_id);
     }

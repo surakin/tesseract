@@ -211,11 +211,6 @@ private:
     void showRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refreshRoomList();
     void onRoomSelected(const std::string& room_id);
-    // Resolve any media bytes the row references and decode them into
-    // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
-    // positional-callback path (insert / update / reset). Overrides the
-    // ShellBase hook to also record decode-size hints (mediaImageSizes_).
-    void prep_row_media_(const tesseract::Event& ev) override;
     void clearMessages();
     /// Kick off a back-pagination worker thread for `room_id`. Early-exit
     /// if a pagination is already in flight for this room or its history
@@ -320,10 +315,6 @@ private:
     /// this, a worker mid-`client_.fetch_*` racing against `~ClientFfi`
     /// is a data race on `&mut self` in Rust that surfaces as a
     /// `panic_in_cleanup` abort through cxx's `prevent_unwind` guard.
-    /// Pinned `(max_w, max_h)` for in-flight `MediaImage` fetches so the
-    /// UI-thread decode can scale them. RoomAvatar / UserAvatar use the
-    /// shell-wide constants and don't need pinning.
-    std::unordered_map<std::string, std::pair<int, int>> mediaImageSizes_;
 
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;

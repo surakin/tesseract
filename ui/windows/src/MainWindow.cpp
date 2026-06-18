@@ -5145,6 +5145,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         break;
     case MediaKind::MediaImage:
     case MediaKind::MediaThumbnail:
+    case MediaKind::Sticker:
+    case MediaKind::Reaction:
     {
         // Decode off the UI thread — WIC factory is free-threaded (see
         // host_win32.h). decode_image_ handles both animated and still images.

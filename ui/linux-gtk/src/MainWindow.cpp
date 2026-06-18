@@ -4020,7 +4020,9 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     const bool uses_thumb_cache =
         is_avatar || kind == MediaKind::MediaThumbnail;
     const bool try_anim = (kind == MediaKind::MediaImage ||
-                           kind == MediaKind::MediaThumbnail);
+                           kind == MediaKind::MediaThumbnail ||
+                           kind == MediaKind::Sticker ||
+                           kind == MediaKind::Reaction);
 
     // Already decoded? Cheap early-out on the UI thread.
     if (account_manager_.anim_cache().has(cache_key) ||
@@ -4122,7 +4124,9 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         {
                             room_view_->message_list()->invalidate_data();
                         }
-                        else if (kind == MediaKind::MediaImage && room_view_)
+                        else if ((kind == MediaKind::MediaImage ||
+                                  kind == MediaKind::Sticker ||
+                                  kind == MediaKind::Reaction) && room_view_)
                         {
                             room_view_->notify_image_ready(cache_key);
                         }

@@ -338,6 +338,9 @@ public:
     // Forwarded from MessageListView (both the main list and the thread panel):
     // the visible rows' media tokens changed; the host re-prioritizes them.
     std::function<void(const std::vector<std::string>&)> on_visible_range_changed;
+    // Forwarded from MessageListView: the visible rows' avatar mxc URLs changed;
+    // the host calls ensure_user_avatar_ for each so only visible avatars are fetched.
+    std::function<void(const std::vector<std::string>&)> on_visible_avatars_changed;
     std::function<void(MessageListView::ImageHit)> on_image_clicked;
     std::function<void(MessageListView::VideoHit)> on_video_clicked;
     std::function<void(MessageListView::FileHit)> on_file_clicked;

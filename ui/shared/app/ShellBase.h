@@ -910,11 +910,13 @@ protected:
     // ── Media kind tag ────────────────────────────────────────────────────────
     enum class MediaKind : std::uint8_t
     {
-        RoomAvatar, // → thumbnail_cache_, triggers room-list repaint
-        UserAvatar, // → thumbnail_cache_, triggers message-list repaint
-        MediaImage, // → anim_cache_ or image_cache_ (full-size)
-        MediaThumbnail, // → anim_cache_ or thumbnail_cache_ (inline preview)
-        Tile, // → image_cache_["tile:z/x/y"], triggers full message-list repaint
+        RoomAvatar,    // → thumbnail_cache_, triggers room-list repaint
+        UserAvatar,    // → thumbnail_cache_, triggers message-list repaint
+        MediaImage,    // → anim_cache_ or image_cache_ (full-size)
+        MediaThumbnail,// → anim_cache_ or thumbnail_cache_ (inline preview)
+        Tile,          // → image_cache_["tile:z/x/y"], triggers full message-list repaint
+        Sticker,       // → image_cache_ (full-size), decode clamped to kStickerSize
+        Reaction,      // → image_cache_ (full-size), decode clamped to reaction icon size
     };
 
     // Result of a worker-thread decode. Exactly one of `still` /
@@ -1809,9 +1811,12 @@ protected:
 
     // Per-shell media-prefetch for one row. Default = ensure_row_media_.
     // Qt6 overrides to also record decode-size hints (mediaImageSizes_).
-    virtual void prep_row_media_(const Event& ev)
+    // Pass fetch_avatars=false when processing a bulk room/thread snapshot so
+    // that sender avatars are fetched lazily (only for the visible rows) instead
+    // of for the entire history.
+    virtual void prep_row_media_(const Event& ev, bool fetch_avatars = true)
     {
-        ensure_row_media_(ev);
+        ensure_row_media_(ev, fetch_avatars);
     }
     // Concrete: only the active account's prefs set the pending restore room.
     virtual void handle_account_prefs_updated_ui_(std::string user_id,
@@ -2303,7 +2308,8 @@ protected:
     // a room's pending media). Defaults to 0 (never cancelled) for non-timeline
     // callers (avatar/preview prefetch); timeline callers pass the room group.
     void ensure_media_image_(const std::string& url, int max_w, int max_h,
-                             std::uint64_t group_id = 0);
+                             std::uint64_t group_id = 0,
+                             MediaKind kind = MediaKind::MediaImage);
 
     // Fetch + decode the full-resolution image for the lightbox viewer into
     // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
@@ -2500,7 +2506,8 @@ protected:
                                 int media_h);
 
     // Walk all media references in ev and call ensure_*_ for each.
-    void ensure_row_media_(const Event& ev);
+    // Pass fetch_avatars=false in bulk-load paths to suppress avatar prefetch.
+    void ensure_row_media_(const Event& ev, bool fetch_avatars = true);
 
     // The timeline's visible rows changed (scroll / room enter / data update):
     // raise the priority of the still-pending media fetches backing the now-

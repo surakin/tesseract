@@ -919,7 +919,8 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         return;
     }
-    if (kind == MediaKind::MediaImage || kind == MediaKind::MediaThumbnail)
+    if (kind == MediaKind::MediaImage || kind == MediaKind::MediaThumbnail ||
+        kind == MediaKind::Sticker || kind == MediaKind::Reaction)
     {
         // Decode off the UI thread — CGImageSource is thread-safe. Store and
         // repaint on the UI thread once the decode completes.

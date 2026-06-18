@@ -21,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace tesseract::views
 {
@@ -6431,21 +6432,59 @@ std::vector<std::string> MessageListView::collect_visible_media_keys_() const
     return keys;
 }
 
+std::vector<std::string> MessageListView::collect_visible_avatar_urls_() const
+{
+    std::vector<std::string> urls;
+    auto [first, last] = visible_range();
+    int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
+    if (first < 0 || actual_last < first)
+    {
+        return urls;
+    }
+    std::unordered_set<std::string> seen;
+    for (int i = first; i <= actual_last; ++i)
+    {
+        const auto& m = messages_[static_cast<std::size_t>(i)];
+        if (!m.sender_avatar_url.empty() && seen.insert(m.sender_avatar_url).second)
+        {
+            urls.push_back(m.sender_avatar_url);
+        }
+        for (const auto& rr : m.read_receipts)
+        {
+            if (!rr.avatar_url.empty() && seen.insert(rr.avatar_url).second)
+            {
+                urls.push_back(rr.avatar_url);
+            }
+        }
+    }
+    return urls;
+}
+
 void MessageListView::maybe_notify_visible_range_() const
 {
-    if (!on_visible_range_changed)
+    if (on_visible_range_changed)
     {
-        return;
+        auto keys = collect_visible_media_keys_();
+        if (keys != last_visible_media_keys_)
+        {
+            last_visible_media_keys_ = keys;
+            if (!keys.empty())
+            {
+                on_visible_range_changed(keys);
+            }
+        }
     }
-    auto keys = collect_visible_media_keys_();
-    if (keys == last_visible_media_keys_)
+    if (on_visible_avatars_changed)
     {
-        return; // unchanged scroll position → nothing to re-prioritize
-    }
-    last_visible_media_keys_ = keys;
-    if (!keys.empty())
-    {
-        on_visible_range_changed(keys);
+        auto urls = collect_visible_avatar_urls_();
+        if (urls != last_visible_avatar_urls_)
+        {
+            last_visible_avatar_urls_ = urls;
+            if (!urls.empty())
+            {
+                on_visible_avatars_changed(urls);
+            }
+        }
     }
 }
 
