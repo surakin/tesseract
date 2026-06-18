@@ -73,13 +73,17 @@ LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             if (cmd == kMenuShowId)
             {
                 if (self->on_show_)
+                {
                     self->on_show_();
+                }
                 return 0;
             }
             if (cmd == kMenuQuitId)
             {
                 if (self->on_quit_)
+                {
                     self->on_quit_();
+                }
                 return 0;
             }
             if (cmd >= kMenuWinBase)

@@ -334,9 +334,13 @@ void EventHandlerBase::on_search_results(std::uint64_t request_id,
         {
             // Route by which pending map owns this id.
             if (shell->in_room_search_pending_.count(request_id))
+            {
                 shell->handle_in_room_search_results_ui_(request_id, std::move(*r));
+            }
             else
+            {
                 shell->handle_search_results_ui_(request_id, std::move(*r));
+            }
         });
 }
 
@@ -347,9 +351,13 @@ void EventHandlerBase::on_search_failed(std::uint64_t request_id,
         [shell = shell(), request_id, msg = message]() mutable
         {
             if (shell->in_room_search_pending_.count(request_id))
+            {
                 shell->handle_in_room_search_failed_ui_(request_id, std::move(msg));
+            }
             else
+            {
                 shell->handle_search_failed_ui_(request_id, std::move(msg));
+            }
         });
 }
 
@@ -395,7 +403,9 @@ void EventHandlerBase::on_sync_error(const std::string& context,
          sl = soft_logout]() mutable
         {
             if (ctx == "sync_offline" || ctx == "sync_error")
+            {
                 shell->handle_offline_ui_();
+            }
             shell->handle_sync_error_ui_(std::move(ctx), std::move(uid),
                                          std::move(desc), sl);
         });
@@ -453,7 +463,9 @@ void EventHandlerBase::on_room_list_state(RoomListState state)
             {
                 shell->begin_server_info_fetch_();
                 if (shell->offline_)
+                {
                     shell->handle_online_ui_();
+                }
             }
         });
 }
