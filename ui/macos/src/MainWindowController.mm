@@ -7360,15 +7360,19 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     BOOL winFocused = self.window.isKeyWindow;
 
     // Already watching this exact room — suppress silently.
-    if (winFocused && _shell->active_account_ &&
+    // Require winVisible: a hidden window can retain isKeyWindow in edge cases
+    // (animation in progress, sheets), so don't suppress when not on screen.
+    if (winVisible && winFocused && _shell->active_account_ &&
         _shell->active_account_->user_id == userId &&
         _shell->current_room_id_ == roomId)
     {
         return;
     }
 
-    // Bounce dock if window is visible but not focused.
-    if (winVisible && !winFocused)
+    // Bounce dock whenever app is not focused — covers both visible-but-background
+    // and fully hidden windows. requestUserAttention is a no-op when the app is
+    // already frontmost, so this is safe.
+    if (!winFocused)
     {
         [self _requestUserAttention];
     }
@@ -7467,7 +7471,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         uid && _shell->active_account_ &&
         _shell->active_account_->user_id ==
             std::string(uid.UTF8String ?: "");
-    if (self.window.isKeyWindow && activeAccount && rid &&
+    if (self.window.isVisible && self.window.isKeyWindow && activeAccount && rid &&
         _shell->current_room_id_ == std::string(rid.UTF8String ?: ""))
     {
         completionHandler(UNNotificationPresentationOptionNone);
