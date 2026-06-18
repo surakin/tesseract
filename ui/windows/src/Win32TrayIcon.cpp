@@ -70,6 +70,12 @@ LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         }
         {
             const int cmd = static_cast<int>(LOWORD(wParam));
+            if (cmd == kMenuShowId)
+            {
+                if (self->on_show_)
+                    self->on_show_();
+                return 0;
+            }
             if (cmd == kMenuQuitId)
             {
                 if (self->on_quit_)
@@ -380,14 +386,19 @@ void Win32TrayIcon::show_menu()
     {
         return;
     }
-    for (std::size_t i = 0; i < window_items_.size(); ++i)
-    {
-        const int id = kMenuWinBase + static_cast<int>(i);
-        std::wstring wlabel = widen_capped(window_items_[i].first, 256);
-        AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(id), wlabel.c_str());
-    }
+    AppendMenuW(menu, MF_STRING, kMenuShowId, L"Show App");
     if (!window_items_.empty())
+    {
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        for (std::size_t i = 0; i < window_items_.size(); ++i)
+        {
+            const int id = kMenuWinBase + static_cast<int>(i);
+            std::wstring wlabel = widen_capped(window_items_[i].first, 256);
+            AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(id),
+                        wlabel.c_str());
+        }
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuQuitId, L"Quit");
 
     POINT pt;
