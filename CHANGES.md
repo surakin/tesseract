@@ -3,7 +3,24 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.8.7 — unreleased
+## v0.8.7 — 2026-06-18
+
+- fix(macos): notifications for the active room are no longer suppressed when
+  the app window is hidden. The active-room suppression guard now requires the
+  window to be visible (`winVisible && winFocused`); a hidden window could
+  retain `isKeyWindow` during animations or while a sheet is attached, causing
+  the notification and dock bounce to be silently dropped. The dock-bounce
+  condition is extended from `winVisible && !winFocused` to `!winFocused` so
+  the Dock receives an attention request even when the window is fully hidden.
+
+- feat(timeline): quoted/reply blocks now show a pointing-hand cursor on hover,
+  matching the visual feedback given by links and file cards. Clicking a quoted
+  block scrolls to the original message.
+
+- fix(packaging): Arch PKGBUILD no longer fails with "cannot stat" errors. The
+  manual `mv`/`sed` rename steps were redundant — CMake's `install(CODE)` block
+  already renames the binary, desktop file, and icon to `tesseract-matrix`
+  during `cmake --install`.
 
 - fix(privacy): remove machine hostname from MAS device display name and HTTP
   User-Agent. Device sessions now appear as "Tesseract on Linux/macOS/Windows"
