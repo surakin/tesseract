@@ -1744,12 +1744,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         setup_dm_callbacks();
         room_view_->on_ignore_user = [this](std::string user_id)
         {
-            if (!client_) return;
-            auto* c = client_;
-            run_async_mut_([c, user_id = std::move(user_id)]() mutable
-            {
-                c->ignore_user(user_id);
-            });
+            if (client_)
+                client_->ignore_user_async(std::move(user_id));
         };
 
         // Image + video viewers — providers / repaint / on_close.

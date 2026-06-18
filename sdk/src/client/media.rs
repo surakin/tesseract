@@ -19,6 +19,7 @@ use matrix_sdk::{
 use std::collections::HashMap;
 #[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
 use std::sync::Arc;
 
 /// Hard upper bound on a single media download (64 MiB). A malicious or

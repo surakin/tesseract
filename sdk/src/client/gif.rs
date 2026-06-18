@@ -283,6 +283,7 @@ use super::{err, ok, require_room, try_op, ClientFfi, SendHandler};
 use crate::ffi::OpResult;
 #[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
 use std::sync::Arc;
 
 /// Deliver an async GIF search outcome to C++ via the event handler. Tolerates

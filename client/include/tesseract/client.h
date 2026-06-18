@@ -658,17 +658,6 @@ public:
     // MSC4278 media-preview config ("m.media_preview_config" account-data)
     // ------------------------------------------------------------------
 
-    /// Read the global MSC4278 media-preview config from the SDK's local
-    /// sync cache (stable → unstable precedence). Returns the MSC defaults
-    /// (previews on, invite avatars on) before the first sync or when not
-    /// logged in. No network roundtrip. Not const: drives the tokio runtime.
-    MediaPreviewConfig media_preview_config();
-
-    /// Read the open room's per-room `media_previews` override (if any) plus
-    /// its local join rule, used to evaluate `Mode::Private`. No network
-    /// roundtrip. Not const: drives the tokio runtime via `block_on`.
-    MediaPreviewOverride room_media_preview_override(const std::string& room_id);
-
     /// Write the global MSC4278 config, dual-writing the stable and unstable
     /// account-data types. Fire-and-forget — returns immediately; the echo
     /// arrives on the next sync and triggers `on_media_preview_config_updated`.
@@ -807,6 +796,10 @@ public:
     /// as the receive-side `IEventHandler::on_presence_changed` path.
     /// Blocks — call from a worker thread.
     Result set_presence(PresenceState state);
+
+    /// Non-blocking counterpart of `set_presence`. Returns immediately;
+    /// the PUT runs on the Rust tokio runtime. No callback on completion.
+    void set_presence_async(PresenceState state);
 
     // ------------------------------------------------------------------
     // Media
@@ -1065,6 +1058,17 @@ public:
     /// Does not pin a thread.
     void get_server_info_async(std::uint64_t request_id);
 
+    /// Async counterpart of `media_preview_config`. Spawns the cache read on
+    /// the tokio runtime; result delivered via
+    /// IEventHandler::on_media_preview_config_ready. Does not pin a thread.
+    void media_preview_config_async(std::uint64_t request_id);
+
+    /// Async counterpart of `room_media_preview_override`. Spawns the cache
+    /// read on the tokio runtime; result delivered via
+    /// IEventHandler::on_room_preview_override_ready. Does not pin a thread.
+    void room_media_preview_override_async(std::uint64_t request_id,
+                                           const std::string& room_id);
+
     /// Join a room by its ID or alias.
     /// Returns the canonical room ID (e.g. `!id:server`) on success, or an
     /// empty string on failure. Blocks the calling thread — invoke only from
@@ -1136,42 +1140,36 @@ public:
     /// Fire-and-forget. Blocks — call from a worker thread.
     void set_room_low_priority(std::string room_id, bool value);
 
-    /// Add user_id to m.ignored_user_list account data.
-    /// Blocks the calling thread — call from a worker thread.
-    Result ignore_user(const std::string& user_id);
+    /// Non-blocking counterpart of `ignore_user`. Returns immediately;
+    /// the SDK call runs on the Rust tokio runtime. No callback on completion.
+    void ignore_user_async(const std::string& user_id);
 
-    /// Remove user_id from m.ignored_user_list.
-    /// Blocks the calling thread — call from a worker thread.
-    Result unignore_user(const std::string& user_id);
+    /// Non-blocking counterpart of `unignore_user`. Returns immediately;
+    /// the SDK call runs on the Rust tokio runtime. No callback on completion.
+    void unignore_user_async(const std::string& user_id);
 
     /// Return the room ID of an existing DM with user_id, or create a new DM.
     /// Returns an empty string on error.
     /// Blocks the calling thread — call from a worker thread.
     std::string get_or_create_dm(const std::string& user_id);
 
-    /// Resolve a user's profile by mxid to confirm the user exists and fetch
-    /// their display name / avatar. The returned UserProfile has `exists ==
-    /// false` (with empty fields) on a parse error or when the homeserver has
-    /// no profile for the mxid.
-    /// Blocks the calling thread — call from a worker thread.
-    UserProfile resolve_user_profile(const std::string& user_id);
+    /// Async counterpart of `get_extended_profile`. Result delivered via
+    /// IEventHandler::on_extended_profile_ready. Does not pin a thread.
+    void get_extended_profile_async(std::uint64_t request_id,
+                                    const std::string& user_id);
 
-    /// Fetch extended profile fields (MSC4133) for any user. Falls back
-    /// gracefully when the server does not support MSC4133 — fields are empty.
-    /// Blocks the calling thread — call from a worker thread.
-    ExtendedProfile get_extended_profile(const std::string& user_id) const;
+    /// Async counterpart of `resolve_user_profile`. Result delivered via
+    /// IEventHandler::on_extended_profile_ready. Does not pin a thread.
+    void resolve_user_profile_async(std::uint64_t request_id,
+                                    const std::string& user_id);
 
-    /// Set a single extended profile field. `key` is the MSC key (e.g.
-    /// `"io.fsky.nyx.pronouns"`), `value_json` is already-serialised JSON.
-    /// Returns an error if the server does not support MSC4133.
-    /// Blocks the calling thread — call from a worker thread.
-    Result set_profile_field(const std::string& key,
-                             const std::string& value_json) const;
-
-    /// Delete a single extended profile field. Returns an error if the
-    /// server does not support MSC4133.
-    /// Blocks the calling thread — call from a worker thread.
-    Result delete_profile_field(const std::string& key) const;
+    /// Async entry point that unifies set and delete. Branches on
+    /// `value_json == "null"` (delete) vs. any other value (set). Result
+    /// delivered via IEventHandler::on_profile_field_result. Does not pin a
+    /// thread.
+    void set_or_delete_profile_field_async(std::uint64_t request_id,
+                                           const std::string& key,
+                                           const std::string& value_json);
 
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)

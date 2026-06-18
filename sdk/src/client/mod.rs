@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
-use matrix_sdk::{
-    ruma::{events::room::message::RoomMessageEventContent, OwnedRoomId},
-    Client,
-};
+use matrix_sdk::Client;
+#[cfg(not(test))]
+use matrix_sdk::ruma::{events::room::message::RoomMessageEventContent, OwnedRoomId};
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
@@ -36,6 +35,7 @@ mod timeline_convert;
 mod update;
 mod verification;
 
+#[cfg(not(test))]
 use session::PersistedSession;
 
 #[cfg(test)]
@@ -370,7 +370,9 @@ fn dirs_like_home() -> Option<PathBuf> {
 
 // ---------------------------------------------------------------------------
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+#[cfg(not(test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(not(test))]
 pub(super) struct SendHandler(pub(super) UniquePtr<EventHandlerBridge>);
@@ -820,6 +822,7 @@ pub(crate) fn encode_voice_ogg(
 
 
 impl ClientFfi {
+    #[cfg(not(test))]
     pub fn new(log_level: &str) -> Self {
         // Build a "matrix_sdk=<level>" directive from the caller-supplied level.
         // Falls back to "warn" on an unrecognised value. RUST_LOG overrides this.
@@ -938,6 +941,28 @@ impl ClientFfi {
                 // large `TimelineEvent`s recurses deeply. The
                 // 2 MB tokio default is tight, so widen it.
                 .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .expect("tokio runtime"),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new() -> Self {
+        Self {
+            client: None,
+            stop_tx: None,
+            stop_rx: None,
+            oauth_flow: None,
+            qr_grant: None,
+            media_upload_limit: AtomicU64::new(0),
+            data_dir: default_data_dir(),
+            http_client: reqwest::Client::new(),
+            presence_polling_enabled: std::sync::Arc::new(
+                std::sync::atomic::AtomicBool::new(true),
+            ),
+            profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            rt: tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
                 .build()
                 .expect("tokio runtime"),
         }
@@ -2289,7 +2314,7 @@ mod tests {
 
     #[test]
     fn send_message_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_message("!room:example.com", "hello", "");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
@@ -2323,7 +2348,7 @@ mod tests {
 
     #[test]
     fn recover_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.recover("some-key");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
@@ -2340,7 +2365,7 @@ mod tests {
 
     #[test]
     fn export_room_keys_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.export_room_keys("/tmp/keys.txt", "pass");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
@@ -2348,7 +2373,7 @@ mod tests {
 
     #[test]
     fn import_room_keys_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.import_room_keys("/tmp/keys.txt", "pass");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
@@ -2356,7 +2381,7 @@ mod tests {
 
     #[test]
     fn set_presence_polling_enabled_roundtrips() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         assert!(c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
         c.set_presence_polling_enabled(false);
         assert!(!c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
@@ -2568,14 +2593,14 @@ mod tests {
 
     #[test]
     fn send_reply_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_reply("!room:example.com", "$event:example.com", "reply body", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_reply_invalid_room_id() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_reply("not-a-room-id", "$event:example.com", "reply body", "");
         assert!(!r.ok);
     }
@@ -2613,14 +2638,14 @@ mod tests {
 
     #[test]
     fn send_thread_message_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_thread_message("!room:server", "$root:server", "hi", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_thread_reply_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r =
             c.send_thread_reply("!room:server", "$root:server", "$reply:server", "hi", "");
         assert!(!r.ok);
@@ -2628,33 +2653,33 @@ mod tests {
 
     #[test]
     fn send_edit_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_edit("!room:example.com", "$event:example.com", "new body", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_edit_invalid_room_id() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_edit("not-a-room-id", "$event:example.com", "new body", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn load_prefs_returns_empty_object_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         assert_eq!(c.load_prefs(), "{}");
     }
 
     #[test]
     fn save_prefs_is_noop_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         c.save_prefs("{\"last_room\":\"!r:example.com\"}");
     }
 
     #[test]
     fn register_pusher_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.register_pusher(
             "key",
             "im.gnomos.tesseract",
@@ -2669,7 +2694,7 @@ mod tests {
 
     #[test]
     fn remove_pusher_fails_when_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.remove_pusher("key", "im.gnomos.tesseract");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
@@ -2677,7 +2702,7 @@ mod tests {
 
     #[test]
     fn send_audio_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_audio("!room:server", &[], "audio/ogg", "voice.ogg", "", 0, "", "");
         assert!(!r.ok);
         assert!(r.message.contains("not logged in"), "got: {}", r.message);
@@ -2685,7 +2710,7 @@ mod tests {
 
     #[test]
     fn send_video_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.send_video(
             "!room:server", &[], "video/mp4", "clip.mp4", "",
             0, 0, &[], 0, 0, 0, "", "",
@@ -3238,7 +3263,7 @@ mod set_presence_tests {
     #[test]
     fn valid_state_bytes_pass_validation() {
         // No client → "not logged in", but the state byte is accepted.
-        let mut ffi = ClientFfi::new();
+        let ffi = ClientFfi::new();
         for byte in [1u8, 2, 3] {
             let r = ffi.set_presence(byte);
             assert!(!r.ok, "no client → must fail");
@@ -3249,7 +3274,7 @@ mod set_presence_tests {
 
     #[test]
     fn unknown_state_byte_is_rejected() {
-        let mut ffi = ClientFfi::new();
+        let ffi = ClientFfi::new();
         for byte in [0u8, 4, 5, 255] {
             let r = ffi.set_presence(byte);
             assert!(!r.ok);
@@ -3267,14 +3292,14 @@ mod thread_timeline_tests {
 
     #[test]
     fn subscribe_thread_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.subscribe_thread("!room:server", "$root:server");
         assert!(!r.ok);
     }
 
     #[test]
     fn paginate_thread_back_not_subscribed() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.paginate_thread_back("!room:server", "$root:server", 20);
         assert!(!r.ok);
     }
@@ -3350,7 +3375,7 @@ mod thread_list_tests {
 
     #[test]
     fn subscribe_room_threads_not_logged_in() {
-        let mut c = ClientFfi::new();
+        let c = ClientFfi::new();
         let r = c.subscribe_room_threads("!room:server");
         assert!(!r.ok);
     }

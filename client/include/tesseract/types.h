@@ -91,6 +91,9 @@ struct UserProfile
     std::string pronouns;     ///< MSC4247 summary text, empty if not set
     std::string tz;           ///< MSC4175 IANA timezone string, empty if not set
     std::string biography;    ///< MSC4440 plain-text body, empty if not set
+    /// Deserialise the JSON produced by `get_extended_profile_async` /
+    /// `resolve_user_profile_async`. Returns `exists=false` on parse failure.
+    static UserProfile from_json(const std::string& json);
 };
 
 struct Event
@@ -526,6 +529,10 @@ struct MediaPreviewConfig
     };
     Mode media_previews = Mode::On;
     bool invite_avatars = true; ///< show room/inviter avatars on pending invites
+    /// Deserialise `{"media_previews":N,"invite_avatars":bool}` produced by
+    /// the Rust `media_preview_config_async` callback. Returns MSC defaults on
+    /// parse failure.
+    static MediaPreviewConfig from_json(const std::string& json);
 };
 
 /// Per-room MSC4278 context for the open room, returned by
@@ -540,6 +547,8 @@ struct MediaPreviewOverride
     /// "knock_restricted", "private"), or "" when indeterminate. Used to
     /// evaluate `Mode::Private`; empty / unknown is treated as public.
     std::string join_rule;
+    /// Deserialise `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`.
+    static MediaPreviewOverride from_json(const std::string& json);
 };
 
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed

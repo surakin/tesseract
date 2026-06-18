@@ -293,115 +293,114 @@ impl ClientFfi {
 
     // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
-    /// Read the global MSC4278 media-preview config from the local sync
-    /// cache (stable → unstable precedence). No network roundtrip. Returns
-    /// the MSC defaults (previews on, invite avatars on) when not logged in
-    /// or before the first sync has populated the cache.
+    /// Async form: spawns the cache read on
+    /// the tokio runtime and fires `on_media_preview_config_ready(request_id,
+    /// config_json)` on completion. Does not pin a C++ worker thread.
+    /// `config_json` is `{"media_previews":N,"invite_avatars":bool}`.
     #[cfg(not(test))]
-    pub fn media_preview_config(&self) -> crate::ffi::MediaPreviewConfigFfi {
+    pub fn media_preview_config_async(&self, request_id: u64) {
+        let default_json = r#"{"media_previews":2,"invite_avatars":true}"#;
         let Some(client) = self.client.clone() else {
-            return crate::ffi::MediaPreviewConfigFfi {
-                media_previews: crate::media_preview::MediaPreviews::On.to_u8(),
-                invite_avatars: true,
-            };
-        };
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "account/get_media_preview_config".to_string(),
-        );
-        let cfg = self
-            .rt
-            .block_on(async move { read_media_preview_config(&client).await });
-        crate::ffi::MediaPreviewConfigFfi {
-            media_previews: cfg.media_previews.to_u8(),
-            invite_avatars: cfg.invite_avatars,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn media_preview_config(&self) -> crate::ffi::MediaPreviewConfigFfi {
-        crate::ffi::MediaPreviewConfigFfi {
-            media_previews: 2,
-            invite_avatars: true,
-        }
-    }
-
-    /// Read a room-level MSC4278 override. `has_media_previews` is true only
-    /// when the room's own `m.media_preview_config` account-data event sets
-    /// the `media_previews` field, in which case `media_previews` carries the
-    /// override; otherwise the caller falls back to the global value. No
-    /// network roundtrip — reads the local sync cache.
-    #[cfg(not(test))]
-    pub fn room_media_preview_override(
-        &self,
-        room_id: &str,
-    ) -> crate::ffi::MediaPreviewOverrideFfi {
-        fn none() -> crate::ffi::MediaPreviewOverrideFfi {
-            crate::ffi::MediaPreviewOverrideFfi {
-                has_media_previews: false,
-                media_previews: crate::media_preview::MediaPreviews::On.to_u8(),
-                join_rule: String::new(),
+            if let Some(ref h) = self.handler {
+                h.lock().on_media_preview_config_ready(request_id, default_json);
             }
+            return;
+        };
+        let handler = self.handler.clone();
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/get_media_preview_config".to_string(),
+            );
+            let cfg = read_media_preview_config(&client).await;
+            let json = format!(
+                r#"{{"media_previews":{},"invite_avatars":{}}}"#,
+                cfg.media_previews.to_u8(),
+                cfg.invite_avatars,
+            );
+            if let Some(h) = handler {
+                h.lock().on_media_preview_config_ready(request_id, &json);
+            }
+        });
+    }
+    #[cfg(test)]
+    pub fn media_preview_config_async(&self, _request_id: u64) {}
+
+    /// Async counterpart of `room_media_preview_override`. Spawns the cache
+    /// read on the tokio runtime and fires
+    /// `on_room_preview_override_ready(request_id, override_json)` on
+    /// completion. Does not pin a C++ worker thread.
+    /// `override_json` is
+    /// `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`.
+    #[cfg(not(test))]
+    pub fn room_media_preview_override_async(&self, request_id: u64, room_id: &str) {
+        fn none_json() -> String {
+            r#"{"has_media_previews":false,"media_previews":2,"join_rule":""}"#.to_owned()
         }
         let Some(client) = self.client.clone() else {
-            return none();
+            if let Some(ref h) = self.handler {
+                h.lock().on_room_preview_override_ready(request_id, &none_json());
+            }
+            return;
         };
         let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
-            return none();
+            if let Some(ref h) = self.handler {
+                h.lock().on_room_preview_override_ready(request_id, &none_json());
+            }
+            return;
         };
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "account/room_media_preview_override".to_string(),
-        );
-        self.rt.block_on(async move {
+        let handler = self.handler.clone();
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/room_media_preview_override".to_string(),
+            );
             use matrix_sdk::ruma::events::RoomAccountDataEventType;
             use serde_json::Value;
 
-            let Some(room) = client.get_room(&rid) else {
-                return none();
+            let ov = if let Some(room) = client.get_room(&rid) {
+                let join_rule =
+                    room.join_rule().map(|r| r.as_str().to_owned()).unwrap_or_default();
+
+                async fn fetch(room: &matrix_sdk::Room, ty: &str) -> Option<Value> {
+                    let et = RoomAccountDataEventType::from(ty);
+                    let raw = room.account_data(et).await.ok().flatten()?;
+                    serde_json::from_str::<Value>(raw.json().get()).ok()
+                }
+
+                let v = match fetch(&room, crate::media_preview::TYPE_STABLE).await {
+                    Some(v) => Some(v),
+                    None => fetch(&room, crate::media_preview::TYPE_UNSTABLE).await,
+                };
+                let mp = v
+                    .as_ref()
+                    .and_then(crate::media_preview::parse_media_previews_field);
+                format!(
+                    r#"{{"has_media_previews":{},"media_previews":{},"join_rule":"{}"}}"#,
+                    mp.is_some(),
+                    mp.unwrap_or(crate::media_preview::MediaPreviews::On).to_u8(),
+                    join_rule.replace('"', "\\\""),
+                )
+            } else {
+                none_json()
             };
-
-            let join_rule = room.join_rule().map(|r| r.as_str().to_owned()).unwrap_or_default();
-
-            async fn fetch(room: &matrix_sdk::Room, ty: &str) -> Option<Value> {
-                let et = RoomAccountDataEventType::from(ty);
-                let raw = room.account_data(et).await.ok().flatten()?;
-                serde_json::from_str::<Value>(raw.json().get()).ok()
+            if let Some(h) = handler {
+                h.lock().on_room_preview_override_ready(request_id, &ov);
             }
-
-            let v = match fetch(&room, crate::media_preview::TYPE_STABLE).await {
-                Some(v) => Some(v),
-                None => fetch(&room, crate::media_preview::TYPE_UNSTABLE).await,
-            };
-
-            let mp = v
-                .as_ref()
-                .and_then(crate::media_preview::parse_media_previews_field);
-            crate::ffi::MediaPreviewOverrideFfi {
-                has_media_previews: mp.is_some(),
-                media_previews: mp
-                    .unwrap_or(crate::media_preview::MediaPreviews::On)
-                    .to_u8(),
-                join_rule,
-            }
-        })
+        });
     }
-
     #[cfg(test)]
-    pub fn room_media_preview_override(
-        &self,
-        _room_id: &str,
-    ) -> crate::ffi::MediaPreviewOverrideFfi {
-        crate::ffi::MediaPreviewOverrideFfi {
-            has_media_previews: false,
-            media_previews: 2,
-            join_rule: String::new(),
-        }
-    }
+    pub fn room_media_preview_override_async(&self, _request_id: u64, _room_id: &str) {}
 
     /// Write the global MSC4278 config, dual-writing the stable and unstable
     /// account-data types so other MSC4278 clients pick it up regardless of
@@ -511,57 +510,51 @@ impl ClientFfi {
     // Ignored users / profile edits
     // -----------------------------------------------------------------------
 
-    /// Add user_id to m.ignored_user_list account data. Blocks — worker thread.
+    /// Non-blocking counterpart of `ignore_user`. Spawns the SDK call as a
+    /// tokio task; no callback — failures are logged internally.
     #[cfg(not(test))]
-    pub fn ignore_user(&self, user_id: &str) -> OpResult {
-        let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
-        };
-        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
-            return err("invalid user id");
-        };
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "account/ignore_user".to_string(),
-        );
-        match self.rt.block_on(client.account().ignore_user(&uid)) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
-        }
+    pub fn ignore_user_async(&self, user_id: &str) {
+        let Some(client) = self.client.clone() else { return; };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else { return; };
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        let handler = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/ignore_user".to_string(),
+            );
+            let _ = client.account().ignore_user(&uid).await;
+        });
     }
-
     #[cfg(test)]
-    pub fn ignore_user(&self, _user_id: &str) -> OpResult {
-        err("not logged in")
-    }
+    pub fn ignore_user_async(&self, _user_id: &str) {}
 
-    /// Remove user_id from m.ignored_user_list. Blocks — worker thread.
+    /// Non-blocking counterpart of `unignore_user`. Spawns the SDK call as a
+    /// tokio task; no callback — failures are logged internally.
     #[cfg(not(test))]
-    pub fn unignore_user(&self, user_id: &str) -> OpResult {
-        let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
-        };
-        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
-            return err("invalid user id");
-        };
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "account/unignore_user".to_string(),
-        );
-        match self.rt.block_on(client.account().unignore_user(&uid)) {
-            Ok(_) => ok(""),
-            Err(e) => err(e.to_string()),
-        }
+    pub fn unignore_user_async(&self, user_id: &str) {
+        let Some(client) = self.client.clone() else { return; };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else { return; };
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        let handler = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/unignore_user".to_string(),
+            );
+            let _ = client.account().unignore_user(&uid).await;
+        });
     }
-
     #[cfg(test)]
-    pub fn unignore_user(&self, _user_id: &str) -> OpResult {
-        err("not logged in")
-    }
+    pub fn unignore_user_async(&self, _user_id: &str) {}
 
     #[cfg(not(test))]
     pub fn set_display_name(&self, name: &str) -> OpResult {
@@ -883,6 +876,38 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Non-blocking counterpart of `set_presence`. Spawns the PUT as a tokio
+    /// task; no callback — failures are silently ignored.
+    #[cfg(not(test))]
+    pub fn set_presence_async(&self, state: u8) {
+        use matrix_sdk::ruma::api::client::presence::set_presence::v3;
+        use matrix_sdk::ruma::presence::PresenceState;
+        let presence = match state {
+            1 => PresenceState::Online,
+            2 => PresenceState::Unavailable,
+            3 => PresenceState::Offline,
+            _ => return,
+        };
+        let Some(client) = self.client.clone() else { return; };
+        let Some(user_id) = client.user_id().map(|u| u.to_owned()) else { return; };
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        let handler = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "account/set_presence".to_string(),
+            );
+            let req = v3::Request::new(user_id, presence);
+            let _ = client.send(req).await;
+        });
+    }
+    #[cfg(test)]
+    pub fn set_presence_async(&self, _state: u8) {}
+
     /// Return room ID of an existing DM with user_id, or create one.
     /// Returns empty string on error. Blocks — worker thread.
     #[cfg(not(test))]
@@ -938,20 +963,12 @@ impl ClientFfi {
         String::new()
     }
 
-    /// Resolve a user's profile by mxid to confirm existence and fetch the
-    /// display name / avatar (plus extended MSC4133 fields). Returns
-    /// `exists: false` (with empty fields) on a parse error, when not logged
-    /// in, or when the homeserver reports no such user (e.g. M_NOT_FOUND).
-    /// Delegates to `get_extended_profile` which handles the InFlightGuard.
-    /// Blocks — worker thread.
-    #[cfg(not(test))]
-    pub fn resolve_user_profile(&self, user_id: &str) -> crate::ffi::UserProfile {
-        self.get_extended_profile(user_id)
-    }
-
-    #[cfg(test)]
-    pub fn resolve_user_profile(&self, user_id: &str) -> crate::ffi::UserProfile {
-        self.get_extended_profile(user_id)
+    /// Async counterpart of `resolve_user_profile`. Delegates to
+    /// `get_extended_profile_async` and fires the same
+    /// `on_extended_profile_ready(request_id, profile_json)` callback.
+    /// Does not pin a C++ worker thread.
+    pub fn resolve_user_profile_async(&self, request_id: u64, user_id: &str) {
+        self.get_extended_profile_async(request_id, user_id);
     }
 
     // -----------------------------------------------------------------------

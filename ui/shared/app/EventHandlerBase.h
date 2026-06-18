@@ -89,6 +89,10 @@ public:
                                       const std::string& summary_json) override;
     void on_server_info_ready(std::uint64_t request_id,
                               const std::string& info_json) override;
+    void on_media_preview_config_ready(std::uint64_t request_id,
+                                       const std::string& config_json) override;
+    void on_room_preview_override_ready(std::uint64_t request_id,
+                                        const std::string& override_json) override;
     void on_search_results(std::uint64_t request_id,
                            const std::vector<SearchHit>& results) override;
     void on_search_failed(std::uint64_t request_id,
@@ -101,6 +105,11 @@ public:
                                  const std::string& message) override;
     void on_upload_complete(std::uint64_t request_id, bool ok,
                             const std::string& message) override;
+    void on_profile_field_result(std::uint64_t request_id,
+                                 const std::string& key, bool ok,
+                                 const std::string& message) override;
+    void on_extended_profile_ready(std::uint64_t request_id,
+                                   const std::string& profile_json) override;
     void on_rooms_updated(const std::vector<RoomInfo>& rooms) override;
     void on_invites_updated(const std::vector<InviteInfo>& invites) override;
     void on_sync_error(const std::string& context,

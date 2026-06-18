@@ -3692,12 +3692,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = weakSelf;
             if (!s || !s->_shell->client_)
                 return;
-            auto* c = s->_shell->client_;
-            s->_shell->run_async_mut_(
-                [c, user_id = std::move(user_id)]() mutable
-                {
-                    c->ignore_user(user_id);
-                });
+            s->_shell->client_->ignore_user_async(std::move(user_id));
         };
         _mainApp->room_view()->set_repaint_requester(
             [weakSelf]

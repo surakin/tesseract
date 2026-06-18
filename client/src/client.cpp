@@ -776,30 +776,6 @@ void Client::save_prefs_json(const std::string& json)
     impl_->ffi->save_prefs(json);
 }
 
-MediaPreviewConfig Client::media_preview_config()
-{
-    SH_FFI;
-    auto raw = impl_->ffi->media_preview_config();
-    MediaPreviewConfig cfg;
-    cfg.media_previews =
-        static_cast<MediaPreviewConfig::Mode>(raw.media_previews);
-    cfg.invite_avatars = raw.invite_avatars;
-    return cfg;
-}
-
-MediaPreviewOverride
-Client::room_media_preview_override(const std::string& room_id)
-{
-    SH_FFI;
-    auto raw = impl_->ffi->room_media_preview_override(room_id);
-    MediaPreviewOverride ov;
-    ov.has_media_previews = raw.has_media_previews;
-    ov.media_previews =
-        static_cast<MediaPreviewConfig::Mode>(raw.media_previews);
-    ov.join_rule = std::string(raw.join_rule);
-    return ov;
-}
-
 void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
                                        bool invite_avatars)
 {
@@ -946,6 +922,19 @@ Result Client::set_presence(PresenceState state)
         case PresenceState::Offline:     byte = 3; break;
     }
     return from_ffi(impl_->ffi->set_presence(byte));
+}
+
+void Client::set_presence_async(PresenceState state)
+{
+    SH_FFI;
+    std::uint8_t byte = 3;
+    switch (state)
+    {
+        case PresenceState::Online:      byte = 1; break;
+        case PresenceState::Unavailable: byte = 2; break;
+        case PresenceState::Offline:     byte = 3; break;
+    }
+    impl_->ffi->set_presence_async(byte);
 }
 
 // Windows-only: GTK/Qt/macOS shells use fetch_media_async.
@@ -1365,6 +1354,19 @@ void Client::get_server_info_async(std::uint64_t request_id)
     impl_->ffi->get_server_info_async(request_id);
 }
 
+void Client::media_preview_config_async(std::uint64_t request_id)
+{
+    SH_FFI;
+    impl_->ffi->media_preview_config_async(request_id);
+}
+
+void Client::room_media_preview_override_async(std::uint64_t request_id,
+                                               const std::string& room_id)
+{
+    SH_FFI;
+    impl_->ffi->room_media_preview_override_async(request_id, room_id);
+}
+
 std::optional<tesseract::RoomSummary>
 Client::get_cached_room_summary(const std::string& room_id) const
 {
@@ -1491,16 +1493,16 @@ void Client::set_room_low_priority(std::string room_id, bool value)
     impl_->ffi->set_room_low_priority(room_id, value);
 }
 
-Result Client::ignore_user(const std::string& user_id)
+void Client::ignore_user_async(const std::string& user_id)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->ignore_user(user_id));
+    impl_->ffi->ignore_user_async(user_id);
 }
 
-Result Client::unignore_user(const std::string& user_id)
+void Client::unignore_user_async(const std::string& user_id)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->unignore_user(user_id));
+    impl_->ffi->unignore_user_async(user_id);
 }
 
 std::string Client::get_or_create_dm(const std::string& user_id)
@@ -1509,39 +1511,26 @@ std::string Client::get_or_create_dm(const std::string& user_id)
     return std::string(impl_->ffi->get_or_create_dm(user_id));
 }
 
-UserProfile Client::resolve_user_profile(const std::string& user_id)
+void Client::set_or_delete_profile_field_async(std::uint64_t request_id,
+                                               const std::string& key,
+                                               const std::string& value_json)
 {
-    if (user_id.empty())
-        return {};
     SH_FFI;
-    auto p = impl_->ffi->resolve_user_profile(user_id);
-    return UserProfile{p.exists, std::string(p.user_id),
-                       std::string(p.display_name), std::string(p.avatar_url),
-                       std::string(p.pronouns), std::string(p.tz),
-                       std::string(p.biography)};
+    impl_->ffi->set_or_delete_profile_field_async(request_id, key, value_json);
 }
 
-ExtendedProfile Client::get_extended_profile(const std::string& user_id) const
+void Client::get_extended_profile_async(std::uint64_t request_id,
+                                        const std::string& user_id)
 {
-    if (user_id.empty())
-        return {};
     SH_FFI;
-    auto p = impl_->ffi->get_extended_profile(user_id);
-    return ExtendedProfile{std::string(p.pronouns), std::string(p.tz),
-                           std::string(p.biography)};
+    impl_->ffi->get_extended_profile_async(request_id, user_id);
 }
 
-Result Client::set_profile_field(const std::string& key,
-                                 const std::string& value_json) const
+void Client::resolve_user_profile_async(std::uint64_t request_id,
+                                        const std::string& user_id)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->set_profile_field(key, value_json));
-}
-
-Result Client::delete_profile_field(const std::string& key) const
-{
-    SH_FFI;
-    return from_ffi(impl_->ffi->delete_profile_field(key));
+    impl_->ffi->resolve_user_profile_async(request_id, user_id);
 }
 
 Client::DiscoveryResult
@@ -1611,6 +1600,52 @@ RoomSummary RoomSummary::from_json(const std::string& json)
     s.is_space           = js_bool(j, "is_space", false);
     s.membership         = js_str(j, "membership");
     return s;
+}
+
+UserProfile UserProfile::from_json(const std::string& json)
+{
+    UserProfile p;
+    if (json.empty())
+        return p;
+    auto j = parse_json_obj(json);
+    p.exists       = j.value("exists", false);
+    p.user_id      = js_str(j, "user_id");
+    p.display_name = js_str(j, "display_name");
+    p.avatar_url   = js_str(j, "avatar_url");
+    p.pronouns     = js_str(j, "pronouns");
+    p.tz           = js_str(j, "tz");
+    p.biography    = js_str(j, "biography");
+    return p;
+}
+
+MediaPreviewConfig MediaPreviewConfig::from_json(const std::string& json)
+{
+    MediaPreviewConfig cfg;
+    if (json.empty())
+        return cfg;
+    auto j = parse_json_obj(json);
+    // Use nlohmann .value() so missing keys yield the MSC defaults (On / true).
+    auto raw = j.value("media_previews", uint32_t(2));
+    cfg.media_previews = raw <= 2
+        ? static_cast<MediaPreviewConfig::Mode>(raw)
+        : MediaPreviewConfig::Mode::On;
+    cfg.invite_avatars = j.value("invite_avatars", true);
+    return cfg;
+}
+
+MediaPreviewOverride MediaPreviewOverride::from_json(const std::string& json)
+{
+    MediaPreviewOverride ov;
+    if (json.empty())
+        return ov;
+    auto j = parse_json_obj(json);
+    ov.has_media_previews = j.value("has_media_previews", false);
+    auto raw = j.value("media_previews", uint32_t(2));
+    ov.media_previews = raw <= 2
+        ? static_cast<MediaPreviewConfig::Mode>(raw)
+        : MediaPreviewConfig::Mode::On;
+    ov.join_rule = js_str(j, "join_rule");
+    return ov;
 }
 
 Client::UrlPreview Client::parse_url_preview(const std::string& json)

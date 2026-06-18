@@ -6,7 +6,9 @@
 //! when the server advertises `unstable_features["uk.tcpip.msc4133"] == true`;
 //! otherwise writes are rejected with an error result.
 
-use super::{err, ok, ClientFfi};
+use super::ClientFfi;
+#[cfg(not(test))]
+use super::{err, ok};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,226 +84,220 @@ fn parse_biography(j: &serde_json::Value) -> String {
 
 #[cfg(not(test))]
 impl ClientFfi {
-    /// Fetch extended profile fields for a user via the standard
-    /// `GET /_matrix/client/v3/profile/{user_id}` endpoint.
-    /// Returns a fully populated `UserProfile` (displayname + avatar_url +
-    /// pronouns + tz + biography). Falls back to `exists: false` on network
-    /// error, parse failure, or when not logged in.
-    /// Blocks — call from a worker thread.
-    pub fn get_extended_profile(&self, user_id: &str) -> crate::ffi::UserProfile {
-        let empty = || crate::ffi::UserProfile {
-            exists: false,
-            user_id: String::new(),
-            display_name: String::new(),
-            avatar_url: String::new(),
-            pronouns: String::new(),
-            tz: String::new(),
-            biography: String::new(),
-        };
+    pub fn get_extended_profile_async(&self, request_id: u64, user_id: &str) {
+        let empty_json = r#"{"exists":false,"user_id":"","display_name":"","avatar_url":"","pronouns":"","tz":"","biography":""}"#;
 
         if user_id.is_empty() {
-            return empty();
+            if let Some(ref h) = self.handler {
+                h.lock().on_extended_profile_ready(request_id, empty_json);
+            }
+            return;
         }
-
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "profile_fields/get_extended_profile".to_string(),
-        );
-
         let Some(client) = self.client.as_ref() else {
-            return empty();
+            if let Some(ref h) = self.handler {
+                h.lock().on_extended_profile_ready(request_id, empty_json);
+            }
+            return;
         };
-
+        let handler = self.handler.clone();
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        let http = self.http_client.clone();
+        let access_token = client.access_token().unwrap_or_default();
         let base = {
             let url = client.homeserver().to_string();
             url.trim_end_matches('/').to_owned()
         };
-        let access_token = client.access_token().unwrap_or_default();
-        let http = self.http_client.clone();
         let encoded_uid = percent_encode_user_id(user_id);
         let url = format!("{base}/_matrix/client/v3/profile/{encoded_uid}");
+        let user_id_owned = user_id.to_owned();
 
-        self.rt.block_on(async move {
-            let mut req = http.get(&url);
-            if !access_token.is_empty() {
-                req = req.bearer_auth(&access_token);
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "profile_fields/get_extended_profile".to_string(),
+            );
+
+            fn esc(s: &str) -> String {
+                s.replace('\\', "\\\\").replace('"', "\\\"")
             }
-            let resp = match req.send().await {
-                Ok(r) => r,
-                Err(_) => return empty(),
-            };
-            if !resp.status().is_success() {
-                return empty();
+
+            let payload = async {
+                let mut req = http.get(&url);
+                if !access_token.is_empty() {
+                    req = req.bearer_auth(&access_token);
+                }
+                let resp = req.send().await.ok()?;
+                if !resp.status().is_success() {
+                    return None;
+                }
+                let j: serde_json::Value = resp.json().await.ok()?;
+
+                let display_name = j["displayname"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| {
+                        user_id_owned
+                            .split(':')
+                            .next()
+                            .and_then(|s| s.strip_prefix('@'))
+                            .unwrap_or(&user_id_owned)
+                            .to_owned()
+                    });
+                let avatar_url = j["avatar_url"].as_str().unwrap_or("").to_owned();
+                let pronouns = parse_pronouns(&j);
+                let tz = parse_tz(&j);
+                let biography = parse_biography(&j);
+
+                Some(format!(
+                    r#"{{"exists":true,"user_id":"{uid}","display_name":"{dn}","avatar_url":"{av}","pronouns":"{pr}","tz":"{tz}","biography":"{bio}"}}"#,
+                    uid = esc(&user_id_owned),
+                    dn  = esc(&display_name),
+                    av  = esc(&avatar_url),
+                    pr  = esc(&pronouns),
+                    tz  = esc(&tz),
+                    bio = esc(&biography),
+                ))
             }
-            let j: serde_json::Value = match resp.json().await {
-                Ok(v) => v,
-                Err(_) => return empty(),
-            };
+            .await;
 
-            let display_name = j["displayname"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    // Fall back to localpart extracted from the mxid
-                    user_id
-                        .split(':')
-                        .next()
-                        .and_then(|s| s.strip_prefix('@'))
-                        .unwrap_or(user_id)
-                        .to_owned()
-                });
-            let avatar_url = j["avatar_url"]
-                .as_str()
-                .unwrap_or("")
-                .to_owned();
-
-            let pronouns = parse_pronouns(&j);
-            let tz = parse_tz(&j);
-            let biography = parse_biography(&j);
-
-            crate::ffi::UserProfile {
-                exists: true,
-                user_id: user_id.to_owned(),
-                display_name,
-                avatar_url,
-                pronouns,
-                tz,
-                biography,
+            let json = payload.as_deref().unwrap_or(empty_json);
+            if let Some(h) = handler {
+                h.lock().on_extended_profile_ready(request_id, json);
             }
-        })
+        });
     }
 
-    /// Write a single extended profile field via MSC4133.
-    ///
-    /// `key` is the unstable key (e.g. `"io.fsky.nyx.pronouns"`).
-    /// `value_json` is a JSON string encoding the field value.
-    ///
-    /// Errors if the server does not advertise `uk.tcpip.msc4133`.
-    /// Blocks — call from a worker thread.
-    pub fn set_profile_field(&self, key: &str, value_json: &str) -> crate::ffi::OpResult {
+    /// Single async entry point for both set and delete. Branches on
+    /// `value_json == "null"` (delete) vs any other value (set). Spawns the
+    /// HTTP call on the tokio runtime and fires
+    /// `on_profile_field_result(request_id, key, ok, message)` on completion.
+    /// Does not pin a C++ worker thread.
+    #[cfg(not(test))]
+    pub fn set_or_delete_profile_field_async(
+        &self,
+        request_id: u64,
+        key: &str,
+        value_json: &str,
+    ) {
         if key.is_empty() {
-            return crate::ffi::OpResult { ok: false, message: "key must not be empty".to_owned() };
+            if let Some(ref h) = self.handler {
+                h.lock().on_profile_field_result(request_id, key, false,
+                                                 "key must not be empty");
+            }
+            return;
         }
-
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] format!("profile_fields/set/{key}"),
-        );
 
         let prefix = match self.profile_fields_prefix.read().unwrap().clone() {
             Some(p) => p,
-            None => return err("server does not support MSC4133 profile field writes"),
-        };
-
-        let value: serde_json::Value = match serde_json::from_str(value_json) {
-            Ok(v) => v,
-            Err(e) => return err(format!("invalid JSON for field value: {e}")),
+            None => {
+                if let Some(ref h) = self.handler {
+                    h.lock().on_profile_field_result(
+                        request_id, key, false,
+                        "server does not support MSC4133 profile field writes",
+                    );
+                }
+                return;
+            }
         };
 
         let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
+            if let Some(ref h) = self.handler {
+                h.lock().on_profile_field_result(request_id, key, false, "not logged in");
+            }
+            return;
         };
         let Some(uid) = client.user_id() else {
-            return err("no user_id available");
+            if let Some(ref h) = self.handler {
+                h.lock().on_profile_field_result(request_id, key, false,
+                                                 "no user_id available");
+            }
+            return;
         };
-        let base = {
-            let url = client.homeserver().to_string();
-            url.trim_end_matches('/').to_owned()
+        let base = client.homeserver().to_string();
+        let base = base.trim_end_matches('/').to_owned();
+        let Some(access_token) = client.access_token() else {
+            if let Some(ref h) = self.handler {
+                h.lock().on_profile_field_result(request_id, key, false, "no access token");
+            }
+            return;
         };
-        let access_token = match client.access_token() {
-            Some(t) => t,
-            None => return err("no access token"),
+
+        let is_delete = value_json == "null";
+        let value: Option<serde_json::Value> = if is_delete {
+            None
+        } else {
+            match serde_json::from_str(value_json) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    if let Some(ref h) = self.handler {
+                        h.lock().on_profile_field_result(
+                            request_id, key, false,
+                            &format!("invalid JSON for field value: {e}"),
+                        );
+                    }
+                    return;
+                }
+            }
         };
+
+        let handler = self.handler.clone();
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
         let http = self.http_client.clone();
         let encoded_uid = percent_encode_user_id(uid.as_str());
         let url = format!("{base}{prefix}/profile/{encoded_uid}/{key}");
-        let body = serde_json::json!({ key: value });
+        let key_owned = key.to_owned();
 
-        self.rt.block_on(async move {
-            let resp = match http
-                .put(&url)
-                .bearer_auth(&access_token)
-                .json(&body)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => return err(format!("network error: {e}")),
-            };
-            if resp.status().is_success() {
-                ok("")
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] if is_delete {
+                    format!("profile_fields/delete/{key_owned}")
+                } else {
+                    format!("profile_fields/set/{key_owned}")
+                },
+            );
+
+            let result = if is_delete {
+                match http.delete(&url).bearer_auth(&access_token).send().await {
+                    Ok(r) if r.status().is_success() => ok(""),
+                    Ok(r) => {
+                        let status = r.status();
+                        let body = r.text().await.unwrap_or_default();
+                        err(format!("server error {status}: {body}"))
+                    }
+                    Err(e) => err(format!("network error: {e}")),
+                }
             } else {
-                let status = resp.status();
-                let error_text = resp.text().await.unwrap_or_default();
-                err(format!("server error {status}: {error_text}"))
-            }
-        })
-    }
-
-    /// Delete a single extended profile field via MSC4133.
-    ///
-    /// `key` is the unstable key (e.g. `"io.fsky.nyx.pronouns"`).
-    ///
-    /// Errors if the server does not advertise `uk.tcpip.msc4133`.
-    /// Blocks — call from a worker thread.
-    pub fn delete_profile_field(&self, key: &str) -> crate::ffi::OpResult {
-        if key.is_empty() {
-            return crate::ffi::OpResult { ok: false, message: "key must not be empty".to_owned() };
-        }
-
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "profile_fields/delete".to_string(),
-        );
-
-        let prefix = match self.profile_fields_prefix.read().unwrap().clone() {
-            Some(p) => p,
-            None => return err("server does not support MSC4133 profile field writes"),
-        };
-
-        let Some(client) = self.client.as_ref() else {
-            return err("not logged in");
-        };
-        let Some(uid) = client.user_id() else {
-            return err("no user_id available");
-        };
-        let base = {
-            let url = client.homeserver().to_string();
-            url.trim_end_matches('/').to_owned()
-        };
-        let access_token = match client.access_token() {
-            Some(t) => t,
-            None => return err("no access token"),
-        };
-        let http = self.http_client.clone();
-        let encoded_uid = percent_encode_user_id(uid.as_str());
-        let url = format!("{base}{prefix}/profile/{encoded_uid}/{key}");
-
-        self.rt.block_on(async move {
-            let resp = match http
-                .delete(&url)
-                .bearer_auth(&access_token)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => return err(format!("network error: {e}")),
+                let body = serde_json::json!({ &key_owned: value });
+                match http.put(&url).bearer_auth(&access_token).json(&body).send().await {
+                    Ok(r) if r.status().is_success() => ok(""),
+                    Ok(r) => {
+                        let status = r.status();
+                        let text = r.text().await.unwrap_or_default();
+                        err(format!("server error {status}: {text}"))
+                    }
+                    Err(e) => err(format!("network error: {e}")),
+                }
             };
-            if resp.status().is_success() {
-                ok("")
-            } else {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                err(format!("server error {status}: {body}"))
+
+            if let Some(h) = handler {
+                h.lock().on_profile_field_result(
+                    request_id,
+                    &key_owned,
+                    result.ok,
+                    &result.message,
+                );
             }
-        })
+        });
     }
 }
 
@@ -311,24 +307,14 @@ impl ClientFfi {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn get_extended_profile(&self, _user_id: &str) -> crate::ffi::UserProfile {
-        crate::ffi::UserProfile {
-            exists: false,
-            user_id: String::new(),
-            display_name: String::new(),
-            avatar_url: String::new(),
-            pronouns: String::new(),
-            tz: String::new(),
-            biography: String::new(),
-        }
-    }
+    pub fn get_extended_profile_async(&self, _request_id: u64, _user_id: &str) {}
 
-    pub fn set_profile_field(&self, _key: &str, _value_json: &str) -> crate::ffi::OpResult {
-        ok("")
-    }
-
-    pub fn delete_profile_field(&self, _key: &str) -> crate::ffi::OpResult {
-        ok("")
+    pub fn set_or_delete_profile_field_async(
+        &self,
+        _request_id: u64,
+        _key: &str,
+        _value_json: &str,
+    ) {
     }
 }
 

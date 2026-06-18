@@ -1173,14 +1173,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mainApp_->room_view()->on_ignore_user =
             [this](const std::string& user_id)
         {
-            if (!client_)
-                return;
-            auto* c = client_;
-            run_async_mut_(
-                [c, user_id]()
-                {
-                    c->ignore_user(user_id);
-                });
+            if (client_)
+                client_->ignore_user_async(user_id);
         };
         mainApp_->video_viewer()->on_save =
             [this](std::string source_json, std::string mime_type)

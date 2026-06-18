@@ -718,6 +718,15 @@ protected:
     std::unordered_map<std::string, tesseract::MediaPreviewOverride>
         room_preview_overrides_;
     std::unordered_set<std::string> room_preview_override_in_flight_;
+    // request_id → room_id for in-flight room_media_preview_override_async calls.
+    std::unordered_map<std::uint64_t, std::string> pending_preview_overrides_;
+    // request_id → UserProfilePanel* for in-flight get_extended_profile_async
+    // (user panel case). Absence = own-profile fetch.
+    std::unordered_map<std::uint64_t, views::UserProfilePanel*>
+        pending_user_profiles_;
+    // request_id → {mxid, gen} for in-flight resolve_user_profile_async.
+    std::unordered_map<std::uint64_t, std::pair<std::string, std::uint64_t>>
+        pending_resolve_requests_;
     // Event IDs the user explicitly revealed (click-to-load), bypassing the
     // preview gate for that one item. Cleared on logout / account switch.
     std::unordered_set<std::string> revealed_events_;
@@ -856,15 +865,13 @@ protected:
 
     // ── Worker thread pools ───────────────────────────────────────────────────
     // Two pools with different concurrency levels:
-    //   pool_     — 4 threads for &self work: image decode, disk-cache I/O, and
-    //               a couple of one-shot blocking &self FFI calls (secondary-
-    //               window video-viewer load + save-to-file). The high-volume
-    //               media downloads (avatars, thumbnails, full images, stickers/
-    //               emoji picker images, tiles, URL previews, voice) NO LONGER
-    //               run here — they are issued as non-blocking tokio tasks via
-    //               fetch_media_async and complete on the on_media_ready
-    //               callback, so a slow download can never pin one of these four
-    //               threads. These hold no C++ mutex; all four can run in
+    //   pool_     — 2 threads for &self work: image decode, disk-cache I/O, and
+    //               a handful of blocking &self FFI calls (profile reads, config
+    //               reads). The high-volume media downloads (avatars, thumbnails,
+    //               full images, stickers/emoji picker images, tiles, URL previews,
+    //               voice) run as non-blocking tokio tasks via fetch_media_async
+    //               and complete on the on_media_ready callback — they never pin
+    //               a pool thread. These hold no C++ mutex; both can run in
     //               parallel.
     //   mut_pool_ — 1 thread for &mut FFI (subscribe_room, send_*, etc.).
     //               Serialised by design so ffi_mu is never contended.
@@ -1813,6 +1820,21 @@ protected:
     // mirror (active account only) and refresh gating + room list.
     virtual void handle_media_preview_config_updated_ui_(std::string user_id,
                                                          std::string json);
+    // Callback from media_preview_config_async: parse config_json and apply.
+    void handle_media_preview_config_fetched_ui_(std::uint64_t request_id,
+                                                 std::string config_json);
+    // Callback from room_media_preview_override_async: store override, fetch media.
+    void handle_room_preview_override_ready_ui_(std::uint64_t request_id,
+                                                std::string override_json);
+    // Callback from set_or_delete_profile_field_async.
+    void handle_profile_field_result_ui_(std::uint64_t request_id,
+                                         std::string key, bool ok,
+                                         std::string message);
+    // Callback from get_extended_profile_async / resolve_user_profile_async.
+    // Dispatches to panel (user panel), resolve map (quick-switcher), or own
+    // profile based on which pending map contains request_id.
+    void handle_extended_profile_ready_ui_(std::uint64_t request_id,
+                                           std::string profile_json);
     virtual void
     handle_notification_ui_(std::string /*user_id*/, std::string /*room_id*/,
                             std::string /*room_name*/, std::string /*sender*/,
@@ -2253,7 +2275,7 @@ protected:
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 
-    // Enqueue fn() on the shared-read pool (pool_, 4 threads).
+    // Enqueue fn() on the shared-read pool (pool_, 2 threads).
     // Use for &self FFI calls and CPU/disk work that holds no ffi_mu lock.
     void run_async_(std::function<void()> fn);
 

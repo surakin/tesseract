@@ -995,6 +995,23 @@ pub mod ffi {
         /// string on failure or when not logged in).
         fn on_server_info_ready(self: &EventHandlerBridge, request_id: u64, info_json: &str);
 
+        /// Fired when an async `media_preview_config_async` fetch completes.
+        /// `config_json` is `{"media_previews":N,"invite_avatars":bool}`.
+        fn on_media_preview_config_ready(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            config_json: &str,
+        );
+
+        /// Fired when an async `room_media_preview_override_async` fetch
+        /// completes. `override_json` is
+        /// `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`.
+        fn on_room_preview_override_ready(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            override_json: &str,
+        );
+
         /// Fired when an async full-text search started via
         /// `search_messages_async` completes successfully. `request_id` is the
         /// correlation token the caller passed; the C++ side drops results
@@ -1050,6 +1067,26 @@ pub mod ffi {
             request_id: u64,
             ok: bool,
             message: &str,
+        );
+
+        /// Fired when an async `set_or_delete_profile_field_async` completes.
+        /// `key` is the field key that was written/deleted; `ok` is success;
+        /// `message` is a human-readable error on failure (empty on success).
+        fn on_profile_field_result(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            key: &str,
+            ok: bool,
+            message: &str,
+        );
+
+        /// Fired when an async `get_extended_profile_async` or
+        /// `resolve_user_profile_async` fetch completes. `profile_json` is the
+        /// full `UserProfile` serialised as JSON (7 fields + `"exists"`).
+        fn on_extended_profile_ready(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            profile_json: &str,
         );
     }
 
@@ -1799,20 +1836,6 @@ pub mod ffi {
 
         // ----- MSC4278 media-preview config (m.media_preview_config) -----
 
-        /// Read the global MSC4278 media-preview config from the local sync
-        /// cache (stable → unstable precedence). No network roundtrip;
-        /// returns the MSC defaults (previews on, invite avatars on) when not
-        /// logged in or before the first sync.
-        fn media_preview_config(self: &ClientFfi) -> MediaPreviewConfigFfi;
-
-        /// Read a room-level override of `media_previews` from that room's
-        /// account-data. `has_media_previews` is false when the room sets no
-        /// override (use the global value). No network roundtrip.
-        fn room_media_preview_override(
-            self: &ClientFfi,
-            room_id: &str,
-        ) -> MediaPreviewOverrideFfi;
-
         /// Write the global MSC4278 config, dual-writing the stable and
         /// unstable account-data types. Fire-and-forget; the echo arrives on
         /// the next sync and triggers `on_media_preview_config_updated`.
@@ -2066,11 +2089,13 @@ pub mod ffi {
         /// power levels — no network round-trip. False on any uncertainty.
         fn can_pin_in_room(self: &ClientFfi, room_id: &str) -> bool;
 
-        /// Add user_id to m.ignored_user_list account data. Blocks — worker thread.
-        fn ignore_user(self: &ClientFfi, user_id: &str) -> OpResult;
+        /// Non-blocking ignore. Spawns the SDK call as a tokio task; no
+        /// callback — failures are logged internally.
+        fn ignore_user_async(self: &ClientFfi, user_id: &str);
 
-        /// Remove user_id from m.ignored_user_list. Blocks — worker thread.
-        fn unignore_user(self: &ClientFfi, user_id: &str) -> OpResult;
+        /// Non-blocking unignore. Spawns the SDK call as a tokio task; no
+        /// callback — failures are logged internally.
+        fn unignore_user_async(self: &ClientFfi, user_id: &str);
 
         /// Set the current user's display name. Blocks — worker thread.
         fn set_display_name(self: &ClientFfi, name: &str) -> OpResult;
@@ -2147,6 +2172,10 @@ pub mod ffi {
         /// Any other value is rejected with `ok=false`. Blocks — worker thread.
         fn set_presence(self: &ClientFfi, state: u8) -> OpResult;
 
+        /// Non-blocking counterpart of `set_presence`. Spawns the PUT as a
+        /// tokio task; no callback — failures are silently ignored.
+        fn set_presence_async(self: &ClientFfi, state: u8);
+
         /// Enable or disable background presence polling of DM counterparts.
         /// When disabled the polling loop skips every tick; already-received
         /// presence values are left unchanged. Thread-safe; may be called on
@@ -2163,33 +2192,28 @@ pub mod ffi {
         /// Returns empty string on error. Blocks — worker thread.
         fn get_or_create_dm(self: &ClientFfi, user_id: &str) -> String;
 
-        /// Resolve a user's profile by mxid to confirm the user exists and
-        /// fetch their display name / avatar. `exists` is false on a parse
-        /// error or when the homeserver has no profile for the mxid.
-        /// Blocks — worker thread.
-        fn resolve_user_profile(self: &ClientFfi, user_id: &str) -> UserProfile;
+        /// Async counterpart of `get_extended_profile`. Spawns the fetch on
+        /// the tokio runtime and fires
+        /// `on_extended_profile_ready(request_id, profile_json)` on
+        /// completion. Does not pin a C++ worker thread.
+        fn get_extended_profile_async(self: &ClientFfi, request_id: u64, user_id: &str);
 
-        /// Fetch extended profile fields for a user via
-        /// `GET /_matrix/client/v3/profile/{user_id}`. Returns a `UserProfile`
-        /// populated with displayname, avatar_url, and the three MSC4133
-        /// extended fields (pronouns, tz, biography). Falls back gracefully:
-        /// `exists` is false on parse error or when the server reports no such
-        /// user. Blocks — worker thread.
-        fn get_extended_profile(self: &ClientFfi, user_id: &str) -> UserProfile;
+        /// Async counterpart of `resolve_user_profile`. Delegates to
+        /// `get_extended_profile_async` and fires the same callback.
+        /// Does not pin a C++ worker thread.
+        fn resolve_user_profile_async(self: &ClientFfi, request_id: u64, user_id: &str);
 
-        /// Write a single profile field via MSC4133.
-        /// `key` is the unstable key (e.g. `"io.fsky.nyx.pronouns"`).
-        /// `value_json` is a JSON string encoding the field value.
-        /// Returns an error result if the server does not advertise
-        /// `uk.tcpip.msc4133` in its unstable features, or on network error.
-        /// Blocks — worker thread.
-        fn set_profile_field(self: &ClientFfi, key: &str, value_json: &str) -> OpResult;
-
-        /// Delete a single profile field via MSC4133.
-        /// `key` is the unstable key (e.g. `"io.fsky.nyx.pronouns"`).
-        /// Returns an error result if the server does not support MSC4133.
-        /// Blocks — worker thread.
-        fn delete_profile_field(self: &ClientFfi, key: &str) -> OpResult;
+        /// Async entry point for both set and delete. Branches on
+        /// `value_json == "null"` (delete) vs. any other value (set).
+        /// Spawns the HTTP call on the tokio runtime and fires
+        /// `on_profile_field_result(request_id, key, ok, message)` on
+        /// completion. Does not pin a C++ worker thread.
+        fn set_or_delete_profile_field_async(
+            self: &ClientFfi,
+            request_id: u64,
+            key: &str,
+            value_json: &str,
+        );
 
         /// Discover the homeserver URL for a server name or Matrix ID.
         /// Accepts "matrix.org", "@user:matrix.org", or "https://matrix.org".
@@ -2232,6 +2256,22 @@ pub mod ffi {
         /// tokio runtime and fires `on_server_info_ready(request_id, info_json)`
         /// on completion. Does not pin a thread.
         fn get_server_info_async(self: &ClientFfi, request_id: u64);
+
+        /// Async counterpart of `media_preview_config`. Spawns the cache read
+        /// on the tokio runtime and fires
+        /// `on_media_preview_config_ready(request_id, config_json)` on
+        /// completion. Does not pin a C++ worker thread.
+        fn media_preview_config_async(self: &ClientFfi, request_id: u64);
+
+        /// Async counterpart of `room_media_preview_override`. Spawns the
+        /// cache read on the tokio runtime and fires
+        /// `on_room_preview_override_ready(request_id, override_json)` on
+        /// completion. Does not pin a C++ worker thread.
+        fn room_media_preview_override_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+        );
 
         // ----- Recovery / key backup (Step 6) -----
 

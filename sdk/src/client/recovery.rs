@@ -2,6 +2,7 @@
 //!
 //! Split out of `client.rs` in the modularization refactor; behavior unchanged.
 
+#[cfg(not(test))]
 use std::sync::Arc;
 
 use super::{err, ok, ClientFfi};

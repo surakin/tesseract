@@ -524,6 +524,26 @@ void EventHandlerBase::on_media_preview_config_updated(const std::string& json)
         });
 }
 
+void EventHandlerBase::on_media_preview_config_ready(std::uint64_t request_id,
+                                                     const std::string& config_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, j = config_json]() mutable
+        {
+            shell->handle_media_preview_config_fetched_ui_(request_id, std::move(j));
+        });
+}
+
+void EventHandlerBase::on_room_preview_override_ready(std::uint64_t request_id,
+                                                      const std::string& override_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, j = override_json]() mutable
+        {
+            shell->handle_room_preview_override_ready_ui_(request_id, std::move(j));
+        });
+}
+
 void EventHandlerBase::on_notification(const std::string& room_id,
                                        const std::string& room_name,
                                        const std::string& sender,
@@ -638,6 +658,28 @@ void EventHandlerBase::on_upload_complete(std::uint64_t request_id, bool ok,
         [shell = shell(), request_id, ok, msg = message]() mutable
         {
             shell->handle_upload_complete_ui_(request_id, ok, std::move(msg));
+        });
+}
+
+void EventHandlerBase::on_profile_field_result(std::uint64_t request_id,
+                                               const std::string& key, bool ok,
+                                               const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, k = key, ok, msg = message]() mutable
+        {
+            shell->handle_profile_field_result_ui_(request_id, std::move(k),
+                                                   ok, std::move(msg));
+        });
+}
+
+void EventHandlerBase::on_extended_profile_ready(std::uint64_t request_id,
+                                                  const std::string& profile_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, j = profile_json]() mutable
+        {
+            shell->handle_extended_profile_ready_ui_(request_id, std::move(j));
         });
 }
 

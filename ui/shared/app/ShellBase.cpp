@@ -1702,34 +1702,37 @@ void ShellBase::ensure_room_preview_override_(const std::string& room_id)
     {
         return;
     }
-    auto sess = active_account_;
-    run_async_mut_(
-        [this, sess, room_id]()
+    auto req_id = next_request_id_++;
+    pending_preview_overrides_[req_id] = room_id;
+    client_->room_media_preview_override_async(req_id, room_id);
+}
+
+void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
+                                                       std::string override_json)
+{
+    auto it = pending_preview_overrides_.find(request_id);
+    if (it == pending_preview_overrides_.end())
+        return;
+    std::string room_id = std::move(it->second);
+    pending_preview_overrides_.erase(it);
+
+    room_preview_override_in_flight_.erase(room_id);
+    room_preview_overrides_[room_id] = tesseract::MediaPreviewOverride::from_json(override_json);
+
+    // Now that the join rule + override are known, fetch any media that turned
+    // out to be allowed in this room and re-evaluate the placeholders.
+    if (room_view_ && room_id == current_room_id_ &&
+        should_auto_preview_(room_id))
+    {
+        if (auto* ml = room_view_->message_list())
         {
-            if (!sess || !sess->client) return;
-            auto ov = sess->client->room_media_preview_override(room_id);
-            post_to_ui_alive_(
-                [this, room_id, ov = std::move(ov)]() mutable
-                {
-                    room_preview_override_in_flight_.erase(room_id);
-                    room_preview_overrides_[room_id] = std::move(ov);
-                    // Now that the join rule + override are known, fetch any
-                    // media that turned out to be allowed in this room and
-                    // re-evaluate the placeholders.
-                    if (room_view_ && room_id == current_room_id_ &&
-                        should_auto_preview_(room_id))
-                    {
-                        if (auto* ml = room_view_->message_list())
-                        {
-                            for (const auto& row : ml->messages())
-                            {
-                                reveal_media_fetch_(row);
-                            }
-                        }
-                    }
-                    request_relayout_();
-                });
-        });
+            for (const auto& row : ml->messages())
+            {
+                reveal_media_fetch_(row);
+            }
+        }
+    }
+    request_relayout_();
 }
 
 void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
@@ -1851,7 +1854,14 @@ void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
     {
         return;
     }
-    auto cfg = client_->media_preview_config();
+    // Kick off an async read; result arrives in handle_media_preview_config_fetched_ui_.
+    client_->media_preview_config_async(next_request_id_++);
+}
+
+void ShellBase::handle_media_preview_config_fetched_ui_(std::uint64_t /*request_id*/,
+                                                        std::string config_json)
+{
+    auto cfg = tesseract::MediaPreviewConfig::from_json(config_json);
     auto& s = tesseract::Settings::instance();
     s.media_previews = mode_to_settings_(cfg.media_previews);
     s.invite_avatars = cfg.invite_avatars;
@@ -2715,46 +2725,73 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
 void ShellBase::fetch_own_extended_profile_async_()
 {
     if (!client_) return;
-    auto sess = active_account_;
-    run_async_([this, sess]() {
-        if (!sess || !sess->client) return;
-        auto prof = sess->client->get_extended_profile(my_user_id_);
-        post_to_ui_alive_([this, prof = std::move(prof)]() mutable {
-            own_extended_profile_ = std::move(prof);
-            on_own_extended_profile_ready_ui_();
-        });
-    });
+    // No entry in pending_user_profiles_ → handle_extended_profile_ready_ui_
+    // treats this as the own-profile case.
+    client_->get_extended_profile_async(next_request_id_++, my_user_id_);
 }
 
 void ShellBase::handle_profile_field_change_(const std::string& key,
                                               const std::string& value_json)
 {
     if (!client_) return;
-    auto sess = active_account_;
-    run_async_([this, sess, key, value_json]() {
-        if (!sess || !sess->client) return;
-        tesseract::Result r = (value_json == "null")
-            ? sess->client->delete_profile_field(key)
-            : sess->client->set_profile_field(key, value_json);
-        post_to_ui_alive_([this, key, ok = r.ok, msg = std::move(r.message)]() mutable {
-            on_profile_field_result_ui_(key, ok, msg);
-            if (ok) fetch_own_extended_profile_async_();
-        });
-    });
+    client_->set_or_delete_profile_field_async(next_request_id_++, key, value_json);
+}
+
+void ShellBase::handle_profile_field_result_ui_(std::uint64_t /*request_id*/,
+                                                 std::string key, bool ok,
+                                                 std::string message)
+{
+    on_profile_field_result_ui_(key, ok, message);
+    if (ok) fetch_own_extended_profile_async_();
 }
 
 void ShellBase::fetch_user_extended_profile_async_(const std::string& user_id,
                                                     views::UserProfilePanel* panel)
 {
     if (!client_ || !panel) return;
-    auto sess = active_account_;
-    run_async_([this, sess, user_id, panel]() {
-        if (!sess || !sess->client) return;
-        auto ep = sess->client->get_extended_profile(user_id);
-        post_to_ui_alive_([panel, ep = std::move(ep)]() mutable {
-            panel->set_extended_profile(ep);
-        });
-    });
+    auto req_id = next_request_id_++;
+    pending_user_profiles_[req_id] = panel;
+    client_->get_extended_profile_async(req_id, user_id);
+}
+
+void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
+                                                   std::string profile_json)
+{
+    // User-panel case: deliver to the requesting panel.
+    auto pit = pending_user_profiles_.find(request_id);
+    if (pit != pending_user_profiles_.end())
+    {
+        auto* panel = pit->second;
+        pending_user_profiles_.erase(pit);
+        auto p = tesseract::UserProfile::from_json(profile_json);
+        tesseract::ExtendedProfile ep{p.pronouns, p.tz, p.biography};
+        panel->set_extended_profile(ep);
+        return;
+    }
+
+    // Quick-switcher resolve case: gen check, then merge.
+    auto rit = pending_resolve_requests_.find(request_id);
+    if (rit != pending_resolve_requests_.end())
+    {
+        auto [mxid, gen] = rit->second;
+        pending_resolve_requests_.erase(rit);
+        if (user_resolve_gen_.load() == gen)
+        {
+            auto p = tesseract::UserProfile::from_json(profile_json);
+            if (p.exists)
+                merge_resolved_user_(p);
+        }
+        return;
+    }
+
+    // Own-profile case (no map entry).
+    auto p = tesseract::UserProfile::from_json(profile_json);
+    // Only update if the fetch returned a valid result; otherwise keep stale.
+    if (p.exists || own_extended_profile_.pronouns.empty())
+    {
+        own_extended_profile_ = {p.pronouns, p.tz, p.biography};
+        on_own_extended_profile_ready_ui_();
+    }
 }
 
 namespace
@@ -2793,23 +2830,25 @@ void ShellBase::handle_user_query_(const std::string& query)
     if (is_complete_mxid(query) &&
         known_users_.find(query) == known_users_.end())
     {
-        auto sess = active_account_;
+        if (!client_) return;
+        auto req_id = next_request_id_++;
+        pending_resolve_requests_[req_id] = {query, gen};
         run_async_(
-            [this, sess, mxid = query, gen]()
+            [this, req_id, mxid = query, gen]()
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 if (user_resolve_gen_.load() != gen)
-                    return; // superseded during the debounce window
-                tesseract::UserProfile prof;
-                if (sess && sess->client)
-                    prof = sess->client->resolve_user_profile(mxid);
-                post_to_ui_alive_(
-                    [this, gen, prof = std::move(prof)]() mutable
-                    {
-                        if (user_resolve_gen_.load() != gen || !prof.exists)
-                            return;
-                        merge_resolved_user_(prof);
+                {
+                    // Superseded — remove the stale map entry on the UI thread.
+                    post_to_ui_alive_([this, req_id]() {
+                        pending_resolve_requests_.erase(req_id);
                     });
+                    return;
+                }
+                // Still valid — fire the async FFI call; result arrives via
+                // handle_extended_profile_ready_ui_ → pending_resolve_requests_.
+                if (client_)
+                    client_->resolve_user_profile_async(req_id, mxid);
             });
     }
 }
@@ -3005,6 +3044,8 @@ void ShellBase::invalidate_known_users_()
     known_users_building_ = false;
     // Drop any in-flight resolve targeting the old roster/account.
     user_resolve_gen_.fetch_add(1);
+    pending_resolve_requests_.clear();
+    pending_user_profiles_.clear();
 }
 
 uint64_t ShellBase::compute_dock_notification_count_() const
@@ -5785,15 +5826,8 @@ void ShellBase::start_presence_tracking_()
         // PUT targets that account's Client (and keeps it alive) even if the
         // user logs out / switches before the worker runs.
         const auto target = to_client_presence(s);
-        auto sess = active_account_;
-        run_async_mut_(
-            [sess, target]
-            {
-                if (sess && sess->client)
-                {
-                    (void) sess->client->set_presence(target);
-                }
-            });
+        if (client_)
+            client_->set_presence_async(target);
     };
     presence_tracker_->notify_sync_started();
 }
@@ -6436,6 +6470,7 @@ void ShellBase::restart_sdk_()
     // MSC4278 per-account gating state.
     room_preview_overrides_.clear();
     room_preview_override_in_flight_.clear();
+    pending_preview_overrides_.clear();
     revealed_events_.clear();
     on_tab_state_changed_ui_();
 

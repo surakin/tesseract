@@ -246,11 +246,7 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     };
     rv->on_ignore_user = [this](std::string user_id) {
         if (!shell_->client_) return;
-        auto sess = shell_->active_account();
-        run_async_mut_([sess, user_id = std::move(user_id)]() mutable {
-            if (!sess || !sess->client) return;
-            sess->client->ignore_user(user_id);
-        });
+        shell_->client_->ignore_user_async(std::move(user_id));
     };
 
     // ── Compose callbacks ────────────────────────────────────────────────

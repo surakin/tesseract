@@ -4,7 +4,9 @@
 //!
 //! Split out of `client/mod.rs` in the modularization refactor; behavior unchanged.
 
-use crate::ffi::{OpResult, PaginateResult};
+use crate::ffi::OpResult;
+#[cfg(not(test))]
+use crate::ffi::PaginateResult;
 
 #[cfg(not(test))]
 use super::{err, ok, ClientFfi, SendHandler, TimelineHandle};
@@ -33,6 +35,7 @@ use matrix_sdk_ui::{
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------

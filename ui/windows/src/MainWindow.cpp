@@ -2444,12 +2444,8 @@ void MainWindow::on_create(HWND hwnd)
         setup_dm_callbacks();
         room_view_->on_ignore_user = [this](std::string user_id)
         {
-            auto* c = client_;
-            run_async_mut_(
-                [c, user_id = std::move(user_id)]()
-                {
-                    c->ignore_user(user_id);
-                });
+            if (client_)
+                client_->ignore_user_async(std::move(user_id));
         };
         room_view_->set_repaint_requester(
             [this]
