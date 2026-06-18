@@ -307,7 +307,7 @@ const CHUNK_STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// async `fetch_url_async` (map tiles); the caller wraps it in the
 /// timeout/stop race and supplies the appropriate size cap.
 #[cfg(not(test))]
-async fn download_url(client: &reqwest::Client, url: &str, max_bytes: usize) -> Vec<u8> {
+pub(super) async fn download_url(client: &reqwest::Client, url: &str, max_bytes: usize) -> Vec<u8> {
     use futures_util::StreamExt;
     let resp = match client.get(url).send().await {
         Ok(r) => r,
@@ -406,68 +406,6 @@ impl ClientFfi {
         self.in_flight.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn fetch_avatar_bytes(&self, room_id: &str) -> Vec<u8> {
-        use matrix_sdk::media::MediaFormat;
-        let Some(client) = self.client.clone() else {
-            return Vec::new();
-        };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(_) => return Vec::new(),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return Vec::new();
-        };
-        let stop_rx = self.stop_rx.clone();
-        self.rt.block_on(async move {
-            tokio::select! {
-                result = room.avatar(MediaFormat::File) =>
-                    result.ok().flatten().unwrap_or_default(),
-                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
-                _ = stop_fut(stop_rx) => Vec::new(),
-            }
-        })
-    }
-
-    pub fn fetch_media_bytes(&self, mxc_url: &str) -> Vec<u8> {
-        use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
-        use matrix_sdk::ruma::events::room::MediaSource;
-        use matrix_sdk::ruma::OwnedMxcUri;
-        let Some(client) = self.client.clone() else {
-            return Vec::new();
-        };
-        let uri = OwnedMxcUri::from(mxc_url);
-        if !uri.is_valid() {
-            return Vec::new();
-        }
-        let request = MediaRequestParameters {
-            source: MediaSource::Plain(uri),
-            format: MediaFormat::File,
-        };
-        let stop_rx = self.stop_rx.clone();
-        let in_flight = std::sync::Arc::clone(&self.in_flight);
-        #[cfg(debug_assertions)]
-        let in_flight_urls = Arc::clone(&self.in_flight_urls);
-        #[cfg(debug_assertions)]
-        let mxc_label = mxc_url.to_owned();
-        let handler = self.handler.clone();
-        self.rt.block_on(async move {
-            let _guard = super::InFlightGuard::new(
-                &in_flight,
-                &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] format!("media/mxc/{}", mxc_label),
-            );
-            let media = client.media();
-            tokio::select! {
-                result = media.get_media_content(&request, true) =>
-                    cap_media_bytes(result.unwrap_or_default()),
-                _ = tokio::time::sleep(FULL_MEDIA_FETCH_TIMEOUT) => Vec::new(),
-                _ = stop_fut(stop_rx) => Vec::new(),
-            }
-        })
-    }
-
     /// Download media from either a plain `mxc://` URI or a JSON-serialised
     /// `MediaSource` carrying an `EncryptedFile`. The two shapes are detected
     /// by the leading `mxc:` prefix: plain URIs go through `MediaSource::Plain`
@@ -527,40 +465,66 @@ impl ClientFfi {
         })
     }
 
-    pub fn fetch_url_bytes(&self, url: &str) -> Vec<u8> {
-        if url.is_empty() {
-            return Vec::new();
-        }
-        let url = url.to_owned();
-        let stop_rx = self.stop_rx.clone();
-        let client = self.http_client.clone();
-        self.rt.block_on(async move {
-            tokio::select! {
-                result = download_url(&client, &url, MAX_URL_BYTES) => result,
-                _ = tokio::time::sleep(THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
-                _ = stop_fut(stop_rx) => Vec::new(),
-            }
-        })
-    }
+    /// Non-blocking counterpart of `fetch_source_bytes`. Spawns the fetch on
+    /// the tokio runtime and fires `on_media_ready(request_id, bytes)` on
+    /// completion. Does not pin a C++ worker thread.
+    pub fn fetch_source_bytes_async(&self, request_id: u64, source: &str) {
+        use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
 
-    /// Like `fetch_url_bytes` but for a GIF-picker MP4: the 1 MiB `MAX_URL_BYTES`
-    /// thumbnail cap is far too small for a video, so this uses the full-media
-    /// cap (`MAX_MEDIA_BYTES`) and the more generous full-download timeout. Used
-    /// by the `/gif` send path to fetch the chosen result before upload.
-    pub fn fetch_gif_bytes(&self, url: &str) -> Vec<u8> {
-        if url.is_empty() {
-            return Vec::new();
+        let handler = self.handler.clone();
+        if source.is_empty() {
+            deliver_media(&handler, request_id, &[]);
+            return;
         }
-        let url = url.to_owned();
+        let Some(client) = self.client.clone() else {
+            deliver_media(&handler, request_id, &[]);
+            return;
+        };
+        let media_source = if source.starts_with("mxc://") {
+            let uri = OwnedMxcUri::from(source);
+            if !uri.is_valid() {
+                deliver_media(&handler, request_id, &[]);
+                return;
+            }
+            MediaSource::Plain(uri)
+        } else {
+            match serde_json::from_str::<MediaSource>(source) {
+                Ok(s) => s,
+                Err(_) => {
+                    deliver_media(&handler, request_id, &[]);
+                    return;
+                }
+            }
+        };
+        let request = MediaRequestParameters {
+            source: media_source,
+            format: MediaFormat::File,
+        };
         let stop_rx = self.stop_rx.clone();
-        let client = self.http_client.clone();
-        self.rt.block_on(async move {
-            tokio::select! {
-                result = download_url(&client, &url, MAX_MEDIA_BYTES) => result,
+        let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        #[cfg(debug_assertions)]
+        let source_label = source.to_owned();
+
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] format!("media/source/{}", source_label),
+            );
+            let media = client.media();
+            let bytes = tokio::select! {
+                result = media.get_media_content(&request, true) =>
+                    cap_media_bytes(result.unwrap_or_default()),
                 _ = tokio::time::sleep(FULL_MEDIA_FETCH_TIMEOUT) => Vec::new(),
                 _ = stop_fut(stop_rx) => Vec::new(),
-            }
-        })
+            };
+            deliver_media(&handler, request_id, &bytes);
+        });
     }
 
     /// Non-blocking counterpart of `fetch_url_bytes` (map tiles, etc.). Spawns
@@ -830,11 +794,8 @@ impl ClientFfi {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn fetch_avatar_bytes(&self, _room_id: &str) -> Vec<u8> { Vec::new() }
-    pub fn fetch_media_bytes(&self, _mxc_url: &str) -> Vec<u8> { Vec::new() }
     pub fn fetch_source_bytes(&self, _source: &str) -> Vec<u8> { Vec::new() }
-    pub fn fetch_url_bytes(&self, _url: &str) -> Vec<u8> { Vec::new() }
-    pub fn fetch_gif_bytes(&self, _url: &str) -> Vec<u8> { Vec::new() }
+    pub fn fetch_source_bytes_async(&self, _request_id: u64, _source: &str) {}
 }
 
 #[cfg(test)]

@@ -209,73 +209,16 @@ void GifController::accept(const tesseract::GifResult& gif)
         clear(); // clear the "/gif …" text right away for responsiveness
     }
 
-    if (!hooks_.run_async)
+    if (client)
     {
-        return;
+        client->send_gif_from_urls_async(
+            0, room,
+            g.image_url, g.image_mime, body,
+            g.image_w, g.image_h,
+            g.preview_url,
+            g.preview_w, g.preview_h,
+            /*reply*/ "", /*thread*/ "");
     }
-    // Check the strip's byte cache on the UI thread before going async: if the
-    // preview strip already downloaded image_url, reuse those bytes instead of
-    // fetching again.
-    std::vector<std::uint8_t> cached_bytes =
-        hooks_.get_cached_gif_bytes ? hooks_.get_cached_gif_bytes(g.image_url)
-                                    : std::vector<std::uint8_t>{};
-    // Marshal a failure message back to the UI thread so a dropped fetch or send
-    // surfaces in the strip instead of vanishing silently.
-    auto report = [this, alive, post_to_ui](std::string msg)
-    {
-        if (!post_to_ui)
-        {
-            return;
-        }
-        post_to_ui(
-            [this, alive, msg = std::move(msg)]
-            {
-                if (*alive)
-                {
-                    show_status(msg);
-                }
-            });
-    };
-    hooks_.run_async(
-        [client, room, g, body, report, cached = std::move(cached_bytes)]() mutable
-        {
-            std::vector<std::uint8_t> bytes =
-                cached.empty() ? client->fetch_gif_bytes(g.image_url)
-                               : std::move(cached);
-            if (bytes.empty())
-            {
-                report("Couldn't load GIF");
-                return;
-            }
-
-            tesseract::Result r;
-            if (g.image_mime == "video/mp4")
-            {
-                // Fetch the static JPEG preview as a poster thumbnail (best-effort;
-                // non-fatal if absent). send_gif_video encrypts in E2EE rooms.
-                std::vector<std::uint8_t> thumb;
-                if (!g.preview_url.empty())
-                    thumb = client->fetch_gif_bytes(g.preview_url);
-                r = client->send_gif_video(
-                    room, bytes, g.image_mime, body,
-                    g.image_w, g.image_h, /*duration_ms*/ 0,
-                    thumb, thumb.empty() ? std::string{} : std::string{"image/jpeg"},
-                    g.preview_w, g.preview_h,
-                    /*reply*/ "", /*thread*/ "");
-            }
-            else
-            {
-                // WebP or GIF: send as m.image with fi.mau.gif autoplay hint.
-                r = client->send_image(
-                    room, bytes, g.image_mime, body, /*caption*/ "",
-                    g.image_w, g.image_h, /*is_animated*/ true,
-                    /*reply*/ "", /*thread*/ "");
-            }
-            if (!r.ok)
-            {
-                report("Send failed");
-            }
-        });
 }
 
 void GifController::hide()

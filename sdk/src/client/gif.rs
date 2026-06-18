@@ -277,6 +277,9 @@ pub(crate) fn build_gif_video_content(
     content
 }
 
+#[cfg(test)]
+use super::ClientFfi;
+
 #[cfg(not(test))]
 use super::{err, ok, require_room, try_op, ClientFfi, SendHandler};
 #[cfg(not(test))]
@@ -469,6 +472,203 @@ impl ClientFfi {
             Err(e) => err(e),
         }
     }
+
+    /// Download `image_url` (and optionally `preview_url`) from the CDN and
+    /// send the GIF into `room_id`. For `video/mp4` content uses
+    /// `m.video`+fi.mau.gif; all other mimes use `m.image` with an autoplay
+    /// hint. Fires `on_upload_complete(request_id, ok, message)` when done.
+    /// Does not block the calling C++ thread.
+    pub fn send_gif_from_urls_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        image_url: &str,
+        image_mime: &str,
+        body: &str,
+        width: u32,
+        height: u32,
+        preview_url: &str,
+        preview_w: u32,
+        preview_h: u32,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        let Some(client) = self.client.clone() else { return; };
+        let handler = self.handler.clone();
+
+        let deliver = {
+            let handler = handler.clone();
+            move |ok: bool, msg: &str| {
+                if let Some(h) = &handler {
+                    let g = h.lock();
+                    g.on_upload_complete(request_id, ok, msg);
+                }
+            }
+        };
+
+        let (_, room) = match require_room(&client, room_id) {
+            Ok(v) => v,
+            Err(e) => { deliver(false, &e.message); return; }
+        };
+
+        let image_url  = image_url.to_owned();
+        let image_mime = image_mime.to_owned();
+        let body       = body.to_owned();
+        let preview_url = preview_url.to_owned();
+        let reply      = reply_event_id.to_owned();
+        let thread     = thread_root.to_owned();
+        let http       = self.http_client.clone();
+        let stop_rx    = self.stop_rx.clone();
+
+        self.rt.spawn(async move {
+            // Fetch image and preview in parallel.
+            let stop2 = stop_rx.clone();
+            let (image_bytes, preview_bytes) = tokio::join!(
+                async {
+                    tokio::select! {
+                        b = super::media::download_url(&http, &image_url, super::media::MAX_MEDIA_BYTES) => b,
+                        _ = tokio::time::sleep(super::media::FULL_MEDIA_FETCH_TIMEOUT) => Vec::new(),
+                        _ = super::stop_fut(stop_rx) => Vec::new(),
+                    }
+                },
+                async {
+                    if preview_url.is_empty() {
+                        Vec::new()
+                    } else {
+                        tokio::select! {
+                            b = super::media::download_url(&http, &preview_url, super::media::MAX_URL_BYTES) => b,
+                            _ = tokio::time::sleep(super::media::THUMBNAIL_FETCH_TIMEOUT) => Vec::new(),
+                            _ = super::stop_fut(stop2) => Vec::new(),
+                        }
+                    }
+                },
+            );
+
+            if image_bytes.is_empty() {
+                deliver(false, "Couldn't load GIF");
+                return;
+            }
+
+            let mime: mime::Mime = match image_mime.parse() {
+                Ok(m) => m,
+                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+            };
+
+            let result: Result<(), String> = if image_mime == "video/mp4" {
+                // MP4: send as m.video with fi.mau.gif hint.
+                let thumb_mime_parsed: Option<mime::Mime> = if preview_bytes.is_empty() {
+                    None
+                } else {
+                    "image/jpeg".parse().ok()
+                };
+                let size = image_bytes.len();
+                async {
+                    let (video_media, thumb_media) = if room.encryption_state().is_encrypted() {
+                        let mut cur = std::io::Cursor::new(image_bytes);
+                        let file = client
+                            .upload_encrypted_file(&mut cur)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let video = GifMedia::Encrypted(
+                            serde_json::to_value(&file).map_err(|e| e.to_string())?,
+                        );
+                        let thumb_media = if preview_bytes.is_empty() {
+                            None
+                        } else {
+                            let mut tc = std::io::Cursor::new(preview_bytes);
+                            let tf = client
+                                .upload_encrypted_file(&mut tc)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            Some(GifMedia::Encrypted(
+                                serde_json::to_value(&tf).map_err(|e| e.to_string())?,
+                            ))
+                        };
+                        (video, thumb_media)
+                    } else {
+                        let mxc = super::account::upload_bytes(&client, image_bytes, &mime)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .to_string();
+                        let thumb_media = match thumb_mime_parsed {
+                            Some(tm) if !preview_bytes.is_empty() => {
+                                let tmxc = super::account::upload_bytes(&client, preview_bytes, &tm)
+                                    .await
+                                    .map_err(|e| e.to_string())?
+                                    .to_string();
+                                Some(GifMedia::Plain(tmxc))
+                            }
+                            _ => None,
+                        };
+                        (GifMedia::Plain(mxc), thumb_media)
+                    };
+
+                    let content = build_gif_video_content(
+                        video_media,
+                        thumb_media,
+                        &body,
+                        &image_mime,
+                        width,
+                        height,
+                        size,
+                        0, // duration_ms
+                        preview_w,
+                        preview_h,
+                        &reply,
+                        &thread,
+                    );
+                    room.send_raw("m.room.message", content)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(())
+                }.await
+            } else {
+                // WebP or GIF: send as m.image with fi.mau.gif autoplay hint.
+                let mime_owned = mime.clone();
+                let size = image_bytes.len();
+                async {
+                    let media = if room.encryption_state().is_encrypted() {
+                        let mut cur = std::io::Cursor::new(image_bytes.clone());
+                        let file = client
+                            .upload_encrypted_file(&mut cur)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        GifMedia::Encrypted(
+                            serde_json::to_value(&file).map_err(|e| e.to_string())?,
+                        )
+                    } else {
+                        let mxc_uri = super::account::upload_bytes(&client, image_bytes.clone(), &mime_owned)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .to_string();
+                        GifMedia::Plain(mxc_uri)
+                    };
+                    let content = super::send::build_animated_image_content(
+                        media, &body, "", &image_mime, width, height, size,
+                        &reply, &thread,
+                    );
+                    room.send_raw("m.room.message", content)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(())
+                }.await
+            };
+
+            match result {
+                Ok(()) => deliver(true, ""),
+                Err(e) => deliver(false, &e),
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+impl ClientFfi {
+    pub fn send_gif_from_urls_async(&self, _request_id: u64, _room_id: &str,
+        _image_url: &str, _image_mime: &str, _body: &str,
+        _width: u32, _height: u32, _preview_url: &str,
+        _preview_w: u32, _preview_h: u32,
+        _reply_event_id: &str, _thread_root: &str) {}
 }
 
 #[cfg(test)]

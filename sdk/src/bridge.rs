@@ -1880,39 +1880,21 @@ pub mod ffi {
 
         // ----- Media -----
 
-        /// Download the avatar image for a room and return the raw bytes
-        /// (typically JPEG or PNG). Returns an empty Vec when no avatar is set
-        /// or the download fails. The SDK media cache is consulted first so
-        /// subsequent calls are instant.
-        fn fetch_avatar_bytes(self: &ClientFfi, room_id: &str) -> Vec<u8>;
-
-        /// Download arbitrary mxc:// media and return the raw bytes. Returns
-        /// an empty Vec when the URL is invalid, media is unavailable, or the
-        /// client is not logged in. The SDK media cache is consulted first so
-        /// repeat calls for the same URL are instant.
-        fn fetch_media_bytes(self: &ClientFfi, mxc_url: &str) -> Vec<u8>;
-
         /// Download media from a JSON-serialised `MediaSource` (plain mxc:// or
         /// encrypted `EncryptedFile`). Returns raw bytes on success or an
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
         fn fetch_source_bytes(self: &ClientFfi, source_json: &str) -> Vec<u8>;
 
-        /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
-        /// Returns the response body on success, or an empty Vec on any error.
-        /// Sets User-Agent to "Tesseract/0.1 (Matrix client)" per OSM tile policy.
-        /// Capped at 1 MiB — intended for thumbnails / map tiles, not video.
-        fn fetch_url_bytes(self: &ClientFfi, url: &str) -> Vec<u8>;
+        /// Non-blocking counterpart of `fetch_source_bytes`. Spawns the fetch
+        /// on the tokio runtime and fires `on_media_ready(request_id, bytes)`
+        /// on completion. Does not pin a C++ worker thread.
+        fn fetch_source_bytes_async(self: &ClientFfi, request_id: u64, source_json: &str);
 
         /// Check the GitHub Releases API for a newer version than `current_version`.
         /// `repo` is the `owner/repo` slug. Blocks the calling thread (call from a
         /// worker, never from the UI thread). Returns `UpdateResult::has_update ==
         /// false` on any network error, rate limit, or when already up-to-date.
         fn check_for_update(self: &ClientFfi, repo: &str, current_version: &str) -> UpdateResult;
-
-        /// Like `fetch_url_bytes` but capped at the full-media size (64 MiB)
-        /// with the generous full-download timeout — for fetching a `/gif`
-        /// picker MP4 before sending it.
-        fn fetch_gif_bytes(self: &ClientFfi, url: &str) -> Vec<u8>;
 
         // ----- Async media downloads (non-blocking) -----
 
@@ -2038,6 +2020,26 @@ pub mod ffi {
             reply_event_id: &str,
             thread_root: &str,
         ) -> OpResult;
+
+        /// Fetch `image_url` (and optionally `preview_url`) from the CDN and
+        /// send the GIF into `room_id` asynchronously. For `video/mp4` sends
+        /// as `m.video`; otherwise sends as `m.image`. Fires
+        /// `on_upload_complete(request_id, ok, message)` when done.
+        fn send_gif_from_urls_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            image_url: &str,
+            image_mime: &str,
+            body: &str,
+            width: u32,
+            height: u32,
+            preview_url: &str,
+            preview_w: u32,
+            preview_h: u32,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
 
         // ----- MSC3266 room summary / join -----
 

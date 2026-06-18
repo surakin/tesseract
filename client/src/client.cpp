@@ -959,22 +959,6 @@ void Client::set_presence_async(PresenceState state)
     impl_->ffi->set_presence_async(byte);
 }
 
-// Windows-only: GTK/Qt/macOS shells use fetch_media_async.
-std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
-{
-    SH_FFI;
-    auto v = impl_->ffi->fetch_avatar_bytes(room_id);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
-// Windows-only: GTK/Qt/macOS shells use fetch_media_async.
-std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url)
-{
-    SH_FFI;
-    auto v = impl_->ffi->fetch_media_bytes(mxc_url);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
 std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
 {
     SH_FFI;
@@ -982,18 +966,11 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
-std::vector<uint8_t> Client::fetch_url_bytes(const std::string& url)
+void Client::fetch_source_bytes_async(std::uint64_t request_id,
+                                       const std::string& source_json)
 {
     SH_FFI;
-    auto v = impl_->ffi->fetch_url_bytes(url);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
-std::vector<uint8_t> Client::fetch_gif_bytes(const std::string& url)
-{
-    SH_FFI;
-    auto v = impl_->ffi->fetch_gif_bytes(url);
-    return std::vector<uint8_t>(v.begin(), v.end());
+    impl_->ffi->fetch_source_bytes_async(request_id, source_json);
 }
 
 // ---------------------------------------------------------------------------
@@ -1201,6 +1178,26 @@ Result Client::send_gif_video(
     return from_ffi(impl_->ffi->send_gif_video(
         room_id, mp4, mime_type, body, width, height, duration_ms, thumb,
         thumb_mime, thumb_width, thumb_height, reply_event_id, thread_root));
+}
+
+void Client::send_gif_from_urls_async(std::uint64_t request_id,
+                                       const std::string& room_id,
+                                       const std::string& image_url,
+                                       const std::string& image_mime,
+                                       const std::string& body,
+                                       std::uint32_t width,
+                                       std::uint32_t height,
+                                       const std::string& preview_url,
+                                       std::uint32_t preview_w,
+                                       std::uint32_t preview_h,
+                                       const std::string& reply_event_id,
+                                       const std::string& thread_root)
+{
+    SH_FFI;
+    impl_->ffi->send_gif_from_urls_async(
+        request_id, room_id, image_url, image_mime, body,
+        width, height, preview_url, preview_w, preview_h,
+        reply_event_id, thread_root);
 }
 
 // ---------------------------------------------------------------------------

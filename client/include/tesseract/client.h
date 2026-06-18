@@ -695,8 +695,7 @@ public:
     std::string get_display_name() const;
 
     /// Returns the mxc:// URI of the current user's avatar, or an empty
-    /// string if none is set / not logged in / the fetch fails. Pair with
-    /// `fetch_media_bytes(mxc_url)` to render. Cached by the SDK.
+    /// string if none is set / not logged in / the fetch fails. Cached by the SDK.
     std::string get_avatar_url() const;
 
     /// Set the current user's display name on the homeserver.
@@ -809,13 +808,6 @@ public:
     /// (JPEG or PNG). Returns an empty vector when no avatar is set or on
     /// error. The SDK's SQLite media cache is consulted first, so repeat
     /// calls for the same avatar are instant.
-    std::vector<uint8_t> fetch_avatar_bytes(const std::string& room_id);
-
-    /// Download arbitrary mxc:// media and return the raw bytes. Returns an
-    /// empty vector when the URL is invalid, the media is unavailable, or the
-    /// client is not logged in. The SDK's SQLite media cache is consulted
-    /// first, so repeat calls for the same URL are instant.
-    std::vector<uint8_t> fetch_media_bytes(const std::string& mxc_url);
 
     /// Download media from either a plain mxc:// URI or a JSON-serialised
     /// `MediaSource` (an opaque token that may carry an `EncryptedFile` for
@@ -823,15 +815,10 @@ public:
     /// the leading `mxc://` prefix. Returns an empty vector on any failure.
     std::vector<uint8_t> fetch_source_bytes(const std::string& source);
 
-    /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
-    /// Returns an empty vector on any error. Blocks the calling thread.
-    /// Capped at 1 MiB — for thumbnails / map tiles, not video.
-    std::vector<uint8_t> fetch_url_bytes(const std::string& url);
-
-    /// Like `fetch_url_bytes` but capped at the full-media size (64 MiB) with a
-    /// generous timeout — for fetching a `/gif` picker MP4 before sending it.
-    /// Returns an empty vector on any error. Blocks the calling thread.
-    std::vector<uint8_t> fetch_gif_bytes(const std::string& url);
+    /// Non-blocking counterpart of `fetch_source_bytes`. Fires
+    /// `IEventHandler::on_media_ready(request_id, bytes)` when done.
+    void fetch_source_bytes_async(std::uint64_t request_id,
+                                   const std::string& source_json);
 
     // ------------------------------------------------------------------
     // Update checking
@@ -1000,6 +987,22 @@ public:
                           std::uint32_t thumb_width, std::uint32_t thumb_height,
                           const std::string& reply_event_id,
                           const std::string& thread_root);
+
+    /// Fetch `image_url` (and optionally `preview_url`) from the CDN and send
+    /// the GIF into `room_id` without blocking the calling thread. Fires
+    /// `IEventHandler::on_upload_complete(request_id, ok, message)` on completion.
+    void send_gif_from_urls_async(std::uint64_t request_id,
+                                   const std::string& room_id,
+                                   const std::string& image_url,
+                                   const std::string& image_mime,
+                                   const std::string& body,
+                                   std::uint32_t width,
+                                   std::uint32_t height,
+                                   const std::string& preview_url,
+                                   std::uint32_t preview_w,
+                                   std::uint32_t preview_h,
+                                   const std::string& reply_event_id,
+                                   const std::string& thread_root);
 
     // ------------------------------------------------------------------
     // URL preview
