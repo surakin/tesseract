@@ -4946,6 +4946,19 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 }
             }
         }
+        // Quote block hover: clicking jumps to the original message, so show
+        // the pointing-hand cursor the same way file and preview cards do.
+        if (new_link_url.empty())
+        {
+            for (const auto& [eid, rect] : quote_block_geom_)
+            {
+                if (rect_contains(rect, world))
+                {
+                    new_link_url = "quote://";
+                    break;
+                }
+            }
+        }
     }
     if (new_link_url != hover_link_url_)
     {
