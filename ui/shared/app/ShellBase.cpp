@@ -2562,13 +2562,14 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
     {
         uint64_t notification_count;
         uint64_t highlight_count;
+        uint64_t unread_count;
         uint64_t last_activity_ts;
     };
     std::unordered_map<std::string, ChildCounts> counts;
     counts.reserve(rooms_.size());
     for (const auto& r : rooms_)
         counts[r.id] = {r.notification_count, r.highlight_count,
-                        r.last_activity_ts};
+                        r.unread_count, r.last_activity_ts};
 
     for (auto& r : rooms)
     {
@@ -2577,7 +2578,8 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
         auto it = space_children_cache_.find(r.id);
         if (it == space_children_cache_.end())
             continue;
-        uint64_t nc = 0, hc = 0, newest_unread_ts = 0;
+        uint64_t nc = 0, hc = 0, uc = 0;
+        uint64_t newest_unread_ts = 0, newest_quiet_ts = 0;
         for (const auto& child_id : it->second)
         {
             auto ci = counts.find(child_id);
@@ -2585,18 +2587,25 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
             {
                 nc += ci->second.notification_count;
                 hc += ci->second.highlight_count;
+                uc += ci->second.unread_count;
                 // Track the most recent activity among *unread* children so the
                 // room list can treat the space as a recency-ranked unread
                 // candidate (its own last_activity_ts is not meaningful).
                 if (ci->second.notification_count > 0)
                     newest_unread_ts =
                         std::max(newest_unread_ts, ci->second.last_activity_ts);
+                if (ci->second.unread_count > 0)
+                    newest_quiet_ts =
+                        std::max(newest_quiet_ts, ci->second.last_activity_ts);
             }
         }
         r.notification_count = nc;
         r.highlight_count    = hc;
+        r.unread_count       = uc;
         if (nc > 0)
             r.last_activity_ts = std::max(r.last_activity_ts, newest_unread_ts);
+        else if (uc > 0)
+            r.last_activity_ts = std::max(r.last_activity_ts, newest_quiet_ts);
     }
 }
 
