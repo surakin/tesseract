@@ -11,9 +11,10 @@ version) are noted where relevant.
 - OS-native secure credential storage on every platform
 - Single-instance behavior (launching again restores the running window)
 - System tray with minimize-to-tray (default), unread dot, and mention-state color; clicking the tray icon jumps to the first unread room
+- macOS dock badge showing the total notification count; clicking the dock icon raises the window and navigates to the first unread room
 - Session restore (all open room tabs and active account restored on launch)
 - Light / dark / system themes
-- System font size inherited from the OS on all four backends (`QApplication::font`, `GtkSettings gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`); all per-role sizes scale with the user's accessibility font-size setting
+- System font size inherited from the OS on all four backends (`QApplication::font`, `GtkSettings gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`); all per-role sizes scale with the user's accessibility font-size setting; Win32 body font raised 1 pt above the raw system size for better readability
 - Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy)
 - In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
 

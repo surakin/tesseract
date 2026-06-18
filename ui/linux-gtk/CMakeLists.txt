@@ -10,7 +10,6 @@ pkg_check_modules(GIO  REQUIRED gio-2.0)
 # loading libgtk-3 into a GTK4 process makes gtk_init() abort.)
 pkg_check_modules(GDKPIXBUF REQUIRED gdk-pixbuf-2.0)
 pkg_check_modules(CAIRO     REQUIRED cairo)
-pkg_check_modules(AVUTIL    REQUIRED IMPORTED_TARGET libavutil)
 
 add_executable(tesseract_gtk
     src/main.cpp
@@ -71,7 +70,6 @@ target_link_libraries(tesseract_gtk PRIVATE
     ${GDKPIXBUF_LIBRARIES}
     ${CAIRO_LIBRARIES}
     opus
-    PkgConfig::AVUTIL
 )
 
 set_target_properties(tesseract_gtk PROPERTIES
@@ -99,6 +97,30 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
         DESTINATION share/icons/hicolor/scalable/apps)
 install(FILES "${CMAKE_BINARY_DIR}/packaging/tesseract.desktop"
         DESTINATION share/applications)
+
+# Rename installed artifacts from `tesseract` to `tesseract-matrix-gtk` so
+# this package can coexist with the unrelated Tesseract OCR engine and with
+# the Qt6 variant (tesseract-matrix).
+install(CODE [[
+    set(_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+    set(_new  "tesseract-matrix-gtk")
+    if(EXISTS "${_root}/bin/tesseract")
+        file(RENAME "${_root}/bin/tesseract"
+                    "${_root}/bin/${_new}")
+    endif()
+    if(EXISTS "${_root}/share/applications/tesseract.desktop")
+        file(READ  "${_root}/share/applications/tesseract.desktop" _d)
+        string(REPLACE "Exec=tesseract %U"        "Exec=${_new} %U"          _d "${_d}")
+        string(REPLACE "Icon=tesseract"           "Icon=${_new}"             _d "${_d}")
+        string(REPLACE "StartupWMClass=tesseract" "StartupWMClass=${_new}"   _d "${_d}")
+        file(WRITE  "${_root}/share/applications/${_new}.desktop" "${_d}")
+        file(REMOVE "${_root}/share/applications/tesseract.desktop")
+    endif()
+    if(EXISTS "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg")
+        file(RENAME "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg"
+                    "${_root}/share/icons/hicolor/scalable/apps/${_new}.svg")
+    endif()
+]])
 
 # i18n: use the root i18n-extract target (cmake/I18n.cmake) which scans all
 # source directories including this one. Run: cmake --build . --target i18n-extract

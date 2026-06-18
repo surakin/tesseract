@@ -153,6 +153,15 @@
     return NO;
 }
 
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)sender
+                     hasVisibleWindows:(BOOL)hasVisibleWindows
+{
+    [_windowController.window makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+    [_windowController navigateToUnread];
+    return YES;
+}
+
 // First-responder pass-through: when no other responder handles
 // Cmd-E (Insert Emoji), route it to the active window controller.
 - (void)showEmojiPicker:(id)sender

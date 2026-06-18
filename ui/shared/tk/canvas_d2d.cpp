@@ -26,8 +26,19 @@ using Microsoft::WRL::ComPtr;
 namespace tk::d2d
 {
 
-// Returns the Windows system body font size in pt from SPI_GETNONCLIENTMETRICS
-// (reflects Accessibility → Text size). Cached on first call.
+// Points added on top of the Windows system UI font size. The Win32 system
+// font (lfMessageFont) is Segoe UI 9pt — the classic desktop default used by
+// Explorer, dialogs and menus. That reads small next to modern chat clients,
+// whose body text sits around 11pt (WinUI body is ~10.5pt; Electron apps such
+// as Slack/Discord/VS Code default to ~14-15px ≈ 10.5-11pt). This offset nudges
+// Tesseract into that range. Because every font role is an additive offset from
+// the body base (see font_role_pt), bumping the base scales the whole UI.
+// Set to 0 to track the system font exactly.
+static constexpr int kBodyFontPtOffset = 2;
+
+// Returns the body font size in pt: the Windows system font from
+// SPI_GETNONCLIENTMETRICS (which reflects Accessibility → Text size) plus
+// kBodyFontPtOffset. Cached on first call.
 int win32_system_base_pt()
 {
     static int base = []() -> int {
@@ -45,7 +56,7 @@ int win32_system_base_pt()
         int pt = MulDiv(std::abs(h), 72, dpi);
         return pt > 0 ? pt : 9;
     }();
-    return base;
+    return base + kBodyFontPtOffset;
 }
 
 namespace

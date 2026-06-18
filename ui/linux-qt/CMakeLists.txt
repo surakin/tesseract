@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.25)
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia DBus Concurrent Network)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
 # qt_standard_project_setup() requires Qt >= 6.3; Ubuntu 22.04 ships 6.2.4.
 # Set the equivalent properties manually so the build works on both.
 set(CMAKE_AUTOMOC ON)
@@ -93,7 +92,6 @@ target_link_libraries(tesseract_qt PRIVATE
     Qt6::Concurrent
     Qt6::Network
     opus
-    PkgConfig::AVUTIL
 )
 
 if(WAYLAND_CLIENT_LIB AND Qt6GuiPrivate_FOUND)
@@ -130,6 +128,30 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
         DESTINATION share/icons/hicolor/scalable/apps)
 install(FILES "${CMAKE_BINARY_DIR}/packaging/tesseract.desktop"
         DESTINATION share/applications)
+
+# Rename installed artifacts from `tesseract` to `tesseract-matrix` so this
+# package can coexist with the unrelated Tesseract OCR engine, which owns
+# /usr/bin/tesseract on most distros.
+install(CODE [[
+    set(_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+    set(_new  "tesseract-matrix")
+    if(EXISTS "${_root}/bin/tesseract")
+        file(RENAME "${_root}/bin/tesseract"
+                    "${_root}/bin/${_new}")
+    endif()
+    if(EXISTS "${_root}/share/applications/tesseract.desktop")
+        file(READ  "${_root}/share/applications/tesseract.desktop" _d)
+        string(REPLACE "Exec=tesseract %U"        "Exec=${_new} %U"          _d "${_d}")
+        string(REPLACE "Icon=tesseract"           "Icon=${_new}"             _d "${_d}")
+        string(REPLACE "StartupWMClass=tesseract" "StartupWMClass=${_new}"   _d "${_d}")
+        file(WRITE  "${_root}/share/applications/${_new}.desktop" "${_d}")
+        file(REMOVE "${_root}/share/applications/tesseract.desktop")
+    endif()
+    if(EXISTS "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg")
+        file(RENAME "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg"
+                    "${_root}/share/icons/hicolor/scalable/apps/${_new}.svg")
+    endif()
+]])
 
 # i18n: use the root i18n-extract target (cmake/I18n.cmake) which scans all
 # source directories including this one. Run: cmake --build . --target i18n-extract

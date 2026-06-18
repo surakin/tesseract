@@ -1,6 +1,26 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-17** (v0.8.5).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-17** (v0.8.6).
+
+> **macOS dock badge + dock-click unread navigation (2026-06-17, v0.8.6).**
+> The macOS dock icon now shows the total notification count as a red badge
+> (aggregated across all signed-in accounts via the existing
+> `notify_tray_unread_` call sites). Clicking the dock icon raises the window
+> — including when hidden via the tray toggle — and navigates to the
+> highest-priority unread room, matching the system-tray click behaviour on
+> the other platforms. Implemented in `AppDelegate` / `MainWindowController` /
+> `ShellBase`. **870 C++ tests**.
+
+<!-- -->
+
+> **Win32 body font raised 1 pt above the OS default (2026-06-17, v0.8.6).**
+> `lfMessageFont` returns Segoe UI 9 pt on a typical Windows installation, which
+> reads noticeably small next to modern chat clients. A named
+> `kBodyFontPtOffset = 1` is added to the detected system size in
+> `canvas_d2d.cpp`; since all font roles derive additively from the body base,
+> the whole Win32 UI scales uniformly from 9 → 10 pt.
+
+<!-- -->
 
 > **Async space-summary and server-info FFI (2026-06-17, v0.8.5).**
 > `get_space_child_summary` and `get_server_info` converted from blocking Rust
@@ -644,7 +664,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 283 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 861 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 870 |
 
 ## Platforms
 

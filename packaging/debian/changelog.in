@@ -1,0 +1,11 @@
+tesseract-matrix (@PROJECT_VERSION@-1) unstable; urgency=low
+
+  * Update to @PROJECT_VERSION@.
+
+ -- Marco Antonio Alvarez <surakus@pm.me>  @PACKAGE_DATE@
+
+tesseract-matrix (0.1.0-1) unstable; urgency=low
+
+  * Initial Debian packaging.
+
+ -- Marco Antonio Alvarez <surakus@pm.me>  Wed, 13 May 2026 00:00:00 +0000

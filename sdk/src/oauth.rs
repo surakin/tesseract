@@ -47,11 +47,14 @@ const CLIENT_URI: &str = "https://surakin.github.io/tesseract/";
 /// metadata. The MAS consent page may display it next to the client name.
 const LOGO_URI: &str = "https://surakin.github.io/tesseract/favicon-160.png";
 
-fn build_device_display_name() -> Option<String> {
-    hostname::get()
-        .ok()
-        .and_then(|h| h.into_string().ok())
-        .map(|host| format!("Tesseract on {host}"))
+fn build_device_display_name() -> String {
+    let platform = match std::env::consts::OS {
+        "windows" => "Windows",
+        "macos"   => "macOS",
+        "linux"   => "Linux",
+        other     => other,
+    };
+    format!("Tesseract on {platform}")
 }
 
 /// User-Agent string for every HTTP request matrix-sdk makes — both the
@@ -60,16 +63,7 @@ fn build_device_display_name() -> Option<String> {
 /// in homeserver / MAS access logs even before the device-display-name
 /// rename request fires.
 pub(crate) fn build_user_agent() -> String {
-    let host = hostname::get()
-        .ok()
-        .and_then(|h| h.into_string().ok())
-        .unwrap_or_else(|| "unknown".to_owned());
-    format!(
-        "Tesseract/{} ({}; {})",
-        env!("CARGO_PKG_VERSION"),
-        host,
-        std::env::consts::OS,
-    )
+    format!("Tesseract/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS)
 }
 
 /// Shared HTTP client for matrix-sdk instances. Uses a 10s connect timeout
@@ -207,12 +201,10 @@ pub async fn begin(
         .await
         .context("oauth login() — does the homeserver support OAuth?")?;
 
-    if let Some(name) = build_device_display_name() {
-        auth_data
-            .url
-            .query_pairs_mut()
-            .append_pair("device_display_name", &name);
-    }
+    auth_data
+        .url
+        .query_pairs_mut()
+        .append_pair("device_display_name", &build_device_display_name());
 
     Ok(BeginResult {
         auth_url: auth_data.url.to_string(),
@@ -239,11 +231,8 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
     // Best-effort: set the device display name so the user can tell sessions
     // apart. ClientMetadata.client_name only feeds the OAuth consent page;
     // the device display name comes from PUT /devices.
-    if let (Some(device_id), Some(_host)) = (
-        client.device_id(),
-        hostname::get().ok().and_then(|h| h.into_string().ok()),
-    ) {
-        let display_name = build_device_display_name().unwrap_or_else(|| "Tesseract".to_owned());
+    if let Some(device_id) = client.device_id() {
+        let display_name = build_device_display_name();
         if let Err(e) = client.rename_device(device_id, &display_name).await {
             tracing::warn!("rename_device({display_name:?}) failed: {e}");
         }
