@@ -544,6 +544,10 @@ protected:
     // from re-queuing fetches that will always fail. Cleared on logout/cache
     // wipe so a re-login or server fix can recover.
     std::unordered_set<std::string> media_decode_failed_;
+    // Tracks which event_ids have had ensure_row_media_() called so that the
+    // lazy visible-range callback skips events already prepped in build_rows_().
+    // Cleared on room switch in after_active_room_changed_().
+    std::unordered_set<std::string> media_prepped_event_ids_;
 
     // Keys whose media fetch returned empty (network error / 5xx / timeout).
     // Unlike media_decode_failed_ (permanent), these back off and recover: a
@@ -2515,6 +2519,10 @@ protected:
     // Walk all media references in ev and call ensure_*_ for each.
     // Pass fetch_avatars=false in bulk-load paths to suppress avatar prefetch.
     void ensure_row_media_(const Event& ev, bool fetch_avatars = true);
+    // Overload for rows that have already been converted to MessageRowData
+    // (used by the lazy visible-range callback for off-screen events).
+    void ensure_row_media_(const views::MessageRowData& row,
+                           bool fetch_avatars = true);
 
     // The timeline's visible rows changed (scroll / room enter / data update):
     // raise the priority of the still-pending media fetches backing the now-

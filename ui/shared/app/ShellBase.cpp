@@ -1651,6 +1651,165 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     }
 }
 
+void ShellBase::ensure_row_media_(const views::MessageRowData& row,
+                                   bool fetch_avatars)
+{
+    using Kind = views::MessageRowData::Kind;
+
+    if (fetch_avatars)
+    {
+        ensure_user_avatar_(row.sender_avatar_url);
+        for (const auto& rr : row.read_receipts)
+            ensure_user_avatar_(rr.avatar_url);
+    }
+
+    const bool preview =
+        media_allowed_(current_room_id_,
+                       !my_user_id_.empty() && row.is_own) ||
+        revealed_events_.count(row.event_id) != 0;
+    const std::uint64_t media_group = media_group_for_room_(current_room_id_);
+
+    if (row.kind == Kind::Image)
+    {
+        if (preview && row.thumbnail)
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight,
+                                    row.image_animated, media_group);
+        if (preview &&
+            (!row.thumbnail ||
+             tesseract::Settings::instance().prefetch_full_media))
+        {
+            if (row.source)
+                ensure_media_image_(row.source->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, media_group);
+        }
+    }
+    else if (row.kind == Kind::Sticker)
+    {
+        if (preview && row.thumbnail)
+            ensure_media_image_(row.thumbnail->fetch_token(),
+                                visual::kStickerSize, visual::kStickerSize,
+                                media_group, MediaKind::Sticker);
+        if (preview &&
+            (!row.thumbnail ||
+             tesseract::Settings::instance().prefetch_full_media))
+        {
+            if (row.source)
+                ensure_media_image_(row.source->fetch_token(),
+                                    visual::kStickerSize, visual::kStickerSize,
+                                    media_group, MediaKind::Sticker);
+        }
+    }
+    else if (row.kind == Kind::Voice)
+    {
+        if (row.audio_source)
+        {
+            const std::string src   = row.audio_source->fetch_token();
+            const bool audio_new    = voice_prefetched_.insert(src).second;
+            const bool waveform_new = row.waveform.empty() &&
+                                      voice_waveform_in_flight_.insert(src).second;
+            if (audio_new || waveform_new)
+            {
+                const std::string event_id = row.event_id;
+                const std::string room_id  = current_room_id_;
+                auto id = begin_media_req_(
+                    /*group_id=*/0,
+                    [this, src, event_id, room_id,
+                     waveform_new](std::vector<std::uint8_t>&& bytes)
+                    {
+                        if (!waveform_new || bytes.empty())
+                            return;
+                        run_async_(
+                            [this, src, event_id, room_id,
+                             bytes = std::move(bytes)]() mutable
+                            {
+                                auto waveform =
+                                    tesseract::load_voice_waveform(src);
+                                if (waveform.empty())
+                                {
+                                    waveform =
+                                        tesseract::compute_waveform_from_ogg(
+                                            bytes);
+                                    if (!waveform.empty())
+                                        tesseract::store_voice_waveform(
+                                            src, waveform);
+                                }
+                                if (waveform.empty())
+                                    return;
+                                post_to_ui_alive_(
+                                    [this, room_id, event_id,
+                                     waveform = std::move(waveform)]() mutable
+                                    {
+                                        handle_voice_waveform_ready_ui_(
+                                            room_id, event_id,
+                                            std::move(waveform));
+                                    });
+                            });
+                    });
+                client_->fetch_media_async(
+                    id, /*group_id=*/0,
+                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                    false);
+            }
+        }
+    }
+    else if (row.kind == Kind::Audio)
+    {
+        if (row.audio_source &&
+            tesseract::Settings::instance().prefetch_full_media)
+        {
+            const std::string src = row.audio_source->fetch_token();
+            if (voice_prefetched_.insert(src).second)
+            {
+                auto id = begin_media_req_(
+                    /*group_id=*/0, [](std::vector<std::uint8_t>&&) {});
+                client_->fetch_media_async(
+                    id, /*group_id=*/0,
+                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                    false);
+            }
+        }
+    }
+    else if (row.kind == Kind::Video)
+    {
+        if (preview && row.thumbnail)
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, false,
+                                    media_group);
+        if (preview && !row.thumbnail && row.source &&
+            video_thumb_in_flight_.insert(row.event_id).second)
+            generate_video_thumbnail_(row.event_id,
+                                      row.source->fetch_token());
+    }
+
+    for (const auto& r : row.reactions)
+    {
+        if (r.source)
+            ensure_media_image_(r.source->fetch_token(), 20, 20, 0,
+                                MediaKind::Reaction);
+    }
+
+    if (!row.blurhash.empty())
+        ensure_blurhash_image_(row.event_id, row.blurhash,
+                               row.media_w, row.media_h);
+
+    if (preview &&
+        (row.kind == Kind::Text || row.kind == Kind::Notice ||
+         row.kind == Kind::Emote || row.kind == Kind::Unhandled))
+    {
+        std::string url;
+        if (!row.formatted_body.empty())
+            url = views::first_url_from_html(row.formatted_body);
+        if (url.empty() && !row.body.empty())
+            url = views::first_url_from_plain(row.body);
+        if (!url.empty())
+            ensure_url_preview_(url);
+    }
+}
+
 std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
     const std::vector<std::string>& keys) const
 {
@@ -1669,14 +1828,30 @@ std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
 
 void ShellBase::on_visible_rows_changed_(const std::vector<std::string>& keys)
 {
-    if (!client_ || active_media_group_ == 0 || keys.empty() ||
-        media_key_to_req_.empty())
+    if (client_ && active_media_group_ != 0 && !keys.empty() &&
+        !media_key_to_req_.empty())
     {
-        return;
+        auto ids = resolve_visible_request_ids_(keys);
+        if (!ids.empty())
+            client_->prioritize_media(active_media_group_, ids);
     }
-    auto ids = resolve_visible_request_ids_(keys);
-    if (!ids.empty())
-        client_->prioritize_media(active_media_group_, ids);
+
+    // Lazy media fetch: rows outside the initial prefetch window enter the
+    // viewport as the user scrolls. Fetch their media now, deduped by
+    // media_prepped_event_ids_ so each event is only processed once.
+    if (!room_view_ || !room_view_->message_list())
+        return;
+    auto* ml = room_view_->message_list();
+    auto [first, last] = ml->visible_range();
+    if (first < 0)
+        return;
+    const auto& msgs = ml->messages();
+    for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+    {
+        const auto& row = msgs[static_cast<std::size_t>(i)];
+        if (media_prepped_event_ids_.insert(row.event_id).second)
+            ensure_row_media_(row, /*fetch_avatars=*/true);
+    }
 }
 
 namespace
@@ -1950,17 +2125,23 @@ ShellBase::build_rows_(const EventList& snapshot)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
-    for (const auto& ev : snapshot)
+    // Only prefetch media for the trailing window — events at the top of the
+    // snapshot are above the initial viewport and their media is fetched lazily
+    // as the user scrolls up (via on_visible_rows_changed_).
+    constexpr std::size_t kMediaPrefetchWindow = 50;
+    const std::size_t n = snapshot.size();
+    for (std::size_t i = 0; i < n; ++i)
     {
+        const auto& ev = snapshot[i];
         if (!ev)
-        {
             continue;
-        }
-        prep_row_media_(*ev, /*fetch_avatars=*/false);
-        if (!ev->in_reply_to_id.empty())
+        if (i + kMediaPrefetchWindow >= n)
         {
-            ensure_reply_details_(ev->event_id);
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
+            media_prepped_event_ids_.insert(ev->event_id);
         }
+        if (!ev->in_reply_to_id.empty())
+            ensure_reply_details_(ev->event_id);
         rows.push_back(views::make_row_data(*ev, my_user_id_));
     }
     return rows;
@@ -1971,17 +2152,20 @@ ShellBase::build_rows_(const std::vector<Event*>& snapshot)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
-    for (auto* ev : snapshot)
+    constexpr std::size_t kMediaPrefetchWindow = 50;
+    const std::size_t n = snapshot.size();
+    for (std::size_t i = 0; i < n; ++i)
     {
+        auto* ev = snapshot[i];
         if (!ev)
-        {
             continue;
-        }
-        prep_row_media_(*ev, /*fetch_avatars=*/false);
-        if (!ev->in_reply_to_id.empty())
+        if (i + kMediaPrefetchWindow >= n)
         {
-            ensure_reply_details_(ev->event_id);
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
+            media_prepped_event_ids_.insert(ev->event_id);
         }
+        if (!ev->in_reply_to_id.empty())
+            ensure_reply_details_(ev->event_id);
         rows.push_back(views::make_row_data(*ev, my_user_id_));
     }
     return rows;
@@ -5368,7 +5552,9 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
-            prep_row_media_(*ev);
+            // Prepended events land above the current viewport. Skip eager
+            // media fetch; on_visible_rows_changed_ handles them lazily when
+            // the user scrolls up to reveal them.
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
@@ -5405,7 +5591,9 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
-            prep_row_media_(*ev);
+            // Suppress avatar fetches — on_visible_avatars_changed handles
+            // lazy avatar loading for whatever is actually visible.
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
@@ -5439,7 +5627,9 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
             auto& ev = events[i];
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
-            prep_row_media_(*ev);
+            // Batch updates can affect off-screen rows; suppress avatar fetches
+            // so we don't bulk-request every sender across the entire history.
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             room_view_->update_message(
@@ -6937,6 +7127,10 @@ void ShellBase::after_active_room_changed_()
     // a rebuild (SDK subscribe_room reuse).
     touch_visited_room_(current_room_id_);
     prune_warm_subscriptions_();
+
+    // Per-room lazy-media tracking: reset so the new room's rows are all
+    // eligible for on-demand fetch via on_visible_rows_changed_.
+    media_prepped_event_ids_.clear();
 
     // Drop the room we just left: cancel its still-pending timeline media
     // downloads (full-size images, thumbnails) so the room we're switching to
