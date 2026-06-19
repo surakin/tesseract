@@ -916,6 +916,9 @@ private:
     HoverTarget hover_target_ = HoverTarget::None;
     int hover_chip_idx_ = -1;
 
+    enum class ActionTooltip { None, React, Reply, Thread, Edit, More };
+    ActionTooltip action_tooltip_ = ActionTooltip::None;
+
     // Press-state — remember which chip the user pressed so we only
     // fire the callback on a clean down-up on the same chip.
     HoverTarget press_target_ = HoverTarget::None;

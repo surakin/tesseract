@@ -1159,7 +1159,7 @@ public:
                                      pill.w + 2.0f * pill_r, pill.h};
 
                 ctx.canvas.fill_rounded_rect(
-                    pill_visual, pill_r, ctx.theme.palette.subtle_hover);
+                    pill_visual, pill_r, ctx.theme.palette.subtle_pressed);
 
                 // Pointer in world-coords for per-cell hover detection.
                 // The reply/edit/delete/pin/thread cells use press_*_btn_
@@ -5004,6 +5004,50 @@ bool MessageListView::on_pointer_move(tk::Point local)
             map_panner_.hide_tooltip();
         }
     }
+
+    // Action pill button tooltips — same change-on-transition pattern as ComposeBar.
+    {
+        const tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        ActionTooltip next      = ActionTooltip::None;
+        tk::Rect      tip_anchor{};
+
+        if (hovered_row_geom_.row_index != static_cast<std::size_t>(-1))
+        {
+            struct { const tk::Rect& rect; ActionTooltip btn; } checks[] = {
+                {hovered_row_geom_.react_button,  ActionTooltip::React},
+                {hovered_row_geom_.reply_button,  ActionTooltip::Reply},
+                {hovered_row_geom_.thread_button, ActionTooltip::Thread},
+                {hovered_row_geom_.edit_button,   ActionTooltip::Edit},
+                {hovered_row_geom_.more_button,   ActionTooltip::More},
+            };
+            for (const auto& c : checks)
+            {
+                if (c.rect.w > 0.0f && rect_contains(c.rect, world))
+                {
+                    next       = c.btn;
+                    tip_anchor = c.rect;
+                    break;
+                }
+            }
+        }
+
+        if (next != action_tooltip_)
+        {
+            if (action_tooltip_ != ActionTooltip::None && on_hide_tooltip)
+                on_hide_tooltip();
+            action_tooltip_ = next;
+            if (next != ActionTooltip::None && on_show_tooltip)
+            {
+                const char* text =
+                    next == ActionTooltip::React  ? "Add reaction"
+                    : next == ActionTooltip::Reply  ? "Reply"
+                    : next == ActionTooltip::Thread ? "Reply in thread"
+                    : next == ActionTooltip::Edit   ? "Edit"
+                    :                                 "More";
+                on_show_tooltip(text, tip_anchor);
+            }
+        }
+    }
     return true;
 }
 
@@ -5041,6 +5085,12 @@ void MessageListView::on_pointer_leave()
     hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
     map_panner_.hide_tooltip();
+    if (action_tooltip_ != ActionTooltip::None)
+    {
+        if (on_hide_tooltip)
+            on_hide_tooltip();
+        action_tooltip_ = ActionTooltip::None;
+    }
 }
 
 bool MessageListView::should_show_pill() const
