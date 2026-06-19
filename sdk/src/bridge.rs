@@ -277,6 +277,10 @@ pub mod ffi {
         file_encrypted_json: String,
         file_name: String,
         file_size: u64,
+        /// Non-empty when msg_type is "m.file" and the sender provided an explicit
+        /// MSC2530 `filename` field (distinct from `body`). When set, `body` is a
+        /// user-written caption and should be displayed below the file card.
+        file_filename: String,
         /// Non-empty when msg_type is "m.image" and the sender provided an explicit
         /// MSC2530 `filename` field (distinct from `body`).  When set, `body` is a
         /// user-written caption and should be displayed below the image.

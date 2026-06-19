@@ -129,6 +129,7 @@ pub mod ffi {
         pub file_encrypted_json: String,
         pub file_name: String,
         pub file_size: u64,
+        pub file_filename: String,
         pub image_filename: String,
         pub audio_url: String,
         pub audio_encrypted_json: String,

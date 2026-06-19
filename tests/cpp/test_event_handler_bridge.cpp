@@ -143,7 +143,7 @@ TEST_CASE("make_event dispatches m.file to FileEvent with metadata",
     auto ev = tesseract::make_event(ffi);
     auto* f = dynamic_cast<tesseract::FileEvent*>(ev.get());
     REQUIRE(f != nullptr);
-    CHECK(f->file_name == "report.pdf");
+    CHECK(f->filename.empty()); // no MSC2530 filename; body is the display name
     CHECK(f->file_size == 12345);
     REQUIRE(f->source);
 }

@@ -227,8 +227,11 @@ struct UtdEvent : public Event
 struct FileEvent : public Event
 {
     MediaSourceRef source; // file attachment source
-    std::string file_name;
     uint64_t file_size = 0;
+    /// Non-empty only when the sender supplied an MSC2530 `filename` field.
+    /// When set, `body` is a user caption and should be displayed below the card.
+    /// When empty, `body` is the fallback display name (legacy behaviour).
+    std::string filename;
 
     FileEvent()
     {

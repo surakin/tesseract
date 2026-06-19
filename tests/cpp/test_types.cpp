@@ -223,7 +223,7 @@ TEST_CASE("FileEvent default-initialised fields", "[types]")
     CHECK(ev.timestamp == 0u);
     CHECK(ev.type == tesseract::EventType::File);
     CHECK(ev.source == nullptr);
-    CHECK(ev.file_name.empty());
+    CHECK(ev.filename.empty());
     CHECK(ev.file_size == 0u);
 }
 
@@ -236,7 +236,7 @@ TEST_CASE("FileEvent fields are settable", "[types]")
     ev.body = "sending a file";
     ev.timestamp = 1234567890;
     ev.source = tesseract::MediaSource::plain("mxc://example.org/file");
-    ev.file_name = "document.pdf";
+    ev.filename = "document.pdf";
     ev.file_size = 102400;
 
     CHECK(ev.event_id == "evt456");
@@ -246,7 +246,7 @@ TEST_CASE("FileEvent fields are settable", "[types]")
     CHECK(ev.timestamp == 1234567890);
     CHECK(ev.source != nullptr);
     CHECK(ev.source->mxc_url() == "mxc://example.org/file");
-    CHECK(ev.file_name == "document.pdf");
+    CHECK(ev.filename == "document.pdf");
     CHECK(ev.file_size == 102400);
 }
 

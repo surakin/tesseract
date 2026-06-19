@@ -46,6 +46,7 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         file_encrypted_json: String::new(),
         file_name: String::new(),
         file_size: 0,
+        file_filename: String::new(),
         image_filename: String::new(),
         audio_url: String::new(),
         audio_encrypted_json: String::new(),
@@ -651,7 +652,15 @@ pub(super) async fn timeline_item_to_ffi(
         }
         MessageType::File(f) => {
             let (file_url, file_enc) = split_source(&f.source);
-            let name = f.filename.clone().unwrap_or_else(|| f.body.clone());
+            // MSC2530: when `filename` is present it holds the real file name
+            // and `body` is the user-supplied caption. When absent, `body` is
+            // the fallback filename and there is no caption.
+            let file_filename = f.filename.clone().unwrap_or_default();
+            let name = if file_filename.is_empty() {
+                f.body.clone()
+            } else {
+                file_filename.clone()
+            };
             let size = f
                 .info
                 .as_ref()
@@ -665,6 +674,7 @@ pub(super) async fn timeline_item_to_ffi(
                 file_encrypted_json: file_enc,
                 file_name: name,
                 file_size: size,
+                file_filename,
                 ..ffi_event_defaults()
             }
         }

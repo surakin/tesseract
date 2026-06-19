@@ -239,8 +239,9 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::File;
         const auto& f = static_cast<const tesseract::FileEvent&>(ev);
         row.file_source = f.source;
-        row.file_name   = f.file_name;
+        row.file_name   = f.filename.empty() ? f.body : f.filename;
         row.file_size   = f.file_size;
+        row.has_filename_caption = !f.filename.empty();
         break;
     }
     case tesseract::EventType::Audio:
@@ -2016,7 +2017,13 @@ private:
             return quote_h + sz.h;
         }
         case MessageRowData::Kind::File:
-            return quote_h + kFileCardH;
+        {
+            float h = kFileCardH;
+            if (m.has_filename_caption && !m.body.empty())
+                h += 4.0f + measure_text_height(m.body, ctx, col_w,
+                                                is_emoji_only(m.body));
+            return quote_h + h;
+        }
         case MessageRowData::Kind::Audio:
             return quote_h + kAudioCardH;
         case MessageRowData::Kind::Voice:
@@ -2342,7 +2349,17 @@ private:
                     MessageListView::FileHit{m.event_id, m.file_source,
                                               m.file_name, m.file_size, r};
             }
-            return y + kFileCardH;
+            float cursor = y + kFileCardH;
+            if (m.has_filename_caption && !m.body.empty())
+            {
+                cursor += 4.0f;
+                const bool cap_eo = is_emoji_only(m.body);
+                float ch = paint_wrapped_text(m.body, ctx, x, cursor, col_w,
+                                              ctx.theme.palette.text_primary,
+                                              cap_eo);
+                cursor += ch;
+            }
+            return cursor;
         }
         case MessageRowData::Kind::Audio:
         {
