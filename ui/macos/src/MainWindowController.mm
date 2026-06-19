@@ -189,6 +189,8 @@ protected:
     void raise_and_activate_() override;
     void rebuild_tray_() override;
     bool is_ctrl_held_() const override;
+    void focus_forward_picker_field_() override;
+    void hide_forward_picker_field_() override;
     void switch_active_account_(const std::string& user_id) override;
     void refresh_account_ui_after_switch_() override;
     void spawn_main_window_(
@@ -592,6 +594,9 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_closeQuickSwitch;
 - (void)_openMessageSearch;
 - (void)_closeMessageSearch;
+- (void)_closeForwardPicker;
+- (void)_focusForwardPickerField;
+- (void)_hideForwardPickerField;
 - (void)_openFindInRoom;
 - (void)_closeFindInRoom;
 - (void)_navigateHistoryBack;
@@ -782,6 +787,18 @@ void MacShell::request_repaint_()
     {
         app_surface_->host().request_repaint();
     }
+}
+
+void MacShell::focus_forward_picker_field_()
+{
+    if (ctrl_)
+        [ctrl_ _focusForwardPickerField];
+}
+
+void MacShell::hide_forward_picker_field_()
+{
+    if (ctrl_)
+        [ctrl_ _hideForwardPickerField];
 }
 
 void MacShell::on_rooms_updated_()
@@ -2267,6 +2284,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
     std::unique_ptr<tk::NativeTextField> _quickSwitchField;
     std::unique_ptr<tk::NativeTextField> _messageSearchField;
+    std::unique_ptr<tk::NativeTextField> _forwardPickerField;
     std::unique_ptr<tk::NativeTextField> _findInRoomField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
@@ -4755,6 +4773,52 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     [s _closeMessageSearch];
             };
 
+        // Forward room picker native search field.
+        _forwardPickerField = _mainAppSurface->host().make_text_field();
+        _forwardPickerField->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
+        _forwardPickerField->set_visible(false);
+        _forwardPickerField->set_on_changed(
+            [weakSelf](const std::string& q)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->forward_picker())
+                {
+                    s->_mainApp->forward_picker()->set_query(q);
+                    s->_mainAppSurface->relayout();
+                }
+            });
+        _forwardPickerField->set_on_submit(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp && s->_mainApp->forward_picker())
+                    s->_mainApp->forward_picker()->confirm();
+            });
+        _forwardPickerField->set_on_popup_nav(
+            [weakSelf](tk::NavKey nk) -> bool
+            {
+                MainWindowController* s = weakSelf;
+                auto* fp = (s && s->_mainApp) ? s->_mainApp->forward_picker()
+                                               : nullptr;
+                if (!fp || !fp->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    fp->move_selection(-1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    fp->move_selection(+1);
+                    s->_mainAppSurface->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    [s _closeForwardPicker];
+                    return true;
+                default:
+                    return false;
+                }
+            });
         // Per-room "find in conversation" (⌘F) native field.
         _findInRoomField = _mainAppSurface->host().make_text_field();
         _findInRoomField->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
@@ -4888,6 +4952,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     if (msVisible)
                         s->_messageSearchField->set_rect(
                             app->message_search_field_rect());
+                }
+                // Forward room picker search field.
+                if (s->_forwardPickerField)
+                {
+                    bool fpVisible = app->forward_picker_field_visible();
+                    s->_forwardPickerField->set_visible(fpVisible);
+                    if (fpVisible)
+                        s->_forwardPickerField->set_rect(
+                            app->forward_picker_field_rect());
                 }
                 // Per-room find-in-conversation field (⌘F).
                 if (s->_findInRoomField)
@@ -7161,6 +7234,27 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _messageSearchField->set_visible(false);
     if (_mainAppSurface)
         _mainAppSurface->relayout();
+}
+
+- (void)_closeForwardPicker
+{
+    if (_mainApp && _mainApp->forward_picker())
+        _mainApp->forward_picker()->close();
+}
+
+- (void)_focusForwardPickerField
+{
+    if (_forwardPickerField)
+    {
+        _forwardPickerField->set_text("");
+        _forwardPickerField->set_focused(true);
+    }
+}
+
+- (void)_hideForwardPickerField
+{
+    if (_forwardPickerField)
+        _forwardPickerField->set_visible(false);
 }
 
 - (void)_openFindInRoom

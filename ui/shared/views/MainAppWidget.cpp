@@ -104,6 +104,12 @@ MainAppWidget::MainAppWidget()
     message_search_ = add_child(std::move(ms));
     message_search_->set_visible(false);
 
+    // Forward room picker — topmost modal, opened by the "Forward message"
+    // action. Added after message_search so it paints above all other overlays.
+    auto fp = std::make_unique<ForwardRoomPicker>();
+    forward_picker_ = add_child(std::move(fp));
+    forward_picker_->set_visible(false);
+
     // Hand RoomView a closure that opens this dialog with caller-supplied
     // options. Downstream destructive actions (leave room, …) route through
     // this provider without each shell needing its own native dialog code.
@@ -342,7 +348,8 @@ bool MainAppWidget::any_modal_open_() const
            (encryption_setup_  && encryption_setup_->visible()) ||
            (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||
-           (message_search_    && message_search_->is_open());
+           (message_search_    && message_search_->is_open()) ||
+           (forward_picker_    && forward_picker_->is_open());
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const
@@ -389,6 +396,17 @@ bool MainAppWidget::message_search_field_visible() const
 tk::Rect MainAppWidget::message_search_field_rect() const
 {
     return message_search_ ? message_search_->search_field_rect() : tk::Rect{};
+}
+
+bool MainAppWidget::forward_picker_field_visible() const
+{
+    return forward_picker_ && forward_picker_->is_open() &&
+           forward_picker_->search_field_visible();
+}
+
+tk::Rect MainAppWidget::forward_picker_field_rect() const
+{
+    return forward_picker_ ? forward_picker_->search_field_rect() : tk::Rect{};
 }
 
 bool MainAppWidget::in_room_search_field_visible() const
@@ -510,6 +528,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (confirm_dialog_) confirm_dialog_->arrange(ctx, bounds);
     if (quick_switcher_) quick_switcher_->arrange(ctx, bounds);
     if (message_search_) message_search_->arrange(ctx, bounds);
+    if (forward_picker_) forward_picker_->arrange(ctx, bounds);
 }
 
 void MainAppWidget::paint(tk::PaintCtx& ctx)
@@ -658,6 +677,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     if (message_search_ && message_search_->visible())
     {
         message_search_->paint(ctx);
+    }
+    if (forward_picker_ && forward_picker_->visible())
+    {
+        forward_picker_->paint(ctx);
     }
 }
 

@@ -2642,6 +2642,48 @@ void MainWindow::on_create(HWND hwnd)
             ms->on_close = [this] { close_message_search_(); };
         }
 
+        // Forward room picker native search field.
+        forward_picker_field_ = main_app_surface_->host().make_text_field();
+        forward_picker_field_->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
+        forward_picker_field_->set_visible(false);
+        forward_picker_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (main_app_ && main_app_->forward_picker())
+                {
+                    main_app_->forward_picker()->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        forward_picker_field_->set_on_submit(
+            [this]
+            {
+                if (main_app_ && main_app_->forward_picker())
+                    main_app_->forward_picker()->confirm();
+            });
+        forward_picker_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
+                if (!fp || !fp->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    fp->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    fp->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_forward_picker_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
         // Per-room "find in conversation" (Ctrl+F) native field.
         find_in_room_field_ = main_app_surface_->host().make_text_field();
         find_in_room_field_->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
@@ -3558,6 +3600,21 @@ void MainWindow::on_create(HWND hwnd)
                         r.w -= 4;
                         r.h -= 4;
                         message_search_field_->set_rect(r);
+                    }
+                }
+
+                if (forward_picker_field_)
+                {
+                    bool vis = main_app_->forward_picker_field_visible();
+                    forward_picker_field_->set_visible(vis);
+                    if (vis)
+                    {
+                        tk::Rect r = main_app_->forward_picker_field_rect();
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
+                        forward_picker_field_->set_rect(r);
                     }
                 }
 
@@ -4592,6 +4649,28 @@ void MainWindow::close_message_search_()
     {
         SetFocus(hwnd_);
     }
+}
+
+void MainWindow::close_forward_picker_()
+{
+    if (main_app_ && main_app_->forward_picker())
+        main_app_->forward_picker()->close();
+}
+
+void MainWindow::focus_forward_picker_field_()
+{
+    if (forward_picker_field_)
+    {
+        forward_picker_field_->set_text("");
+        forward_picker_field_->set_focused(true);
+    }
+}
+
+void MainWindow::hide_forward_picker_field_()
+{
+    if (forward_picker_field_)
+        forward_picker_field_->set_visible(false);
+    SetFocus(hwnd_);
 }
 
 void MainWindow::open_find_in_room_()

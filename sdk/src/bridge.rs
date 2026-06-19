@@ -1695,6 +1695,18 @@ pub mod ffi {
             formatted_body: &str,
         ) -> OpResult;
 
+        /// Forward `event_id` from `source_room_id` to `target_room_id`.
+        /// Fetches the event (decrypting it when the source room is E2EE),
+        /// strips `m.relates_to` so the copy is free-standing in the target
+        /// room, then sends it as a new event. All message-like event types
+        /// (m.room.message, m.sticker, …) are supported.
+        fn forward_event(
+            self: &ClientFfi,
+            source_room_id: &str,
+            event_id: &str,
+            target_room_id: &str,
+        ) -> OpResult;
+
         /// Homeserver-reported maximum upload size in bytes
         /// (`/_matrix/media/v3/config`). Cached after the first successful
         /// query; returns `0` when the server does not advertise a limit, the

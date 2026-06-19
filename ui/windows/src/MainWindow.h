@@ -216,6 +216,9 @@ private:
     void close_quick_switch_();
     void open_message_search_();
     void close_message_search_();
+    void close_forward_picker_();
+    void focus_forward_picker_field_() override;
+    void hide_forward_picker_field_() override;
     void open_find_in_room_();
     void close_find_in_room_();
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
@@ -349,6 +352,7 @@ private:
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
     std::unique_ptr<tk::NativeTextField> message_search_field_;
+    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
     std::unique_ptr<tk::NativeTextField> find_in_room_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     bool                                 focus_compose_on_show_ = false;

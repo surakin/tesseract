@@ -786,6 +786,14 @@ Result Client::send_edit(const std::string& room_id,
                               derive_formatted(new_body, formatted_body)));
 }
 
+Result Client::forward_event(const std::string& source_room_id,
+                              const std::string& event_id,
+                              const std::string& target_room_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->forward_event(source_room_id, event_id, target_room_id));
+}
+
 std::string Client::load_prefs_json()
 {
     SH_FFI;

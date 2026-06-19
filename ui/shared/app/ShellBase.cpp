@@ -1086,6 +1086,40 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             main_app_->clear_content();
         request_relayout_();
     };
+
+    // Forward picker: stable providers wired once so open() always has rooms.
+    // The native text field, keyboard accelerator, and on_close stay per-shell.
+    if (auto* fp = app->forward_picker())
+    {
+        fp->set_rooms_provider(
+            [this]() -> std::vector<tesseract::RoomInfo> { return rooms_; });
+        fp->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            { return account_manager_.thumbnail_cache().peek(mxc); });
+        fp->on_room_avatar_needed =
+            [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+        fp->on_close = [this] { hide_forward_picker_field_(); request_relayout_(); };
+    }
+    if (auto* rv = app->room_view())
+    {
+        rv->on_forward_requested =
+            [this](const std::string& event_id)
+        {
+            auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
+            if (!fp || current_room_id_.empty() || fp->is_open())
+                return;
+            fp->on_confirmed =
+                [this, source_room = current_room_id_, event_id]
+                (std::vector<std::string> room_ids)
+            {
+                for (const auto& rid : room_ids)
+                    client_->forward_event(source_room, event_id, rid);
+            };
+            fp->open(current_room_id_);
+            focus_forward_picker_field_();
+            request_relayout_();
+        };
+    }
 }
 
 void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,

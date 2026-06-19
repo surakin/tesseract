@@ -172,10 +172,22 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
 
     ml->on_more_requested =
         [this, ml](const std::string& event_id, tk::Rect anchor,
-                   bool can_delete, bool can_pin, bool is_pinned)
+                   bool can_delete, bool can_pin, bool is_pinned,
+                   bool can_forward)
     {
         // anchor is in world coordinates — PopupMenu::open() takes world coords.
         std::vector<PopupMenu::Item> items;
+        if (can_forward)
+        {
+            items.push_back({"",
+                             kForwardSvg,
+                             "Forward message", /*destructive=*/false,
+                             [this, event_id]
+                             {
+                                 if (on_forward_requested)
+                                     on_forward_requested(event_id);
+                             }});
+        }
         if (can_delete)
         {
             items.push_back({"", // SVG icon below

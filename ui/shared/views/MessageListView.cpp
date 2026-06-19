@@ -1120,9 +1120,10 @@ public:
                 cells.push_back({&ic_edit_, kEditSvg,
                                  &owner_.hovered_row_geom_.edit_button});
             }
-            if ((m.is_own || owner_.can_pin_) &&
-                m.kind != MessageRowData::Kind::Redacted &&
-                m.kind != MessageRowData::Kind::Utd)
+            if (m.kind != MessageRowData::Kind::Redacted &&
+                m.kind != MessageRowData::Kind::Utd &&
+                (m.is_own || owner_.can_pin_ ||
+                 m.pending_state == MessageRowData::PendingState::None))
             {
                 cells.push_back({&ic_more_, kMoreSvg,
                                  &owner_.hovered_row_geom_.more_button});
@@ -5537,12 +5538,15 @@ bool MessageListView::on_pointer_down(tk::Point local)
             if (row < messages_.size())
             {
                 const auto& m = messages_[row];
-                press_more_btn_        = true;
-                press_more_event_id_   = m.event_id;
-                press_more_can_delete_ = m.is_own;
-                press_more_can_pin_    = can_pin_;
-                press_more_is_pinned_  = pinned_event_ids_.find(m.event_id) !=
-                                         pinned_event_ids_.end();
+                press_more_btn_         = true;
+                press_more_event_id_    = m.event_id;
+                press_more_can_delete_  = m.is_own;
+                press_more_can_pin_     = can_pin_;
+                press_more_is_pinned_   = pinned_event_ids_.find(m.event_id) !=
+                                          pinned_event_ids_.end();
+                press_more_can_forward_ =
+                    m.kind != MessageRowData::Kind::Redacted &&
+                    m.pending_state == MessageRowData::PendingState::None;
                 return true;
             }
         }
@@ -6073,13 +6077,15 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                     on_more_requested(ev, mb,
                                       press_more_can_delete_,
                                       press_more_can_pin_,
-                                      press_more_is_pinned_);
+                                      press_more_is_pinned_,
+                                      press_more_can_forward_);
                 }
             }
         }
-        press_more_can_delete_ = false;
-        press_more_can_pin_    = false;
-        press_more_is_pinned_  = false;
+        press_more_can_delete_  = false;
+        press_more_can_pin_     = false;
+        press_more_is_pinned_   = false;
+        press_more_can_forward_ = false;
         return;
     }
     if (press_retry_btn_)

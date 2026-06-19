@@ -10,7 +10,7 @@ foreach(_entry
         "redact|kRedactSvg" "pin|kPinSvg" "download|kDownloadSvg" "close|kCloseSvg"
         "play|kPlaySvg" "join|kJoinSvg" "jump-to-date|kJumpToDateSvg"
         "threadlist|kThreadListSvg" "search|kSearchSvg" "chevron-up|kChevronUpSvg"
-        "chevron-down|kChevronDownSvg")
+        "chevron-down|kChevronDownSvg" "forward|kForwardSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)

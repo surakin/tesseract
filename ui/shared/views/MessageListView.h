@@ -443,10 +443,12 @@ public:
     // Overflow-menu affordance — fires when the user clicks the "⋯" more
     // button. `anchor` is the button rect in world coordinates. `can_delete`
     // is true for own non-redacted messages; `can_pin` when the room allows
-    // pinning; `is_pinned` when this event is already pinned. The host should
+    // pinning; `is_pinned` when this event is already pinned; `can_forward`
+    // is true for any non-redacted, non-pending message. The host should
     // open a PopupMenu and call the appropriate SDK methods on selection.
     std::function<void(const std::string& event_id, tk::Rect anchor,
-                       bool can_delete, bool can_pin, bool is_pinned)>
+                       bool can_delete, bool can_pin, bool is_pinned,
+                       bool can_forward)>
         on_more_requested;
 
     // Pin / Unpin affordance — kept for backward-compat wiring; now fired
@@ -945,6 +947,7 @@ private:
     bool press_more_can_delete_  = false;
     bool press_more_can_pin_     = false;
     bool press_more_is_pinned_   = false;
+    bool press_more_can_forward_ = false;
 
     bool hover_locked_ = false;
 

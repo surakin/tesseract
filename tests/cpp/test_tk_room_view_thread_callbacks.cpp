@@ -82,10 +82,10 @@ TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
     REQUIRE(static_cast<bool>(ml->on_more_requested));
 
     // Fire the more-button callback; the anchor is in world coords.
-    // can_delete=true, can_pin=false, is_pinned=false → only Delete item.
+    // can_forward=false keeps Delete as the sole item (tests delete path only).
     ml->on_more_requested("$evt:example.org", {10.f, 10.f, 24.f, 24.f},
                           /*can_delete=*/true, /*can_pin=*/false,
-                          /*is_pinned=*/false);
+                          /*is_pinned=*/false, /*can_forward=*/false);
 
     auto* pm = view.overflow_menu();
     REQUIRE(pm != nullptr);

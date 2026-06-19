@@ -1362,6 +1362,11 @@ protected:
     virtual void show_qr_grant_overlay_() {}
     virtual void hide_qr_grant_overlay_() {}
 
+    // Called when the forward picker opens: shell focuses its native text field.
+    // Called when the forward picker closes: shell hides its native text field.
+    virtual void focus_forward_picker_field_() {}
+    virtual void hide_forward_picker_field_() {}
+
     // Wires every platform-agnostic callback on the encryption-setup overlay
     // (recovery/verify actions, clipboard, field readers, layout/dismiss).
     // Each shell only creates+stores the two native text fields then calls

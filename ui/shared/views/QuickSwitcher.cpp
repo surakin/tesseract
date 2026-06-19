@@ -1,10 +1,10 @@
 #include "QuickSwitcher.h"
 
 #include "media_utils.h"
+#include "text_util.h"
 #include "tk/theme.h"
 
 #include <algorithm>
-#include <cctype>
 #include <string>
 
 namespace tesseract::views
@@ -19,40 +19,7 @@ constexpr float kAvatarGap = 12.0f;
 constexpr float kFieldH = 34.0f;
 
 // Case-insensitive substring match (byte-level ASCII approximation). Mirrors
-// RoomListView::name_matches so the switcher filters identically to the
-// sidebar search.
-bool name_matches(const std::string& name, const std::string& query)
-{
-    if (query.empty())
-    {
-        return true;
-    }
-    if (name.size() < query.size())
-    {
-        return false;
-    }
-    auto to_lower = [](char c)
-    {
-        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    };
-    for (std::size_t i = 0; i + query.size() <= name.size(); ++i)
-    {
-        bool match = true;
-        for (std::size_t j = 0; j < query.size(); ++j)
-        {
-            if (to_lower(name[i + j]) != to_lower(query[j]))
-            {
-                match = false;
-                break;
-            }
-        }
-        if (match)
-        {
-            return true;
-        }
-    }
-    return false;
-}
+using tesseract::text::name_matches;
 
 } // namespace
 

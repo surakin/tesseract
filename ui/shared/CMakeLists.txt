@@ -127,6 +127,8 @@ set(_tk_sources
     views/VideoViewerOverlay.cpp
     views/QuickSwitcher.h
     views/QuickSwitcher.cpp
+    views/ForwardRoomPicker.h
+    views/ForwardRoomPicker.cpp
     views/MessageSearchView.h
     views/MessageSearchView.cpp
     views/RoomSearchBar.h
@@ -296,6 +298,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-search.svg"
     "${_lucide_dir}/lucide-chevron-up.svg"
     "${_lucide_dir}/lucide-chevron-down.svg"
+    "${_lucide_dir}/lucide-forward.svg"
 )
 
 add_custom_command(

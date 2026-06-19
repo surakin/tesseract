@@ -182,6 +182,9 @@ private:
     // field; close hides it and relayouts.
     void open_message_search_();
     void close_message_search_();
+    void close_forward_picker_();
+    void focus_forward_picker_field_() override;
+    void hide_forward_picker_field_() override;
     // Ctrl+F per-room "find in conversation" search bar.
     void open_find_in_room_();
     void close_find_in_room_();
@@ -337,6 +340,7 @@ private:
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
     std::unique_ptr<tk::NativeTextField> message_search_field_;
+    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
     std::unique_ptr<tk::NativeTextField> find_in_room_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;

@@ -324,6 +324,7 @@ public:
     std::function<void()> on_cancel_voice;
 
     std::function<void(std::string event_id)> on_delete_requested;
+    std::function<void(std::string event_id)> on_forward_requested;
     // `source_mxc` is the mxc:// URI for MSC4027 custom-image reactions,
     // empty for plain Unicode. Hosts route empty → `Client::send_reaction`,
     // non-empty → `Client::send_reaction_custom`.

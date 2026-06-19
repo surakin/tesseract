@@ -26,6 +26,7 @@
 #include "QRGrantView.h"
 #include "InviteCard.h"
 #include "RoomPreviewView.h"
+#include "ForwardRoomPicker.h"
 #include "QuickSwitcher.h"
 #include "MessageSearchView.h"
 #include "RoomListView.h"
@@ -110,6 +111,12 @@ public:
     MessageSearchView* message_search() const { return message_search_; }
     bool     message_search_field_visible() const;
     tk::Rect message_search_field_rect()    const;
+
+    // ── Forward room picker ───────────────────────────────────────────────
+
+    ForwardRoomPicker* forward_picker() const { return forward_picker_; }
+    bool     forward_picker_field_visible() const;
+    tk::Rect forward_picker_field_rect()    const;
 
     EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
 
@@ -252,6 +259,10 @@ private:
     // Ctrl+Shift+F message search — topmost overlay alongside the quick
     // switcher. Hidden until show_message_search(true).
     MessageSearchView* message_search_ = nullptr;
+
+    // Forward room picker — topmost modal overlay, shown when the user
+    // selects "Forward message" from the action bar.
+    ForwardRoomPicker* forward_picker_ = nullptr;
 
     bool verif_visible_ = false;
 

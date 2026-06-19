@@ -134,6 +134,11 @@ private:
     void openMessageSearch_();
     void closeMessageSearch_();
 
+    // Forward room picker — opened by "Forward message" action.
+    void closeForwardPicker_();
+    void focus_forward_picker_field_() override;
+    void hide_forward_picker_field_() override;
+
     // Ctrl+F per-room "find in conversation" search bar.
     void openFindInRoom_();
     void closeFindInRoom_();
@@ -339,6 +344,7 @@ private:
     std::unique_ptr<tk::NativeTextField> roomSearchField_;
     std::unique_ptr<tk::NativeTextField> quickSwitchField_;
     std::unique_ptr<tk::NativeTextField> messageSearchField_;
+    std::unique_ptr<tk::NativeTextField> forwardPickerField_;
     std::unique_ptr<tk::NativeTextField> findInRoomField_;
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     std::unique_ptr<tk::NativeTextArea> topicTextArea_;

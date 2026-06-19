@@ -1771,6 +1771,53 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     if (mainApp_ && mainApp_->message_search())
         mainApp_->message_search()->on_close = [this] { closeMessageSearch_(); };
 
+    // Forward room picker native search field.
+    forwardPickerField_ = mainAppSurface_->host().make_text_field();
+    forwardPickerField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    forwardPickerField_->set_placeholder(
+        tr("Search rooms\xe2\x80\xa6").toStdString());
+    forwardPickerField_->set_visible(false);
+    forwardPickerField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (mainApp_ && mainApp_->forward_picker())
+            {
+                mainApp_->forward_picker()->set_query(q);
+                mainAppSurface_->relayout();
+            }
+        });
+    forwardPickerField_->set_on_submit(
+        [this]
+        {
+            if (mainApp_ && mainApp_->forward_picker())
+                mainApp_->forward_picker()->confirm();
+        });
+    forwardPickerField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            auto* fp = mainApp_ ? mainApp_->forward_picker() : nullptr;
+            if (!fp || !fp->is_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                fp->move_selection(-1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                fp->move_selection(+1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                closeForwardPicker_();
+                return true;
+            default:
+                return false;
+            }
+        });
+    if (mainApp_ && mainApp_->forward_picker())
+
     // Per-room "find in conversation" (Ctrl+F) native field — docked under the
     // RoomHeader inside the shared search bar strip. Mirrors messageSearchField_
     // except: no popup-nav (UP/DOWN are button clicks in the strip), submit is
@@ -1889,6 +1936,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 if (vis)
                     messageSearchField_->set_rect(
                         mainApp_->message_search_field_rect());
+            }
+            if (mainApp_ && forwardPickerField_)
+            {
+                const bool vis = mainApp_->forward_picker_field_visible();
+                forwardPickerField_->set_visible(vis);
+                if (vis)
+                    forwardPickerField_->set_rect(
+                        mainApp_->forward_picker_field_rect());
             }
             if (mainApp_ && findInRoomField_)
             {
@@ -2454,6 +2509,27 @@ void MainWindow::closeMessageSearch_()
         messageSearchField_->set_visible(false);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
+}
+
+void MainWindow::closeForwardPicker_()
+{
+    if (mainApp_ && mainApp_->forward_picker())
+        mainApp_->forward_picker()->close();
+}
+
+void MainWindow::focus_forward_picker_field_()
+{
+    if (forwardPickerField_)
+    {
+        forwardPickerField_->set_text("");
+        forwardPickerField_->set_focused(true);
+    }
+}
+
+void MainWindow::hide_forward_picker_field_()
+{
+    if (forwardPickerField_)
+        forwardPickerField_->set_visible(false);
 }
 
 void MainWindow::openFindInRoom_()
