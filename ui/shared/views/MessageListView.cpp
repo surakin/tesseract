@@ -5038,13 +5038,13 @@ bool MessageListView::on_pointer_move(tk::Point local)
             action_tooltip_ = next;
             if (next != ActionTooltip::None && on_show_tooltip)
             {
-                const char* text =
+                const char* src =
                     next == ActionTooltip::React  ? "Add reaction"
                     : next == ActionTooltip::Reply  ? "Reply"
                     : next == ActionTooltip::Thread ? "Reply in thread"
                     : next == ActionTooltip::Edit   ? "Edit"
                     :                                 "More";
-                on_show_tooltip(text, tip_anchor);
+                on_show_tooltip(tk::tr(src), tip_anchor);
             }
         }
     }

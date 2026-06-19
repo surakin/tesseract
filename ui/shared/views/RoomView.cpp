@@ -1,6 +1,7 @@
 #include "RoomView.h"
 
 #include "icons.h"
+#include "tk/i18n.h"
 
 #include <algorithm>
 #include <memory>
@@ -181,7 +182,7 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         {
             items.push_back({"",
                              kForwardSvg,
-                             "Forward message", /*destructive=*/false,
+                             tk::tr("Forward message"), /*destructive=*/false,
                              [this, event_id]
                              {
                                  if (on_forward_requested)

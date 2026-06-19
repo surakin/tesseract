@@ -2,6 +2,7 @@
 
 #include "media_utils.h"
 #include "text_util.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -86,7 +87,7 @@ public:
         ns.trim      = tk::TextTrim::Ellipsis;
         ns.max_width = text_w;
         auto name_lo = ctx.factory.build_text(
-            room->name.empty() ? std::string("Unnamed room") : room->name, ns);
+            room->name.empty() ? tk::tr("Unnamed room") : room->name, ns);
         if (name_lo)
         {
             const tk::Size sz = name_lo->measure();
@@ -366,7 +367,7 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
     {
         tk::TextStyle cs{};
         cs.role  = tk::FontRole::Body;
-        auto lo  = ctx.factory.build_text(std::string("Cancel"), cs);
+        auto lo  = ctx.factory.build_text(tk::tr("Cancel"), cs);
         if (lo)
         {
             const tk::Size sz = lo->measure();
@@ -388,8 +389,9 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
     {
         const std::string label =
             can_forward
-                ? ("Forward (" + std::to_string(selected_ids_.size()) + ")")
-                : std::string("Forward");
+                ? tk::trf(tk::tr("Forward ({0})"),
+                          {std::to_string(selected_ids_.size())})
+                : tk::tr("Forward");
         tk::TextStyle cs{};
         cs.role = tk::FontRole::Body;
         auto lo = ctx.factory.build_text(label, cs);
@@ -410,7 +412,7 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
     {
         tk::TextStyle es{};
         es.role  = tk::FontRole::Body;
-        auto lo  = ctx.factory.build_text(std::string("No rooms"), es);
+        auto lo  = ctx.factory.build_text(tk::tr("No rooms"), es);
         if (lo)
         {
             const tk::Size sz    = lo->measure();

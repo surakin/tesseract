@@ -509,3 +509,43 @@ msgstr "Español"
 #: /home/rayden/src/tesseract/ui/shared/views/settings/LanguageSection.cpp:30
 msgid "Changes take effect after restart."
 msgstr "Los cambios se aplican tras reiniciar."
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp:184
+msgid "Forward message"
+msgstr "Reenviar mensaje"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:392
+msgid "Forward"
+msgstr "Reenviar"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:391
+msgid "Forward ({0})"
+msgstr "Reenviar ({0})"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:413
+msgid "No rooms"
+msgstr "Sin salas"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:89
+msgid "Unnamed room"
+msgstr "Sala sin nombre"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5042
+msgid "Add reaction"
+msgstr "Añadir reacción"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5043
+msgid "Reply"
+msgstr "Responder"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5044
+msgid "Reply in thread"
+msgstr "Responder en hilo"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5045
+msgid "Edit"
+msgstr "Editar"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5046
+msgid "More"
+msgstr "Más"
