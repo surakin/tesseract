@@ -237,6 +237,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         tk/audio_capture_gtk.cpp
         tk/video_gtk.cpp
         tk/video_decode_gst.cpp
+        tk/gst_hw_probe.cpp
     )
 elseif(TESSERACT_UI STREQUAL "macos")
     list(APPEND _tk_sources
@@ -407,6 +408,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         Qt6::Widgets
         Qt6::Multimedia
         PkgConfig::TK_GST_QT
+        ${CMAKE_DL_LIBS}
     )
     tesseract_target_pch(tesseract_tk
         <QtCore/QtCore>
@@ -431,6 +433,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
     target_link_libraries(tesseract_tk PUBLIC
         PkgConfig::TK_GTK4
         PkgConfig::TK_GST
+        ${CMAKE_DL_LIBS}
     )
     tesseract_target_pch(tesseract_tk
         <gtk/gtk.h>

@@ -14,6 +14,7 @@
 // synchronously.
 
 #include "video_decode.h"
+#include "gst_hw_probe.h"
 
 // Qt defines 'signals' as 'public' for its meta-object system.
 // GLib's gdbusintrospection.h declares a struct field named 'signals', which
@@ -30,7 +31,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <mutex>
 #include <vector>
 
 namespace tk
@@ -38,17 +38,6 @@ namespace tk
 
 namespace
 {
-
-// GStreamer must be initialized once per process before any element is
-// created. The GTK4 video player has its own lazy init, but this decoder may
-// run first (and on Qt6 nothing else initializes GStreamer at all). Use
-// call_once because decode_video_frames() runs on worker threads, possibly
-// concurrently — a plain static-bool guard would race.
-void ensure_gst_init()
-{
-    static std::once_flag flag;
-    std::call_once(flag, [] { gst_init(nullptr, nullptr); });
-}
 
 // Maximum frames extracted per clip — guards against excessively long videos
 // exhausting memory in the GIF strip thumbnail cache.
@@ -177,7 +166,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         return result;
     }
 
-    ensure_gst_init();
+    gst::ensure_gst_init();
 
     // Build elements.
     GstElement* src   = gst_element_factory_make("giostreamsrc",  "src");

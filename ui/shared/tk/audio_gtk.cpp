@@ -5,6 +5,7 @@
 // the on_progress handler is already on the UI thread.
 
 #include "audio.h"
+#include "gst_hw_probe.h"
 
 #include <gio/gio.h>
 #include <glib.h>
@@ -12,36 +13,17 @@
 
 #include <cstdint>
 #include <memory>
-#include <utility>
 #include <vector>
 
 namespace tk::gtk4
 {
-
-namespace
-{
-
-// One-shot lazy gst_init. Repeat calls are cheap (gst_init guards itself),
-// but funnelling through this helper keeps initialisation localised in case
-// the project later wires a more elaborate runtime setup.
-void ensure_gst_init()
-{
-    static bool initialised = false;
-    if (!initialised)
-    {
-        gst_init(nullptr, nullptr);
-        initialised = true;
-    }
-}
-
-} // namespace
 
 class GtkAudioPlayer : public tk::AudioPlayer
 {
 public:
     GtkAudioPlayer()
     {
-        ensure_gst_init();
+        gst::ensure_gst_init();
     }
 
     ~GtkAudioPlayer() override
