@@ -2780,38 +2780,58 @@ void MainWindow::on_create(HWND hwnd)
                             {
                                 gif_preview_inflight_.erase(url);
                                 if (bytes.empty()) return;
+                                // Decode off the UI thread; WIC work must not
+                                // run on the message pump.
                                 run_async_(
-                                    [this, disk_key, bytes]() mutable
+                                    [this, url, disk_key, alive, repaint,
+                                     bytes = std::move(bytes)]() mutable
                                     {
                                         account_manager_.media_disk_cache().store(
-                                            disk_key, std::move(bytes));
+                                            disk_key, bytes);
+                                        using CW = tesseract::views::GifPopup;
+                                        auto d = std::make_shared<DecodedImage>(
+                                            decode_image_(bytes,
+                                                          int(CW::kCellW) * 2,
+                                                          int(CW::kCellH) * 2));
+                                        post_to_ui_(
+                                            [this, url, d, alive, repaint]() mutable
+                                            {
+                                                if (!*alive) return;
+                                                if (d->still)
+                                                    gif_previews_[url] =
+                                                        std::move(d->still);
+                                                repaint();
+                                            });
                                     });
-                                if (!*alive) return;
-                                using CW = tesseract::views::GifPopup;
-                                DecodedImage d = decode_image_(
-                                    bytes, int(CW::kCellW) * 2,
-                                    int(CW::kCellH) * 2);
-                                if (d.still)
-                                    gif_previews_[url] = std::move(d.still);
-                                repaint();
                             });
-                        run_async_(
-                            [this, req_id, url, disk_key]()
-                            {
-                                auto bytes =
-                                    account_manager_.media_disk_cache().load(disk_key);
-                                if (!bytes.empty())
+                        // Snapshot client_ on the UI thread to avoid a data
+                        // race with the account-removal path.
+                        auto* client_snap = client_;
+                        if (!client_snap)
+                        {
+                            handle_media_ready_ui_(req_id, {});
+                        }
+                        else
+                        {
+                            run_async_(
+                                [this, req_id, url, disk_key, client_snap]()
                                 {
-                                    post_to_ui_(
-                                        [this, req_id, bytes = std::move(bytes)]() mutable
-                                        {
-                                            handle_media_ready_ui_(req_id, std::move(bytes));
-                                        });
-                                    return;
-                                }
-                                if (client_)
-                                    client_->fetch_url_async(req_id, 0, url);
-                            });
+                                    auto bytes =
+                                        account_manager_.media_disk_cache().load(disk_key);
+                                    if (!bytes.empty())
+                                    {
+                                        post_to_ui_(
+                                            [this, req_id,
+                                             bytes = std::move(bytes)]() mutable
+                                            {
+                                                handle_media_ready_ui_(
+                                                    req_id, std::move(bytes));
+                                            });
+                                        return;
+                                    }
+                                    client_snap->fetch_url_async(req_id, 0, url);
+                                });
+                        }
                     }
                 }
                 // Kick off the strip-display fetch (strip_url: WebP/GIF) — decode
@@ -2911,23 +2931,32 @@ void MainWindow::on_create(HWND hwnd)
                                         }
                                     });
                             });
-                        run_async_(
-                            [this, req_id, anim_url, disk_key]()
-                            {
-                                auto bytes =
-                                    account_manager_.media_disk_cache().load(disk_key);
-                                if (!bytes.empty())
+                        auto* client_snap = client_;
+                        if (!client_snap)
+                        {
+                            handle_media_ready_ui_(req_id, {});
+                        }
+                        else
+                        {
+                            run_async_(
+                                [this, req_id, anim_url, disk_key, client_snap]()
                                 {
-                                    post_to_ui_(
-                                        [this, req_id, bytes = std::move(bytes)]() mutable
-                                        {
-                                            handle_media_ready_ui_(req_id, std::move(bytes));
-                                        });
-                                    return;
-                                }
-                                if (client_)
-                                    client_->fetch_url_async(req_id, 0, anim_url);
-                            });
+                                    auto bytes =
+                                        account_manager_.media_disk_cache().load(disk_key);
+                                    if (!bytes.empty())
+                                    {
+                                        post_to_ui_(
+                                            [this, req_id,
+                                             bytes = std::move(bytes)]() mutable
+                                            {
+                                                handle_media_ready_ui_(
+                                                    req_id, std::move(bytes));
+                                            });
+                                        return;
+                                    }
+                                    client_snap->fetch_url_async(req_id, 0, anim_url);
+                                });
+                        }
                     }
                 }
                 // Static JPEG preview shown while the animation decodes (or as

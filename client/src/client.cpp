@@ -1545,12 +1545,14 @@ void Client::set_room_low_priority(std::string room_id, bool value)
 
 void Client::ignore_user_async(const std::string& user_id)
 {
+    if (!impl_) { return; }
     SH_FFI;
     impl_->ffi->ignore_user_async(user_id);
 }
 
 void Client::unignore_user_async(const std::string& user_id)
 {
+    if (!impl_) { return; }
     SH_FFI;
     impl_->ffi->unignore_user_async(user_id);
 }

@@ -1776,11 +1776,11 @@ void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
         if (row.thumbnail)
             ensure_media_image_(row.thumbnail->fetch_token(),
                                 visual::kStickerSize, visual::kStickerSize,
-                                media_group);
+                                media_group, MediaKind::Sticker);
         else if (row.source)
             ensure_media_image_(row.source->fetch_token(),
                                 visual::kStickerSize, visual::kStickerSize,
-                                media_group);
+                                media_group, MediaKind::Sticker);
     }
     else if (row.kind == K::Video)
     {
