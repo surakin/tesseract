@@ -71,10 +71,9 @@ pub(crate) fn build_user_agent() -> String {
 /// sync long-poll but short enough to surface stalled media downloads faster
 /// than the outer tokio::select! backstop).
 ///
-/// Must use `matrix_sdk::reqwest` (reqwest 0.13) — matrix-sdk re-exports its
-/// own reqwest version, which is a different crate version than the reqwest
-/// 0.12 used for tile/URL fetches. `ClientBuilder::http_client` only accepts
-/// the matrix-sdk re-export.
+/// Must use `matrix_sdk::reqwest` — `ClientBuilder::http_client` only accepts
+/// the re-export from within matrix-sdk, not an independently constructed
+/// `reqwest::Client`, even though both resolve to the same crate version.
 pub(crate) fn build_sdk_http_client() -> matrix_sdk::reqwest::Client {
     matrix_sdk::reqwest::Client::builder()
         .user_agent(build_user_agent())

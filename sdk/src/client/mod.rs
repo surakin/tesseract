@@ -141,15 +141,16 @@ impl Drop for InFlightGuard {
     }
 }
 
-/// Max concurrent interactive media downloads (avatars + thumbnails). These are
-/// small and the user is actively waiting on them, so the lane is wide.
+/// AIMD upper bound for interactive media downloads (avatars + thumbnails).
+/// The gate starts here and walks downward under stall pressure, recovering
+/// upward on clean releases. HTTP/2 multiplexing means this doesn't create
+/// extra TCP connections — all streams share one connection to the homeserver.
 #[cfg(not(test))]
-pub(super) const MEDIA_FG_PERMITS: usize = 12;
-/// Max concurrent bulk media downloads (full-size source, URL previews, tiles,
-/// audio prefetch). With HTTP/2 multiplexing these share one connection, so the
-/// old TCP-connection pressure is gone and a wider lane is safe.
+pub(super) const MEDIA_FG_PERMITS: usize = 32;
+/// AIMD upper bound for bulk media downloads (full-size source, URL previews,
+/// tiles, audio prefetch).
 #[cfg(not(test))]
-pub(super) const MEDIA_BULK_PERMITS: usize = 10;
+pub(super) const MEDIA_BULK_PERMITS: usize = 24;
 
 #[cfg(not(test))]
 use crate::ffi::EventHandlerBridge;
@@ -895,10 +896,12 @@ impl ClientFfi {
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir: default_data_dir(),
             http_client: reqwest::Client::builder()
-                .user_agent("Tesseract/0.1 (Matrix client)")
+                .user_agent(oauth::build_user_agent())
                 .connect_timeout(std::time::Duration::from_secs(10))
-                .timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(60))
                 .http2_adaptive_window(true)
+                .http2_initial_stream_window_size(4 * 1024 * 1024)
+                .http2_initial_connection_window_size(16 * 1024 * 1024)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),

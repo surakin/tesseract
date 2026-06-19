@@ -20,13 +20,30 @@
 //! so a stuck download would otherwise hold its slot until the outer 30s/60s
 //! timeout, freezing the lane — priority can't help because nothing frees a
 //! slot. To prevent this, a slot held past [`STALL_DEADLINE`] stops counting
-//! against the lane `limit`: it is presumed stuck, so the gate grants its
-//! effective capacity to the next (highest-priority) waiter while the stuck
+//! against the lane `dynamic_limit`: it is presumed stuck, so the gate grants
+//! its effective capacity to the next (highest-priority) waiter while the stuck
 //! download keeps draining in the background under its own hard timeout. A hard
 //! `ceiling` on total in-flight (held fresh + held stale) bounds how many hung
 //! connections a dead homeserver can accumulate. Because no release fires when a
 //! slot merely goes stale, each parked waiter re-evaluates on a
 //! [`RECHECK_INTERVAL`] tick.
+//!
+//! ## Adaptive concurrency (AIMD)
+//!
+//! HTTP/2 multiplexes all streams over one connection, so the lane limit is no
+//! longer constrained by TCP connection pressure and can start high. However,
+//! an unresponsive homeserver should trigger backoff rather than pile-on.
+//! [`PriorityGate`] implements additive-increase / multiplicative-decrease:
+//!
+//! - **Additive increase** — every slot release with no stalled peers earns one
+//!   more fresh slot (up to `max_limit`). This slowly recovers capacity after a
+//!   stall episode and lets a healthy lane saturate its ceiling over time.
+//! - **Multiplicative decrease** — when more than half of active slots are
+//!   stalled at release time the limit is halved (floored at `min_limit`). This
+//!   rapidly backs off a lane whose homeserver is struggling.
+//! - **Hold steady** — a minority of stalls (≤ 50 %) leaves the limit unchanged;
+//!   occasional slow transfers on an otherwise healthy connection don't penalise
+//!   the whole lane.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -48,8 +65,14 @@ pub(super) const STALL_DEADLINE: Duration = Duration::from_secs(8);
 pub(super) const RECHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 struct GateInner {
-    /// Base concurrency: max *fresh* (non-stalled) slots in active use at once.
-    limit: usize,
+    /// AIMD upper bound on fresh concurrency. `dynamic_limit` never exceeds this.
+    max_limit: usize,
+    /// Current effective fresh-slot limit, adjusted at runtime by AIMD. Starts
+    /// at `max_limit` (optimistic) and walks between `min_limit` and `max_limit`.
+    dynamic_limit: usize,
+    /// AIMD floor: `(max_limit / 8).max(1)`. Prevents the limit from collapsing
+    /// to zero under sustained stall pressure while scaling with lane size.
+    min_limit: usize,
     /// Hard cap on total in-flight (fresh + stalled) so a mass stall can't
     /// accumulate unbounded hung downloads.
     ceiling: usize,
@@ -79,10 +102,15 @@ impl GateInner {
             .count()
     }
 
-    /// Capacity to start one more download: room under the fresh `limit` (stale
+    /// Count of held slots past the stall deadline.
+    fn stale(&self, now: Instant) -> usize {
+        self.active.len() - self.fresh(now)
+    }
+
+    /// Capacity to start one more download: room under `dynamic_limit` (stale
     /// slots don't count) and under the hard `ceiling` on total in-flight.
     fn can_grant(&self, now: Instant) -> bool {
-        self.fresh(now) < self.limit && self.active.len() < self.ceiling
+        self.fresh(now) < self.dynamic_limit && self.active.len() < self.ceiling
     }
 
     /// Record a freshly granted slot and return its id.
@@ -123,13 +151,18 @@ pub(super) struct GatePermit {
 }
 
 impl PriorityGate {
-    /// `limit` = base concurrency (fresh slots); `ceiling` = hard cap on total
-    /// in-flight including presumed-stuck downloads (`ceiling >= limit`).
-    pub(super) fn new(limit: usize, ceiling: usize) -> Arc<Self> {
+    /// `max_limit` = AIMD upper bound on fresh concurrency; `ceiling` = hard cap
+    /// on total in-flight including presumed-stuck downloads (`ceiling >=
+    /// max_limit`). The gate starts at `max_limit` (optimistic) and adjusts
+    /// downward under stall pressure, recovering upward on clean releases.
+    pub(super) fn new(max_limit: usize, ceiling: usize) -> Arc<Self> {
+        let min_limit = (max_limit / 8).max(1);
         Arc::new(Self {
             inner: Mutex::new(GateInner {
-                limit,
-                ceiling: ceiling.max(limit),
+                max_limit,
+                dynamic_limit: max_limit,
+                min_limit,
+                ceiling: ceiling.max(max_limit),
                 seq: 0,
                 next_permit_id: 0,
                 active: HashMap::new(),
@@ -225,11 +258,44 @@ impl PriorityGate {
         self.inner.lock().active.len()
     }
 
-    /// Release a held slot and grant its capacity to the highest-priority waiter.
+    /// Number of held slots past the stall deadline (test/diagnostics).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn stale_len(&self) -> usize {
+        let inner = self.inner.lock();
+        inner.stale(Instant::now())
+    }
+
+    /// Current adaptive concurrency limit (test/diagnostics).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn dynamic_limit(&self) -> usize {
+        self.inner.lock().dynamic_limit
+    }
+
+    /// Release a held slot, apply one AIMD step, then grant capacity to the
+    /// highest-priority waiter.
+    ///
+    /// AIMD rules (evaluated after removing the released slot):
+    /// - **AI**: no stalls visible → increment `dynamic_limit` by 1 (up to
+    ///   `max_limit`). Covers both "all slots idle" and "busy but fully fresh".
+    /// - **MD**: stalled > 50 % of remaining active slots → halve
+    ///   `dynamic_limit` (down to `min_limit`). Backs off quickly when the
+    ///   homeserver is struggling.
+    /// - **Hold**: stalls present but ≤ 50 % → leave `dynamic_limit` unchanged.
     fn release(&self, id: u64) {
         let mut inner = self.inner.lock();
         inner.active.remove(&id);
-        inner.dispatch(Instant::now());
+        let now = Instant::now();
+        let stale = inner.stale(now);
+        let total = inner.active.len();
+        if total == 0 || stale == 0 {
+            // AI: earn one more slot when there is nothing stalled.
+            inner.dynamic_limit = (inner.dynamic_limit + 1).min(inner.max_limit);
+        } else if stale * 2 > total {
+            // MD: more than half stalled — back off quickly.
+            inner.dynamic_limit = (inner.dynamic_limit / 2).max(inner.min_limit);
+        }
+        // else: minority of stalls — hold steady.
+        inner.dispatch(now);
     }
 }
 
@@ -243,6 +309,7 @@ impl Drop for GatePermit {
 mod tests {
     use super::{PriorityGate, RECHECK_INTERVAL, STALL_DEADLINE};
     use super::super::media_queue::{PRIO_NORMAL, PRIO_VISIBLE};
+    use std::time::Duration;
     use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     use std::sync::Arc;
 
@@ -356,6 +423,50 @@ mod tests {
         assert_eq!(gate.active_len(), 2);
         assert_eq!(gate.pending_len(), 1);
         drop(h); // detach the still-parked waiter
+    }
+
+    // Releasing a slot when >50% of remaining active slots are stalled halves
+    // dynamic_limit (MD step). Releasing the last stale slot (total == 0 after
+    // removal) triggers AI instead, incrementing the limit by 1.
+    #[tokio::test(start_paused = true)]
+    async fn aimd_decreases_limit_under_mass_stall() {
+        // max_limit=4, min_limit = (4/8).max(1) = 1
+        let gate = PriorityGate::new(4, 8);
+        assert_eq!(gate.dynamic_limit(), 4);
+
+        let p0 = gate.acquire(PRIO_NORMAL, 0, 1).await.unwrap();
+        let p1 = gate.acquire(PRIO_NORMAL, 1, 1).await.unwrap();
+        let p2 = gate.acquire(PRIO_NORMAL, 2, 1).await.unwrap();
+        let p3 = gate.acquire(PRIO_NORMAL, 3, 1).await.unwrap();
+
+        // All 4 slots go stale.
+        tokio::time::advance(STALL_DEADLINE + Duration::from_millis(1)).await;
+
+        // Drop p0: after removal total=3, stale=3 → stale*2=6 > 3 → MD: 4→2.
+        drop(p0);
+        assert_eq!(gate.dynamic_limit(), 2, "MD halves limit when >50% stalled");
+
+        drop(p1); drop(p2); drop(p3);
+    }
+
+    // After MD has lowered dynamic_limit, releasing a slot with no remaining
+    // stalls (total == 0) triggers AI and increments the limit by 1.
+    #[tokio::test(start_paused = true)]
+    async fn aimd_increases_limit_on_clean_release() {
+        // max_limit=4, min_limit=1
+        let gate = PriorityGate::new(4, 8);
+
+        // Bring dynamic_limit below max via MD: hold 2 slots, let them go stale,
+        // release one to trigger MD (stale=1/total=1 → 100% stalled).
+        let p0 = gate.acquire(PRIO_NORMAL, 0, 1).await.unwrap();
+        let p1 = gate.acquire(PRIO_NORMAL, 1, 1).await.unwrap();
+        tokio::time::advance(STALL_DEADLINE + Duration::from_millis(1)).await;
+        drop(p0); // total=1, stale=1 → MD: 4→2
+        assert_eq!(gate.dynamic_limit(), 2);
+
+        // Now drop p1: total becomes 0 after removal → AI: 2→3.
+        drop(p1);
+        assert_eq!(gate.dynamic_limit(), 3, "AI increments limit when total==0");
     }
 
     // Once total in-flight reaches the ceiling, no further download starts even
