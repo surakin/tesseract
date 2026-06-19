@@ -1,6 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-17** (v0.8.6).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-19** (v0.8.8).
+
+> **Forward message (2026-06-19, v0.8.8).**
+> A "Forward message" item appears in the ⋯ more menu for any non-redacted,
+> non-pending event (including messages from other users). Opens
+> `ForwardRoomPicker` — a modal overlay with a NativeTextField search bar and a
+> two-section list: selected rooms pinned above a divider, filtered unselected
+> rooms below. Avatars load lazily. The Rust FFI `forward_event` fetches the
+> original event, strips `m.relates_to`, and re-sends the raw content to each
+> target room; all msgtypes are preserved. Wired once in
+> `ShellBase::wire_main_app_widget_()` across all four platform shells.
+> **870 C++ tests**.
+
+<!-- -->
 
 > **macOS dock badge + dock-click unread navigation (2026-06-17, v0.8.6).**
 > The macOS dock icon now shows the total notification count as a red badge
