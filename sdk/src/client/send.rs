@@ -2103,62 +2103,89 @@ impl ClientFfi {
     /// Fetches the event (decrypting if the source room is E2EE), strips
     /// `m.relates_to` so the copy lands as a free-standing new event, then
     /// sends it to the target room. Works for all message-like event types.
+    /// Non-blocking: result delivered via on_forward_done / on_forward_failed.
     #[cfg(not(test))]
     pub fn forward_event(
         &self,
+        request_id: u64,
         source_room_id: &str,
         event_id: &str,
         target_room_id: &str,
-    ) -> OpResult {
+    ) {
         let Some(client) = self.client.clone() else {
-            return err("not logged in");
-        };
-        let (_, source_room) = try_op!(require_room(&client, source_room_id));
-        let (_, target_room) = try_op!(require_room(&client, target_room_id));
-        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid event id: {e}")),
-        };
-        let _guard = super::InFlightGuard::new(
-            &self.in_flight,
-            &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/forward".to_string(),
-        );
-        match self.rt.block_on(async move {
-            let tl_event = source_room
-                .event(&event_id, None)
-                .await
-                .map_err(|e| e.to_string())?;
-            let json_str = tl_event.raw().json().get();
-            let mut envelope: serde_json::Value =
-                serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-            let event_type = envelope["type"]
-                .as_str()
-                .ok_or_else(|| "missing event type".to_owned())?
-                .to_owned();
-            let mut content = envelope["content"].take();
-            if let Some(obj) = content.as_object_mut() {
-                obj.remove("m.relates_to");
+            if let Some(h) = &self.handler {
+                let g = h.lock();
+                g.on_forward_failed(request_id, "not logged in");
             }
-            target_room
-                .send_raw(&event_type, content)
-                .await
-                .map_err(|e| e.to_string())
-                .map(|_| ())
-        }) {
-            Ok(()) => ok(""),
-            Err(e) => err(e),
-        }
+            return;
+        };
+        let source_room_id = source_room_id.to_owned();
+        let target_room_id = target_room_id.to_owned();
+        let event_id_str = event_id.to_owned();
+
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        let handler = self.handler.clone();
+
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)] &in_flight_urls,
+                #[cfg(debug_assertions)] "send/forward".to_string(),
+            );
+
+            let result: Result<(), String> = async {
+                let (_, source_room) = require_room(&client, &source_room_id)
+                    .map_err(|e| e.message)?;
+                let (_, target_room) = require_room(&client, &target_room_id)
+                    .map_err(|e| e.message)?;
+                let event_id: matrix_sdk::ruma::OwnedEventId =
+                    event_id_str.parse().map_err(|e: matrix_sdk::ruma::IdParseError| {
+                        format!("invalid event id: {e}")
+                    })?;
+                let tl_event = source_room
+                    .event(&event_id, None)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let json_str = tl_event.raw().json().get();
+                let mut envelope: serde_json::Value =
+                    serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+                let event_type = envelope["type"]
+                    .as_str()
+                    .ok_or_else(|| "missing event type".to_owned())?
+                    .to_owned();
+                let mut content = envelope["content"].take();
+                if let Some(obj) = content.as_object_mut() {
+                    obj.remove("m.relates_to");
+                }
+                target_room
+                    .send_raw(&event_type, content)
+                    .await
+                    .map_err(|e| e.to_string())
+                    .map(|_| ())
+            }
+            .await;
+
+            if let Some(h) = &handler {
+                let g = h.lock();
+                match result {
+                    Ok(()) => g.on_forward_done(request_id),
+                    Err(msg) => g.on_forward_failed(request_id, &msg),
+                }
+            }
+        });
     }
 
     #[cfg(test)]
     pub fn forward_event(
         &self,
+        _request_id: u64,
         _source_room_id: &str,
         _event_id: &str,
         _target_room_id: &str,
-    ) -> OpResult {
-        err("not logged in")
+    ) {
     }
 }

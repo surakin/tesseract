@@ -530,6 +530,17 @@ msgstr "Sin salas"
 msgid "Unnamed room"
 msgstr "Sala sin nombre"
 
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+msgid "Failed to forward to {0}: {1}"
+msgstr "Error al reenviar a {0}: {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+#, c++-format
+msgid "Forwarding to {0} room…"
+msgid_plural "Forwarding to {0} rooms…"
+msgstr[0] "Reenviando a {0} sala…"
+msgstr[1] "Reenviando a {0} salas…"
+
 #: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5042
 msgid "Add reaction"
 msgstr "Añadir reacción"

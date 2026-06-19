@@ -125,6 +125,8 @@ public:
                         const rust::Vec<GifResult>& results) const;
     void on_gif_search_failed(std::uint64_t request_id,
                               rust::Str message) const;
+    void on_forward_done(std::uint64_t request_id) const;
+    void on_forward_failed(std::uint64_t request_id, rust::Str message) const;
     void on_space_child_summary_ready(std::uint64_t request_id,
                                       rust::Str summary_json) const;
     void on_server_info_ready(std::uint64_t request_id,

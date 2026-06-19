@@ -192,6 +192,17 @@ msgstr ""
 msgid "Unnamed room"
 msgstr ""
 
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+msgid "Failed to forward to {0}: {1}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+#, c++-format
+msgid "Forwarding to {0} room…"
+msgid_plural "Forwarding to {0} rooms…"
+msgstr[0] ""
+msgstr[1] ""
+
 #: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5042
 msgid "Add reaction"
 msgstr ""

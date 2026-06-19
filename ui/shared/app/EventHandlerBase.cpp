@@ -305,6 +305,25 @@ void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_forward_done(std::uint64_t request_id)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id]()
+        {
+            shell->handle_forward_done_ui_(request_id);
+        });
+}
+
+void EventHandlerBase::on_forward_failed(std::uint64_t     request_id,
+                                         const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, msg = message]() mutable
+        {
+            shell->handle_forward_failed_ui_(request_id, std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_space_child_summary_ready(std::uint64_t request_id,
                                                     const std::string& summary_json)
 {

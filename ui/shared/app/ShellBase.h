@@ -414,6 +414,8 @@ protected:
     std::uint64_t unjoined_fetch_gen_ = 0;
     // Monotonically increasing counter for async FFI request IDs. UI-thread-only.
     std::uint64_t next_request_id_ = 0;
+    // request_id → target_room_id for in-flight async forwards.
+    std::unordered_map<std::uint64_t, std::string> pending_forwards_;
     // In-flight get_space_child_summary_async requests keyed by request_id.
     struct PendingSummaryRequest
     {
@@ -2718,6 +2720,9 @@ protected:
     void handle_search_failed_ui_(std::uint64_t request_id,
                                   const std::string& message);
     // Open the result's room and scroll/highlight the matching event.
+    void handle_forward_done_ui_(std::uint64_t request_id);
+    void handle_forward_failed_ui_(std::uint64_t      request_id,
+                                   const std::string& message);
     void handle_search_result_activated_(const std::string& room_id,
                                          const std::string& event_id);
 

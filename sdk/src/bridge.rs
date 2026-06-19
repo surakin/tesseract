@@ -979,6 +979,14 @@ pub mod ffi {
             message: &str,
         );
 
+        /// Fired when `forward_event` completes successfully.
+        /// `request_id` is the correlation token the caller passed.
+        fn on_forward_done(self: &EventHandlerBridge, request_id: u64);
+
+        /// Fired when `forward_event` fails. `request_id` is the correlation
+        /// token; `message` is a human-readable error string.
+        fn on_forward_failed(self: &EventHandlerBridge, request_id: u64, message: &str);
+
         /// Fired when an async space-child summary fetch started via
         /// `get_space_child_summary_async` completes. `summary_json` is the
         /// same JSON shape as the synchronous `get_space_child_summary` return
@@ -1700,12 +1708,14 @@ pub mod ffi {
         /// strips `m.relates_to` so the copy is free-standing in the target
         /// room, then sends it as a new event. All message-like event types
         /// (m.room.message, m.sticker, …) are supported.
+        /// Non-blocking: result delivered via on_forward_done / on_forward_failed.
         fn forward_event(
             self: &ClientFfi,
+            request_id: u64,
             source_room_id: &str,
             event_id: &str,
             target_room_id: &str,
-        ) -> OpResult;
+        );
 
         /// Homeserver-reported maximum upload size in bytes
         /// (`/_matrix/media/v3/config`). Cached after the first successful

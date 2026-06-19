@@ -546,6 +546,25 @@ void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_forward_done(std::uint64_t request_id) const
+{
+    with_handler("on_forward_done", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_forward_done(request_id);
+          });
+}
+
+void EventHandlerBridge::on_forward_failed(std::uint64_t request_id,
+                                           rust::Str message) const
+{
+    with_handler("on_forward_failed", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_forward_failed(request_id, std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_space_child_summary_ready(std::uint64_t request_id,
                                                       rust::Str summary_json) const
 {

@@ -247,6 +247,14 @@ public:
     {
     }
 
+    /// Fired when an async forward started via `Client::forward_event`
+    /// completes successfully. Default no-op.
+    virtual void on_forward_done(std::uint64_t /*request_id*/) {}
+
+    /// Fired when an async forward fails. Default no-op.
+    virtual void on_forward_failed(std::uint64_t /*request_id*/,
+                                   const std::string& /*message*/) {}
+
     /// Fired when an async full-text search (`Client::search_messages`)
     /// completes. The UI drops results whose `request_id` is stale (a newer
     /// query was issued). Default no-op.

@@ -642,9 +642,12 @@ public:
     /// Forward `event_id` from `source_room_id` to `target_room_id`.
     /// Fetches the event (decrypting for E2EE rooms), strips `m.relates_to`,
     /// and sends it as a new free-standing event in the target room.
-    Result forward_event(const std::string& source_room_id,
-                         const std::string& event_id,
-                         const std::string& target_room_id);
+    /// Non-blocking: result delivered via IEventHandler::on_forward_done /
+    /// on_forward_failed with the supplied request_id.
+    void forward_event(std::uint64_t      request_id,
+                       const std::string& source_room_id,
+                       const std::string& event_id,
+                       const std::string& target_room_id);
 
     // ------------------------------------------------------------------
     // Application prefs ("im.gnomos.tesseract" global account-data)

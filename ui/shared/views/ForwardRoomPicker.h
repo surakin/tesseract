@@ -49,11 +49,20 @@ public:
 
     // ── Native-field rect delegation ──────────────────────────────────────
     tk::Rect search_field_rect() const { return search_field_rect_; }
-    bool search_field_visible() const { return is_open_; }
+    bool search_field_visible() const { return is_open_ && !forwarding_; }
 
     // ── Keyboard ──────────────────────────────────────────────────────────
     void move_selection(int delta);
     void confirm(); // forward to all selected rooms
+
+    // ── Async forwarding state ─────────────────────────────────────────────
+    // Call set_forwarding() after confirm() fires on_confirmed; the picker
+    // stays open showing progress. Call add_forward_error() per failure and
+    // mark_complete() when all pending forwards have resolved.
+    void set_forwarding(int room_count);
+    void add_forward_error(const std::string& room_name,
+                           const std::string& detail);
+    void mark_complete();
 
     // ── Callbacks ─────────────────────────────────────────────────────────
     // Fires when the user confirms. room_ids is in selection order.
@@ -121,6 +130,13 @@ private:
     bool press_outside_ = false;
     bool press_cancel_  = false;
     bool press_confirm_ = false;
+    bool press_dismiss_ = false;
+
+    bool                     forwarding_      = false;
+    int                      forward_errors_  = 0;
+    std::string              forwarding_status_;
+    std::vector<std::string> error_lines_;
+    tk::Rect                 dismiss_btn_rect_{};
 };
 
 } // namespace tesseract::views

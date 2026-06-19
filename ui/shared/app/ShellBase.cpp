@@ -1112,8 +1112,16 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 [this, source_room = current_room_id_, event_id]
                 (std::vector<std::string> room_ids)
             {
+                if (!client_) return;
+                auto* fp_ptr = main_app_ ? main_app_->forward_picker() : nullptr;
+                if (!fp_ptr) return;
+                fp_ptr->set_forwarding(static_cast<int>(room_ids.size()));
                 for (const auto& rid : room_ids)
-                    client_->forward_event(source_room, event_id, rid);
+                {
+                    const auto req_id = next_request_id_++;
+                    pending_forwards_[req_id] = rid;
+                    client_->forward_event(req_id, source_room, event_id, rid);
+                }
             };
             fp->open(current_room_id_);
             focus_forward_picker_field_();
@@ -3475,6 +3483,32 @@ void ShellBase::handle_search_results_ui_(
         main_app_->message_search()->set_results(std::move(results), for_query);
         schedule_relayout_();
     }
+}
+
+void ShellBase::handle_forward_done_ui_(std::uint64_t request_id)
+{
+    pending_forwards_.erase(request_id);
+    if (pending_forwards_.empty())
+        if (auto* fp = main_app_ ? main_app_->forward_picker() : nullptr)
+            fp->close();
+}
+
+void ShellBase::handle_forward_failed_ui_(std::uint64_t      request_id,
+                                          const std::string& message)
+{
+    auto it = pending_forwards_.find(request_id);
+    if (it == pending_forwards_.end())
+        return;
+    const auto* room = room_by_id_(it->second);
+    std::string target_name =
+        (room && !room->name.empty()) ? room->name : it->second;
+    pending_forwards_.erase(it);
+    auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
+    if (!fp)
+        return;
+    fp->add_forward_error(target_name, message);
+    if (pending_forwards_.empty())
+        fp->mark_complete();
 }
 
 void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
