@@ -4233,6 +4233,14 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         msg.owned_image = std::move(messages_[index].owned_image);
         msg.owned_image_key = old_key;
     }
+    // Transfer the avatar pin when the sender URL is unchanged (e.g. a
+    // read-receipt or reaction update on an existing row).
+    if (messages_[index].owned_avatar &&
+        messages_[index].owned_avatar_key == msg.sender_avatar_url)
+    {
+        msg.owned_avatar     = std::move(messages_[index].owned_avatar);
+        msg.owned_avatar_key = messages_[index].owned_avatar_key;
+    }
     messages_[index] = std::move(msg);
     try_acquire_image_(messages_[index]);
     if (touches_read_marker)
@@ -4461,17 +4469,26 @@ void MessageListView::try_acquire_image_(MessageRowData& m)
     const std::string key = row_image_key_(m);
     if (key.empty())
     {
-        // Nothing pinnable (e.g. a preview without an image, or a text row).
+        // Nothing pinnable for inline media (text/audio/file/etc. rows).
         m.owned_image.reset();
         m.owned_image_key.clear();
-        return;
+        // fall through to avatar pin below
     }
-    if (m.owned_image && m.owned_image_key == key)
+    else if (!m.owned_image || m.owned_image_key != key)
     {
-        return; // already holding the right image
+        m.owned_image = image_acquirer_(key); // null when not yet decoded — fine
+        m.owned_image_key = key;
     }
-    m.owned_image = image_acquirer_(key); // null when not yet decoded — fine
-    m.owned_image_key = key;
+    // Pin sender avatar so it survives thumbnail cache sweeps during idle
+    // periods. image_acquirer_ probes thumbnail_cache() as its fallback, so
+    // it correctly acquires avatar entries. Returns null when not yet decoded;
+    // re-pinned by notify_image_ready() once the fetch completes.
+    if (!m.sender_avatar_url.empty() &&
+        (!m.owned_avatar || m.owned_avatar_key != m.sender_avatar_url))
+    {
+        m.owned_avatar     = image_acquirer_(m.sender_avatar_url);
+        m.owned_avatar_key = m.sender_avatar_url;
+    }
 }
 
 void MessageListView::set_preview_provider(PreviewProvider p)
@@ -4556,6 +4573,14 @@ void MessageListView::notify_image_ready(const std::string& url)
             // Newly decoded → re-pin this row now that the image exists.
             try_acquire_image_(m);
             matched = true;
+        }
+        // Pin newly-decoded sender avatar. Avatars don't change row height so
+        // this doesn't contribute to the relayout-triggering `matched` flag.
+        if (!url.empty() && m.sender_avatar_url == url &&
+            (!m.owned_avatar || m.owned_avatar_key != url))
+        {
+            m.owned_avatar     = image_acquirer_(url);
+            m.owned_avatar_key = url;
         }
     }
     if (!matched)

@@ -98,6 +98,10 @@ struct MessageRowData
     // Both are populated lazily and are NOT produced by make_row_data().
     tk::ImageRef owned_image;
     std::string owned_image_key;
+    // Sender-avatar pin: prevents thumbnail cache eviction during idle periods.
+    // Same lifecycle as owned_image — populated by try_acquire_image_(), NOT make_row_data().
+    tk::ImageRef owned_avatar;
+    std::string  owned_avatar_key;
 
     // File card
     tesseract::MediaSourceRef file_source; // file attachment
