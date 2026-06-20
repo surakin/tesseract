@@ -5236,6 +5236,19 @@ void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx)
                        paginate_start_, /*radius=*/10.0f, /*dot_r=*/2.5f);
 }
 
+void MessageListView::clear_hit_geometry_()
+{
+    sticker_geom_.clear();
+    image_geom_.clear();
+    video_geom_.clear();
+    file_geom_.clear();
+    media_.clear_geometry();
+    map_panner_.clear_geometry();
+    quote_block_geom_.clear();
+    previews_.clear_geometry();
+    chip_hit_rects_.clear();
+}
+
 void MessageListView::begin_switch_loading()
 {
     // Supersede any prior loading state / display gate, and bump the epoch so an
@@ -5246,10 +5259,13 @@ void MessageListView::begin_switch_loading()
     switch_spinner_start_ = std::chrono::steady_clock::now();
     room_switch_gate_.clear();
 
-    // Clear the previous room's rows immediately so they can never show beneath
-    // the new room's header. The new room's populated snapshot arrives via
-    // set_messages(.., room_switch=true), which cancels this state.
+    // Clear the previous room's rows and hit-test geometry immediately.
+    // The animation-tick guard added in c2157add skips the paint-time clear
+    // when anim_damage != nullptr, so an ongoing animation can leave stale
+    // geometry from the old room alive past a switch — clearing here ensures
+    // no old entry survives to misdirect a click in the new room.
     messages_.clear();
+    clear_hit_geometry_();
     adapter_->clear_layout_cache();
     video_playlist_.clear();
     invalidate_data();
@@ -6593,17 +6609,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     // the clip covers only the dirty region, so rows outside it aren't repainted and
     // would lose their hit-test entries until the next full repaint.
     if (!ctx.anim_damage)
-    {
-        sticker_geom_.clear();
-        image_geom_.clear();
-        video_geom_.clear();
-        file_geom_.clear();
-        media_.clear_geometry();
-        map_panner_.clear_geometry();
-        quote_block_geom_.clear();
-        previews_.clear_geometry();
-        chip_hit_rects_.clear();
-    }
+        clear_hit_geometry_();
 
     // Room-switch loading: the old room's rows were cleared on the click; show a
     // clean background until the new room's snapshot lands (set_messages cancels
