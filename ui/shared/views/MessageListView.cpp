@@ -6563,17 +6563,22 @@ void MessageListView::maybe_notify_visible_range_() const
 
 void MessageListView::paint(tk::PaintCtx& ctx)
 {
-    // Sticker, voice, quote, and video rects are rebuilt per-paint by Adapter::paint_row.
-    // Clear here so entries scrolled offscreen don't linger.
-    sticker_geom_.clear();
-    image_geom_.clear();
-    video_geom_.clear();
-    file_geom_.clear();
-    media_.clear_geometry();
-    map_panner_.clear_geometry();
-    quote_block_geom_.clear();
-    previews_.clear_geometry();
-    chip_hit_rects_.clear();
+    // Geometry maps are rebuilt by Adapter::paint_row for every painted row.
+    // Skip the clear during animation-tick partial repaints (anim_damage != nullptr):
+    // the clip covers only the dirty region, so rows outside it aren't repainted and
+    // would lose their hit-test entries until the next full repaint.
+    if (!ctx.anim_damage)
+    {
+        sticker_geom_.clear();
+        image_geom_.clear();
+        video_geom_.clear();
+        file_geom_.clear();
+        media_.clear_geometry();
+        map_panner_.clear_geometry();
+        quote_block_geom_.clear();
+        previews_.clear_geometry();
+        chip_hit_rects_.clear();
+    }
 
     // Room-switch loading: the old room's rows were cleared on the click; show a
     // clean background until the new room's snapshot lands (set_messages cancels
