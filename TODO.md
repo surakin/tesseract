@@ -10,7 +10,8 @@
 - [x] ComposeBar: `/` slash-command hint popup (`/me`, `/shrug`, `/slap`, `/spoiler`)
 - [x] ComposeBar: send typing indicator to the room (`m.typing`)
 - [x] ComposeBar: placeholder label for GTK4 + macOS NativeTextArea (GtkTextView / NSTextView have no built-in placeholder)
-- [x] Hover action pill (reply / thread / react / edit / redact / pin consolidated into a single top-right pill)
+- [x] Hover action pill (reply / thread / react / edit / redact / pin consolidated into a single top-right pill; tooltips for all five buttons)
+- [x] Forward message action (ForwardRoomPicker modal; async per-room error feedback via on_forward_done / on_forward_failed)
 - [x] Pinned messages — banner, pin/unpin action, power-level gating, all four shells
 - [x] Session restore — all open room tabs + active account restored on restart
 
