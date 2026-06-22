@@ -414,6 +414,8 @@ protected:
     std::uint64_t unjoined_fetch_gen_ = 0;
     // Monotonically increasing counter for async FFI request IDs. UI-thread-only.
     std::uint64_t next_request_id_ = 0;
+    // request_id → target_room_id for in-flight async forwards.
+    std::unordered_map<std::uint64_t, std::string> pending_forwards_;
     // In-flight get_space_child_summary_async requests keyed by request_id.
     struct PendingSummaryRequest
     {
@@ -542,6 +544,10 @@ protected:
     // from re-queuing fetches that will always fail. Cleared on logout/cache
     // wipe so a re-login or server fix can recover.
     std::unordered_set<std::string> media_decode_failed_;
+    // Tracks which event_ids have had ensure_row_media_() called so that the
+    // lazy visible-range callback skips events already prepped in build_rows_().
+    // Cleared on room switch in after_active_room_changed_().
+    std::unordered_set<std::string> media_prepped_event_ids_;
 
     // Keys whose media fetch returned empty (network error / 5xx / timeout).
     // Unlike media_decode_failed_ (permanent), these back off and recover: a
@@ -718,6 +724,15 @@ protected:
     std::unordered_map<std::string, tesseract::MediaPreviewOverride>
         room_preview_overrides_;
     std::unordered_set<std::string> room_preview_override_in_flight_;
+    // request_id → room_id for in-flight room_media_preview_override_async calls.
+    std::unordered_map<std::uint64_t, std::string> pending_preview_overrides_;
+    // request_id → UserProfilePanel* for in-flight get_extended_profile_async
+    // (user panel case). Absence = own-profile fetch.
+    std::unordered_map<std::uint64_t, views::UserProfilePanel*>
+        pending_user_profiles_;
+    // request_id → {mxid, gen} for in-flight resolve_user_profile_async.
+    std::unordered_map<std::uint64_t, std::pair<std::string, std::uint64_t>>
+        pending_resolve_requests_;
     // Event IDs the user explicitly revealed (click-to-load), bypassing the
     // preview gate for that one item. Cleared on logout / account switch.
     std::unordered_set<std::string> revealed_events_;
@@ -856,15 +871,13 @@ protected:
 
     // ── Worker thread pools ───────────────────────────────────────────────────
     // Two pools with different concurrency levels:
-    //   pool_     — 4 threads for &self work: image decode, disk-cache I/O, and
-    //               a couple of one-shot blocking &self FFI calls (secondary-
-    //               window video-viewer load + save-to-file). The high-volume
-    //               media downloads (avatars, thumbnails, full images, stickers/
-    //               emoji picker images, tiles, URL previews, voice) NO LONGER
-    //               run here — they are issued as non-blocking tokio tasks via
-    //               fetch_media_async and complete on the on_media_ready
-    //               callback, so a slow download can never pin one of these four
-    //               threads. These hold no C++ mutex; all four can run in
+    //   pool_     — 2 threads for &self work: image decode, disk-cache I/O, and
+    //               a handful of blocking &self FFI calls (profile reads, config
+    //               reads). The high-volume media downloads (avatars, thumbnails,
+    //               full images, stickers/emoji picker images, tiles, URL previews,
+    //               voice) run as non-blocking tokio tasks via fetch_media_async
+    //               and complete on the on_media_ready callback — they never pin
+    //               a pool thread. These hold no C++ mutex; both can run in
     //               parallel.
     //   mut_pool_ — 1 thread for &mut FFI (subscribe_room, send_*, etc.).
     //               Serialised by design so ffi_mu is never contended.
@@ -903,11 +916,13 @@ protected:
     // ── Media kind tag ────────────────────────────────────────────────────────
     enum class MediaKind : std::uint8_t
     {
-        RoomAvatar, // → thumbnail_cache_, triggers room-list repaint
-        UserAvatar, // → thumbnail_cache_, triggers message-list repaint
-        MediaImage, // → anim_cache_ or image_cache_ (full-size)
-        MediaThumbnail, // → anim_cache_ or thumbnail_cache_ (inline preview)
-        Tile, // → image_cache_["tile:z/x/y"], triggers full message-list repaint
+        RoomAvatar,    // → thumbnail_cache_, triggers room-list repaint
+        UserAvatar,    // → thumbnail_cache_, triggers message-list repaint
+        MediaImage,    // → anim_cache_ or image_cache_ (full-size)
+        MediaThumbnail,// → anim_cache_ or thumbnail_cache_ (inline preview)
+        Tile,          // → image_cache_["tile:z/x/y"], triggers full message-list repaint
+        Sticker,       // → image_cache_ (full-size), decode clamped to kStickerSize
+        Reaction,      // → image_cache_ (full-size), decode clamped to reaction icon size
     };
 
     // Result of a worker-thread decode. Exactly one of `still` /
@@ -1352,6 +1367,11 @@ protected:
     void start_qr_grant_overlay();
     virtual void show_qr_grant_overlay_() {}
     virtual void hide_qr_grant_overlay_() {}
+
+    // Called when the forward picker opens: shell focuses its native text field.
+    // Called when the forward picker closes: shell hides its native text field.
+    virtual void focus_forward_picker_field_() {}
+    virtual void hide_forward_picker_field_() {}
 
     // Wires every platform-agnostic callback on the encryption-setup overlay
     // (recovery/verify actions, clipboard, field readers, layout/dismiss).
@@ -1802,9 +1822,12 @@ protected:
 
     // Per-shell media-prefetch for one row. Default = ensure_row_media_.
     // Qt6 overrides to also record decode-size hints (mediaImageSizes_).
-    virtual void prep_row_media_(const Event& ev)
+    // Pass fetch_avatars=false when processing a bulk room/thread snapshot so
+    // that sender avatars are fetched lazily (only for the visible rows) instead
+    // of for the entire history.
+    virtual void prep_row_media_(const Event& ev, bool fetch_avatars = true)
     {
-        ensure_row_media_(ev);
+        ensure_row_media_(ev, fetch_avatars);
     }
     // Concrete: only the active account's prefs set the pending restore room.
     virtual void handle_account_prefs_updated_ui_(std::string user_id,
@@ -1813,6 +1836,21 @@ protected:
     // mirror (active account only) and refresh gating + room list.
     virtual void handle_media_preview_config_updated_ui_(std::string user_id,
                                                          std::string json);
+    // Callback from media_preview_config_async: parse config_json and apply.
+    void handle_media_preview_config_fetched_ui_(std::uint64_t request_id,
+                                                 std::string config_json);
+    // Callback from room_media_preview_override_async: store override, fetch media.
+    void handle_room_preview_override_ready_ui_(std::uint64_t request_id,
+                                                std::string override_json);
+    // Callback from set_or_delete_profile_field_async.
+    void handle_profile_field_result_ui_(std::uint64_t request_id,
+                                         std::string key, bool ok,
+                                         std::string message);
+    // Callback from get_extended_profile_async / resolve_user_profile_async.
+    // Dispatches to panel (user panel), resolve map (quick-switcher), or own
+    // profile based on which pending map contains request_id.
+    void handle_extended_profile_ready_ui_(std::uint64_t request_id,
+                                           std::string profile_json);
     virtual void
     handle_notification_ui_(std::string /*user_id*/, std::string /*room_id*/,
                             std::string /*room_name*/, std::string /*sender*/,
@@ -2253,7 +2291,7 @@ protected:
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 
-    // Enqueue fn() on the shared-read pool (pool_, 4 threads).
+    // Enqueue fn() on the shared-read pool (pool_, 2 threads).
     // Use for &self FFI calls and CPU/disk work that holds no ffi_mu lock.
     void run_async_(std::function<void()> fn);
 
@@ -2281,7 +2319,8 @@ protected:
     // a room's pending media). Defaults to 0 (never cancelled) for non-timeline
     // callers (avatar/preview prefetch); timeline callers pass the room group.
     void ensure_media_image_(const std::string& url, int max_w, int max_h,
-                             std::uint64_t group_id = 0);
+                             std::uint64_t group_id = 0,
+                             MediaKind kind = MediaKind::MediaImage);
 
     // Fetch + decode the full-resolution image for the lightbox viewer into
     // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
@@ -2478,7 +2517,12 @@ protected:
                                 int media_h);
 
     // Walk all media references in ev and call ensure_*_ for each.
-    void ensure_row_media_(const Event& ev);
+    // Pass fetch_avatars=false in bulk-load paths to suppress avatar prefetch.
+    void ensure_row_media_(const Event& ev, bool fetch_avatars = true);
+    // Overload for rows that have already been converted to MessageRowData
+    // (used by the lazy visible-range callback for off-screen events).
+    void ensure_row_media_(const views::MessageRowData& row,
+                           bool fetch_avatars = true);
 
     // The timeline's visible rows changed (scroll / room enter / data update):
     // raise the priority of the still-pending media fetches backing the now-
@@ -2684,6 +2728,9 @@ protected:
     void handle_search_failed_ui_(std::uint64_t request_id,
                                   const std::string& message);
     // Open the result's room and scroll/highlight the matching event.
+    void handle_forward_done_ui_(std::uint64_t request_id);
+    void handle_forward_failed_ui_(std::uint64_t      request_id,
+                                   const std::string& message);
     void handle_search_result_activated_(const std::string& room_id,
                                          const std::string& event_id);
 

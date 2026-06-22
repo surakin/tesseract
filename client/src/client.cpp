@@ -290,7 +290,9 @@ void Client::accept_invite_async(std::uint64_t request_id,
                                   const std::string& room_id)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->accept_invite_async(request_id, room_id);
 }
@@ -298,7 +300,9 @@ void Client::accept_invite_async(std::uint64_t request_id,
 void Client::decline_invite_async(const std::string& room_id)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->decline_invite_async(room_id);
 }
@@ -307,7 +311,9 @@ void Client::block_invite_async(const std::string& room_id,
                                  const std::string& inviter_user_id)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->block_invite_async(room_id, inviter_user_id);
 }
@@ -336,7 +342,9 @@ void Client::paginate_back_async(std::uint64_t request_id,
                                  std::uint16_t count)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->paginate_back_async(request_id, room_id, count);
 }
@@ -346,7 +354,9 @@ void Client::paginate_forward_async(std::uint64_t request_id,
                                     std::uint16_t count)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->paginate_forward_async(request_id, room_id, count);
 }
@@ -587,7 +597,10 @@ void Client::send_image_async(std::uint64_t request_id,
                                const std::string& reply_event_id,
                                const std::string& thread_root)
 {
-    if (!impl_) return;
+    if (!impl_)
+    {
+        return;
+    }
     SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_image_async(request_id, room_id, slice, mime_type,
@@ -609,7 +622,10 @@ void Client::send_video_async(std::uint64_t request_id,
                                const std::string& reply_event_id,
                                const std::string& thread_root)
 {
-    if (!impl_) return;
+    if (!impl_)
+    {
+        return;
+    }
     SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     rust::Slice<const std::uint8_t> thumb_slice{thumb_bytes.data(),
@@ -630,7 +646,10 @@ void Client::send_audio_async(std::uint64_t request_id,
                                const std::string& reply_event_id,
                                const std::string& thread_root)
 {
-    if (!impl_) return;
+    if (!impl_)
+    {
+        return;
+    }
     SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_audio_async(request_id, room_id, slice, mime_type,
@@ -647,7 +666,10 @@ void Client::send_file_async(std::uint64_t request_id,
                               const std::string& reply_event_id,
                               const std::string& thread_root)
 {
-    if (!impl_) return;
+    if (!impl_)
+    {
+        return;
+    }
     SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_file_async(request_id, room_id, slice, mime_type,
@@ -764,6 +786,15 @@ Result Client::send_edit(const std::string& room_id,
                               derive_formatted(new_body, formatted_body)));
 }
 
+void Client::forward_event(std::uint64_t      request_id,
+                            const std::string& source_room_id,
+                            const std::string& event_id,
+                            const std::string& target_room_id)
+{
+    SH_FFI;
+    impl_->ffi->forward_event(request_id, source_room_id, event_id, target_room_id);
+}
+
 std::string Client::load_prefs_json()
 {
     SH_FFI;
@@ -774,30 +805,6 @@ void Client::save_prefs_json(const std::string& json)
 {
     SH_FFI;
     impl_->ffi->save_prefs(json);
-}
-
-MediaPreviewConfig Client::media_preview_config()
-{
-    SH_FFI;
-    auto raw = impl_->ffi->media_preview_config();
-    MediaPreviewConfig cfg;
-    cfg.media_previews =
-        static_cast<MediaPreviewConfig::Mode>(raw.media_previews);
-    cfg.invite_avatars = raw.invite_avatars;
-    return cfg;
-}
-
-MediaPreviewOverride
-Client::room_media_preview_override(const std::string& room_id)
-{
-    SH_FFI;
-    auto raw = impl_->ffi->room_media_preview_override(room_id);
-    MediaPreviewOverride ov;
-    ov.has_media_previews = raw.has_media_previews;
-    ov.media_previews =
-        static_cast<MediaPreviewConfig::Mode>(raw.media_previews);
-    ov.join_rule = std::string(raw.join_rule);
-    return ov;
 }
 
 void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
@@ -948,20 +955,17 @@ Result Client::set_presence(PresenceState state)
     return from_ffi(impl_->ffi->set_presence(byte));
 }
 
-// Windows-only: GTK/Qt/macOS shells use fetch_media_async.
-std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
+void Client::set_presence_async(PresenceState state)
 {
     SH_FFI;
-    auto v = impl_->ffi->fetch_avatar_bytes(room_id);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
-// Windows-only: GTK/Qt/macOS shells use fetch_media_async.
-std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url)
-{
-    SH_FFI;
-    auto v = impl_->ffi->fetch_media_bytes(mxc_url);
-    return std::vector<uint8_t>(v.begin(), v.end());
+    std::uint8_t byte = 3;
+    switch (state)
+    {
+        case PresenceState::Online:      byte = 1; break;
+        case PresenceState::Unavailable: byte = 2; break;
+        case PresenceState::Offline:     byte = 3; break;
+    }
+    impl_->ffi->set_presence_async(byte);
 }
 
 std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
@@ -971,18 +975,11 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source)
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
-std::vector<uint8_t> Client::fetch_url_bytes(const std::string& url)
+void Client::fetch_source_bytes_async(std::uint64_t request_id,
+                                       const std::string& source_json)
 {
     SH_FFI;
-    auto v = impl_->ffi->fetch_url_bytes(url);
-    return std::vector<uint8_t>(v.begin(), v.end());
-}
-
-std::vector<uint8_t> Client::fetch_gif_bytes(const std::string& url)
-{
-    SH_FFI;
-    auto v = impl_->ffi->fetch_gif_bytes(url);
-    return std::vector<uint8_t>(v.begin(), v.end());
+    impl_->ffi->fetch_source_bytes_async(request_id, source_json);
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,7 +1050,9 @@ void Client::gif_search(std::uint64_t request_id, const std::string& query,
 void Client::set_search_indexing_enabled(bool enabled)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->set_search_indexing_enabled(enabled);
 }
@@ -1062,7 +1061,9 @@ void Client::search_messages(std::uint64_t request_id, const std::string& query,
                              const std::string& room_id, std::uint32_t limit)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->search_messages_async(request_id, query, room_id, limit);
 }
@@ -1070,7 +1071,9 @@ void Client::search_messages(std::uint64_t request_id, const std::string& query,
 SearchIndexStats Client::search_index_stats() const
 {
     if (!impl_)
+    {
         return {};
+    }
     SH_FFI;
     return from_ffi(impl_->ffi->search_index_stats());
 }
@@ -1078,7 +1081,9 @@ SearchIndexStats Client::search_index_stats() const
 std::uint64_t Client::search_index_size_bytes() const
 {
     if (!impl_)
+    {
         return 0;
+    }
     SH_FFI;
     return impl_->ffi->search_index_size_bytes();
 }
@@ -1086,7 +1091,9 @@ std::uint64_t Client::search_index_size_bytes() const
 std::vector<MediaBackoffEntry> Client::load_media_backoff() const
 {
     if (!impl_)
+    {
         return {};
+    }
     SH_FFI;
     auto ffi_vec = impl_->ffi->load_media_backoff();
     std::vector<MediaBackoffEntry> out;
@@ -1101,7 +1108,9 @@ void Client::note_media_backoff_failed(const std::string& url,
                                         std::int64_t        deadline_secs)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->note_media_backoff_failed(url, attempts, deadline_secs);
 }
@@ -1109,7 +1118,9 @@ void Client::note_media_backoff_failed(const std::string& url,
 void Client::note_media_backoff_ok(const std::string& url)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->note_media_backoff_ok(url);
 }
@@ -1117,7 +1128,9 @@ void Client::note_media_backoff_ok(const std::string& url)
 void Client::clear_media_backoff_db()
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->clear_media_backoff_db();
 }
@@ -1125,7 +1138,9 @@ void Client::clear_media_backoff_db()
 std::vector<RoomSummaryBackoffEntry> Client::load_room_summary_backoff() const
 {
     if (!impl_)
+    {
         return {};
+    }
     SH_FFI;
     auto ffi_vec = impl_->ffi->load_room_summary_backoff();
     std::vector<RoomSummaryBackoffEntry> out;
@@ -1140,7 +1155,9 @@ void Client::note_room_summary_backoff_failed(const std::string& room_id,
                                                std::int64_t        deadline_secs)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->note_room_summary_backoff_failed(room_id, attempts, deadline_secs);
 }
@@ -1148,7 +1165,9 @@ void Client::note_room_summary_backoff_failed(const std::string& room_id,
 void Client::note_room_summary_backoff_ok(const std::string& room_id)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->note_room_summary_backoff_ok(room_id);
 }
@@ -1168,6 +1187,26 @@ Result Client::send_gif_video(
     return from_ffi(impl_->ffi->send_gif_video(
         room_id, mp4, mime_type, body, width, height, duration_ms, thumb,
         thumb_mime, thumb_width, thumb_height, reply_event_id, thread_root));
+}
+
+void Client::send_gif_from_urls_async(std::uint64_t request_id,
+                                       const std::string& room_id,
+                                       const std::string& image_url,
+                                       const std::string& image_mime,
+                                       const std::string& body,
+                                       std::uint32_t width,
+                                       std::uint32_t height,
+                                       const std::string& preview_url,
+                                       std::uint32_t preview_w,
+                                       std::uint32_t preview_h,
+                                       const std::string& reply_event_id,
+                                       const std::string& thread_root)
+{
+    SH_FFI;
+    impl_->ffi->send_gif_from_urls_async(
+        request_id, room_id, image_url, image_mime, body,
+        width, height, preview_url, preview_w, preview_h,
+        reply_event_id, thread_root);
 }
 
 // ---------------------------------------------------------------------------
@@ -1365,10 +1404,26 @@ void Client::get_server_info_async(std::uint64_t request_id)
     impl_->ffi->get_server_info_async(request_id);
 }
 
+void Client::media_preview_config_async(std::uint64_t request_id)
+{
+    SH_FFI;
+    impl_->ffi->media_preview_config_async(request_id);
+}
+
+void Client::room_media_preview_override_async(std::uint64_t request_id,
+                                               const std::string& room_id)
+{
+    SH_FFI;
+    impl_->ffi->room_media_preview_override_async(request_id, room_id);
+}
+
 std::optional<tesseract::RoomSummary>
 Client::get_cached_room_summary(const std::string& room_id) const
 {
-    if (!impl_) return std::nullopt;
+    if (!impl_)
+    {
+        return std::nullopt;
+    }
     SH_FFI;
     const std::string json =
         std::string(impl_->ffi->get_cached_room_summary(room_id));
@@ -1387,7 +1442,9 @@ void Client::join_room_async(std::uint64_t request_id,
                               const std::string& room_id_or_alias)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->join_room_async(request_id, room_id_or_alias);
 }
@@ -1401,7 +1458,9 @@ Result Client::leave_room(const std::string& room_id)
 void Client::leave_room_async(std::uint64_t request_id, const std::string& room_id)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->leave_room_async(request_id, room_id);
 }
@@ -1410,7 +1469,9 @@ void Client::invite_user_async(const std::string& room_id,
                                 const std::string& user_id)
 {
     if (!impl_)
+    {
         return;
+    }
     SH_FFI;
     impl_->ffi->invite_user_async(room_id, user_id);
 }
@@ -1491,16 +1552,18 @@ void Client::set_room_low_priority(std::string room_id, bool value)
     impl_->ffi->set_room_low_priority(room_id, value);
 }
 
-Result Client::ignore_user(const std::string& user_id)
+void Client::ignore_user_async(const std::string& user_id)
 {
+    if (!impl_) { return; }
     SH_FFI;
-    return from_ffi(impl_->ffi->ignore_user(user_id));
+    impl_->ffi->ignore_user_async(user_id);
 }
 
-Result Client::unignore_user(const std::string& user_id)
+void Client::unignore_user_async(const std::string& user_id)
 {
+    if (!impl_) { return; }
     SH_FFI;
-    return from_ffi(impl_->ffi->unignore_user(user_id));
+    impl_->ffi->unignore_user_async(user_id);
 }
 
 std::string Client::get_or_create_dm(const std::string& user_id)
@@ -1509,39 +1572,26 @@ std::string Client::get_or_create_dm(const std::string& user_id)
     return std::string(impl_->ffi->get_or_create_dm(user_id));
 }
 
-UserProfile Client::resolve_user_profile(const std::string& user_id)
+void Client::set_or_delete_profile_field_async(std::uint64_t request_id,
+                                               const std::string& key,
+                                               const std::string& value_json)
 {
-    if (user_id.empty())
-        return {};
     SH_FFI;
-    auto p = impl_->ffi->resolve_user_profile(user_id);
-    return UserProfile{p.exists, std::string(p.user_id),
-                       std::string(p.display_name), std::string(p.avatar_url),
-                       std::string(p.pronouns), std::string(p.tz),
-                       std::string(p.biography)};
+    impl_->ffi->set_or_delete_profile_field_async(request_id, key, value_json);
 }
 
-ExtendedProfile Client::get_extended_profile(const std::string& user_id) const
+void Client::get_extended_profile_async(std::uint64_t request_id,
+                                        const std::string& user_id)
 {
-    if (user_id.empty())
-        return {};
     SH_FFI;
-    auto p = impl_->ffi->get_extended_profile(user_id);
-    return ExtendedProfile{std::string(p.pronouns), std::string(p.tz),
-                           std::string(p.biography)};
+    impl_->ffi->get_extended_profile_async(request_id, user_id);
 }
 
-Result Client::set_profile_field(const std::string& key,
-                                 const std::string& value_json) const
+void Client::resolve_user_profile_async(std::uint64_t request_id,
+                                        const std::string& user_id)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->set_profile_field(key, value_json));
-}
-
-Result Client::delete_profile_field(const std::string& key) const
-{
-    SH_FFI;
-    return from_ffi(impl_->ffi->delete_profile_field(key));
+    impl_->ffi->resolve_user_profile_async(request_id, user_id);
 }
 
 Client::DiscoveryResult
@@ -1611,6 +1661,52 @@ RoomSummary RoomSummary::from_json(const std::string& json)
     s.is_space           = js_bool(j, "is_space", false);
     s.membership         = js_str(j, "membership");
     return s;
+}
+
+UserProfile UserProfile::from_json(const std::string& json)
+{
+    UserProfile p;
+    if (json.empty())
+        return p;
+    auto j = parse_json_obj(json);
+    p.exists       = j.value("exists", false);
+    p.user_id      = js_str(j, "user_id");
+    p.display_name = js_str(j, "display_name");
+    p.avatar_url   = js_str(j, "avatar_url");
+    p.pronouns     = js_str(j, "pronouns");
+    p.tz           = js_str(j, "tz");
+    p.biography    = js_str(j, "biography");
+    return p;
+}
+
+MediaPreviewConfig MediaPreviewConfig::from_json(const std::string& json)
+{
+    MediaPreviewConfig cfg;
+    if (json.empty())
+        return cfg;
+    auto j = parse_json_obj(json);
+    // Use nlohmann .value() so missing keys yield the MSC defaults (On / true).
+    auto raw = j.value("media_previews", uint32_t(2));
+    cfg.media_previews = raw <= 2
+        ? static_cast<MediaPreviewConfig::Mode>(raw)
+        : MediaPreviewConfig::Mode::On;
+    cfg.invite_avatars = j.value("invite_avatars", true);
+    return cfg;
+}
+
+MediaPreviewOverride MediaPreviewOverride::from_json(const std::string& json)
+{
+    MediaPreviewOverride ov;
+    if (json.empty())
+        return ov;
+    auto j = parse_json_obj(json);
+    ov.has_media_previews = j.value("has_media_previews", false);
+    auto raw = j.value("media_previews", uint32_t(2));
+    ov.media_previews = raw <= 2
+        ? static_cast<MediaPreviewConfig::Mode>(raw)
+        : MediaPreviewConfig::Mode::On;
+    ov.join_rule = js_str(j, "join_rule");
+    return ov;
 }
 
 Client::UrlPreview Client::parse_url_preview(const std::string& json)
@@ -1753,7 +1849,9 @@ BackupProgress Client::backup_state() const
 uint8_t Client::recovery_state() const
 {
     if (!impl_)
+    {
         return 0;
+    }
     SH_FFI;
     return impl_->ffi->recovery_state();
 }
@@ -1761,7 +1859,9 @@ uint8_t Client::recovery_state() const
 bool Client::own_identity_exists() const
 {
     if (!impl_)
+    {
         return false;
+    }
     SH_FFI;
     return impl_->ffi->own_identity_exists();
 }
@@ -1769,7 +1869,9 @@ bool Client::own_identity_exists() const
 bool Client::device_verified() const
 {
     if (!impl_)
+    {
         return false;
+    }
     SH_FFI;
     return impl_->ffi->device_verified();
 }
@@ -1777,7 +1879,9 @@ bool Client::device_verified() const
 bool Client::have_cross_signing_keys() const
 {
     if (!impl_)
+    {
         return false;
+    }
     SH_FFI;
     return impl_->ffi->have_cross_signing_keys();
 }
@@ -1785,7 +1889,9 @@ bool Client::have_cross_signing_keys() const
 Result Client::enable_recovery(const std::string& passphrase)
 {
     if (!impl_)
+    {
         return {false, "not logged in"};
+    }
     SH_FFI;
     return from_ffi(impl_->ffi->enable_recovery(passphrase));
 }

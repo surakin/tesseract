@@ -21,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace tesseract::views
 {
@@ -238,8 +239,9 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::File;
         const auto& f = static_cast<const tesseract::FileEvent&>(ev);
         row.file_source = f.source;
-        row.file_name   = f.file_name;
+        row.file_name   = f.filename.empty() ? f.body : f.filename;
         row.file_size   = f.file_size;
+        row.has_filename_caption = !f.filename.empty();
         break;
     }
     case tesseract::EventType::Audio:
@@ -1119,9 +1121,10 @@ public:
                 cells.push_back({&ic_edit_, kEditSvg,
                                  &owner_.hovered_row_geom_.edit_button});
             }
-            if ((m.is_own || owner_.can_pin_) &&
-                m.kind != MessageRowData::Kind::Redacted &&
-                m.kind != MessageRowData::Kind::Utd)
+            if (m.kind != MessageRowData::Kind::Redacted &&
+                m.kind != MessageRowData::Kind::Utd &&
+                (m.is_own || owner_.can_pin_ ||
+                 m.pending_state == MessageRowData::PendingState::None))
             {
                 cells.push_back({&ic_more_, kMoreSvg,
                                  &owner_.hovered_row_geom_.more_button});
@@ -1157,7 +1160,7 @@ public:
                                      pill.w + 2.0f * pill_r, pill.h};
 
                 ctx.canvas.fill_rounded_rect(
-                    pill_visual, pill_r, ctx.theme.palette.subtle_hover);
+                    pill_visual, pill_r, ctx.theme.palette.subtle_pressed);
 
                 // Pointer in world-coords for per-cell hover detection.
                 // The reply/edit/delete/pin/thread cells use press_*_btn_
@@ -2014,7 +2017,13 @@ private:
             return quote_h + sz.h;
         }
         case MessageRowData::Kind::File:
-            return quote_h + kFileCardH;
+        {
+            float h = kFileCardH;
+            if (m.has_filename_caption && !m.body.empty())
+                h += 4.0f + measure_text_height(m.body, ctx, col_w,
+                                                is_emoji_only(m.body));
+            return quote_h + h;
+        }
         case MessageRowData::Kind::Audio:
             return quote_h + kAudioCardH;
         case MessageRowData::Kind::Voice:
@@ -2340,7 +2349,17 @@ private:
                     MessageListView::FileHit{m.event_id, m.file_source,
                                               m.file_name, m.file_size, r};
             }
-            return y + kFileCardH;
+            float cursor = y + kFileCardH;
+            if (m.has_filename_caption && !m.body.empty())
+            {
+                cursor += 4.0f;
+                const bool cap_eo = is_emoji_only(m.body);
+                float ch = paint_wrapped_text(m.body, ctx, x, cursor, col_w,
+                                              ctx.theme.palette.text_primary,
+                                              cap_eo);
+                cursor += ch;
+            }
+            return cursor;
         }
         case MessageRowData::Kind::Audio:
         {
@@ -4214,6 +4233,14 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         msg.owned_image = std::move(messages_[index].owned_image);
         msg.owned_image_key = old_key;
     }
+    // Transfer the avatar pin when the sender URL is unchanged (e.g. a
+    // read-receipt or reaction update on an existing row).
+    if (messages_[index].owned_avatar &&
+        messages_[index].owned_avatar_key == msg.sender_avatar_url)
+    {
+        msg.owned_avatar     = std::move(messages_[index].owned_avatar);
+        msg.owned_avatar_key = messages_[index].owned_avatar_key;
+    }
     messages_[index] = std::move(msg);
     try_acquire_image_(messages_[index]);
     if (touches_read_marker)
@@ -4442,17 +4469,26 @@ void MessageListView::try_acquire_image_(MessageRowData& m)
     const std::string key = row_image_key_(m);
     if (key.empty())
     {
-        // Nothing pinnable (e.g. a preview without an image, or a text row).
+        // Nothing pinnable for inline media (text/audio/file/etc. rows).
         m.owned_image.reset();
         m.owned_image_key.clear();
-        return;
+        // fall through to avatar pin below
     }
-    if (m.owned_image && m.owned_image_key == key)
+    else if (!m.owned_image || m.owned_image_key != key)
     {
-        return; // already holding the right image
+        m.owned_image = image_acquirer_(key); // null when not yet decoded — fine
+        m.owned_image_key = key;
     }
-    m.owned_image = image_acquirer_(key); // null when not yet decoded — fine
-    m.owned_image_key = key;
+    // Pin sender avatar so it survives thumbnail cache sweeps during idle
+    // periods. image_acquirer_ probes thumbnail_cache() as its fallback, so
+    // it correctly acquires avatar entries. Returns null when not yet decoded;
+    // re-pinned by notify_image_ready() once the fetch completes.
+    if (!m.sender_avatar_url.empty() &&
+        (!m.owned_avatar || m.owned_avatar_key != m.sender_avatar_url))
+    {
+        m.owned_avatar     = image_acquirer_(m.sender_avatar_url);
+        m.owned_avatar_key = m.sender_avatar_url;
+    }
 }
 
 void MessageListView::set_preview_provider(PreviewProvider p)
@@ -4537,6 +4573,14 @@ void MessageListView::notify_image_ready(const std::string& url)
             // Newly decoded → re-pin this row now that the image exists.
             try_acquire_image_(m);
             matched = true;
+        }
+        // Pin newly-decoded sender avatar. Avatars don't change row height so
+        // this doesn't contribute to the relayout-triggering `matched` flag.
+        if (!url.empty() && m.sender_avatar_url == url &&
+            (!m.owned_avatar || m.owned_avatar_key != url))
+        {
+            m.owned_avatar     = image_acquirer_(url);
+            m.owned_avatar_key = url;
         }
     }
     if (!matched)
@@ -5002,6 +5046,50 @@ bool MessageListView::on_pointer_move(tk::Point local)
             map_panner_.hide_tooltip();
         }
     }
+
+    // Action pill button tooltips — same change-on-transition pattern as ComposeBar.
+    {
+        const tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        ActionTooltip next      = ActionTooltip::None;
+        tk::Rect      tip_anchor{};
+
+        if (hovered_row_geom_.row_index != static_cast<std::size_t>(-1))
+        {
+            struct { const tk::Rect& rect; ActionTooltip btn; } checks[] = {
+                {hovered_row_geom_.react_button,  ActionTooltip::React},
+                {hovered_row_geom_.reply_button,  ActionTooltip::Reply},
+                {hovered_row_geom_.thread_button, ActionTooltip::Thread},
+                {hovered_row_geom_.edit_button,   ActionTooltip::Edit},
+                {hovered_row_geom_.more_button,   ActionTooltip::More},
+            };
+            for (const auto& c : checks)
+            {
+                if (c.rect.w > 0.0f && rect_contains(c.rect, world))
+                {
+                    next       = c.btn;
+                    tip_anchor = c.rect;
+                    break;
+                }
+            }
+        }
+
+        if (next != action_tooltip_)
+        {
+            if (action_tooltip_ != ActionTooltip::None && on_hide_tooltip)
+                on_hide_tooltip();
+            action_tooltip_ = next;
+            if (next != ActionTooltip::None && on_show_tooltip)
+            {
+                const char* src =
+                    next == ActionTooltip::React  ? "Add reaction"
+                    : next == ActionTooltip::Reply  ? "Reply"
+                    : next == ActionTooltip::Thread ? "Reply in thread"
+                    : next == ActionTooltip::Edit   ? "Edit"
+                    :                                 "More";
+                on_show_tooltip(tk::tr(src), tip_anchor);
+            }
+        }
+    }
     return true;
 }
 
@@ -5039,6 +5127,12 @@ void MessageListView::on_pointer_leave()
     hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
     map_panner_.hide_tooltip();
+    if (action_tooltip_ != ActionTooltip::None)
+    {
+        if (on_hide_tooltip)
+            on_hide_tooltip();
+        action_tooltip_ = ActionTooltip::None;
+    }
 }
 
 bool MessageListView::should_show_pill() const
@@ -5142,6 +5236,19 @@ void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx)
                        paginate_start_, /*radius=*/10.0f, /*dot_r=*/2.5f);
 }
 
+void MessageListView::clear_hit_geometry_()
+{
+    sticker_geom_.clear();
+    image_geom_.clear();
+    video_geom_.clear();
+    file_geom_.clear();
+    media_.clear_geometry();
+    map_panner_.clear_geometry();
+    quote_block_geom_.clear();
+    previews_.clear_geometry();
+    chip_hit_rects_.clear();
+}
+
 void MessageListView::begin_switch_loading()
 {
     // Supersede any prior loading state / display gate, and bump the epoch so an
@@ -5152,10 +5259,13 @@ void MessageListView::begin_switch_loading()
     switch_spinner_start_ = std::chrono::steady_clock::now();
     room_switch_gate_.clear();
 
-    // Clear the previous room's rows immediately so they can never show beneath
-    // the new room's header. The new room's populated snapshot arrives via
-    // set_messages(.., room_switch=true), which cancels this state.
+    // Clear the previous room's rows and hit-test geometry immediately.
+    // The animation-tick guard added in c2157add skips the paint-time clear
+    // when anim_damage != nullptr, so an ongoing animation can leave stale
+    // geometry from the old room alive past a switch — clearing here ensures
+    // no old entry survives to misdirect a click in the new room.
     messages_.clear();
+    clear_hit_geometry_();
     adapter_->clear_layout_cache();
     video_playlist_.clear();
     invalidate_data();
@@ -5536,12 +5646,15 @@ bool MessageListView::on_pointer_down(tk::Point local)
             if (row < messages_.size())
             {
                 const auto& m = messages_[row];
-                press_more_btn_        = true;
-                press_more_event_id_   = m.event_id;
-                press_more_can_delete_ = m.is_own;
-                press_more_can_pin_    = can_pin_;
-                press_more_is_pinned_  = pinned_event_ids_.find(m.event_id) !=
-                                         pinned_event_ids_.end();
+                press_more_btn_         = true;
+                press_more_event_id_    = m.event_id;
+                press_more_can_delete_  = m.is_own;
+                press_more_can_pin_     = can_pin_;
+                press_more_is_pinned_   = pinned_event_ids_.find(m.event_id) !=
+                                          pinned_event_ids_.end();
+                press_more_can_forward_ =
+                    m.kind != MessageRowData::Kind::Redacted &&
+                    m.pending_state == MessageRowData::PendingState::None;
                 return true;
             }
         }
@@ -6072,13 +6185,15 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                     on_more_requested(ev, mb,
                                       press_more_can_delete_,
                                       press_more_can_pin_,
-                                      press_more_is_pinned_);
+                                      press_more_is_pinned_,
+                                      press_more_can_forward_);
                 }
             }
         }
-        press_more_can_delete_ = false;
-        press_more_can_pin_    = false;
-        press_more_is_pinned_  = false;
+        press_more_can_delete_  = false;
+        press_more_can_pin_     = false;
+        press_more_is_pinned_   = false;
+        press_more_can_forward_ = false;
         return;
     }
     if (press_retry_btn_)
@@ -6431,37 +6546,70 @@ std::vector<std::string> MessageListView::collect_visible_media_keys_() const
     return keys;
 }
 
+std::vector<std::string> MessageListView::collect_visible_avatar_urls_() const
+{
+    std::vector<std::string> urls;
+    auto [first, last] = visible_range();
+    int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
+    if (first < 0 || actual_last < first)
+    {
+        return urls;
+    }
+    std::unordered_set<std::string> seen;
+    for (int i = first; i <= actual_last; ++i)
+    {
+        const auto& m = messages_[static_cast<std::size_t>(i)];
+        if (!m.sender_avatar_url.empty() && seen.insert(m.sender_avatar_url).second)
+        {
+            urls.push_back(m.sender_avatar_url);
+        }
+        for (const auto& rr : m.read_receipts)
+        {
+            if (!rr.avatar_url.empty() && seen.insert(rr.avatar_url).second)
+            {
+                urls.push_back(rr.avatar_url);
+            }
+        }
+    }
+    return urls;
+}
+
 void MessageListView::maybe_notify_visible_range_() const
 {
-    if (!on_visible_range_changed)
+    if (on_visible_range_changed)
     {
-        return;
+        auto keys = collect_visible_media_keys_();
+        if (keys != last_visible_media_keys_)
+        {
+            last_visible_media_keys_ = keys;
+            if (!keys.empty())
+            {
+                on_visible_range_changed(keys);
+            }
+        }
     }
-    auto keys = collect_visible_media_keys_();
-    if (keys == last_visible_media_keys_)
+    if (on_visible_avatars_changed)
     {
-        return; // unchanged scroll position → nothing to re-prioritize
-    }
-    last_visible_media_keys_ = keys;
-    if (!keys.empty())
-    {
-        on_visible_range_changed(keys);
+        auto urls = collect_visible_avatar_urls_();
+        if (urls != last_visible_avatar_urls_)
+        {
+            last_visible_avatar_urls_ = urls;
+            if (!urls.empty())
+            {
+                on_visible_avatars_changed(urls);
+            }
+        }
     }
 }
 
 void MessageListView::paint(tk::PaintCtx& ctx)
 {
-    // Sticker, voice, quote, and video rects are rebuilt per-paint by Adapter::paint_row.
-    // Clear here so entries scrolled offscreen don't linger.
-    sticker_geom_.clear();
-    image_geom_.clear();
-    video_geom_.clear();
-    file_geom_.clear();
-    media_.clear_geometry();
-    map_panner_.clear_geometry();
-    quote_block_geom_.clear();
-    previews_.clear_geometry();
-    chip_hit_rects_.clear();
+    // Geometry maps are rebuilt by Adapter::paint_row for every painted row.
+    // Skip the clear during animation-tick partial repaints (anim_damage != nullptr):
+    // the clip covers only the dirty region, so rows outside it aren't repainted and
+    // would lose their hit-test entries until the next full repaint.
+    if (!ctx.anim_damage)
+        clear_hit_geometry_();
 
     // Room-switch loading: the old room's rows were cleared on the click; show a
     // clean background until the new room's snapshot lands (set_messages cancels

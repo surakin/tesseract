@@ -22,20 +22,77 @@
 
 #include <cstdint>
 #include <ctime>
+#include <dlfcn.h>
+#include <fcntl.h>
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 namespace tk::gst {
 
-namespace {
-
 void ensure_gst_init()
 {
     static std::once_flag flag;
-    std::call_once(flag, [] { gst_init(nullptr, nullptr); });
+    std::call_once(flag, [] {
+        gst_init(nullptr, nullptr);
+        // AV_LOG_QUIET = -8; silence FFmpeg/libav noise emitted via gst-libav.
+        // gst_init doesn't load plugins eagerly, so libavutil isn't in the
+        // process yet — dlopen it directly with versioned fallbacks.
+        //
+        // Crash sentinel: create a file before the call; delete it on success.
+        // If the process crashes inside av_log_set_level, the file survives and
+        // the next run finds it and skips suppression entirely.
+        //
+        // Prefer XDG_RUNTIME_DIR (mode 0700 — only this user can write there,
+        // so no symlink attack is possible). Fall back to /tmp with a uid suffix.
+        // In both cases use lstat (no symlink follow) for the existence check,
+        // O_CREAT|O_EXCL|O_NOFOLLOW for creation, and lstat-then-unlink for
+        // removal, so a symlink planted by another user at the path is always
+        // refused rather than followed.
+        const char* xdg = getenv("XDG_RUNTIME_DIR");
+        const std::string sentinel = xdg
+            ? std::string(xdg) + "/tesseract-avlog"
+            : "/tmp/tesseract-avlog-" + std::to_string(getuid());
+
+        struct stat st;
+        if (lstat(sentinel.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+            return;
+
+        int fd = ::open(sentinel.c_str(),
+                        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (fd >= 0)
+            ::close(fd);
+
+        void* sym = dlsym(RTLD_DEFAULT, "av_log_set_level");
+        if (!sym) {
+            static const char* const kNames[] = {
+                "libavutil.so",    // unversioned (dev package)
+                "libavutil.so.60", // FFmpeg 8.x
+                "libavutil.so.59", // FFmpeg 7.x
+                "libavutil.so.58", // FFmpeg 6.x
+                "libavutil.so.57", // FFmpeg 5.x
+                "libavutil.so.56", // FFmpeg 4.x
+            };
+            for (const char* name : kNames) {
+                if (void* h = dlopen(name, RTLD_LAZY | RTLD_GLOBAL)) {
+                    sym = dlsym(h, "av_log_set_level");
+                    if (sym)
+                        break;
+                }
+            }
+        }
+        if (sym)
+            reinterpret_cast<void(*)(int)>(sym)(-8);
+
+        if (lstat(sentinel.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+            ::unlink(sentinel.c_str());
+    });
 }
+
+namespace {
 
 // Hardware decoder element names to probe.  Only factories that are actually
 // installed (gst_element_factory_find succeeds) are recorded in the cache, so

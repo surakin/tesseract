@@ -3,6 +3,10 @@
 
 namespace tk::gst {
 
+// Initialize GStreamer exactly once (thread-safe). Called implicitly by
+// apply_hw_decoder_cache; other GStreamer users may call this directly.
+void ensure_gst_init();
+
 // Call once after QApplication is constructed, before MainWindow.
 // Reads the hardware-decoder capability cache from cache_dir/gst_hw_probe.dat.
 // If the cache is absent or older than 7 days, probes each known hardware

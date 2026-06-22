@@ -12,6 +12,7 @@
 // returns nullptr and the viewer shows a static thumbnail.
 
 #include "video.h"
+#include "gst_hw_probe.h"
 
 // cairo.h must be included before canvas_cairo.h so that the elaborated
 // struct _cairo_surface type specifier in canvas_cairo.h resolves to the
@@ -35,25 +36,12 @@
 namespace tk::gtk4
 {
 
-namespace
-{
-void ensure_gst_init()
-{
-    static bool done = false;
-    if (!done)
-    {
-        gst_init(nullptr, nullptr);
-        done = true;
-    }
-}
-} // namespace
-
 class GtkVideoPlayer final : public tk::VideoPlayer
 {
 public:
     GtkVideoPlayer() : alive_(std::make_shared<std::atomic<bool>>(true))
     {
-        ensure_gst_init();
+        gst::ensure_gst_init();
     }
 
     ~GtkVideoPlayer() override

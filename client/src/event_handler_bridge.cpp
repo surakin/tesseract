@@ -546,6 +546,25 @@ void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_forward_done(std::uint64_t request_id) const
+{
+    with_handler("on_forward_done", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_forward_done(request_id);
+          });
+}
+
+void EventHandlerBridge::on_forward_failed(std::uint64_t request_id,
+                                           rust::Str message) const
+{
+    with_handler("on_forward_failed", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_forward_failed(request_id, std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_space_child_summary_ready(std::uint64_t request_id,
                                                       rust::Str summary_json) const
 {
@@ -564,6 +583,28 @@ void EventHandlerBridge::on_server_info_ready(std::uint64_t request_id,
           [&](tesseract::IEventHandler* handler_)
           {
               handler_->on_server_info_ready(request_id, std::string(info_json));
+          });
+}
+
+void EventHandlerBridge::on_media_preview_config_ready(std::uint64_t request_id,
+                                                       rust::Str config_json) const
+{
+    with_handler("on_media_preview_config_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_media_preview_config_ready(request_id,
+                                                      std::string(config_json));
+          });
+}
+
+void EventHandlerBridge::on_room_preview_override_ready(std::uint64_t request_id,
+                                                        rust::Str override_json) const
+{
+    with_handler("on_room_preview_override_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_preview_override_ready(request_id,
+                                                       std::string(override_json));
           });
 }
 
@@ -635,6 +676,29 @@ void EventHandlerBridge::on_upload_complete(std::uint64_t request_id, bool ok,
           [&](tesseract::IEventHandler* handler_)
           {
               handler_->on_upload_complete(request_id, ok, std::string(message));
+          });
+}
+
+void EventHandlerBridge::on_profile_field_result(std::uint64_t request_id,
+                                                  rust::Str key, bool ok,
+                                                  rust::Str message) const
+{
+    with_handler("on_profile_field_result", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_profile_field_result(request_id, std::string(key),
+                                                ok, std::string(message));
+          });
+}
+
+void EventHandlerBridge::on_extended_profile_ready(std::uint64_t request_id,
+                                                    rust::Str profile_json) const
+{
+    with_handler("on_extended_profile_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_extended_profile_ready(request_id,
+                                                   std::string(profile_json));
           });
 }
 

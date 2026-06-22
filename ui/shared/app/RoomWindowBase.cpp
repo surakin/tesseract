@@ -246,11 +246,7 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     };
     rv->on_ignore_user = [this](std::string user_id) {
         if (!shell_->client_) return;
-        auto sess = shell_->active_account();
-        run_async_mut_([sess, user_id = std::move(user_id)]() mutable {
-            if (!sess || !sess->client) return;
-            sess->client->ignore_user(user_id);
-        });
+        shell_->client_->ignore_user_async(std::move(user_id));
     };
 
     // ── Compose callbacks ────────────────────────────────────────────────
@@ -616,28 +612,20 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             request_relayout();
             std::string src = src_tok;
             std::weak_ptr<bool> alive_weak = alive_;
-            auto sess = shell_->active_account();
-            run_async_(
-                [this, src = std::move(src),
-                 alive_weak = std::move(alive_weak),
-                 sess = std::move(sess)]()
-                {
-                    if (!sess || !sess->client) return;
-                    auto bytes = fetch_source_bytes_(sess->client.get(), src);
-                    shell_->post_to_ui_(
-                        [this, alive_weak, bytes = std::move(bytes)]() mutable
-                        {
-                            auto alive = alive_weak.lock();
-                            if (!alive || !*alive)
-                                return;
-                            if (vid_viewer_)
-                            {
-                                vid_viewer_->load_bytes(bytes.data(),
-                                                        bytes.size());
-                            }
-                            request_relayout();
-                        });
-                });
+            if (shell_->client_)
+            {
+                auto req_id = shell_->begin_media_req_(0,
+                    [this, alive_weak](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        auto alive = alive_weak.lock();
+                        if (!alive || !*alive)
+                            return;
+                        if (vid_viewer_)
+                            vid_viewer_->load_bytes(bytes.data(), bytes.size());
+                        request_relayout();
+                    });
+                shell_->client_->fetch_source_bytes_async(req_id, src);
+            }
         };
     }
 
@@ -1277,22 +1265,6 @@ RoomWindowBase::preview_lookup_(const std::string& url)
     return it == shell_->url_preview_data_.end() ? nullptr : &it->second;
 }
 
-std::vector<std::uint8_t>
-RoomWindowBase::fetch_source_bytes_(tesseract::Client* client,
-                                    const std::string& source_json)
-{
-    // Blocking — callers (video-viewer load, save-to-file) already run this on
-    // a worker thread. The UI-thread voice-playback path uses the non-blocking
-    // voice_bytes_or_fetch_ via set_voice_bytes_provider instead.
-    // client is the AccountSession-captured Client so it remains valid even if
-    // the account is logged out/switched while the task is in-flight.
-    if (!client)
-    {
-        return {};
-    }
-    return client->fetch_source_bytes(source_json);
-}
-
 void RoomWindowBase::request_pagination_back_()
 {
     if (room_id_.empty() || !shell_->client_)
@@ -1346,31 +1318,22 @@ void RoomWindowBase::post_to_ui_(std::function<void()> fn)
 void RoomWindowBase::save_source_to_file_(std::string source_json,
                                            std::string dest_path)
 {
+    if (!shell_->client_) return;
     std::weak_ptr<bool> alive_weak = alive_;
-    auto sess = shell_->active_account();
-    run_async_(
-        [this, src = std::move(source_json), dest = std::move(dest_path),
-         alive_weak = std::move(alive_weak),
-         sess = std::move(sess)]()
+    auto req_id = shell_->begin_media_req_(0,
+        [alive_weak = std::move(alive_weak),
+         dest = std::move(dest_path)](std::vector<std::uint8_t> bytes) mutable
         {
-            if (!sess || !sess->client) return;
-            auto bytes = fetch_source_bytes_(sess->client.get(), src);
-            // Inner lambda: file write only — no this capture needed.
-            shell_->post_to_ui_(
-                [alive_weak, dest, bytes = std::move(bytes)]() mutable
-                {
-                    auto alive = alive_weak.lock();
-                    if (!alive || !*alive)
-                        return;
-                    if (!bytes.empty())
-                    {
-                        std::ofstream f(dest, std::ios::binary);
-                        f.write(
-                            reinterpret_cast<const char*>(bytes.data()),
-                            static_cast<std::streamsize>(bytes.size()));
-                    }
-                });
+            auto alive = alive_weak.lock();
+            if (!alive || !*alive) return;
+            if (!bytes.empty())
+            {
+                std::ofstream f(dest, std::ios::binary);
+                f.write(reinterpret_cast<const char*>(bytes.data()),
+                        static_cast<std::streamsize>(bytes.size()));
+            }
         });
+    shell_->client_->fetch_source_bytes_async(req_id, source_json);
 }
 
 void RoomWindowBase::ensure_viewer_image_(const std::string& url)

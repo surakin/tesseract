@@ -50,6 +50,7 @@ private:
     // copy of base_icon_).
     HICON make_overlay_icon_(UINT32 dot_color_argb) const;
 
+    static constexpr int kMenuShowId = 1001;
     static constexpr int kMenuQuitId = 1002;
     // Window-item command IDs start here (one per entry in window_items_).
     static constexpr int kMenuWinBase = 2000;

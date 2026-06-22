@@ -38,6 +38,7 @@ use matrix_sdk_ui::timeline::{
 use std::collections::HashMap;
 #[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
 use std::sync::Arc;
 
 #[cfg(not(test))]

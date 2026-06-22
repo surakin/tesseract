@@ -85,13 +85,13 @@ constexpr UINT WM_TESSERACT_MEDIA_BYTES = WM_APP + 14;
 constexpr UINT WM_TESSERACT_ACCOUNT_PREFS = WM_APP + 16;
 constexpr UINT WM_TESSERACT_NOTIFY = WM_APP + 17;
 // WM_APP + 18 = WM_TESSERACT_NOTIFY_CLICK, defined in Win32Notifier.h
-constexpr UINT WM_TESSERACT_VIDEO_BYTES = WM_APP + 19;
+// WM_APP + 19 was WM_TESSERACT_VIDEO_BYTES (removed; media now flows through begin_media_req_)
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE = WM_APP + 21;
 constexpr UINT WM_TESSERACT_POST_TO_UI = WM_APP + 22;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE = WM_APP + 25;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_DONE = WM_APP + 26;
-constexpr UINT WM_TESSERACT_FILE_BYTES = WM_APP + 27;
+// WM_APP + 27 was WM_TESSERACT_FILE_BYTES (removed; file saves now use begin_media_req_)
 
 namespace win32
 {
@@ -216,6 +216,9 @@ private:
     void close_quick_switch_();
     void open_message_search_();
     void close_message_search_();
+    void close_forward_picker_();
+    void focus_forward_picker_field_() override;
+    void hide_forward_picker_field_() override;
     void open_find_in_room_();
     void close_find_in_room_();
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
@@ -349,6 +352,7 @@ private:
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextField> quick_switch_field_;
     std::unique_ptr<tk::NativeTextField> message_search_field_;
+    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
     std::unique_ptr<tk::NativeTextField> find_in_room_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     bool                                 focus_compose_on_show_ = false;

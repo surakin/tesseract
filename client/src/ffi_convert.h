@@ -340,7 +340,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         auto ev = std::make_unique<FileEvent>();
         assign_base(*ev, e);
         ev->source    = make_source(e.file_url, e.file_encrypted_json);
-        ev->file_name = std::string(e.file_name);
+        ev->filename  = std::string(e.file_filename);
         ev->file_size = e.file_size;
         return ev;
     }

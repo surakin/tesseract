@@ -125,10 +125,16 @@ public:
                         const rust::Vec<GifResult>& results) const;
     void on_gif_search_failed(std::uint64_t request_id,
                               rust::Str message) const;
+    void on_forward_done(std::uint64_t request_id) const;
+    void on_forward_failed(std::uint64_t request_id, rust::Str message) const;
     void on_space_child_summary_ready(std::uint64_t request_id,
                                       rust::Str summary_json) const;
     void on_server_info_ready(std::uint64_t request_id,
                               rust::Str info_json) const;
+    void on_media_preview_config_ready(std::uint64_t request_id,
+                                       rust::Str config_json) const;
+    void on_room_preview_override_ready(std::uint64_t request_id,
+                                        rust::Str override_json) const;
     void on_search_results(std::uint64_t request_id,
                            const rust::Vec<SearchHit>& results) const;
     void on_search_failed(std::uint64_t request_id,
@@ -141,6 +147,10 @@ public:
                                  rust::Str message) const;
     void on_upload_complete(std::uint64_t request_id, bool ok,
                             rust::Str message) const;
+    void on_profile_field_result(std::uint64_t request_id, rust::Str key,
+                                 bool ok, rust::Str message) const;
+    void on_extended_profile_ready(std::uint64_t request_id,
+                                   rust::Str profile_json) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_media_preview_config_updated(rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,

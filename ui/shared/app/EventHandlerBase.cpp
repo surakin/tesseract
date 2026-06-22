@@ -305,6 +305,25 @@ void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_forward_done(std::uint64_t request_id)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id]()
+        {
+            shell->handle_forward_done_ui_(request_id);
+        });
+}
+
+void EventHandlerBase::on_forward_failed(std::uint64_t     request_id,
+                                         const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, msg = message]() mutable
+        {
+            shell->handle_forward_failed_ui_(request_id, std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_space_child_summary_ready(std::uint64_t request_id,
                                                     const std::string& summary_json)
 {
@@ -334,9 +353,13 @@ void EventHandlerBase::on_search_results(std::uint64_t request_id,
         {
             // Route by which pending map owns this id.
             if (shell->in_room_search_pending_.count(request_id))
+            {
                 shell->handle_in_room_search_results_ui_(request_id, std::move(*r));
+            }
             else
+            {
                 shell->handle_search_results_ui_(request_id, std::move(*r));
+            }
         });
 }
 
@@ -347,9 +370,13 @@ void EventHandlerBase::on_search_failed(std::uint64_t request_id,
         [shell = shell(), request_id, msg = message]() mutable
         {
             if (shell->in_room_search_pending_.count(request_id))
+            {
                 shell->handle_in_room_search_failed_ui_(request_id, std::move(msg));
+            }
             else
+            {
                 shell->handle_search_failed_ui_(request_id, std::move(msg));
+            }
         });
 }
 
@@ -395,7 +422,9 @@ void EventHandlerBase::on_sync_error(const std::string& context,
          sl = soft_logout]() mutable
         {
             if (ctx == "sync_offline" || ctx == "sync_error")
+            {
                 shell->handle_offline_ui_();
+            }
             shell->handle_sync_error_ui_(std::move(ctx), std::move(uid),
                                          std::move(desc), sl);
         });
@@ -453,7 +482,9 @@ void EventHandlerBase::on_room_list_state(RoomListState state)
             {
                 shell->begin_server_info_fetch_();
                 if (shell->offline_)
+                {
                     shell->handle_online_ui_();
+                }
             }
         });
 }
@@ -521,6 +552,26 @@ void EventHandlerBase::on_media_preview_config_updated(const std::string& json)
         {
             shell->handle_media_preview_config_updated_ui_(std::move(uid),
                                                            std::move(j));
+        });
+}
+
+void EventHandlerBase::on_media_preview_config_ready(std::uint64_t request_id,
+                                                     const std::string& config_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, j = config_json]() mutable
+        {
+            shell->handle_media_preview_config_fetched_ui_(request_id, std::move(j));
+        });
+}
+
+void EventHandlerBase::on_room_preview_override_ready(std::uint64_t request_id,
+                                                      const std::string& override_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, j = override_json]() mutable
+        {
+            shell->handle_room_preview_override_ready_ui_(request_id, std::move(j));
         });
 }
 
@@ -638,6 +689,28 @@ void EventHandlerBase::on_upload_complete(std::uint64_t request_id, bool ok,
         [shell = shell(), request_id, ok, msg = message]() mutable
         {
             shell->handle_upload_complete_ui_(request_id, ok, std::move(msg));
+        });
+}
+
+void EventHandlerBase::on_profile_field_result(std::uint64_t request_id,
+                                               const std::string& key, bool ok,
+                                               const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, k = key, ok, msg = message]() mutable
+        {
+            shell->handle_profile_field_result_ui_(request_id, std::move(k),
+                                                   ok, std::move(msg));
+        });
+}
+
+void EventHandlerBase::on_extended_profile_ready(std::uint64_t request_id,
+                                                  const std::string& profile_json)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, j = profile_json]() mutable
+        {
+            shell->handle_extended_profile_ready_ui_(request_id, std::move(j));
         });
 }
 

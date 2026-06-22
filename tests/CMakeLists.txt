@@ -78,6 +78,7 @@ add_executable(tesseract_tests
     cpp/test_shell_dispatch_room_send.cpp
     cpp/test_shell_media_priority.cpp
     cpp/test_shell_roster_invalidation.cpp
+    cpp/test_shell_forward_async.cpp
     cpp/test_roomlist_unread.cpp
     cpp/test_message_list_pinning.cpp
     cpp/test_tk_message_list_search_highlight.cpp

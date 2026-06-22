@@ -98,6 +98,10 @@ struct MessageRowData
     // Both are populated lazily and are NOT produced by make_row_data().
     tk::ImageRef owned_image;
     std::string owned_image_key;
+    // Sender-avatar pin: prevents thumbnail cache eviction during idle periods.
+    // Same lifecycle as owned_image — populated by try_acquire_image_(), NOT make_row_data().
+    tk::ImageRef owned_avatar;
+    std::string  owned_avatar_key;
 
     // File card
     tesseract::MediaSourceRef file_source; // file attachment
@@ -443,10 +447,12 @@ public:
     // Overflow-menu affordance — fires when the user clicks the "⋯" more
     // button. `anchor` is the button rect in world coordinates. `can_delete`
     // is true for own non-redacted messages; `can_pin` when the room allows
-    // pinning; `is_pinned` when this event is already pinned. The host should
+    // pinning; `is_pinned` when this event is already pinned; `can_forward`
+    // is true for any non-redacted, non-pending message. The host should
     // open a PopupMenu and call the appropriate SDK methods on selection.
     std::function<void(const std::string& event_id, tk::Rect anchor,
-                       bool can_delete, bool can_pin, bool is_pinned)>
+                       bool can_delete, bool can_pin, bool is_pinned,
+                       bool can_forward)>
         on_more_requested;
 
     // Pin / Unpin affordance — kept for backward-compat wiring; now fired
@@ -544,6 +550,12 @@ public:
     // the download priority of the still-pending fetches for these tokens so the
     // media the user is looking at downloads ahead of the off-screen backlog.
     std::function<void(const std::vector<std::string>&)> on_visible_range_changed;
+
+    // Fired with the deduplicated avatar mxc URLs (sender + read-receipt users)
+    // of the currently-visible rows whenever that set changes. The host calls
+    // ensure_user_avatar_ for each URL so avatars are fetched lazily rather than
+    // for the entire room history on room switch.
+    std::function<void(const std::vector<std::string>&)> on_visible_avatars_changed;
 
     // Clipboard write. Wire to Host::set_clipboard_text via RoomView.
     std::function<void(std::string_view)> on_set_clipboard;
@@ -908,6 +920,9 @@ private:
     HoverTarget hover_target_ = HoverTarget::None;
     int hover_chip_idx_ = -1;
 
+    enum class ActionTooltip { None, React, Reply, Thread, Edit, More };
+    ActionTooltip action_tooltip_ = ActionTooltip::None;
+
     // Press-state — remember which chip the user pressed so we only
     // fire the callback on a clean down-up on the same chip.
     HoverTarget press_target_ = HoverTarget::None;
@@ -939,6 +954,7 @@ private:
     bool press_more_can_delete_  = false;
     bool press_more_can_pin_     = false;
     bool press_more_is_pinned_   = false;
+    bool press_more_can_forward_ = false;
 
     bool hover_locked_ = false;
 
@@ -1029,10 +1045,15 @@ private:
     // rows' downloads to the front of the queue. De-duped against the last
     // notified set so an unchanged scroll position does not re-fire each paint.
     std::vector<std::string> collect_visible_media_keys_() const;
+    // Collects deduplicated avatar mxc URLs (sender + read-receipt users) for
+    // the currently-visible rows; fired via on_visible_avatars_changed.
+    std::vector<std::string> collect_visible_avatar_urls_() const;
     void maybe_notify_visible_range_() const;
+    void clear_hit_geometry_();
     // True when `event_id` maps to a row currently within the visible range.
     bool is_event_visible_(const std::string& event_id) const;
     mutable std::vector<std::string> last_visible_media_keys_;
+    mutable std::vector<std::string> last_visible_avatar_urls_;
 
     // Voice + audio message playback. The view owns a single AudioPlayer
     // (at most one clip plays at a time); ownership, the byte-cache provider,

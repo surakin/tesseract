@@ -14,11 +14,15 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
+/// Lowest priority: a retry for a URL that has previously failed and is in
+/// exponential backoff. Never raised by `prioritize` — stays below normal
+/// prefetch even when the row is visible. Mirrors `MediaPriority::Backoff`.
+pub(super) const PRIO_BACKOFF: u8 = 0;
 /// Background priority for the eager whole-timeline prefetch.
-pub(super) const PRIO_NORMAL: u8 = 0;
+pub(super) const PRIO_NORMAL: u8 = 1;
 /// Priority for media backing a currently-visible row. Mirrors the C++
 /// `tesseract::MediaPriority::Visible`.
-pub(super) const PRIO_VISIBLE: u8 = 1;
+pub(super) const PRIO_VISIBLE: u8 = 2;
 
 /// One queued download request plus its opaque wake-up payload.
 pub(super) struct Entry<T> {
@@ -103,6 +107,7 @@ impl<T> MediaQueue<T> {
         let mut items: Vec<Entry<T>> = self.heap.drain().collect();
         for e in &mut items {
             if e.group_id == group_id
+                && e.priority != PRIO_BACKOFF
                 && e.priority < new_priority
                 && request_ids.contains(&e.request_id)
             {
@@ -132,7 +137,7 @@ impl<T> MediaQueue<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MediaQueue, PRIO_NORMAL, PRIO_VISIBLE};
+    use super::{MediaQueue, PRIO_BACKOFF, PRIO_NORMAL, PRIO_VISIBLE};
 
     // Payload sentinel = request_id, so tests can assert on what was popped.
     fn q() -> MediaQueue<u64> {
@@ -196,6 +201,17 @@ mod tests {
         assert_eq!(bumped, 0, "request 2 is in group 6, not 5");
         assert_eq!(q.pop_highest().unwrap().request_id, 1);
         assert_eq!(q.pop_highest().unwrap().request_id, 2);
+    }
+
+    #[test]
+    fn prioritize_never_raises_backoff_entries() {
+        let mut q = q();
+        q.push(PRIO_BACKOFF, 0, 1, 5, 1);
+        q.push(PRIO_NORMAL, 1, 2, 5, 2);
+        let bumped = q.prioritize(5, &[1, 2], PRIO_VISIBLE);
+        assert_eq!(bumped, 1, "only the normal entry is bumped");
+        assert_eq!(q.pop_highest().unwrap().request_id, 2, "visible pops first");
+        assert_eq!(q.pop_highest().unwrap().request_id, 1, "backoff stays lowest");
     }
 
     #[test]

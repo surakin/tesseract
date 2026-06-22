@@ -400,8 +400,13 @@ void ShellBase::fetch_media_pipeline_(
     spec.should_deliver_ = [this, group_id]
     { return group_id == 0 || group_id == active_media_group_; };
     spec.start_fetch_ =
-        [this, group_id, kind, source, w, h, animated](std::uint64_t id)
-    { client_->fetch_media_async(id, group_id, kind, source, w, h, animated); };
+        [this, group_id, kind, source, w, h, animated, cache_key](std::uint64_t id)
+    {
+        const auto prio = media_fetch_failed_.count(cache_key)
+            ? tesseract::Client::MediaPriority::Backoff
+            : tesseract::Client::MediaPriority::Normal;
+        client_->fetch_media_async(id, group_id, kind, source, w, h, animated, prio);
+    };
     spec.on_empty_ = [this, cache_key, out_kind]
     {
         note_media_fetch_failed_(cache_key);
@@ -532,7 +537,8 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
 }
 
 void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
-                                    int /*max_h*/, std::uint64_t group_id)
+                                    int /*max_h*/, std::uint64_t group_id,
+                                    MediaKind kind)
 {
     if (url.empty() || account_manager_.image_cache().contains(url) || account_manager_.anim_cache().has(url) ||
         media_decode_failed_.count(url) || media_fetch_backed_off_(url))
@@ -548,7 +554,7 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
     fetch_media_pipeline_(url, url, url, group_id,
                           tesseract::Client::MediaReqKind::SourceFull, url,
                           /*w=*/0, /*h=*/0, /*animated=*/false,
-                          MediaKind::MediaImage);
+                          kind);
 }
 
 const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
@@ -935,6 +941,14 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->on_visible_range_changed =
         [this](const std::vector<std::string>& keys)
     { on_visible_rows_changed_(keys); };
+    // Lazy avatar fetch: only request avatars for currently-visible rows so
+    // switching rooms doesn't kick off fetches for the entire room history.
+    app->room_view()->on_visible_avatars_changed =
+        [this](const std::vector<std::string>& urls)
+    {
+        for (const auto& url : urls)
+            ensure_user_avatar_(url);
+    };
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
@@ -1072,6 +1086,48 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             main_app_->clear_content();
         request_relayout_();
     };
+
+    // Forward picker: stable providers wired once so open() always has rooms.
+    // The native text field, keyboard accelerator, and on_close stay per-shell.
+    if (auto* fp = app->forward_picker())
+    {
+        fp->set_rooms_provider(
+            [this]() -> std::vector<tesseract::RoomInfo> { return rooms_; });
+        fp->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            { return account_manager_.thumbnail_cache().peek(mxc); });
+        fp->on_room_avatar_needed =
+            [this](const tesseract::RoomInfo& r) { ensure_room_avatar_(r); };
+        fp->on_close = [this] { hide_forward_picker_field_(); request_relayout_(); };
+    }
+    if (auto* rv = app->room_view())
+    {
+        rv->on_forward_requested =
+            [this](const std::string& event_id)
+        {
+            auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
+            if (!fp || current_room_id_.empty() || fp->is_open())
+                return;
+            fp->on_confirmed =
+                [this, source_room = current_room_id_, event_id]
+                (std::vector<std::string> room_ids)
+            {
+                if (!client_) return;
+                auto* fp_ptr = main_app_ ? main_app_->forward_picker() : nullptr;
+                if (!fp_ptr) return;
+                fp_ptr->set_forwarding(static_cast<int>(room_ids.size()));
+                for (const auto& rid : room_ids)
+                {
+                    const auto req_id = next_request_id_++;
+                    pending_forwards_[req_id] = rid;
+                    client_->forward_event(req_id, source_room, event_id, rid);
+                }
+            };
+            fp->open(current_room_id_);
+            focus_forward_picker_field_();
+            request_relayout_();
+        };
+    }
 }
 
 void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
@@ -1357,7 +1413,7 @@ void ShellBase::ensure_blurhash_image_(const std::string& event_id,
     cache_rgba_image_(key, kW, kH, std::move(rgba));
 }
 
-void ShellBase::ensure_row_media_(const Event& ev)
+void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
 {
     if (!media_disk_cache_pruned_)
     {
@@ -1374,10 +1430,13 @@ void ShellBase::ensure_row_media_(const Event& ev)
         tesseract::init_waveform_cache(
             (tesseract::cache_dir() / "waveforms.db").string());
     }
-    ensure_user_avatar_(ev.sender_avatar_url);
-    for (const auto& rr : ev.read_receipts)
+    if (fetch_avatars)
     {
-        ensure_user_avatar_(rr.avatar_url);
+        ensure_user_avatar_(ev.sender_avatar_url);
+        for (const auto& rr : ev.read_receipts)
+        {
+            ensure_user_avatar_(rr.avatar_url);
+        }
     }
 
     // MSC4278: gate media (image/sticker/video thumbnails + URL previews)
@@ -1425,7 +1484,7 @@ void ShellBase::ensure_row_media_(const Event& ev)
         {
             ensure_media_image_(s.thumbnail->fetch_token(),
                                 visual::kStickerSize, visual::kStickerSize,
-                                media_group);
+                                media_group, MediaKind::Sticker);
         }
         if (preview &&
             (!s.thumbnail || tesseract::Settings::instance().prefetch_full_media))
@@ -1433,7 +1492,7 @@ void ShellBase::ensure_row_media_(const Event& ev)
             if (s.source)
                 ensure_media_image_(s.source->fetch_token(),
                                     visual::kStickerSize, visual::kStickerSize,
-                                    media_group);
+                                    media_group, MediaKind::Sticker);
         }
     }
     else if (ev.type == EventType::Voice)
@@ -1538,7 +1597,8 @@ void ShellBase::ensure_row_media_(const Event& ev)
     {
         if (r.source)
         {
-            ensure_media_image_(r.source->fetch_token(), 20, 20);
+            ensure_media_image_(r.source->fetch_token(), 20, 20, 0,
+                                MediaKind::Reaction);
         }
     }
 
@@ -1591,6 +1651,165 @@ void ShellBase::ensure_row_media_(const Event& ev)
     }
 }
 
+void ShellBase::ensure_row_media_(const views::MessageRowData& row,
+                                   bool fetch_avatars)
+{
+    using Kind = views::MessageRowData::Kind;
+
+    if (fetch_avatars)
+    {
+        ensure_user_avatar_(row.sender_avatar_url);
+        for (const auto& rr : row.read_receipts)
+            ensure_user_avatar_(rr.avatar_url);
+    }
+
+    const bool preview =
+        media_allowed_(current_room_id_,
+                       !my_user_id_.empty() && row.is_own) ||
+        revealed_events_.count(row.event_id) != 0;
+    const std::uint64_t media_group = media_group_for_room_(current_room_id_);
+
+    if (row.kind == Kind::Image)
+    {
+        if (preview && row.thumbnail)
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight,
+                                    row.image_animated, media_group);
+        if (preview &&
+            (!row.thumbnail ||
+             tesseract::Settings::instance().prefetch_full_media))
+        {
+            if (row.source)
+                ensure_media_image_(row.source->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, media_group);
+        }
+    }
+    else if (row.kind == Kind::Sticker)
+    {
+        if (preview && row.thumbnail)
+            ensure_media_image_(row.thumbnail->fetch_token(),
+                                visual::kStickerSize, visual::kStickerSize,
+                                media_group, MediaKind::Sticker);
+        if (preview &&
+            (!row.thumbnail ||
+             tesseract::Settings::instance().prefetch_full_media))
+        {
+            if (row.source)
+                ensure_media_image_(row.source->fetch_token(),
+                                    visual::kStickerSize, visual::kStickerSize,
+                                    media_group, MediaKind::Sticker);
+        }
+    }
+    else if (row.kind == Kind::Voice)
+    {
+        if (row.audio_source)
+        {
+            const std::string src   = row.audio_source->fetch_token();
+            const bool audio_new    = voice_prefetched_.insert(src).second;
+            const bool waveform_new = row.waveform.empty() &&
+                                      voice_waveform_in_flight_.insert(src).second;
+            if (audio_new || waveform_new)
+            {
+                const std::string event_id = row.event_id;
+                const std::string room_id  = current_room_id_;
+                auto id = begin_media_req_(
+                    /*group_id=*/0,
+                    [this, src, event_id, room_id,
+                     waveform_new](std::vector<std::uint8_t>&& bytes)
+                    {
+                        if (!waveform_new || bytes.empty())
+                            return;
+                        run_async_(
+                            [this, src, event_id, room_id,
+                             bytes = std::move(bytes)]() mutable
+                            {
+                                auto waveform =
+                                    tesseract::load_voice_waveform(src);
+                                if (waveform.empty())
+                                {
+                                    waveform =
+                                        tesseract::compute_waveform_from_ogg(
+                                            bytes);
+                                    if (!waveform.empty())
+                                        tesseract::store_voice_waveform(
+                                            src, waveform);
+                                }
+                                if (waveform.empty())
+                                    return;
+                                post_to_ui_alive_(
+                                    [this, room_id, event_id,
+                                     waveform = std::move(waveform)]() mutable
+                                    {
+                                        handle_voice_waveform_ready_ui_(
+                                            room_id, event_id,
+                                            std::move(waveform));
+                                    });
+                            });
+                    });
+                client_->fetch_media_async(
+                    id, /*group_id=*/0,
+                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                    false);
+            }
+        }
+    }
+    else if (row.kind == Kind::Audio)
+    {
+        if (row.audio_source &&
+            tesseract::Settings::instance().prefetch_full_media)
+        {
+            const std::string src = row.audio_source->fetch_token();
+            if (voice_prefetched_.insert(src).second)
+            {
+                auto id = begin_media_req_(
+                    /*group_id=*/0, [](std::vector<std::uint8_t>&&) {});
+                client_->fetch_media_async(
+                    id, /*group_id=*/0,
+                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                    false);
+            }
+        }
+    }
+    else if (row.kind == Kind::Video)
+    {
+        if (preview && row.thumbnail)
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, false,
+                                    media_group);
+        if (preview && !row.thumbnail && row.source &&
+            video_thumb_in_flight_.insert(row.event_id).second)
+            generate_video_thumbnail_(row.event_id,
+                                      row.source->fetch_token());
+    }
+
+    for (const auto& r : row.reactions)
+    {
+        if (r.source)
+            ensure_media_image_(r.source->fetch_token(), 20, 20, 0,
+                                MediaKind::Reaction);
+    }
+
+    if (!row.blurhash.empty())
+        ensure_blurhash_image_(row.event_id, row.blurhash,
+                               row.media_w, row.media_h);
+
+    if (preview &&
+        (row.kind == Kind::Text || row.kind == Kind::Notice ||
+         row.kind == Kind::Emote || row.kind == Kind::Unhandled))
+    {
+        std::string url;
+        if (!row.formatted_body.empty())
+            url = views::first_url_from_html(row.formatted_body);
+        if (url.empty() && !row.body.empty())
+            url = views::first_url_from_plain(row.body);
+        if (!url.empty())
+            ensure_url_preview_(url);
+    }
+}
+
 std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
     const std::vector<std::string>& keys) const
 {
@@ -1609,14 +1828,30 @@ std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
 
 void ShellBase::on_visible_rows_changed_(const std::vector<std::string>& keys)
 {
-    if (!client_ || active_media_group_ == 0 || keys.empty() ||
-        media_key_to_req_.empty())
+    if (client_ && active_media_group_ != 0 && !keys.empty() &&
+        !media_key_to_req_.empty())
     {
-        return;
+        auto ids = resolve_visible_request_ids_(keys);
+        if (!ids.empty())
+            client_->prioritize_media(active_media_group_, ids);
     }
-    auto ids = resolve_visible_request_ids_(keys);
-    if (!ids.empty())
-        client_->prioritize_media(active_media_group_, ids);
+
+    // Lazy media fetch: rows outside the initial prefetch window enter the
+    // viewport as the user scrolls. Fetch their media now, deduped by
+    // media_prepped_event_ids_ so each event is only processed once.
+    if (!room_view_ || !room_view_->message_list())
+        return;
+    auto* ml = room_view_->message_list();
+    auto [first, last] = ml->visible_range();
+    if (first < 0)
+        return;
+    const auto& msgs = ml->messages();
+    for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+    {
+        const auto& row = msgs[static_cast<std::size_t>(i)];
+        if (media_prepped_event_ids_.insert(row.event_id).second)
+            ensure_row_media_(row, /*fetch_avatars=*/true);
+    }
 }
 
 namespace
@@ -1702,34 +1937,37 @@ void ShellBase::ensure_room_preview_override_(const std::string& room_id)
     {
         return;
     }
-    auto sess = active_account_;
-    run_async_mut_(
-        [this, sess, room_id]()
+    auto req_id = next_request_id_++;
+    pending_preview_overrides_[req_id] = room_id;
+    client_->room_media_preview_override_async(req_id, room_id);
+}
+
+void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
+                                                       std::string override_json)
+{
+    auto it = pending_preview_overrides_.find(request_id);
+    if (it == pending_preview_overrides_.end())
+        return;
+    std::string room_id = std::move(it->second);
+    pending_preview_overrides_.erase(it);
+
+    room_preview_override_in_flight_.erase(room_id);
+    room_preview_overrides_[room_id] = tesseract::MediaPreviewOverride::from_json(override_json);
+
+    // Now that the join rule + override are known, fetch any media that turned
+    // out to be allowed in this room and re-evaluate the placeholders.
+    if (room_view_ && room_id == current_room_id_ &&
+        should_auto_preview_(room_id))
+    {
+        if (auto* ml = room_view_->message_list())
         {
-            if (!sess || !sess->client) return;
-            auto ov = sess->client->room_media_preview_override(room_id);
-            post_to_ui_alive_(
-                [this, room_id, ov = std::move(ov)]() mutable
-                {
-                    room_preview_override_in_flight_.erase(room_id);
-                    room_preview_overrides_[room_id] = std::move(ov);
-                    // Now that the join rule + override are known, fetch any
-                    // media that turned out to be allowed in this room and
-                    // re-evaluate the placeholders.
-                    if (room_view_ && room_id == current_room_id_ &&
-                        should_auto_preview_(room_id))
-                    {
-                        if (auto* ml = room_view_->message_list())
-                        {
-                            for (const auto& row : ml->messages())
-                            {
-                                reveal_media_fetch_(row);
-                            }
-                        }
-                    }
-                    request_relayout_();
-                });
-        });
+            for (const auto& row : ml->messages())
+            {
+                reveal_media_fetch_(row);
+            }
+        }
+    }
+    request_relayout_();
 }
 
 void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
@@ -1755,11 +1993,11 @@ void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
         if (row.thumbnail)
             ensure_media_image_(row.thumbnail->fetch_token(),
                                 visual::kStickerSize, visual::kStickerSize,
-                                media_group);
+                                media_group, MediaKind::Sticker);
         else if (row.source)
             ensure_media_image_(row.source->fetch_token(),
                                 visual::kStickerSize, visual::kStickerSize,
-                                media_group);
+                                media_group, MediaKind::Sticker);
     }
     else if (row.kind == K::Video)
     {
@@ -1851,7 +2089,14 @@ void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
     {
         return;
     }
-    auto cfg = client_->media_preview_config();
+    // Kick off an async read; result arrives in handle_media_preview_config_fetched_ui_.
+    client_->media_preview_config_async(next_request_id_++);
+}
+
+void ShellBase::handle_media_preview_config_fetched_ui_(std::uint64_t /*request_id*/,
+                                                        std::string config_json)
+{
+    auto cfg = tesseract::MediaPreviewConfig::from_json(config_json);
     auto& s = tesseract::Settings::instance();
     s.media_previews = mode_to_settings_(cfg.media_previews);
     s.invite_avatars = cfg.invite_avatars;
@@ -1880,17 +2125,23 @@ ShellBase::build_rows_(const EventList& snapshot)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
-    for (const auto& ev : snapshot)
+    // Only prefetch media for the trailing window — events at the top of the
+    // snapshot are above the initial viewport and their media is fetched lazily
+    // as the user scrolls up (via on_visible_rows_changed_).
+    constexpr std::size_t kMediaPrefetchWindow = 50;
+    const std::size_t n = snapshot.size();
+    for (std::size_t i = 0; i < n; ++i)
     {
+        const auto& ev = snapshot[i];
         if (!ev)
-        {
             continue;
-        }
-        prep_row_media_(*ev);
-        if (!ev->in_reply_to_id.empty())
+        if (i + kMediaPrefetchWindow >= n)
         {
-            ensure_reply_details_(ev->event_id);
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
+            media_prepped_event_ids_.insert(ev->event_id);
         }
+        if (!ev->in_reply_to_id.empty())
+            ensure_reply_details_(ev->event_id);
         rows.push_back(views::make_row_data(*ev, my_user_id_));
     }
     return rows;
@@ -1901,17 +2152,20 @@ ShellBase::build_rows_(const std::vector<Event*>& snapshot)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
-    for (auto* ev : snapshot)
+    constexpr std::size_t kMediaPrefetchWindow = 50;
+    const std::size_t n = snapshot.size();
+    for (std::size_t i = 0; i < n; ++i)
     {
+        auto* ev = snapshot[i];
         if (!ev)
-        {
             continue;
-        }
-        prep_row_media_(*ev);
-        if (!ev->in_reply_to_id.empty())
+        if (i + kMediaPrefetchWindow >= n)
         {
-            ensure_reply_details_(ev->event_id);
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
+            media_prepped_event_ids_.insert(ev->event_id);
         }
+        if (!ev->in_reply_to_id.empty())
+            ensure_reply_details_(ev->event_id);
         rows.push_back(views::make_row_data(*ev, my_user_id_));
     }
     return rows;
@@ -2534,13 +2788,14 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
     {
         uint64_t notification_count;
         uint64_t highlight_count;
+        uint64_t unread_count;
         uint64_t last_activity_ts;
     };
     std::unordered_map<std::string, ChildCounts> counts;
     counts.reserve(rooms_.size());
     for (const auto& r : rooms_)
         counts[r.id] = {r.notification_count, r.highlight_count,
-                        r.last_activity_ts};
+                        r.unread_count, r.last_activity_ts};
 
     for (auto& r : rooms)
     {
@@ -2549,7 +2804,8 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
         auto it = space_children_cache_.find(r.id);
         if (it == space_children_cache_.end())
             continue;
-        uint64_t nc = 0, hc = 0, newest_unread_ts = 0;
+        uint64_t nc = 0, hc = 0, uc = 0;
+        uint64_t newest_unread_ts = 0, newest_quiet_ts = 0;
         for (const auto& child_id : it->second)
         {
             auto ci = counts.find(child_id);
@@ -2557,18 +2813,25 @@ void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
             {
                 nc += ci->second.notification_count;
                 hc += ci->second.highlight_count;
+                uc += ci->second.unread_count;
                 // Track the most recent activity among *unread* children so the
                 // room list can treat the space as a recency-ranked unread
                 // candidate (its own last_activity_ts is not meaningful).
                 if (ci->second.notification_count > 0)
                     newest_unread_ts =
                         std::max(newest_unread_ts, ci->second.last_activity_ts);
+                if (ci->second.unread_count > 0)
+                    newest_quiet_ts =
+                        std::max(newest_quiet_ts, ci->second.last_activity_ts);
             }
         }
         r.notification_count = nc;
         r.highlight_count    = hc;
+        r.unread_count       = uc;
         if (nc > 0)
             r.last_activity_ts = std::max(r.last_activity_ts, newest_unread_ts);
+        else if (uc > 0)
+            r.last_activity_ts = std::max(r.last_activity_ts, newest_quiet_ts);
     }
 }
 
@@ -2715,46 +2978,73 @@ void ShellBase::handle_open_dm_(const std::string& user_id)
 void ShellBase::fetch_own_extended_profile_async_()
 {
     if (!client_) return;
-    auto sess = active_account_;
-    run_async_([this, sess]() {
-        if (!sess || !sess->client) return;
-        auto prof = sess->client->get_extended_profile(my_user_id_);
-        post_to_ui_alive_([this, prof = std::move(prof)]() mutable {
-            own_extended_profile_ = std::move(prof);
-            on_own_extended_profile_ready_ui_();
-        });
-    });
+    // No entry in pending_user_profiles_ → handle_extended_profile_ready_ui_
+    // treats this as the own-profile case.
+    client_->get_extended_profile_async(next_request_id_++, my_user_id_);
 }
 
 void ShellBase::handle_profile_field_change_(const std::string& key,
                                               const std::string& value_json)
 {
     if (!client_) return;
-    auto sess = active_account_;
-    run_async_([this, sess, key, value_json]() {
-        if (!sess || !sess->client) return;
-        tesseract::Result r = (value_json == "null")
-            ? sess->client->delete_profile_field(key)
-            : sess->client->set_profile_field(key, value_json);
-        post_to_ui_alive_([this, key, ok = r.ok, msg = std::move(r.message)]() mutable {
-            on_profile_field_result_ui_(key, ok, msg);
-            if (ok) fetch_own_extended_profile_async_();
-        });
-    });
+    client_->set_or_delete_profile_field_async(next_request_id_++, key, value_json);
+}
+
+void ShellBase::handle_profile_field_result_ui_(std::uint64_t /*request_id*/,
+                                                 std::string key, bool ok,
+                                                 std::string message)
+{
+    on_profile_field_result_ui_(key, ok, message);
+    if (ok) fetch_own_extended_profile_async_();
 }
 
 void ShellBase::fetch_user_extended_profile_async_(const std::string& user_id,
                                                     views::UserProfilePanel* panel)
 {
     if (!client_ || !panel) return;
-    auto sess = active_account_;
-    run_async_([this, sess, user_id, panel]() {
-        if (!sess || !sess->client) return;
-        auto ep = sess->client->get_extended_profile(user_id);
-        post_to_ui_alive_([panel, ep = std::move(ep)]() mutable {
-            panel->set_extended_profile(ep);
-        });
-    });
+    auto req_id = next_request_id_++;
+    pending_user_profiles_[req_id] = panel;
+    client_->get_extended_profile_async(req_id, user_id);
+}
+
+void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
+                                                   std::string profile_json)
+{
+    // User-panel case: deliver to the requesting panel.
+    auto pit = pending_user_profiles_.find(request_id);
+    if (pit != pending_user_profiles_.end())
+    {
+        auto* panel = pit->second;
+        pending_user_profiles_.erase(pit);
+        auto p = tesseract::UserProfile::from_json(profile_json);
+        tesseract::ExtendedProfile ep{p.pronouns, p.tz, p.biography};
+        panel->set_extended_profile(ep);
+        return;
+    }
+
+    // Quick-switcher resolve case: gen check, then merge.
+    auto rit = pending_resolve_requests_.find(request_id);
+    if (rit != pending_resolve_requests_.end())
+    {
+        auto [mxid, gen] = rit->second;
+        pending_resolve_requests_.erase(rit);
+        if (user_resolve_gen_.load() == gen)
+        {
+            auto p = tesseract::UserProfile::from_json(profile_json);
+            if (p.exists)
+                merge_resolved_user_(p);
+        }
+        return;
+    }
+
+    // Own-profile case (no map entry).
+    auto p = tesseract::UserProfile::from_json(profile_json);
+    // Only update if the fetch returned a valid result; otherwise keep stale.
+    if (p.exists || own_extended_profile_.pronouns.empty())
+    {
+        own_extended_profile_ = {p.pronouns, p.tz, p.biography};
+        on_own_extended_profile_ready_ui_();
+    }
 }
 
 namespace
@@ -2793,23 +3083,25 @@ void ShellBase::handle_user_query_(const std::string& query)
     if (is_complete_mxid(query) &&
         known_users_.find(query) == known_users_.end())
     {
-        auto sess = active_account_;
+        if (!client_) return;
+        auto req_id = next_request_id_++;
+        pending_resolve_requests_[req_id] = {query, gen};
         run_async_(
-            [this, sess, mxid = query, gen]()
+            [this, req_id, mxid = query, gen]()
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 if (user_resolve_gen_.load() != gen)
-                    return; // superseded during the debounce window
-                tesseract::UserProfile prof;
-                if (sess && sess->client)
-                    prof = sess->client->resolve_user_profile(mxid);
-                post_to_ui_alive_(
-                    [this, gen, prof = std::move(prof)]() mutable
-                    {
-                        if (user_resolve_gen_.load() != gen || !prof.exists)
-                            return;
-                        merge_resolved_user_(prof);
+                {
+                    // Superseded — remove the stale map entry on the UI thread.
+                    post_to_ui_alive_([this, req_id]() {
+                        pending_resolve_requests_.erase(req_id);
                     });
+                    return;
+                }
+                // Still valid — fire the async FFI call; result arrives via
+                // handle_extended_profile_ready_ui_ → pending_resolve_requests_.
+                if (client_)
+                    client_->resolve_user_profile_async(req_id, mxid);
             });
     }
 }
@@ -3005,6 +3297,8 @@ void ShellBase::invalidate_known_users_()
     known_users_building_ = false;
     // Drop any in-flight resolve targeting the old roster/account.
     user_resolve_gen_.fetch_add(1);
+    pending_resolve_requests_.clear();
+    pending_user_profiles_.clear();
 }
 
 uint64_t ShellBase::compute_dock_notification_count_() const
@@ -3373,6 +3667,32 @@ void ShellBase::handle_search_results_ui_(
         main_app_->message_search()->set_results(std::move(results), for_query);
         schedule_relayout_();
     }
+}
+
+void ShellBase::handle_forward_done_ui_(std::uint64_t request_id)
+{
+    pending_forwards_.erase(request_id);
+    if (pending_forwards_.empty())
+        if (auto* fp = main_app_ ? main_app_->forward_picker() : nullptr)
+            fp->close();
+}
+
+void ShellBase::handle_forward_failed_ui_(std::uint64_t      request_id,
+                                          const std::string& message)
+{
+    auto it = pending_forwards_.find(request_id);
+    if (it == pending_forwards_.end())
+        return;
+    const auto* room = room_by_id_(it->second);
+    std::string target_name =
+        (room && !room->name.empty()) ? room->name : it->second;
+    pending_forwards_.erase(it);
+    auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
+    if (!fp)
+        return;
+    fp->add_forward_error(target_name, message);
+    if (pending_forwards_.empty())
+        fp->mark_complete();
 }
 
 void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,
@@ -4995,6 +5315,8 @@ void ShellBase::notify_secondary_media_ready_(const std::string& cache_key,
         {
         case MediaKind::MediaImage:
         case MediaKind::MediaThumbnail:
+        case MediaKind::Sticker:
+        case MediaKind::Reaction:
             rv->notify_image_ready(cache_key);
             w->request_relayout();
             break;
@@ -5230,7 +5552,9 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
-            prep_row_media_(*ev);
+            // Prepended events land above the current viewport. Skip eager
+            // media fetch; on_visible_rows_changed_ handles them lazily when
+            // the user scrolls up to reveal them.
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
@@ -5267,7 +5591,9 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
-            prep_row_media_(*ev);
+            // Suppress avatar fetches — on_visible_avatars_changed handles
+            // lazy avatar loading for whatever is actually visible.
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
@@ -5301,7 +5627,9 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
             auto& ev = events[i];
             if (!ev || ev->type == tesseract::EventType::Unhandled)
                 continue;
-            prep_row_media_(*ev);
+            // Batch updates can affect off-screen rows; suppress avatar fetches
+            // so we don't bulk-request every sender across the entire history.
+            prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty())
                 ensure_reply_details_(ev->event_id);
             room_view_->update_message(
@@ -5437,7 +5765,7 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
     {
         if (!ev || ev->type == tesseract::EventType::Unhandled)
             continue;
-        prep_row_media_(*ev);
+        prep_row_media_(*ev, /*fetch_avatars=*/false);
         if (!ev->in_reply_to_id.empty())
             ensure_reply_details_(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
@@ -5785,15 +6113,8 @@ void ShellBase::start_presence_tracking_()
         // PUT targets that account's Client (and keeps it alive) even if the
         // user logs out / switches before the worker runs.
         const auto target = to_client_presence(s);
-        auto sess = active_account_;
-        run_async_mut_(
-            [sess, target]
-            {
-                if (sess && sess->client)
-                {
-                    (void) sess->client->set_presence(target);
-                }
-            });
+        if (client_)
+            client_->set_presence_async(target);
     };
     presence_tracker_->notify_sync_started();
 }
@@ -6436,6 +6757,7 @@ void ShellBase::restart_sdk_()
     // MSC4278 per-account gating state.
     room_preview_overrides_.clear();
     room_preview_override_in_flight_.clear();
+    pending_preview_overrides_.clear();
     revealed_events_.clear();
     on_tab_state_changed_ui_();
 
@@ -6805,6 +7127,10 @@ void ShellBase::after_active_room_changed_()
     // a rebuild (SDK subscribe_room reuse).
     touch_visited_room_(current_room_id_);
     prune_warm_subscriptions_();
+
+    // Per-room lazy-media tracking: reset so the new room's rows are all
+    // eligible for on-demand fetch via on_visible_rows_changed_.
+    media_prepped_event_ids_.clear();
 
     // Drop the room we just left: cancel its still-pending timeline media
     // downloads (full-size images, thumbnails) so the room we're switching to

@@ -226,16 +226,6 @@ struct MediaBytesPayload
     std::string cache_key;
     std::vector<std::uint8_t> bytes;
 };
-struct VideoBytesPayload
-{
-    std::string source_json; // original request key
-    std::vector<std::uint8_t> bytes;
-};
-struct FileBytesPayload
-{
-    std::string dest_path;
-    std::vector<uint8_t> bytes;
-};
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -1338,28 +1328,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         delete p;
         return 0;
     }
-    case WM_TESSERACT_VIDEO_BYTES:
-    {
-        auto* p = reinterpret_cast<VideoBytesPayload*>(lParam);
-        if (self->vid_viewer_ && !p->bytes.empty())
-        {
-            self->vid_viewer_->load_bytes(p->bytes.data(), p->bytes.size());
-        }
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_FILE_BYTES:
-    {
-        auto* p = reinterpret_cast<FileBytesPayload*>(lParam);
-        if (p && !p->bytes.empty())
-        {
-            std::ofstream f(p->dest_path, std::ios::binary);
-            f.write(reinterpret_cast<const char*>(p->bytes.data()),
-                    static_cast<std::streamsize>(p->bytes.size()));
-        }
-        delete p;
-        return 0;
-    }
     case WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE:
     {
         // lParam owns a heap-allocated RoomSummary (or empty room_id = error).
@@ -2444,12 +2412,8 @@ void MainWindow::on_create(HWND hwnd)
         setup_dm_callbacks();
         room_view_->on_ignore_user = [this](std::string user_id)
         {
-            auto* c = client_;
-            run_async_mut_(
-                [c, user_id = std::move(user_id)]()
-                {
-                    c->ignore_user(user_id);
-                });
+            if (client_)
+                client_->ignore_user_async(std::move(user_id));
         };
         room_view_->set_repaint_requester(
             [this]
@@ -2678,6 +2642,48 @@ void MainWindow::on_create(HWND hwnd)
             ms->on_close = [this] { close_message_search_(); };
         }
 
+        // Forward room picker native search field.
+        forward_picker_field_ = main_app_surface_->host().make_text_field();
+        forward_picker_field_->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
+        forward_picker_field_->set_visible(false);
+        forward_picker_field_->set_on_changed(
+            [this](const std::string& q)
+            {
+                if (main_app_ && main_app_->forward_picker())
+                {
+                    main_app_->forward_picker()->set_query(q);
+                    main_app_surface_->relayout();
+                }
+            });
+        forward_picker_field_->set_on_submit(
+            [this]
+            {
+                if (main_app_ && main_app_->forward_picker())
+                    main_app_->forward_picker()->confirm();
+            });
+        forward_picker_field_->set_on_popup_nav(
+            [this](tk::NavKey nk) -> bool
+            {
+                auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
+                if (!fp || !fp->is_open())
+                    return false;
+                switch (nk)
+                {
+                case tk::NavKey::Up:
+                    fp->move_selection(-1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Down:
+                    fp->move_selection(+1);
+                    main_app_surface_->relayout();
+                    return true;
+                case tk::NavKey::Escape:
+                    close_forward_picker_();
+                    return true;
+                default:
+                    return false;
+                }
+            });
         // Per-room "find in conversation" (Ctrl+F) native field.
         find_in_room_field_ = main_app_surface_->host().make_text_field();
         find_in_room_field_->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
@@ -2808,41 +2814,67 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     auto alive = gif_alive_;
                     auto url = result.preview_url;
-                    run_async_(
-                        [this, url, alive, repaint]
-                        {
-                            // Disk-cache the preview too, symmetrically with the
-                            // animated source. Otherwise a GIF whose MP4 is
-                            // already on disk loads its video faster than its
-                            // preview downloads, leaving the cell blank until
-                            // the video appears instead of the thumbnail first.
-                            const std::string disk_key = gif_src_disk_key_(url);
-                            std::vector<std::uint8_t> bytes =
-                                account_manager_.media_disk_cache().load(disk_key);
-                            if (bytes.empty() && client_)
+                    {
+                        const std::string disk_key = gif_src_disk_key_(url);
+                        auto req_id = begin_media_req_(0,
+                            [this, url, disk_key, alive, repaint](
+                                std::vector<std::uint8_t> bytes) mutable
                             {
-                                bytes = client_->fetch_url_bytes(url);
-                                if (!bytes.empty())
-                                    account_manager_.media_disk_cache().store(disk_key, bytes);
-                            }
-                            post_to_ui_(
-                                [this, url, b = std::move(bytes), alive,
-                                 repaint]() mutable
+                                gif_preview_inflight_.erase(url);
+                                if (bytes.empty()) return;
+                                // Decode off the UI thread; WIC work must not
+                                // run on the message pump.
+                                run_async_(
+                                    [this, url, disk_key, alive, repaint,
+                                     bytes = std::move(bytes)]() mutable
+                                    {
+                                        account_manager_.media_disk_cache().store(
+                                            disk_key, bytes);
+                                        using CW = tesseract::views::GifPopup;
+                                        auto d = std::make_shared<DecodedImage>(
+                                            decode_image_(bytes,
+                                                          int(CW::kCellW) * 2,
+                                                          int(CW::kCellH) * 2));
+                                        post_to_ui_(
+                                            [this, url, d, alive, repaint]() mutable
+                                            {
+                                                if (!*alive) return;
+                                                if (d->still)
+                                                    gif_previews_[url] =
+                                                        std::move(d->still);
+                                                repaint();
+                                            });
+                                    });
+                            });
+                        // Snapshot client_ on the UI thread to avoid a data
+                        // race with the account-removal path.
+                        auto* client_snap = client_;
+                        if (!client_snap)
+                        {
+                            handle_media_ready_ui_(req_id, {});
+                        }
+                        else
+                        {
+                            run_async_(
+                                [this, req_id, url, disk_key, client_snap]()
                                 {
-                                    if (!*alive)
+                                    auto bytes =
+                                        account_manager_.media_disk_cache().load(disk_key);
+                                    if (!bytes.empty())
+                                    {
+                                        post_to_ui_(
+                                            [this, req_id,
+                                             bytes = std::move(bytes)]() mutable
+                                            {
+                                                handle_media_ready_ui_(
+                                                    req_id, std::move(bytes));
+                                            });
                                         return;
-                                    gif_preview_inflight_.erase(url);
-                                    if (b.empty())
-                                        return;
-                                    using CW = tesseract::views::GifPopup;
-                                    DecodedImage d = decode_image_(
-                                        b, int(CW::kCellW) * 2,
-                                        int(CW::kCellH) * 2);
-                                    if (d.still)
-                                        gif_previews_[url] = std::move(d.still);
-                                    repaint();
+                                    }
+                                    client_snap->fetch_url_async(req_id, 0, url);
                                 });
-                        });
+                        }
+                    }
                 }
                 // Kick off the strip-display fetch (strip_url: WebP/GIF) — decode
                 // on the worker thread. The MP4 send form is fetched at send time.
@@ -2851,101 +2883,123 @@ void MainWindow::on_create(HWND hwnd)
                     auto alive = gif_alive_;
                     auto anim_url = result.strip_url;
                     auto anim_mime = result.strip_mime;
-                    run_async_(
-                        [this, anim_url, anim_mime, alive, repaint]
+                    {
+                        const std::string disk_key = gif_src_disk_key_(anim_url);
+                        auto req_id = begin_media_req_(0,
+                            [this, anim_url, anim_mime, disk_key, alive, repaint](
+                                std::vector<std::uint8_t> bytes) mutable
+                            {
+                                gif_anim_inflight_.erase(anim_url);
+                                if (bytes.empty()) return;
+                                run_async_(
+                                    [this, anim_url, anim_mime, disk_key, alive,
+                                     repaint, bytes = std::move(bytes)]() mutable
+                                    {
+                                        account_manager_.media_disk_cache().store(
+                                            disk_key, bytes);
+                                        using CW = tesseract::views::GifPopup;
+                                        if (anim_mime == "video/mp4")
+                                        {
+                                            tk::DecodedVideoFrames dvf =
+                                                tk::decode_video_frames(
+                                                    bytes.data(), bytes.size(),
+                                                    int(CW::kCellW) * 2,
+                                                    int(CW::kCellH) * 2);
+                                            post_to_ui_(
+                                                [this, anim_url,
+                                                 dvf = std::move(dvf),
+                                                 alive, repaint]() mutable
+                                                {
+                                                    if (!*alive)
+                                                        return;
+                                                    auto& backend =
+                                                        tk::win32::backend_singleton();
+                                                    std::vector<
+                                                        std::unique_ptr<tk::Image>>
+                                                        imgs;
+                                                    std::vector<int> delays;
+                                                    for (auto& f : dvf.frames)
+                                                    {
+                                                        auto img =
+                                                            tk::d2d::make_image_from_bgra(
+                                                                backend, f.bgra.data(),
+                                                                f.w, f.h);
+                                                        if (img)
+                                                        {
+                                                            imgs.push_back(std::move(img));
+                                                            delays.push_back(f.delay_ms);
+                                                        }
+                                                    }
+                                                    if (!imgs.empty())
+                                                    {
+                                                        account_manager_.anim_cache().store(
+                                                            anim_url, std::move(imgs),
+                                                            std::move(delays),
+                                                            static_cast<std::int64_t>(
+                                                                GetTickCount64()));
+                                                        start_anim_tick_();
+                                                    }
+                                                    repaint();
+                                                });
+                                        }
+                                        else
+                                        {
+                                            auto d = std::make_shared<DecodedImage>(
+                                                decode_image_(bytes,
+                                                              int(CW::kCellW) * 2,
+                                                              int(CW::kCellH) * 2));
+                                            post_to_ui_(
+                                                [this, anim_url, d, alive,
+                                                 repaint]() mutable
+                                                {
+                                                    if (!*alive)
+                                                        return;
+                                                    if (!d->frames.empty())
+                                                    {
+                                                        account_manager_.anim_cache().store(
+                                                            anim_url, std::move(d->frames),
+                                                            std::move(d->delays_ms),
+                                                            static_cast<std::int64_t>(
+                                                                GetTickCount64()));
+                                                        start_anim_tick_();
+                                                    }
+                                                    else if (d->still)
+                                                    {
+                                                        gif_previews_[anim_url] =
+                                                            std::move(d->still);
+                                                    }
+                                                    repaint();
+                                                });
+                                        }
+                                    });
+                            });
+                        auto* client_snap = client_;
+                        if (!client_snap)
                         {
-                            // Source bytes: disk cache first, else download and
-                            // persist so the send path reuses them.
-                            const std::string disk_key =
-                                gif_src_disk_key_(anim_url);
-                            std::vector<std::uint8_t> bytes =
-                                account_manager_.media_disk_cache().load(disk_key);
-                            if (bytes.empty() && client_)
-                            {
-                                bytes = client_->fetch_url_bytes(anim_url);
-                                if (!bytes.empty())
-                                    account_manager_.media_disk_cache().store(disk_key, bytes);
-                            }
-                            using CW = tesseract::views::GifPopup;
-                            if (!bytes.empty() && anim_mime == "video/mp4")
-                            {
-                                // Decode MP4 on the worker thread (IMFSourceReader).
-                                tk::DecodedVideoFrames dvf =
-                                    tk::decode_video_frames(
-                                        bytes.data(), bytes.size(),
-                                        int(CW::kCellW) * 2,
-                                        int(CW::kCellH) * 2);
-                                // Convert raw BGRA → D2D images in post_to_ui_
-                                // (WIC/D2D calls require COM; do on UI thread).
-                                post_to_ui_(
-                                    [this, anim_url, dvf = std::move(dvf), alive,
-                                     repaint]() mutable
+                            handle_media_ready_ui_(req_id, {});
+                        }
+                        else
+                        {
+                            run_async_(
+                                [this, req_id, anim_url, disk_key, client_snap]()
+                                {
+                                    auto bytes =
+                                        account_manager_.media_disk_cache().load(disk_key);
+                                    if (!bytes.empty())
                                     {
-                                        if (!*alive)
-                                            return;
-                                        gif_anim_inflight_.erase(anim_url);
-                                        auto& backend =
-                                            tk::win32::backend_singleton();
-                                        std::vector<
-                                            std::unique_ptr<tk::Image>>
-                                            imgs;
-                                        std::vector<int> delays;
-                                        for (auto& f : dvf.frames)
-                                        {
-                                            auto img =
-                                                tk::d2d::make_image_from_bgra(
-                                                    backend, f.bgra.data(),
-                                                    f.w, f.h);
-                                            if (img)
+                                        post_to_ui_(
+                                            [this, req_id,
+                                             bytes = std::move(bytes)]() mutable
                                             {
-                                                imgs.push_back(std::move(img));
-                                                delays.push_back(f.delay_ms);
-                                            }
-                                        }
-                                        if (!imgs.empty())
-                                        {
-                                            account_manager_.anim_cache().store(
-                                                anim_url, std::move(imgs),
-                                                std::move(delays),
-                                                static_cast<std::int64_t>(
-                                                    GetTickCount64()));
-                                            start_anim_tick_();
-                                        }
-                                        repaint();
-                                    });
-                            }
-                            else
-                            {
-                                auto d = std::make_shared<DecodedImage>(
-                                    bytes.empty()
-                                        ? DecodedImage{}
-                                        : decode_image_(bytes,
-                                                        int(CW::kCellW) * 2,
-                                                        int(CW::kCellH) * 2));
-                                post_to_ui_(
-                                    [this, anim_url, d, alive, repaint]() mutable
-                                    {
-                                        if (!*alive)
-                                            return;
-                                        gif_anim_inflight_.erase(anim_url);
-                                        if (!d->frames.empty())
-                                        {
-                                            account_manager_.anim_cache().store(
-                                                anim_url, std::move(d->frames),
-                                                std::move(d->delays_ms),
-                                                static_cast<std::int64_t>(
-                                                    GetTickCount64()));
-                                            start_anim_tick_();
-                                        }
-                                        else if (d->still)
-                                        {
-                                            gif_previews_[anim_url] =
-                                                std::move(d->still);
-                                        }
-                                        repaint();
-                                    });
-                            }
-                        });
+                                                handle_media_ready_ui_(
+                                                    req_id, std::move(bytes));
+                                            });
+                                        return;
+                                    }
+                                    client_snap->fetch_url_async(req_id, 0, anim_url);
+                                });
+                        }
+                    }
                 }
                 // Static JPEG preview shown while the animation decodes (or as
                 // the permanent fallback for a non-animated result).
@@ -3260,17 +3314,21 @@ void MainWindow::on_create(HWND hwnd)
                 L"Images\0*.jpg;*.jpeg;*.png;*.gif;*.webp\0All files\0*.*\0\0");
             if (path.empty())
                 return;
-            HWND target = hwnd_;
-            run_async_(
-                [this, target, source_url = std::move(source_url), path]()
-                {
-                    auto bytes = client_->fetch_source_bytes(source_url);
-                    auto* p = new FileBytesPayload{
-                        wstr_to_utf8(path.c_str()), std::move(bytes)};
-                    if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
-                                      reinterpret_cast<LPARAM>(p)))
-                        delete p;
-                });
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [path](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (!bytes.empty())
+                        {
+                            std::ofstream f(wstr_to_utf8(path.c_str()),
+                                            std::ios::binary);
+                            f.write(reinterpret_cast<const char*>(bytes.data()),
+                                    static_cast<std::streamsize>(bytes.size()));
+                        }
+                    });
+                client_->fetch_source_bytes_async(req_id, source_url);
+            }
         };
 
         room_view_->on_image_clicked =
@@ -3340,17 +3398,21 @@ void MainWindow::on_create(HWND hwnd)
                 L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");
             if (path.empty())
                 return;
-            HWND target = hwnd_;
-            run_async_(
-                [this, target, source_json = std::move(source_json), path]()
-                {
-                    auto bytes = client_->fetch_source_bytes(source_json);
-                    auto* p = new FileBytesPayload{
-                        wstr_to_utf8(path.c_str()), std::move(bytes)};
-                    if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
-                                      reinterpret_cast<LPARAM>(p)))
-                        delete p;
-                });
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [path](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (!bytes.empty())
+                        {
+                            std::ofstream f(wstr_to_utf8(path.c_str()),
+                                            std::ios::binary);
+                            f.write(reinterpret_cast<const char*>(bytes.data()),
+                                    static_cast<std::streamsize>(bytes.size()));
+                        }
+                    });
+                client_->fetch_source_bytes_async(req_id, source_json);
+            }
         };
 
         room_view_->on_video_clicked =
@@ -3376,20 +3438,18 @@ void MainWindow::on_create(HWND hwnd)
             {
                 SetFocus(hwnd_);
             }
-            // Async byte fetch via PostMessage.
-            HWND target = hwnd_;
+            // Async byte fetch via begin_media_req_.
             std::string src = src_tok;
-            run_async_(
-                [this, target, src = std::move(src)]() mutable
-                {
-                    auto bytes = client_->fetch_source_bytes(src);
-                    auto* p = new VideoBytesPayload{src, std::move(bytes)};
-                    if (!PostMessageW(target, WM_TESSERACT_VIDEO_BYTES, 0,
-                                      reinterpret_cast<LPARAM>(p)))
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [this](std::vector<std::uint8_t> bytes) mutable
                     {
-                        delete p;
-                    }
-                });
+                        if (vid_viewer_ && !bytes.empty())
+                            vid_viewer_->load_bytes(bytes.data(), bytes.size());
+                    });
+                client_->fetch_source_bytes_async(req_id, src);
+            }
         };
 
         room_view_->on_file_clicked =
@@ -3402,18 +3462,22 @@ void MainWindow::on_create(HWND hwnd)
                                                   L"All files\0*.*\0\0");
             if (path.empty())
                 return;
-            HWND target = hwnd_;
             std::string url = hit.source ? hit.source->fetch_token() : std::string{};
-            run_async_(
-                [this, target, url, path]()
-                {
-                    auto bytes = client_->fetch_source_bytes(url);
-                    auto* p = new FileBytesPayload{
-                        wstr_to_utf8(path.c_str()), std::move(bytes)};
-                    if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
-                                      reinterpret_cast<LPARAM>(p)))
-                        delete p;
-                });
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [path](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (!bytes.empty())
+                        {
+                            std::ofstream f(wstr_to_utf8(path.c_str()),
+                                            std::ios::binary);
+                            f.write(reinterpret_cast<const char*>(bytes.data()),
+                                    static_cast<std::streamsize>(bytes.size()));
+                        }
+                    });
+                client_->fetch_source_bytes_async(req_id, url);
+            }
         };
 
         room_view_->set_video_player_factory(
@@ -3425,17 +3489,16 @@ void MainWindow::on_create(HWND hwnd)
             [this](const std::string& src,
                    std::function<void(std::vector<std::uint8_t>)> on_ready)
             {
-                run_async_(
-                    [this, src, on_ready = std::move(on_ready)]() mutable
-                    {
-                        auto bytes = client_->fetch_source_bytes(src);
-                        post_to_ui_(
-                            [on_ready = std::move(on_ready),
-                             bytes = std::move(bytes)]() mutable
-                            {
-                                on_ready(std::move(bytes));
-                            });
-                    });
+                if (client_)
+                {
+                    auto req_id = begin_media_req_(0,
+                        [on_ready = std::move(on_ready)](
+                            std::vector<std::uint8_t> bytes) mutable
+                        {
+                            on_ready(std::move(bytes));
+                        });
+                    client_->fetch_source_bytes_async(req_id, src);
+                }
             });
 
         // ── set_on_layout: keep native overlays aligned ──────────────────────
@@ -3537,6 +3600,21 @@ void MainWindow::on_create(HWND hwnd)
                         r.w -= 4;
                         r.h -= 4;
                         message_search_field_->set_rect(r);
+                    }
+                }
+
+                if (forward_picker_field_)
+                {
+                    bool vis = main_app_->forward_picker_field_visible();
+                    forward_picker_field_->set_visible(vis);
+                    if (vis)
+                    {
+                        tk::Rect r = main_app_->forward_picker_field_rect();
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
+                        forward_picker_field_->set_rect(r);
                     }
                 }
 
@@ -4573,6 +4651,28 @@ void MainWindow::close_message_search_()
     }
 }
 
+void MainWindow::close_forward_picker_()
+{
+    if (main_app_ && main_app_->forward_picker())
+        main_app_->forward_picker()->close();
+}
+
+void MainWindow::focus_forward_picker_field_()
+{
+    if (forward_picker_field_)
+    {
+        forward_picker_field_->set_text("");
+        forward_picker_field_->set_focused(true);
+    }
+}
+
+void MainWindow::hide_forward_picker_field_()
+{
+    if (forward_picker_field_)
+        forward_picker_field_->set_visible(false);
+    SetFocus(hwnd_);
+}
+
 void MainWindow::open_find_in_room_()
 {
     auto* rv = main_app_ ? main_app_->room_view() : nullptr;
@@ -4962,10 +5062,8 @@ void MainWindow::on_space_back()
 //  Avatar / inline-media decode into tk::Image
 // ---------------------------------------------------------------------------
 
-// These three helpers used to call the synchronous Rust FFI directly on
-// the UI thread. `fetch_avatar_bytes` / `fetch_media_bytes` do a
-// `tokio::block_on` inside, so on first sync of an account with many
-// rooms `refresh_room_list` was freezing the message pump for minutes
+// These helpers used to call the synchronous Rust FFI directly on
+// the UI thread, which froze the message pump for minutes on first sync
 // (one network round-trip per room avatar, serialised on the UI thread).
 // Decode + cache + repaint now happens via WM_TESSERACT_MEDIA_BYTES;
 // the call sites return immediately and the next paint shows an
@@ -5149,6 +5247,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         break;
     case MediaKind::MediaImage:
     case MediaKind::MediaThumbnail:
+    case MediaKind::Sticker:
+    case MediaKind::Reaction:
     {
         // Decode off the UI thread — WIC factory is free-threaded (see
         // host_win32.h). decode_image_ handles both animated and still images.

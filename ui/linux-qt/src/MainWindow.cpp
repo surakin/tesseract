@@ -481,19 +481,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             [this](const std::string& src,
                    std::function<void(std::vector<std::uint8_t>)> on_ready)
             {
-                run_async_(
-                    [this, src, on_ready = std::move(on_ready)]() mutable
-                    {
-                        auto bytes = client_->fetch_source_bytes(src);
-                        QMetaObject::invokeMethod(
-                            this,
-                            [on_ready = std::move(on_ready),
-                             bytes = std::move(bytes)]() mutable
-                            {
-                                on_ready(std::move(bytes));
-                            },
-                            Qt::QueuedConnection);
-                    });
+                if (client_)
+                {
+                    auto req_id = begin_media_req_(0,
+                        [on_ready = std::move(on_ready)](
+                            std::vector<std::uint8_t> bytes) mutable
+                        {
+                            on_ready(std::move(bytes));
+                        });
+                    client_->fetch_source_bytes_async(req_id, src);
+                }
             });
 
         mainApp_->room_view()->on_layout_changed = [this]
@@ -1011,22 +1008,18 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             if (path.isEmpty())
                 return;
             std::string dest = path.toStdString();
-            run_async_(
-                [this, source_url = std::move(source_url), dest]()
-                {
-                    auto bytes = client_->fetch_source_bytes(source_url);
-                    QMetaObject::invokeMethod(
-                        this,
-                        [dest, bytes = std::move(bytes)]() mutable
-                        {
-                            if (bytes.empty())
-                                return;
-                            std::ofstream f(dest, std::ios::binary);
-                            f.write(reinterpret_cast<const char*>(bytes.data()),
-                                    static_cast<std::streamsize>(bytes.size()));
-                        },
-                        Qt::QueuedConnection);
-                });
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [dest](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (bytes.empty()) return;
+                        std::ofstream f(dest, std::ios::binary);
+                        f.write(reinterpret_cast<const char*>(bytes.data()),
+                                static_cast<std::streamsize>(bytes.size()));
+                    });
+                client_->fetch_source_bytes_async(req_id, source_url);
+            }
         };
         mainApp_->room_view()->on_video_clicked =
             [this](const tesseract::views::MessageListView::VideoHit& hit)
@@ -1041,22 +1034,17 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();
             std::string src = src_tok;
-            run_async_(
-                [this, src = std::move(src)]() mutable
-                {
-                    auto bytes = client_->fetch_source_bytes(src);
-                    QMetaObject::invokeMethod(
-                        this,
-                        [this, bytes = std::move(bytes)]() mutable
-                        {
-                            if (mainApp_)
-                            {
-                                mainApp_->video_viewer()->load_bytes(
-                                    bytes.data(), bytes.size());
-                            }
-                        },
-                        Qt::QueuedConnection);
-                });
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [this](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (mainApp_ && !bytes.empty())
+                            mainApp_->video_viewer()->load_bytes(
+                                bytes.data(), bytes.size());
+                    });
+                client_->fetch_source_bytes_async(req_id, src);
+            }
         };
         mainApp_->room_view()->on_file_clicked =
             [this](const tesseract::views::MessageListView::FileHit& hit)
@@ -1070,22 +1058,18 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 return;
             std::string url  = hit.source ? hit.source->fetch_token() : std::string{};
             std::string dest = path.toStdString();
-            run_async_(
-                [this, url, dest]()
-                {
-                    auto bytes = client_->fetch_source_bytes(url);
-                    QMetaObject::invokeMethod(
-                        this,
-                        [dest, bytes = std::move(bytes)]() mutable
-                        {
-                            if (bytes.empty())
-                                return;
-                            std::ofstream f(dest, std::ios::binary);
-                            f.write(reinterpret_cast<const char*>(bytes.data()),
-                                    static_cast<std::streamsize>(bytes.size()));
-                        },
-                        Qt::QueuedConnection);
-                });
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [dest](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (bytes.empty()) return;
+                        std::ofstream f(dest, std::ios::binary);
+                        f.write(reinterpret_cast<const char*>(bytes.data()),
+                                static_cast<std::streamsize>(bytes.size()));
+                    });
+                client_->fetch_source_bytes_async(req_id, url);
+            }
         };
         mainApp_->room_view()->on_fetch_room_members =
             [this](const std::string& room_id)
@@ -1173,14 +1157,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mainApp_->room_view()->on_ignore_user =
             [this](const std::string& user_id)
         {
-            if (!client_)
-                return;
-            auto* c = client_;
-            run_async_mut_(
-                [c, user_id]()
-                {
-                    c->ignore_user(user_id);
-                });
+            if (client_)
+                client_->ignore_user_async(user_id);
         };
         mainApp_->video_viewer()->on_save =
             [this](std::string source_json, std::string mime_type)
@@ -1196,22 +1174,18 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             if (path.isEmpty())
                 return;
             std::string dest = path.toStdString();
-            run_async_(
-                [this, source_json = std::move(source_json), dest]()
-                {
-                    auto bytes = client_->fetch_source_bytes(source_json);
-                    QMetaObject::invokeMethod(
-                        this,
-                        [dest, bytes = std::move(bytes)]() mutable
-                        {
-                            if (bytes.empty())
-                                return;
-                            std::ofstream f(dest, std::ios::binary);
-                            f.write(reinterpret_cast<const char*>(bytes.data()),
-                                    static_cast<std::streamsize>(bytes.size()));
-                        },
-                        Qt::QueuedConnection);
-                });
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [dest](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (bytes.empty()) return;
+                        std::ofstream f(dest, std::ios::binary);
+                        f.write(reinterpret_cast<const char*>(bytes.data()),
+                                static_cast<std::streamsize>(bytes.size()));
+                    });
+                client_->fetch_source_bytes_async(req_id, source_json);
+            }
         };
 
         mainAppSurface_->set_root(std::move(main_app_owner));
@@ -1432,41 +1406,46 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             {
                 auto alive = gif_alive_;
                 auto url = result.preview_url;
-                run_async_(
-                    [this, url, alive, repaint]
-                    {
-                        // Disk-cache the preview too, symmetrically with the
-                        // animated source below. Otherwise a GIF whose MP4 is
-                        // already on disk loads its video faster than its
-                        // preview downloads from the network, so the cell stays
-                        // blank until the video appears instead of showing the
-                        // thumbnail first.
-                        const std::string disk_key = gif_src_disk_key_(url);
-                        std::vector<std::uint8_t> bytes =
-                            account_manager_.media_disk_cache().load(disk_key);
-                        if (bytes.empty() && client_)
+                {
+                    const std::string disk_key = gif_src_disk_key_(url);
+                    auto req_id = begin_media_req_(0,
+                        [this, url, disk_key, alive, repaint](
+                            std::vector<std::uint8_t> bytes) mutable
                         {
-                            bytes = client_->fetch_url_bytes(url);
+                            gif_preview_inflight_.erase(url);
+                            if (bytes.empty()) return;
+                            run_async_(
+                                [this, disk_key, bytes]() mutable
+                                {
+                                    account_manager_.media_disk_cache().store(
+                                        disk_key, std::move(bytes));
+                                });
+                            if (!*alive) return;
+                            using CW = tesseract::views::GifPopup;
+                            DecodedImage d = decode_image_(
+                                bytes, int(CW::kCellW) * 2, int(CW::kCellH) * 2);
+                            if (d.still)
+                                gif_previews_[url] = std::move(d.still);
+                            repaint();
+                        });
+                    run_async_(
+                        [this, req_id, url, disk_key]()
+                        {
+                            auto bytes =
+                                account_manager_.media_disk_cache().load(disk_key);
                             if (!bytes.empty())
-                                account_manager_.media_disk_cache().store(disk_key, bytes);
-                        }
-                        post_to_ui_(
-                            [this, url, b = std::move(bytes), alive,
-                             repaint]() mutable
                             {
-                                if (!*alive)
-                                    return;
-                                gif_preview_inflight_.erase(url);
-                                if (b.empty())
-                                    return;
-                                using CW = tesseract::views::GifPopup;
-                                DecodedImage d = decode_image_(
-                                    b, int(CW::kCellW) * 2, int(CW::kCellH) * 2);
-                                if (d.still)
-                                    gif_previews_[url] = std::move(d.still);
-                                repaint();
-                            });
-                    });
+                                post_to_ui_(
+                                    [this, req_id, bytes = std::move(bytes)]() mutable
+                                    {
+                                        handle_media_ready_ui_(req_id, std::move(bytes));
+                                    });
+                                return;
+                            }
+                            if (client_)
+                                client_->fetch_url_async(req_id, 0, url);
+                        });
+                }
             }
             // Kick off the strip-display fetch (strip_url: WebP/GIF) — decode
             // entirely on the worker thread. The MP4 send form is fetched
@@ -1476,99 +1455,107 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 auto alive = gif_alive_;
                 auto anim_url = result.strip_url;
                 auto anim_mime = result.strip_mime;
-                run_async_(
-                    [this, anim_url, anim_mime, alive, repaint]
-                    {
-                        // Source bytes: disk cache first, else download and
-                        // persist so the send path (accept) reuses them without
-                        // a second round-trip.
-                        const std::string disk_key = gif_src_disk_key_(anim_url);
-                        std::vector<std::uint8_t> bytes =
-                            account_manager_.media_disk_cache().load(disk_key);
-                        if (bytes.empty() && client_)
+                {
+                    const std::string disk_key = gif_src_disk_key_(anim_url);
+                    auto req_id = begin_media_req_(0,
+                        [this, anim_url, anim_mime, disk_key, alive, repaint](
+                            std::vector<std::uint8_t> bytes) mutable
                         {
-                            bytes = client_->fetch_url_bytes(anim_url);
+                            gif_anim_inflight_.erase(anim_url);
+                            if (bytes.empty()) return;
+                            run_async_(
+                                [this, anim_url, anim_mime, disk_key, alive,
+                                 repaint, bytes = std::move(bytes)]() mutable
+                                {
+                                    account_manager_.media_disk_cache().store(
+                                        disk_key, bytes);
+                                    using CW = tesseract::views::GifPopup;
+                                    if (anim_mime == "video/mp4")
+                                    {
+                                        tk::DecodedVideoFrames dvf =
+                                            tk::decode_video_frames(
+                                                bytes.data(), bytes.size(),
+                                                int(CW::kCellW) * 2,
+                                                int(CW::kCellH) * 2);
+                                        auto imgs = std::make_shared<
+                                            std::vector<std::unique_ptr<tk::Image>>>();
+                                        std::vector<int> delays;
+                                        for (auto& f : dvf.frames)
+                                        {
+                                            QImage qi(f.bgra.data(), f.w, f.h,
+                                                      QImage::Format_ARGB32);
+                                            imgs->push_back(
+                                                tk::qt6::make_image(qi.copy()));
+                                            delays.push_back(f.delay_ms);
+                                        }
+                                        post_to_ui_(
+                                            [this, anim_url, imgs,
+                                             delays = std::move(delays),
+                                             alive, repaint]() mutable
+                                            {
+                                                if (!*alive) return;
+                                                if (!imgs->empty())
+                                                {
+                                                    account_manager_.anim_cache().store(
+                                                        anim_url, std::move(*imgs),
+                                                        std::move(delays),
+                                                        QDateTime::currentMSecsSinceEpoch());
+                                                    if (tk_anim_timer_ &&
+                                                        !tk_anim_timer_->isActive())
+                                                        tk_anim_timer_->start();
+                                                }
+                                                repaint();
+                                            });
+                                    }
+                                    else
+                                    {
+                                        auto d = std::make_shared<DecodedImage>(
+                                            decode_image_(bytes,
+                                                          int(CW::kCellW) * 2,
+                                                          int(CW::kCellH) * 2));
+                                        post_to_ui_(
+                                            [this, anim_url, d, alive,
+                                             repaint]() mutable
+                                            {
+                                                if (!*alive) return;
+                                                if (!d->frames.empty())
+                                                {
+                                                    account_manager_.anim_cache().store(
+                                                        anim_url, std::move(d->frames),
+                                                        std::move(d->delays_ms),
+                                                        QDateTime::currentMSecsSinceEpoch());
+                                                    if (tk_anim_timer_ &&
+                                                        !tk_anim_timer_->isActive())
+                                                        tk_anim_timer_->start();
+                                                }
+                                                else if (d->still)
+                                                {
+                                                    gif_previews_[anim_url] =
+                                                        std::move(d->still);
+                                                }
+                                                repaint();
+                                            });
+                                    }
+                                });
+                        });
+                    run_async_(
+                        [this, req_id, anim_url, disk_key]()
+                        {
+                            auto bytes =
+                                account_manager_.media_disk_cache().load(disk_key);
                             if (!bytes.empty())
-                                account_manager_.media_disk_cache().store(disk_key, bytes);
-                        }
-                        using CW = tesseract::views::GifPopup;
-                        if (!bytes.empty() && anim_mime == "video/mp4")
-                        {
-                            // Decode all frames off the UI thread.
-                            tk::DecodedVideoFrames dvf = tk::decode_video_frames(
-                                bytes.data(), bytes.size(),
-                                int(CW::kCellW) * 2, int(CW::kCellH) * 2);
-                            // Wrap frames in shared_ptr so the lambda is
-                            // copy-constructible (required by std::function).
-                            auto imgs = std::make_shared<
-                                std::vector<std::unique_ptr<tk::Image>>>();
-                            std::vector<int> delays;
-                            for (auto& f : dvf.frames)
                             {
-                                // GStreamer BGRA is byte-order B,G,R,A, which
-                                // matches QImage::Format_ARGB32 on little-endian
-                                // (0xAARRGGBB). Format_RGBA8888 would swap R/B.
-                                QImage qi(f.bgra.data(), f.w, f.h,
-                                          QImage::Format_ARGB32);
-                                imgs->push_back(
-                                    tk::qt6::make_image(qi.copy()));
-                                delays.push_back(f.delay_ms);
+                                post_to_ui_(
+                                    [this, req_id, bytes = std::move(bytes)]() mutable
+                                    {
+                                        handle_media_ready_ui_(req_id, std::move(bytes));
+                                    });
+                                return;
                             }
-                            post_to_ui_(
-                                [this, anim_url, imgs,
-                                 delays = std::move(delays), alive,
-                                 repaint]() mutable
-                                {
-                                    if (!*alive)
-                                        return;
-                                    gif_anim_inflight_.erase(anim_url);
-                                    if (!imgs->empty())
-                                    {
-                                        account_manager_.anim_cache().store(
-                                            anim_url, std::move(*imgs),
-                                            std::move(delays),
-                                            QDateTime::currentMSecsSinceEpoch());
-                                        if (tk_anim_timer_ &&
-                                            !tk_anim_timer_->isActive())
-                                            tk_anim_timer_->start();
-                                    }
-                                    repaint();
-                                });
-                        }
-                        else
-                        {
-                            // WebP/GIF (or empty bytes): decode off UI thread.
-                            auto d = std::make_shared<DecodedImage>(
-                                bytes.empty()
-                                    ? DecodedImage{}
-                                    : decode_image_(bytes,
-                                                    int(CW::kCellW) * 2,
-                                                    int(CW::kCellH) * 2));
-                            post_to_ui_(
-                                [this, anim_url, d, alive, repaint]() mutable
-                                {
-                                    if (!*alive)
-                                        return;
-                                    gif_anim_inflight_.erase(anim_url);
-                                    if (!d->frames.empty())
-                                    {
-                                        account_manager_.anim_cache().store(
-                                            anim_url, std::move(d->frames),
-                                            std::move(d->delays_ms),
-                                            QDateTime::currentMSecsSinceEpoch());
-                                        if (tk_anim_timer_ &&
-                                            !tk_anim_timer_->isActive())
-                                            tk_anim_timer_->start();
-                                    }
-                                    else if (d->still)
-                                    {
-                                        gif_previews_[anim_url] =
-                                            std::move(d->still);
-                                    }
-                                    repaint();
-                                });
-                        }
-                    });
+                            if (client_)
+                                client_->fetch_url_async(req_id, 0, anim_url);
+                        });
+                }
             }
             // Static JPEG preview shown while the animation decodes (or as the
             // permanent fallback for a non-animated result).
@@ -1784,6 +1771,53 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     if (mainApp_ && mainApp_->message_search())
         mainApp_->message_search()->on_close = [this] { closeMessageSearch_(); };
 
+    // Forward room picker native search field.
+    forwardPickerField_ = mainAppSurface_->host().make_text_field();
+    forwardPickerField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    forwardPickerField_->set_placeholder(
+        tr("Search rooms\xe2\x80\xa6").toStdString());
+    forwardPickerField_->set_visible(false);
+    forwardPickerField_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (mainApp_ && mainApp_->forward_picker())
+            {
+                mainApp_->forward_picker()->set_query(q);
+                mainAppSurface_->relayout();
+            }
+        });
+    forwardPickerField_->set_on_submit(
+        [this]
+        {
+            if (mainApp_ && mainApp_->forward_picker())
+                mainApp_->forward_picker()->confirm();
+        });
+    forwardPickerField_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            auto* fp = mainApp_ ? mainApp_->forward_picker() : nullptr;
+            if (!fp || !fp->is_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                fp->move_selection(-1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                fp->move_selection(+1);
+                mainAppSurface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                closeForwardPicker_();
+                return true;
+            default:
+                return false;
+            }
+        });
+    if (mainApp_ && mainApp_->forward_picker())
+
     // Per-room "find in conversation" (Ctrl+F) native field — docked under the
     // RoomHeader inside the shared search bar strip. Mirrors messageSearchField_
     // except: no popup-nav (UP/DOWN are button clicks in the strip), submit is
@@ -1902,6 +1936,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 if (vis)
                     messageSearchField_->set_rect(
                         mainApp_->message_search_field_rect());
+            }
+            if (mainApp_ && forwardPickerField_)
+            {
+                const bool vis = mainApp_->forward_picker_field_visible();
+                forwardPickerField_->set_visible(vis);
+                if (vis)
+                    forwardPickerField_->set_rect(
+                        mainApp_->forward_picker_field_rect());
             }
             if (mainApp_ && findInRoomField_)
             {
@@ -2467,6 +2509,27 @@ void MainWindow::closeMessageSearch_()
         messageSearchField_->set_visible(false);
     if (mainAppSurface_)
         mainAppSurface_->relayout();
+}
+
+void MainWindow::closeForwardPicker_()
+{
+    if (mainApp_ && mainApp_->forward_picker())
+        mainApp_->forward_picker()->close();
+}
+
+void MainWindow::focus_forward_picker_field_()
+{
+    if (forwardPickerField_)
+    {
+        forwardPickerField_->set_text("");
+        forwardPickerField_->set_focused(true);
+    }
+}
+
+void MainWindow::hide_forward_picker_field_()
+{
+    if (forwardPickerField_)
+        forwardPickerField_->set_visible(false);
 }
 
 void MainWindow::openFindInRoom_()
@@ -3108,7 +3171,6 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // Called on the UI thread (already posted via post_to_ui_ in ShellBase).
     if (bytes.empty())
     {
-        mediaImageSizes_.erase(cache_key);
         return;
     }
 
@@ -3188,24 +3250,25 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
 
-    // MediaImage / MediaThumbnail — decode off the UI thread (QImageReader is
-    // thread-safe), then store + repaint on the UI thread. Mirrors GTK4 and
-    // ensure_picker_image_; pickers already use this pattern so all paths are
-    // now consistent.
+    // MediaImage / MediaThumbnail / Sticker / Reaction — decode off the UI
+    // thread (QImageReader is thread-safe), then store + repaint on the UI
+    // thread. Mirrors GTK4 and ensure_picker_image_; pickers already use this
+    // pattern so all paths are now consistent.
     const bool is_thumb = (kind == MediaKind::MediaThumbnail);
     if ((is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache()).contains(cache_key) ||
         account_manager_.anim_cache().has(cache_key))
     {
-        mediaImageSizes_.erase(cache_key);
         return;
     }
-    int max_w = kMaxImageWidth, max_h = kMaxImageHeight;
-    if (auto sit = mediaImageSizes_.find(cache_key);
-        sit != mediaImageSizes_.end())
+    int max_w, max_h;
+    switch (kind)
     {
-        max_w = sit->second.first;
-        max_h = sit->second.second;
-        mediaImageSizes_.erase(sit);
+    case MediaKind::Sticker:
+        max_w = max_h = kMaxStickerSize; break;
+    case MediaKind::Reaction:
+        max_w = max_h = 20; break;
+    default:
+        max_w = kMaxImageWidth; max_h = kMaxImageHeight; break;
     }
     run_async_(
         [this, cache_key, kind, is_thumb, max_w, max_h,
@@ -3582,74 +3645,56 @@ void MainWindow::extract_drop_audio_(std::uint32_t pending_gen,
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                                            const std::string& video_url)
 {
+    if (!client_) return;
     const std::string src = video_url;
-    run_async_(
-        [this, eid = event_id, src]()
+    auto req_id = begin_media_req_(0,
+        [this, eid = event_id](std::vector<std::uint8_t> bytes) mutable
         {
-            auto bytes = client_->fetch_source_bytes(src);
-            if (bytes.empty())
-            {
+            if (bytes.empty()) return;
+            // Qt multimedia objects (QMediaPlayer, QVideoSink) must live on
+            // the UI thread — the callback is already on the UI thread.
+            const std::string key = "thumb::" + eid;
+            if (account_manager_.image_cache().contains(key))
                 return;
-            }
-            // Decode the first frame on the UI thread — Qt multimedia
-            // objects (QMediaPlayer, QVideoSink) must live there.
-            QMetaObject::invokeMethod(
-                this,
-                [this, eid, bytes = std::move(bytes)]() mutable
+            auto* player = new QMediaPlayer(this);
+            auto* sink = new QVideoSink(player);
+            player->setVideoSink(sink);
+            auto* buf = new QBuffer(player);
+            QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
+                          static_cast<qsizetype>(bytes.size()));
+            buf->setData(ba);
+            buf->open(QIODevice::ReadOnly);
+            player->setSourceDevice(buf);
+            QObject::connect(
+                sink, &QVideoSink::videoFrameChanged, sink,
+                [this, key, player](const QVideoFrame& frame)
                 {
-                    const std::string key = "thumb::" + eid;
-                    if (account_manager_.image_cache().contains(key))
-                    {
+                    if (!frame.isValid())
                         return;
+                    player->stop();
+                    player->deleteLater();
+                    if (account_manager_.image_cache().contains(key))
+                        return;
+                    QImage img = frame.toImage();
+                    if (img.isNull())
+                        return;
+                    QByteArray enc;
+                    QBuffer encbuf(&enc);
+                    encbuf.open(QIODevice::WriteOnly);
+                    img.save(&encbuf, "JPEG", 85);
+                    if (!enc.isEmpty())
+                    {
+                        std::vector<uint8_t> v(
+                            reinterpret_cast<const uint8_t*>(enc.constData()),
+                            reinterpret_cast<const uint8_t*>(enc.constData()) +
+                                enc.size());
+                        on_media_bytes_ready_(
+                            key, MediaKind::MediaImage, std::move(v));
                     }
-                    auto* player = new QMediaPlayer(this);
-                    auto* sink = new QVideoSink(player);
-                    player->setVideoSink(sink);
-                    auto* buf = new QBuffer(player);
-                    QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
-                                  static_cast<qsizetype>(bytes.size()));
-                    buf->setData(ba);
-                    buf->open(QIODevice::ReadOnly);
-                    player->setSourceDevice(buf);
-                    QObject::connect(
-                        sink, &QVideoSink::videoFrameChanged, sink,
-                        [this, key, player](const QVideoFrame& frame)
-                        {
-                            if (!frame.isValid())
-                            {
-                                return;
-                            }
-                            player->stop();
-                            player->deleteLater();
-                            if (account_manager_.image_cache().contains(key))
-                            {
-                                return;
-                            }
-                            QImage img = frame.toImage();
-                            if (img.isNull())
-                            {
-                                return;
-                            }
-                            QByteArray enc;
-                            QBuffer encbuf(&enc);
-                            encbuf.open(QIODevice::WriteOnly);
-                            img.save(&encbuf, "JPEG", 85);
-                            if (!enc.isEmpty())
-                            {
-                                std::vector<uint8_t> v(
-                                    reinterpret_cast<const uint8_t*>(
-                                        enc.constData()),
-                                    reinterpret_cast<const uint8_t*>(
-                                        enc.constData()) +
-                                        enc.size());
-                                on_media_bytes_ready_(
-                                    key, MediaKind::MediaImage, std::move(v));
-                            }
-                        });
-                    player->play();
-                },
-                Qt::QueuedConnection);
+                });
+            player->play();
         });
+    client_->fetch_source_bytes_async(req_id, src);
 }
 
 void MainWindow::onMessageAnimTick_()
@@ -3849,34 +3894,6 @@ void MainWindow::onSpaceBack()
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::prep_row_media_(const tesseract::Event& ev)
-{
-    // Store decode size hints before delegating to the ShellBase helper.
-    if (ev.type == tesseract::EventType::Image)
-    {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        if (img.source)
-            mediaImageSizes_[img.source->fetch_token()] = {kMaxImageWidth, kMaxImageHeight};
-    }
-    else if (ev.type == tesseract::EventType::Sticker)
-    {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        if (s.source)
-            mediaImageSizes_[s.source->fetch_token()] = {kMaxStickerSize, kMaxStickerSize};
-    }
-    else if (ev.type == tesseract::EventType::Video)
-    {
-        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        if (vid.thumbnail)
-            mediaImageSizes_[vid.thumbnail->fetch_token()] = {kMaxImageWidth, kMaxImageHeight};
-    }
-    for (const auto& r : ev.reactions)
-    {
-        if (r.source)
-            mediaImageSizes_[r.source->fetch_token()] = {20, 20};
-    }
-    ensure_row_media_(ev);
-}
 
 void MainWindow::refreshSyncStatus()
 {

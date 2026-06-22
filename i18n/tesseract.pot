@@ -172,6 +172,57 @@ msgstr ""
 msgid "Images (*.png *.jpg *.jpeg *.gif *.webp)"
 msgstr ""
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp:184
+msgid "Forward message"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:392
+msgid "Forward"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:391
+msgid "Forward ({0})"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:413
+msgid "No rooms"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:89
+msgid "Unnamed room"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+msgid "Failed to forward to {0}: {1}"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+#, c++-format
+msgid "Forwarding to {0} room…"
+msgid_plural "Forwarding to {0} rooms…"
+msgstr[0] ""
+msgstr[1] ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5042
+msgid "Add reaction"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5043
+msgid "Reply"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5044
+msgid "Reply in thread"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5045
+msgid "Edit"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5046
+msgid "More"
+msgstr ""
+
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3886
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3896
 msgid "Syncing rooms…"

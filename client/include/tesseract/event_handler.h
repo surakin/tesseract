@@ -247,6 +247,14 @@ public:
     {
     }
 
+    /// Fired when an async forward started via `Client::forward_event`
+    /// completes successfully. Default no-op.
+    virtual void on_forward_done(std::uint64_t /*request_id*/) {}
+
+    /// Fired when an async forward fails. Default no-op.
+    virtual void on_forward_failed(std::uint64_t /*request_id*/,
+                                   const std::string& /*message*/) {}
+
     /// Fired when an async full-text search (`Client::search_messages`)
     /// completes. The UI drops results whose `request_id` is stale (a newer
     /// query was issued). Default no-op.
@@ -290,6 +298,16 @@ public:
     /// Default no-op.
     virtual void on_upload_complete(std::uint64_t /*request_id*/, bool /*ok*/,
                                     const std::string& /*message*/)
+    {
+    }
+
+    /// Fired when an async `Client::set_or_delete_profile_field_async`
+    /// completes. `key` is the field key; `message` is a human-readable error
+    /// on failure (empty on success). Default no-op.
+    virtual void on_profile_field_result(std::uint64_t /*request_id*/,
+                                         const std::string& /*key*/,
+                                         bool /*ok*/,
+                                         const std::string& /*message*/)
     {
     }
 
@@ -402,6 +420,31 @@ public:
     /// (empty on failure or when not logged in). Default no-op.
     virtual void on_server_info_ready(std::uint64_t /*request_id*/,
                                       const std::string& /*info_json*/)
+    {
+    }
+
+    /// Fired when an async media-preview config fetch
+    /// (`Client::media_preview_config_async`) completes.
+    /// `config_json` is `{"media_previews":N,"invite_avatars":bool}`.
+    virtual void on_media_preview_config_ready(std::uint64_t /*request_id*/,
+                                               const std::string& /*config_json*/)
+    {
+    }
+
+    /// Fired when an async room-level media-preview override fetch
+    /// (`Client::room_media_preview_override_async`) completes.
+    /// `override_json` is
+    /// `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`.
+    virtual void on_room_preview_override_ready(std::uint64_t /*request_id*/,
+                                                const std::string& /*override_json*/)
+    {
+    }
+
+    /// Fired when an async `Client::get_extended_profile_async` or
+    /// `resolve_user_profile_async` fetch completes.
+    /// `profile_json` is the full `UserProfile` serialised as JSON.
+    virtual void on_extended_profile_ready(std::uint64_t /*request_id*/,
+                                           const std::string& /*profile_json*/)
     {
     }
 };

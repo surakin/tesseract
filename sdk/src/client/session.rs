@@ -331,6 +331,7 @@ impl ClientFfi {
     /// Async counterpart of `get_server_info`. Spawns the fetch on the tokio
     /// runtime and fires `on_server_info_ready(request_id, json)` on completion
     /// (empty string on failure or when not logged in). Does not pin a thread.
+    #[cfg(not(test))]
     pub fn get_server_info_async(&self, request_id: u64) {
         let Some(client) = self.client.clone() else {
             if let Some(ref h) = self.handler {
@@ -439,6 +440,9 @@ impl ClientFfi {
             }
         });
     }
+
+    #[cfg(test)]
+    pub fn get_server_info_async(&self, _request_id: u64) {}
 
     // -----------------------------------------------------------------------
     // Cache management
