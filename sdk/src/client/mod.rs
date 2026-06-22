@@ -1968,7 +1968,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
 /// be unit-tested without a live client.
 pub(super) fn room_list_fingerprint(
     rooms: &[crate::ffi::RoomInfo],
-) -> Vec<(bool, bool, bool, bool, u64, String)> {
+) -> Vec<(bool, bool, bool, bool, u64, String, String)> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -1995,6 +1995,7 @@ pub(super) fn room_list_fingerprint(
                 r.is_low_priority,
                 r.last_activity_ts,
                 r.id.clone(),
+                r.name.clone(),
             )
         })
         .collect()
@@ -2154,6 +2155,15 @@ mod tests {
         r.unread_count = 5;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_name_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.name = "New Name".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
     }
 
     #[test]
