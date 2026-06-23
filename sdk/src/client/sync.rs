@@ -130,6 +130,7 @@ impl ClientFfi {
             let presence_enabled_p = std::sync::Arc::clone(&self.presence_polling_enabled);
             let dm_counterparts = Arc::clone(&self.dm_counterparts);
             let forbidden_presence = Arc::clone(&self.forbidden_presence);
+            let app_cache_db_p = Arc::clone(&self.app_cache_db);
             self.spawn_tracked(watch_presence(
                 h,
                 client_p,
@@ -137,6 +138,7 @@ impl ClientFfi {
                 presence_enabled_p,
                 dm_counterparts,
                 forbidden_presence,
+                app_cache_db_p,
             ));
         }
 
@@ -200,6 +202,18 @@ impl ClientFfi {
                     self.sdk_media_fetched.lock().clear();
                     if let Some(conn) = open_app_cache_db(&self.data_dir) {
                         load_backfill_ts_conn(&conn, &self.backfill_previews);
+                        // Restore persisted presence-forbidden set so users
+                        // that returned 403 in a previous session are not
+                        // re-polled after restart.
+                        {
+                            let persisted = backfill::load_presence_forbidden_conn(&conn);
+                            let mut fp = self.forbidden_presence.lock();
+                            for uid_str in persisted {
+                                if let Ok(uid) = uid_str.parse() {
+                                    fp.insert(uid);
+                                }
+                            }
+                        }
                         {
                             let mut db = self.app_cache_db.lock();
                             *db = Some(conn);
@@ -886,12 +900,14 @@ impl ClientFfi {
         };
         let dm_counterparts = Arc::clone(&self.dm_counterparts);
         let forbidden_presence = Arc::clone(&self.forbidden_presence);
+        let app_cache_db = Arc::clone(&self.app_cache_db);
         self.spawn_tracked(async move {
             poll_presence_once(
                 &client,
                 &handler,
                 &dm_counterparts,
                 &forbidden_presence,
+                &app_cache_db,
             )
             .await;
         });
@@ -910,6 +926,7 @@ async fn poll_presence_once(
     forbidden_presence: &Arc<
         parking_lot::Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>,
     >,
+    app_cache_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
 ) {
     use matrix_sdk::ruma::api::client::presence::get_presence;
     use matrix_sdk::ruma::presence::PresenceState as RumaPresence;
@@ -932,6 +949,7 @@ async fn poll_presence_once(
         let cp = client.clone();
         let h_ref = Arc::clone(handler);
         let forbidden_clone = Arc::clone(forbidden_presence);
+        let db_clone = Arc::clone(app_cache_db);
         futs.push(async move {
             let user_id: matrix_sdk::ruma::OwnedUserId = uid.parse().ok()?;
             // Skip users known to return 403 Forbidden.
@@ -961,6 +979,11 @@ async fn poll_presence_once(
                                     "presence: stopping polls for {uid} \
                                      (homeserver forbids)"
                                 );
+                                // Persist so the user is skipped after restart too.
+                                let db = db_clone.lock();
+                                if let Some(conn) = db.as_ref() {
+                                    backfill::upsert_presence_forbidden_conn(conn, &uid);
+                                }
                             }
                         }
                     }
@@ -1172,6 +1195,7 @@ async fn watch_presence(
     presence_enabled: Arc<std::sync::atomic::AtomicBool>,
     dm_counterparts: Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
     forbidden_presence: Arc<Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>>,
+    app_cache_db: Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
 ) {
     // 60s tick: matrix-sdk delivers presence EDUs through the sync stream
     // for free; this polling loop is a fallback for servers that omit them
@@ -1189,7 +1213,7 @@ async fn watch_presence(
         if !presence_enabled.load(std::sync::atomic::Ordering::Relaxed) {
             continue;
         }
-        poll_presence_once(&client, &h, &dm_counterparts, &forbidden_presence).await;
+        poll_presence_once(&client, &h, &dm_counterparts, &forbidden_presence, &app_cache_db).await;
     }
 }
 

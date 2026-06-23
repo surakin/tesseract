@@ -846,6 +846,9 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
              summary_json    TEXT    NOT NULL,
              fetched_at_secs INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS presence_forbidden (
+             user_id TEXT NOT NULL PRIMARY KEY
+         );
          DELETE FROM room_summary_cache
              WHERE fetched_at_secs < strftime('%s','now') - 2592000;",
     )
@@ -984,6 +987,25 @@ pub(super) fn delete_room_summary_backoff(conn: &rusqlite::Connection, room_id: 
     let _ = conn.execute(
         "DELETE FROM room_summary_backoff WHERE room_id = ?1",
         rusqlite::params![room_id],
+    );
+}
+
+// ── presence_forbidden DB helpers ─────────────────────────────────────────
+
+pub(super) fn load_presence_forbidden_conn(conn: &rusqlite::Connection) -> Vec<String> {
+    let Ok(mut stmt) = conn.prepare("SELECT user_id FROM presence_forbidden") else {
+        return vec![];
+    };
+    let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
+        return vec![];
+    };
+    rows.flatten().collect()
+}
+
+pub(super) fn upsert_presence_forbidden_conn(conn: &rusqlite::Connection, user_id: &str) {
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO presence_forbidden (user_id) VALUES (?1)",
+        rusqlite::params![user_id],
     );
 }
 
