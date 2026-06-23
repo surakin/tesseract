@@ -6103,9 +6103,9 @@ void MainWindow::rebuild_account_picker()
             RegisterClassExW(&wc);
             registered = true;
         }
-        constexpr int kPickerW = 260;
-        constexpr int kRowH = 56;
-        int kPickerH = kRowH * static_cast<int>(account_manager_.accounts().size());
+        const int kPickerW = dip_to_phys(260.f);
+        const int kPickerH = dip_to_phys(
+            56.f * static_cast<float>(account_manager_.accounts().size()));
         hAccountPicker_ = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"TesseractAccountPicker", L"",
             WS_POPUP | WS_BORDER, 0, 0, kPickerW, kPickerH, hwnd_, nullptr,
@@ -6131,9 +6131,6 @@ void MainWindow::rebuild_account_picker()
         account_picker_surface_->set_root(std::move(picker));
         if (HWND s = account_picker_surface_->hwnd())
         {
-            constexpr int kPickerW = 260;
-            constexpr int kRowH = 56;
-            int kPickerH = kRowH * static_cast<int>(account_manager_.accounts().size());
             SetWindowPos(s, nullptr, 0, 0, kPickerW, kPickerH,
                          SWP_NOZORDER | SWP_NOACTIVATE);
         }
@@ -6172,9 +6169,9 @@ void MainWindow::open_account_picker()
         return;
     }
 
-    constexpr int kPickerW = 260;
-    constexpr int kRowH = 56;
-    int kPickerH = kRowH * static_cast<int>(account_manager_.accounts().size());
+    const int kPickerW = dip_to_phys(260.f);
+    const int kPickerH = dip_to_phys(
+        56.f * static_cast<float>(account_manager_.accounts().size()));
 
     // Anchor to the bottom-left of the main app surface (where the user strip lives).
     RECT sr{};
