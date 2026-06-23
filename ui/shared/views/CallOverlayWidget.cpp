@@ -568,13 +568,14 @@ bool CallOverlayWidget::on_pointer_down(tk::Point local)
 {
     if (mode_ == Mode::Floating)
     {
-        // World point comparison: drag_header_rect_ is in world coords;
-        // `local` is already in world coords (the host passes world coords to
-        // on_pointer_down after dispatch resolves the claimer).
-        if (local.y < bounds_.y + kDragHeaderH)
+        // local is widget-relative (0,0 = widget top-left), so compare
+        // directly to kDragHeaderH without adding bounds_.y.
+        if (local.y < kDragHeaderH)
         {
-            dragging_       = true;
-            drag_start_pos_ = local;
+            dragging_ = true;
+            // Store drag origin in world coordinates so the delta stays
+            // correct even after bounds_ is updated by a mid-drag relayout.
+            drag_start_pos_ = {local.x + bounds_.x, local.y + bounds_.y};
             drag_start_fx_  = float_x_;
             drag_start_fy_  = float_y_;
             return true;
@@ -587,8 +588,12 @@ void CallOverlayWidget::on_pointer_drag(tk::Point local)
 {
     if (!dragging_) return;
 
-    const float dx = local.x - drag_start_pos_.x;
-    const float dy = local.y - drag_start_pos_.y;
+    // Reconstruct world coordinates: local + bounds_ == world always,
+    // regardless of whether bounds_ was updated by a relayout since the
+    // last event. This keeps the drag 1:1 with the mouse.
+    const tk::Point world_pos{local.x + bounds_.x, local.y + bounds_.y};
+    const float dx = world_pos.x - drag_start_pos_.x;
+    const float dy = world_pos.y - drag_start_pos_.y;
     float_x_ = drag_start_fx_ + dx;
     float_y_ = drag_start_fy_ + dy;
 
