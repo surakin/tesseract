@@ -453,15 +453,27 @@ fn spawn_event_task(
                 }
                 RoomEvent::TrackMuted { participant, .. } => {
                     if let Some(ref s) = sink {
-                        if let Some(rp) = room.remote_participants().get(&participant.identity()) {
+                        let identity = participant.identity();
+                        if let Some(rp) = room.remote_participants().get(&identity) {
                             s.on_participant_updated(session_id, participant_info(&rp));
+                        } else if identity == room.local_participant().identity() {
+                            s.on_participant_updated(
+                                session_id,
+                                local_participant_info(&room.local_participant()),
+                            );
                         }
                     }
                 }
                 RoomEvent::TrackUnmuted { participant, .. } => {
                     if let Some(ref s) = sink {
-                        if let Some(rp) = room.remote_participants().get(&participant.identity()) {
+                        let identity = participant.identity();
+                        if let Some(rp) = room.remote_participants().get(&identity) {
                             s.on_participant_updated(session_id, participant_info(&rp));
+                        } else if identity == room.local_participant().identity() {
+                            s.on_participant_updated(
+                                session_id,
+                                local_participant_info(&room.local_participant()),
+                            );
                         }
                     }
                 }
@@ -499,6 +511,25 @@ fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
     // Identity format from the JWT service: "{user_id}:{device_id}" where
     // user_id is a Matrix ID (@localpart:server).  Split at the second ':'
     // to recover the user_id — the first ':' is inside the Matrix ID itself.
+    let (user_id, device_id) = split_identity(&identity);
+    RtcParticipantInfo {
+        participant_id: identity,
+        user_id,
+        device_id,
+        is_audio_muted,
+        is_video_muted,
+    }
+}
+
+fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
+    let pubs = p.track_publications();
+    let is_audio_muted = !pubs.values().any(|pub_| {
+        pub_.kind() == TrackKind::Audio && !pub_.is_muted()
+    });
+    let is_video_muted = !pubs.values().any(|pub_| {
+        pub_.kind() == TrackKind::Video && !pub_.is_muted()
+    });
+    let identity = p.identity().as_str().to_owned();
     let (user_id, device_id) = split_identity(&identity);
     RtcParticipantInfo {
         participant_id: identity,

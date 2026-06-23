@@ -32,6 +32,7 @@ public:
     struct State
     {
         std::string participant_id;
+        std::string user_id;
         std::string display_name;
         bool        audio_muted = false;
         bool        video_muted = false;

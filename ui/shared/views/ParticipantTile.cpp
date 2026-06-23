@@ -154,12 +154,19 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
     {
         // Avatar disc centred in the media area.
         const tk::Image* avatar =
-            avatar_provider_ ? avatar_provider_(state_.participant_id) : nullptr;
+            avatar_provider_ ? avatar_provider_(state_.user_id) : nullptr;
         const float diam = std::min(bounds_.w, media_h) * kAvatarFrac;
         const tk::Point ctr{bounds_.x + bounds_.w * 0.5f,
                             bounds_.y + kCellPad + media_h * 0.5f};
         draw_avatar(ctx.canvas, avatar, ctr, diam,
                     state_.display_name, kAvatarBg, kAvatarFg);
+        // Use a centered square as the video rect so the black tile background
+        // frames the avatar with a consistent border, and pin/mic badges anchor
+        // to its corners the same way they would over a real video stream.
+        const float sq   = std::min(vw, vh);
+        const float sq_x = bounds_.x + kCellPad + (vw - sq) * 0.5f;
+        const float sq_y = bounds_.y + kCellPad + (vh - sq) * 0.5f;
+        video_rect = {sq_x, sq_y, sq, sq};
     }
 
     // ── Name label (bottom row) ───────────────────────────────────────────────
@@ -184,11 +191,11 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // ── Mic-off badge (bottom-left) ───────────────────────────────────────────
+    // ── Mic-off badge (bottom-left of video image) ───────────────────────────
     if (state_.audio_muted)
     {
-        const float bx = bounds_.x + kCellPad;
-        const float by = bounds_.y + kCellPad + media_h - kBadgeSz;
+        const float bx = video_rect.x + kPinInset;
+        const float by = video_rect.y + video_rect.h - kBadgeSz - kPinInset;
         const tk::Rect badge{bx, by, kBadgeSz, kBadgeSz};
         ctx.canvas.fill_rounded_rect(badge, kBadgeSz * 0.5f, kBadgeBg);
         mic_off_icon_.draw(ctx.canvas, ctx.factory, kMicOffSvg,
@@ -206,21 +213,14 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
                              badge, kBadgeIcon, kMutedRed);
     }
 
-    // ── Pin button — top-left corner of the video image ──────────────────────
-    // video_rect_ and pin_rect_ are zeroed when video is muted so pointer
-    // hit-tests silently fail and the pin is never drawn over the avatar.
-    if (show_video)
-    {
-        video_rect_ = video_rect;
-        pin_rect_   = {video_rect.x + kPinInset,
-                       video_rect.y + kPinInset,
-                       kPinBtnSz, kPinBtnSz};
-    }
-    else
-    {
-        video_rect_ = {};
-        pin_rect_   = {};
-    }
+    // ── Pin button — top-left corner of video image (or avatar rect) ─────────
+    // video_rect is always valid here: the letterboxed frame rect when video
+    // is live, or the avatar bounding square otherwise. Both serve as the
+    // hover/hit-test target for pin and mic-off badges.
+    video_rect_ = video_rect;
+    pin_rect_   = {video_rect.x + kPinInset,
+                   video_rect.y + kPinInset,
+                   kPinBtnSz, kPinBtnSz};
 
     if (state_.pinned && !video_hover_)
     {

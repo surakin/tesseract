@@ -231,7 +231,8 @@ void CallOverlayWidget::update_participants(
                     pinned_participant_.clear();
                 else
                     pinned_participant_ = pid;
-                if (repaint_requester_) repaint_requester_();
+                if (relayout_requester_) relayout_requester_();
+                else if (repaint_requester_) repaint_requester_();
             };
 
             // Resolve display name.
@@ -245,6 +246,7 @@ void CallOverlayWidget::update_participants(
 
             ParticipantTile::State s;
             s.participant_id = p.participant_id;
+            s.user_id        = p.user_id;
             s.display_name   = dname;
             s.audio_muted    = p.is_audio_muted;
             s.video_muted    = p.is_video_muted;
@@ -256,6 +258,7 @@ void CallOverlayWidget::update_participants(
             // Mirror non-video fields in tile_states_ to track current metadata.
             ParticipantTile::State shadow;
             shadow.participant_id = p.participant_id;
+            shadow.user_id        = p.user_id;
             shadow.display_name   = dname;
             shadow.audio_muted    = p.is_audio_muted;
             shadow.video_muted    = p.is_video_muted;
@@ -278,6 +281,7 @@ void CallOverlayWidget::update_participants(
 
             ParticipantTile::State s;
             s.participant_id = p.participant_id;
+            s.user_id        = p.user_id;
             s.display_name   = dname;
             s.audio_muted    = p.is_audio_muted;
             s.video_muted    = p.is_video_muted;
@@ -286,10 +290,11 @@ void CallOverlayWidget::update_participants(
             // The tile reverts to avatar until the next push_video_frame (~1 frame).
             tile->set_state(std::move(s));
             // Keep shadow in sync for reference by other code.
-            tile_states_[idx].display_name = dname;
-            tile_states_[idx].audio_muted  = p.is_audio_muted;
-            tile_states_[idx].video_muted  = p.is_video_muted;
-            tile_states_[idx].pinned       = (pinned_participant_ == p.participant_id);
+            tile_states_[idx].user_id        = p.user_id;
+            tile_states_[idx].display_name   = dname;
+            tile_states_[idx].audio_muted    = p.is_audio_muted;
+            tile_states_[idx].video_muted    = p.is_video_muted;
+            tile_states_[idx].pinned         = (pinned_participant_ == p.participant_id);
         }
     }
 

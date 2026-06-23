@@ -8135,9 +8135,18 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
     // separate OS surface; calling request_repaint_() would repaint the main
     // window instead, so video frames would never update the popout.
     auto repaint_fn = [this] { request_repaint_(); };
-    auto avatar_fn  = [this](const std::string& mxc) -> const tk::Image*
+    auto avatar_fn  = [this](const std::string& user_id) -> const tk::Image*
     {
-        return account_manager_.thumbnail_cache().peek(mxc);
+        if (call_session_ && client_)
+        {
+            const auto members = client_->get_room_members(call_session_->room_id());
+            for (const auto& mem : members)
+            {
+                if (mem.user_id == user_id && !mem.avatar_url.empty())
+                    return account_manager_.thumbnail_cache().peek(mem.avatar_url);
+            }
+        }
+        return nullptr;
     };
     auto name_fn = [this](const std::string& user_id) -> std::string
     {
