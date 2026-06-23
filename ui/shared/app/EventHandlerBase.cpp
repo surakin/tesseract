@@ -739,4 +739,111 @@ void EventHandlerBase::on_presence_changed(const std::string& user_id,
         });
 }
 
+#ifdef TESSERACT_CALLS_ENABLED
+
+void EventHandlerBase::on_call_invitation(const std::string& room_id,
+                                           const std::string& slot_id,
+                                           const std::string& caller_user_id,
+                                           const std::string& call_intent,
+                                           std::uint64_t      lifetime_ms,
+                                           const std::string& notification_event_id)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), rid = room_id, sid = slot_id, caller = caller_user_id,
+         intent = call_intent, lms = lifetime_ms, notif_id = notification_event_id]()
+        {
+            shell->handle_rtc_invitation_ui_(rid, sid, caller, intent, lms, notif_id);
+        });
+}
+
+void EventHandlerBase::on_call_participant_joined(std::uint64_t session_id,
+                                                   const RtcParticipantInfo& info)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), session_id, p = info]()
+        {
+            shell->handle_rtc_participant_joined_ui_(session_id, p);
+        });
+}
+
+void EventHandlerBase::on_call_participant_left(std::uint64_t session_id,
+                                                 const std::string& participant_id)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), session_id, pid = participant_id]()
+        {
+            shell->handle_rtc_participant_left_ui_(session_id, pid);
+        });
+}
+
+void EventHandlerBase::on_call_participant_updated(std::uint64_t session_id,
+                                                    const RtcParticipantInfo& info)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), session_id, p = info]()
+        {
+            shell->handle_rtc_participant_updated_ui_(session_id, p);
+        });
+}
+
+void EventHandlerBase::on_call_ended(std::uint64_t session_id,
+                                      const std::string& reason)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), session_id, r = reason]()
+        {
+            shell->handle_rtc_session_ended_ui_(session_id, r);
+        });
+}
+
+void EventHandlerBase::on_call_video_frame(std::uint64_t session_id,
+                                            const std::string& participant_id,
+                                            std::uint32_t width,
+                                            std::uint32_t height,
+                                            const std::uint8_t* rgba,
+                                            std::size_t rgba_size)
+{
+    // Copy the frame data before returning — the pointer is only valid for the
+    // duration of this callback (stack-allocated on the Rust side).
+    // TODO(calls-layer5): replace with a lock-free ring buffer to avoid per-frame allocation.
+    struct Payload
+    {
+        std::uint64_t session_id;
+        std::string   participant_id;
+        std::uint32_t width;
+        std::uint32_t height;
+        std::vector<std::uint8_t> rgba;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{session_id, participant_id, width, height,
+                std::vector<std::uint8_t>(rgba, rgba + rgba_size)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]()
+        {
+            shell->handle_rtc_video_frame_ui_(p->session_id, p->participant_id,
+                                              p->width, p->height,
+                                              p->rgba.data(), p->rgba.size());
+        });
+}
+
+void EventHandlerBase::on_call_audio_frame(std::uint64_t session_id,
+                                            const std::string& /*participant_id*/,
+                                            const std::int16_t* samples,
+                                            std::size_t sample_count,
+                                            std::uint32_t sample_rate,
+                                            std::uint32_t num_channels)
+{
+    // Copy samples before returning — the pointer is only valid during this call.
+    auto pcm = std::make_shared<std::vector<std::int16_t>>(samples, samples + sample_count);
+    shell()->post_to_ui_(
+        [shell = shell(), session_id, pcm, sample_rate, num_channels]()
+        {
+            shell->handle_rtc_audio_frame_ui_(session_id,
+                                              pcm->data(), pcm->size(),
+                                              sample_rate, num_channels);
+        });
+}
+
+#endif // TESSERACT_CALLS_ENABLED
+
 } // namespace tesseract

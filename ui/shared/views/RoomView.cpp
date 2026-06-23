@@ -140,6 +140,18 @@ RoomView::RoomView()
     if (header_)
         header_->on_search_requested = [this] { open_room_search(); };
 
+#ifdef TESSERACT_CALLS_ENABLED
+    auto banner = std::make_unique<IncomingCallBanner>();
+    call_banner_ = add_child(std::move(banner));
+
+    if (header_)
+        header_->on_call_requested = [this]
+        {
+            if (on_start_call)
+                on_start_call(current_room_info_.id, "call#default");
+        };
+#endif
+
     wire_internal_callbacks();
 }
 
@@ -879,6 +891,86 @@ void RoomView::close_room_search()
         on_layout_changed();
 }
 
+#ifdef TESSERACT_CALLS_ENABLED
+void RoomView::show_call_banner(const std::string& room_id,
+                                 const std::string& slot_id,
+                                 const std::string& caller_display_name,
+                                 const std::string& call_intent,
+                                 std::uint64_t      lifetime_ms)
+{
+    if (!call_banner_) return;
+
+    call_banner_room_id_ = room_id;
+    call_banner_slot_id_ = slot_id;
+
+    // Bump the generation counter so any in-flight auto-dismiss fires as a
+    // no-op if the user answers or declines before the timeout expires.
+    const auto gen = ++call_banner_dismiss_gen_;
+
+    const std::uint64_t effective_lifetime = (lifetime_ms > 0) ? lifetime_ms : 30000;
+
+    call_banner_->set_call(
+        caller_display_name,
+        call_intent,
+        [this, room_id, slot_id] {       // on_answer
+            dismiss_call_banner();
+            if (on_start_call) on_start_call(room_id, slot_id);
+        },
+        [this] { dismiss_call_banner(); } // on_decline
+    );
+
+    // Auto-dismiss after the effective lifetime.
+    if (post_delayed_)
+    {
+        post_delayed_(static_cast<int>(effective_lifetime), [this, gen] {
+            if (gen != call_banner_dismiss_gen_) return;
+            dismiss_call_banner();
+        });
+    }
+
+    if (on_layout_changed) on_layout_changed();
+}
+
+void RoomView::dismiss_call_banner()
+{
+    ++call_banner_dismiss_gen_;
+    if (call_banner_) call_banner_->clear();
+    if (on_layout_changed) on_layout_changed();
+}
+
+bool RoomView::call_banner_visible() const
+{
+    return call_banner_ && call_banner_->visible();
+}
+
+views::CallOverlayWidget*
+RoomView::mount_call_panel(
+    views::CallOverlayWidget::Mode initial_mode,
+    PostDelayedFn                  post_delayed,
+    std::function<void()>          repaint_requester,
+    std::function<const tk::Image*(const std::string&)> avatar_provider,
+    std::function<std::string(const std::string&)>      display_name_provider)
+{
+    if (call_panel_) unmount_call_panel();
+    auto w = std::make_unique<views::CallOverlayWidget>();
+    w->set_post_delayed(std::move(post_delayed));
+    w->set_repaint_requester(std::move(repaint_requester));
+    w->set_avatar_provider(std::move(avatar_provider));
+    w->set_display_name_provider(std::move(display_name_provider));
+    w->set_mode(initial_mode);
+    call_panel_ = add_child(std::move(w));
+    return call_panel_;
+}
+
+void RoomView::unmount_call_panel()
+{
+    if (!call_panel_) return;
+    call_panel_->stop_timer();
+    remove_child(call_panel_);
+    call_panel_ = nullptr;
+}
+#endif // TESSERACT_CALLS_ENABLED
+
 bool RoomView::room_search_open() const
 {
     return room_search_bar_ && room_search_bar_->is_open();
@@ -1356,6 +1448,36 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         list_top += bh;
     }
 
+#ifdef TESSERACT_CALLS_ENABLED
+    // Incoming-call banner — occupies kBannerH between the pinned banner and
+    // the search bar / message list when visible.
+    if (call_banner_ && call_banner_->visible())
+    {
+        call_banner_->arrange(ctx, {bounds.x, list_top, bounds.w,
+                                    IncomingCallBanner::kBannerH});
+        list_top += IncomingCallBanner::kBannerH;
+    }
+
+    // Docked call panel — occupies kDockedH between banners and message list.
+    // DockedExpanded collapses the message area entirely.
+    if (call_panel_ && call_panel_->visible())
+    {
+        const auto mode = call_panel_->mode();
+        if (mode == views::CallOverlayWidget::Mode::DockedExpanded)
+        {
+            const float panel_h = bounds.bottom() - list_top;
+            call_panel_->arrange(ctx, {bounds.x, list_top, bounds.w, panel_h});
+            list_top = bounds.bottom(); // collapse messages
+        }
+        else // Docked (220 px strip)
+        {
+            constexpr float kDockedH = 220.0f;
+            call_panel_->arrange(ctx, {bounds.x, list_top, bounds.w, kDockedH});
+            list_top += kDockedH;
+        }
+    }
+#endif
+
     // In-room search bar — occupies kStripH between the header/banner and the
     // message list when open. Arranged at zero height (invisible to
     // hit-testing) when closed.
@@ -1451,6 +1573,10 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         pinned_banner_->paint(ctx);
     }
+#ifdef TESSERACT_CALLS_ENABLED
+    if (call_banner_ && call_banner_->visible())
+        call_banner_->paint(ctx);
+#endif
     if (room_search_bar_ && room_search_bar_->is_open())
         room_search_bar_->paint(ctx);
     if (message_list_)
@@ -1462,6 +1588,13 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         compose_bar_->paint(ctx);
     }
+
+#ifdef TESSERACT_CALLS_ENABLED
+    // Paint call panel last so it always draws on top of both message list and
+    // compose bar (critical in DockedExpanded mode where it fills the area).
+    if (call_panel_ && call_panel_->visible())
+        call_panel_->paint(ctx);
+#endif
 
     // Right-side thread panel.
     if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)

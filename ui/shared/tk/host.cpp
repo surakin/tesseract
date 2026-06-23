@@ -51,16 +51,18 @@ void Host::dispatch_pointer_down(Point world)
 void Host::dispatch_pointer_up(Point world)
 {
     if (!pressed_widget_)
-    {
         return;
-    }
-    Point ws = pressed_widget_->world_to_local(world);
-    bool inside =
-        (ws.x >= 0 && ws.y >= 0 && ws.x < pressed_widget_->bounds().w &&
-         ws.y < pressed_widget_->bounds().h);
-    pressed_widget_->on_pointer_up(ws, inside);
-    pressed_widget_ = nullptr;
-    request_repaint();
+    Widget* w = pressed_widget_;
+    pressed_widget_ = nullptr;  // clear before callback (re-entrancy safe)
+    Point ws = w->world_to_local(world);
+    bool inside = (ws.x >= 0 && ws.y >= 0 &&
+                   ws.x < w->bounds().w && ws.y < w->bounds().h);
+    // Guard: if the callback destroys this host (e.g. hang-up → call_window_.reset()),
+    // dispatch_alive_ is freed and the weak_ptr expires — do not touch `this` after.
+    std::weak_ptr<bool> still_alive = dispatch_alive_;
+    w->on_pointer_up(ws, inside);
+    if (!still_alive.expired())
+        request_repaint();
 }
 
 void Host::dispatch_pointer_move(Point world)
@@ -166,6 +168,32 @@ void Host::dispatch_pointer_leave()
         pressed_widget_ = nullptr;
     }
     request_repaint();
+}
+
+void Host::on_subtree_removing(Widget* subtree)
+{
+    // Walk up from a tracked widget to see if it lives inside the subtree
+    // being removed. Called before the subtree is freed so the check is safe.
+    auto in_subtree = [&](Widget* w) -> bool {
+        while (w) {
+            if (w == subtree) return true;
+            w = w->parent();
+        }
+        return false;
+    };
+    if (pressed_widget_ && in_subtree(pressed_widget_)) {
+        pressed_widget_->on_pointer_up({-1, -1}, false);
+        pressed_widget_ = nullptr;
+    }
+    if (hovered_btn_ && in_subtree(hovered_btn_)) {
+        hovered_btn_->set_hovered(false);
+        hovered_btn_ = nullptr;
+    }
+    if (hovered_widget_ && in_subtree(hovered_widget_)) {
+        // Skip on_pointer_leave(): the call overlay's child widgets may already
+        // be partially torn down when this fires during unmount.
+        hovered_widget_ = nullptr;
+    }
 }
 
 } // namespace tk

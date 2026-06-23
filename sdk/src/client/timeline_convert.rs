@@ -592,6 +592,38 @@ pub(super) async fn timeline_item_to_ffi(
         });
     }
 
+    // org.matrix.msc4075.rtc.notification — matrix-sdk-ui 0.18 surfaces this
+    // as a dedicated TimelineItemContent::RtcNotification variant (not Other).
+    // Map call_intent (Audio/Video/None) to a body string for the C++ layer.
+    if let TimelineItemContent::RtcNotification { call_intent, .. } = event_item.content() {
+        use matrix_sdk::ruma::events::rtc::notification::CallIntent;
+        let intent_str = match call_intent {
+            Some(CallIntent::Audio) => "audio",
+            Some(CallIntent::Video) => "video",
+            _ => "",
+        };
+        let (sender_name, sender_avatar_url) =
+            if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+                (
+                    p.display_name.clone().unwrap_or_default(),
+                    p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                )
+            } else {
+                (String::new(), String::new())
+            };
+        return Some(TimelineEvent {
+            room_id: room_id.to_owned(),
+            msg_type: "org.matrix.msc4075.rtc.notification".to_owned(),
+            event_id: event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
+            sender: event_item.sender().to_string(),
+            sender_name,
+            sender_avatar_url,
+            body: intent_str.to_owned(), // "audio" | "video" | ""
+            timestamp: event_item.timestamp().get().into(),
+            ..ffi_event_defaults()
+        });
+    }
+
     let msg_content = match event_item.content() {
         TimelineItemContent::MsgLike(MsgLikeContent {
             kind: MsgLikeKind::Message(msg),

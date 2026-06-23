@@ -270,6 +270,11 @@ public:
         return raw;
     }
 
+    // Removes a direct child and returns ownership.
+    // Borrowed pointers to the removed widget become dangling — callers must clear them.
+    // Asserts that child->parent_ == this.
+    std::unique_ptr<Widget> remove_child(Widget* child);
+
     // Drop every child widget. Any borrowed pointers returned from
     // add_child() are dangling after this call — callers must clear them.
     void clear_children()
@@ -282,6 +287,15 @@ public:
         return children_;
     }
 
+    // Installed once by the platform Host on the surface root widget.
+    // Fires in remove_child() before the child subtree is freed so the
+    // Host can clear any dangling Widget pointers it holds internally.
+    // Not propagated to children — only set on the root of each surface.
+    void set_subtree_removing_cb(std::function<void(Widget*)> cb)
+    {
+        subtree_removing_cb_ = std::move(cb);
+    }
+
 protected:
     Rect bounds_{};
     LayoutHints hints_{};
@@ -290,6 +304,7 @@ protected:
 private:
     Widget* parent_ = nullptr;
     std::vector<std::unique_ptr<Widget>> children_;
+    std::function<void(Widget*)> subtree_removing_cb_;
 };
 
 } // namespace tk

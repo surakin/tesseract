@@ -64,6 +64,13 @@ add_executable(tesseract_win32 WIN32
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
 )
 
+if(TESSERACT_ENABLE_CALLS)
+    target_sources(tesseract_win32 PRIVATE
+        src/CallWindow.h
+        src/CallWindow.cpp
+    )
+endif()
+
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
 
 # std base + windows.h. WIN32_LEAN_AND_MEAN / NOMINMAX / _WIN32_WINNT are set as

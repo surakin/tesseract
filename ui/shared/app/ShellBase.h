@@ -17,6 +17,14 @@
 #include "app/ThreadPanelController.h"
 #include "app/UpdateChecker.h"
 #include "tk/audio_capture.h"
+#include "tk/audio_playback.h"
+#ifdef TESSERACT_CALLS_ENABLED
+#include <tesseract/call_session.h>
+#include "tk/audio_capture_call_router.h"
+#include "tk/video_capture.h"
+#include "app/CallWindowBase.h"
+#include "views/CallOverlayWidget.h"
+#endif
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
 #include "tk/theme.h"
@@ -134,6 +142,19 @@ public:
     // is already open, it is raised instead of duplicated. The platform shell
     // must override create_secondary_room_window_() for this to have effect.
     void open_room_in_new_window(const std::string& room_id);
+
+#ifdef TESSERACT_CALLS_ENABLED
+    // ── MatrixRTC call control (Layer 4, guarded) ────────────────────────────
+    // start_call creates a CallSession, wires audio (and video if a camera is
+    // available) capture routing, and calls rtc_start_call on the client.
+    // No-op when a call is already active.
+    void start_call(const std::string& room_id,
+                    const std::string& slot_id = "call#default");
+    // End the active call and tear down all call resources. No-op when idle.
+    void end_call();
+    // Returns the active CallSession, or nullptr when not in a call.
+    CallSession* active_call() const { return call_session_.get(); }
+#endif // TESSERACT_CALLS_ENABLED
 
     // ── Tab management (call from the UI thread only) ─────────────────────────
 
@@ -1868,6 +1889,70 @@ protected:
     virtual void handle_voice_waveform_ready_ui_(std::string room_id,
                                                  std::string event_id,
                                                  std::vector<std::uint16_t> waveform);
+
+#ifdef TESSERACT_CALLS_ENABLED
+    // ── MatrixRTC call event hooks ────────────────────────────────────────────
+    // Called on the UI thread by EventHandlerBase after marshalling.
+    // Default ShellBase implementations update call_session_ state.
+    // Layer 5 shells override to update IncomingCallBanner / CallOverlay.
+
+    // A remote participant opened a call slot in a room we are in.
+    virtual void handle_rtc_invitation_ui_(std::string room_id,
+                                           std::string slot_id,
+                                           std::string caller_user_id,
+                                           std::string call_intent,
+                                           std::uint64_t lifetime_ms,
+                                           std::string notification_event_id);
+    virtual void handle_rtc_participant_joined_ui_(std::uint64_t session_id,
+                                                   RtcParticipantInfo info);
+    virtual void handle_rtc_participant_left_ui_(std::uint64_t session_id,
+                                                 std::string participant_id);
+    virtual void handle_rtc_participant_updated_ui_(std::uint64_t session_id,
+                                                    RtcParticipantInfo info);
+    virtual void handle_rtc_session_ended_ui_(std::uint64_t session_id,
+                                              std::string reason);
+    // Decoded RGBA video frame from a remote participant.
+    virtual void handle_rtc_video_frame_ui_(std::uint64_t session_id,
+                                            const std::string& participant_id,
+                                            std::uint32_t width,
+                                            std::uint32_t height,
+                                            const std::uint8_t* rgba,
+                                            std::size_t rgba_size);
+    // S16LE PCM audio from a remote participant.
+    virtual void handle_rtc_audio_frame_ui_(std::uint64_t session_id,
+                                            const std::int16_t* samples,
+                                            std::size_t sample_count,
+                                            std::uint32_t sample_rate,
+                                            std::uint32_t num_channels);
+    // Factory hook: each concrete shell returns its platform audio output sink.
+    // Returns nullptr on platforms where playback is not yet implemented.
+    virtual std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() = 0;
+
+    // Factory hook: each concrete shell creates its call pop-out window.
+    virtual CallWindowBase* create_call_window_() = 0;
+
+    // Returns the single active CallOverlayWidget regardless of mode
+    // (Popout → call_window_, Docked/DockedExpanded/Floating → main_app_).
+    views::CallOverlayWidget* active_call_overlay_() const;
+
+    // Tear down the current overlay, switch to the requested mode, remount,
+    // rewire all callbacks, and persist the new mode to Settings.
+    void on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m);
+
+    // Persist the new float position to Settings and request relayout.
+    void on_call_float_position_changed_(float x, float y);
+
+protected:
+    std::unique_ptr<CallSession>                call_session_;
+    std::unique_ptr<tk::AudioCaptureCallRouter> call_audio_router_;
+    std::unique_ptr<tk::VideoCapture>           call_video_capture_;
+    std::unique_ptr<tk::AudioPlayback>          call_audio_output_;
+    std::unique_ptr<CallWindowBase>             call_window_;
+    // Tracks the notification_event_id of the current pending ring invitation.
+    // Non-empty means a notification-path invite is showing; member-state invites
+    // for the same room are suppressed to avoid duplicate banners.
+    std::string rtc_pending_notification_id_;
+#endif // TESSERACT_CALLS_ENABLED
 
     // Install the platform screen-lock probe (called once by the concrete
     // shell at startup, mirroring the per-account INotifier injection).

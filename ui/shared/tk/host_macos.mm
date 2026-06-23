@@ -1,4 +1,7 @@
 #include "host_macos.h"
+#ifdef TESSERACT_CALLS_ENABLED
+#include "audio_playback.h"
+#endif
 #include "anim_image_cache.h"
 #include "canvas_cg.h"
 #include "controls.h"
@@ -73,6 +76,9 @@ public:
     std::unique_ptr<AudioPlayer> make_audio_player() override;
     std::unique_ptr<AudioCapture> make_audio_capture() override;
     std::unique_ptr<VideoPlayer> make_video_player() override;
+#ifdef TESSERACT_CALLS_ENABLED
+    std::unique_ptr<AudioPlayback> make_audio_playback() override;
+#endif
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override;
     void set_clipboard_text(std::string_view text) override;
@@ -80,6 +86,7 @@ public:
     void set_root(std::unique_ptr<Widget> root)
     {
         root_ = std::move(root);
+        root_->set_subtree_removing_cb([this](Widget* s){ on_subtree_removing(s); });
         relayout();
     }
     Widget* root() const
@@ -1489,6 +1496,13 @@ std::unique_ptr<tk::VideoPlayer> Host::make_video_player()
 {
     return make_video_player_macos();
 }
+
+#ifdef TESSERACT_CALLS_ENABLED
+std::unique_ptr<tk::AudioPlayback> Host::make_audio_playback()
+{
+    return ::tk::make_audio_playback_macos();
+}
+#endif
 
 EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
                                    bool compress)

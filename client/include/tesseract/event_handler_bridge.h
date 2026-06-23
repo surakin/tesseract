@@ -20,6 +20,7 @@ struct BackupProgress;
 struct VerificationEmoji;
 struct GifResult;
 struct SearchHit;
+struct RtcParticipantInfo;
 } // namespace tesseract_ffi
 
 namespace tesseract_ffi
@@ -185,6 +186,28 @@ public:
                                       const rust::Vec<TimelineEvent>& events) const;
     void on_thread_messages_appended(rust::Str room_id, rust::Str thread_root,
                                      const rust::Vec<TimelineEvent>& events) const;
+
+    // MatrixRTC call event callbacks.  Always compiled; forward to no-op
+    // IEventHandler virtuals when TESSERACT_CALLS_ENABLED is not set.
+    void on_rtc_invitation(rust::Str room_id, rust::Str slot_id,
+                            rust::Str caller_user_id,
+                            rust::Str call_intent,
+                            std::uint64_t lifetime_ms,
+                            rust::Str notification_event_id) const;
+    void on_rtc_participant_joined(std::uint64_t session_id,
+                                    const RtcParticipantInfo& info) const;
+    void on_rtc_participant_left(std::uint64_t session_id,
+                                  rust::Str participant_id) const;
+    void on_rtc_participant_updated(std::uint64_t session_id,
+                                     const RtcParticipantInfo& info) const;
+    void on_rtc_session_ended(std::uint64_t session_id, rust::Str reason) const;
+    void on_rtc_video_frame(std::uint64_t session_id, rust::Str participant_id,
+                             std::uint32_t width, std::uint32_t height,
+                             rust::Slice<const uint8_t> rgba) const;
+    void on_rtc_audio_frame(std::uint64_t session_id, rust::Str participant_id,
+                             rust::Slice<const int16_t> samples,
+                             std::uint32_t sample_rate,
+                             std::uint32_t num_channels) const;
 
 private:
     // Shared, mutex-guarded handler slot. `const`: the shared_ptr is set once

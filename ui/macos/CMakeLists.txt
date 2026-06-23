@@ -54,6 +54,13 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     "${_icns}"
 )
 
+if(TESSERACT_ENABLE_CALLS)
+    target_sources(tesseract_macos PRIVATE
+        src/CallWindowController.h
+        src/CallWindowController.mm
+    )
+endif()
+
 set_source_files_properties("${_icns}" PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources
     GENERATED TRUE
@@ -102,6 +109,7 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework CoreVideo"
     "-framework UserNotifications"
 )
+
 
 # ---------------------------------------------------------------------------
 # Installer (CPack DragNDrop) — see cmake/Installers.cmake for generator

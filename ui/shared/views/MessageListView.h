@@ -59,7 +59,8 @@ struct MessageRowData
         DaySeparator,
         ReadMarker,
         TimelineStart,
-        PinnedEvent,   // m.room.pinned_events state-event row
+        PinnedEvent,        // m.room.pinned_events state-event row
+        CallNotification,  // org.matrix.msc4075.rtc.notification
         Location,
     };
 

@@ -68,6 +68,19 @@ public:
     void set_show_search_btn(bool show) { show_search_btn_ = show; }
     bool show_search_btn() const { return show_search_btn_; }
 
+#ifdef TESSERACT_CALLS_ENABLED
+    // Show or hide the start-call button. Hidden by default; shown when the
+    // room is a DM or the server advertises MatrixRTC support.
+    void set_show_call_btn(bool show) { show_call_btn_ = show; }
+    bool show_call_btn() const { return show_call_btn_; }
+
+    // Toggle the active-call indicator style on the call button.
+    void set_call_active(bool active) { call_active_ = active; }
+
+    // Fired when the user presses the call button.
+    std::function<void()> on_call_requested;
+#endif
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
@@ -115,13 +128,20 @@ private:
     bool show_calendar_btn_ = false;
     bool show_threads_btn_ = false;
     bool show_search_btn_ = false;
+#ifdef TESSERACT_CALLS_ENABLED
+    bool show_call_btn_ = false;
+    bool call_active_   = false;
+#endif
 
-    // Calendar / threads / search action buttons. Variant::Icon child buttons
-    // own their hover/press background and click dispatch; this view only draws
-    // the vector glyph centred inside each button's bounds (see paint()).
+    // Calendar / threads / search / call action buttons. Variant::Icon child
+    // buttons own their hover/press background and click dispatch; this view
+    // only draws the vector glyph centred inside each button's bounds.
     tk::Button* calendar_btn_ = nullptr;
     tk::Button* threads_btn_ = nullptr;
     tk::Button* search_btn_ = nullptr;
+#ifdef TESSERACT_CALLS_ENABLED
+    tk::Button* call_btn_ = nullptr;
+#endif
 
     // Owned date-picker popup (not a widget-tree child — driven via
     // register_popup / paint_overlay).
@@ -133,11 +153,13 @@ private:
     void hide_date_picker_();
     static std::uint64_t date_to_midnight_utc_ms_(int year, int month, int day);
 
-    // Lucide icons for the action buttons, tinted text_primary
-    // (tint-aware so they recolor on theme switch).
+    // Lucide icons for the action buttons, tinted text_primary.
     tk::IconCache calendar_icon_;
     tk::IconCache threads_icon_;
     tk::IconCache search_icon_;
+#ifdef TESSERACT_CALLS_ENABLED
+    tk::IconCache call_icon_;
+#endif
 
 public:
     // Test-only accessor for the threads button's world-coordinate rect.

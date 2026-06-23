@@ -1,11 +1,14 @@
 [package]
 name    = "tesseract-sdk-ffi"
-version = "0.8.8"
+version = "0.8.9"
 edition = "2021"
 
 [lib]
 name      = "tesseract_sdk_ffi"
 crate-type = ["staticlib"]
+
+[features]
+calls = ["dep:livekit", "dep:hkdf", "dep:base64ct", "dep:rand", "dep:rustls"]
 
 [dependencies]
 cxx        = "1.0"
@@ -18,7 +21,7 @@ matrix-sdk-base = "0.18"
 matrix-sdk-ui = { version = "0.18" }
 # Enable decryption of `m.sticker` events sent in encrypted rooms (MSC2545
 # implementations that wrap the media source as an `EncryptedFile`).
-ruma          = { version = "0.16", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448"] }
+ruma          = { version = "0.16", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075"] }
 futures-util = "0.3"
 parking_lot   = "0.12"
 anyhow     = "1"
@@ -38,6 +41,22 @@ rusqlite      = "0.37"
 syntect       = { version = "5", default-features = false, features = ["default-fancy"] }
 pulldown-cmark = { version = "0.13", features = ["html"] }
 linkify        = "0.11"
+
+# calls feature — all optional, pulled in only when TESSERACT_ENABLE_CALLS=ON
+livekit   = { version = "0.7",  optional = true, features = ["rustls-tls-native-roots"] }
+rustls    = { version = "0.23", optional = true, features = ["aws_lc_rs"] }
+hkdf      = { version = "0.12", optional = true }
+base64ct  = { version = "1",    optional = true, features = ["alloc"] }
+rand      = { version = "0.8",  optional = true }
+
+# On macOS, livekit-webrtc bundles its own Opus in libwebrtc. audiopus_sys's
+# build.rs checks cfg!(feature = "dynamic") before env-var branches, so this
+# is the only reliable way to force dynamic linking — env var checks test
+# presence, not value, so OPUS_STATIC=0 would still mean "link statically".
+# Dynamic linking avoids embedding a second copy of Opus in the combined
+# archive alongside livekit-webrtc's copy, which ld-prime (Xcode 15+) rejects.
+[target.'cfg(target_os = "macos")'.dependencies]
+audiopus_sys  = { version = "0.1.8", features = ["dynamic"] }
 
 [dev-dependencies]
 # test-util enables the paused/auto-advancing clock (#[tokio::test(start_paused)]

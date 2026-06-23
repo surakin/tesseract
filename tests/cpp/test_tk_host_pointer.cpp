@@ -96,6 +96,12 @@ public:
     {
         return nullptr;
     }
+#ifdef TESSERACT_CALLS_ENABLED
+    std::unique_ptr<AudioPlayback> make_audio_playback() override
+    {
+        return nullptr;
+    }
+#endif
     EncodedImage encode_for_send(const std::uint8_t*, std::size_t,
                                  bool) override
     {

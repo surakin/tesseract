@@ -34,6 +34,9 @@
 #include "UserInfo.h"
 #include "VerificationBanner.h"
 #include "VideoViewerOverlay.h"
+#ifdef TESSERACT_CALLS_ENABLED
+#include "CallOverlayWidget.h"
+#endif
 
 #include "tk/controls.h"
 #include "tk/tab_bar.h"
@@ -41,6 +44,7 @@
 
 #include <tesseract/visual.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -119,6 +123,30 @@ public:
     tk::Rect forward_picker_field_rect()    const;
 
     EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
+
+#ifdef TESSERACT_CALLS_ENABLED
+    // Configure and show the call overlay for an active session. Routes to
+    // RoomView::mount_call_panel() for Docked/DockedExpanded modes, or creates
+    // a floating CallOverlayWidget child for Floating mode.
+    // post_delayed wires the timer, repaint_requester requests video-frame
+    // repaints, avatar_provider and display_name_provider supply participant
+    // metadata. Calls start_timer() on the created widget.
+    void mount_call_overlay(
+        views::CallOverlayWidget::Mode                  initial_mode,
+        std::function<void(int, std::function<void()>)> post_delayed,
+        std::function<void()>                           repaint_requester,
+        std::function<const tk::Image*(const std::string&)> avatar_provider,
+        std::function<std::string(const std::string&)>  display_name_provider);
+
+    // Tear down the overlay: stops the timer and removes/hides it.
+    // Cleans up both the docked panel (via room_view_->unmount_call_panel())
+    // and the floating overlay (via remove_child) if either is active.
+    void unmount_call_overlay();
+
+    // Returns the active CallOverlayWidget in the main room view (Docked /
+    // DockedExpanded) or the floating layer (Floating mode), or nullptr.
+    views::CallOverlayWidget* call_panel_for_room() const;
+#endif
 
     // Field-rect delegation — called from the shell's layout hook.
     bool     encryption_setup_passphrase_field_visible() const;
@@ -263,6 +291,14 @@ private:
     // Forward room picker — topmost modal overlay, shown when the user
     // selects "Forward message" from the action bar.
     ForwardRoomPicker* forward_picker_ = nullptr;
+
+#ifdef TESSERACT_CALLS_ENABLED
+    // Floating-mode CallOverlayWidget — lazily created by mount_call_overlay()
+    // when initial_mode == Floating, removed by unmount_call_overlay().
+    // nullptr when no floating call is active. Ownership is in children_.
+    views::CallOverlayWidget* float_call_overlay_ = nullptr;
+
+#endif
 
     bool verif_visible_ = false;
 

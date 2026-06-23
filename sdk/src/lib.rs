@@ -28,6 +28,15 @@ pub mod ffi {
         pub formatted_body: String,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct RtcParticipantInfo {
+        pub participant_id: String,
+        pub user_id: String,
+        pub device_id: String,
+        pub is_audio_muted: bool,
+        pub is_video_muted: bool,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct InviteInfo {
         pub room_id: String,
@@ -340,6 +349,37 @@ pub mod ffi {
             _sender: &str,
             _body: &str,
             _is_mention: bool,
+        ) {
+        }
+        pub fn on_rtc_invitation(
+            &self,
+            _room_id: &str,
+            _slot_id: &str,
+            _caller_user_id: &str,
+            _call_intent: &str,
+            _lifetime_ms: u64,
+            _notification_event_id: &str,
+        ) {}
+        pub fn on_rtc_participant_joined(&self, _session_id: u64, _info: &RtcParticipantInfo) {}
+        pub fn on_rtc_participant_left(&self, _session_id: u64, _participant_id: &str) {}
+        pub fn on_rtc_participant_updated(&self, _session_id: u64, _info: &RtcParticipantInfo) {}
+        pub fn on_rtc_session_ended(&self, _session_id: u64, _reason: &str) {}
+        pub fn on_rtc_video_frame(
+            &self,
+            _session_id: u64,
+            _participant_id: &str,
+            _width: u32,
+            _height: u32,
+            _rgba: &[u8],
+        ) {
+        }
+        pub fn on_rtc_audio_frame(
+            &self,
+            _session_id: u64,
+            _participant_id: &str,
+            _samples: &[i16],
+            _sample_rate: u32,
+            _num_channels: u32,
         ) {
         }
     }

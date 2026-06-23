@@ -8,4 +8,8 @@ fn main() {
     };
     println!("cargo:rustc-env=TESSERACT_UI_PLATFORM={platform}");
     println!("cargo:rerun-if-env-changed=TESSERACT_UI");
+
+    // ruma_macros generates #[cfg(ruma_unstable_exhaustive_types)] in our crate
+    // context. Declare it as a known cfg so rustc's unexpected_cfg lint is silent.
+    println!("cargo:rustc-check-cfg=cfg(ruma_unstable_exhaustive_types)");
 }

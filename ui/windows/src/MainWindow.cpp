@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "RoomWindow.h"
+#include "CallWindow.h"
 #include "views/BrandView.h"
 #include "views/media_drop.h"
 #include "Win32Notifier.h"
@@ -11,6 +12,7 @@
 #include "resource.h"
 #include "app/SlashCommands.h"
 #include "app/status_links.h"
+#include "tk/audio_playback.h"
 #include "tk/i18n.h"
 #include "tk/video_decode.h"
 
@@ -718,6 +720,10 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
 
     // Pop-out room windows track the theme too.
     apply_theme_to_secondary_windows_(current_theme_);
+#ifdef TESSERACT_CALLS_ENABLED
+    if (call_window_)
+        call_window_->apply_theme(current_theme_);
+#endif
 }
 
 void MainWindow::on_system_theme_changed()
@@ -4106,6 +4112,18 @@ void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
     session.notifier =
         std::make_unique<win32::Win32Notifier>(hwnd_, session.user_id);
 }
+
+#ifdef TESSERACT_CALLS_ENABLED
+std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
+{
+    return tk::make_audio_playback_win32();
+}
+
+tesseract::CallWindowBase* MainWindow::create_call_window_()
+{
+    return new win32::CallWindow(this);
+}
+#endif
 
 void MainWindow::finish_login_ui_(const std::string& uid)
 {

@@ -2010,4 +2010,66 @@ Result Client::hint_push_room(const std::string& room_id)
     return from_ffi(impl_->ffi->hint_push_room(room_id));
 }
 
+#ifdef TESSERACT_CALLS_ENABLED
+Result Client::rtc_start_call(const std::string& room_id,
+                               const std::string& slot_id)
+{
+    MUT_FFI;
+    return from_ffi(impl_->ffi->rtc_start_call(room_id, slot_id));
+}
+
+void Client::rtc_end_call()
+{
+    MUT_FFI;
+    impl_->ffi->rtc_end_call();
+}
+
+void Client::rtc_set_audio_muted(bool muted)
+{
+    MUT_FFI;
+    impl_->ffi->rtc_set_audio_muted(muted);
+}
+
+void Client::rtc_set_video_muted(bool muted)
+{
+    MUT_FFI;
+    impl_->ffi->rtc_set_video_muted(muted);
+}
+
+void Client::rtc_push_audio_samples(const std::int16_t* samples,
+                                     std::size_t frame_count)
+{
+    MUT_FFI;
+    rust::Slice<const std::int16_t> slice{samples, frame_count};
+    impl_->ffi->rtc_push_audio_samples(slice, frame_count);
+}
+
+void Client::rtc_push_video_frame_i420(const std::uint8_t* y,
+                                        const std::uint8_t* u,
+                                        const std::uint8_t* v,
+                                        std::uint32_t width, std::uint32_t height,
+                                        std::uint32_t stride_y,
+                                        std::uint32_t stride_u,
+                                        std::uint32_t stride_v)
+{
+    // Basic sanity: reject degenerate or implausibly large frames.
+    // 8192 cap exceeds any real camera resolution and bounds the slice sizes.
+    if (width == 0 || height == 0 || stride_y < width ||
+        stride_u < (width + 1) / 2 || stride_v < (width + 1) / 2 ||
+        width > 8192 || height > 8192)
+        return;
+
+    MUT_FFI;
+    const std::size_t h_uv   = (static_cast<std::size_t>(height) + 1) / 2;
+    const std::size_t y_size = static_cast<std::size_t>(stride_y) * height;
+    const std::size_t u_size = static_cast<std::size_t>(stride_u) * h_uv;
+    const std::size_t v_size = static_cast<std::size_t>(stride_v) * h_uv;
+    impl_->ffi->rtc_push_video_frame_i420(
+        rust::Slice<const std::uint8_t>{y, y_size},
+        rust::Slice<const std::uint8_t>{u, u_size},
+        rust::Slice<const std::uint8_t>{v, v_size},
+        width, height, stride_y, stride_u, stride_v);
+}
+#endif // TESSERACT_CALLS_ENABLED
+
 } // namespace tesseract

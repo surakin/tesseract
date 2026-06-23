@@ -1408,6 +1408,44 @@ public:
     /// sync cycle before the regular loop catches up.
     Result hint_push_room(const std::string& room_id);
 
+#ifdef TESSERACT_CALLS_ENABLED
+    // ------------------------------------------------------------------
+    // MatrixRTC voice/video call control
+    // These wrap the rtc_* FFI methods on ClientFfi. All are no-ops when
+    // TESSERACT_CALLS_ENABLED is not set (guard prevents compilation).
+    // ------------------------------------------------------------------
+
+    /// Start a MatrixRTC call in `room_id` / `slot_id` (`"call#default"` by
+    /// convention). Returns an error when not logged in or already in a call.
+    Result rtc_start_call(const std::string& room_id,
+                          const std::string& slot_id);
+
+    /// Gracefully leave the active call. No-op when no call is active.
+    void rtc_end_call();
+
+    /// Mute or unmute the local audio track. No-op when no call is active.
+    void rtc_set_audio_muted(bool muted);
+
+    /// Mute or unmute the local video track. No-op when no call is active.
+    void rtc_set_video_muted(bool muted);
+
+    /// Push a live PCM audio frame into the active session.
+    /// `samples` is S16LE at 48 kHz mono; `frame_count` is the sample count
+    /// (typically 480 for a 10 ms frame). No-op when no call is active.
+    void rtc_push_audio_samples(const std::int16_t* samples,
+                                std::size_t frame_count);
+
+    /// Push a raw I420 video frame into the active session.
+    /// No-op when no call is active.
+    void rtc_push_video_frame_i420(const std::uint8_t* y,
+                                   const std::uint8_t* u,
+                                   const std::uint8_t* v,
+                                   std::uint32_t width, std::uint32_t height,
+                                   std::uint32_t stride_y,
+                                   std::uint32_t stride_u,
+                                   std::uint32_t stride_v);
+#endif // TESSERACT_CALLS_ENABLED
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

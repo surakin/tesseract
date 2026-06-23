@@ -97,6 +97,20 @@ public:
 
     bool is_recording() const override { return recording_; }
 
+#ifdef TESSERACT_CALLS_ENABLED
+    void set_frame_callback(
+        std::function<void(const std::int16_t*, std::size_t)> cb) override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        frame_callback_ = std::move(cb);
+    }
+    void clear_frame_callback() override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        frame_callback_ = nullptr;
+    }
+#endif
+
     std::uint64_t duration_ms() const override
     {
         if (!recording_)
@@ -114,30 +128,42 @@ private:
             reinterpret_cast<const int16_t*>(buf.int16ChannelData[0]);
         const std::size_t bytes = frame_count * 2;
 
-        std::lock_guard<std::mutex> lk(mu_);
-        pcm_.insert(pcm_.end(),
-                    reinterpret_cast<const uint8_t*>(s16),
-                    reinterpret_cast<const uint8_t*>(s16) + bytes);
-        window_buf_.insert(window_buf_.end(), s16, s16 + frame_count);
-        window_byte_count_ += bytes;
-
-        if (window_byte_count_ >= 9600)
+#ifdef TESSERACT_CALLS_ENABLED
+        std::function<void(const std::int16_t*, std::size_t)> frame_cb;
+#endif
         {
-            int16_t peak = 0;
-            for (int16_t v : window_buf_)
-                peak = std::max(peak, static_cast<int16_t>(std::abs(v)));
-            std::uint16_t amp =
-                static_cast<uint16_t>(static_cast<uint32_t>(peak) * 1000 / 32767);
-            waveform_.push_back(amp);
-            window_buf_.clear();
-            window_byte_count_ = 0;
+            std::lock_guard<std::mutex> lk(mu_);
+            pcm_.insert(pcm_.end(),
+                        reinterpret_cast<const uint8_t*>(s16),
+                        reinterpret_cast<const uint8_t*>(s16) + bytes);
+            window_buf_.insert(window_buf_.end(), s16, s16 + frame_count);
+            window_byte_count_ += bytes;
+#ifdef TESSERACT_CALLS_ENABLED
+            frame_cb = frame_callback_;
+#endif
 
-            if (on_amplitude)
+            if (window_byte_count_ >= 9600)
             {
-                auto cb = on_amplitude;
-                post_([cb, amp]() { cb(amp); });
+                int16_t peak = 0;
+                for (int16_t v : window_buf_)
+                    peak = std::max(peak, static_cast<int16_t>(std::abs(v)));
+                std::uint16_t amp =
+                    static_cast<uint16_t>(static_cast<uint32_t>(peak) * 1000 / 32767);
+                waveform_.push_back(amp);
+                window_buf_.clear();
+                window_byte_count_ = 0;
+
+                if (on_amplitude)
+                {
+                    auto cb = on_amplitude;
+                    post_([cb, amp]() { cb(amp); });
+                }
             }
         }
+#ifdef TESSERACT_CALLS_ENABLED
+        if (frame_cb)
+            frame_cb(s16, frame_count);
+#endif
     }
 
     void start_engine_()
@@ -221,6 +247,9 @@ private:
     std::vector<std::uint16_t> waveform_;
     std::vector<int16_t>       window_buf_;
     std::size_t                window_byte_count_ = 0;
+#ifdef TESSERACT_CALLS_ENABLED
+    std::function<void(const std::int16_t*, std::size_t)> frame_callback_;
+#endif
 };
 
 } // namespace

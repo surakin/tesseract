@@ -154,6 +154,34 @@ public:
     void on_presence_changed(const std::string& user_id,
                              PresenceState state) override;
 
+#ifdef TESSERACT_CALLS_ENABLED
+    void on_call_invitation(const std::string& room_id,
+                             const std::string& slot_id,
+                             const std::string& caller_user_id,
+                             const std::string& call_intent,
+                             std::uint64_t      lifetime_ms,
+                             const std::string& notification_event_id) override;
+    void on_call_participant_joined(std::uint64_t session_id,
+                                    const RtcParticipantInfo& info) override;
+    void on_call_participant_left(std::uint64_t session_id,
+                                  const std::string& participant_id) override;
+    void on_call_participant_updated(std::uint64_t session_id,
+                                     const RtcParticipantInfo& info) override;
+    void on_call_ended(std::uint64_t session_id,
+                       const std::string& reason) override;
+    void on_call_video_frame(std::uint64_t session_id,
+                              const std::string& participant_id,
+                              std::uint32_t width, std::uint32_t height,
+                              const std::uint8_t* rgba,
+                              std::size_t rgba_size) override;
+    void on_call_audio_frame(std::uint64_t session_id,
+                              const std::string& participant_id,
+                              const std::int16_t* samples,
+                              std::size_t sample_count,
+                              std::uint32_t sample_rate,
+                              std::uint32_t num_channels) override;
+#endif // TESSERACT_CALLS_ENABLED
+
 protected:
     // Current owner window. Atomic because SDK callbacks read it on tokio worker
     // threads while set_shell() writes it on the UI thread (multi-window re-point).

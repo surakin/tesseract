@@ -272,6 +272,69 @@ void MainAppWidget::show_qr_grant(bool show)
     if (qr_grant_view_) qr_grant_view_->set_visible(show);
 }
 
+#ifdef TESSERACT_CALLS_ENABLED
+void MainAppWidget::mount_call_overlay(
+    views::CallOverlayWidget::Mode                  initial_mode,
+    std::function<void(int, std::function<void()>)> post_delayed,
+    std::function<void()>                           repaint_requester,
+    std::function<const tk::Image*(const std::string&)> avatar_provider,
+    std::function<std::string(const std::string&)>  display_name_provider)
+{
+    if (initial_mode == views::CallOverlayWidget::Mode::Floating)
+    {
+        // Floating mode: create a CallOverlayWidget child in the overlay layer.
+        auto w = std::make_unique<views::CallOverlayWidget>();
+        w->set_post_delayed(std::move(post_delayed));
+        w->set_repaint_requester(std::move(repaint_requester));
+        w->set_avatar_provider(std::move(avatar_provider));
+        w->set_display_name_provider(std::move(display_name_provider));
+        w->set_mode(views::CallOverlayWidget::Mode::Floating);
+        w->start_timer();
+        float_call_overlay_ = add_child(std::move(w));
+    }
+    else
+    {
+        // Docked / DockedExpanded: delegate to RoomView's call panel.
+        if (room_view_)
+        {
+            room_view_->mount_call_panel(
+                initial_mode,
+                std::move(post_delayed),
+                std::move(repaint_requester),
+                std::move(avatar_provider),
+                std::move(display_name_provider));
+        }
+    }
+    if (room_view_ && room_view_->on_layout_changed)
+        room_view_->on_layout_changed();
+}
+
+void MainAppWidget::unmount_call_overlay()
+{
+    // Tear down the docked panel if one is active.
+    if (room_view_ && room_view_->call_panel())
+        room_view_->unmount_call_panel();
+
+    // Tear down the floating overlay if one is active.
+    if (float_call_overlay_)
+    {
+        float_call_overlay_->stop_timer();
+        remove_child(float_call_overlay_);
+        float_call_overlay_ = nullptr;
+    }
+
+    if (room_view_ && room_view_->on_layout_changed)
+        room_view_->on_layout_changed();
+}
+
+views::CallOverlayWidget* MainAppWidget::call_panel_for_room() const
+{
+    if (float_call_overlay_)
+        return float_call_overlay_;
+    return room_view_ ? room_view_->call_panel() : nullptr;
+}
+#endif // TESSERACT_CALLS_ENABLED
+
 bool MainAppWidget::qr_grant_check_code_field_visible() const
 {
     return qr_grant_view_ && qr_grant_view_->check_code_field_visible();
@@ -341,7 +404,8 @@ tk::Rect MainAppWidget::encryption_setup_key_field_rect() const
 
 bool MainAppWidget::any_modal_open_() const
 {
-    return (confirm_dialog_    && confirm_dialog_->is_open()) ||
+    const bool existing_modals =
+           (confirm_dialog_    && confirm_dialog_->is_open()) ||
            (room_view_         && room_view_->is_overlay_open()) ||
            (img_viewer_        && img_viewer_->is_open()) ||
            (vid_viewer_        && vid_viewer_->is_open()) ||
@@ -350,6 +414,18 @@ bool MainAppWidget::any_modal_open_() const
            (quick_switcher_    && quick_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
            (forward_picker_    && forward_picker_->is_open());
+#ifdef TESSERACT_CALLS_ENABLED
+    // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
+    // native overlays. Only DockedExpanded (covers the chat panel) and Floating
+    // (free-floating overlay) are treated as modal.
+    const auto* panel = room_view_ ? room_view_->call_panel() : nullptr;
+    const bool panel_modal =
+        panel && panel->mode() == views::CallOverlayWidget::Mode::DockedExpanded;
+    const bool float_modal = float_call_overlay_ && float_call_overlay_->visible();
+    return existing_modals || panel_modal || float_modal;
+#else
+    return existing_modals;
+#endif
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const
@@ -529,6 +605,17 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (quick_switcher_) quick_switcher_->arrange(ctx, bounds);
     if (message_search_) message_search_->arrange(ctx, bounds);
     if (forward_picker_) forward_picker_->arrange(ctx, bounds);
+#ifdef TESSERACT_CALLS_ENABLED
+    if (float_call_overlay_)
+    {
+        const auto [cx, cy] = float_call_overlay_->float_position();
+        const float fx = std::max(bounds_.x,
+            std::min(cx, bounds_.x + bounds_.w - 320.0f));
+        const float fy = std::max(bounds_.y,
+            std::min(cy, bounds_.y + bounds_.h - 240.0f));
+        float_call_overlay_->arrange(ctx, {fx, fy, 320.0f, 240.0f});
+    }
+#endif
 }
 
 void MainAppWidget::paint(tk::PaintCtx& ctx)
@@ -682,6 +769,12 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     {
         forward_picker_->paint(ctx);
     }
+#ifdef TESSERACT_CALLS_ENABLED
+    if (float_call_overlay_ && float_call_overlay_->visible())
+    {
+        float_call_overlay_->paint(ctx);
+    }
+#endif
 }
 
 } // namespace tesseract::views

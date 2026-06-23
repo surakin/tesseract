@@ -3259,6 +3259,12 @@ public:
             },
             &backend_singleton());
     }
+#ifdef TESSERACT_CALLS_ENABLED
+    std::unique_ptr<AudioPlayback> make_audio_playback() override
+    {
+        return make_audio_playback_win32();
+    }
+#endif
 
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override
@@ -3479,6 +3485,7 @@ public:
     void set_root(std::unique_ptr<Widget> root)
     {
         root_ = std::move(root);
+        root_->set_subtree_removing_cb([this](Widget* s){ on_subtree_removing(s); });
         relayout();
     }
     Widget* root() const

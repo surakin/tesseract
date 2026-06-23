@@ -11,6 +11,9 @@ use crate::oauth;
 
 mod account;
 mod backfill;
+#[cfg(feature = "calls")]
+pub(crate) mod rtc;
+pub(crate) mod rtc_ffi;
 mod qr_grant;
 mod crypto_reset;
 mod profile_fields;
@@ -652,6 +655,11 @@ pub struct ClientFfi {
     /// `unstable_features["uk.tcpip.msc4133"] == true`.
     /// `None` = server does not support MSC4133 (writes disabled).
     pub(super) profile_fields_prefix: std::sync::Arc<std::sync::RwLock<Option<String>>>,
+    /// Active MatrixRTC call session, or `None` when not in a call.
+    /// Owned here so `rtc_push_audio_samples` / `rtc_push_video_frame_i420`
+    /// can reach it without a separate handle.
+    #[cfg(feature = "calls")]
+    pub(super) active_rtc_call: Option<Box<crate::client::rtc::RtcSession>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -825,17 +833,18 @@ pub(crate) fn encode_voice_ogg(
 impl ClientFfi {
     #[cfg(not(test))]
     pub fn new(log_level: &str) -> Self {
-        // Build a "matrix_sdk=<level>" directive from the caller-supplied level.
-        // Falls back to "warn" on an unrecognised value. RUST_LOG overrides this.
-        let directive = format!("matrix_sdk={}", log_level)
-            .parse()
-            .unwrap_or_else(|_| "matrix_sdk=warn".parse().unwrap());
+        // When RUST_LOG is set, use it directly so it fully overrides the
+        // programmatic defaults.  When RUST_LOG is absent, apply the
+        // caller-supplied level for matrix_sdk (defaulting to "warn").
+        let level = if ["error", "warn", "info", "debug", "trace"].contains(&log_level) {
+            log_level
+        } else {
+            "warn"
+        };
+        let default_filter = format!("matrix_sdk={level},matrix_sdk::http_client=off");
+        let filter_str = std::env::var("RUST_LOG").unwrap_or(default_filter);
         let _ = tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive(directive)
-                    .add_directive("matrix_sdk::http_client=off".parse().unwrap()),
-            )
+            .with_env_filter(tracing_subscriber::EnvFilter::new(filter_str))
             .try_init();
 
         Self {
@@ -937,12 +946,13 @@ impl ClientFfi {
             #[cfg(not(test))]
             sdk_media_fetched: Arc::new(Mutex::new(std::collections::HashSet::new())),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            #[cfg(feature = "calls")]
+            active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
-                // Timeline construction collects cached events
-                // into an `imbl::Vector`; chunk promotion for
-                // large `TimelineEvent`s recurses deeply. The
-                // 2 MB tokio default is tight, so widen it.
+                // Timeline construction collects cached events into an
+                // `imbl::Vector`; chunk promotion for large `TimelineEvent`s
+                // recurses deeply.  The 2 MB tokio default is tight.
                 .thread_stack_size(8 * 1024 * 1024)
                 .build()
                 .expect("tokio runtime"),
@@ -964,6 +974,8 @@ impl ClientFfi {
                 std::sync::atomic::AtomicBool::new(true),
             ),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            #[cfg(feature = "calls")]
+            active_rtc_call: None,
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -1968,7 +1980,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
 /// be unit-tested without a live client.
 pub(super) fn room_list_fingerprint(
     rooms: &[crate::ffi::RoomInfo],
-) -> Vec<(bool, bool, bool, bool, u64, String)> {
+) -> Vec<(bool, bool, bool, bool, u64, String, String)> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -1995,6 +2007,7 @@ pub(super) fn room_list_fingerprint(
                 r.is_low_priority,
                 r.last_activity_ts,
                 r.id.clone(),
+                r.name.clone(),
             )
         })
         .collect()
@@ -2154,6 +2167,15 @@ mod tests {
         r.unread_count = 5;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_name_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.name = "New Name".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
     }
 
     #[test]

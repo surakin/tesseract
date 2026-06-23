@@ -6,6 +6,7 @@
 #import "MacOSTrayIcon.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
+#import "CallWindowController.h"
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
@@ -203,6 +204,13 @@ protected:
         tesseract::AccountSession& /*session*/) override
     {
     }
+#ifdef TESSERACT_CALLS_ENABLED
+    std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override
+    {
+        return tk::make_audio_playback_macos();
+    }
+    tesseract::CallWindowBase* create_call_window_() override;
+#endif
 
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;
@@ -745,6 +753,13 @@ MacShell::make_account_bridge_(const std::string& uid)
     bridge->set_user_id(uid);
     return bridge;
 }
+
+#ifdef TESSERACT_CALLS_ENABLED
+tesseract::CallWindowBase* MacShell::create_call_window_()
+{
+    return tesseract::make_mac_call_window(this);
+}
+#endif
 
 void MacShell::open_join_room_dialog_ui_(const std::string& prefill)
 {
@@ -1792,6 +1807,10 @@ void MacShell::apply_theme_ui_(const tk::Theme& t)
         [ctrl_ _applyTheme:t];
     }
     apply_theme_to_secondary_windows_(t);
+#ifdef TESSERACT_CALLS_ENABLED
+    if (call_window_)
+        call_window_->apply_theme(t);
+#endif
 }
 
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────

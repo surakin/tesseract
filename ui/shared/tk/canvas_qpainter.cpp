@@ -470,6 +470,24 @@ public:
         p_.drawImage(to_qrect(dst), qi.image(), to_qrect(src));
     }
 
+    bool draw_rgba_pixels(const std::uint8_t* pixels,
+                          std::uint32_t w, std::uint32_t h, Rect dst) override
+    {
+        if (!pixels || w == 0 || h == 0) return false;
+        // Wrap the caller's buffer without copying. The buffer belongs to
+        // ParticipantTile::state_.pending_rgba, which is stable for the
+        // duration of this synchronous paint() call. QPainter::drawImage()
+        // scales bilinearly (SmoothPixmapTransform is already set on the
+        // painter) without the multi-pass QImage::scaled(SmoothTransformation)
+        // filter that pick_image_()/scaled_for() would apply — sufficient for
+        // live video and eliminates the per-frame cache miss that occurred
+        // because create_image_rgba() allocated a new QtImage every frame.
+        QImage img(pixels, static_cast<int>(w), static_cast<int>(h),
+                   static_cast<qsizetype>(w) * 4, QImage::Format_RGBA8888);
+        p_.drawImage(to_qrect(dst), img);
+        return true;
+    }
+
     void draw_circle_image(const Image& image, Point centre,
                            float diameter) override
     {

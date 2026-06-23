@@ -3,7 +3,7 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.8.8 — 2026-06-19
+## v0.8.8 — 2026-06-22
 
 - feat: Forward message action. A "Forward message" item now appears in the ⋯
   more menu for any non-redacted, non-pending event (including messages from
@@ -72,6 +72,79 @@ Tagged releases summarize all changes since the previous tag.
 
 - feat(windows): "Show App" entry added at the top of the Win32 system-tray
   context menu, mirroring the existing Linux Qt6 tray menu.
+
+- feat(timeline): action pill buttons now show tooltip labels on hover. All
+  five buttons (react, reply, reply-in-thread, edit, more) fire through the
+  existing `on_show_tooltip` / `on_hide_tooltip` pipeline; no shell changes
+  were needed. The pill background is also raised from `subtle_hover` to
+  `subtle_pressed` for better contrast against message content.
+
+- feat: `forward_event` is now fully async. The blocking `rt.block_on()` is
+  replaced with `rt.spawn()`, correlating results back via `on_forward_done` /
+  `on_forward_failed` callbacks and a `request_id` token. `ForwardRoomPicker`
+  stays open during forwarding, shows an inline "Forwarding to N rooms…"
+  status line, then either auto-closes on full success or displays per-room
+  error lines with a Dismiss button. `ShellBase` tracks in-flight forwards in
+  `pending_forwards_`. Adds 8 Catch2 tests for the handler state mutations.
+
+- i18n: 11 strings introduced since v0.8.7 are now wrapped in `tk::tr()` /
+  `tk::trf()` and registered in `tesseract.pot` and `es.po`. Covered strings:
+  `ForwardRoomPicker` labels ("Forward message", "Forward", "Forward ({0})",
+  "No rooms", "Unnamed room", "Cancel") and action-pill tooltip labels ("Add
+  reaction", "Reply", "Reply in thread", "Edit", "More").
+
+- perf(media): reqwest upgraded to 0.13 (was 0.12 for tile / URL-preview
+  fetches, 0.13 via matrix-sdk for media). Both HTTP clients now share
+  identical H2 window sizing (4 MiB/stream, 16 MiB/connection), 60 s timeout,
+  and `build_user_agent()` string. `PriorityGate` fixed limits replaced with
+  AIMD: additive-increase on a clean slot release (+1, up to max),
+  multiplicative-decrease when >50% of active slots are stalled at release
+  time (halved, floor = max/8). Starting limits raised 12/10 → 32/24 (fg/bulk)
+  to suit HTTP/2 multiplexing.
+
+- perf(media): media prefetch is now gated to the last 50 events
+  (`kMediaPrefetchWindow`) on room switch. Previously `build_rows_()` called
+  `prep_row_media_()` for every event in the SDK snapshot, producing hundreds
+  of avatar/thumbnail/URL-preview HTTP requests for off-screen content.
+  Pagination backfill no longer pre-fetches media; newly-visible rows trigger
+  on-demand fetches via a new `ensure_row_media_()` overload called from
+  `on_visible_rows_changed_()`.
+
+- fix(timeline): `m.file` events now display the MSC2530 user caption below
+  the file card, matching the existing behaviour for `m.image` and `m.video`.
+  `filename` is set only when the sender supplied the MSC2530 `filename` field;
+  `body` then carries the user-visible caption.
+
+- fix(timeline): geometry maps (`image_geom_`, `video_geom_`, etc.) were
+  unconditionally cleared at the start of every paint. During animation-tick
+  partial repaints only the dirty animated region is redrawn, so rows outside
+  it were skipped — leaving their hit-test entries permanently empty until the
+  next full repaint. The "Load image" pill on suppressed-media tiles stopped
+  responding whenever a spinner or GIF was animating. The clear is now guarded
+  behind `!ctx.anim_damage`.
+
+- fix(timeline): sender avatars could be evicted by the 30-minute thumbnail
+  LRU TTL while the app sat idle, because `avatar_provider_` used `peek()`
+  (raw pointer, `use_count() == 1`). `try_acquire_image_()` now holds an
+  `ImageRef` for the sender avatar on every materialized row, and
+  `notify_image_ready()` pins avatars on first network arrival without
+  triggering a row-height relayout.
+
+- fix(timeline): the animation-tick geometry-clear guard introduced to fix the
+  partial-repaint issue above could leave stale `image_geom_` / `video_geom_`
+  entries from the old room alive when an animation was in progress during a
+  room switch, causing clicks to open media viewers for the wrong room.
+  Hit-test geometry is now cleared eagerly in `begin_switch_loading()`
+  alongside `messages_.clear()`, regardless of animation state.
+
+- fix(compose): typing text between two semicolons with no matching emoji
+  shortcode no longer causes infinite recursion in the shortcode-popup logic.
+
+- fix(rooms): room title changes now trigger a live room-list update. The
+  Rust sync fingerprint omitted `RoomInfo::name`, so a pure `m.room.name`
+  state event produced an identical fingerprint and the snapshot emit was
+  suppressed — the UI showed the stale title until an unrelated event (new
+  message, read receipt) happened to perturb the fingerprint.
 
 ## v0.8.7 — 2026-06-18
 

@@ -831,3 +831,15 @@ msgstr ""
 #: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:144
 msgid "Device added successfully."
 msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+msgid "Decline"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+msgid "Answer"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+msgid "is calling"
+msgstr ""

@@ -833,4 +833,102 @@ void EventHandlerBridge::on_presence_changed(rust::Str user_id,
           });
 }
 
+// ---------------------------------------------------------------------------
+// MatrixRTC callbacks
+// ---------------------------------------------------------------------------
+
+void EventHandlerBridge::on_rtc_invitation(rust::Str room_id,
+                                           rust::Str slot_id,
+                                           rust::Str caller_user_id,
+                                           rust::Str call_intent,
+                                           std::uint64_t lifetime_ms,
+                                           rust::Str notification_event_id) const
+{
+    with_handler("on_rtc_invitation", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_invitation(std::string(room_id),
+                                           std::string(slot_id),
+                                           std::string(caller_user_id),
+                                           std::string(call_intent),
+                                           lifetime_ms,
+                                           std::string(notification_event_id));
+          });
+}
+
+void EventHandlerBridge::on_rtc_participant_joined(
+    std::uint64_t session_id, const RtcParticipantInfo& info) const
+{
+    with_handler("on_rtc_participant_joined", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_participant_joined(session_id,
+                                                   tesseract::from_ffi(info));
+          });
+}
+
+void EventHandlerBridge::on_rtc_participant_left(std::uint64_t session_id,
+                                                 rust::Str participant_id) const
+{
+    with_handler("on_rtc_participant_left", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_participant_left(session_id,
+                                                  std::string(participant_id));
+          });
+}
+
+void EventHandlerBridge::on_rtc_participant_updated(
+    std::uint64_t session_id, const RtcParticipantInfo& info) const
+{
+    with_handler("on_rtc_participant_updated", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_participant_updated(session_id,
+                                                    tesseract::from_ffi(info));
+          });
+}
+
+void EventHandlerBridge::on_rtc_session_ended(std::uint64_t session_id,
+                                              rust::Str reason) const
+{
+    with_handler("on_rtc_session_ended", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_ended(session_id, std::string(reason));
+          });
+}
+
+void EventHandlerBridge::on_rtc_video_frame(std::uint64_t session_id,
+                                            rust::Str participant_id,
+                                            std::uint32_t width,
+                                            std::uint32_t height,
+                                            rust::Slice<const uint8_t> rgba) const
+{
+    with_handler("on_rtc_video_frame", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_video_frame(session_id,
+                                             std::string(participant_id),
+                                             width, height,
+                                             rgba.data(), rgba.size());
+          });
+}
+
+void EventHandlerBridge::on_rtc_audio_frame(std::uint64_t session_id,
+                                            rust::Str participant_id,
+                                            rust::Slice<const int16_t> samples,
+                                            std::uint32_t sample_rate,
+                                            std::uint32_t num_channels) const
+{
+    with_handler("on_rtc_audio_frame", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_audio_frame(session_id,
+                                             std::string(participant_id),
+                                             samples.data(), samples.size(),
+                                             sample_rate, num_channels);
+          });
+}
+
 } // namespace tesseract_ffi

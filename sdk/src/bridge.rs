@@ -398,6 +398,17 @@ pub mod ffi {
         message: String,
     }
 
+    /// Plain-data descriptor for a MatrixRTC call participant.
+    /// Always compiled so the cxx-generated header is unconditional; the fields
+    /// are only populated when the `calls` Cargo feature is active.
+    struct RtcParticipantInfo {
+        participant_id: String,
+        user_id: String,
+        device_id: String,
+        is_audio_muted: bool,
+        is_video_muted: bool,
+    }
+
     /// Result of a GitHub release update check.
     /// `has_update` is `true` when a newer version than the running one was
     /// found. `version` is the release tag (leading `v` stripped) and `url`
@@ -1099,6 +1110,77 @@ pub mod ffi {
             self: &EventHandlerBridge,
             request_id: u64,
             profile_json: &str,
+        );
+
+        // --- MatrixRTC call event callbacks ---
+        // Always declared here (no cfg guard) so the C++ glue is unconditional.
+        // C++ no-ops when TESSERACT_CALLS_ENABLED is not set.
+
+        /// Fired when a remote participant opens a call slot in a joined room,
+        /// or when an m.rtc.notification ring event arrives (MSC4075).
+        /// `call_intent` is "audio" | "video" | "" (empty = unknown).
+        /// `lifetime_ms` is the remaining ms before the ring expires; 0 when
+        /// triggered by a member-state event (no explicit timeout).
+        /// `notification_event_id` is the "$..." event id of the ring
+        /// notification, or "" when triggered by a member-state event.
+        fn on_rtc_invitation(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            slot_id: &str,
+            caller_user_id: &str,
+            call_intent: &str,
+            lifetime_ms: u64,
+            notification_event_id: &str,
+        );
+
+        /// Fired when a remote participant joins the active call.
+        fn on_rtc_participant_joined(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            info: &RtcParticipantInfo,
+        );
+
+        /// Fired when a remote participant leaves the active call.
+        fn on_rtc_participant_left(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            participant_id: &str,
+        );
+
+        /// Fired when a participant's mute state changes within the active call.
+        fn on_rtc_participant_updated(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            info: &RtcParticipantInfo,
+        );
+
+        /// Fired when the active call session ends for any reason.
+        fn on_rtc_session_ended(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            reason: &str,
+        );
+
+        /// Fired per decoded RGBA video frame from a remote participant (~30fps).
+        /// `rgba` is `width * height * 4` bytes, row-major.
+        fn on_rtc_video_frame(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            participant_id: &str,
+            width: u32,
+            height: u32,
+            rgba: &[u8],
+        );
+
+        /// Fired per audio frame from a remote participant.
+        /// `samples` is S16LE PCM, `sample_rate` Hz, `num_channels` channels.
+        fn on_rtc_audio_frame(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            participant_id: &str,
+            samples: &[i16],
+            sample_rate: u32,
+            num_channels: u32,
         );
     }
 
@@ -2446,6 +2528,54 @@ pub mod ffi {
         // ----- Session teardown -----
 
         fn logout(self: &mut ClientFfi) -> OpResult;
+
+        // --- MatrixRTC calls ---
+        // Always declared; bodies return an error when the `calls` feature is off.
+
+        /// Start a MatrixRTC call in `room_id` / `slot_id`. Returns an error when
+        /// not logged in or when the `calls` feature is disabled. On success the
+        /// session is stored inside `ClientFfi`; subsequent `rtc_*` calls operate
+        /// on it. `slot_id` is typically `"call#default"`.
+        fn rtc_start_call(
+            self: &mut ClientFfi,
+            room_id: &str,
+            slot_id: &str,
+        ) -> OpResult;
+
+        /// Gracefully leave the active call and release its resources. No-op when
+        /// no call is active or when the `calls` feature is disabled.
+        fn rtc_end_call(self: &mut ClientFfi);
+
+        /// Mute or unmute the local audio track. The track stays published but
+        /// delivers silence when muted. No-op when no call is active.
+        fn rtc_set_audio_muted(self: &mut ClientFfi, muted: bool);
+
+        /// Mute or unmute the local video track. No-op when no call is active.
+        fn rtc_set_video_muted(self: &mut ClientFfi, muted: bool);
+
+        /// Inject a PCM audio frame into the live session. `samples` is
+        /// interleaved S16LE at 48 kHz mono; `frame_count` is the number of
+        /// samples (typically 480 for a 10 ms frame). No-op when no call is
+        /// active.
+        fn rtc_push_audio_samples(
+            self: &mut ClientFfi,
+            samples: &[i16],
+            frame_count: usize,
+        );
+
+        /// Inject a raw I420 video frame into the live session. No-op when no
+        /// call is active.
+        fn rtc_push_video_frame_i420(
+            self: &mut ClientFfi,
+            y: &[u8],
+            u: &[u8],
+            v: &[u8],
+            width: u32,
+            height: u32,
+            stride_y: u32,
+            stride_u: u32,
+            stride_v: u32,
+        );
     }
 }
 
@@ -2496,5 +2626,111 @@ impl Clone for ffi::PinnedEvent {
             body_preview: self.body_preview.clone(),
             timestamp: self.timestamp,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MatrixRTC bridge sink
+//
+// Implements `RtcEventSink` by forwarding call events to C++ through the
+// same `EventHandlerBridge` used by all other SDK callbacks.  Only compiled
+// when the `calls` Cargo feature is active.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "calls")]
+pub(crate) struct RtcCxxBridgeSink {
+    pub(crate) handler: std::sync::Arc<parking_lot::Mutex<super::client::SendHandler>>,
+}
+
+#[cfg(feature = "calls")]
+impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
+    fn on_invitation(
+        &self,
+        room_id: &str,
+        slot_id: &str,
+        caller_user_id: &str,
+        call_intent: &str,
+        lifetime_ms: u64,
+        notification_event_id: &str,
+    ) {
+        let g = self.handler.lock();
+        g.on_rtc_invitation(
+            room_id,
+            slot_id,
+            caller_user_id,
+            call_intent,
+            lifetime_ms,
+            notification_event_id,
+        );
+    }
+
+    fn on_participant_joined(
+        &self,
+        session_id: u64,
+        info: super::client::rtc::RtcParticipantInfo,
+    ) {
+        let g = self.handler.lock();
+        g.on_rtc_participant_joined(
+            session_id,
+            &ffi::RtcParticipantInfo {
+                participant_id: info.participant_id,
+                user_id: info.user_id,
+                device_id: info.device_id,
+                is_audio_muted: info.is_audio_muted,
+                is_video_muted: info.is_video_muted,
+            },
+        );
+    }
+
+    fn on_participant_left(&self, session_id: u64, participant_id: &str) {
+        let g = self.handler.lock();
+        g.on_rtc_participant_left(session_id, participant_id);
+    }
+
+    fn on_participant_updated(
+        &self,
+        session_id: u64,
+        info: super::client::rtc::RtcParticipantInfo,
+    ) {
+        let g = self.handler.lock();
+        g.on_rtc_participant_updated(
+            session_id,
+            &ffi::RtcParticipantInfo {
+                participant_id: info.participant_id,
+                user_id: info.user_id,
+                device_id: info.device_id,
+                is_audio_muted: info.is_audio_muted,
+                is_video_muted: info.is_video_muted,
+            },
+        );
+    }
+
+    fn on_session_ended(&self, session_id: u64, reason: &str) {
+        let g = self.handler.lock();
+        g.on_rtc_session_ended(session_id, reason);
+    }
+
+    fn on_video_frame(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) {
+        let g = self.handler.lock();
+        g.on_rtc_video_frame(session_id, participant_id, width, height, &rgba);
+    }
+
+    fn on_audio_frame(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        samples: &[i16],
+        sample_rate: u32,
+        num_channels: u32,
+    ) {
+        let g = self.handler.lock();
+        g.on_rtc_audio_frame(session_id, participant_id, samples, sample_rate, num_channels);
     }
 }

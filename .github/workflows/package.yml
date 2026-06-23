@@ -211,6 +211,7 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             golang perl \
             libwayland-dev \
+            libxtst-dev \
             rpm
 
       - name: Expose opus to audiopus_sys
@@ -273,6 +274,7 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             golang perl \
             libwayland-dev \
+            libxtst-dev \
             patchelf \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \

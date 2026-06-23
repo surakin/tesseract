@@ -108,6 +108,18 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
             sdk_log_level = lvl;
     }
 
+#ifdef TESSERACT_CALLS_ENABLED
+    {
+        auto mode = j.value("call_overlay_mode", std::string("docked"));
+        if (mode == "docked_expanded") call_overlay_mode = CallOverlayMode::DockedExpanded;
+        else if (mode == "floating")   call_overlay_mode = CallOverlayMode::Floating;
+        else if (mode == "popout")     call_overlay_mode = CallOverlayMode::Popout;
+        else                           call_overlay_mode = CallOverlayMode::Docked;
+    }
+    call_overlay_float_x = j.value("call_overlay_float_x", 40.0f);
+    call_overlay_float_y = j.value("call_overlay_float_y", 40.0f);
+#endif
+
     } // try (field reading)
     catch (const nlohmann::json::exception&)
     {
@@ -151,6 +163,18 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
     };
     j["language"]    = language;
     j["gif_api_key"] = gif_api_key;
+
+#ifdef TESSERACT_CALLS_ENABLED
+    {
+        const char* mode_str =
+            call_overlay_mode == CallOverlayMode::DockedExpanded ? "docked_expanded" :
+            call_overlay_mode == CallOverlayMode::Floating       ? "floating"        :
+            call_overlay_mode == CallOverlayMode::Popout         ? "popout"          : "docked";
+        j["call_overlay_mode"]    = mode_str;
+        j["call_overlay_float_x"] = call_overlay_float_x;
+        j["call_overlay_float_y"] = call_overlay_float_y;
+    }
+#endif
 
     if (main_window_geometry.valid)
     {

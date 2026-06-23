@@ -1240,6 +1240,48 @@ public:
                             D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
     }
 
+    bool draw_rgba_pixels(const std::uint8_t* pixels,
+                          std::uint32_t w, std::uint32_t h, Rect dst) override
+    {
+        if (!pixels || w == 0 || h == 0) return false;
+        // D2D expects premultiplied BGRA. Swizzle + premultiply straight RGBA.
+        const UINT n = w * h;
+        std::vector<std::uint8_t> bgra(static_cast<std::size_t>(n) * 4);
+        for (UINT i = 0; i < n; ++i)
+        {
+            const unsigned a = pixels[i * 4 + 3];
+            bgra[i * 4 + 0] =
+                static_cast<std::uint8_t>((pixels[i * 4 + 2] * a + 127) / 255); // B
+            bgra[i * 4 + 1] =
+                static_cast<std::uint8_t>((pixels[i * 4 + 1] * a + 127) / 255); // G
+            bgra[i * 4 + 2] =
+                static_cast<std::uint8_t>((pixels[i * 4 + 0] * a + 127) / 255); // R
+            bgra[i * 4 + 3] = static_cast<std::uint8_t>(a);
+        }
+        const D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                              D2D1_ALPHA_MODE_PREMULTIPLIED));
+        ComPtr<ID2D1Bitmap> bitmap;
+        HRESULT hr;
+        if (dc_)
+            hr = dc_->CreateBitmap({w, h}, bgra.data(),
+                                   w * 4, props, bitmap.GetAddressOf());
+        else
+            hr = rt_->CreateBitmap({w, h}, bgra.data(),
+                                   w * 4, props, bitmap.GetAddressOf());
+        if (FAILED(hr) || !bitmap) return false;
+        const D2D1_RECT_F d = to_d2d(dst);
+        // LINEAR interpolation is sufficient for live video and faster than
+        // HIGH_QUALITY_CUBIC used for static images.
+        if (dc_)
+            dc_->DrawBitmap(bitmap.Get(), &d, 1.0f,
+                            D2D1_INTERPOLATION_MODE_LINEAR);
+        else
+            rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        return true;
+    }
+
     void draw_circle_image(const Image& image, Point centre,
                            float diameter) override
     {

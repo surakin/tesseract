@@ -42,10 +42,13 @@ bool ShortcodeController::on_text_changed(const std::string& text, int cursor)
     if (auto complete = engine_.find_complete(text, cursor))
     {
         auto hits = engine_.lookup(complete->prefix, packs, 1);
-        std::string r = (!hits.empty() && !hits.front().glyph.empty())
+        if (!hits.empty())
+        {
+            std::string r = (!hits.front().glyph.empty())
                             ? hits.front().glyph
                             : ":" + complete->prefix + ":";
-        text_area_->replace_range(complete->start, complete->end, r);
+            text_area_->replace_range(complete->start, complete->end, r);
+        }
         hide();
         return true;
     }

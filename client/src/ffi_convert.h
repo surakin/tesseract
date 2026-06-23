@@ -49,6 +49,17 @@ inline MediaBackoffEntry from_ffi(const tesseract_ffi::MediaBackoffEntry& e)
     return {std::string(e.url), e.attempts, e.deadline_secs};
 }
 
+inline RtcParticipantInfo from_ffi(const tesseract_ffi::RtcParticipantInfo& p)
+{
+    return {
+        std::string(p.participant_id),
+        std::string(p.user_id),
+        std::string(p.device_id),
+        p.is_audio_muted,
+        p.is_video_muted,
+    };
+}
+
 inline RoomSummaryBackoffEntry from_ffi(const tesseract_ffi::RoomSummaryBackoffEntry& e)
 {
     return {std::string(e.room_id), e.attempts, e.deadline_secs};
@@ -427,6 +438,13 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     if (msg_type == "m.room.pinned_events")
     {
         auto ev = std::make_unique<PinnedStateEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
+    if (msg_type == "org.matrix.msc4075.rtc.notification")
+    {
+        auto ev = std::make_unique<CallNotificationEvent>();
         assign_base(*ev, e);
         return ev;
     }

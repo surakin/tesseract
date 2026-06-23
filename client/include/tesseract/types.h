@@ -28,6 +28,7 @@ enum class EventType
     Utd,    // appended (not slotted near Redacted) so existing enum-int
             // pinned tests stay valid
     PinnedEvent, // m.room.pinned_events state-event timeline row
+    CallNotification, // org.matrix.msc4075.rtc.notification
 };
 
 /// User presence state. Wire encoding (matches sdk/src/bridge.rs on_presence_changed):
@@ -362,6 +363,16 @@ struct PinnedStateEvent : public Event
     }
 };
 
+/// org.matrix.msc4075.rtc.notification — MatrixRTC call ring/notification event.
+/// `body` carries the m.call.intent value: "audio" | "video" | "" (unknown/absent).
+struct CallNotificationEvent : public Event
+{
+    CallNotificationEvent()
+    {
+        type = EventType::CallNotification;
+    }
+};
+
 /// Ordered list of timeline events (oldest-first), as passed to
 /// IEventHandler::on_timeline_reset and the handle_*_ui_ virtuals.
 using EventList = std::vector<std::unique_ptr<Event>>;
@@ -662,6 +673,18 @@ struct MediaBackoffEntry
     std::uint32_t attempts = 0;
     /// Unix epoch seconds (UTC) after which the URL may be retried.
     std::int64_t deadline_secs = 0;
+};
+
+/// Plain-data descriptor for a MatrixRTC call participant.
+/// Always defined so the bridge header is unconditional; the fields are only
+/// populated when `TESSERACT_CALLS_ENABLED` is set.
+struct RtcParticipantInfo
+{
+    std::string participant_id;
+    std::string user_id;
+    std::string device_id;
+    bool is_audio_muted = false;
+    bool is_video_muted = false;
 };
 
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via

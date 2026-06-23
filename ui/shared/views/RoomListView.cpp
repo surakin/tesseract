@@ -481,7 +481,7 @@ private:
         // Thumbnail lookup.
         const tk::Image* thumb     = nullptr;
         std::string      thumb_url;
-        if (has_preview && owner_.sticker_provider_)
+        if (!room.is_space && has_preview && owner_.sticker_provider_)
         {
             const std::string& kind = room.last_message_kind;
             thumb_url = kind == "sticker" ? room.last_message_sticker_url
@@ -505,7 +505,12 @@ private:
 
         // Build preview string (cheap string ops, no TextLayout allocation).
         std::string preview;
-        if (has_preview)
+        if (room.is_space)
+        {
+            preview     = room.topic;
+            has_preview = !preview.empty();
+        }
+        else if (has_preview)
         {
             const std::string& kind   = room.last_message_kind;
             const std::string  sender = room.last_message_sender_name.empty()

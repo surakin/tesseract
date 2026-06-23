@@ -85,3 +85,7 @@ endif()
 if(APPLE)
     target_link_libraries(tesseract_client PRIVATE "-framework Security")
 endif()
+
+if(TESSERACT_ENABLE_CALLS)
+    target_sources(tesseract_client PRIVATE src/CallSession.cpp)
+endif()

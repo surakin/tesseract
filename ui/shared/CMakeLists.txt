@@ -214,6 +214,7 @@ if(TESSERACT_UI STREQUAL "win32")
         tk/host_win32.cpp
         tk/audio_win32.cpp
         tk/audio_capture_win32.cpp
+        tk/audio_playback_win32.cpp
         tk/video_win32.cpp
         tk/video_decode_mf.cpp
     )
@@ -225,6 +226,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         tk/host_qt.cpp
         tk/audio_qt.cpp
         tk/audio_capture_qt.cpp
+        tk/audio_playback_qt.cpp
         tk/video_qt.cpp
         tk/video_decode_gst.cpp
         tk/gst_hw_probe.cpp
@@ -237,6 +239,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         tk/host_gtk.cpp
         tk/audio_gtk.cpp
         tk/audio_capture_gtk.cpp
+        tk/audio_playback_gtk.cpp
         tk/video_gtk.cpp
         tk/video_decode_gst.cpp
         tk/gst_hw_probe.cpp
@@ -249,9 +252,32 @@ elseif(TESSERACT_UI STREQUAL "macos")
         tk/host_macos.mm
         tk/audio_macos.mm
         tk/audio_capture_macos.mm
+        tk/audio_playback_macos.mm
         tk/video_macos.mm
         tk/video_decode_av.mm
     )
+endif()
+
+if(TESSERACT_ENABLE_CALLS)
+    list(APPEND _tk_sources
+        views/IncomingCallBanner.h
+        views/IncomingCallBanner.cpp
+        views/ParticipantTile.h
+        views/ParticipantTile.cpp
+        views/CallOverlayWidget.h
+        views/CallOverlayWidget.cpp
+        tk/video_capture.cpp
+        tk/video_capture_gst.cpp
+        app/CallWindowBase.h
+        app/CallWindowBase.cpp
+    )
+    if(TESSERACT_UI STREQUAL "macos")
+        list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
+        list(APPEND _tk_sources tk/video_capture_macos.mm)
+    elseif(TESSERACT_UI STREQUAL "win32")
+        list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
+        list(APPEND _tk_sources tk/video_capture_win32.cpp)
+    endif()
 endif()
 
 add_library(tesseract_tk STATIC ${_tk_sources})
@@ -299,6 +325,14 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-chevron-up.svg"
     "${_lucide_dir}/lucide-chevron-down.svg"
     "${_lucide_dir}/lucide-forward.svg"
+    "${_lucide_dir}/lucide-phone.svg"
+    "${_lucide_dir}/lucide-phone-off.svg"
+    "${_lucide_dir}/lucide-mic-off.svg"
+    "${_lucide_dir}/lucide-video.svg"
+    "${_lucide_dir}/lucide-video-off.svg"
+    "${_lucide_dir}/lucide-expand.svg"
+    "${_lucide_dir}/lucide-minimize.svg"
+    "${_lucide_dir}/lucide-pip.svg"
 )
 
 add_custom_command(

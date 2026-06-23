@@ -134,6 +134,20 @@ public:
 
     bool is_recording() const override { return recording_.load(); }
 
+#ifdef TESSERACT_CALLS_ENABLED
+    void set_frame_callback(
+        std::function<void(const std::int16_t*, std::size_t)> cb) override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        frame_callback_ = std::move(cb);
+    }
+    void clear_frame_callback() override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        frame_callback_ = nullptr;
+    }
+#endif
+
     std::uint64_t duration_ms() const override
     {
         if (!recording_.load())
@@ -164,6 +178,11 @@ private:
                 const std::size_t bytes = frames * kBytesPerFrame;
                 const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
 
+#ifdef TESSERACT_CALLS_ENABLED
+                std::function<void(const std::int16_t*, std::size_t)> frame_cb;
+                const int16_t* frame_s16 = nullptr;
+                std::size_t    frame_n   = 0;
+#endif
                 {
                     std::lock_guard<std::mutex> lk(mu_);
                     if (silent)
@@ -179,6 +198,10 @@ private:
                         window_buf_.insert(window_buf_.end(),
                                            s16, s16 + frames);
                         window_byte_count_ += bytes;
+#ifdef TESSERACT_CALLS_ENABLED
+                        frame_s16 = s16;
+                        frame_n   = frames;
+#endif
                     }
 
                     // Emit amplitude every ~100ms (9600 bytes).
@@ -200,8 +223,15 @@ private:
                             post_([cb, amp]() { cb(amp); });
                         }
                     }
+#ifdef TESSERACT_CALLS_ENABLED
+                    frame_cb = frame_callback_;
+#endif
                 }
                 capture_client_->ReleaseBuffer(frames);
+#ifdef TESSERACT_CALLS_ENABLED
+                if (frame_cb && frame_s16)
+                    frame_cb(frame_s16, frame_n);
+#endif
             }
         }
     }
@@ -261,6 +291,9 @@ private:
     std::vector<std::uint16_t> waveform_;
     std::vector<int16_t>       window_buf_;
     std::size_t                window_byte_count_ = 0;
+#ifdef TESSERACT_CALLS_ENABLED
+    std::function<void(const std::int16_t*, std::size_t)> frame_callback_;
+#endif
 };
 
 } // namespace

@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <ctime>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -321,6 +322,9 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         break;
     case tesseract::EventType::PinnedEvent:
         row.kind = Kind::PinnedEvent;
+        break;
+    case tesseract::EventType::CallNotification:
+        row.kind = Kind::CallNotification;
         break;
     }
 
@@ -682,6 +686,14 @@ std::string format_day_label(std::uint64_t timestamp_ms)
 
 } // namespace
 
+static bool is_virtual_event(MessageRowData::Kind k)
+{
+    using Kind = MessageRowData::Kind;
+    return k == Kind::DaySeparator || k == Kind::ReadMarker ||
+           k == Kind::TimelineStart || k == Kind::PinnedEvent ||
+           k == Kind::CallNotification;
+}
+
 class MessageListView::Adapter : public tk::ListAdapter
 {
 public:
@@ -703,15 +715,10 @@ public:
     // ReadMarker, or TimelineStart) exists after `index`.
     bool has_content_after(std::size_t index) const
     {
-        using Kind = MessageRowData::Kind;
         for (std::size_t j = index + 1; j < owner_.messages_.size(); ++j)
         {
-            auto k = owner_.messages_[j].kind;
-            if (k != Kind::DaySeparator && k != Kind::ReadMarker &&
-                k != Kind::TimelineStart && k != Kind::PinnedEvent)
-            {
+            if (!is_virtual_event(owner_.messages_[j].kind))
                 return true;
-            }
         }
         return false;
     }
@@ -722,14 +729,12 @@ public:
     // consecutive empty-day separators collapse to just the last one.
     bool has_content_before_next_separator(std::size_t index) const
     {
-        using Kind = MessageRowData::Kind;
         for (std::size_t j = index + 1; j < owner_.messages_.size(); ++j)
         {
-            const Kind k = owner_.messages_[j].kind;
-            if (k == Kind::DaySeparator)
+            const MessageRowData::Kind k = owner_.messages_[j].kind;
+            if (k == MessageRowData::Kind::DaySeparator)
                 return false;
-            if (k != Kind::ReadMarker && k != Kind::TimelineStart &&
-                k != Kind::PinnedEvent)
+            if (!is_virtual_event(k))
                 return true;
         }
         return false;
@@ -788,8 +793,7 @@ public:
         const auto& curr = owner_.messages_[index];
         // Virtual rows are never continuations; nor is the row after one.
         using Kind = MessageRowData::Kind;
-        if (curr.kind == Kind::DaySeparator || curr.kind == Kind::ReadMarker ||
-            curr.kind == Kind::TimelineStart || curr.kind == Kind::PinnedEvent)
+        if (is_virtual_event(curr.kind))
         {
             return false;
         }
@@ -814,8 +818,7 @@ public:
             }
         }
         const auto& prev = owner_.messages_[prev_idx];
-        if (prev.kind == Kind::DaySeparator || prev.kind == Kind::ReadMarker ||
-            prev.kind == Kind::TimelineStart || prev.kind == Kind::PinnedEvent)
+        if (is_virtual_event(prev.kind))
         {
             return false;
         }
@@ -860,12 +863,7 @@ public:
         {
             i = n - 1;
         }
-        using Kind = MessageRowData::Kind;
-        auto is_virtual = [](Kind k)
-        {
-            return k == Kind::DaySeparator || k == Kind::ReadMarker ||
-                   k == Kind::TimelineStart || k == Kind::PinnedEvent;
-        };
+        auto is_virtual = [](MessageRowData::Kind k) { return is_virtual_event(k); };
         // Backward: consecutive virtual rows immediately before i (their
         // visibility flips exactly when content appears/disappears beside them).
         std::size_t a = i;
@@ -919,6 +917,10 @@ public:
         {
             return kPinnedEventH;
         }
+        if (m.kind == Kind::CallNotification)
+        {
+            return kPinnedEventH;
+        }
         bool cont = is_cont(index);
         float body_w = std::max(0.0f, body_text_max_width(width) -
                                           receipt_reserve_width(m));
@@ -942,6 +944,26 @@ public:
             raw_h += kThreadChipH + kThreadChipGap;
         }
         return raw_h;
+    }
+
+    static tk::Color sender_color(const std::string& name, tk::ThemeMode mode)
+    {
+        static constexpr tk::Color kLight[] = {
+            tk::Color::rgb(0xC0392B), tk::Color::rgb(0xD35400),
+            tk::Color::rgb(0x6E7D00), tk::Color::rgb(0x1E8449),
+            tk::Color::rgb(0x117A65), tk::Color::rgb(0x1565C0),
+            tk::Color::rgb(0x6A1B9A), tk::Color::rgb(0xAD1457),
+        };
+        static constexpr tk::Color kDark[] = {
+            tk::Color::rgb(0xFF8A80), tk::Color::rgb(0xFFAB40),
+            tk::Color::rgb(0xD4E157), tk::Color::rgb(0x69F0AE),
+            tk::Color::rgb(0x4DD0E1), tk::Color::rgb(0x82B1FF),
+            tk::Color::rgb(0xCE93D8), tk::Color::rgb(0xF48FB1),
+        };
+        const std::size_t h = std::hash<std::string>{}(name);
+        if (mode == tk::ThemeMode::Dark)
+            return kDark[h % std::size(kDark)];
+        return kLight[h % std::size(kLight)];
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -984,6 +1006,11 @@ public:
         if (m.kind == Kind::PinnedEvent)
         {
             paint_pinned_event(m, ctx, bounds);
+            return;
+        }
+        if (m.kind == Kind::CallNotification)
+        {
+            paint_call_notification(m, ctx, bounds);
             return;
         }
 
@@ -1057,7 +1084,7 @@ public:
             if (rc.sender)
             {
                 ctx.canvas.draw_text(*rc.sender, {col_x, sender_y},
-                                     ctx.theme.palette.text_secondary);
+                                     sender_color(m.sender, ctx.theme.mode));
             }
         }
 
@@ -1914,6 +1941,65 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
+    void paint_call_notification(const MessageRowData& m, tk::PaintCtx& ctx,
+                                 tk::Rect bounds) const
+    {
+        const bool is_video = (m.body == "video");
+
+        const std::string intent_label =
+            is_video
+                ? tk::tr("started a video call")
+                : (m.body == "audio"
+                       ? tk::tr("started a voice call")
+                       : tk::tr("started a call"));
+        const std::string label =
+            m.sender_name.empty()
+                ? intent_label
+                : m.sender_name + " " + intent_label;
+
+        constexpr float kIconSz    = 12.0f;
+        constexpr float kIconGap   = 4.0f;
+        constexpr float kLabelPadX = 8.0f;
+
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds.w - kPadX * 2 - kIconSz - kIconGap);
+        auto lo = ctx.factory.build_text(label, st);
+        if (!lo)
+            return;
+
+        const tk::Size sz      = lo->measure();
+        const float content_w  = kIconSz + kIconGap + sz.w;
+        const float cx         = bounds.x + bounds.w * 0.5f;
+        const float cy         = bounds.y + kPinnedEventH * 0.5f;
+        const float icon_x     = cx - content_w * 0.5f;
+        const float text_x     = icon_x + kIconSz + kIconGap;
+        const float label_l    = cx - content_w * 0.5f - kLabelPadX;
+        const float label_r    = cx + content_w * 0.5f + kLabelPadX;
+        const float line_y     = std::round(cy);
+
+        if (label_l > bounds.x + kPadX)
+            ctx.canvas.fill_rect(
+                {bounds.x + kPadX, line_y, label_l - bounds.x - kPadX, 1.0f},
+                ctx.theme.palette.border);
+        if (label_r < bounds.x + bounds.w - kPadX)
+            ctx.canvas.fill_rect(
+                {label_r, line_y, bounds.x + bounds.w - kPadX - label_r, 1.0f},
+                ctx.theme.palette.border);
+
+        const tk::Rect icon_rect{icon_x, cy - kIconSz * 0.5f, kIconSz, kIconSz};
+        if (is_video)
+            ic_call_video_.draw(ctx.canvas, ctx.factory, kVideoSvg, icon_rect,
+                                kIconSz, ctx.theme.palette.text_muted);
+        else
+            ic_call_phone_.draw(ctx.canvas, ctx.factory, kPhoneSvg, icon_rect,
+                                kIconSz, ctx.theme.palette.text_muted);
+        ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f},
+                             ctx.theme.palette.text_muted);
+    }
+
     // Trailing synthetic "X is typing…" row. Left-aligned + ellipsized
     // muted text, matching the look the old RoomView strip had.
     void paint_typing_row(tk::PaintCtx& ctx, tk::Rect bounds) const
@@ -2087,6 +2173,7 @@ private:
         case MessageRowData::Kind::ReadMarker:
         case MessageRowData::Kind::TimelineStart:
         case MessageRowData::Kind::PinnedEvent:
+        case MessageRowData::Kind::CallNotification:
             return 0.0f;
         }
         return quote_h;
@@ -2426,6 +2513,7 @@ private:
         case MessageRowData::Kind::ReadMarker:
         case MessageRowData::Kind::TimelineStart:
         case MessageRowData::Kind::PinnedEvent:
+        case MessageRowData::Kind::CallNotification:
             break;
         }
         return y;
@@ -3700,6 +3788,7 @@ private:
     // crisp across DPI.
     mutable tk::IconCache ic_react_, ic_reply_, ic_thread_, ic_edit_, ic_more_;
     mutable tk::IconCache ic_play_voice_, ic_play_audio_, ic_play_video_;
+    mutable tk::IconCache ic_call_phone_, ic_call_video_;
 
     MessageListView& owner_;
 };
@@ -4087,10 +4176,8 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
 
     // Suppress the read marker while the SDK catches up to the new position.
     // update_message() clears this flag when it delivers the updated marker.
-    using Kind = MessageRowData::Kind;
     bool suppress_flipped = false;
-    if (msg.kind != Kind::ReadMarker && msg.kind != Kind::DaySeparator &&
-        msg.kind != Kind::TimelineStart && msg.kind != Kind::PinnedEvent)
+    if (!is_virtual_event(msg.kind))
     {
         suppress_flipped = !suppress_read_marker_;
         suppress_read_marker_ = true;
@@ -5795,11 +5882,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
             if (ri < messages_.size())
             {
                 const auto& m = messages_[ri];
-                using Kind = MessageRowData::Kind;
-                const bool is_virtual = m.kind == Kind::DaySeparator ||
-                                        m.kind == Kind::ReadMarker ||
-                                        m.kind == Kind::TimelineStart ||
-                                        m.kind == Kind::PinnedEvent;
+                const bool is_virtual = is_virtual_event(m.kind);
                 if (!is_virtual && !adapter_->is_cont(ri) && !m.sender.empty())
                 {
                     const tk::Rect rb = row_world_rect(ri_int);

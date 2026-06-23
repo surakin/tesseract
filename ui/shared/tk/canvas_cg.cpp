@@ -855,6 +855,35 @@ public:
         draw_cg_image(sub.get(), dst);
     }
 
+    bool draw_rgba_pixels(const std::uint8_t* pixels,
+                          std::uint32_t w, std::uint32_t h, Rect dst) override
+    {
+        if (!pixels || w == 0 || h == 0) return false;
+        // Create a CGDataProvider that references the caller's buffer without
+        // copying. The buffer belongs to pending_rgba on the tile state, which
+        // is stable for the duration of this synchronous paint() call.
+        // A nullptr releaseData callback means the provider does not free the
+        // buffer when it is released — the caller (pending_rgba) owns it.
+        CFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
+        CFRetained<CGDataProviderRef> provider{
+            CGDataProviderCreateWithData(
+                nullptr, pixels,
+                static_cast<std::size_t>(w) * h * 4,
+                nullptr /*releaseData — caller owns the buffer*/)};
+        if (!provider.get()) return false;
+        CGImageRef img = CGImageCreate(
+            static_cast<std::size_t>(w), static_cast<std::size_t>(h),
+            8, 32,
+            static_cast<std::size_t>(w) * 4,
+            cs.get(),
+            static_cast<CGBitmapInfo>(kCGImageAlphaLast) | kCGBitmapByteOrderDefault,
+            provider.get(), nullptr, false, kCGRenderingIntentDefault);
+        if (!img) return false;
+        draw_cg_image(img, dst);
+        CGImageRelease(img);
+        return true;
+    }
+
     void draw_circle_image(const Image& image, Point centre,
                            float diameter) override
     {

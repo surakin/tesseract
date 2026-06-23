@@ -363,6 +363,56 @@ public:
         blit(static_cast<const CairoImage&>(image), dst);
     }
 
+    bool draw_rgba_pixels(const std::uint8_t* pixels,
+                          std::uint32_t w, std::uint32_t h, Rect dst) override
+    {
+        if (!pixels || w == 0 || h == 0 || dst.w <= 0.0f || dst.h <= 0.0f)
+            return false;
+        const int iw = static_cast<int>(w), ih = static_cast<int>(h);
+        // Cairo's native pixel format is premultiplied BGRA (CAIRO_FORMAT_ARGB32).
+        // Convert straight RGBA → premultiplied BGRA into a temporary buffer.
+        const int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, iw);
+        std::vector<unsigned char> buf(static_cast<std::size_t>(stride * ih));
+        for (int y = 0; y < ih; ++y)
+        {
+            const std::uint8_t* src_row = pixels + y * iw * 4;
+            auto* dst_row = reinterpret_cast<std::uint32_t*>(
+                buf.data() + y * stride);
+            for (int x = 0; x < iw; ++x)
+            {
+                const unsigned r = src_row[x * 4 + 0];
+                const unsigned g = src_row[x * 4 + 1];
+                const unsigned b = src_row[x * 4 + 2];
+                const unsigned a = src_row[x * 4 + 3];
+                dst_row[x] = (a << 24) |
+                             (((r * a + 127) / 255) << 16) |
+                             (((g * a + 127) / 255) <<  8) |
+                              ((b * a + 127) / 255);
+            }
+        }
+        // Wrap the converted buffer in a non-owning surface (zero additional copy).
+        cairo_surface_t* surf = cairo_image_surface_create_for_data(
+            buf.data(), CAIRO_FORMAT_ARGB32, iw, ih, stride);
+        if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS)
+        {
+            cairo_surface_destroy(surf);
+            return false;
+        }
+        cairo_save(cr_);
+        const double sx = dst.w / iw;
+        const double sy = dst.h / ih;
+        cairo_translate(cr_, dst.x, dst.y);
+        cairo_scale(cr_, sx, sy);
+        cairo_set_source_surface(cr_, surf, 0, 0);
+        // CAIRO_FILTER_GOOD (bilinear) is sufficient for live video and
+        // substantially faster than CAIRO_FILTER_BEST (cubic).
+        cairo_pattern_set_filter(cairo_get_source(cr_), CAIRO_FILTER_GOOD);
+        cairo_paint(cr_);
+        cairo_restore(cr_);
+        cairo_surface_destroy(surf);
+        return true;
+    }
+
     void draw_image_subregion(const Image& image, Rect src, Rect dst) override
     {
         const auto& ci = static_cast<const CairoImage&>(image);

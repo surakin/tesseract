@@ -1127,6 +1127,14 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             focus_forward_picker_field_();
             request_relayout_();
         };
+
+#ifdef TESSERACT_CALLS_ENABLED
+        rv->on_start_call =
+            [this](const std::string& room_id, const std::string& slot_id)
+        {
+            start_call(room_id, slot_id);
+        };
+#endif
     }
 }
 
@@ -3086,8 +3094,10 @@ void ShellBase::handle_user_query_(const std::string& query)
         if (!client_) return;
         auto req_id = next_request_id_++;
         pending_resolve_requests_[req_id] = {query, gen};
+        // Capture client_ on the UI thread; don't read it from the worker.
+        auto* c = client_;
         run_async_(
-            [this, req_id, mxid = query, gen]()
+            [this, c, req_id, mxid = query, gen]()
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 if (user_resolve_gen_.load() != gen)
@@ -3100,8 +3110,7 @@ void ShellBase::handle_user_query_(const std::string& query)
                 }
                 // Still valid — fire the async FFI call; result arrives via
                 // handle_extended_profile_ready_ui_ → pending_resolve_requests_.
-                if (client_)
-                    client_->resolve_user_profile_async(req_id, mxid);
+                c->resolve_user_profile_async(req_id, mxid);
             });
     }
 }
@@ -5088,6 +5097,15 @@ void ShellBase::open_room_in_new_window(const std::string& room_id)
         // would otherwise be stuck on its constructor's default theme.
         w->apply_theme(current_theme_);
         owned_secondary_windows_.emplace_back(w);
+
+        // Hide the call button immediately if a call is already in progress.
+#ifdef TESSERACT_CALLS_ENABLED
+        if (call_session_)
+        {
+            if (w->room_view() && w->room_view()->header())
+                w->room_view()->header()->set_call_active(true);
+        }
+#endif
 
         // Record that this room is now open as a popout so it can be
         // restored on the next launch. Geometry is written by the window
@@ -7155,6 +7173,27 @@ void ShellBase::after_active_room_changed_()
             v.resize(kRecentRoomsMax);
     }
 
+#ifdef TESSERACT_CALLS_ENABLED
+    // Show the call button for all rooms when calls are compiled in and the
+    // active call (if any) is in this room. A per-room capability gate can be
+    // added later when the server advertises RTC transport support.
+    if (room_view_ && room_view_->header())
+    {
+        const bool in_call_room = call_session_ != nullptr &&
+                                  call_session_->room_id() == current_room_id_;
+        room_view_->header()->set_show_call_btn(true);
+        room_view_->header()->set_call_active(in_call_room);
+        // Hide the docked panel when viewing a different room; show it again
+        // when the user returns. Floating/Popout: call_panel() is nullptr,
+        // so this block is a no-op for those modes.
+        if (auto* panel = room_view_->call_panel())
+        {
+            panel->set_visible(in_call_room);
+            request_relayout_();
+        }
+    }
+#endif
+
     // Each new room starts with an unknown thread history — allow pagination.
     thread_panel_ctl_.reset_backfill();
     // Keep an always-on background subscription on the active room so the
@@ -7795,6 +7834,419 @@ ShellBase::SpaceNavFrame::capture(views::RoomListView* rlv)
     }
     return f;
 }
+
+#ifdef TESSERACT_CALLS_ENABLED
+
+void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
+                                           std::string slot_id,
+                                           std::string caller_user_id,
+                                           std::string call_intent,
+                                           std::uint64_t lifetime_ms,
+                                           std::string notification_event_id)
+{
+    if (!room_view_ || !main_app_) return;
+
+    // Only show the banner when the caller is in the currently-viewed room.
+    if (room_id != current_room_id_) return;
+
+    // Never show an incoming-call banner while a call is already active — sync
+    // can re-fire member-state invitation events after the call has started.
+    if (call_session_) return;
+
+    // If the banner was auto-dismissed (timeout), clear the pending ID so we
+    // don't suppress new invitations.
+    if (room_view_ && !room_view_->call_banner_visible())
+        rtc_pending_notification_id_.clear();
+
+    // Deduplication: if we already have a notification-path banner showing
+    // for this room, skip member-state-event triggers (notification_event_id is empty
+    // for the member-state path).
+    if (notification_event_id.empty() && !rtc_pending_notification_id_.empty())
+        return;
+
+    // Resolve a display name; fall back to the user-id localpart.
+    std::string display_name = caller_user_id;
+    auto it = known_users_.find(caller_user_id);
+    if (it != known_users_.end() && !it->second.display_name.empty())
+        display_name = it->second.display_name;
+
+    // Track that a notification-path invite is active.
+    if (!notification_event_id.empty())
+        rtc_pending_notification_id_ = notification_event_id;
+
+    room_view_->show_call_banner(room_id, slot_id, display_name, call_intent, lifetime_ms);
+}
+
+void ShellBase::handle_rtc_video_frame_ui_(std::uint64_t /*session_id*/,
+                                            const std::string& participant_id,
+                                            std::uint32_t width,
+                                            std::uint32_t height,
+                                            const std::uint8_t* rgba,
+                                            std::size_t rgba_size)
+{
+    if (auto* ov = active_call_overlay_())
+        ov->on_video_frame(participant_id, width, height, rgba, rgba_size);
+}
+
+void ShellBase::handle_rtc_audio_frame_ui_(std::uint64_t /*session_id*/,
+                                            const std::int16_t* samples,
+                                            std::size_t sample_count,
+                                            std::uint32_t sample_rate,
+                                            std::uint32_t num_channels)
+{
+    if (call_audio_output_)
+        call_audio_output_->push_frame(samples, sample_count, sample_rate, num_channels);
+}
+
+void ShellBase::start_call(const std::string& room_id, const std::string& slot_id)
+{
+    if (call_session_ || !client_)
+        return;
+
+    auto result = client_->rtc_start_call(room_id, slot_id);
+    if (!result.ok)
+    {
+        show_status_message_("Call failed: " + result.message);
+        return;
+    }
+
+    call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id);
+    call_audio_output_ = make_call_audio_output_();
+
+    if (capture_)
+    {
+        call_audio_router_ = std::make_unique<tk::AudioCaptureCallRouter>(
+            capture_.get(),
+            [this](const std::int16_t* samples, std::size_t n)
+            {
+                client_->rtc_push_audio_samples(samples, n);
+            });
+        // Start capture so the poll timer fires and delivers PCM frames.
+        // Only start if not already recording (e.g. mid-voice-message).
+        if (!capture_->is_recording())
+            capture_->start();
+    }
+
+    auto vc = tk::VideoCapture::create();
+    if (vc)
+    {
+        vc->set_callback(
+            [this](const tk::VideoCapture::Frame& f)
+            {
+                client_->rtc_push_video_frame_i420(
+                    f.y, f.u, f.v, f.width, f.height,
+                    f.stride_y, f.stride_u, f.stride_v);
+            });
+        vc->start();
+        call_video_capture_ = std::move(vc);
+    }
+
+    // Determine the initial overlay mode from saved settings.
+    auto initial_mode = views::CallOverlayWidget::Mode::Docked;
+    switch (Settings::instance().call_overlay_mode)
+    {
+    case Settings::CallOverlayMode::DockedExpanded:
+        initial_mode = views::CallOverlayWidget::Mode::DockedExpanded; break;
+    case Settings::CallOverlayMode::Floating:
+        initial_mode = views::CallOverlayWidget::Mode::Floating;       break;
+    case Settings::CallOverlayMode::Popout:
+        initial_mode = views::CallOverlayWidget::Mode::Popout;         break;
+    default: break;
+    }
+
+    // Mount + wire the call overlay in the resolved mode.
+    on_call_overlay_mode_requested_(initial_mode);
+
+    // Restore saved float position.
+    if (auto* ov = active_call_overlay_())
+        ov->set_float_position(Settings::instance().call_overlay_float_x,
+                               Settings::instance().call_overlay_float_y);
+
+    // Dismiss the incoming-call banner (if the user answered via banner).
+    if (room_view_) room_view_->dismiss_call_banner();
+
+    // Flip the call button to active state in main window and all pop-outs.
+    if (room_view_ && room_view_->header())
+        room_view_->header()->set_call_active(true);
+    for (auto& w : owned_secondary_windows_)
+    {
+        if (w->room_view() && w->room_view()->header())
+            w->room_view()->header()->set_call_active(true);
+    }
+}
+
+void ShellBase::end_call()
+{
+    // Clear active indicator before tearing down session.
+    if (room_view_ && room_view_->header())
+        room_view_->header()->set_call_active(false);
+#ifdef TESSERACT_CALLS_ENABLED
+    for (auto& w : owned_secondary_windows_)
+    {
+        if (w->room_view() && w->room_view()->header())
+            w->room_view()->header()->set_call_active(false);
+    }
+#endif
+
+    call_video_capture_.reset();
+    call_audio_router_.reset();
+    // cancel() stops capture without firing on_stopped (which would try to send a voice msg).
+    if (capture_ && capture_->is_recording())
+        capture_->cancel();
+    if (call_session_)
+    {
+        call_session_->hang_up();
+        call_session_.reset();
+    }
+    if (call_window_)
+    {
+        call_window_->on_window_closed = nullptr;
+        call_window_->close_window();
+        call_window_.release()->schedule_delete(); // defer Qt delete past event handler
+    }
+    if (main_app_) main_app_->unmount_call_overlay();
+}
+
+void ShellBase::handle_rtc_participant_joined_ui_(std::uint64_t session_id,
+                                                   RtcParticipantInfo info)
+{
+    if (!call_session_)
+        return;
+    call_session_->set_session_id(session_id);
+    call_session_->on_participant_joined(info);
+    if (auto* ov = active_call_overlay_())
+        ov->update_participants(call_session_->participants());
+}
+
+void ShellBase::handle_rtc_participant_left_ui_(std::uint64_t session_id,
+                                                 std::string participant_id)
+{
+    if (!call_session_ || call_session_->session_id() != session_id)
+        return;
+    call_session_->on_participant_left(participant_id);
+    if (auto* ov = active_call_overlay_())
+        ov->update_participants(call_session_->participants());
+}
+
+void ShellBase::handle_rtc_participant_updated_ui_(std::uint64_t session_id,
+                                                    RtcParticipantInfo info)
+{
+    if (!call_session_ || call_session_->session_id() != session_id)
+        return;
+    call_session_->on_participant_updated(info);
+    if (auto* ov = active_call_overlay_())
+        ov->update_participants(call_session_->participants());
+}
+
+void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
+                                              std::string reason)
+{
+    if (!call_session_)
+        return;
+    // Accept the end event if session_id matches, OR if session_id_ is still 0
+    // (no participant joined yet — the session never got its id confirmed).
+    if (call_session_->session_id() != 0 &&
+        call_session_->session_id() != session_id)
+        return;
+
+    // Clear the pending notification dedup tracker and any standing banner.
+    rtc_pending_notification_id_.clear();
+    if (room_view_) room_view_->dismiss_call_banner();
+
+    // Surface disconnect reason for non-normal ends.
+    if (!reason.empty()
+        && reason != "hangup"
+        && reason != "user_action"
+        && reason != "switch_device")
+    {
+        std::string msg;
+        if (reason == "ice_failed" || reason == "dtls_failed" || reason == "network_error")
+            msg = tk::tr("Call disconnected due to a network error.");
+        else if (reason == "media_error" || reason == "transport_failure")
+            msg = tk::tr("Call ended due to a media error.");
+        else if (reason == "codec_mismatch" || reason == "unsupported_features")
+            msg = tk::tr("This call is not supported on your device.");
+        else if (reason == "encryption_error")
+            msg = tk::tr("Call ended due to an encryption error.");
+        else
+            msg = tk::tr("The call ended unexpectedly.");
+        show_status_message_(std::move(msg));
+    }
+
+    call_session_->on_session_ended({});
+    call_video_capture_.reset();
+    call_audio_router_.reset();
+    call_audio_output_.reset();
+    if (capture_ && capture_->is_recording())
+        capture_->cancel();
+    call_session_.reset();
+    if (call_window_)
+    {
+        call_window_->on_window_closed = nullptr;
+        call_window_->close_window();
+        call_window_.release()->schedule_delete(); // defer Qt delete past event handler
+    }
+    if (main_app_) main_app_->unmount_call_overlay();
+    if (room_view_ && room_view_->header())
+        room_view_->header()->set_call_active(false);
+    for (auto& w : owned_secondary_windows_)
+    {
+        if (w->room_view() && w->room_view()->header())
+            w->room_view()->header()->set_call_active(false);
+    }
+}
+
+views::CallOverlayWidget* ShellBase::active_call_overlay_() const
+{
+    if (call_window_)
+        return call_window_->call_overlay_widget();
+    if (main_app_)
+        return main_app_->call_panel_for_room();
+    return nullptr;
+}
+
+void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m)
+{
+    if (!main_app_ || !call_session_)
+        return;
+
+    // Tear down whatever is currently active.
+    if (call_window_)
+    {
+        // Null the callback before closing to prevent re-entrancy (GTK4
+        // fires "destroy" synchronously; Qt6 would re-enter closeEvent).
+        call_window_->on_window_closed = nullptr;
+        call_window_->close_window();
+        // Release ownership and defer destruction. Deleting a QWidget (or
+        // GTK window) synchronously while inside one of its event handlers
+        // (closeEvent / mouseReleaseEvent) causes Qt to crash during its
+        // own post-event cleanup — schedule_delete() defers via deleteLater()
+        // on Qt6, fires delete immediately on other platforms.
+        call_window_.release()->schedule_delete();
+    }
+    main_app_->unmount_call_overlay();
+
+    // Provider lambdas reused for all non-Popout mount calls.
+    auto post_delayed_fn = [this](int ms, std::function<void()> fn)
+    {
+        post_to_ui_after_(ms, std::move(fn));
+    };
+    // repaint_fn is overridden for Popout below — the popout window lives in a
+    // separate OS surface; calling request_repaint_() would repaint the main
+    // window instead, so video frames would never update the popout.
+    auto repaint_fn = [this] { request_repaint_(); };
+    auto avatar_fn  = [this](const std::string& mxc) -> const tk::Image*
+    {
+        return account_manager_.thumbnail_cache().peek(mxc);
+    };
+    auto name_fn = [this](const std::string& user_id) -> std::string
+    {
+        // Primary: room member list for the active call room.
+        if (call_session_ && client_)
+        {
+            const auto members = client_->get_room_members(call_session_->room_id());
+            for (const auto& mem : members)
+            {
+                if (mem.user_id == user_id && !mem.display_name.empty())
+                    return mem.display_name;
+            }
+        }
+        // Secondary: global known-users roster.
+        auto it = known_users_.find(user_id);
+        if (it != known_users_.end() && !it->second.display_name.empty())
+            return it->second.display_name;
+        // Fallback: localpart of the Matrix ID (@alice:server → alice).
+        if (!user_id.empty() && user_id.front() == '@')
+        {
+            const auto colon = user_id.find(':');
+            if (colon != std::string::npos)
+                return user_id.substr(1, colon - 1);
+        }
+        return user_id;
+    };
+
+    if (m == views::CallOverlayWidget::Mode::Popout)
+    {
+        // Create the OS window and wire its overlay.
+        auto* win = create_call_window_();
+        call_window_.reset(win);
+        // Override repaint_fn: the popout window is a separate OS surface;
+        // request_repaint_() would repaint the main window, not the popout.
+        // call_window_->request_repaint() targets the popout's own surface.
+        call_window_->wire_call_overlay(
+            std::move(post_delayed_fn),
+            [this] { if (call_window_) call_window_->request_repaint(); },
+            std::move(avatar_fn),
+            std::move(name_fn));
+        call_window_->on_window_closed = [this]
+        {
+            on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode::Docked);
+        };
+        call_window_->bring_to_front();
+    }
+    else
+    {
+        // Docked / DockedExpanded / Floating.
+        main_app_->mount_call_overlay(
+            m,
+            std::move(post_delayed_fn),
+            std::move(repaint_fn),
+            std::move(avatar_fn),
+            std::move(name_fn));
+    }
+
+    // Wire buttons on the newly active overlay.
+    if (auto* ov = active_call_overlay_())
+    {
+        ov->on_hang_up = [this] { end_call(); };
+        ov->on_toggle_audio = [this](bool muted)
+        {
+            if (call_session_) call_session_->mute_audio(muted);
+        };
+        ov->on_toggle_video = [this](bool muted)
+        {
+            if (call_session_) call_session_->mute_video(muted);
+        };
+        ov->on_mode_change_requested = [this](views::CallOverlayWidget::Mode nm)
+        {
+            on_call_overlay_mode_requested_(nm);
+        };
+        ov->on_float_position_changed = [this](float x, float y)
+        {
+            on_call_float_position_changed_(x, y);
+        };
+
+        // Wire the relayout requester so update_participants() can trigger a
+        // layout pass after adding/removing tiles (tiles have zero bounds until
+        // arrange() runs). The popout window has no incidental redraws to rely
+        // on, so a dedicated relayout path is essential.
+        if (m == views::CallOverlayWidget::Mode::Popout)
+            ov->set_relayout_requester(
+                [this] { if (call_window_) call_window_->request_relayout(); });
+        else
+            ov->set_relayout_requester([this] { request_relayout_(); });
+
+        // Seed with current participants for mid-call mode switches.
+        if (call_session_ && !call_session_->participants().empty())
+            ov->update_participants(call_session_->participants());
+    }
+
+    // Persist the new mode (Settings::CallOverlayMode has the same ordinal order).
+    Settings::instance().call_overlay_mode =
+        static_cast<Settings::CallOverlayMode>(static_cast<int>(m));
+    Settings::instance().save_to_disk(tesseract::config_dir());
+    request_relayout_();
+}
+
+void ShellBase::on_call_float_position_changed_(float x, float y)
+{
+    Settings::instance().call_overlay_float_x = x;
+    Settings::instance().call_overlay_float_y = y;
+    Settings::instance().save_to_disk(tesseract::config_dir());
+    request_relayout_();
+}
+
+#endif // TESSERACT_CALLS_ENABLED
 
 void ShellBase::SpaceNavFrame::restore(views::RoomListView* rlv) const
 {

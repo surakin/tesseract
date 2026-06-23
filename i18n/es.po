@@ -442,6 +442,7 @@ msgstr "Verificar"
 
 #: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:70
 #: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:213
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
 msgid "Decline"
 msgstr "Rechazar"
 
@@ -560,3 +561,11 @@ msgstr "Editar"
 #: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5046
 msgid "More"
 msgstr "Más"
+
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+msgid "Answer"
+msgstr "Contestar"
+
+#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+msgid "is calling"
+msgstr "está llamando"

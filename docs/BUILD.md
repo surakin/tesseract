@@ -48,6 +48,39 @@ xcode-select --install   # Xcode Command Line Tools
 
 `go` is a build-only dep for `aws-lc-sys`'s CMake builder; `perl` ships with macOS.
 
+## Calls / MatrixRTC (optional)
+
+Native voice and video calls via LiveKit/WebRTC are gated behind a CMake flag that
+defaults to OFF:
+
+```bash
+cmake --preset linux-qt6-debug -DTESSERACT_ENABLE_CALLS=ON
+```
+
+### Additional prerequisites when calls are enabled
+
+**Linux** — one extra package:
+
+```bash
+sudo apt install libxtst-dev      # Ubuntu/Debian
+# sudo dnf install libXtst-devel  # Fedora/RHEL
+```
+
+`libxtst-dev` provides XTest/XRecord headers required by livekit-webrtc's Linux
+screen-capture backend.
+
+**macOS** — no extra `brew install` needed. All required frameworks
+(CoreAudio, CoreMedia, CoreVideo, IOKit, IOSurface, Metal, VideoToolbox) are part of
+the Xcode SDK. ScreenCaptureKit (screen sharing) is weak-linked and requires macOS
+12.3 or later; it is silently absent and screen sharing is disabled on older versions.
+`opus` is already listed in the base prerequisites above.
+
+**Windows** — calls are not yet supported on Windows.
+
+**First-build download** — when `TESSERACT_ENABLE_CALLS=ON`, `cargo build` downloads a
+prebuilt `libwebrtc.a` (~150 MB) during the first build. Internet access is required.
+Subsequent builds use the cached copy.
+
 ## Presets
 
 All presets live in `CMakePresets.json`:

@@ -1,5 +1,7 @@
 #include "widget.h"
 
+#include <cassert>
+
 namespace tk
 {
 
@@ -165,6 +167,37 @@ Widget* Widget::hit_test(Point world)
         }
     }
     return this;
+}
+
+std::unique_ptr<Widget> Widget::remove_child(Widget* child)
+{
+    assert(child != nullptr && "remove_child: child pointer is null");
+    assert(child->parent_ == this && "remove_child: child's parent is not this");
+
+    // Find the child in the children_ vector by comparing raw pointers.
+    for (auto it = children_.begin(); it != children_.end(); ++it)
+    {
+        if (it->get() == child)
+        {
+            // Notify the host before the subtree is freed so it can clear any
+            // dangling pointer fields (hovered_widget_, pressed_widget_, etc.).
+            // Walk to root to find the registered callback (installed by Surface).
+            {
+                Widget* root = this;
+                while (root->parent_) root = root->parent_;
+                if (root->subtree_removing_cb_)
+                    root->subtree_removing_cb_(child);
+            }
+            std::unique_ptr<Widget> removed = std::move(*it);
+            children_.erase(it);
+            removed->parent_ = nullptr;
+            return removed;
+        }
+    }
+
+    // Child not found in children_ vector — assertion failure.
+    assert(false && "remove_child: child not found in children_");
+    return nullptr; // Unreachable, but silences compiler warnings.
 }
 
 } // namespace tk

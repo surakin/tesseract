@@ -447,6 +447,66 @@ public:
                                            const std::string& /*profile_json*/)
     {
     }
+
+    // ------------------------------------------------------------------
+    // MatrixRTC voice/video call events
+    // Always declared; always no-ops when TESSERACT_CALLS_ENABLED is not
+    // set.  EventHandlerBase overrides them when calls are enabled.
+    // ------------------------------------------------------------------
+
+    /// Fired when a remote participant opens a call slot in a joined room.
+    virtual void on_call_invitation(const std::string& /*room_id*/,
+                                     const std::string& /*slot_id*/,
+                                     const std::string& /*caller_user_id*/,
+                                     const std::string& /*call_intent*/,
+                                     std::uint64_t      /*lifetime_ms*/,
+                                     const std::string& /*notification_event_id*/)
+    {
+    }
+
+    /// Fired when a remote participant joins the active call.
+    virtual void on_call_participant_joined(std::uint64_t /*session_id*/,
+                                             const RtcParticipantInfo& /*info*/)
+    {
+    }
+
+    /// Fired when a remote participant leaves the active call.
+    virtual void on_call_participant_left(std::uint64_t /*session_id*/,
+                                           const std::string& /*participant_id*/)
+    {
+    }
+
+    /// Fired when a participant's mute state changes in the active call.
+    virtual void on_call_participant_updated(std::uint64_t /*session_id*/,
+                                              const RtcParticipantInfo& /*info*/)
+    {
+    }
+
+    /// Fired when the active call session ends for any reason.
+    virtual void on_call_ended(std::uint64_t /*session_id*/,
+                                const std::string& /*reason*/)
+    {
+    }
+
+    /// Fired per decoded RGBA video frame from a remote participant (~30fps).
+    /// `rgba` is `width * height * 4` bytes, row-major.  Called on a
+    /// background thread — copy if the data must outlive the call.
+    virtual void on_call_video_frame(std::uint64_t /*session_id*/,
+                                      const std::string& /*participant_id*/,
+                                      std::uint32_t /*width*/,
+                                      std::uint32_t /*height*/,
+                                      const std::uint8_t* /*rgba*/,
+                                      std::size_t /*rgba_size*/)
+    {
+    }
+    virtual void on_call_audio_frame(std::uint64_t /*session_id*/,
+                                      const std::string& /*participant_id*/,
+                                      const std::int16_t* /*samples*/,
+                                      std::size_t /*sample_count*/,
+                                      std::uint32_t /*sample_rate*/,
+                                      std::uint32_t /*num_channels*/)
+    {
+    }
 };
 
 } // namespace tesseract

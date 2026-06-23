@@ -13,6 +13,7 @@
 
 #include "audio.h"
 #include "audio_capture.h"
+#include "audio_playback.h"
 #include "canvas.h"
 #include "video.h"
 #include "widget.h"
@@ -335,6 +336,11 @@ public:
     /// check for null before use.
     virtual std::unique_ptr<AudioCapture> make_audio_capture() = 0;
 
+#ifdef TESSERACT_CALLS_ENABLED
+    /// Create an AudioPlayback for routing remote call audio to the speaker.
+    virtual std::unique_ptr<AudioPlayback> make_audio_playback() = 0;
+#endif
+
     // Create a `VideoPlayer` backed by the platform's native media stack.
     // Returns `nullptr` on platforms without a video backend; callers must
     // check before invoking.
@@ -402,12 +408,22 @@ protected:
     Widget* pending_popup_ = nullptr;  // populated during the current paint
 
     // Tracked pointer state, shared by the dispatch_pointer_* state machine.
+    // Called via Widget::remove_child() before a subtree is freed.
+    // Clears hovered_widget_, hovered_btn_, pressed_widget_ if they fall
+    // inside the subtree so they never become dangling pointers.
+    void on_subtree_removing(Widget* subtree);
+
     Widget* pressed_widget_ = nullptr;  // captured on pointer-down
     Button* hovered_btn_    = nullptr;  // Button currently under the pointer
     Widget* hovered_widget_ = nullptr;  // widget currently under the pointer
 
 private:
     std::function<void()> on_user_activity_;
+    // Alive-flag: captured as a weak_ptr on the stack before any dispatch
+    // callback that may destroy this host synchronously (e.g. hang-up button
+    // fires on_hang_up → call_window_.reset() → ~Host). If the weak_ptr
+    // expires, the post-callback code skips any `this` dereference.
+    std::shared_ptr<bool> dispatch_alive_{std::make_shared<bool>(true)};
 };
 
 } // namespace tk

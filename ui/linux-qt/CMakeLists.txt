@@ -60,6 +60,13 @@ qt_add_executable(tesseract_qt
     src/LinuxQtTrayIcon.h     # MOC input
 )
 
+if(TESSERACT_ENABLE_CALLS)
+    target_sources(tesseract_qt PRIVATE
+        src/CallWindow.h      # MOC input
+        src/CallWindow.cpp
+    )
+endif()
+
 target_compile_features(tesseract_qt PRIVATE cxx_std_20)
 
 # Qt module umbrella headers dominate per-file parse cost in the shell. Applied

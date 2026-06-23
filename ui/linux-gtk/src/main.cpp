@@ -8,6 +8,7 @@
 
 #include "MainWindow.h"
 #include "app/AccountManager.h"
+#include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -35,6 +36,11 @@ int main(int argc, char** argv)
     // Load persisted settings before set_locale so the saved language
     // preference is available when choosing the locale.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
+    // Mirror Qt6: probe GStreamer hardware decoders once at startup and cache
+    // the results so broken hardware elements are demoted before first use.
+    std::filesystem::create_directories(tesseract::cache_dir());
+    tk::gst::apply_hw_decoder_cache(tesseract::cache_dir().string());
 
     // Determine locale name: use saved preference if non-auto, else derive
     // from the environment (setlocale already called above).

@@ -312,6 +312,10 @@ private:
         tesseract::AccountSession& session) override;
     void install_account_up_connector_(
         tesseract::AccountSession& session) override;
+#ifdef TESSERACT_CALLS_ENABLED
+    std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override;
+    tesseract::CallWindowBase* create_call_window_() override;
+#endif
 
 
     /// Shutdown coordination. `~MainWindow` flips this flag, clears the

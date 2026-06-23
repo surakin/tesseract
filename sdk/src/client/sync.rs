@@ -729,6 +729,22 @@ impl ClientFfi {
         let h_state = Arc::clone(&handler);
         let mut stop_rx_sv = stop_rx.clone();
 
+        // MatrixRTC: register the CXX event sink (once, keyed to this handler)
+        // and the global invitation watcher so incoming call slots surface to the
+        // UI even when we haven't joined a call yet.
+        #[cfg(feature = "calls")]
+        {
+            use crate::bridge::RtcCxxBridgeSink;
+            use crate::client::rtc;
+            let sink = std::sync::Arc::new(RtcCxxBridgeSink {
+                handler: std::sync::Arc::clone(&handler),
+            });
+            rtc::register_sink(sink);
+            rtc::session::register_invitation_handler(&client);
+            rtc::session::register_msc3401_invitation_handler(&client);
+            rtc::session::register_rtc_notification_handler(&client);
+        }
+
         self.spawn_tracked(async move {
             svc_clone.start().await;
 

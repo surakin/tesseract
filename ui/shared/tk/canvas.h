@@ -452,6 +452,19 @@ public:
     virtual void draw_image(const Image&, Rect dst) = 0;
     virtual void draw_image_subregion(const Image&, Rect src, Rect dst) = 0;
 
+    // Draw RGBA8888 pixels into dst, bilinearly scaling to fit.
+    // Returns true if the backend drew the frame; false if the caller should
+    // fall back to CanvasFactory::create_image_rgba() + draw_image().
+    // The Qt6 override wraps the caller's buffer in a non-owning QImage and
+    // calls QPainter::drawImage() directly — zero extra allocation, no
+    // scaled_for() pre-filter, avoiding cache thrash on video frame updates.
+    virtual bool draw_rgba_pixels(const std::uint8_t* /*pixels*/,
+                                  std::uint32_t /*w*/, std::uint32_t /*h*/,
+                                  Rect /*dst*/)
+    {
+        return false;
+    }
+
     // Circular clip + centre-fit, for avatars. Diameter is logical pixels.
     virtual void draw_circle_image(const Image&, Point centre,
                                    float diameter) = 0;
