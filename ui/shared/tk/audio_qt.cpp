@@ -60,6 +60,10 @@ public:
     ~QtAudioPlayer() override
     {
         ticker_.stop();
+        // Null the callback before stop() — QFFmpegMediaPlayer::stop() emits
+        // positionChanged synchronously, which would invoke fire_progress() →
+        // on_progress() → repaint into an already-destroyed widget tree.
+        on_progress = nullptr;
         player_.stop();
         // Detach from buffer_ before buffer_/bytes_ are freed.
         // player_ is declared last so ~QMediaPlayer() runs before ~QBuffer().
