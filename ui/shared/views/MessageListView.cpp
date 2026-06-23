@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <ctime>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -944,6 +945,26 @@ public:
         return raw_h;
     }
 
+    static tk::Color sender_color(const std::string& name, tk::ThemeMode mode)
+    {
+        static constexpr tk::Color kLight[] = {
+            tk::Color::rgb(0xC0392B), tk::Color::rgb(0xD35400),
+            tk::Color::rgb(0x6E7D00), tk::Color::rgb(0x1E8449),
+            tk::Color::rgb(0x117A65), tk::Color::rgb(0x1565C0),
+            tk::Color::rgb(0x6A1B9A), tk::Color::rgb(0xAD1457),
+        };
+        static constexpr tk::Color kDark[] = {
+            tk::Color::rgb(0xFF8A80), tk::Color::rgb(0xFFAB40),
+            tk::Color::rgb(0xD4E157), tk::Color::rgb(0x69F0AE),
+            tk::Color::rgb(0x4DD0E1), tk::Color::rgb(0x82B1FF),
+            tk::Color::rgb(0xCE93D8), tk::Color::rgb(0xF48FB1),
+        };
+        const std::size_t h = std::hash<std::string>{}(name);
+        if (mode == tk::ThemeMode::Dark)
+            return kDark[h % std::size(kDark)];
+        return kLight[h % std::size(kLight)];
+    }
+
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
                    bool /*selected*/, bool hovered) override
     {
@@ -1057,7 +1078,7 @@ public:
             if (rc.sender)
             {
                 ctx.canvas.draw_text(*rc.sender, {col_x, sender_y},
-                                     ctx.theme.palette.text_secondary);
+                                     sender_color(m.sender, ctx.theme.mode));
             }
         }
 
