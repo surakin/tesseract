@@ -56,6 +56,11 @@ void ParticipantTile::push_video_frame(std::uint32_t w, std::uint32_t h,
     if (repaint_requester_) repaint_requester_();
 }
 
+void ParticipantTile::set_pinned(bool pinned)
+{
+    state_.pinned = pinned;
+}
+
 void ParticipantTile::set_avatar_provider(
     std::function<const tk::Image*(const std::string&)> fn)
 {

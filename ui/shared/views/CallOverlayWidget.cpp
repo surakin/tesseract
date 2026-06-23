@@ -231,6 +231,11 @@ void CallOverlayWidget::update_participants(
                     pinned_participant_.clear();
                 else
                     pinned_participant_ = pid;
+                // Sync pinned flag on every tile immediately so the pin icon
+                // recolors in the same frame as the layout change, without
+                // waiting for the next update_participants() call.
+                for (std::size_t i = 0; i < tiles_.size(); ++i)
+                    tiles_[i]->set_pinned(pinned_participant_ == tile_ids_[i]);
                 if (relayout_requester_) relayout_requester_();
                 else if (repaint_requester_) repaint_requester_();
             };

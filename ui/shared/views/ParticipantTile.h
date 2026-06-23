@@ -56,6 +56,9 @@ public:
     void push_video_frame(std::uint32_t w, std::uint32_t h,
                           const std::uint8_t* rgba, std::size_t sz);
 
+    // Update only the pinned flag without touching video or other metadata.
+    void set_pinned(bool pinned);
+
     void set_avatar_provider(
         std::function<const tk::Image*(const std::string& participant_id)> fn);
     void set_repaint_requester(std::function<void()> fn);
