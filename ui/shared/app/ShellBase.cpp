@@ -8238,6 +8238,22 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         // Seed with current participants for mid-call mode switches.
         if (call_session_ && !call_session_->participants().empty())
             ov->update_participants(call_session_->participants());
+
+        // Hide the docked panel immediately if the user is viewing a different
+        // room. The room-switch path keeps it in sync from here on, but it
+        // won't fire again until the next navigation — without this the panel
+        // appears briefly in the wrong room after a Floating/Popout → Docked
+        // transition.
+        if (m != views::CallOverlayWidget::Mode::Popout &&
+            m != views::CallOverlayWidget::Mode::Floating)
+        {
+            if (auto* panel = room_view_ ? room_view_->call_panel() : nullptr)
+            {
+                const bool in_call_room = call_session_ &&
+                    call_session_->room_id() == current_room_id_;
+                panel->set_visible(in_call_room);
+            }
+        }
     }
 
     // Persist the new mode (Settings::CallOverlayMode has the same ordinal order).
