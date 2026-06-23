@@ -130,17 +130,20 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
             }
         }
 
-        // Extract BGRA pixels from CVPixelBuffer.
+        // Extract pixels from CVPixelBuffer, normalising to BGRA.
         CVPixelBufferRef pbuf = CMSampleBufferGetImageBuffer(sample_buf);
         if (pbuf)
         {
             CVPixelBufferLockBaseAddress(pbuf, kCVPixelBufferLock_ReadOnly);
+            const OSType      fmt    = CVPixelBufferGetPixelFormatType(pbuf);
             const std::size_t w      = CVPixelBufferGetWidth(pbuf);
             const std::size_t h      = CVPixelBufferGetHeight(pbuf);
             const std::size_t stride = CVPixelBufferGetBytesPerRow(pbuf);
             const void*       base   = CVPixelBufferGetBaseAddress(pbuf);
+            const bool is_bgra = (fmt == kCVPixelFormatType_32BGRA);
+            const bool is_rgba = (fmt == kCVPixelFormatType_32RGBA);
 
-            if (base && w > 0 && h > 0)
+            if (base && w > 0 && h > 0 && (is_bgra || is_rgba))
             {
                 VideoFrame f;
                 f.w        = static_cast<int>(w);
@@ -149,10 +152,26 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                 const std::size_t row_bytes = w * 4u;
                 f.bgra.resize(row_bytes * h);
                 const auto* src = static_cast<const std::uint8_t*>(base);
-                for (std::size_t row = 0; row < h; ++row)
+                if (is_bgra)
                 {
-                    std::memcpy(f.bgra.data() + row * row_bytes,
-                                src + row * stride, row_bytes);
+                    for (std::size_t row = 0; row < h; ++row)
+                        std::memcpy(f.bgra.data() + row * row_bytes,
+                                    src + row * stride, row_bytes);
+                }
+                else // RGBA → BGRA: swap byte 0 (R) and byte 2 (B) per pixel
+                {
+                    for (std::size_t row = 0; row < h; ++row)
+                    {
+                        const std::uint8_t* s = src + row * stride;
+                        std::uint8_t* d = f.bgra.data() + row * row_bytes;
+                        for (std::size_t col = 0; col < w; ++col, s += 4, d += 4)
+                        {
+                            d[0] = s[2]; // B ← src[2]
+                            d[1] = s[1]; // G
+                            d[2] = s[0]; // R ← src[0]
+                            d[3] = s[3]; // A
+                        }
+                    }
                 }
                 // Scale to the preview cell size so cached frames stay small.
                 result.frames.push_back(
