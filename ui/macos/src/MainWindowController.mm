@@ -346,7 +346,7 @@ public:
     // Room list
     void start_room_subscription(const std::string& room_id,
                                  std::vector<std::string> visible_ids);
-    void request_more_history(const std::string& room_id);
+    void request_more_history(std::string room_id);
     void handle_paginate_result(const std::string& room_id, bool reached_start);
 
     // Settings / session
@@ -2127,7 +2127,7 @@ void MacShell::start_room_subscription(const std::string& room_id,
                                         std::vector<std::string> visible_ids)
     { start_room_subscription_(room_id, std::move(visible_ids)); }
 
-void MacShell::request_more_history(const std::string& room_id)
+void MacShell::request_more_history(std::string room_id)
 {
     if (room_id.empty())
         return;

@@ -2553,16 +2553,6 @@ pub mod ffi {
         /// Mute or unmute the local video track. No-op when no call is active.
         fn rtc_set_video_muted(self: &mut ClientFfi, muted: bool);
 
-        /// Inject a PCM audio frame into the live session. `samples` is
-        /// interleaved S16LE at 48 kHz mono; `frame_count` is the number of
-        /// samples (typically 480 for a 10 ms frame). No-op when no call is
-        /// active.
-        fn rtc_push_audio_samples(
-            self: &mut ClientFfi,
-            samples: &[i16],
-            frame_count: usize,
-        );
-
         /// Inject a raw I420 video frame into the live session. No-op when no
         /// call is active.
         fn rtc_push_video_frame_i420(

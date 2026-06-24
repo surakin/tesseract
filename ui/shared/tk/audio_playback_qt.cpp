@@ -12,10 +12,8 @@
 #include <QIODevice>
 #include <QMediaDevices>
 
-#include <algorithm>
 #include <cstring>
 #include <memory>
-#include <vector>
 
 namespace
 {
@@ -80,7 +78,7 @@ public:
 private:
     QAudioFormat              fmt_;
     std::unique_ptr<QAudioSink> sink_;
-    QIODevice*                io_  = nullptr; // owned by sink_
+    QIODevice*                io_ = nullptr; // owned by sink_
 };
 
 } // namespace

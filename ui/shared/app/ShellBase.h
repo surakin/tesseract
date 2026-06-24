@@ -20,7 +20,6 @@
 #include "tk/audio_playback.h"
 #ifdef TESSERACT_CALLS_ENABLED
 #include <tesseract/call_session.h>
-#include "tk/audio_capture_call_router.h"
 #include "tk/video_capture.h"
 #include "app/CallWindowBase.h"
 #include "views/CallOverlayWidget.h"
@@ -149,7 +148,8 @@ public:
     // available) capture routing, and calls rtc_start_call on the client.
     // No-op when a call is already active.
     void start_call(const std::string& room_id,
-                    const std::string& slot_id = "call#default");
+                    const std::string& slot_id   = "call#default",
+                    bool               audio_only = false);
     // End the active call and tear down all call resources. No-op when idle.
     void end_call();
     // Returns the active CallSession, or nullptr when not in a call.
@@ -1911,19 +1911,23 @@ protected:
                                                     RtcParticipantInfo info);
     virtual void handle_rtc_session_ended_ui_(std::uint64_t session_id,
                                               std::string reason);
-    // Decoded RGBA video frame from a remote participant.
-    virtual void handle_rtc_video_frame_ui_(std::uint64_t session_id,
-                                            const std::string& participant_id,
-                                            std::uint32_t width,
-                                            std::uint32_t height,
-                                            const std::uint8_t* rgba,
-                                            std::size_t rgba_size);
-    // S16LE PCM audio from a remote participant.
-    virtual void handle_rtc_audio_frame_ui_(std::uint64_t session_id,
-                                            const std::int16_t* samples,
-                                            std::size_t sample_count,
-                                            std::uint32_t sample_rate,
-                                            std::uint32_t num_channels);
+    // Decoded, pre-multiplied BGRA video frame from a remote participant.
+    // bgra was pre-converted from RGBA on the worker thread in EventHandlerBase;
+    // the shared_ptr allows zero-copy handoff to ParticipantTile.
+    virtual void handle_rtc_video_frame_ui_(
+        std::uint64_t session_id,
+        const std::string& participant_id,
+        std::uint32_t width,
+        std::uint32_t height,
+        std::shared_ptr<std::vector<std::uint8_t>> bgra);
+
+    // Thread-safe entry point for incoming PCM audio from the worker thread.
+    // AudioPlayback::push_frame() is documented thread-safe; the mutex protects
+    // the call_audio_output_ pointer itself from concurrent reset on teardown.
+    void push_call_audio_bgnd_(const std::int16_t* samples,
+                                std::size_t sample_count,
+                                std::uint32_t sample_rate,
+                                std::uint32_t num_channels);
     // Factory hook: each concrete shell returns its platform audio output sink.
     // Returns nullptr on platforms where playback is not yet implemented.
     virtual std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() = 0;
@@ -1942,12 +1946,25 @@ protected:
     // Persist the new float position to Settings and request relayout.
     void on_call_float_position_changed_(float x, float y);
 
+    // Overlay configuration that must survive mode switches (docked ↔ floating ↔
+    // popout). Initialised at call start; each remount reads from this struct
+    // rather than re-deriving state from scattered sources.
+    struct CallOverlayState
+    {
+        double      elapsed_seconds   = 0.0;    // wall-clock double for sub-second precision
+        bool        show_video_button = true;   // false for audio-only calls
+        std::string local_user_id;
+    };
+
 protected:
     std::unique_ptr<CallSession>                call_session_;
-    std::unique_ptr<tk::AudioCaptureCallRouter> call_audio_router_;
     std::unique_ptr<tk::VideoCapture>           call_video_capture_;
+    // Guarded by call_audio_mutex_: accessed by worker threads via
+    // push_call_audio_bgnd_() and reset on the UI thread at call teardown.
+    std::mutex                                  call_audio_mutex_;
     std::unique_ptr<tk::AudioPlayback>          call_audio_output_;
     std::unique_ptr<CallWindowBase>             call_window_;
+    CallOverlayState                            call_overlay_state_;
     // Tracks the notification_event_id of the current pending ring invitation.
     // Non-empty means a notification-path invite is showing; member-state invites
     // for the same room are suppressed to avoid duplicate banners.

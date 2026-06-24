@@ -656,8 +656,8 @@ pub struct ClientFfi {
     /// `None` = server does not support MSC4133 (writes disabled).
     pub(super) profile_fields_prefix: std::sync::Arc<std::sync::RwLock<Option<String>>>,
     /// Active MatrixRTC call session, or `None` when not in a call.
-    /// Owned here so `rtc_push_audio_samples` / `rtc_push_video_frame_i420`
-    /// can reach it without a separate handle.
+    /// Owned here so `rtc_push_video_frame_i420` can reach it without a
+    /// separate handle.
     #[cfg(feature = "calls")]
     pub(super) active_rtc_call: Option<Box<crate::client::rtc::RtcSession>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup

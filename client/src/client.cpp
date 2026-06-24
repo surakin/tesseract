@@ -2036,14 +2036,6 @@ void Client::rtc_set_video_muted(bool muted)
     impl_->ffi->rtc_set_video_muted(muted);
 }
 
-void Client::rtc_push_audio_samples(const std::int16_t* samples,
-                                     std::size_t frame_count)
-{
-    MUT_FFI;
-    rust::Slice<const std::int16_t> slice{samples, frame_count};
-    impl_->ffi->rtc_push_audio_samples(slice, frame_count);
-}
-
 void Client::rtc_push_video_frame_i420(const std::uint8_t* y,
                                         const std::uint8_t* u,
                                         const std::uint8_t* v,

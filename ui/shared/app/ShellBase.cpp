@@ -1130,9 +1130,10 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 
 #ifdef TESSERACT_CALLS_ENABLED
         rv->on_start_call =
-            [this](const std::string& room_id, const std::string& slot_id)
+            [this](const std::string& room_id, const std::string& slot_id,
+                   bool audio_only)
         {
-            start_call(room_id, slot_id);
+            start_call(room_id, slot_id, audio_only);
         };
 #endif
     }
@@ -7877,28 +7878,29 @@ void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
     room_view_->show_call_banner(room_id, slot_id, display_name, call_intent, lifetime_ms);
 }
 
-void ShellBase::handle_rtc_video_frame_ui_(std::uint64_t /*session_id*/,
-                                            const std::string& participant_id,
-                                            std::uint32_t width,
-                                            std::uint32_t height,
-                                            const std::uint8_t* rgba,
-                                            std::size_t rgba_size)
+void ShellBase::handle_rtc_video_frame_ui_(
+    std::uint64_t /*session_id*/,
+    const std::string& participant_id,
+    std::uint32_t width,
+    std::uint32_t height,
+    std::shared_ptr<std::vector<std::uint8_t>> bgra)
 {
     if (auto* ov = active_call_overlay_())
-        ov->on_video_frame(participant_id, width, height, rgba, rgba_size);
+        ov->on_video_frame(participant_id, width, height, std::move(bgra));
 }
 
-void ShellBase::handle_rtc_audio_frame_ui_(std::uint64_t /*session_id*/,
-                                            const std::int16_t* samples,
-                                            std::size_t sample_count,
-                                            std::uint32_t sample_rate,
-                                            std::uint32_t num_channels)
+void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
+                                       std::size_t sample_count,
+                                       std::uint32_t sample_rate,
+                                       std::uint32_t num_channels)
 {
+    std::lock_guard<std::mutex> lock(call_audio_mutex_);
     if (call_audio_output_)
         call_audio_output_->push_frame(samples, sample_count, sample_rate, num_channels);
 }
 
-void ShellBase::start_call(const std::string& room_id, const std::string& slot_id)
+void ShellBase::start_call(const std::string& room_id, const std::string& slot_id,
+                           bool audio_only)
 {
     if (call_session_ || !client_)
         return;
@@ -7913,32 +7915,32 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id);
     call_audio_output_ = make_call_audio_output_();
 
-    if (capture_)
-    {
-        call_audio_router_ = std::make_unique<tk::AudioCaptureCallRouter>(
-            capture_.get(),
-            [this](const std::int16_t* samples, std::size_t n)
-            {
-                client_->rtc_push_audio_samples(samples, n);
-            });
-        // Start capture so the poll timer fires and delivers PCM frames.
-        // Only start if not already recording (e.g. mid-voice-message).
-        if (!capture_->is_recording())
-            capture_->start();
-    }
+    // Initialise overlay state for this call. elapsed_seconds starts at 0;
+    // audio_only is only known here, so it must be captured in the struct now.
+    call_overlay_state_ = {};
+    call_overlay_state_.show_video_button = !audio_only;
+    call_overlay_state_.local_user_id     = my_user_id_;
 
-    auto vc = tk::VideoCapture::create();
-    if (vc)
+    if (!audio_only)
     {
-        vc->set_callback(
-            [this](const tk::VideoCapture::Frame& f)
-            {
-                client_->rtc_push_video_frame_i420(
-                    f.y, f.u, f.v, f.width, f.height,
-                    f.stride_y, f.stride_u, f.stride_v);
-            });
-        vc->start();
-        call_video_capture_ = std::move(vc);
+        auto vc = tk::VideoCapture::create();
+        if (vc)
+        {
+            vc->set_callback(
+                [this](const tk::VideoCapture::Frame& f)
+                {
+                    client_->rtc_push_video_frame_i420(
+                        f.y, f.u, f.v, f.width, f.height,
+                        f.stride_y, f.stride_u, f.stride_v);
+                });
+            vc->start();
+            call_video_capture_ = std::move(vc);
+        }
+    }
+    else
+    {
+        // Audio-only: publish video track muted so no frames are sent.
+        call_session_->mute_video(true);
     }
 
     // Determine the initial overlay mode from saved settings.
@@ -7957,10 +7959,14 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     // Mount + wire the call overlay in the resolved mode.
     on_call_overlay_mode_requested_(initial_mode);
 
-    // Restore saved float position.
+    // Restore saved float position; hide video button for audio-only calls.
     if (auto* ov = active_call_overlay_())
+    {
         ov->set_float_position(Settings::instance().call_overlay_float_x,
                                Settings::instance().call_overlay_float_y);
+        if (audio_only)
+            ov->set_show_video_button(false);
+    }
 
     // Dismiss the incoming-call banner (if the user answered via banner).
     if (room_view_) room_view_->dismiss_call_banner();
@@ -7989,7 +7995,6 @@ void ShellBase::end_call()
 #endif
 
     call_video_capture_.reset();
-    call_audio_router_.reset();
     // cancel() stops capture without firing on_stopped (which would try to send a voice msg).
     if (capture_ && capture_->is_recording())
         capture_->cancel();
@@ -8005,6 +8010,7 @@ void ShellBase::end_call()
         call_window_.release()->schedule_delete(); // defer Qt delete past event handler
     }
     if (main_app_) main_app_->unmount_call_overlay();
+    call_overlay_state_ = {};
 }
 
 void ShellBase::handle_rtc_participant_joined_ui_(std::uint64_t session_id,
@@ -8075,8 +8081,10 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
 
     call_session_->on_session_ended({});
     call_video_capture_.reset();
-    call_audio_router_.reset();
-    call_audio_output_.reset();
+    {
+        std::lock_guard<std::mutex> lock(call_audio_mutex_);
+        call_audio_output_.reset();
+    }
     if (capture_ && capture_->is_recording())
         capture_->cancel();
     call_session_.reset();
@@ -8109,6 +8117,10 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
 {
     if (!main_app_ || !call_session_)
         return;
+
+    // Snapshot mutable overlay state into the persistent struct before teardown.
+    if (auto* ov = active_call_overlay_())
+        call_overlay_state_.elapsed_seconds = ov->elapsed_seconds();
 
     // Tear down whatever is currently active.
     if (call_window_)
@@ -8204,9 +8216,18 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
             std::move(name_fn));
     }
 
-    // Wire buttons on the newly active overlay.
+    // Apply all persistent overlay state to the newly mounted widget.
     if (auto* ov = active_call_overlay_())
     {
+        // Restore timer, video-button visibility, and local-user identity from
+        // the call_overlay_state_ struct — the single source of truth for state
+        // that must survive docked ↔ floating ↔ popout mode switches.
+        ov->start_timer(call_overlay_state_.elapsed_seconds);
+        ov->set_show_video_button(call_overlay_state_.show_video_button);
+        // set_local_user_id must precede update_participants() so is_self is
+        // applied when tiles are created/refreshed.
+        ov->set_local_user_id(call_overlay_state_.local_user_id);
+
         ov->on_hang_up = [this] { end_call(); };
         ov->on_toggle_audio = [this](bool muted)
         {

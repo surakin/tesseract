@@ -1240,6 +1240,56 @@ public:
                             D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
     }
 
+    bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
+                                   std::uint32_t w, std::uint32_t h,
+                                   Rect dst, bool flip_h = false) override
+    {
+        if (!pixels || w == 0 || h == 0) return false;
+        // pixels is already premultiplied BGRA. Create the D2D bitmap directly
+        // — no per-pixel swizzle/premult loop needed.
+        const D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                              D2D1_ALPHA_MODE_PREMULTIPLIED));
+        ComPtr<ID2D1Bitmap> bitmap;
+        HRESULT hr;
+        if (dc_)
+            hr = dc_->CreateBitmap({w, h}, pixels,
+                                   w * 4, props, bitmap.GetAddressOf());
+        else
+            hr = rt_->CreateBitmap({w, h}, pixels,
+                                   w * 4, props, bitmap.GetAddressOf());
+        if (FAILED(hr) || !bitmap) return false;
+        const D2D1_RECT_F d = to_d2d(dst);
+        if (flip_h)
+        {
+            // Save the current RT transform, apply a horizontal-flip matrix
+            // (scale X by -1 around the centre of the dest rect), draw, restore.
+            D2D1_MATRIX_3X2_F old;
+            if (dc_) dc_->GetTransform(&old); else rt_->GetTransform(&old);
+            const float cx = (d.left + d.right) * 0.5f;
+            const auto flip = D2D1::Matrix3x2F::Scale(
+                -1.0f, 1.0f, D2D1::Point2F(cx, 0.0f)) * old;
+            if (dc_) dc_->SetTransform(flip); else rt_->SetTransform(flip);
+            if (dc_)
+                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f,
+                                D2D1_INTERPOLATION_MODE_LINEAR);
+            else
+                rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
+                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            if (dc_) dc_->SetTransform(old); else rt_->SetTransform(old);
+        }
+        else
+        {
+            if (dc_)
+                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f,
+                                D2D1_INTERPOLATION_MODE_LINEAR);
+            else
+                rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
+                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        }
+        return true;
+    }
+
     bool draw_rgba_pixels(const std::uint8_t* pixels,
                           std::uint32_t w, std::uint32_t h, Rect dst) override
     {

@@ -363,6 +363,63 @@ public:
         blit(static_cast<const CairoImage&>(image), dst);
     }
 
+    bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
+                                   std::uint32_t w, std::uint32_t h,
+                                   Rect dst, bool flip_h = false) override
+    {
+        if (!pixels || w == 0 || h == 0 || dst.w <= 0.0f || dst.h <= 0.0f)
+            return false;
+        const int iw = static_cast<int>(w), ih = static_cast<int>(h);
+        // pixels is already premultiplied BGRA in CAIRO_FORMAT_ARGB32 layout.
+        // Stride may differ from w*4 (Cairo requires aligned rows), so we copy
+        // into a thread-local aligned buffer when needed.
+        const int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, iw);
+        cairo_surface_t* surf;
+        if (stride == iw * 4)
+        {
+            // Stride matches packed width — wrap directly, zero extra copy.
+            surf = cairo_image_surface_create_for_data(
+                const_cast<std::uint8_t*>(pixels),
+                CAIRO_FORMAT_ARGB32, iw, ih, stride);
+        }
+        else
+        {
+            static thread_local std::vector<unsigned char> buf;
+            buf.resize(static_cast<std::size_t>(stride * ih));
+            for (int y = 0; y < ih; ++y)
+                std::memcpy(buf.data() + y * stride,
+                            pixels + static_cast<std::size_t>(y) * iw * 4,
+                            static_cast<std::size_t>(iw) * 4);
+            surf = cairo_image_surface_create_for_data(
+                buf.data(), CAIRO_FORMAT_ARGB32, iw, ih, stride);
+        }
+        if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS)
+        {
+            cairo_surface_destroy(surf);
+            return false;
+        }
+        cairo_save(cr_);
+        // For flip_h: translate to the right edge and scale X by -1 so the
+        // source surface is drawn mirrored. Cairo already uses a save/restore
+        // block here so the transform is fully contained.
+        if (flip_h)
+        {
+            cairo_translate(cr_, dst.x + dst.w, dst.y);
+            cairo_scale(cr_, -(dst.w / iw), dst.h / ih);
+        }
+        else
+        {
+            cairo_translate(cr_, dst.x, dst.y);
+            cairo_scale(cr_, dst.w / iw, dst.h / ih);
+        }
+        cairo_set_source_surface(cr_, surf, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(cr_), CAIRO_FILTER_GOOD);
+        cairo_paint(cr_);
+        cairo_restore(cr_);
+        cairo_surface_destroy(surf);
+        return true;
+    }
+
     bool draw_rgba_pixels(const std::uint8_t* pixels,
                           std::uint32_t w, std::uint32_t h, Rect dst) override
     {
@@ -372,22 +429,43 @@ public:
         // Cairo's native pixel format is premultiplied BGRA (CAIRO_FORMAT_ARGB32).
         // Convert straight RGBA → premultiplied BGRA into a temporary buffer.
         const int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, iw);
-        std::vector<unsigned char> buf(static_cast<std::size_t>(stride * ih));
+        // Reuse a thread-local buffer to avoid per-frame heap allocation
+        // (GTK4 drawing always runs on the main thread).
+        static thread_local std::vector<unsigned char> buf;
+        buf.resize(static_cast<std::size_t>(stride * ih));
+        // Video frames are always fully opaque (a=255). In that case
+        // premultiplication is an identity (r*255/255 = r), so skip the
+        // multiply/divide and just pack the channels directly. The resulting
+        // inner loop is a simple bit-pack that the compiler can auto-vectorize.
+        const bool opaque = (pixels[3] == 255);
         for (int y = 0; y < ih; ++y)
         {
             const std::uint8_t* src_row = pixels + y * iw * 4;
             auto* dst_row = reinterpret_cast<std::uint32_t*>(
                 buf.data() + y * stride);
-            for (int x = 0; x < iw; ++x)
+            if (opaque)
             {
-                const unsigned r = src_row[x * 4 + 0];
-                const unsigned g = src_row[x * 4 + 1];
-                const unsigned b = src_row[x * 4 + 2];
-                const unsigned a = src_row[x * 4 + 3];
-                dst_row[x] = (a << 24) |
-                             (((r * a + 127) / 255) << 16) |
-                             (((g * a + 127) / 255) <<  8) |
-                              ((b * a + 127) / 255);
+                for (int x = 0; x < iw; ++x)
+                {
+                    const unsigned r = src_row[x * 4 + 0];
+                    const unsigned g = src_row[x * 4 + 1];
+                    const unsigned b = src_row[x * 4 + 2];
+                    dst_row[x] = (255u << 24) | (r << 16) | (g << 8) | b;
+                }
+            }
+            else
+            {
+                for (int x = 0; x < iw; ++x)
+                {
+                    const unsigned r = src_row[x * 4 + 0];
+                    const unsigned g = src_row[x * 4 + 1];
+                    const unsigned b = src_row[x * 4 + 2];
+                    const unsigned a = src_row[x * 4 + 3];
+                    dst_row[x] = (a << 24) |
+                                 (((r * a + 127) / 255) << 16) |
+                                 (((g * a + 127) / 255) <<  8) |
+                                  ((b * a + 127) / 255);
+                }
             }
         }
         // Wrap the converted buffer in a non-owning surface (zero additional copy).

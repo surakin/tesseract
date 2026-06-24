@@ -129,10 +129,23 @@ void CallOverlayWidget::set_display_name_provider(
 
 // ── Timer ──────────────────────────────────────────────────────────────────
 
-void CallOverlayWidget::start_timer()
+double CallOverlayWidget::elapsed_seconds() const
 {
-    elapsed_seconds_ = 0;
-    timer_running_   = true;
+    if (!timer_running_) return elapsed_offset_;
+    using namespace std::chrono;
+    const auto dur = duration_cast<duration<double>>(steady_clock::now() - start_time_);
+    return elapsed_offset_ + dur.count();
+}
+
+void CallOverlayWidget::start_timer(double initial_seconds)
+{
+    // Cancel any existing chain before starting a new one. Without this,
+    // calling start_timer() on a running timer creates a second chain that
+    // shares the current timer_gen_ — both chains fire, rate doubles each call.
+    stop_timer();
+    elapsed_offset_ = initial_seconds;
+    start_time_     = std::chrono::steady_clock::now();
+    timer_running_  = true;
     schedule_tick_();
 }
 
@@ -146,12 +159,28 @@ void CallOverlayWidget::schedule_tick_()
 {
     if (!post_delayed_ || !timer_running_) return;
     const auto gen = timer_gen_;
-    post_delayed_(1000, [this, gen] {
-        if (gen != timer_gen_) return;
-        ++elapsed_seconds_;
+    // Capture a weak_ptr to tick_alive_ so the closure can detect widget
+    // destruction without touching `this`. When this widget is freed its
+    // tick_alive_ shared_ptr is destroyed; weak.lock() returns nullptr and
+    // the closure exits before accessing any member — safe even when the
+    // allocator reuses the same address for a new widget (which would have
+    // matching timer_gen_ == 1 and trigger a false-positive gen check alone).
+    std::weak_ptr<bool> weak = tick_alive_;
+    post_delayed_(1000, [this, gen, weak] {
+        if (!weak.lock()) return;       // widget was destroyed
+        if (gen != timer_gen_) return;  // timer stopped or restarted on live widget
         if (repaint_requester_) repaint_requester_();
         schedule_tick_();
     });
+}
+
+// ── Video button visibility ───────────────────────────────────────────────
+
+void CallOverlayWidget::set_show_video_button(bool show)
+{
+    show_video_btn_ = show;
+    if (video_btn_)
+        video_btn_->set_visible(show);
 }
 
 // ── Mode / float position ─────────────────────────────────────────────────
@@ -255,6 +284,7 @@ void CallOverlayWidget::update_participants(
             s.display_name   = dname;
             s.audio_muted    = p.is_audio_muted;
             s.video_muted    = p.is_video_muted;
+            s.is_self        = (!local_user_id_.empty() && p.user_id == local_user_id_);
             s.pinned         = (pinned_participant_ == p.participant_id);
             tile->set_state(std::move(s));
 
@@ -267,6 +297,7 @@ void CallOverlayWidget::update_participants(
             shadow.display_name   = dname;
             shadow.audio_muted    = p.is_audio_muted;
             shadow.video_muted    = p.is_video_muted;
+            shadow.is_self        = s.is_self;
             shadow.pinned         = (pinned_participant_ == p.participant_id);
             tile_states_.push_back(std::move(shadow));
         }
@@ -284,14 +315,16 @@ void CallOverlayWidget::update_participants(
             }
             if (dname.empty()) dname = p.participant_id;
 
+            const bool this_is_self = (!local_user_id_.empty() && p.user_id == local_user_id_);
             ParticipantTile::State s;
             s.participant_id = p.participant_id;
             s.user_id        = p.user_id;
             s.display_name   = dname;
             s.audio_muted    = p.is_audio_muted;
             s.video_muted    = p.is_video_muted;
+            s.is_self        = this_is_self;
             s.pinned         = (pinned_participant_ == p.participant_id);
-            // set_state replaces the entire State (including pending_rgba).
+            // set_state replaces the entire State (including pending_bgra).
             // The tile reverts to avatar until the next push_video_frame (~1 frame).
             tile->set_state(std::move(s));
             // Keep shadow in sync for reference by other code.
@@ -299,6 +332,7 @@ void CallOverlayWidget::update_participants(
             tile_states_[idx].display_name   = dname;
             tile_states_[idx].audio_muted    = p.is_audio_muted;
             tile_states_[idx].video_muted    = p.is_video_muted;
+            tile_states_[idx].is_self        = this_is_self;
             tile_states_[idx].pinned         = (pinned_participant_ == p.participant_id);
         }
     }
@@ -311,17 +345,15 @@ void CallOverlayWidget::update_participants(
 
 void CallOverlayWidget::on_video_frame(const std::string& participant_id,
                                        std::uint32_t w, std::uint32_t h,
-                                       const std::uint8_t* rgba,
-                                       std::size_t rgba_size)
+                                       std::shared_ptr<std::vector<std::uint8_t>> bgra)
 {
     const auto it = std::find(tile_ids_.begin(), tile_ids_.end(), participant_id);
     if (it == tile_ids_.end()) return;
 
     const std::size_t idx = static_cast<std::size_t>(it - tile_ids_.begin());
-    // Update only the pixel buffer — avoids full State reconstruction (string
-    // copies, video_image destruction) on every frame. push_video_frame()
-    // fires repaint_requester_ internally via set_repaint_requester().
-    tiles_[idx]->push_video_frame(w, h, rgba, rgba_size);
+    // Forward the shared_ptr without copying; push_video_frame() stores it and
+    // fires repaint_requester_. No second memcpy on the UI thread.
+    tiles_[idx]->push_video_frame(w, h, std::move(bgra));
 }
 
 void CallOverlayWidget::set_audio_muted(bool m)
@@ -434,16 +466,20 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     // ── Control buttons ────────────────────────────────────────────────────
-    const float total_w = 3.0f * kBtnSz + 2.0f * kBtnGap;
-    const float start_x = controls_rect_.x + (controls_rect_.w - total_w) * 0.5f;
-    const float btn_y   = controls_rect_.y + (kControlsH - kBtnSz) * 0.5f;
+    const int   btn_count = show_video_btn_ ? 3 : 2;
+    const float total_w   = btn_count * kBtnSz + (btn_count - 1) * kBtnGap;
+    const float start_x   = controls_rect_.x + (controls_rect_.w - total_w) * 0.5f;
+    const float btn_y     = controls_rect_.y + (kControlsH - kBtnSz) * 0.5f;
 
     if (mute_btn_)
         mute_btn_->arrange(ctx, {start_x, btn_y, kBtnSz, kBtnSz});
-    if (video_btn_)
+    if (video_btn_ && show_video_btn_)
         video_btn_->arrange(ctx, {start_x + kBtnSz + kBtnGap, btn_y, kBtnSz, kBtnSz});
     if (hangup_btn_)
-        hangup_btn_->arrange(ctx, {start_x + 2.0f * (kBtnSz + kBtnGap), btn_y, kBtnSz, kBtnSz});
+    {
+        const float hx = start_x + (btn_count - 1) * (kBtnSz + kBtnGap);
+        hangup_btn_->arrange(ctx, {hx, btn_y, kBtnSz, kBtnSz});
+    }
 
     // ── Expand + pip buttons (top-right corner) ──────────────────────────────
     // expand_btn_: Docked ↔ DockedExpanded toggle; hidden otherwise.
@@ -492,24 +528,34 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
 
     // ── Duration label ─────────────────────────────────────────────────────
     {
-        const int s = elapsed_seconds_ % 60;
-        const int m = (elapsed_seconds_ / 60) % 60;
-        const int h = elapsed_seconds_ / 3600;
+        const int total = static_cast<int>(elapsed_seconds());
+        const int s = total % 60;
+        const int m = (total / 60) % 60;
+        const int h = total / 3600;
         char buf[16];
         if (h > 0)
             std::snprintf(buf, sizeof(buf), "%d:%02d:%02d", h, m, s);
         else
             std::snprintf(buf, sizeof(buf), "%d:%02d", m, s);
 
-        tk::TextStyle ts{};
-        ts.role = tk::FontRole::Body;
-        auto layout = ctx.factory.build_text(std::string(buf), ts);
-        if (layout)
+        // Rebuild the text layout only when the formatted string changes
+        // (at most 1 Hz). Video repaints arrive at ~30 Hz, so without caching
+        // build_text() would be called on every frame even when the text is
+        // the same.
+        if (buf != cached_duration_str_)
         {
-            const tk::Size sz = layout->measure();
+            cached_duration_str_ = buf;
+            tk::TextStyle ts{};
+            ts.role = tk::FontRole::Body;
+            cached_duration_layout_ = ctx.factory.build_text(cached_duration_str_, ts);
+        }
+
+        if (cached_duration_layout_)
+        {
+            const tk::Size sz = cached_duration_layout_->measure();
             const float tx = duration_rect_.x + (duration_rect_.w - sz.w) * 0.5f;
             const float ty = duration_rect_.y + (duration_rect_.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*layout, {tx, ty}, kWhiteSoft);
+            ctx.canvas.draw_text(*cached_duration_layout_, {tx, ty}, kWhiteSoft);
         }
     }
 
@@ -527,7 +573,7 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
                            mute_btn_->bounds(), kBtnIconPx, kWhite);
     }
 
-    if (video_btn_)
+    if (video_btn_ && show_video_btn_)
     {
         video_btn_->paint(ctx);
         if (video_muted_)

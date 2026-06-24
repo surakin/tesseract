@@ -27,8 +27,10 @@
 
 #include <tesseract/types.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -63,22 +65,32 @@ public:
     void set_display_name_provider(
         std::function<std::string(const std::string& user_id)> fn);
 
-    // Start/stop the elapsed-time counter.
-    void start_timer();
-    void stop_timer();
+    // Start/stop the elapsed-time counter. Pass initial_seconds to resume a
+    // previously-running timer (e.g. after a mode switch). Using double allows
+    // mode switches to preserve sub-second precision: elapsed_seconds() returns
+    // the true wall-clock offset, not just the integer tick count.
+    void   start_timer(double initial_seconds = 0.0);
+    void   stop_timer();
+    double elapsed_seconds() const;
 
     // Diff the incoming participant list against `tiles_` and add/remove/update
     // children accordingly. Requests a repaint.
     void update_participants(const std::vector<tesseract::RtcParticipantInfo>& ps);
 
-    // Deliver a decoded RGBA video frame for participant_id. Called on the UI
-    // thread; the image is forwarded to the matching tile.
+    // Deliver a pre-converted premultiplied BGRA video frame for participant_id.
+    // Called on the UI thread; bgra is forwarded zero-copy to the matching tile.
     void on_video_frame(const std::string& participant_id,
                         std::uint32_t w, std::uint32_t h,
-                        const std::uint8_t* rgba, std::size_t rgba_size);
+                        std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
     void set_audio_muted(bool m);
     void set_video_muted(bool m);
+
+    // Hide the video-mute toggle (call once after mounting for audio-only calls).
+    void set_show_video_button(bool show);
+
+    // Set the local user's Matrix user_id so the self tile can be mirrored.
+    void set_local_user_id(std::string id) { local_user_id_ = std::move(id); }
 
     // Switch to a different display mode. The parent shell must re-arrange
     // after this call.
@@ -114,9 +126,19 @@ private:
     std::function<std::string(const std::string&)>      display_name_provider_;
 
     // ── Timer ─────────────────────────────────────────────────────────────────
-    std::uint64_t timer_gen_       = 0;
-    bool          timer_running_   = false;
-    int           elapsed_seconds_ = 0;
+    // tick_alive_ is a lifetime token: schedule_tick_() closures hold a weak_ptr
+    // to it. When the widget is destroyed, tick_alive_ is destroyed and all
+    // pending callbacks find weak.lock()==nullptr — preventing use-after-free
+    // when the allocator reuses the widget's memory address for a new instance
+    // whose timer_gen_ happens to equal the old callback's captured gen.
+    std::shared_ptr<bool> tick_alive_{std::make_shared<bool>(true)};
+    std::uint64_t         timer_gen_      = 0;
+    bool                  timer_running_  = false;
+    // Wall-clock start point + initial offset: elapsed_seconds() = elapsed_offset_
+    // + seconds since start_time_. Storing as double lets mode switches preserve
+    // sub-second precision when snapshotting mid-tick.
+    double                elapsed_offset_ = 0.0;
+    std::chrono::steady_clock::time_point start_time_{};
 
     // ── Participant tiles ──────────────────────────────────────────────────────
     // Borrowed pointers into children_; ownership is in the widget tree.
@@ -126,6 +148,7 @@ private:
     std::vector<std::string>            tile_ids_;
     std::vector<ParticipantTile::State> tile_states_;
     std::string                         pinned_participant_;
+    std::string                         local_user_id_;
 
     // ── Mode / float position ─────────────────────────────────────────────────
     Mode  mode_    = Mode::Docked;
@@ -139,8 +162,9 @@ private:
     float     drag_start_fy_  = 0.0f;
 
     // ── Local mute state ──────────────────────────────────────────────────────
-    bool audio_muted_ = false;
-    bool video_muted_ = false;
+    bool audio_muted_      = false;
+    bool video_muted_      = false;
+    bool show_video_btn_   = true;
 
     // ── Control buttons (always present, managed by the widget tree) ──────────
     tk::Button* mute_btn_   = nullptr;
@@ -148,6 +172,10 @@ private:
     tk::Button* hangup_btn_ = nullptr;
     tk::Button* expand_btn_ = nullptr; // Docked ↔ DockedExpanded toggle
     tk::Button* pip_btn_    = nullptr; // Popout (picture-in-picture) window
+
+    // ── Duration label cache ──────────────────────────────────────────────────
+    std::string                     cached_duration_str_;
+    std::unique_ptr<tk::TextLayout> cached_duration_layout_;
 
     // ── Icon caches ───────────────────────────────────────────────────────────
     tk::IconCache mic_icon_;

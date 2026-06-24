@@ -13,7 +13,7 @@ calls = ["dep:livekit", "dep:hkdf", "dep:base64ct", "dep:rand", "dep:rustls"]
 [dependencies]
 cxx        = "1.0"
 tokio      = { version = "1", features = ["full"] }
-matrix-sdk    = { version = "0.18", features = ["e2e-encryption", "bundled-sqlite", "local-server", "markdown", "qrcode"] }
+matrix-sdk    = { version = "0.18", features = ["e2e-encryption", "bundled-sqlite", "local-server", "markdown", "qrcode", "experimental-send-custom-to-device"] }
 qrcode        = "0.14"
 # Needed for `UtdCause` in the timeline converter — matrix-sdk doesn't
 # re-export the crypto types module.

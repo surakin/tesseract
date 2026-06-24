@@ -45,14 +45,14 @@ void ParticipantTile::set_state(State s)
 }
 
 void ParticipantTile::push_video_frame(std::uint32_t w, std::uint32_t h,
-                                        const std::uint8_t* rgba, std::size_t sz)
+                                        std::shared_ptr<std::vector<std::uint8_t>> bgra)
 {
-    // Reuse the existing allocation when frame size is stable (common case).
-    state_.pending_rgba.resize(sz);
-    std::memcpy(state_.pending_rgba.data(), rgba, sz);
-    state_.pending_w   = w;
-    state_.pending_h   = h;
-    state_.video_dirty = true;  // signals non-Qt fallback to re-upload
+    // Store the shared_ptr directly — no second memcpy on the UI thread.
+    // The buffer was pre-converted to premultiplied BGRA by EventHandlerBase
+    // on the worker thread.
+    state_.pending_bgra = std::move(bgra);
+    state_.pending_w    = w;
+    state_.pending_h    = h;
     if (repaint_requester_) repaint_requester_();
 }
 
@@ -106,9 +106,8 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
     // Used below to anchor the pin button in the correct corner.
     tk::Rect video_rect{bounds_.x + kCellPad, bounds_.y + kCellPad, vw, vh};
 
-    const bool has_pending = !state_.pending_rgba.empty();
-    const bool has_image   = (state_.video_image != nullptr);
-    const bool show_video  = !state_.video_muted && (has_pending || has_image);
+    const bool has_pending = (state_.pending_bgra != nullptr);
+    const bool show_video  = !state_.video_muted && has_pending;
 
     if (show_video)
     {
@@ -126,33 +125,13 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
         const float draw_y = bounds_.y + kCellPad + (vh - draw_h) * 0.5f;
         const tk::Rect draw_rect{draw_x, draw_y, draw_w, draw_h};
 
-        bool drew = false;
-        if (has_pending)
-        {
-            // Qt6 fast path: pass the pixel buffer directly to the canvas.
-            // draw_rgba_pixels() wraps pending_rgba in a non-owning QImage and
-            // calls QPainter::drawImage() with bilinear scaling — no heap
-            // allocation, no scaled_for() LRU miss. Returns false on backends
-            // that don't override this (they fall through to video_image below).
-            drew = ctx.canvas.draw_rgba_pixels(
-                state_.pending_rgba.data(), state_.pending_w,
-                state_.pending_h, draw_rect);
-        }
-        if (!drew)
-        {
-            // Non-Qt6 fallback: lazy upload to a persistent Image object.
-            if (state_.video_dirty && has_pending)
-            {
-                state_.video_image = ctx.factory.create_image_rgba(
-                    state_.pending_rgba.data(),
-                    static_cast<int>(state_.pending_w),
-                    static_cast<int>(state_.pending_h));
-                state_.pending_rgba.clear();
-                state_.video_dirty = false;
-            }
-            if (state_.video_image)
-                ctx.canvas.draw_image(*state_.video_image, draw_rect);
-        }
+        // All backends implement draw_bgra_premult_pixels(); the buffer was
+        // pre-converted from RGBA to premultiplied BGRA on the worker thread.
+        // is_self=true mirrors the local camera feed via a native canvas
+        // transform — no per-pixel copy.
+        ctx.canvas.draw_bgra_premult_pixels(
+            state_.pending_bgra->data(), state_.pending_w,
+            state_.pending_h, draw_rect, state_.is_self);
         video_rect = draw_rect;
     }
     else

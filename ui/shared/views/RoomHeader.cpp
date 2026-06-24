@@ -88,7 +88,7 @@ RoomHeader::RoomHeader()
     call_btn_ = add_child(std::move(call));
     call_btn_->set_visible(false);
     call_btn_->set_on_click(
-        [this] { if (on_call_requested) on_call_requested(); });
+        [this] { if (on_call_requested) on_call_requested(call_btn_->bounds()); });
 #endif
 }
 

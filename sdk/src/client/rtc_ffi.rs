@@ -92,14 +92,6 @@ impl ClientFfi {
         }
     }
 
-    /// Inject a PCM audio frame into the live session.
-    pub fn rtc_push_audio_samples(&mut self, samples: &[i16], frame_count: usize) {
-        #[cfg(feature = "calls")]
-        if let Some(session) = &self.active_rtc_call {
-            self.rt.block_on(session.push_audio_samples(samples, frame_count));
-        }
-    }
-
     /// Inject a raw I420 video frame into the live session.
     #[allow(clippy::too_many_arguments)]
     pub fn rtc_push_video_frame_i420(

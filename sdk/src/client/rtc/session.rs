@@ -58,6 +58,13 @@ pub struct RtcSession {
     client: matrix_sdk::Client,
     /// Periodic sticky-event refresh task.
     refresh_task: AbortHandle,
+    /// Key-rotation task: rotates and rebroadcasts the frame key whenever a
+    /// participant leaves (forward secrecy). None in unencrypted rooms.
+    rotate_task: Option<AbortHandle>,
+    /// Rebroadcast task: re-sends the current frame key whenever a participant
+    /// joins so they can decrypt our media even if they missed the initial
+    /// broadcast. None in unencrypted rooms.
+    rebroadcast_task: Option<AbortHandle>,
     lk: Arc<LiveKitRoom>,
     e2ee: Arc<PLMutex<E2eeManager>>,
     /// Removes the m.rtc.encryption_key to-device handler when session is dropped.
@@ -71,11 +78,6 @@ impl RtcSession {
 
     pub fn mute_video(&self, muted: bool) {
         self.lk.set_video_muted(muted);
-    }
-
-    /// Inject PCM audio from Layer 3 (AudioCaptureCallRouter).
-    pub async fn push_audio_samples(&self, samples: &[i16], frame_count: usize) {
-        self.lk.push_audio_samples(samples, frame_count).await;
     }
 
     /// Inject an I420 video frame from Layer 3 (VideoCaptureCallSession).
@@ -98,6 +100,12 @@ impl RtcSession {
 impl Drop for RtcSession {
     fn drop(&mut self) {
         self.refresh_task.abort();
+        if let Some(ref h) = self.rotate_task {
+            h.abort();
+        }
+        if let Some(ref h) = self.rebroadcast_task {
+            h.abort();
+        }
     }
 }
 
@@ -211,9 +219,13 @@ pub async fn start_call(
             let holder = Arc::clone(&lk_holder_h);
             async move {
                 let sender = ev.sender.to_string();
-                let index = ev.content.media_key.index as i32;
-                match Base64::decode_vec(&ev.content.media_key.key) {
-                    Ok(raw_key) if raw_key.len() == 32 => {
+                let index = ev.content.keys.index as i32;
+                let key_b64_len = ev.content.keys.key.len();
+                match Base64::decode_vec(&ev.content.keys.key) {
+                    Ok(raw_key) if raw_key.is_empty() => {
+                        warn!("e2ee: peer key from {sender} index={index} decoded to empty bytes — dropping");
+                    }
+                    Ok(raw_key) => {
                         let lk_opt = holder.lock().clone();
                         if let Some(lk) = lk_opt {
                             lk.queue_peer_key(&sender, index, raw_key);
@@ -221,8 +233,9 @@ pub async fn start_call(
                             early.lock().push((sender, index, raw_key));
                         }
                     }
-                    _ => warn!(
-                        "rtc: invalid peer E2EE key from {sender} (wrong length or bad base64)"
+                    Err(e) => warn!(
+                        "e2ee: bad base64 in peer key from {sender} index={index} \
+                         key_b64_len={key_b64_len}: {e}"
                     ),
                 }
             }
@@ -243,13 +256,57 @@ pub async fn start_call(
         .await?;
     }
 
-    // MSC4075: send ring notification so MSC4075-aware peers know to ring.
-    // Failure is non-fatal — don't abort the call over a notification error.
-    if let Err(e) = signaling::send_rtc_notification(&room, "video", &device_id, &user_id).await {
-        warn!("rtc: send_rtc_notification failed (non-fatal): {e}");
+    // MSC4075: send ring notification only if we are the first participant.
+    // Our own pre-flight send_msc3401_member_join() hasn't been echoed back
+    // through sync yet, so the local state cache only reflects other users.
+    {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::SyncStateEvent;
+
+        let existing = room
+            .get_state_events_static::<RtcMemberEventContent>()
+            .await
+            .unwrap_or_default();
+
+        let has_active_members = existing.iter().any(|raw| {
+            let Ok(ev) = raw.deserialize() else { return false };
+            let content = match ev {
+                SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) => o.content,
+                _ => return false,
+            };
+            // Leave events carry only disconnect_reason; join events have
+            // application/focus_active/slot_id populated. Mirrors the check
+            // in register_invitation_handler.
+            !content.application.kind.is_empty()
+                || content.focus_active.is_some()
+                || !content.slot_id.is_empty()
+        });
+
+        if !has_active_members {
+            if let Err(e) =
+                signaling::send_rtc_notification(&room, "video", &device_id, &user_id).await
+            {
+                warn!("rtc: send_rtc_notification failed (non-fatal): {e}");
+            }
+        }
     }
 
     // ── Connect to LiveKit ────────────────────────────────────────────────
+    // Create the rotation channel before connecting so the event loop can fire
+    // rotation triggers as soon as participants start disconnecting.
+    let (rotate_tx, rotate_rx) = if use_e2ee {
+        let (tx, rx) = tokio::sync::mpsc::channel::<()>(4);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+    let (rebroadcast_tx, rebroadcast_rx) = if use_e2ee {
+        let (tx, rx) = tokio::sync::mpsc::channel::<String>(16);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     let sink = super::global_sink();
     let lk = Arc::new(
         LiveKitRoom::connect(
@@ -258,6 +315,8 @@ pub async fn start_call(
             session_id,
             sink,
             use_e2ee,
+            rotate_tx,
+            rebroadcast_tx,
         )
         .await?,
     );
@@ -303,6 +362,71 @@ pub async fn start_call(
             .unwrap_or_else(|e| warn!("e2ee broadcast failed: {e}"));
     }
 
+    // Spawn the key-rotation task. Fires whenever the LiveKit event loop sends
+    // a () on rotate_rx (i.e. on every ParticipantDisconnected). Absent for
+    // unencrypted rooms (rotate_rx is None).
+    let rotate_task = rotate_rx.map(|mut rx| {
+        let e2ee_r = Arc::clone(&e2ee);
+        let lk_r = Arc::clone(&lk);
+        let client_r = client.clone();
+        let room_r = room.clone();
+        let identity_r = lk_identity.clone();
+        tokio::spawn(async move {
+            while rx.recv().await.is_some() {
+                // Rotate and snapshot — both synchronous, guard drops before
+                // the await.  parking_lot::MutexGuard is !Send so we must not
+                // hold it across an async boundary.
+                let (new_idx, raw, key_b64): (u8, super::e2ee::KeyMaterial, String) = {
+                    let mut mgr = e2ee_r.lock();
+                    let (idx, b64) = mgr.rotate();
+                    (idx, *mgr.own_raw_key(), b64)
+                };
+                lk_r.set_own_frame_key(&raw, new_idx as i32);
+                super::e2ee::broadcast_key(
+                    &client_r,
+                    &room_r,
+                    &identity_r,
+                    &key_b64,
+                    new_idx,
+                )
+                .await
+                .unwrap_or_else(|e| warn!("e2ee rebroadcast after participant leave: {e}"));
+            }
+        })
+        .abort_handle()
+    });
+
+    // Spawn the rebroadcast task. Fires whenever a participant connects
+    // (ParticipantConnected or pre-existing at Connected), carrying their
+    // Matrix user ID extracted from the LiveKit identity.  Uses
+    // send_frame_key_to_user which bypasses room.members() and performs a
+    // fresh /keys/query when their devices aren't in the local cache.
+    let rebroadcast_task = rebroadcast_rx.map(|mut rx| {
+        let e2ee_r    = Arc::clone(&e2ee);
+        let client_r  = client.clone();
+        let room_id_r = room.room_id().to_string();
+        let identity_r = lk_identity.clone();
+        tokio::spawn(async move {
+            while let Some(matrix_user_id) = rx.recv().await {
+                let (idx, key_b64): (u8, String) = {
+                    let mgr = e2ee_r.lock();
+                    (mgr.own_index(), mgr.own_key_b64())
+                };
+                super::e2ee::send_frame_key_to_user(
+                    &client_r,
+                    &matrix_user_id,
+                    &room_id_r,
+                    &identity_r,
+                    &key_b64,
+                    idx,
+                )
+                .await
+                .unwrap_or_else(|e| warn!("e2ee rebroadcast to {matrix_user_id}: {e}"));
+            }
+        })
+        .abort_handle()
+    });
+
     // Sticky-refresh background task (uses lk_identity as member_id to match
     // what we sent in the initial m.rtc.member and m.call.member events above).
     let refresh_task = spawn_refresh_task(
@@ -323,6 +447,8 @@ pub async fn start_call(
         device_id,
         client: client.clone(),
         refresh_task,
+        rotate_task,
+        rebroadcast_task,
         lk,
         e2ee,
         _enc_key_guard: enc_key_guard,

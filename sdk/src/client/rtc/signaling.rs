@@ -150,21 +150,45 @@ pub struct RtcMemberEventContent {
     pub device_id: String,
 }
 
-/// Per-participant media key carried in m.rtc.encryption_key to-device events.
+/// Key material carried in `io.element.call.encryption_keys` to-device events.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RtcMediaKey {
-    /// Base64-encoded 32-byte key material (raw, before HKDF derivation).
+pub struct RtcKeyContent {
+    /// Base64-encoded 32-byte raw key material.
     pub key: String,
-    /// Rotation index, 0-255 wrapping.
+    /// Rotation index (0-255, wrapping).
     pub index: u8,
 }
 
-/// `org.matrix.msc4143.rtc.encryption_key` to-device event.
+/// Sender identity fields in `io.element.call.encryption_keys`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RtcKeyMember {
+    /// Sender's Matrix device ID (used by receiver to target key delivery).
+    pub claimed_device_id: String,
+    /// Sender's LiveKit participant identity (`@user:server:session_id`).
+    pub id: String,
+}
+
+/// Session descriptor in `io.element.call.encryption_keys`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RtcKeySession {
+    pub call_id: String,
+    pub application: String,
+    pub scope: String,
+}
+
+/// `io.element.call.encryption_keys` to-device event (Element Call wire format).
+///
+/// Element Call v0.7+ uses this event type for per-participant E2EE frame-key
+/// exchange.  The event content was validated against Element Call 0.20.1.
 #[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
-#[ruma_event(type = "org.matrix.msc4143.rtc.encryption_key", kind = ToDevice)]
+#[ruma_event(type = "io.element.call.encryption_keys", kind = ToDevice)]
 pub struct RtcEncryptionKeyEventContent {
-    pub member_id: String,
-    pub media_key: RtcMediaKey,
+    pub keys: RtcKeyContent,
+    pub room_id: String,
+    pub member: RtcKeyMember,
+    pub session: RtcKeySession,
+    #[serde(default)]
+    pub sent_ts: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -187,17 +211,21 @@ pub async fn send_msc3401_call_open(
 
 /// Publish or refresh our MSC3401 call membership.
 ///
-/// `membership_id` is the LiveKit participant identity (`{user_id}:{member_id}`),
-/// decoded from the JWT `sub` claim.  Element X uses this value as both the
-/// `device_id` field (session part only) and the explicit `membershipID` field
-/// that Element Android uses to map a LiveKit participant to its Matrix membership.
+/// `membership_id` is the LiveKit participant identity (`{user_id}:{session_part}`),
+/// decoded from the JWT `sub` claim.
 ///
 /// State key format: `_{user_id}_{session_part}_m.call`
 /// where `session_part` = membership_id stripped of the `{user_id}:` prefix.
+///
+/// IMPORTANT: The `device_id` field in the event **content** must be the real
+/// Matrix device ID, not the session UUID.  Element Call reads `n.device_id` to
+/// find which Matrix device to deliver E2EE frame keys to.  Using the session
+/// UUID here means Element Call tries to target a non-existent device ID and
+/// the key delivery silently fails.
 pub async fn send_msc3401_member_join(
     room: &matrix_sdk::Room,
     call_id: &str,
-    _matrix_device_id: &str,
+    matrix_device_id: &str,
     membership_id: &str,
     service_url: &str,
     livekit_alias: &str,
@@ -216,7 +244,8 @@ pub async fn send_msc3401_member_join(
         },
     };
 
-    // The per-session device_id is the part of membership_id after "{user_id}:".
+    // The state key uses the session part (UUID) so that each LiveKit session
+    // gets a unique state event even if multiple sessions share the same device.
     let session_part = membership_id
         .strip_prefix(&format!("{user_id}:"))
         .unwrap_or(membership_id);
@@ -229,7 +258,7 @@ pub async fn send_msc3401_member_join(
 
     let content = CallMemberEventContent::new(
         Application::Call(app_content),
-        session_part.into(),
+        matrix_device_id.into(),  // Real Matrix device ID so EC can target key delivery
         ActiveFocus::Livekit(ActiveLivekitFocus::new()),
         vec![Focus::Livekit(LivekitFocus::new(livekit_alias.to_owned(), service_url.to_owned()))],
         None,
@@ -407,12 +436,6 @@ pub async fn send_rtc_notification(
     device_id: &str,
     _user_id: &str,
 ) -> anyhow::Result<()> {
-    use matrix_sdk::ruma::{
-        TransactionId,
-        api::client::message::send_message_event,
-        events::{AnyMessageLikeEventContent, MessageLikeEventType},
-    };
-
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -429,18 +452,10 @@ pub async fn send_rtc_notification(
         body["m.call.intent"] = serde_json::Value::String(call_intent.to_owned());
     }
 
-    let raw = serde_json::value::to_raw_value(&body)
-        .map(|v| matrix_sdk::ruma::serde::Raw::<AnyMessageLikeEventContent>::from_json(v))
-        .map_err(|e| anyhow::anyhow!("serialize rtc notification: {e}"))?;
-
-    let request = send_message_event::v3::Request::new_raw(
-        room.room_id().to_owned(),
-        TransactionId::new(),
-        MessageLikeEventType::from("org.matrix.msc4075.rtc.notification"),
-        raw,
-    );
-    room.client()
-        .send(request)
+    // Use room.send_raw() so the event is automatically encrypted when the
+    // room is encrypted. The previous room.client().send(raw_http_request)
+    // bypass sent the content in cleartext regardless of room encryption state.
+    room.send_raw("org.matrix.msc4075.rtc.notification", body)
         .await
         .map_err(|e| anyhow::anyhow!("send rtc notification: {e}"))?;
     Ok(())

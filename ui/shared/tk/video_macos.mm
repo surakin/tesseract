@@ -385,18 +385,22 @@ private:
     {
         CVPixelBufferLockBaseAddress(pbuf, kCVPixelBufferLock_ReadOnly);
 
-        const size_t w = CVPixelBufferGetWidth(pbuf);
-        const size_t h = CVPixelBufferGetHeight(pbuf);
+        const OSType fmt  = CVPixelBufferGetPixelFormatType(pbuf);
+        const size_t w    = CVPixelBufferGetWidth(pbuf);
+        const size_t h    = CVPixelBufferGetHeight(pbuf);
         const size_t stride = CVPixelBufferGetBytesPerRow(pbuf);
         void* base = CVPixelBufferGetBaseAddress(pbuf);
 
-        if (!base || w == 0 || h == 0)
+        // Only handle 8-bit packed formats we can map to a BGRA context.
+        const bool is_bgra = (fmt == kCVPixelFormatType_32BGRA);
+        const bool is_rgba = (fmt == kCVPixelFormatType_32RGBA);
+        if (!base || w == 0 || h == 0 || (!is_bgra && !is_rgba))
         {
             CVPixelBufferUnlockBaseAddress(pbuf, kCVPixelBufferLock_ReadOnly);
             return;
         }
 
-        // Draw BGRA pixels into a CGBitmapContext to get a CGImage.
+        // Draw pixels into a BGRA CGBitmapContext to get a CGImage.
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
@@ -409,16 +413,30 @@ private:
 
         if (ctx)
         {
-            // Copy source pixels into the context.
             const uint8_t* src = static_cast<const uint8_t*>(base);
             uint8_t* dst = static_cast<uint8_t*>(CGBitmapContextGetData(ctx));
             if (dst)
             {
                 const size_t row_bytes = w * 4;
-                for (size_t row = 0; row < h; ++row)
+                if (is_bgra)
                 {
-                    memcpy(dst + row * row_bytes, src + row * stride,
-                           row_bytes);
+                    for (size_t row = 0; row < h; ++row)
+                        memcpy(dst + row * row_bytes, src + row * stride, row_bytes);
+                }
+                else // RGBA → BGRA: swap byte 0 (R) and byte 2 (B) per pixel
+                {
+                    for (size_t row = 0; row < h; ++row)
+                    {
+                        const uint8_t* s = src + row * stride;
+                        uint8_t* d = dst + row * row_bytes;
+                        for (size_t col = 0; col < w; ++col, s += 4, d += 4)
+                        {
+                            d[0] = s[2]; // B ← src[2]
+                            d[1] = s[1]; // G
+                            d[2] = s[0]; // R ← src[0]
+                            d[3] = s[3]; // A
+                        }
+                    }
                 }
             }
             CGImageRef img = CGBitmapContextCreateImage(ctx);

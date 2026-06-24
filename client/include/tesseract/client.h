@@ -1429,12 +1429,6 @@ public:
     /// Mute or unmute the local video track. No-op when no call is active.
     void rtc_set_video_muted(bool muted);
 
-    /// Push a live PCM audio frame into the active session.
-    /// `samples` is S16LE at 48 kHz mono; `frame_count` is the sample count
-    /// (typically 480 for a 10 ms frame). No-op when no call is active.
-    void rtc_push_audio_samples(const std::int16_t* samples,
-                                std::size_t frame_count);
-
     /// Push a raw I420 video frame into the active session.
     /// No-op when no call is active.
     void rtc_push_video_frame_i420(const std::uint8_t* y,

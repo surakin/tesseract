@@ -118,6 +118,19 @@ RoomView::RoomView()
             on_layout_changed();
     };
 
+    // Call-type popup — anchored to the call button; opened by the
+    // on_call_requested handler below when the button is pressed.
+    {
+        auto cp = std::make_unique<PopupMenu>();
+        call_popup_ = add_child(std::move(cp));
+        call_popup_->on_dismissed = [this] { call_popup_->close(); };
+        call_popup_->on_layout_changed = [this]
+        {
+            if (on_layout_changed)
+                on_layout_changed();
+        };
+    }
+
     // In-room search bar — docked strip under the header. Hidden until
     // open_room_search() is called.
     auto search_bar = std::make_unique<RoomSearchBar>();
@@ -145,10 +158,25 @@ RoomView::RoomView()
     call_banner_ = add_child(std::move(banner));
 
     if (header_)
-        header_->on_call_requested = [this]
+        header_->on_call_requested = [this](tk::Rect btn_rect)
         {
-            if (on_start_call)
-                on_start_call(current_room_info_.id, "call#default");
+            if (!call_popup_) return;
+            const std::string rid = current_room_info_.id;
+            PopupMenu::Item audio;
+            audio.svg_icon    = kPhoneSvg;
+            audio.label       = "Audio call";
+            audio.on_selected = [this, rid]
+            {
+                if (on_start_call) on_start_call(rid, "call#default", true);
+            };
+            PopupMenu::Item video;
+            video.svg_icon    = kVideoSvg;
+            video.label       = "Video call";
+            video.on_selected = [this, rid]
+            {
+                if (on_start_call) on_start_call(rid, "call#default", false);
+            };
+            call_popup_->open({audio, video}, btn_rect);
         };
 #endif
 
@@ -914,7 +942,7 @@ void RoomView::show_call_banner(const std::string& room_id,
         call_intent,
         [this, room_id, slot_id] {       // on_answer
             dismiss_call_banner();
-            if (on_start_call) on_start_call(room_id, slot_id);
+            if (on_start_call) on_start_call(room_id, slot_id, false);
         },
         [this] { dismiss_call_banner(); } // on_decline
     );
@@ -1548,6 +1576,8 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Overflow popup: always arranged so it can zero its bounds when closed.
     if (overflow_menu_)
         overflow_menu_->arrange(ctx, bounds);
+    if (call_popup_)
+        call_popup_->arrange(ctx, bounds);
 }
 
 void RoomView::paint(tk::PaintCtx& ctx)
@@ -1608,6 +1638,8 @@ void RoomView::paint(tk::PaintCtx& ctx)
         user_profile_panel_->paint(ctx);
     if (overflow_menu_ && overflow_menu_->is_open())
         overflow_menu_->paint(ctx);
+    if (call_popup_ && call_popup_->is_open())
+        call_popup_->paint(ctx);
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -1628,6 +1660,8 @@ tk::Widget* RoomView::active_overlay_panel_() const
         return room_info_panel_;
     if (overflow_menu_ && overflow_menu_->is_open())
         return overflow_menu_;
+    if (call_popup_ && call_popup_->is_open())
+        return call_popup_;
     return nullptr;
 }
 

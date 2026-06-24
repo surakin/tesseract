@@ -803,26 +803,49 @@ void EventHandlerBase::on_call_video_frame(std::uint64_t session_id,
                                             const std::uint8_t* rgba,
                                             std::size_t rgba_size)
 {
-    // Copy the frame data before returning — the pointer is only valid for the
-    // duration of this callback (stack-allocated on the Rust side).
-    // TODO(calls-layer5): replace with a lock-free ring buffer to avoid per-frame allocation.
+    // Convert RGBA → premultiplied BGRA on this worker thread, then hand the
+    // shared_ptr to the UI thread — no second memcpy in push_video_frame().
+    // Video frames are always fully opaque (α=255 from the I420 decoder), so
+    // premultiplication is an identity and we only need a channel swap.
     struct Payload
     {
         std::uint64_t session_id;
         std::string   participant_id;
         std::uint32_t width;
         std::uint32_t height;
-        std::vector<std::uint8_t> rgba;
+        std::shared_ptr<std::vector<std::uint8_t>> bgra; // premultiplied
     };
+    const std::size_t n_px = static_cast<std::size_t>(width) * height;
+    auto bgra = std::make_shared<std::vector<std::uint8_t>>(rgba_size);
+    const bool opaque = (rgba_size > 0 && rgba[3] == 255);
+    if (opaque)
+    {
+        for (std::size_t i = 0; i < n_px; ++i)
+        {
+            (*bgra)[i * 4 + 0] = rgba[i * 4 + 2]; // B
+            (*bgra)[i * 4 + 1] = rgba[i * 4 + 1]; // G
+            (*bgra)[i * 4 + 2] = rgba[i * 4 + 0]; // R
+            (*bgra)[i * 4 + 3] = 255u;
+        }
+    }
+    else
+    {
+        for (std::size_t i = 0; i < n_px; ++i)
+        {
+            const unsigned a = rgba[i * 4 + 3];
+            (*bgra)[i * 4 + 0] = static_cast<std::uint8_t>((rgba[i*4+2] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 1] = static_cast<std::uint8_t>((rgba[i*4+1] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 2] = static_cast<std::uint8_t>((rgba[i*4+0] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 3] = static_cast<std::uint8_t>(a);
+        }
+    }
     auto p = std::make_shared<Payload>(
-        Payload{session_id, participant_id, width, height,
-                std::vector<std::uint8_t>(rgba, rgba + rgba_size)});
+        Payload{session_id, participant_id, width, height, std::move(bgra)});
     shell()->post_to_ui_(
         [shell = shell(), p]()
         {
             shell->handle_rtc_video_frame_ui_(p->session_id, p->participant_id,
-                                              p->width, p->height,
-                                              p->rgba.data(), p->rgba.size());
+                                              p->width, p->height, p->bgra);
         });
 }
 
@@ -833,15 +856,12 @@ void EventHandlerBase::on_call_audio_frame(std::uint64_t session_id,
                                             std::uint32_t sample_rate,
                                             std::uint32_t num_channels)
 {
-    // Copy samples before returning — the pointer is only valid during this call.
-    auto pcm = std::make_shared<std::vector<std::int16_t>>(samples, samples + sample_count);
-    shell()->post_to_ui_(
-        [shell = shell(), session_id, pcm, sample_rate, num_channels]()
-        {
-            shell->handle_rtc_audio_frame_ui_(session_id,
-                                              pcm->data(), pcm->size(),
-                                              sample_rate, num_channels);
-        });
+    // AudioPlayback::push_frame() is documented thread-safe (audio_playback.h).
+    // Call it directly on this worker thread — no post_to_ui_() overhead.
+    // The mutex in push_call_audio_bgnd_() ensures the output object is not
+    // destroyed while we are inside push_frame().
+    shell()->push_call_audio_bgnd_(samples, sample_count, sample_rate, num_channels);
+    (void)session_id;
 }
 
 #endif // TESSERACT_CALLS_ENABLED

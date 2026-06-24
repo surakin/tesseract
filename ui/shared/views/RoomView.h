@@ -296,9 +296,11 @@ public:
     bool call_banner_visible() const;
 
     // Fired when the user answers (banner or header button). The shell calls
-    // ShellBase::start_call(room_id, slot_id).
+    // ShellBase::start_call(room_id, slot_id, audio_only).
+    // audio_only=true skips video capture; audio_only=false starts with video.
     std::function<void(const std::string& room_id,
-                       const std::string& slot_id)> on_start_call;
+                       const std::string& slot_id,
+                       bool               audio_only)> on_start_call;
 
     // ── Docked call panel ────────────────────────────────────────────────
     // post_delayed signature matches the post_delayed_ provider used by
@@ -505,6 +507,7 @@ private:
     RoomInfoPanel*    room_info_panel_    = nullptr;
     UserProfilePanel* user_profile_panel_ = nullptr;
     PopupMenu*        overflow_menu_      = nullptr;
+    PopupMenu*        call_popup_         = nullptr;
     // Stored so they can be forwarded to the lazily-created thread view.
     MessageListView::ImageProvider stored_avatar_provider_;
     MessageListView::ImageProvider stored_image_provider_;

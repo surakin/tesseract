@@ -289,7 +289,6 @@ void MainAppWidget::mount_call_overlay(
         w->set_avatar_provider(std::move(avatar_provider));
         w->set_display_name_provider(std::move(display_name_provider));
         w->set_mode(views::CallOverlayWidget::Mode::Floating);
-        w->start_timer();
         float_call_overlay_ = add_child(std::move(w));
     }
     else

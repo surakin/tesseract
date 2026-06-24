@@ -24,10 +24,8 @@ use crate::client::rtc::RtcEventSink;
 use livekit::{
     prelude::*,
     options::TrackPublishOptions,
-    e2ee::{E2eeOptions, EncryptionType, key_provider::{KeyProvider, KeyProviderOptions}},
+    e2ee::{E2eeOptions, EncryptionType, key_provider::{KeyDerivationAlgorithm, KeyProvider, KeyProviderOptions}},
     webrtc::{
-        audio_frame::AudioFrame,
-        audio_source::{native::NativeAudioSource, AudioSourceOptions, RtcAudioSource},
         video_frame::{BoxVideoFrame, I420Buffer, VideoFrame, VideoRotation},
         video_source::{native::NativeVideoSource, RtcVideoSource},
         audio_stream::native::NativeAudioStream,
@@ -38,7 +36,7 @@ use livekit::{
 
 pub struct LiveKitRoom {
     room: Arc<Room>,
-    audio_source: NativeAudioSource,
+    platform_audio: PlatformAudio,
     video_source: NativeVideoSource,
     audio_publication: LocalTrackPublication,
     video_publication: LocalTrackPublication,
@@ -54,21 +52,42 @@ pub struct LiveKitRoom {
     key_provider: KeyProvider,
     /// Monotonic start time used to generate RTP timestamps for video frames.
     call_start: std::time::Instant,
-    /// Pending peer keys keyed by Matrix user_id. Applied immediately to
-    /// connected participants and deferred for those who connect later.
-    pending_peer_keys: Arc<StdMutex<HashMap<String, (i32, Vec<u8>)>>>,
+    /// Pending peer keys keyed by Matrix user_id → key index → raw bytes.
+    /// All received indices are stored so frames encrypted before a rotation
+    /// can still be decrypted when the participant first appears in LiveKit.
+    pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>>,
 }
 
 impl LiveKitRoom {
     /// Connect, publish local audio + video tracks, start the event loop.
+    ///
+    /// `rotate_tx`: when `Some`, the event loop fires a `()` message on every
+    /// `ParticipantDisconnected` event so the caller can rotate the frame key.
+    /// `rebroadcast_tx`: when `Some`, the event loop sends the participant's
+    /// Matrix user ID on every `ParticipantConnected` and for each participant
+    /// already present at `Connected`, so the caller can re-broadcast the
+    /// current key directly to that user bypassing the room member list cache.
     pub async fn connect(
         server_url: &str,
         jwt: &str,
         session_id: u64,
         sink: Option<Arc<dyn RtcEventSink>>,
         use_e2ee: bool,
+        rotate_tx: Option<tokio::sync::mpsc::Sender<()>>,
+        rebroadcast_tx: Option<tokio::sync::mpsc::Sender<String>>,
     ) -> anyhow::Result<Self> {
-        let key_provider = KeyProvider::new(KeyProviderOptions::default());
+        // Match Element Call's key provider configuration exactly so both sides
+        // derive the same AES-128-GCM frame key from the exchanged key material:
+        //   - HKDF (not PBKDF2) with SHA-256, salt="LKFrameEncryptionKey"
+        //   - ratchetWindowSize=8, failureTolerance=10, keyringSize=16
+        // Using PBKDF2 produces a different derived key and frames can't decrypt.
+        let key_provider = KeyProvider::new(KeyProviderOptions {
+            key_derivation_algorithm: KeyDerivationAlgorithm::HKDF,
+            ratchet_window_size: 8,
+            failure_tolerance: 10,
+            key_ring_size: 16,
+            ..KeyProviderOptions::default()
+        });
         // RoomOptions is #[non_exhaustive] in the external crate — must use
         // Default::default() then field-assign rather than struct literal.
         let mut room_options = RoomOptions::default();
@@ -81,20 +100,19 @@ impl LiveKitRoom {
         let (room, events) = Room::connect(server_url, jwt, room_options).await?;
         let room = Arc::new(room);
 
-        // Local audio track (48 kHz mono, 100 ms queue).
-        // AEC/NS/AGC are disabled: with NativeAudioSource (Synthetic ADM) there
-        // is no speaker-output reference for AEC3 to cancel against, so it would
-        // treat the entire captured signal as echo and suppress it to silence.
-        // OS-level processing already handles gain on the Qt audio path.
-        let audio_opts = AudioSourceOptions {
-            echo_cancellation: false,
-            noise_suppression: false,
-            auto_gain_control: false,
-        };
-        let audio_source = NativeAudioSource::new(audio_opts, 48_000, 1, 100);
+        // Local audio track via platform hardware ADM.
+        // PlatformAudio gives libwebrtc's AEC3 access to the speaker-output
+        // reference, enabling echo cancellation. AudioProcessingOptions::default()
+        // enables AEC, NS, and AGC. Capture is handled entirely by the platform
+        // ADM — no manual PCM injection needed.
+        let platform_audio = PlatformAudio::new()
+            .map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
+        platform_audio
+            .configure_audio_processing(AudioProcessingOptions::default())
+            .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
         let local_audio = LocalAudioTrack::create_audio_track(
             "mic",
-            RtcAudioSource::Native(audio_source.clone()),
+            platform_audio.rtc_source(),
         );
         // dtx=false: always send audio packets even during silence.
         // red=false: send plain Opus instead of RED; some SFUs fail to forward
@@ -152,7 +170,7 @@ impl LiveKitRoom {
         let local_identity = room.local_participant().identity().as_str().to_owned();
         let video_frame_in_flight = Arc::new(AtomicBool::new(false));
         let local_video_in_flight = Arc::new(AtomicBool::new(false));
-        let pending_peer_keys: Arc<StdMutex<HashMap<String, (i32, Vec<u8>)>>> =
+        let pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>> =
             Arc::new(StdMutex::new(HashMap::new()));
         let event_task = spawn_event_task(
             Arc::clone(&room),
@@ -162,12 +180,14 @@ impl LiveKitRoom {
             sink.clone(),
             key_provider.clone(),
             Arc::clone(&pending_peer_keys),
+            rotate_tx,
+            rebroadcast_tx,
         );
 
         info!("rtc: livekit connected (session {session_id}), local identity={local_identity}");
         Ok(Self {
             room,
-            audio_source,
+            platform_audio,
             video_source,
             audio_publication,
             video_publication,
@@ -196,19 +216,6 @@ impl LiveKitRoom {
             self.video_publication.mute();
         } else {
             self.video_publication.unmute();
-        }
-    }
-
-    /// Inject S16LE 48 kHz mono PCM from AudioCaptureCallRouter (Layer 3).
-    pub async fn push_audio_samples(&self, samples: &[i16], frame_count: usize) {
-        let frame = AudioFrame {
-            data: std::borrow::Cow::Borrowed(samples),
-            sample_rate: 48_000,
-            num_channels: 1,
-            samples_per_channel: frame_count as u32,
-        };
-        if let Err(e) = self.audio_source.capture_frame(&frame).await {
-            warn!("rtc: audio capture_frame error: {e}");
         }
     }
 
@@ -270,6 +277,7 @@ impl LiveKitRoom {
     /// Set our own 32-byte raw key material in the KeyProvider so LiveKit
     /// encrypts our outgoing tracks with AES-GCM.
     pub fn set_own_frame_key(&self, raw_key: &[u8], index: i32) {
+        info!("e2ee: set own frame key index={index} identity={}", self.local_identity);
         let identity: ParticipantIdentity = self.local_identity.clone().into();
         self.key_provider.set_key(&identity, index, raw_key.to_vec());
     }
@@ -279,19 +287,32 @@ impl LiveKitRoom {
     /// identity starts with `{sender_user_id}:` (the format the JWT service
     /// uses), and queues the key for participants who connect later.
     pub fn queue_peer_key(&self, sender_user_id: &str, index: i32, raw_key: Vec<u8>) {
-        // Update the pending-keys map (overwriting any older key at this index).
+        // Store this index; preserve all other indices so frames encrypted
+        // before a rotation can still be decrypted when the participant appears.
         self.pending_peer_keys
             .lock()
             .unwrap()
-            .insert(sender_user_id.to_owned(), (index, raw_key.clone()));
+            .entry(sender_user_id.to_owned())
+            .or_default()
+            .insert(index, raw_key.clone());
 
         // Apply to any participant already in the room.
         let prefix = format!("{}:", sender_user_id);
+        let mut applied = 0usize;
         for (identity, _) in self.room.remote_participants() {
             let id_str = identity.as_str();
             if id_str.starts_with(&prefix) || id_str == sender_user_id {
+                info!(
+                    "e2ee: set_key for participant {id_str} (from {sender_user_id} index={index})"
+                );
                 self.key_provider.set_key(&identity, index, raw_key.clone());
+                applied += 1;
             }
+        }
+        if applied == 0 {
+            info!(
+                "e2ee: queued key for {sender_user_id} index={index} (participant not yet connected)"
+            );
         }
     }
 
@@ -334,7 +355,9 @@ fn spawn_event_task(
     video_in_flight: Arc<AtomicBool>,
     sink: Option<Arc<dyn RtcEventSink>>,
     key_provider: KeyProvider,
-    pending_peer_keys: Arc<StdMutex<HashMap<String, (i32, Vec<u8>)>>>,
+    pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>>,
+    rotate_tx: Option<tokio::sync::mpsc::Sender<()>>,
+    rebroadcast_tx: Option<tokio::sync::mpsc::Sender<String>>,
 ) -> AbortHandle {
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
@@ -347,14 +370,27 @@ fn spawn_event_task(
                         if let Some(ref s) = sink {
                             s.on_participant_joined(session_id, participant_info(participant));
                         }
-                        // Apply any pending E2EE key for this participant.
+                        // Apply any pending E2EE keys for this participant (all indices).
                         let id = participant.identity();
-                        let pending = pending_peer_keys.lock().unwrap();
-                        for (user_id_prefix, (idx, raw_key)) in pending.iter() {
-                            let prefix = format!("{}:", user_id_prefix);
-                            let id_str = id.as_str();
-                            if id_str.starts_with(&prefix) || id_str == user_id_prefix.as_str() {
-                                key_provider.set_key(&id, *idx, raw_key.clone());
+                        {
+                            let pending = pending_peer_keys.lock().unwrap();
+                            for (user_id_prefix, keys_by_index) in pending.iter() {
+                                let prefix = format!("{}:", user_id_prefix);
+                                let id_str = id.as_str();
+                                if id_str.starts_with(&prefix) || id_str == user_id_prefix.as_str() {
+                                    for (idx, raw_key) in keys_by_index {
+                                        key_provider.set_key(&id, *idx, raw_key.clone());
+                                    }
+                                }
+                            }
+                        }
+                        // Re-broadcast our key to each pre-existing participant
+                        // using their Matrix user ID (extracted from the LiveKit
+                        // identity) so the broadcast reaches them even when they
+                        // are not yet in the local room-member cache.
+                        if let Some(ref tx) = rebroadcast_tx {
+                            if let Some(uid) = matrix_user_id_from_lk_identity(id.as_str()) {
+                                let _ = tx.try_send(uid.to_owned());
                             }
                         }
                     }
@@ -381,14 +417,25 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         s.on_participant_joined(session_id, participant_info(&p));
                     }
-                    // Apply any pending peer key for this participant.
+                    // Apply any pending peer keys for this participant (all indices).
                     let id = p.identity();
                     let pending = pending_peer_keys.lock().unwrap();
-                    for (user_id_prefix, (idx, raw_key)) in pending.iter() {
+                    for (user_id_prefix, keys_by_index) in pending.iter() {
                         let prefix = format!("{}:", user_id_prefix);
                         let id_str = id.as_str();
                         if id_str.starts_with(&prefix) || id_str == user_id_prefix.as_str() {
-                            key_provider.set_key(&id, *idx, raw_key.clone());
+                            for (idx, raw_key) in keys_by_index {
+                                key_provider.set_key(&id, *idx, raw_key.clone());
+                            }
+                        }
+                    }
+                    // Re-broadcast our own key to this specific participant using
+                    // their Matrix user ID (extracted from the LiveKit identity).
+                    // This bypasses room.members() which may not include them yet.
+                    if let Some(ref tx) = rebroadcast_tx {
+                        let id = p.identity();
+                        if let Some(uid) = matrix_user_id_from_lk_identity(id.as_str()) {
+                            let _ = tx.try_send(uid.to_owned());
                         }
                     }
                 }
@@ -397,9 +444,21 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         s.on_participant_left(session_id, p.identity().as_str());
                     }
+                    // Trigger a key rotation so the departed participant loses
+                    // the ability to decrypt future media (forward secrecy).
+                    if let Some(ref tx) = rotate_tx {
+                        let _ = tx.try_send(());
+                    }
                 }
                 RoomEvent::TrackSubscribed { track, participant, .. } => {
-                    info!("rtc: track subscribed from {}: {:?}", participant.identity(), track.kind());
+                    info!("rtc: TrackSubscribed from {} kind={:?}", participant.identity(), track.kind());
+                    // Re-emit participant state now that publications are populated.
+                    // At ParticipantConnected time the publication list is empty
+                    // (0 pubs), so is_video_muted=true and the tile shows an avatar
+                    // even though frames are arriving. Refreshing here fixes that.
+                    if let Some(ref s) = sink {
+                        s.on_participant_updated(session_id, participant_info(&participant));
+                    }
                     let pid = participant.identity().as_str().to_owned();
                     match track {
                         RemoteTrack::Video(video_track) => {
@@ -540,6 +599,21 @@ fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
     }
 }
 
+/// Extract the Matrix user ID prefix from a LiveKit participant identity.
+///
+/// LiveKit identities have the form `@localpart:server:device_id`.
+/// Returns `Some("@localpart:server")` on success, `None` if the format is
+/// unexpected (e.g. the identity is not a Matrix user ID).
+fn matrix_user_id_from_lk_identity(identity: &str) -> Option<&str> {
+    if !identity.starts_with('@') {
+        return None;
+    }
+    let first_colon = identity.find(':')?;
+    let after_first = &identity[first_colon + 1..];
+    let second_colon = after_first.find(':')?;
+    Some(&identity[..first_colon + 1 + second_colon])
+}
+
 /// Split a LiveKit identity string of the form `@localpart:server:device_id`
 /// into `(user_id, device_id)`.  Returns the full string and an empty device_id
 /// if the expected structure is not present.
@@ -563,6 +637,19 @@ fn split_identity(identity: &str) -> (String, String) {
 
 /// Software I420 → RGBA conversion from raw planes (BT.601 full-range).
 /// Used for the local self-view loopback where we have the planes directly.
+/// BT.601 full-range YUV → RGBA using integer fixed-point (1/1024 units).
+/// Avoids per-pixel f32 casts and floating-point multiplies.
+#[inline(always)]
+fn yuv_to_rgba_pixel(y: u8, u: u8, v: u8) -> [u8; 4] {
+    let y = y as i32;
+    let u = u as i32 - 128;
+    let v = v as i32 - 128;
+    let r = (y + ((1436 * v) >> 10)).clamp(0, 255) as u8;
+    let g = (y - ((352 * u + 731 * v) >> 10)).clamp(0, 255) as u8;
+    let b = (y + ((1815 * u) >> 10)).clamp(0, 255) as u8;
+    [r, g, b, 255]
+}
+
 fn i420_planes_to_rgba(
     y_plane: &[u8],
     u_plane: &[u8],
@@ -579,17 +666,13 @@ fn i420_planes_to_rgba(
     let mut rgba = vec![0u8; w * h * 4];
     for row in 0..h {
         for col in 0..w {
-            let yv = y_plane[row * sy + col] as f32;
-            let uv = u_plane[(row / 2) * suv + (col / 2)] as f32 - 128.0;
-            let vv = v_plane[(row / 2) * suv + (col / 2)] as f32 - 128.0;
-            let r = (yv + 1.402 * vv).clamp(0.0, 255.0) as u8;
-            let g = (yv - 0.344_136 * uv - 0.714_136 * vv).clamp(0.0, 255.0) as u8;
-            let b = (yv + 1.772 * uv).clamp(0.0, 255.0) as u8;
+            let px = yuv_to_rgba_pixel(
+                y_plane[row * sy + col],
+                u_plane[(row / 2) * suv + (col / 2)],
+                v_plane[(row / 2) * suv + (col / 2)],
+            );
             let idx = (row * w + col) * 4;
-            rgba[idx] = r;
-            rgba[idx + 1] = g;
-            rgba[idx + 2] = b;
-            rgba[idx + 3] = 255;
+            rgba[idx..idx + 4].copy_from_slice(&px);
         }
     }
     rgba
@@ -611,17 +694,13 @@ fn i420_to_rgba(frame: &BoxVideoFrame) -> Option<Vec<u8>> {
     let mut rgba = vec![0u8; w * h * 4];
     for row in 0..h {
         for col in 0..w {
-            let y = y_data[row * w + col] as f32;
-            let u = u_data[(row / 2) * (w / 2) + (col / 2)] as f32 - 128.0;
-            let v = v_data[(row / 2) * (w / 2) + (col / 2)] as f32 - 128.0;
-            let r = (y + 1.402 * v).clamp(0.0, 255.0) as u8;
-            let g = (y - 0.344_136 * u - 0.714_136 * v).clamp(0.0, 255.0) as u8;
-            let b = (y + 1.772 * u).clamp(0.0, 255.0) as u8;
+            let px = yuv_to_rgba_pixel(
+                y_data[row * w + col],
+                u_data[(row / 2) * (w / 2) + (col / 2)],
+                v_data[(row / 2) * (w / 2) + (col / 2)],
+            );
             let idx = (row * w + col) * 4;
-            rgba[idx] = r;
-            rgba[idx + 1] = g;
-            rgba[idx + 2] = b;
-            rgba[idx + 3] = 255;
+            rgba[idx..idx + 4].copy_from_slice(&px);
         }
     }
     Some(rgba)

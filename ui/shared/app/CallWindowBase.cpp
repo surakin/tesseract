@@ -25,7 +25,6 @@ void CallWindowBase::wire_call_overlay(
     call_overlay_widget_->set_avatar_provider(std::move(avatar_provider));
     call_overlay_widget_->set_display_name_provider(std::move(display_name_provider));
     call_overlay_widget_->set_mode(views::CallOverlayWidget::Mode::Popout);
-    call_overlay_widget_->start_timer();
 }
 
 } // namespace tesseract

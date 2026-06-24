@@ -130,7 +130,7 @@ public:
     // a floating CallOverlayWidget child for Floating mode.
     // post_delayed wires the timer, repaint_requester requests video-frame
     // repaints, avatar_provider and display_name_provider supply participant
-    // metadata. Calls start_timer() on the created widget.
+    // metadata. Does not call start_timer() — the caller owns that.
     void mount_call_overlay(
         views::CallOverlayWidget::Mode                  initial_mode,
         std::function<void(int, std::function<void()>)> post_delayed,

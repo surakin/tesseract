@@ -465,6 +465,21 @@ public:
         return false;
     }
 
+    // Draw premultiplied BGRA pixels (Cairo ARGB32 / D3D BGRA layout) into dst,
+    // bilinearly scaling to fit.  Layout: pixels[i*4+0]=B, [1]=G, [2]=R, [3]=A,
+    // all channels premultiplied by A/255.  Allows all backends to skip the
+    // per-pixel premult loop at paint time when frames are pre-converted on a
+    // worker thread.
+    // Every current backend implements this; the default returns false as a safety
+    // net for future backends that may not yet override it.
+    virtual bool draw_bgra_premult_pixels(const std::uint8_t* /*pixels*/,
+                                          std::uint32_t /*w*/, std::uint32_t /*h*/,
+                                          Rect /*dst*/,
+                                          bool /*flip_h*/ = false)
+    {
+        return false;
+    }
+
     // Circular clip + centre-fit, for avatars. Diameter is logical pixels.
     virtual void draw_circle_image(const Image&, Point centre,
                                    float diameter) = 0;

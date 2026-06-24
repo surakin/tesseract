@@ -55,10 +55,9 @@ public:
         on_stopped;
 
 #ifdef TESSERACT_CALLS_ENABLED
-    // Live per-frame callback for MatrixRTC call routing.
+    // Live per-frame callback, reserved for future use.
     // Called on the capture thread with each incoming PCM chunk (48kHz/S16LE/
     // mono). May be called concurrently with on_amplitude/on_stopped dispatch.
-    // Set by AudioCaptureCallRouter; cleared when the router is destroyed.
     // Must not be called while a set_frame_callback/clear_frame_callback is in
     // progress on another thread — callers must serialize those transitions.
     virtual void set_frame_callback(

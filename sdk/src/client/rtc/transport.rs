@@ -190,7 +190,7 @@ pub async fn fetch_livekit_jwt(
             matrix_server_name,
             token_type: "Bearer",
         },
-        device_id: member_id,
+        device_id,
         room: room_id,
     };
     let sfu_resp = http

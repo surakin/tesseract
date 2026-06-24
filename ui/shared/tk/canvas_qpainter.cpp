@@ -474,9 +474,8 @@ public:
                           std::uint32_t w, std::uint32_t h, Rect dst) override
     {
         if (!pixels || w == 0 || h == 0) return false;
-        // Wrap the caller's buffer without copying. The buffer belongs to
-        // ParticipantTile::state_.pending_rgba, which is stable for the
-        // duration of this synchronous paint() call. QPainter::drawImage()
+        // Wrap the caller's buffer without copying. The buffer must remain
+        // valid for the duration of this synchronous paint() call. QPainter::drawImage()
         // scales bilinearly (SmoothPixmapTransform is already set on the
         // painter) without the multi-pass QImage::scaled(SmoothTransformation)
         // filter that pick_image_()/scaled_for() would apply — sufficient for
@@ -485,6 +484,35 @@ public:
         QImage img(pixels, static_cast<int>(w), static_cast<int>(h),
                    static_cast<qsizetype>(w) * 4, QImage::Format_RGBA8888);
         p_.drawImage(to_qrect(dst), img);
+        return true;
+    }
+
+    bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
+                                   std::uint32_t w, std::uint32_t h,
+                                   Rect dst, bool flip_h = false) override
+    {
+        if (!pixels || w == 0 || h == 0) return false;
+        // Wrap the pre-converted buffer without copying.
+        // Format_ARGB32_Premultiplied matches CAIRO_FORMAT_ARGB32 memory layout:
+        // [B, G, R, A] per pixel (0xAARRGGBB in little-endian 32-bit).
+        // Qt blits this without any per-pixel conversion.
+        QImage img(pixels, static_cast<int>(w), static_cast<int>(h),
+                   static_cast<qsizetype>(w) * 4,
+                   QImage::Format_ARGB32_Premultiplied);
+        if (flip_h)
+        {
+            // Apply a horizontal-flip world transform so Qt handles the mirror
+            // via its rasteriser — no per-pixel copy.
+            p_.save();
+            p_.translate(dst.x + dst.w, dst.y);
+            p_.scale(-1.0, 1.0);
+            p_.drawImage(QRectF(0.0, 0.0, dst.w, dst.h), img);
+            p_.restore();
+        }
+        else
+        {
+            p_.drawImage(to_qrect(dst), img);
+        }
         return true;
     }
 

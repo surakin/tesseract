@@ -855,6 +855,52 @@ public:
         draw_cg_image(sub.get(), dst);
     }
 
+    bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
+                                   std::uint32_t w, std::uint32_t h,
+                                   Rect dst, bool flip_h = false) override
+    {
+        if (!pixels || w == 0 || h == 0) return false;
+        // pixels is premultiplied BGRA (layout: [B,G,R,A] per pixel, matching
+        // CAIRO_FORMAT_ARGB32). CoreGraphics bitmap flags:
+        //   kCGBitmapByteOrder32Little  — interpret each 32-bit word as LE
+        //   kCGImageAlphaPremultipliedFirst — A in the MS byte of the 32-bit word
+        // Together these map to A=byte[3], R=byte[2], G=byte[1], B=byte[0],
+        // i.e. exactly the layout we pre-compute on the worker thread.
+        CFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
+        CFRetained<CGDataProviderRef> provider{
+            CGDataProviderCreateWithData(
+                nullptr, pixels,
+                static_cast<std::size_t>(w) * h * 4,
+                nullptr /*releaseData — shared_ptr keeps the buffer alive*/)};
+        if (!provider.get()) return false;
+        CGImageRef img = CGImageCreate(
+            static_cast<std::size_t>(w), static_cast<std::size_t>(h),
+            8, 32,
+            static_cast<std::size_t>(w) * 4,
+            cs.get(),
+            static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) |
+                kCGBitmapByteOrder32Little,
+            provider.get(), nullptr, false, kCGRenderingIntentDefault);
+        if (!img) return false;
+        if (flip_h)
+        {
+            // draw_cg_image uses translate(x, y+h) + scale(1,-1) to flip Y
+            // (CG origin is bottom-left; toolkit uses top-left). For a horizontal
+            // mirror we additionally flip X: translate to the right edge, scale(-1,-1).
+            CGContextSaveGState(ctx_);
+            CGContextTranslateCTM(ctx_, dst.x + dst.w, dst.y + dst.h);
+            CGContextScaleCTM(ctx_, -1.0, -1.0);
+            CGContextDrawImage(ctx_, CGRectMake(0, 0, dst.w, dst.h), img);
+            CGContextRestoreGState(ctx_);
+        }
+        else
+        {
+            draw_cg_image(img, dst);
+        }
+        CGImageRelease(img);
+        return true;
+    }
+
     bool draw_rgba_pixels(const std::uint8_t* pixels,
                           std::uint32_t w, std::uint32_t h, Rect dst) override
     {

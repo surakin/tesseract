@@ -77,8 +77,9 @@ public:
     // Toggle the active-call indicator style on the call button.
     void set_call_active(bool active) { call_active_ = active; }
 
-    // Fired when the user presses the call button.
-    std::function<void()> on_call_requested;
+    // Fired when the user presses the call button, passing the button's
+    // world-space rect so the owner can anchor a popup to it.
+    std::function<void(tk::Rect)> on_call_requested;
 #endif
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

@@ -3,21 +3,19 @@
 
 // A self-contained widget representing a single call participant.
 //
-// Renders a video frame (lazily uploaded from raw RGBA pixels), an avatar
-// disc fallback when no frame is available, a display-name label at the
-// bottom, mic-off and video-off status badges, and a pin button that appears
-// in the corner of the video image on hover.
+// Renders a video frame, an avatar disc fallback when no frame is available,
+// a display-name label at the bottom, mic-off and video-off status badges,
+// and a pin button that appears in the corner of the video image on hover.
 //
-// The lazy RGBA upload pattern mirrors CallOverlay::Cell: pixels are stored in
-// pending_rgba and uploaded to a tk::Image on the next paint() pass.
+// Video pixels arrive pre-converted to premultiplied BGRA from EventHandlerBase
+// (worker thread). ParticipantTile stores a shared_ptr and calls
+// draw_bgra_premult_pixels() at paint time — no per-frame copy or conversion.
 
 #include "tk/canvas.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
-#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
@@ -37,13 +35,16 @@ public:
         bool        audio_muted = false;
         bool        video_muted = false;
 
-        // RGBA data waiting to be uploaded to a tk::Image.
-        std::vector<std::uint8_t> pending_rgba;
+        // Premultiplied BGRA frame pre-converted on the worker thread.
+        // Shared ownership lets EventHandlerBase, CallOverlayWidget, and
+        // ParticipantTile all point to the same buffer with zero extra copies.
+        std::shared_ptr<std::vector<std::uint8_t>> pending_bgra;
         std::uint32_t pending_w = 0, pending_h = 0;
-        bool          video_dirty = false;
 
-        std::unique_ptr<tk::Image> video_image;
-        bool pinned = false;
+        // True when this tile shows the local user's own camera feed.
+        // The video is horizontally mirrored so it matches a mirror reflection.
+        bool is_self = false;
+        bool pinned  = false;
     };
 
     ParticipantTile();
@@ -51,10 +52,11 @@ public:
     void set_state(State s);
 
     // Update only the video buffer without touching metadata (display_name,
-    // audio_muted, etc.). Avoids the full State reconstruction that
-    // set_state() would require on each video frame.
+    // audio_muted, etc.). Takes ownership of the shared_ptr so no second
+    // memcpy occurs on the UI thread — avoids the full State reconstruction
+    // that set_state() would require on each video frame.
     void push_video_frame(std::uint32_t w, std::uint32_t h,
-                          const std::uint8_t* rgba, std::size_t sz);
+                          std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
     // Update only the pinned flag without touching video or other metadata.
     void set_pinned(bool pinned);
