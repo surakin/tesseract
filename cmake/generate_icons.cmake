@@ -11,6 +11,7 @@ foreach(_entry
         "play|kPlaySvg" "join|kJoinSvg" "jump-to-date|kJumpToDateSvg"
         "threadlist|kThreadListSvg" "search|kSearchSvg" "chevron-up|kChevronUpSvg"
         "chevron-down|kChevronDownSvg" "forward|kForwardSvg"
+        "arrow-left|kArrowLeftSvg"
         "phone|kPhoneSvg" "phone-off|kPhoneOffSvg" "mic-off|kMicOffSvg"
         "video|kVideoSvg" "video-off|kVideoOffSvg"
         "expand|kExpandSvg" "minimize|kMinimizeSvg" "pip|kPipSvg")

@@ -406,7 +406,7 @@ protected:
     // ── Invites ───────────────────────────────────────────────────────────────
     std::vector<InviteInfo> invites_;
     // Populated asynchronously from update_space_children_cache_(); read
-    // synchronously in each shell's refresh_room_list().
+    // synchronously in refresh_room_list_().
     std::unordered_map<std::string, std::vector<std::string>> space_children_cache_;
 
     // space_id → child room IDs that are NOT in rooms_ (unjoined children).
@@ -1372,6 +1372,16 @@ protected:
     // or alias).  Default no-op — shells that have a join dialog override this.
     virtual void open_join_room_dialog_ui_(const std::string& /*prefill*/) {}
 
+    // Returns true while a room-list search is active (search text is non-empty).
+    // Shells that implement room search override this to suppress space-child
+    // filtering during search (all rooms are shown unfiltered). Default: false.
+    virtual bool is_room_search_active_() const { return false; }
+
+    // Compute the filtered room list and push it to the shared RoomListView.
+    // Shells call this from their own refreshRoomList() wrapper to avoid
+    // duplicating the space-child filter and unread-override logic.
+    void refresh_room_list_();
+
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
 
@@ -2126,11 +2136,11 @@ protected:
                                               const std::string& /*error*/) {}
 
     // Called on the UI thread after space_children_cache_ has been refreshed.
-    // Each shell overrides to call its refresh_room_list().
+    // Each shell overrides to call refresh_room_list_() or its wrapper.
     virtual void on_space_children_cache_ready_ui_() {}
 
     // Called on the UI thread after unjoined summaries for space_id arrive.
-    // Each shell overrides to call its refresh_room_list().
+    // Each shell overrides to call refresh_room_list_() or its wrapper.
     virtual void on_space_unjoined_summaries_ready_ui_(
         const std::string& /*space_id*/) {}
 

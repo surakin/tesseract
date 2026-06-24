@@ -2565,6 +2565,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             s.save_to_disk(tesseract::config_dir());
             if (room_list_view_) room_list_view_->refresh();
         };
+        settings_widget_->on_group_unread_changed = [this](bool enabled)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.group_unread_rooms = enabled;
+            s.save_to_disk(tesseract::config_dir());
+            if (room_list_view_) room_list_view_->refresh();
+        };
         settings_widget_->on_inactive_period_changed = [this](int days)
         {
             auto& s = tesseract::Settings::instance();
@@ -3881,91 +3888,7 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms)
 
 void MainWindow::refresh_room_list()
 {
-    if (space_stack_.empty())
-    {
-        if (!search_pending_text_.empty())
-        {
-            if (main_app_)
-            {
-                main_app_->set_space_nav(false);
-            }
-            show_rooms(rooms_);
-            return;
-        }
-        std::unordered_set<std::string> in_space;
-        for (const auto& r : rooms_)
-        {
-            if (!r.is_space)
-            {
-                continue;
-            }
-            auto sc_it = space_children_cache_.find(r.id);
-            if (sc_it != space_children_cache_.end())
-            {
-                for (const auto& id : sc_it->second)
-                {
-                    in_space.insert(id);
-                }
-            }
-        }
-        std::vector<tesseract::RoomInfo> filtered;
-        for (const auto& r : rooms_)
-        {
-            if (!r.is_space && (!in_space.count(r.id) || r.is_favorite))
-            {
-                filtered.push_back(r);
-            }
-        }
-        for (const auto& r : rooms_)
-        {
-            if (r.is_space && (!in_space.count(r.id) || r.is_favorite))
-            {
-                filtered.push_back(r);
-            }
-        }
-        apply_space_child_counts_(filtered);
-        if (main_app_)
-        {
-            main_app_->set_space_nav(false);
-            main_app_->room_list_view()->clear_space_unjoined_rooms();
-            cancel_unjoined_summaries_();
-        }
-        show_rooms(filtered);
-    }
-    else
-    {
-        const std::string& space_id = space_stack_.back();
-        static const std::vector<std::string> kNoChildren;
-        const auto sc_it = space_children_cache_.find(space_id);
-        const auto& child_ids =
-            sc_it != space_children_cache_.end() ? sc_it->second : kNoChildren;
-        std::vector<tesseract::RoomInfo> filtered;
-        for (const auto& r : rooms_)
-        {
-            if (std::find(child_ids.begin(), child_ids.end(), r.id) !=
-                child_ids.end())
-            {
-                filtered.push_back(r);
-            }
-        }
-        if (main_app_)
-        {
-            for (const auto& r : rooms_)
-            {
-                if (r.id == space_id)
-                {
-                    ensure_room_avatar_(r);
-                    main_app_->set_space_nav(true, r.name, r.avatar_url);
-                    break;
-                }
-            }
-            const auto& unjoined =
-                get_cached_unjoined_summaries_(space_stack_.back());
-            main_app_->room_list_view()->set_space_unjoined_rooms(
-                std::vector<tesseract::RoomSummary>(unjoined));
-        }
-        show_rooms(filtered);
-    }
+    ShellBase::refresh_room_list_();
 }
 
 // ---------------------------------------------------------------------------
@@ -5143,6 +5066,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().notifications_enabled);
     settings_widget_->set_group_inactive_pref(
         tesseract::Settings::instance().group_inactive_rooms);
+    settings_widget_->set_group_unread_pref(
+        tesseract::Settings::instance().group_unread_rooms);
     settings_widget_->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
     settings_widget_->set_autoscroll_unread_pref(

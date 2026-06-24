@@ -164,6 +164,12 @@ public:
     bool group_inactive_rooms = false;
     int inactive_room_threshold_days = 30;
 
+    // Group rooms with any visible unread indicator (notification, highlight, or
+    // quiet unread) into a separate "Unread" section at the top of the room list,
+    // above Favorites. Rooms in this section are suppressed from their normal
+    // section. Default off.
+    bool group_unread_rooms = false;
+
     // When a room (or a space whose child rooms) receives new messages, scroll
     // the most-recent unread room into view in the room list. Default on.
     bool autoscroll_unread_rooms = true;
@@ -181,6 +187,7 @@ public:
     bool room_section_rooms_collapsed           = false;
     bool room_section_spaces_collapsed          = false;
     bool room_section_inactive_collapsed        = true;
+    bool room_section_unread_collapsed          = false;
     bool room_section_space_unjoined_collapsed  = false;
 
     // ── Privacy ───────────────────────────────────────────────────────

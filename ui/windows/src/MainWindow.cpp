@@ -3795,6 +3795,13 @@ void MainWindow::on_create(HWND hwnd)
             s.save_to_disk(tesseract::config_dir());
             if (room_list_view_) room_list_view_->refresh();
         };
+        settings_view_->on_group_unread_changed = [this](bool enabled)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.group_unread_rooms = enabled;
+            s.save_to_disk(tesseract::config_dir());
+            if (room_list_view_) room_list_view_->refresh();
+        };
         settings_view_->on_inactive_period_changed = [this](int days)
         {
             auto& s = tesseract::Settings::instance();
@@ -4362,6 +4369,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().prefetch_full_media);
     settings_view_->set_group_inactive_pref(
         tesseract::Settings::instance().group_inactive_rooms);
+    settings_view_->set_group_unread_pref(
+        tesseract::Settings::instance().group_unread_rooms);
     settings_view_->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
     settings_view_->set_autoscroll_unread_pref(
@@ -4948,118 +4957,7 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
 
 void MainWindow::refresh_room_list()
 {
-    if (!room_list_view_)
-    {
-        return;
-    }
-
-    std::vector<tesseract::RoomInfo> filtered;
-    if (space_stack_.empty())
-    {
-        // Hide the space nav bar via the widget tree.
-        if (main_app_)
-        {
-            main_app_->set_space_nav(false);
-            main_app_->room_list_view()->clear_space_unjoined_rooms();
-            cancel_unjoined_summaries_();
-        }
-
-        if (!pending_search_text_.empty())
-        {
-            // Avatars load lazily as rows are painted (on_room_avatar_needed).
-            room_list_view_->set_rooms(rooms_);
-            if (!current_room_id_.empty())
-            {
-                room_list_view_->set_selected_room(current_room_id_);
-            }
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-            return;
-        }
-        // Build the root list, excluding rooms that are children of any space
-        // (they appear only when drilled in).
-        std::unordered_set<std::string> in_space;
-        for (const auto& r : rooms_)
-        {
-            if (r.is_space)
-            {
-                auto sc_it = space_children_cache_.find(r.id);
-                if (sc_it != space_children_cache_.end())
-                {
-                    for (const auto& id : sc_it->second)
-                    {
-                        in_space.insert(id);
-                    }
-                }
-            }
-        }
-        for (const auto& r : rooms_)
-        {
-            if (!r.is_space && (!in_space.count(r.id) || r.is_favorite))
-            {
-                filtered.push_back(r);
-            }
-        }
-        for (const auto& r : rooms_)
-        {
-            if (r.is_space && (!in_space.count(r.id) || r.is_favorite))
-            {
-                filtered.push_back(r);
-            }
-        }
-        apply_space_child_counts_(filtered);
-    }
-    else
-    {
-        // Show the navigation bar with the current space's name and avatar.
-        std::string space_name;
-        std::string space_avatar;
-        for (const auto& r : rooms_)
-        {
-            if (r.id == space_stack_.back())
-            {
-                space_name = r.name;
-                space_avatar = r.avatar_url;
-                ensure_room_avatar_(r);
-                break;
-            }
-        }
-        if (main_app_)
-        {
-            main_app_->set_space_nav(true, space_name, space_avatar);
-            const auto& unjoined =
-                get_cached_unjoined_summaries_(space_stack_.back());
-            main_app_->room_list_view()->set_space_unjoined_rooms(
-                std::vector<tesseract::RoomSummary>(unjoined));
-        }
-
-        static const std::vector<std::string> kNoChildren;
-        const auto sc_it = space_children_cache_.find(space_stack_.back());
-        const auto& child_ids =
-            sc_it != space_children_cache_.end() ? sc_it->second : kNoChildren;
-        for (const auto& r : rooms_)
-        {
-            if (std::find(child_ids.begin(), child_ids.end(), r.id) !=
-                child_ids.end())
-            {
-                filtered.push_back(r);
-            }
-        }
-    }
-    // Avatars load lazily as rows are painted (RoomListView's
-    // on_room_avatar_needed), so collapsed / off-screen rooms aren't requested.
-    room_list_view_->set_rooms(filtered);
-    if (!current_room_id_.empty())
-    {
-        room_list_view_->set_selected_room(current_room_id_);
-    }
-
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
+    refresh_room_list_();
 }
 
 void MainWindow::on_space_back()

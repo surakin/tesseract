@@ -562,6 +562,14 @@ msgstr "Editar"
 msgid "More"
 msgstr "Más"
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.h:163
+msgid "Unread"
+msgstr "No leído"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:278
+msgid "Group unread rooms"
+msgstr "Agrupar salas no leídas"
+
 #: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
 msgid "Answer"
 msgstr "Contestar"

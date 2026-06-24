@@ -223,6 +223,10 @@ protected:
         tab_navigate_room(room_id);
     }
     void open_join_room_dialog_ui_(const std::string& prefill) override;
+    bool is_room_search_active_() const override
+    {
+        return !pending_search_text_.empty();
+    }
 
     // Public C++ API for ObjC++ code — add new features here rather than
     // extending the legacy using-block below.
@@ -348,6 +352,7 @@ public:
                                  std::vector<std::string> visible_ids);
     void request_more_history(std::string room_id);
     void handle_paginate_result(const std::string& room_id, bool reached_start);
+    void refresh_room_list() { refresh_room_list_(); }
 
     // Settings / session
     void ensure_settings_controller();
@@ -503,6 +508,9 @@ public:
     using ShellBase::main_app_;
     using ShellBase::room_view_;
     tk::macos::Surface* app_surface_ = nullptr;
+
+    // Current room-list search query (empty when search is inactive).
+    std::string pending_search_text_;
 
     // Native text fields for the encryption-setup overlay. Owned here (not in
     // ObjC ivars) so show_encryption_setup_overlay_() can reach them from C++.
@@ -2292,7 +2300,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     // Single surface hosting the full main-app widget tree.
     std::unique_ptr<tk::macos::Surface> _mainAppSurface;
     tesseract::views::MainAppWidget* _mainApp; // borrowed from root
-    std::string _pendingSearchText;
 
     // Settings surface — full-window sibling of mainAppView and _loginView.
     std::unique_ptr<tk::macos::Surface> _settingsSurface;
@@ -4676,7 +4683,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 {
                     return;
                 }
-                s->_pendingSearchText = q;
+                s->_shell->pending_search_text_ = q;
                 s->_shell->debounce_(
                     tesseract::ShellBase::DebounceSlot::RoomSearch,
                     tesseract::views::RoomListView::kSearchDebounceMs,
@@ -5282,6 +5289,18 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 return;
             }
             tesseract::Settings::instance().group_inactive_rooms = enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+            if (s->_roomListView) s->_roomListView->refresh();
+        };
+        _settingsView->on_group_unread_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return;
+            }
+            tesseract::Settings::instance().group_unread_rooms = enabled;
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
             if (s->_roomListView) s->_roomListView->refresh();
@@ -7125,6 +7144,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         tesseract::Settings::instance().prefetch_full_media);
     _settingsView->set_group_inactive_pref(
         tesseract::Settings::instance().group_inactive_rooms);
+    _settingsView->set_group_unread_pref(
+        tesseract::Settings::instance().group_unread_rooms);
     _settingsView->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
     _settingsView->set_autoscroll_unread_pref(
@@ -7182,7 +7203,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 {
     if (_roomListView)
     {
-        _roomListView->set_search_text(_pendingSearchText);
+        _roomListView->set_search_text(_shell->pending_search_text_);
     }
 }
 
@@ -8057,90 +8078,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
 - (void)_refreshRoomList
 {
-    std::vector<tesseract::RoomInfo> filtered;
-    if (_shell->space_stack_empty())
-    {
-        std::unordered_set<std::string> in_space;
-        for (const auto& r : _shell->rooms_)
-        {
-            if (!r.is_space)
-            {
-                continue;
-            }
-            if (const auto* children = _shell->space_children(r.id))
-            {
-                for (const auto& id : *children)
-                    in_space.insert(id);
-            }
-        }
-        filtered.reserve(_shell->rooms_.size());
-        for (const auto& r : _shell->rooms_)
-        {
-            if (!r.is_space && (!in_space.count(r.id) || r.is_favorite))
-            {
-                filtered.push_back(r);
-            }
-        }
-        for (const auto& r : _shell->rooms_)
-        {
-            if (r.is_space)
-            {
-                filtered.push_back(r);
-            }
-        }
-        _shell->apply_space_child_counts(filtered);
-        if (_mainApp)
-        {
-            _mainApp->set_space_nav(false);
-            _mainApp->room_list_view()->clear_space_unjoined_rooms();
-            _shell->cancel_unjoined_summaries();
-        }
-    }
-    else
-    {
-        static const std::vector<std::string> kNoChildren;
-        const auto* sc_ptr = _shell->space_children(_shell->current_space());
-        const auto& child_ids = sc_ptr ? *sc_ptr : kNoChildren;
-        for (const auto& r : _shell->rooms_)
-        {
-            if (std::find(child_ids.begin(), child_ids.end(), r.id) !=
-                child_ids.end())
-            {
-                filtered.push_back(r);
-            }
-        }
-        std::string space_name;
-        std::string space_avatar;
-        for (const auto& r : _shell->rooms_)
-        {
-            if (r.id == _shell->current_space())
-            {
-                space_name = r.name;
-                space_avatar = r.avatar_url;
-                _shell->ensure_room_avatar(r);
-                break;
-            }
-        }
-        if (_mainApp)
-        {
-            _mainApp->set_space_nav(true, space_name, space_avatar);
-            const auto& unjoined =
-                _shell->cached_unjoined_summaries();
-            _mainApp->room_list_view()->set_space_unjoined_rooms(
-                std::vector<tesseract::RoomSummary>(unjoined));
-        }
-    }
-    // Avatars load lazily as rows are painted (RoomListView's
-    // on_room_avatar_needed), so collapsed / off-screen rooms aren't requested.
-    _roomListView->set_rooms(filtered);
-    if (!_shell->current_room_id_.empty())
-    {
-        _roomListView->set_selected_room(_shell->current_room_id_);
-    }
-    if (_mainAppSurface)
-    {
-        _mainAppSurface->relayout();
-    }
+    _shell->refresh_room_list();
 }
 
 - (void)_refreshInviteList

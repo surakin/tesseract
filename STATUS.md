@@ -1,6 +1,35 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-19** (v0.8.8).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-24** (v0.8.9).
+
+> **Group unread rooms (2026-06-24, v0.8.9).**
+> An optional "Group unread rooms" toggle in Appearance settings adds an **Unread**
+> section above Favorites in the room list. When enabled, every room with a visible
+> unread indicator — notification count, highlight, or unmuted quiet unread — is
+> collected there regardless of type, including rooms nested inside spaces (which
+> previously were invisible at the root list until the user drilled into the space).
+> Rooms leave the section automatically when read; favorites and spaces are never
+> moved. The fix and the new section are implemented as a testable
+> `filter_root_rooms()` free function alongside `classify_room_section()`, with a
+> shared `ShellBase::refresh_room_list_()` consolidating the four per-shell
+> implementations. 7 new Catch2 tests for the filter edge cases. **892 C++ tests**.
+
+<!-- -->
+
+> **Colored sender display names (2026-06-24, v0.8.9).**
+> Sender names in the message timeline are tinted using a hash of the user's Matrix
+> user ID, mapped into an 8-hue palette tuned for contrast in both light and dark
+> mode. The color is stable across display-name changes because it keys on the mxid.
+
+<!-- -->
+
+> **Space topic preview in room list (2026-06-24, v0.8.9).**
+> Space entries in the Spaces section now show the space's **topic** as the one-line
+> preview instead of a last-message snippet. Spaces are containers rather than chat
+> rooms, so the topic is the more useful summary. Falls back to name-only (centred)
+> when the topic is absent.
+
+<!-- -->
 
 > **Forward message (2026-06-19, v0.8.8).**
 > A "Forward message" item appears in the ⋯ more menu for any non-redacted,
@@ -677,7 +706,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 283 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 870 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 892 |
 
 ## Platforms
 

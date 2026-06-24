@@ -39,6 +39,7 @@
 #endif
 
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/tab_bar.h"
 #include "tk/widget.h"
 
@@ -258,6 +259,7 @@ private:
 
     // Sidebar children — borrowed raw pointers back from add_child()
     tk::Button* nav_back_btn_ = nullptr;
+    tk::IconCache nav_back_icon_;
     tk::Label* nav_name_lbl_ = nullptr;
     RoomListView* room_list_view_ = nullptr;
     UserInfo* user_info_ = nullptr;

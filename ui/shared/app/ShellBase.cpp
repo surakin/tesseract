@@ -898,6 +898,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         auto& s = tesseract::Settings::instance();
         const bool init[views::RoomListView::kNumSections] = {
             s.room_section_invites_collapsed,
+            s.room_section_unread_collapsed,
             s.room_section_favorites_collapsed,
             s.room_section_dms_collapsed,
             s.room_section_rooms_collapsed,
@@ -916,6 +917,8 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
         case views::RoomListView::kSecInvites:
             s.room_section_invites_collapsed   = collapsed; break;
+        case views::RoomListView::kSecUnread:
+            s.room_section_unread_collapsed    = collapsed; break;
         case views::RoomListView::kSecFavorites:
             s.room_section_favorites_collapsed = collapsed; break;
         case views::RoomListView::kSecDMs:
@@ -2730,6 +2733,81 @@ void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
     if (server_info_.supports_profile_fields &&
         server_info_.profile_fields_enabled)
         fetch_own_extended_profile_async_();
+}
+
+void ShellBase::refresh_room_list_()
+{
+    if (!main_app_)
+        return;
+    auto* rlv = main_app_->room_list_view();
+    if (!rlv)
+        return;
+
+    if (is_room_search_active_())
+    {
+        main_app_->set_space_nav(false);
+        // Search is only reachable when space_stack_ is empty, so there are
+        // no unjoined-room subscriptions to cancel and no space section to clear.
+        rlv->set_rooms(rooms_);
+        if (!current_room_id_.empty())
+            rlv->set_selected_room(current_room_id_);
+        request_relayout_();
+        return;
+    }
+
+    if (space_stack_.empty())
+    {
+        const bool group_unread =
+            tesseract::Settings::instance().group_unread_rooms;
+
+        auto filtered = views::filter_root_rooms(
+            rooms_, space_children_cache_, group_unread);
+
+        apply_space_child_counts_(filtered);
+
+        main_app_->set_space_nav(false);
+        main_app_->room_list_view()->clear_space_unjoined_rooms();
+        cancel_unjoined_summaries_();
+
+        rlv->set_rooms(filtered);
+    }
+    else
+    {
+        const std::string& space_id = space_stack_.back();
+        static const std::vector<std::string> kNoChildren;
+        const auto sc_it = space_children_cache_.find(space_id);
+        const auto& child_ids =
+            sc_it != space_children_cache_.end() ? sc_it->second : kNoChildren;
+
+        std::vector<tesseract::RoomInfo> filtered;
+        filtered.reserve(child_ids.size());
+        for (const auto& r : rooms_)
+        {
+            if (std::find(child_ids.begin(), child_ids.end(), r.id) !=
+                child_ids.end())
+                filtered.push_back(r);
+        }
+
+        for (const auto& r : rooms_)
+        {
+            if (r.id == space_id)
+            {
+                ensure_room_avatar_(r);
+                main_app_->set_space_nav(true, r.name, r.avatar_url);
+                break;
+            }
+        }
+        const auto& unjoined = get_cached_unjoined_summaries_(space_id);
+        main_app_->room_list_view()->set_space_unjoined_rooms(
+            std::vector<tesseract::RoomSummary>(unjoined));
+
+        rlv->set_rooms(filtered);
+    }
+
+    if (!current_room_id_.empty())
+        rlv->set_selected_room(current_room_id_);
+
+    request_relayout_();
 }
 
 void ShellBase::cancel_unjoined_summaries_()

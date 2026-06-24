@@ -100,6 +100,11 @@ SettingsWidget::SettingsWidget()
         if (on_group_inactive_changed)
             on_group_inactive_changed(v);
     };
+    settings_view_->on_group_unread_changed = [this](bool v)
+    {
+        if (on_group_unread_changed)
+            on_group_unread_changed(v);
+    };
     settings_view_->on_inactive_period_changed = [this](int days)
     {
         if (on_inactive_period_changed)
@@ -442,6 +447,11 @@ void SettingsWidget::set_profile_field_error(const std::string& key,
 void SettingsWidget::set_group_inactive_pref(bool enabled)
 {
     settings_view_->set_group_inactive_pref(enabled);
+}
+
+void SettingsWidget::set_group_unread_pref(bool enabled)
+{
+    settings_view_->set_group_unread_pref(enabled);
 }
 
 void SettingsWidget::set_inactive_period_pref(int days)
