@@ -1,7 +1,9 @@
 #include "MainAppWidget.h"
 
+#include "icons.h"
 #include "media_utils.h"
 #include "tk/i18n.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <tesseract/visual.h>
@@ -17,7 +19,7 @@ MainAppWidget::MainAppWidget()
     // Space nav bar: back button + space name label.
     // Both start hidden; set_space_nav() shows them.
     auto back = std::make_unique<tk::Button>(
-        "←",
+        "",
         [this]
         {
             if (on_space_back)
@@ -25,7 +27,7 @@ MainAppWidget::MainAppWidget()
                 on_space_back();
             }
         },
-        tk::Button::Variant::Subtle);
+        tk::Button::Variant::Icon);
     nav_back_btn_ = add_child(std::move(back));
     nav_back_btn_->set_visible(false);
 
@@ -576,6 +578,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
         if (nav_back_btn_)
         {
             nav_back_btn_->paint(ctx);
+            constexpr float kNavIconPx = 16.0f;
+            nav_back_icon_.draw(ctx.canvas, ctx.factory, kArrowLeftSvg,
+                                nav_back_btn_->bounds(), kNavIconPx,
+                                pal.text_primary);
         }
     }
 

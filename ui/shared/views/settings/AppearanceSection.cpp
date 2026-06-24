@@ -274,6 +274,14 @@ AppearanceSection::AppearanceSection()
         const auto& s = tesseract::Settings::instance();
         auto* rl_group = add_group("Room list");
 
+        auto cb_unread = std::make_unique<tk::CheckButton>(
+            tk::tr("Group unread rooms"), s.group_unread_rooms);
+        group_unread_cb_ = rl_group->add_widget(std::move(cb_unread));
+        group_unread_cb_->on_change = [this](bool v)
+        {
+            if (on_group_unread_changed) on_group_unread_changed(v);
+        };
+
         auto cb = std::make_unique<tk::CheckButton>(
             "Group inactive rooms", s.group_inactive_rooms);
         group_inactive_cb_ = rl_group->add_widget(std::move(cb));
@@ -316,6 +324,11 @@ AppearanceSection::~AppearanceSection() = default;
 void AppearanceSection::set_selected(tesseract::Settings::ThemePreference pref)
 {
     picker_->set_selected(pref);
+}
+
+void AppearanceSection::set_group_unread(bool enabled)
+{
+    if (group_unread_cb_) group_unread_cb_->set_checked(enabled);
 }
 
 void AppearanceSection::set_group_inactive(bool enabled)

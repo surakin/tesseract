@@ -29,6 +29,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace tesseract::views
@@ -146,19 +148,20 @@ public:
     // kSecInvites is fed from invites_; all others are fed from rooms_.
     // kSecSpaceUnjoined is fed from space_unjoined_rooms_ (not section_rooms_).
     static constexpr int kSecInvites       = 0;
-    static constexpr int kSecFavorites     = 1;
-    static constexpr int kSecDMs           = 2;
-    static constexpr int kSecRooms         = 3;
-    static constexpr int kSecSpaces        = 4;
-    static constexpr int kSecInactive      = 5;
-    static constexpr int kSecSpaceUnjoined = 6;
-    static constexpr int kNumSections      = 7;
+    static constexpr int kSecUnread        = 1;  // NEW
+    static constexpr int kSecFavorites     = 2;  // was 1
+    static constexpr int kSecDMs           = 3;  // was 2
+    static constexpr int kSecRooms         = 4;  // was 3
+    static constexpr int kSecSpaces        = 5;  // was 4
+    static constexpr int kSecInactive      = 6;  // was 5
+    static constexpr int kSecSpaceUnjoined = 7;  // was 6
+    static constexpr int kNumSections      = 8;  // was 7
 
     // kSectionTitles[kSecInvites] is a placeholder; the actual header label is
     // "Invitations (N)" and is constructed dynamically in paint_header.
     static constexpr const char* kSectionTitles[kNumSections] = {
-        "Invitations", "Favorites", "Direct Messages", "Rooms", "Spaces",
-        "Inactive", "Available to Join"};
+        "Invitations", "Unread", "Favorites", "Direct Messages", "Rooms",
+        "Spaces", "Inactive", "Available to Join"};
 
     // Programmatically collapse or expand a section (e.g. to restore saved
     // state on launch). No-op if section is out of range or already in the
@@ -312,7 +315,18 @@ private:
 // `group_inactive` is true, DMs and Rooms whose `last_activity_ts` is more than
 // `threshold_days` before `now_ms` go to kSecInactive. `last_activity_ts == 0`
 // (timestamp not yet available from sync) is treated as active.
-int classify_room_section(const tesseract::RoomInfo& r, bool group_inactive,
+int classify_room_section(const tesseract::RoomInfo& r,
+                          bool group_unread, bool group_inactive,
                           int threshold_days, std::uint64_t now_ms);
+
+// Builds the filtered room list for the root view (space_stack empty case).
+// Non-favorite rooms that are children of any space are excluded, except when
+// group_unread_rooms is true and the room has a visible unread indicator.
+// Spaces that are themselves children of another space are also excluded.
+// Non-space, non-child rooms are always included.
+std::vector<tesseract::RoomInfo> filter_root_rooms(
+    const std::vector<tesseract::RoomInfo>& rooms,
+    const std::unordered_map<std::string, std::vector<std::string>>& sc_cache,
+    bool group_unread_rooms);
 
 } // namespace tesseract::views

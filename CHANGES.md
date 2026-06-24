@@ -3,6 +3,75 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.9 — 2026-06-24
+
+- feat(room-list): "Group unread rooms" toggle in Appearance settings (off by
+  default). When enabled, a new **Unread** section appears above Favorites in
+  the room list, collecting every room with a visible unread indicator
+  (notification count, highlight count, or an unmuted quiet unread) regardless
+  of type — DMs, normal rooms, and rooms inside spaces. Rooms in the Unread
+  section are suppressed from their normal section until they have no more
+  unreads. The section's collapse state (`room_section_unread_collapsed`)
+  persists across restarts alongside all other section states. Off by default.
+  892 C++ tests.
+
+- fix(room-list): when "Group unread rooms" is on, space-child rooms with
+  unreads now bypass the space-child exclusion and appear in the Unread section
+  at the root room list. Previously an unread room nested inside a space was
+  invisible in the root view until the user drilled into the space. Muted rooms
+  with only quiet unreads remain excluded (`UnreadStyle::None`). The fix lives
+  in the new testable `filter_root_rooms()` free function alongside
+  `classify_room_section()`; 7 new Catch2 tests cover the boundary cases. Also
+  consolidates the four per-shell `refreshRoomList()` bodies (~90 LOC each)
+  into a single `ShellBase::refresh_room_list_()`, aligning macOS nested-space
+  visibility with Qt6/GTK4/Win32 (child-spaces now hidden from the root list on
+  all platforms).
+
+- feat(timeline): sender display names are tinted using a hash of the sender's
+  Matrix user ID, mapped into an 8-hue palette tuned for contrast against the
+  chat background in both light and dark mode. The color is stable across
+  display-name changes because it keys on the mxid.
+
+- feat(room-list): space rooms now show their **topic** as the one-line preview
+  line in the Spaces section instead of a last-message snippet. Spaces are
+  containers rather than chat rooms, so the topic is more informative. Falls
+  back to name-only (centred) when the topic is absent.
+
+- fix(presence): the forbidden-presence set — users that return 403 on presence
+  requests — was in-memory only and lost on restart, causing unnecessary
+  re-polls every session. It is now persisted to a `presence_forbidden` table
+  in `app_cache.db` (the same DB as the media and room-summary backoff state).
+  The set is restored before the polling task launches at sync start, so
+  subsequent sessions skip those users from the first tick.
+
+- fix(macos): fixed a dangling-reference crash on scroll-up in the timeline.
+  `request_more_history` took `room_id` by `const&`; the caller passed a
+  by-value local `std::string`, so the reference was already dangling by the
+  time the `dispatch_async` block ran on the background thread. The cxx
+  bridge's UTF-8 validation in `Str::Str` then threw `std::invalid_argument`
+  on the garbage bytes. Taking `room_id` by value lets the ObjC++ block copy
+  it at capture time.
+
+- fix(video): on macOS, some videos caused AVFoundation to deliver
+  `kCVPixelFormatType_32RGBA` instead of the requested BGRA format, swapping
+  red and blue channels in the rendered frame. The video decoder now checks the
+  actual format of each `CVPixelBuffer` and byte-swaps R and B when RGBA is
+  delivered. Non-8-bit packed formats (e.g. 10-bit planar HDR) are left
+  untouched. The common BGRA path remains an unmodified `memcpy`.
+
+- fix(account-picker): the Win32 account-picker popup appeared at a fraction of
+  its intended size on HiDPI displays because the hardcoded 260 × 56 DIP
+  constants were passed unscaled to `CreateWindowExW` and `SetWindowPos`. Both
+  calls now go through `dip_to_phys()`. Redundant inner re-declarations of the
+  same constants removed.
+
+- fix(audio): fixed a crash on Qt6 during app shutdown. `QFFmpegMediaPlayer::stop()`
+  emits `positionChanged` synchronously, which triggered `fire_progress()` →
+  `on_progress()` → `repaint_requester_()` into a widget tree already being
+  torn down, crashing inside `QWidgetPrivate::update()`. `QtAudioPlayer`'s
+  destructor now nulls `on_progress` before calling `player_.stop()`, so the
+  guard in `fire_progress()` short-circuits the callback.
+
 ## v0.8.8 — 2026-06-22
 
 - feat: Forward message action. A "Forward message" item now appears in the ⋯

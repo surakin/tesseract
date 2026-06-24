@@ -64,6 +64,7 @@ public:
 
     // Room list grouping (forwarded from AppearanceSection).
     void set_group_inactive_pref(bool enabled);
+    void set_group_unread_pref(bool enabled);
     void set_inactive_period_pref(int days);
     void set_autoscroll_unread_pref(bool enabled);
 
@@ -186,6 +187,9 @@ public:
 
     // Fired when the user toggles room-list grouping of inactive rooms.
     std::function<void(bool)> on_group_inactive_changed;
+
+    // Fired when the user toggles room-list grouping of unread rooms.
+    std::function<void(bool)> on_group_unread_changed;
 
     // Fired when the user changes the inactivity threshold (days).
     std::function<void(int)>  on_inactive_period_changed;

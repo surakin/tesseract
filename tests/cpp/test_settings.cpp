@@ -259,6 +259,26 @@ TEST_CASE("Settings load wrong-typed field falls back to defaults", "[settings]"
     fs::remove_all(dir);
 }
 
+TEST_CASE("Settings round-trip: group_unread_rooms + room_section_unread_collapsed",
+          "[settings]")
+{
+    auto dir = make_tmp_dir("group_unread");
+
+    auto& s = tesseract::Settings::instance();
+    s.group_unread_rooms            = true;
+    s.room_section_unread_collapsed = true;
+    s.save_to_disk(dir);
+
+    s.group_unread_rooms            = false;
+    s.room_section_unread_collapsed = false;
+    s.load_from_disk(dir);
+
+    CHECK(s.group_unread_rooms == true);
+    CHECK(s.room_section_unread_collapsed == true);
+
+    fs::remove_all(dir);
+}
+
 TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
 {
     auto dir = make_tmp_dir("section_collapsed");

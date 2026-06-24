@@ -42,6 +42,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     notification_hide_content    = j.value("notification_hide_content",    false);
     prefetch_full_media          = j.value("prefetch_full_media",          false);
     group_inactive_rooms         = j.value("group_inactive_rooms",         false);
+    group_unread_rooms            = j.value("group_unread_rooms",            false);
     inactive_room_threshold_days = j.value("inactive_room_threshold_days", 30);
     autoscroll_unread_rooms      = j.value("autoscroll_unread_rooms",       true);
     prefetch_unread_rooms        = j.value("prefetch_unread_rooms",          true);
@@ -55,6 +56,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     room_section_rooms_collapsed     = j.value("room_section_rooms_collapsed",     false);
     room_section_spaces_collapsed    = j.value("room_section_spaces_collapsed",    false);
     room_section_inactive_collapsed        = j.value("room_section_inactive_collapsed",        true);
+    room_section_unread_collapsed = j.value("room_section_unread_collapsed", false);
     room_section_space_unjoined_collapsed  = j.value("room_section_space_unjoined_collapsed",  false);
 
     if (j.contains("main_window") && j["main_window"].is_object())
@@ -135,6 +137,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"notification_hide_content",        notification_hide_content},
         {"prefetch_full_media",              prefetch_full_media},
         {"group_inactive_rooms",             group_inactive_rooms},
+        {"group_unread_rooms",            group_unread_rooms},
         {"inactive_room_threshold_days",     inactive_room_threshold_days},
         {"autoscroll_unread_rooms",          autoscroll_unread_rooms},
         {"prefetch_unread_rooms",            prefetch_unread_rooms},
@@ -147,6 +150,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"room_section_rooms_collapsed",     room_section_rooms_collapsed},
         {"room_section_spaces_collapsed",    room_section_spaces_collapsed},
         {"room_section_inactive_collapsed",        room_section_inactive_collapsed},
+        {"room_section_unread_collapsed", room_section_unread_collapsed},
         {"room_section_space_unjoined_collapsed",  room_section_space_unjoined_collapsed},
     };
     j["language"]    = language;

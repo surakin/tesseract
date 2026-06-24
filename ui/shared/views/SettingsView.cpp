@@ -49,6 +49,10 @@ SettingsView::SettingsView()
     {
         if (on_group_inactive_changed) on_group_inactive_changed(v);
     };
+    appearance->on_group_unread_changed = [this](bool v)
+    {
+        if (on_group_unread_changed) on_group_unread_changed(v);
+    };
     appearance->on_inactive_period_changed = [this](int days)
     {
         if (on_inactive_period_changed) on_inactive_period_changed(days);
@@ -258,6 +262,11 @@ void SettingsView::set_theme_pref(tesseract::Settings::ThemePreference pref)
 void SettingsView::set_group_inactive_pref(bool enabled)
 {
     if (appearance_) appearance_->set_group_inactive(enabled);
+}
+
+void SettingsView::set_group_unread_pref(bool enabled)
+{
+    if (appearance_) appearance_->set_group_unread(enabled);
 }
 
 void SettingsView::set_inactive_period_pref(int days)

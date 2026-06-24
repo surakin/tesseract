@@ -112,6 +112,13 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         s.save_to_disk(tesseract::config_dir());
         emit roomListGroupingChanged();
     };
+    settings_view_->on_group_unread_changed = [this](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.group_unread_rooms = enabled;
+        s.save_to_disk(tesseract::config_dir());
+        emit roomListGroupingChanged();
+    };
     settings_view_->on_inactive_period_changed = [this](int days)
     {
         auto& s = tesseract::Settings::instance();
@@ -216,6 +223,8 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().invite_avatars);
     settings_view_->set_group_inactive_pref(
         tesseract::Settings::instance().group_inactive_rooms);
+    settings_view_->set_group_unread_pref(
+        tesseract::Settings::instance().group_unread_rooms);
     settings_view_->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
     settings_view_->set_autoscroll_unread_pref(

@@ -831,3 +831,11 @@ msgstr ""
 #: /home/rayden/src/tesseract/ui/shared/views/QRGrantView.cpp:144
 msgid "Device added successfully."
 msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.h:163
+msgid "Unread"
+msgstr ""
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:278
+msgid "Group unread rooms"
+msgstr ""

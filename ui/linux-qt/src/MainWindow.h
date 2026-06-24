@@ -177,6 +177,10 @@ private:
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
+    bool is_room_search_active_() const override
+    {
+        return !roomSearchPendingText_.empty();
+    }
 
     // ---- Multi-account orchestration ----
 

@@ -16,6 +16,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace tesseract::views
 {
@@ -63,39 +64,86 @@ using tesseract::text::name_matches;
 
 // ─────────────────────────────────────────────────────────────────────────
 
-int classify_room_section(const tesseract::RoomInfo& r, bool group_inactive,
+std::vector<tesseract::RoomInfo> filter_root_rooms(
+    const std::vector<tesseract::RoomInfo>& rooms,
+    const std::unordered_map<std::string, std::vector<std::string>>& sc_cache,
+    bool group_unread_rooms)
+{
+    // Build the set of rooms that are children of any space.
+    std::unordered_set<std::string> in_space;
+    for (const auto& r : rooms)
+    {
+        if (!r.is_space)
+            continue;
+        auto it = sc_cache.find(r.id);
+        if (it != sc_cache.end())
+            for (const auto& id : it->second)
+                in_space.insert(id);
+    }
+
+    std::vector<tesseract::RoomInfo> filtered;
+    filtered.reserve(rooms.size());
+
+    // Non-space rooms first.
+    for (const auto& r : rooms)
+    {
+        if (r.is_space)
+            continue;
+        if (in_space.count(r.id) && !r.is_favorite)
+        {
+            // Space-child and not a favorite: include only if group_unread is on
+            // and the room has a visible unread indicator.
+            if (!group_unread_rooms ||
+                unread_style_for(r.notification_count, r.highlight_count,
+                                 r.unread_count, r.muted) == UnreadStyle::None)
+                continue;
+        }
+        filtered.push_back(r);
+    }
+
+    // Spaces: only top-level spaces (not children of another space) or favorites.
+    for (const auto& r : rooms)
+    {
+        if (r.is_space && (!in_space.count(r.id) || r.is_favorite))
+            filtered.push_back(r);
+    }
+
+    return filtered;
+}
+
+int classify_room_section(const tesseract::RoomInfo& r,
+                          bool group_unread, bool group_inactive,
                           int threshold_days, std::uint64_t now_ms)
 {
-    // Favorites and Spaces are never grouped. Keep the original
-    // favorite → DM → Room → Space precedence so the non-grouped result is
-    // byte-for-byte unchanged; the inactivity branch only diverts DMs and
-    // regular Rooms (the `!r.is_space` guard keeps spaces out of Inactive).
+    // Favorites and Spaces are never moved to Unread or Inactive.
     if (r.is_favorite)
-    {
         return RoomListView::kSecFavorites;
+
+    // Unread check runs before Inactive so an inactive+unread room surfaces
+    // in the Unread section where the user can find it. Applies to DMs and
+    // regular rooms only (not spaces, consistent with Inactive's scope).
+    if (group_unread && !r.is_space)
+    {
+        using tesseract::views::UnreadStyle;
+        using tesseract::views::unread_style_for;
+        if (unread_style_for(r.notification_count, r.highlight_count,
+                             r.unread_count, r.muted) != UnreadStyle::None)
+            return RoomListView::kSecUnread;
     }
+
     if (group_inactive && !r.is_space && r.last_activity_ts != 0)
     {
         std::uint64_t threshold_ms =
             static_cast<std::uint64_t>(threshold_days) * 86'400'000ULL;
-        // last_activity_ts == 0 means the SDK hasn't returned a timestamp yet;
-        // skip the inactive check rather than treating epoch as ancient history.
-        // The `<= now_ms` guard avoids unsigned underflow treating a future-dated
-        // timestamp (clock skew) as inactive.
         if (r.last_activity_ts <= now_ms &&
             now_ms - r.last_activity_ts > threshold_ms)
-        {
             return RoomListView::kSecInactive;
-        }
     }
+
     if (r.is_direct)
-    {
         return RoomListView::kSecDMs;
-    }
     if (!r.is_space)
-    {
         return RoomListView::kSecRooms;
-    }
     return RoomListView::kSecSpaces;
 }
 
@@ -1125,7 +1173,7 @@ const tesseract::RoomInfo* RoomListView::most_recent_unread_active_() const
     const tesseract::RoomInfo* best = nullptr;
     // Favorites/DMs/Rooms first, Spaces last: on equal timestamps a concrete
     // unread room is preferred over the space that aggregates it.
-    for (int sec : {kSecFavorites, kSecDMs, kSecRooms, kSecSpaces})
+    for (int sec : {kSecUnread, kSecFavorites, kSecDMs, kSecRooms, kSecSpaces})
     {
         for (const auto* r : section_rooms_[sec])
         {
@@ -1277,6 +1325,7 @@ void RoomListView::rebuild_items()
 
     // 2. Classify each room into a section, applying the search filter.
     const auto& settings = tesseract::Settings::instance();
+    const bool group_unread   = settings.group_unread_rooms;
     const bool group_inactive = settings.group_inactive_rooms;
     const int threshold_days = settings.inactive_room_threshold_days;
     const std::uint64_t now_ms = static_cast<std::uint64_t>(
@@ -1292,7 +1341,7 @@ void RoomListView::rebuild_items()
             continue;
         }
 
-        int sec = classify_room_section(r, group_inactive, threshold_days, now_ms);
+        int sec = classify_room_section(r, group_unread, group_inactive, threshold_days, now_ms);
         section_rooms_[sec].push_back(&r);
     }
 
@@ -1310,12 +1359,33 @@ void RoomListView::rebuild_items()
         }
     }
 
+    // Emit kSecUnread between Invitations and Favorites.
+    if (!section_rooms_[kSecUnread].empty())
+    {
+        items_.push_back({Item::Kind::Header, kSecUnread, 0});
+        if (collapsed_[kSecUnread] && search_text_.empty())
+        {
+            for (int i = 0; i < static_cast<int>(section_rooms_[kSecUnread].size()); ++i)
+            {
+                const auto* r = section_rooms_[kSecUnread][i];
+                if (r->notification_count > 0 || r->highlight_count > 0 ||
+                    r->id == selected_room_id_cache_)
+                    items_.push_back({Item::Kind::Room, kSecUnread, i});
+            }
+        }
+        else
+        {
+            for (int i = 0; i < static_cast<int>(section_rooms_[kSecUnread].size()); ++i)
+                items_.push_back({Item::Kind::Room, kSecUnread, i});
+        }
+    }
+
     // Room sections — kSecInvites and kSecSpaceUnjoined slots are skipped
     // (they use separate data sources; kSecSpaceUnjoined is appended below).
     for (int s = kSecFavorites; s < kNumSections; ++s)
     {
-        if (s == kSecSpaceUnjoined)
-            continue; // handled separately below
+        if (s == kSecSpaceUnjoined || s == kSecUnread)
+            continue; // handled separately above/below
         if (section_rooms_[s].empty())
         {
             continue;
