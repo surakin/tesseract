@@ -6033,6 +6033,10 @@ void MainWindow::on_login_cancelled()
         add_account_return_idx_ < static_cast<int>(accs.size()))
     {
         switch_active_account(accs[add_account_return_idx_]->user_id);
+        // The account may already be active (cancelled before completing OAuth),
+        // so switch_active_account_impl_ returns false and skips the UI refresh.
+        // Always navigate away from the login view explicitly.
+        show_main_content();
     }
     else
     {

@@ -6887,6 +6887,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     if (returnIdx >= 0 && returnIdx < (int)accs.size())
     {
         [self _switchActiveAccount:accs[returnIdx]->user_id];
+        // The account may already be active (cancelled before completing OAuth),
+        // so switch_account() returns false and _refreshAccountUIAfterSwitch is
+        // skipped. Always hide the login view explicitly.
+        [self _refreshAccountUIAfterSwitch];
     }
 }
 
