@@ -1275,6 +1275,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         {
             if (!mainApp_)
                 return;
+            mainApp_->is_call_active = [this] { return active_call() != nullptr; };
             mainApp_->on_selfie_captured =
                 [this](std::vector<std::uint8_t> bgra,
                        std::uint32_t w, std::uint32_t h)

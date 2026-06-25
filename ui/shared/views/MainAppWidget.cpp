@@ -278,6 +278,8 @@ void MainAppWidget::open_camera_overlay()
 {
     if (camera_widget_)
         return; // already open
+    if (is_call_active && is_call_active())
+        return;
 
     auto widget = std::make_unique<CameraWidget>();
     camera_widget_ = widget.get();

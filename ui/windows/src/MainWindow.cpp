@@ -3172,6 +3172,7 @@ void MainWindow::on_create(HWND hwnd)
             {
                 if (!main_app_)
                     return;
+                main_app_->is_call_active = [this] { return active_call() != nullptr; };
                 main_app_->on_selfie_captured =
                     [this](std::vector<std::uint8_t> bgra,
                            std::uint32_t w, std::uint32_t h)

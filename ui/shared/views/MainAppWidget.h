@@ -115,6 +115,9 @@ public:
     std::function<void(std::vector<std::uint8_t> bgra,
                        std::uint32_t w, std::uint32_t h)>
         on_selfie_captured;
+
+    // Set by the shell. open_camera_overlay() is a no-op while this returns true.
+    std::function<bool()> is_call_active;
     void show_encryption_setup(bool show);
     void show_qr_grant(bool show);
     QRGrantView* qr_grant_view() const { return qr_grant_view_; }

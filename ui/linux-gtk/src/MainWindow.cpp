@@ -820,6 +820,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             sh.clear_composer = [this] { room_view_->clear_compose_text(); };
             sh.on_selfie = [this]
             {
+                main_app_->is_call_active = [this] { return active_call() != nullptr; };
                 main_app_->on_selfie_captured =
                     [this](std::vector<std::uint8_t> bgra,
                            std::uint32_t w, std::uint32_t h)
