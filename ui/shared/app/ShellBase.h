@@ -117,6 +117,27 @@ public:
     std::vector<std::pair<std::string, std::function<void()>>>
     build_tray_items_() const;
 
+    // A single item in the user-strip context menu. An entry whose label is
+    // empty is a separator; its callback will be null.
+    struct UserMenuItem
+    {
+        std::string           label;
+        std::function<void()> callback;
+    };
+
+    // Build the canonical user-strip context-menu item list. The order and
+    // Log Out label are defined here; platform shells supply the five action
+    // callbacks and iterate the result to build their native menu. The QR
+    // item is omitted automatically when server_info_.supports_qr_grant is
+    // false. show_qr_grant may be a null std::function even when QR is
+    // supported — the item will still be omitted.
+    std::vector<UserMenuItem> build_user_menu_items_(
+        std::function<void()> open_settings,
+        std::function<void()> add_account,
+        std::function<void()> show_qr_grant,
+        std::function<void()> logout,
+        std::function<void()> quit) const;
+
     // Arm the pending-login OAuth flow's temp directory. Installed (via a
     // shell-native one-liner lambda) as the LoginView's on-begin-oauth
     // callback: the user_id isn't known until await_oauth completes, so the

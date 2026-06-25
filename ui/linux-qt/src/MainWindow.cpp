@@ -3956,43 +3956,23 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
 {
     auto* menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    QAction* addAct = menu->addAction(tr("Add Account\xe2\x80\xa6"));
-    QAction* settingsAct = menu->addAction(tr("Settings\xe2\x80\xa6"));
-    QAction* qrAct = server_info_.supports_qr_grant
-                         ? menu->addAction(tr("Add device via QR\xe2\x80\xa6"))
-                         : nullptr;
-    QString logout_label =
-        tr("Log Out %1")
-            .arg(my_display_name_.empty()
-                     ? QString::fromStdString(my_user_id_)
-                     : QString::fromStdString(my_display_name_));
-    QAction* logoutAct = menu->addAction(logout_label);
-    menu->addSeparator();
-    QAction* quitAct = menu->addAction(tr("Quit"));
-    QObject::connect(menu, &QMenu::triggered, this,
-                     [this, addAct, settingsAct, qrAct, logoutAct, quitAct](QAction* a)
-                     {
-                         if (a == addAct)
-                         {
-                             beginAddAccount();
-                         }
-                         else if (a == settingsAct)
-                         {
-                             openSettings();
-                         }
-                         else if (a == qrAct)
-                         {
-                             start_qr_grant_overlay();
-                         }
-                         else if (a == logoutAct)
-                         {
-                             logoutActiveAccount();
-                         }
-                         else if (a == quitAct)
-                         {
-                             do_quit_();
-                         }
-                     });
+    const auto items = build_user_menu_items_(
+        [this] { openSettings(); },
+        [this] { beginAddAccount(); },
+        [this] { start_qr_grant_overlay(); },
+        [this] { logoutActiveAccount(); },
+        [this] { do_quit_(); });
+    for (const auto& item : items)
+    {
+        if (item.label.empty())
+        {
+            menu->addSeparator();
+            continue;
+        }
+        auto* act = menu->addAction(QString::fromStdString(item.label));
+        QObject::connect(act, &QAction::triggered, this,
+                         [cb = item.callback] { cb(); });
+    }
     menu->popup(global_pos);
 }
 

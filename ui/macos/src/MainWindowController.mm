@@ -89,6 +89,33 @@
 @class MainWindowController;
 
 // ─────────────────────────────────────────────────────────────────────────
+//  _TkMenuAction — thin ObjC object that bridges a C++ callback to an
+//  NSMenuItem action. Created per-item and kept alive in an NSArray for the
+//  synchronous duration of popUpMenuPositioningItem:atLocation:inView:.
+// ─────────────────────────────────────────────────────────────────────────
+@interface _TkMenuAction : NSObject
+- (instancetype)initWithCallback:(std::function<void()>)cb;
+- (void)fire:(id)sender;
+@end
+@implementation _TkMenuAction
+{
+    std::function<void()> _cb;
+}
+- (instancetype)initWithCallback:(std::function<void()>)cb
+{
+    self = [super init];
+    if (self)
+        _cb = std::move(cb);
+    return self;
+}
+- (void)fire:(id)sender
+{
+    if (_cb)
+        _cb();
+}
+@end
+
+// ─────────────────────────────────────────────────────────────────────────
 //  MacShell — ShellBase subclass for the macOS AppKit shell.
 //  ObjC++ @interface cannot inherit C++ classes, so we use composition:
 //  MainWindowController holds a std::unique_ptr<MacShell>.
@@ -2621,34 +2648,34 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         {
             MainWindowController* s = weakSelf;
             if (!s)
-            {
                 return;
-            }
-            const std::string& _name_ref = s->_shell->display_name().empty()
-                ? s->_shell->user_id()
-                : s->_shell->display_name();
-            NSString* logoutTitle = [NSString
-                stringWithUTF8String:tk::trf(tk::tr("Log Out {0}"),
-                                             {_name_ref})
-                                         .c_str()];
+            const auto items = s->_shell->build_user_menu_items_(
+                [weakSelf] { if (auto c = weakSelf) [c _openSettings]; },
+                [weakSelf] { if (auto c = weakSelf) [c _beginAddAccount]; },
+                [weakSelf] { if (auto c = weakSelf) [c _showQRGrant]; },
+                [weakSelf] { if (auto c = weakSelf) [c _logoutActiveAccount]; },
+                [] { [NSApp terminate:nil]; });
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
-            [menu addItemWithTitle:TkTr("Settings\xe2\x80\xa6")
-                            action:@selector(_openSettings)
-                     keyEquivalent:@""];
-            [menu addItemWithTitle:TkTr("Add Account\xe2\x80\xa6")
-                            action:@selector(_beginAddAccount)
-                     keyEquivalent:@""];
-            [menu addItemWithTitle:logoutTitle
-                            action:@selector(_logoutActiveAccount)
-                     keyEquivalent:@""];
-            if (s->_shell->server_info_ref().supports_qr_grant)
-                [menu addItemWithTitle:TkTr("Add device via QR\xe2\x80\xa6")
-                                action:@selector(_showQRGrant)
-                         keyEquivalent:@""];
-            [menu addItem:[NSMenuItem separatorItem]];
-            [menu addItemWithTitle:TkTr("Quit")
-                            action:@selector(terminate:)
-                     keyEquivalent:@""];
+            NSMutableArray<_TkMenuAction*>* actions = [NSMutableArray new];
+            for (const auto& item : items)
+            {
+                if (item.label.empty())
+                {
+                    [menu addItem:[NSMenuItem separatorItem]];
+                    continue;
+                }
+                NSString* title =
+                    [NSString stringWithUTF8String:item.label.c_str()];
+                _TkMenuAction* act =
+                    [[_TkMenuAction alloc] initWithCallback:item.callback];
+                [actions addObject:act];
+                NSMenuItem* mi = [[NSMenuItem alloc]
+                    initWithTitle:title
+                           action:@selector(fire:)
+                    keyEquivalent:@""];
+                [mi setTarget:act];
+                [menu addItem:mi];
+            }
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             NSPoint local = NSMakePoint(p.x, p.y);
             NSPoint screen = [view.window

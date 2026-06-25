@@ -4457,6 +4457,26 @@ ShellBase::build_tray_items_() const
     return items;
 }
 
+std::vector<ShellBase::UserMenuItem> ShellBase::build_user_menu_items_(
+    std::function<void()> open_settings,
+    std::function<void()> add_account,
+    std::function<void()> show_qr_grant,
+    std::function<void()> logout,
+    std::function<void()> quit) const
+{
+    std::vector<UserMenuItem> items;
+    items.push_back({tk::tr("Settings\xe2\x80\xa6"),    std::move(open_settings)});
+    items.push_back({tk::tr("Add Account\xe2\x80\xa6"), std::move(add_account)});
+    if (server_info_.supports_qr_grant && show_qr_grant)
+        items.push_back({tk::tr("Add device via QR\xe2\x80\xa6"), std::move(show_qr_grant)});
+    const std::string& name =
+        my_display_name_.empty() ? my_user_id_ : my_display_name_;
+    items.push_back({tk::trf(tk::tr("Log Out {0}"), {name}), std::move(logout)});
+    items.push_back({"", nullptr}); // separator
+    items.push_back({tk::tr("Quit"), std::move(quit)});
+    return items;
+}
+
 void ShellBase::arm_pending_login_()
 {
     if (!pending_login_temp_dir_.empty())

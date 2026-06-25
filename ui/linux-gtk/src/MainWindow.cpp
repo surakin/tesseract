@@ -179,8 +179,6 @@ void MainWindow::on_server_info_ready_ui_()
     if (main_app_ && main_app_->room_view())
         main_app_->room_view()->header()->set_jump_to_date_enabled(
             server_info_.supports_msc3030);
-    if (qr_grant_action_)
-        g_simple_action_set_enabled(qr_grant_action_, server_info_.supports_qr_grant);
     if (main_app_surface_)
         main_app_surface_->relayout();
 }
@@ -373,6 +371,24 @@ void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
     main_app_->show_verif_banner(true);
     main_app_surface_->relayout();
 }
+
+// ---------------------------------------------------------------------------
+// User context menu helpers — trampoline + cleanup for g_signal_connect_data
+// ---------------------------------------------------------------------------
+
+namespace {
+struct UserMenuCtx {
+    std::function<void()> cb;
+};
+void user_menu_activate_(GSimpleAction*, GVariant*, gpointer p)
+{
+    static_cast<UserMenuCtx*>(p)->cb();
+}
+void user_menu_ctx_free_(gpointer p, GClosure*)
+{
+    delete static_cast<UserMenuCtx*>(p);
+}
+} // namespace
 
 // ---------------------------------------------------------------------------
 // MainWindow
@@ -570,10 +586,63 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         };
         main_app_->user_info()->on_secondary = [this](tk::Point world)
         {
-            if (!user_popover_)
+            // Rebuild the popover with current state (display name, QR
+            // support) so the logout label and QR item are always fresh.
+            if (user_popover_)
             {
-                return;
+                gtk_widget_unparent(user_popover_);
+                user_popover_ = nullptr;
             }
+
+            const auto items = build_user_menu_items_(
+                [this] { open_settings_(); },
+                [this] { begin_add_account(); },
+                [this] { start_qr_grant_overlay(); },
+                [this] { logout_active_account(); },
+                [this] { tray_.reset(); g_application_quit(G_APPLICATION(app_)); });
+
+            GMenu* top = g_menu_new();
+            GMenu* cur = g_menu_new();
+            GSimpleActionGroup* grp = g_simple_action_group_new();
+            int id = 0;
+
+            for (const auto& item : items)
+            {
+                if (item.label.empty())
+                {
+                    g_menu_append_section(top, nullptr, G_MENU_MODEL(cur));
+                    g_object_unref(cur);
+                    cur = g_menu_new();
+                    continue;
+                }
+                char name[32];
+                std::snprintf(name, sizeof(name), "i%d", id);
+                char full[48];
+                std::snprintf(full, sizeof(full), "usr.i%d", id);
+
+                g_menu_append(cur, item.label.c_str(), full);
+
+                GSimpleAction* act = g_simple_action_new(name, nullptr);
+                g_signal_connect_data(act, "activate",
+                                      G_CALLBACK(user_menu_activate_),
+                                      new UserMenuCtx{item.callback},
+                                      user_menu_ctx_free_,
+                                      static_cast<GConnectFlags>(0));
+                g_action_map_add_action(G_ACTION_MAP(grp), G_ACTION(act));
+                g_object_unref(act);
+                ++id;
+            }
+            g_menu_append_section(top, nullptr, G_MENU_MODEL(cur));
+            g_object_unref(cur);
+
+            user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(top));
+            g_object_unref(top);
+            gtk_widget_set_parent(user_popover_, main_app_surface_->widget());
+            gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
+            gtk_widget_insert_action_group(user_popover_, "usr",
+                                           G_ACTION_GROUP(grp));
+            g_object_unref(grp);
+
             GdkRectangle r = {static_cast<int>(world.x),
                               static_cast<int>(world.y), 1, 1};
             gtk_popover_set_pointing_to(GTK_POPOVER(user_popover_), &r);
@@ -2457,75 +2526,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             });
 
         main_app_surface_->set_root(std::move(main_app_owner));
-    }
-
-    // User context menu (right-click on user strip) — parented to main_app_surface_
-    // so it can float anywhere in the window. Position is set via pointing_to in
-    // UserInfo::on_secondary.
-    {
-        GMenu* top = g_menu_new();
-
-        GMenu* main_section = g_menu_new();
-        g_menu_append(main_section, _("Settings\xe2\x80\xa6"), "user.settings");
-        g_menu_append(main_section, _("Add Account\xe2\x80\xa6"),
-                      "user.add_account");
-        g_menu_append(main_section, _("Add device via QR\xe2\x80\xa6"),
-                      "user.qr_grant");
-        g_menu_append(main_section, _("Log Out"), "user.logout");
-        g_menu_append_section(top, nullptr, G_MENU_MODEL(main_section));
-        g_object_unref(main_section);
-
-        GMenu* quit_section = g_menu_new();
-        g_menu_append(quit_section, _("Quit"), "user.quit");
-        g_menu_append_section(top, nullptr, G_MENU_MODEL(quit_section));
-        g_object_unref(quit_section);
-
-        user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(top));
-        gtk_widget_set_parent(user_popover_, main_app_surface_->widget());
-        gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
-        g_object_unref(top);
-
-        GSimpleActionGroup* group = g_simple_action_group_new();
-        {
-            GSimpleAction* act = g_simple_action_new("settings", nullptr);
-            g_signal_connect(act, "activate", G_CALLBACK(on_settings_activate_),
-                             this);
-            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
-            g_object_unref(act);
-        }
-        {
-            GSimpleAction* act = g_simple_action_new("add_account", nullptr);
-            g_signal_connect(act, "activate",
-                             G_CALLBACK(on_add_account_activate_), this);
-            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
-            g_object_unref(act);
-        }
-        {
-            GSimpleAction* act = g_simple_action_new("logout", nullptr);
-            g_signal_connect(act, "activate", G_CALLBACK(on_logout_activate_),
-                             this);
-            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
-            g_object_unref(act);
-        }
-        {
-            GSimpleAction* act = g_simple_action_new("qr_grant", nullptr);
-            g_simple_action_set_enabled(act, FALSE);  // enabled in on_server_info_ready_ui_
-            g_signal_connect(act, "activate",
-                             G_CALLBACK(on_qr_grant_activate_), this);
-            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
-            qr_grant_action_ = act;  // group holds the ref; pointer valid for our lifetime
-            g_object_unref(act);
-        }
-        {
-            GSimpleAction* act = g_simple_action_new("quit", nullptr);
-            g_signal_connect(act, "activate",
-                             G_CALLBACK(on_quit_user_activate_), this);
-            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
-            g_object_unref(act);
-        }
-        gtk_widget_insert_action_group(main_app_surface_->widget(), "user",
-                                       G_ACTION_GROUP(group));
-        g_object_unref(group);
     }
 
     // Right-click on the chat area: hit-test sticker rects.
@@ -4855,12 +4855,6 @@ void MainWindow::hide_qr_grant_overlay_()
     qr_check_code_field_.reset();
 }
 
-// static
-void MainWindow::on_qr_grant_activate_(GSimpleAction*, GVariant*, gpointer p)
-{
-    static_cast<MainWindow*>(p)->start_qr_grant_overlay();
-}
-
 // ---------------------------------------------------------------------------
 
 void MainWindow::push_notification(const std::string& user_id,
@@ -5103,40 +5097,6 @@ void MainWindow::populate_user_strip()
     {
         ensure_user_avatar_(my_avatar_url_);
     }
-}
-
-void MainWindow::on_add_account_activate_(GSimpleAction* /*action*/,
-                                          GVariant* /*parameter*/,
-                                          gpointer user_data)
-{
-    gtk_popover_popdown(
-        GTK_POPOVER(static_cast<MainWindow*>(user_data)->user_popover_));
-    static_cast<MainWindow*>(user_data)->begin_add_account();
-}
-
-void MainWindow::on_logout_activate_(GSimpleAction* /*action*/,
-                                     GVariant* /*parameter*/,
-                                     gpointer user_data)
-{
-    gtk_popover_popdown(
-        GTK_POPOVER(static_cast<MainWindow*>(user_data)->user_popover_));
-    static_cast<MainWindow*>(user_data)->logout_active_account();
-}
-
-void MainWindow::on_settings_activate_(GSimpleAction* /*action*/,
-                                       GVariant* /*param*/, gpointer self)
-{
-    static_cast<MainWindow*>(self)->open_settings_();
-}
-
-void MainWindow::on_quit_user_activate_(GSimpleAction* /*action*/,
-                                        GVariant* /*parameter*/,
-                                        gpointer user_data)
-{
-    auto* self = static_cast<MainWindow*>(user_data);
-    gtk_popover_popdown(GTK_POPOVER(self->user_popover_));
-    self->tray_.reset();
-    g_application_quit(G_APPLICATION(self->app_));
 }
 
 void MainWindow::open_settings_()

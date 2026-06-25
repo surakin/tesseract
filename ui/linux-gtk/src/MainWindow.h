@@ -160,17 +160,6 @@ private:
                                           gpointer user_data);
     static void on_copy_action_(GSimpleAction* action, GVariant* parameter,
                                 gpointer user_data);
-    static void on_logout_activate_(GSimpleAction* action, GVariant* parameter,
-                                    gpointer user_data);
-    static void on_add_account_activate_(GSimpleAction* action,
-                                         GVariant* parameter,
-                                         gpointer user_data);
-    static void on_settings_activate_(GSimpleAction* action,
-                                      GVariant* parameter, gpointer user_data);
-    static void on_quit_user_activate_(GSimpleAction* action,
-                                       GVariant* parameter, gpointer user_data);
-    static void on_qr_grant_activate_(GSimpleAction* action, GVariant* parameter,
-                                      gpointer user_data);
     void open_settings_();
 
     // Ctrl+K quick switcher — open focuses the native search field; close
@@ -474,7 +463,6 @@ private:
     std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
 
     GtkWidget*       user_popover_      = nullptr;
-    GSimpleAction*   qr_grant_action_   = nullptr;  ///< enabled once server_info_ confirms MSC4108
 
     // Account-picker popover (left-click, only when ≥2 accounts).
     GtkWidget* account_picker_popover_ = nullptr;

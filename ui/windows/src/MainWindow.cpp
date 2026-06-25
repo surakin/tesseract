@@ -1187,31 +1187,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_COMMAND:
         // Compose bar Send / Emoji clicks go through the shared widgets'
-        // callbacks now — no WM_COMMAND wiring. The
-        // emoji-picker search field is a NativeTextField overlay handled
-        // by its set_on_changed lambda. Only the logout / add-account
-        // items posted by show_user_context_menu_ remain.
-        if (LOWORD(wParam) == IDM_SETTINGS)
-        {
-            self->open_settings_();
-        }
-        if (LOWORD(wParam) == IDM_LOGOUT)
-        {
-            self->logout_active_account();
-        }
-        if (LOWORD(wParam) == IDM_ADD_ACCOUNT)
-        {
-            self->begin_add_account();
-        }
-        if (LOWORD(wParam) == IDM_QR_GRANT)
-        {
-            self->start_qr_grant_overlay();
-        }
-        if (LOWORD(wParam) == IDM_QUIT)
-        {
-            self->quitting_ = true;
-            DestroyWindow(hwnd);
-        }
+        // callbacks now — no WM_COMMAND wiring. The emoji-picker search
+        // field is a NativeTextField overlay handled by its set_on_changed
+        // lambda. User context menu items invoke callbacks directly in
+        // show_user_context_menu_ (no PostMessageW).
         if (LOWORD(wParam) == IDC_QUICK_SWITCH)
         {
             self->open_quick_switch_();
@@ -6242,26 +6221,37 @@ void MainWindow::open_account_picker()
 
 void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
 {
+    const auto items = build_user_menu_items_(
+        [this] { open_settings_(); },
+        [this] { begin_add_account(); },
+        [this] { start_qr_grant_overlay(); },
+        [this] { logout_active_account(); },
+        [this] { quitting_ = true; DestroyWindow(hwnd_); });
+
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, IDM_SETTINGS, L"Settings…");
-    AppendMenuW(menu, MF_STRING, IDM_ADD_ACCOUNT, L"Add Account…");
-    if (server_info_.supports_qr_grant)
-        AppendMenuW(menu, MF_STRING, IDM_QR_GRANT, L"Add device via QR…");
-    std::wstring logout_label = L"Log Out";
-    if (!my_display_name_.empty())
+    UINT id = 1;
+    for (const auto& item : items)
     {
-        logout_label += L" ";
-        logout_label += utf8_to_wstr(my_display_name_);
+        if (item.label.empty())
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        else
+            AppendMenuW(menu, MF_STRING, id++, utf8_to_wstr(item.label).c_str());
     }
-    AppendMenuW(menu, MF_STRING, IDM_LOGOUT, logout_label.c_str());
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, IDM_QUIT, L"Quit");
-    UINT pick = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, screen_x,
-                               screen_y, 0, hwnd_, nullptr);
+    UINT pick = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                               screen_x, screen_y, 0, hwnd_, nullptr);
     DestroyMenu(menu);
-    if (pick)
+    if (!pick)
+        return;
+    UINT non_sep = 0;
+    for (const auto& item : items)
     {
-        PostMessageW(hwnd_, WM_COMMAND, MAKEWPARAM(pick, 0), 0);
+        if (item.label.empty())
+            continue;
+        if (++non_sep == pick && item.callback)
+        {
+            item.callback();
+            break;
+        }
     }
 }
 
