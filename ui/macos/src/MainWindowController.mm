@@ -5977,8 +5977,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         c->_roomView->set_current_text({});
                     if (c->_shell->main_app_)
                     {
+#ifdef TESSERACT_CALLS_ENABLED
                         c->_shell->main_app_->is_call_active =
                             [c] { return c->_shell->active_call() != nullptr; };
+#endif
                         c->_shell->main_app_->on_selfie_captured =
                             [c](std::vector<std::uint8_t> bgra,
                                 std::uint32_t w, std::uint32_t h)
