@@ -45,7 +45,6 @@ MFCreateMFByteStreamOnStream(IStream* pStream, IMFByteStream** ppByteStream);
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -60,24 +59,6 @@ namespace tk::win32
 
 using PostFn = std::function<void(std::function<void()>)>;
 
-// ─────────────────────────────────────────────────────────────────────────
-//  One-shot MFStartup — called lazily the first time a player is created.
-//  MFShutdown is intentionally omitted: the process exit reclaims MF state,
-//  and calling it from a static destructor (after OleUninitialize) causes
-//  ordering problems.
-// ─────────────────────────────────────────────────────────────────────────
-namespace
-{
-void ensure_mf_started()
-{
-    static std::once_flag flag;
-    std::call_once(flag,
-                   []()
-                   {
-                       MFStartup(MF_VERSION, MFSTARTUP_LITE);
-                   });
-}
-} // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
 //  IMFMediaEngineNotify implementation
@@ -165,7 +146,6 @@ public:
         : post_(std::move(post)),
           alive_(std::make_shared<std::atomic<bool>>(true))
     {
-        ensure_mf_started();
         init_engine();
     }
 

@@ -14,6 +14,7 @@
 #endif
 #include <filesystem>
 #include <fstream>
+#include <mfapi.h>
 #include <shellapi.h>
 #include <stdexcept>
 #include "tk/i18n.h"
@@ -261,6 +262,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         tk::set_locale(i18n_dir, lang);
     }
 
+    MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
+
     int exit_code = 1;
     if (win32::MainWindow::register_class(hInstance))
     {
@@ -287,6 +290,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         }
     }
 
+    MFShutdown();
     OleUninitialize();
     ReleaseMutex(single_inst_mutex);
     CloseHandle(single_inst_mutex);

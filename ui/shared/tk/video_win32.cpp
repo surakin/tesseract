@@ -62,16 +62,6 @@ using PostFn = std::function<void(std::function<void()>)>;
 
 namespace
 {
-void ensure_mf_started()
-{
-    static std::once_flag flag;
-    std::call_once(flag,
-                   []()
-                   {
-                       MFStartup(MF_VERSION, MFSTARTUP_LITE);
-                   });
-}
-
 // Rotate a tightly-packed BGRA pixel buffer in place, updating w and h.
 // deg must be 90, 180, or 270; any other value is a no-op.
 static void rotate_pixels_inplace(std::vector<uint8_t>& pixels,
@@ -260,7 +250,6 @@ public:
         : post_(std::move(post)), backend_(backend),
           alive_(std::make_shared<std::atomic<bool>>(true))
     {
-        ensure_mf_started();
         init_audio_engine();
     }
 

@@ -35,7 +35,7 @@ void CameraWidget::open()
         [this](const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h)
         {
             std::lock_guard<std::mutex> lk(frame_mu_);
-            last_bgra_.assign(bgra, bgra + w * h * 4);
+            last_bgra_.assign(bgra, bgra + static_cast<std::size_t>(w) * h * 4);
             frame_w_ = w;
             frame_h_ = h;
         });

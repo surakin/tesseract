@@ -108,6 +108,8 @@ public:
     // user cancel). May also be called by the shell (e.g. on window close).
     void close_camera_overlay();
 
+    bool camera_overlay_open() const { return camera_widget_ != nullptr; }
+
     // Set by the shell before calling open_camera_overlay(). Receives the raw
     // BGRA8888 frame; the shell encodes it to JPEG and calls set_pending_image.
     std::function<void(std::vector<std::uint8_t> bgra,

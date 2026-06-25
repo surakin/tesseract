@@ -3194,11 +3194,34 @@ void MainWindow::on_create(HWND hwnd)
                             {
                                 frame->Initialize(nullptr);
                                 frame->SetSize(w, h);
-                                WICPixelFormatGUID fmt =
-                                    GUID_WICPixelFormat32bppBGRA;
-                                frame->SetPixelFormat(&fmt);
-                                frame->WritePixels(h, w * 4, w * h * 4,
-                                                   bgra.data());
+                                // Wrap BGRA data in a WIC bitmap and let
+                                // IWICFormatConverter strip the alpha channel
+                                // to 24bppBGR — no manual pixel loop needed.
+                                IWICBitmap* src_bmp = nullptr;
+                                wic->CreateBitmapFromMemory(
+                                    w, h, GUID_WICPixelFormat32bppBGRA,
+                                    w * 4u, w * h * 4u,
+                                    bgra.data(), &src_bmp);
+                                if (src_bmp)
+                                {
+                                    IWICFormatConverter* conv = nullptr;
+                                    if (SUCCEEDED(
+                                            wic->CreateFormatConverter(&conv)))
+                                    {
+                                        conv->Initialize(
+                                            src_bmp,
+                                            GUID_WICPixelFormat24bppBGR,
+                                            WICBitmapDitherTypeNone,
+                                            nullptr, 0.0,
+                                            WICBitmapPaletteTypeCustom);
+                                        WICPixelFormatGUID fmt =
+                                            GUID_WICPixelFormat24bppBGR;
+                                        frame->SetPixelFormat(&fmt);
+                                        frame->WriteSource(conv, nullptr);
+                                        conv->Release();
+                                    }
+                                    src_bmp->Release();
+                                }
                                 frame->Commit();
                                 frame->Release();
                             }
@@ -3578,7 +3601,8 @@ void MainWindow::on_create(HWND hwnd)
                 // Native overlays must be hidden while an image/video viewer is open —
                 // Win32 child HWNDs always paint over canvas-drawn overlays.
                 const bool hide = (img_viewer_ && img_viewer_->is_open()) ||
-                                  (vid_viewer_ && vid_viewer_->is_open());
+                                  (vid_viewer_ && vid_viewer_->is_open()) ||
+                                  (main_app_ && main_app_->camera_overlay_open());
 
                 // Compose text area. Hidden while a viewer is open or while
                 // voice recording is active (rect is empty in that case).
@@ -5457,7 +5481,6 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
         // ── Video: first-frame thumbnail + duration via Media Foundation ───
         else if (mime.rfind("video/", 0) == 0)
         {
-            MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
             IStream* com_stream = SHCreateMemStream(
                 reinterpret_cast<const BYTE*>(bytes.data()),
                 static_cast<UINT>(bytes.size()));
@@ -5615,12 +5638,10 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                 }
                 com_stream->Release();
             }
-            MFShutdown();
         }
         // ── Audio: duration only via Media Foundation ──────────────────────
         else if (mime.rfind("audio/", 0) == 0)
         {
-            MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
             IStream* com_stream = SHCreateMemStream(
                 reinterpret_cast<const BYTE*>(bytes.data()),
                 static_cast<UINT>(bytes.size()));
@@ -5649,7 +5670,6 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                 }
                 com_stream->Release();
             }
-            MFShutdown();
         }
 
         CoUninitialize();

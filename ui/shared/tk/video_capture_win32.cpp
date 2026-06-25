@@ -5,8 +5,10 @@
 // with software de-interleave. Used by rtc_push_video_frame_i420.
 //
 // BGRA mode (selfie / CameraWidget): requests MFVideoFormat_ARGB32 (stored
-// B,G,R,A in little-endian memory — i.e., native BGRA). The Media Foundation
-// colour converter MFT handles the conversion; no software BT.601 loop.
+// B,G,R,A in little-endian memory — i.e., native BGRA). The Video Processor
+// MFT (enabled via MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING) handles
+// the YUV→ARGB32 conversion; the Color Converter DSP (ENABLE_VIDEO_PROCESSING)
+// does NOT support ARGB32 output and must not be used here.
 //
 // Frames are delivered on the MF reader thread via OnReadSample; the
 // FrameCallback / BgraCallback must be thread-safe.
@@ -150,8 +152,15 @@ public:
             return;
 
         IMFAttributes* attrs = nullptr;
-        MFCreateAttributes(&attrs, 2);
+        MFCreateAttributes(&attrs, 3);
         attrs->SetUnknown(MF_SOURCE_READER_ASYNC_CALLBACK, this);
+        // MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING inserts the Video
+        // Processor MFT, which supports ARGB32 output. The basic
+        // MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING uses the Color Converter DSP
+        // which does NOT list ARGB32 as a supported output type, so
+        // SetCurrentMediaType(ARGB32) silently falls back to the camera's native
+        // packed-YUV format with that flag.
+        attrs->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE);
 
         IMFAttributes* dev_attrs = nullptr;
         MFCreateAttributes(&dev_attrs, 1);
@@ -190,25 +199,21 @@ public:
         IMFMediaType* type = nullptr;
         MFCreateMediaType(&type);
         type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-        MFSetAttributeSize(type, MF_MT_FRAME_SIZE, 640, 480);
-        MFSetAttributeRatio(type, MF_MT_FRAME_RATE, 30, 1);
 
         if (bgra_mode_)
         {
-            // ARGB32 is stored B,G,R,A in little-endian memory (= BGRA).
-            // The MF colour converter MFT handles the conversion from the
-            // camera's native format.
+            // Request ARGB32 at the camera's native resolution.
+            // MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING (set on attrs)
+            // inserts the Video Processor MFT which supports ARGB32 output.
             type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32);
-            if (FAILED(reader_->SetCurrentMediaType(
-                    MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type)))
-            {
-                // Fallback: accept whatever the reader chooses; OnReadSample
-                // will try to deliver BGRA by re-reading the format.
-            }
+            reader_->SetCurrentMediaType(
+                MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
         }
         else
         {
-            // I420 for the RTC path.
+            // I420 for the RTC path — request 640×480 at 30 fps.
+            MFSetAttributeSize(type, MF_MT_FRAME_SIZE, 640, 480);
+            MFSetAttributeRatio(type, MF_MT_FRAME_RATE, 30, 1);
             type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_I420);
             if (FAILED(reader_->SetCurrentMediaType(
                     MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type)))
@@ -221,12 +226,16 @@ public:
         }
         type->Release();
 
-        // Record actual frame geometry.
+        // Record actual frame geometry and negotiated subtype.
         IMFMediaType* actual = nullptr;
         reader_->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, &actual);
         if (actual)
         {
             MFGetAttributeSize(actual, MF_MT_FRAME_SIZE, &frame_w_, &frame_h_);
+            GUID subtype = GUID_NULL;
+            actual->GetGUID(MF_MT_SUBTYPE, &subtype);
+            // If the reader couldn't deliver ARGB32, detect common 2-byte
+            // packed YUV formats and convert in software in deliver_bgra_.
             actual->Release();
         }
 

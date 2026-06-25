@@ -134,16 +134,12 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         }
     };
 
-    // MF must be started per-process; calling again is harmless if already up.
-    MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
-
     // Wrap the raw bytes in an IStream / IMFByteStream.
     Microsoft::WRL::ComPtr<IStream> stream;
     stream.Attach(SHCreateMemStream(
         reinterpret_cast<const BYTE*>(data), static_cast<UINT>(size)));
     if (!stream)
     {
-        MFShutdown();
         cleanup_com();
         return result;
     }
@@ -152,7 +148,6 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
                                             mf_stream.GetAddressOf())))
     {
-        MFShutdown();
         cleanup_com();
         return result;
     }
@@ -169,7 +164,6 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     if (FAILED(MFCreateSourceReaderFromByteStream(
             mf_stream.Get(), attrs.Get(), reader.GetAddressOf())))
     {
-        MFShutdown();
         cleanup_com();
         return result;
     }
@@ -192,7 +186,6 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
             static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
             actual_type.GetAddressOf())))
     {
-        MFShutdown();
         cleanup_com();
         return result;
     }
@@ -201,7 +194,6 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     MFGetAttributeSize(actual_type.Get(), MF_MT_FRAME_SIZE, &frame_w, &frame_h);
     if (frame_w == 0 || frame_h == 0)
     {
-        MFShutdown();
         cleanup_com();
         return result;
     }
@@ -381,7 +373,6 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         result.frames.push_back(downscale_bgra(std::move(f), max_w, max_h));
     }
 
-    MFShutdown();
     cleanup_com();
     return result;
 }
