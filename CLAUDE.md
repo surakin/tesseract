@@ -120,6 +120,22 @@ Never commit or push changes without explicit confirmation from the user that th
 
 When investigating a bug or unexpected behavior, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
 
+## Internationalisation
+
+Every user-visible string in C++ **must** be wrapped in `tk::tr()` (singular), `tk::trn()` (plural), or `tk::trf()` (interpolated). Never pass a raw string literal directly to a widget or label where it will be displayed to the user.
+
+```cpp
+// Wrong
+dev_group->add_widget(std::make_unique<tk::Label>("Microphone"));
+
+// Correct
+dev_group->add_widget(std::make_unique<tk::Label>(tk::tr("Microphone")));
+```
+
+After adding new strings, add the corresponding `msgid`/`msgstr` entries to every `.po` file under `i18n/` (currently `es.po` and `pseudo.po`). Strings added without `.po` entries will silently fall back to English and will never be translated.
+
+Include `ui/shared/tk/i18n.h` to access `tk::tr`, `tk::trn`, and `tk::trf`.
+
 ## Shared vs Platform Code
 
 Always implement new functionality in `ui/shared/` (`tk/` or `views/`) rather than duplicating it across platform shells. Platform shells (`ui/windows/`, `ui/linux-qt/`, `ui/linux-gtk/`, `ui/macos/`) should contain only what is genuinely platform-specific: native window/menu management, OS API calls, and thin wiring to the shared layer. If you find yourself writing the same logic in two or more shells, that logic belongs in `ui/shared/`.

@@ -577,3 +577,15 @@ msgstr "Contestar"
 #: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
 msgid "is calling"
 msgstr "está llamando"
+
+#: ui/shared/views/settings/MediaSection.cpp
+msgid "Microphone"
+msgstr "Micrófono"
+
+#: ui/shared/views/settings/MediaSection.cpp
+msgid "Speaker"
+msgstr "Altavoz"
+
+#: ui/shared/views/settings/MediaSection.cpp
+msgid "Camera"
+msgstr "Cámara"
