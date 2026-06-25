@@ -15,6 +15,7 @@
 #include "audio_capture.h"
 #include "audio_playback.h"
 #include "canvas.h"
+#include "device_listing.h"
 #include "video.h"
 #include "widget.h"
 
@@ -340,6 +341,16 @@ public:
     /// Create an AudioPlayback for routing remote call audio to the speaker.
     virtual std::unique_ptr<AudioPlayback> make_audio_playback() = 0;
 #endif
+
+    // Enumerate available audio input devices (microphones).
+    // Returns an empty vector on platforms that haven't implemented this yet.
+    virtual std::vector<DeviceListing> enumerate_audio_inputs() const { return {}; }
+
+    // Enumerate available audio output devices (speakers/headphones).
+    virtual std::vector<DeviceListing> enumerate_audio_outputs() const { return {}; }
+
+    // Enumerate available camera (video capture) devices.
+    virtual std::vector<DeviceListing> enumerate_cameras() const { return {}; }
 
     // Create a `VideoPlayer` backed by the platform's native media stack.
     // Returns `nullptr` on platforms without a video backend; callers must

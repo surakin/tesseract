@@ -108,6 +108,18 @@ SettingsView::SettingsView()
         if (on_invite_avatars_changed)
             on_invite_avatars_changed(enabled);
     };
+    media->on_audio_input_changed = [this](std::string id)
+    {
+        if (on_audio_input_changed) on_audio_input_changed(std::move(id));
+    };
+    media->on_audio_output_changed = [this](std::string id)
+    {
+        if (on_audio_output_changed) on_audio_output_changed(std::move(id));
+    };
+    media->on_camera_changed = [this](std::string id)
+    {
+        if (on_camera_changed) on_camera_changed(std::move(id));
+    };
     media_ = media.get();
 
     // Privacy section.
@@ -326,6 +338,36 @@ void SettingsView::set_invite_avatars_pref(bool enabled)
     {
         media_->set_invite_avatars(enabled);
     }
+}
+
+void SettingsView::set_audio_input_devices(std::vector<tk::DeviceListing> devices)
+{
+    if (media_) media_->set_audio_input_devices(std::move(devices));
+}
+
+void SettingsView::set_audio_output_devices(std::vector<tk::DeviceListing> devices)
+{
+    if (media_) media_->set_audio_output_devices(std::move(devices));
+}
+
+void SettingsView::set_camera_devices(std::vector<tk::DeviceListing> devices)
+{
+    if (media_) media_->set_camera_devices(std::move(devices));
+}
+
+void SettingsView::set_selected_audio_input(const std::string& id)
+{
+    if (media_) media_->set_selected_audio_input(id);
+}
+
+void SettingsView::set_selected_audio_output(const std::string& id)
+{
+    if (media_) media_->set_selected_audio_output(id);
+}
+
+void SettingsView::set_selected_camera(const std::string& id)
+{
+    if (media_) media_->set_selected_camera(id);
 }
 
 void SettingsView::set_send_presence_pref(bool enabled)

@@ -3,6 +3,8 @@
 
 #include "audio_capture.h"
 
+#include <tesseract/settings.h>
+
 #include <audioclient.h>
 #include <mmdeviceapi.h>
 #include <windows.h>
@@ -13,6 +15,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -48,7 +51,22 @@ public:
         }
 
         IMMDevice* device = nullptr;
-        hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+        {
+            const std::string& pref = tesseract::Settings::instance().audio_input_device_id;
+            if (pref.empty())
+            {
+                hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+            }
+            else
+            {
+                int n = MultiByteToWideChar(CP_UTF8, 0, pref.c_str(), -1, nullptr, 0);
+                std::wstring wid(static_cast<std::size_t>(n), L'\0');
+                MultiByteToWideChar(CP_UTF8, 0, pref.c_str(), -1, wid.data(), n);
+                hr = enumerator->GetDevice(wid.c_str(), &device);
+                if (FAILED(hr))
+                    hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+            }
+        }
         enumerator->Release();
         if (FAILED(hr))
         {

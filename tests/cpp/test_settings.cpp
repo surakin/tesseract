@@ -22,6 +22,9 @@ static void reset_settings()
     tesseract::Settings::instance().theme_pref =
         tesseract::Settings::ThemePreference::System;
     tesseract::Settings::instance().notifications_enabled = true;
+    tesseract::Settings::instance().audio_input_device_id  = {};
+    tesseract::Settings::instance().audio_output_device_id = {};
+    tesseract::Settings::instance().camera_device_id       = {};
 }
 
 // Each test uses a unique subdirectory under the OS temp path.
@@ -312,4 +315,41 @@ TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
     CHECK(s.room_section_inactive_collapsed  == false);
 
     fs::remove_all(dir);
+}
+
+TEST_CASE("device IDs default to empty string", "[settings][audio_video]")
+{
+    reset_settings();
+    REQUIRE(tesseract::Settings::instance().audio_input_device_id.empty());
+    REQUIRE(tesseract::Settings::instance().audio_output_device_id.empty());
+    REQUIRE(tesseract::Settings::instance().camera_device_id.empty());
+}
+
+TEST_CASE("device IDs round-trip through disk", "[settings][audio_video]")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("device_ids");
+
+    tesseract::Settings::instance().audio_input_device_id  = "hw:0,0";
+    tesseract::Settings::instance().audio_output_device_id = "hw:0,1";
+    tesseract::Settings::instance().camera_device_id       = "/dev/video0";
+    tesseract::Settings::instance().save_to_disk(dir);
+
+    reset_settings(); // wipe in-memory state
+    tesseract::Settings::instance().load_from_disk(dir);
+
+    REQUIRE(tesseract::Settings::instance().audio_input_device_id  == "hw:0,0");
+    REQUIRE(tesseract::Settings::instance().audio_output_device_id == "hw:0,1");
+    REQUIRE(tesseract::Settings::instance().camera_device_id       == "/dev/video0");
+}
+
+TEST_CASE("missing device ID keys load as empty string", "[settings][audio_video]")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("device_ids_missing");
+    write_file(dir / "app_settings.json", R"({"theme":"light"})");
+    tesseract::Settings::instance().load_from_disk(dir);
+    REQUIRE(tesseract::Settings::instance().audio_input_device_id.empty());
+    REQUIRE(tesseract::Settings::instance().audio_output_device_id.empty());
+    REQUIRE(tesseract::Settings::instance().camera_device_id.empty());
 }

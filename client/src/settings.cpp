@@ -50,6 +50,10 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     index_messages_for_search    = j.value("index_messages_for_search",   false);
     check_for_updates            = j.value("check_for_updates",            true);
 
+    audio_input_device_id  = j.value("audio_input_device_id",  std::string{});
+    audio_output_device_id = j.value("audio_output_device_id", std::string{});
+    camera_device_id       = j.value("camera_device_id",       std::string{});
+
     room_section_invites_collapsed   = j.value("room_section_invites_collapsed",   false);
     room_section_favorites_collapsed = j.value("room_section_favorites_collapsed", false);
     room_section_dms_collapsed       = j.value("room_section_dms_collapsed",       false);
@@ -164,6 +168,9 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"room_section_inactive_collapsed",        room_section_inactive_collapsed},
         {"room_section_unread_collapsed", room_section_unread_collapsed},
         {"room_section_space_unjoined_collapsed",  room_section_space_unjoined_collapsed},
+        {"audio_input_device_id",  audio_input_device_id},
+        {"audio_output_device_id", audio_output_device_id},
+        {"camera_device_id",       camera_device_id},
     };
     j["language"]    = language;
     j["gif_api_key"] = gif_api_key;

@@ -6,6 +6,8 @@
 
 #include "audio_capture.h"
 
+#include <tesseract/settings.h>
+
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 
@@ -14,6 +16,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace
@@ -33,11 +36,30 @@ public:
         if (recording_)
             return;
 
-        pipeline_ = gst_parse_launch(
-            "pulsesrc ! audioconvert ! audioresample ! "
-            "audio/x-raw,rate=48000,channels=1,format=S16LE ! "
-            "appsink name=sink emit-signals=true",
-            nullptr);
+        {
+            // Build the pipeline with a named pulsesrc so we can set the
+            // device property programmatically (avoids pipeline injection).
+            static constexpr char kDesc[] =
+                "pulsesrc name=aud_src ! audioconvert ! audioresample ! "
+                "audio/x-raw,rate=48000,channels=1,format=S16LE ! "
+                "appsink name=sink emit-signals=true";
+            pipeline_ = gst_parse_launch(kDesc, nullptr);
+        }
+
+        if (pipeline_)
+        {
+            const std::string& pref = tesseract::Settings::instance().audio_input_device_id;
+            if (!pref.empty())
+            {
+                GstElement* src_elem =
+                    gst_bin_get_by_name(GST_BIN(pipeline_), "aud_src");
+                if (src_elem)
+                {
+                    g_object_set(src_elem, "device", pref.c_str(), nullptr);
+                    gst_object_unref(src_elem);
+                }
+            }
+        }
 
         if (!pipeline_)
         {

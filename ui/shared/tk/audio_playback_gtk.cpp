@@ -6,6 +6,8 @@
 
 #include "audio_playback.h"
 
+#include <tesseract/settings.h>
+
 #include <gst/app/gstappsrc.h>
 #include <gst/gst.h>
 
@@ -26,14 +28,30 @@ public:
             "audio/x-raw,format=S16LE,rate=" + std::to_string(sample_rate) +
             ",channels=" + std::to_string(num_channels) + ",layout=interleaved";
 
+        const std::string& pref = tesseract::Settings::instance().audio_output_device_id;
+        // Use pulsesink (named) when a device is selected so we can set the
+        // device property programmatically; autoaudiosink otherwise.
+        const char* sink_elem = pref.empty() ? "autoaudiosink"
+                                              : "pulsesink name=aud_sink";
         const std::string desc =
             "appsrc name=src format=time is-live=true do-timestamp=true caps=\"" +
             caps +
-            "\" ! audioconvert ! audioresample ! autoaudiosink";
+            "\" ! audioconvert ! audioresample ! " + sink_elem;
 
         pipeline_ = gst_parse_launch(desc.c_str(), nullptr);
         if (!pipeline_)
             return;
+
+        if (!pref.empty())
+        {
+            GstElement* sink_elem_ptr =
+                gst_bin_get_by_name(GST_BIN(pipeline_), "aud_sink");
+            if (sink_elem_ptr)
+            {
+                g_object_set(sink_elem_ptr, "device", pref.c_str(), nullptr);
+                gst_object_unref(sink_elem_ptr);
+            }
+        }
 
         src_ = gst_bin_get_by_name(GST_BIN(pipeline_), "src");
         if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) ==

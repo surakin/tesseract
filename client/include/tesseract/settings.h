@@ -220,6 +220,15 @@ public:
     float call_overlay_float_y = 40.0f;
 #endif // TESSERACT_CALLS_ENABLED
 
+    // ── Audio / video device selection ───────────────────────────────────────
+    // Platform-specific device IDs for microphone, speaker, and camera.
+    // Empty string means "use the system default" on all platforms.
+    // Populated by the Audio & Video settings section; applied at the start
+    // of each capture/playback session (not hot-swapped on a running session).
+    std::string audio_input_device_id;
+    std::string audio_output_device_id;
+    std::string camera_device_id;
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.

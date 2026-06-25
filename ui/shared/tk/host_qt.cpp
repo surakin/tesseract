@@ -43,6 +43,11 @@
 #include <QtGui/QDragEnterEvent>
 #include <QtGui/QDragMoveEvent>
 #include <QtGui/QDropEvent>
+#include <QMediaDevices>
+#include <QAudioDevice>
+
+#include "gst_hw_probe.h"
+#include <gst/gst.h>
 
 namespace tk::qt6
 {
@@ -947,6 +952,10 @@ public:
     std::unique_ptr<AudioPlayback> make_audio_playback() override;
 #endif
 
+    std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
+    std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
+    std::vector<tk::DeviceListing> enumerate_cameras()       const override;
+
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override
     {
@@ -1576,6 +1585,81 @@ std::unique_ptr<tk::VideoPlayer> make_video_player_qt();
 std::unique_ptr<tk::VideoPlayer> Host::make_video_player()
 {
     return make_video_player_qt();
+}
+
+std::vector<tk::DeviceListing> Host::enumerate_audio_inputs() const
+{
+    std::vector<tk::DeviceListing> result;
+    for (const QAudioDevice& dev : QMediaDevices::audioInputs())
+    {
+        tk::DeviceListing entry;
+        entry.id           = dev.id().toStdString();
+        entry.display_name = dev.description().toStdString();
+        result.push_back(std::move(entry));
+    }
+    return result;
+}
+
+std::vector<tk::DeviceListing> Host::enumerate_audio_outputs() const
+{
+    std::vector<tk::DeviceListing> result;
+    for (const QAudioDevice& dev : QMediaDevices::audioOutputs())
+    {
+        tk::DeviceListing entry;
+        entry.id           = dev.id().toStdString();
+        entry.display_name = dev.description().toStdString();
+        result.push_back(std::move(entry));
+    }
+    return result;
+}
+
+std::vector<tk::DeviceListing> Host::enumerate_cameras() const
+{
+    tk::gst::ensure_gst_init();
+
+    std::vector<tk::DeviceListing> result;
+    GstDeviceMonitor* monitor = gst_device_monitor_new();
+    GstCaps* caps = gst_caps_new_empty_simple("video/x-raw");
+    gst_device_monitor_add_filter(monitor, "Video/Source", caps);
+    gst_caps_unref(caps);
+
+    if (!gst_device_monitor_start(monitor))
+    {
+        gst_object_unref(monitor);
+        return result;
+    }
+
+    GList* devices = gst_device_monitor_get_devices(monitor);
+    for (GList* l = devices; l; l = l->next)
+    {
+        GstDevice* dev = GST_DEVICE(l->data);
+
+        // Create a temporary element to read the "device" property
+        // (the /dev/videoN path suitable for injection into the pipeline).
+        GstElement* elem = gst_device_create_element(dev, nullptr);
+        if (!elem) { gst_object_unref(dev); continue; }
+
+        gchar* dev_path = nullptr;
+        g_object_get(elem, "device", &dev_path, nullptr);
+        gst_object_unref(elem);
+
+        if (!dev_path) { gst_object_unref(dev); continue; }
+
+        gchar* display = gst_device_get_display_name(dev);
+        tk::DeviceListing entry;
+        entry.id           = dev_path;
+        entry.display_name = display ? display : dev_path;
+        result.push_back(std::move(entry));
+
+        g_free(dev_path);
+        g_free(display);
+        gst_object_unref(dev);
+    }
+    g_list_free(devices);
+
+    gst_device_monitor_stop(monitor);
+    gst_object_unref(monitor);
+    return result;
 }
 
 } // namespace tk::qt6

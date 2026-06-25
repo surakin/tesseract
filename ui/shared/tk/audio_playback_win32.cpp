@@ -6,6 +6,8 @@
 
 #include "audio_playback.h"
 
+#include <tesseract/settings.h>
+
 #include <audioclient.h>
 #include <mmdeviceapi.h>
 #include <windows.h>
@@ -15,6 +17,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -130,14 +133,30 @@ std::unique_ptr<tk::AudioPlayback> make_audio_playback_win32()
         return nullptr;
 
     IMMDevice* device = nullptr;
-    HRESULT hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
-    enumerator->Release();
-    if (FAILED(hr))
-        return nullptr;
+    {
+        const std::string& pref = tesseract::Settings::instance().audio_output_device_id;
+        HRESULT hr2;
+        if (pref.empty())
+        {
+            hr2 = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+        }
+        else
+        {
+            int n = MultiByteToWideChar(CP_UTF8, 0, pref.c_str(), -1, nullptr, 0);
+            std::wstring wid(static_cast<std::size_t>(n), L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, pref.c_str(), -1, wid.data(), n);
+            hr2 = enumerator->GetDevice(wid.c_str(), &device);
+            if (FAILED(hr2))
+                hr2 = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+        }
+        enumerator->Release();
+        if (FAILED(hr2))
+            return nullptr;
+    }
 
     IAudioClient* client = nullptr;
-    hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
-                          reinterpret_cast<void**>(&client));
+    HRESULT hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                  reinterpret_cast<void**>(&client));
     device->Release();
     if (FAILED(hr))
         return nullptr;

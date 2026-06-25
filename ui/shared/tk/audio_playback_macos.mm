@@ -5,13 +5,18 @@
 
 #include "audio_playback.h"
 
+#include <tesseract/settings.h>
+
 #import <AVFoundation/AVFoundation.h>
+#import <AudioUnit/AudioUnit.h>
+#import <CoreAudio/CoreAudio.h>
 
 #include <algorithm>
 #include <cstring>
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <string>
 
 namespace
 {
@@ -76,6 +81,23 @@ public:
 
         [engine_ attachNode:src_];
         [engine_ connect:src_ to:engine_.mainMixerNode format:fmt];
+
+        // Select the preferred output device if one is configured.
+        // The stored ID is the CoreAudio AudioDeviceID rendered as a decimal string.
+        const std::string& pref = tesseract::Settings::instance().audio_output_device_id;
+        if (!pref.empty())
+        {
+            try
+            {
+                AudioDeviceID dev_id = static_cast<AudioDeviceID>(std::stoul(pref));
+                AudioUnit au = engine_.outputNode.audioUnit;
+                AudioUnitSetProperty(au,
+                                     kAudioOutputUnitProperty_CurrentDevice,
+                                     kAudioUnitScope_Global,
+                                     0, &dev_id, sizeof(dev_id));
+            }
+            catch (...) {} // ignore conversion errors — fall back to default
+        }
 
         NSError* err = nil;
         if (![engine_ startAndReturnError:&err])

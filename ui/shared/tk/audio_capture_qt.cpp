@@ -5,6 +5,8 @@
 
 #include "audio_capture.h"
 
+#include <tesseract/settings.h>
+
 #include <QAudioDevice>
 #include <QAudioFormat>
 #include <QAudioSource>
@@ -40,6 +42,15 @@ public:
         fmt.setSampleFormat(QAudioFormat::Int16);
 
         QAudioDevice dev = QMediaDevices::defaultAudioInput();
+        const std::string& pref = tesseract::Settings::instance().audio_input_device_id;
+        if (!pref.empty())
+        {
+            const QByteArray want = QByteArray::fromStdString(pref);
+            for (const QAudioDevice& d : QMediaDevices::audioInputs())
+            {
+                if (d.id() == want) { dev = d; break; }
+            }
+        }
         if (!dev.isFormatSupported(fmt))
         {
             if (on_stopped)

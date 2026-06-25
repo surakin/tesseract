@@ -5,6 +5,8 @@
 
 #include "audio_playback.h"
 
+#include <tesseract/settings.h>
+
 #include <QAudioDevice>
 #include <QAudioFormat>
 #include <QAudioSink>
@@ -18,6 +20,23 @@
 namespace
 {
 
+// Returns the preferred audio output device. Falls back to the system default
+// if the user preference is empty or the named device is not found.
+QAudioDevice preferred_audio_output()
+{
+    QAudioDevice dev = QMediaDevices::defaultAudioOutput();
+    const std::string& pref = tesseract::Settings::instance().audio_output_device_id;
+    if (!pref.empty())
+    {
+        const QByteArray want = QByteArray::fromStdString(pref);
+        for (const QAudioDevice& d : QMediaDevices::audioOutputs())
+        {
+            if (d.id() == want) { dev = d; break; }
+        }
+    }
+    return dev;
+}
+
 class AudioPlaybackQt : public tk::AudioPlayback
 {
 public:
@@ -27,7 +46,7 @@ public:
         fmt_.setChannelCount(1);
         fmt_.setSampleFormat(QAudioFormat::Int16);
 
-        const QAudioDevice dev = QMediaDevices::defaultAudioOutput();
+        const QAudioDevice dev = preferred_audio_output();
         if (!dev.isFormatSupported(fmt_))
             return;
 
@@ -56,7 +75,7 @@ public:
             fmt_.setSampleRate(static_cast<int>(sample_rate));
             fmt_.setChannelCount(static_cast<int>(num_channels));
             sink_->stop();
-            const QAudioDevice dev = QMediaDevices::defaultAudioOutput();
+            const QAudioDevice dev = preferred_audio_output();
             if (!dev.isFormatSupported(fmt_))
                 return;
             sink_ = std::make_unique<QAudioSink>(dev, fmt_);

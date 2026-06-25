@@ -7,6 +7,8 @@
 #include "controls.h"
 
 #import <AppKit/AppKit.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreAudio/CoreAudio.h>
 #import <ImageIO/ImageIO.h>
 #import <CoreServices/CoreServices.h>
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
@@ -82,6 +84,10 @@ public:
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override;
     void set_clipboard_text(std::string_view text) override;
+
+    std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
+    std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
+    std::vector<tk::DeviceListing> enumerate_cameras()       const override;
 
     void set_root(std::unique_ptr<Widget> root)
     {
@@ -1640,6 +1646,118 @@ void Host::set_clipboard_text(std::string_view text)
     NSPasteboard* pb = [NSPasteboard generalPasteboard];
     [pb clearContents];
     [pb setString:str forType:NSPasteboardTypeString];
+}
+
+// ── Device enumeration ────────────────────────────────────────────────────
+
+std::vector<tk::DeviceListing> Host::enumerate_cameras() const
+{
+    std::vector<tk::DeviceListing> result;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    NSArray<AVCaptureDeviceType>* types =
+        @[AVCaptureDeviceTypeBuiltInWideAngleCamera,
+          AVCaptureDeviceTypeExternalUnknown];
+    AVCaptureDeviceDiscoverySession* session =
+        [AVCaptureDeviceDiscoverySession
+            discoverySessionWithDeviceTypes:types
+                                  mediaType:AVMediaTypeVideo
+                                   position:AVCaptureDevicePositionUnspecified];
+#pragma clang diagnostic pop
+    for (AVCaptureDevice* dev in session.devices)
+    {
+        tk::DeviceListing entry;
+        entry.id           = dev.uniqueID.UTF8String
+                                 ? std::string(dev.uniqueID.UTF8String) : "";
+        entry.display_name = dev.localizedName.UTF8String
+                                 ? std::string(dev.localizedName.UTF8String)
+                                 : entry.id;
+        result.push_back(std::move(entry));
+    }
+    return result;
+}
+
+std::vector<tk::DeviceListing> Host::enumerate_audio_inputs() const
+{
+    std::vector<tk::DeviceListing> result;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    NSArray<AVCaptureDeviceType>* types =
+        @[AVCaptureDeviceTypeBuiltInMicrophone,
+          AVCaptureDeviceTypeExternalUnknown];
+    AVCaptureDeviceDiscoverySession* session =
+        [AVCaptureDeviceDiscoverySession
+            discoverySessionWithDeviceTypes:types
+                                  mediaType:AVMediaTypeAudio
+                                   position:AVCaptureDevicePositionUnspecified];
+#pragma clang diagnostic pop
+    for (AVCaptureDevice* dev in session.devices)
+    {
+        tk::DeviceListing entry;
+        entry.id           = dev.uniqueID.UTF8String
+                                 ? std::string(dev.uniqueID.UTF8String) : "";
+        entry.display_name = dev.localizedName.UTF8String
+                                 ? std::string(dev.localizedName.UTF8String)
+                                 : entry.id;
+        result.push_back(std::move(entry));
+    }
+    return result;
+}
+
+std::vector<tk::DeviceListing> Host::enumerate_audio_outputs() const
+{
+    std::vector<tk::DeviceListing> result;
+
+    AudioObjectPropertyAddress addr{kAudioHardwarePropertyDevices,
+                                    kAudioObjectPropertyScopeGlobal,
+                                    kAudioObjectPropertyElementMain};
+    UInt32 data_size = 0;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject,
+                                       &addr, 0, nullptr, &data_size) != noErr)
+        return result;
+
+    std::vector<AudioDeviceID> device_ids(data_size / sizeof(AudioDeviceID));
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr,
+                                   &data_size, device_ids.data()) != noErr)
+        return result;
+
+    for (AudioDeviceID dev_id : device_ids)
+    {
+        // Skip devices that have no output streams.
+        AudioObjectPropertyAddress streams_addr{
+            kAudioDevicePropertyStreams,
+            kAudioDevicePropertyScopeOutput,
+            kAudioObjectPropertyElementMain};
+        UInt32 streams_size = 0;
+        if (AudioObjectGetPropertyDataSize(dev_id, &streams_addr, 0, nullptr,
+                                           &streams_size) != noErr ||
+            streams_size == 0)
+            continue;
+
+        // Retrieve the device name as a CFStringRef.
+        AudioObjectPropertyAddress name_addr{
+            kAudioDevicePropertyDeviceNameCFString,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain};
+        CFStringRef name_ref = nullptr;
+        UInt32 name_size = sizeof(name_ref);
+        if (AudioObjectGetPropertyData(dev_id, &name_addr, 0, nullptr,
+                                       &name_size, &name_ref) != noErr)
+            continue;
+
+        tk::DeviceListing entry;
+        entry.id = std::to_string(dev_id);
+        char name_buf[256] = {};
+        if (name_ref)
+        {
+            CFStringGetCString(name_ref, name_buf, sizeof(name_buf),
+                               kCFStringEncodingUTF8);
+            CFRelease(name_ref);
+        }
+        entry.display_name = name_buf[0] ? name_buf : entry.id;
+        result.push_back(std::move(entry));
+    }
+    return result;
 }
 
 void Host::relayout()

@@ -15,6 +15,8 @@
 
 #include "video_capture.h"
 
+#include <tesseract/settings.h>
+
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
@@ -23,6 +25,7 @@
 #include <atomic>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #pragma comment(lib, "mf.lib")
@@ -178,8 +181,33 @@ public:
             return;
         }
 
+        // Find the preferred device by symbolic link; fall back to index 0.
+        UINT32 selected = 0;
+        {
+            const std::string& pref = tesseract::Settings::instance().camera_device_id;
+            if (!pref.empty())
+            {
+                int n = MultiByteToWideChar(CP_UTF8, 0, pref.c_str(), -1, nullptr, 0);
+                std::wstring wpref(static_cast<std::size_t>(n), L'\0');
+                MultiByteToWideChar(CP_UTF8, 0, pref.c_str(), -1, wpref.data(), n);
+                for (UINT32 i = 0; i < count; ++i)
+                {
+                    WCHAR* sym = nullptr;
+                    UINT32 sym_len = 0;
+                    if (SUCCEEDED(devices[i]->GetAllocatedString(
+                            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
+                            &sym, &sym_len)))
+                    {
+                        bool match = (wpref == sym);
+                        CoTaskMemFree(sym);
+                        if (match) { selected = i; break; }
+                    }
+                }
+            }
+        }
+
         IMFMediaSource* source = nullptr;
-        devices[0]->ActivateObject(IID_PPV_ARGS(&source));
+        devices[selected]->ActivateObject(IID_PPV_ARGS(&source));
         for (UINT32 i = 0; i < count; ++i)
             devices[i]->Release();
         CoTaskMemFree(devices);

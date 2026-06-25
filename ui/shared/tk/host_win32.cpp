@@ -34,6 +34,12 @@
 #include <shlobj.h>
 #include <wrl/client.h>
 
+// Device enumeration: WASAPI (audio) + Media Foundation (camera).
+#include <mmdeviceapi.h>
+#include <functiondiscoverykeys_devpkey.h>
+#include <mfapi.h>
+#include <mfidl.h>
+
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -407,6 +413,69 @@ static constexpr DWORD kNotoFaceId = 1u;
 // Blink timer ID used by Win32RichEditArea for the D2D caret.
 // Must not clash with MSFTEDIT's own timer IDs (typically 1–4).
 static constexpr UINT kRichEditCaretTimerId = 0xCAFEu;
+
+// ── WASAPI device enumeration helper ─────────────────────────────────────
+//
+// Enumerates active endpoints for the given data-flow direction (eCapture for
+// microphones, eRender for speakers). Used by Host::enumerate_audio_inputs()
+// and Host::enumerate_audio_outputs().
+
+std::vector<tk::DeviceListing> enumerate_wasapi_endpoints(EDataFlow flow)
+{
+    std::vector<tk::DeviceListing> result;
+    IMMDeviceEnumerator* enumerator = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
+                                CLSCTX_ALL, IID_PPV_ARGS(&enumerator))))
+        return result;
+
+    IMMDeviceCollection* collection = nullptr;
+    if (FAILED(enumerator->EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE,
+                                              &collection)))
+    {
+        enumerator->Release();
+        return result;
+    }
+
+    UINT count = 0;
+    collection->GetCount(&count);
+    for (UINT i = 0; i < count; ++i)
+    {
+        IMMDevice* device = nullptr;
+        if (FAILED(collection->Item(i, &device)))
+            continue;
+
+        LPWSTR id_raw = nullptr;
+        device->GetId(&id_raw);
+
+        IPropertyStore* props = nullptr;
+        device->OpenPropertyStore(STGM_READ, &props);
+        PROPVARIANT pv;
+        PropVariantInit(&pv);
+        std::wstring friendly;
+        if (props &&
+            SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &pv)) &&
+            pv.vt == VT_LPWSTR)
+        {
+            friendly = pv.pwszVal;
+        }
+        PropVariantClear(&pv);
+        if (props) props->Release();
+
+        if (id_raw)
+        {
+            tk::DeviceListing entry;
+            entry.id = wide_to_utf8(id_raw);
+            CoTaskMemFree(id_raw);
+            entry.display_name = friendly.empty() ? entry.id
+                                                   : wide_to_utf8(friendly);
+            result.push_back(std::move(entry));
+        }
+        device->Release();
+    }
+    collection->Release();
+    enumerator->Release();
+    return result;
+}
 
 } // namespace
 
@@ -3265,6 +3334,60 @@ public:
         return make_audio_playback_win32();
     }
 #endif
+
+    std::vector<tk::DeviceListing> enumerate_audio_inputs() const override
+    {
+        return enumerate_wasapi_endpoints(eCapture);
+    }
+
+    std::vector<tk::DeviceListing> enumerate_audio_outputs() const override
+    {
+        return enumerate_wasapi_endpoints(eRender);
+    }
+
+    std::vector<tk::DeviceListing> enumerate_cameras() const override
+    {
+        std::vector<tk::DeviceListing> result;
+
+        IMFAttributes* attrs = nullptr;
+        if (FAILED(MFCreateAttributes(&attrs, 1)))
+            return result;
+        attrs->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+                       MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
+
+        IMFActivate** devices = nullptr;
+        UINT32 count = 0;
+        if (SUCCEEDED(MFEnumDeviceSources(attrs, &devices, &count)))
+        {
+            for (UINT32 i = 0; i < count; ++i)
+            {
+                WCHAR* sym = nullptr;
+                UINT32 sym_len = 0;
+                devices[i]->GetAllocatedString(
+                    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
+                    &sym, &sym_len);
+
+                WCHAR* name = nullptr;
+                UINT32 name_len = 0;
+                devices[i]->GetAllocatedString(
+                    MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &name, &name_len);
+
+                if (sym)
+                {
+                    tk::DeviceListing entry;
+                    entry.id           = wide_to_utf8(sym);
+                    entry.display_name = name ? wide_to_utf8(name) : entry.id;
+                    result.push_back(std::move(entry));
+                    CoTaskMemFree(sym);
+                }
+                if (name) CoTaskMemFree(name);
+                devices[i]->Release();
+            }
+            CoTaskMemFree(devices);
+        }
+        attrs->Release();
+        return result;
+    }
 
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override

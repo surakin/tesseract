@@ -4005,6 +4005,43 @@ void MainWindow::on_create(HWND hwnd)
         {
             ShowWindow(settings_surface_->hwnd(), SW_HIDE);
         }
+
+        // Populate capture-device combos in the Media section.
+        {
+            auto& host = settings_surface_->host();
+            settings_view_->set_audio_input_devices(
+                host.enumerate_audio_inputs());
+            settings_view_->set_audio_output_devices(
+                host.enumerate_audio_outputs());
+            settings_view_->set_camera_devices(host.enumerate_cameras());
+            settings_view_->set_selected_audio_input(
+                tesseract::Settings::instance().audio_input_device_id);
+            settings_view_->set_selected_audio_output(
+                tesseract::Settings::instance().audio_output_device_id);
+            settings_view_->set_selected_camera(
+                tesseract::Settings::instance().camera_device_id);
+            settings_view_->on_audio_input_changed = [this](std::string id)
+            {
+                tesseract::Settings::instance().audio_input_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+            settings_view_->on_audio_output_changed = [this](std::string id)
+            {
+                tesseract::Settings::instance().audio_output_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+            settings_view_->on_camera_changed = [this](std::string id)
+            {
+                tesseract::Settings::instance().camera_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+        }
     }
 
     apply_current_theme_();

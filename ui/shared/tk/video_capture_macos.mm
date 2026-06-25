@@ -11,10 +11,13 @@
 
 #include "video_capture.h"
 
+#include <tesseract/settings.h>
+
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -176,8 +179,17 @@ public:
 private:
     void start_session_()
     {
-        AVCaptureDevice* device =
-            [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+        AVCaptureDevice* device = nil;
+        {
+            const std::string& pref = tesseract::Settings::instance().camera_device_id;
+            if (!pref.empty())
+            {
+                NSString* uid = [NSString stringWithUTF8String:pref.c_str()];
+                device = [AVCaptureDevice deviceWithUniqueID:uid];
+            }
+            if (!device)
+                device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+        }
         if (!device)
             return;
 

@@ -17,11 +17,13 @@
 
 #include "video_capture.h"
 
+#include <tesseract/settings.h>
+
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 
-#include <cstring>
 #include <mutex>
+#include <string>
 
 namespace
 {
@@ -37,8 +39,10 @@ public:
             return;
 
         const char* format = bgra_mode_ ? "BGRA" : "I420";
+        // Build pipeline with a named v4l2src; set the device property
+        // programmatically after parsing to avoid pipeline injection.
         gchar* desc = g_strdup_printf(
-            "v4l2src ! videoconvert ! videoscale ! "
+            "v4l2src name=cam_src ! videoconvert ! videoscale ! "
             "video/x-raw,format=%s,width=640,height=480 ! "
             "appsink name=vsink emit-signals=true max-buffers=2 drop=true",
             format);
@@ -46,6 +50,21 @@ public:
         GError* err = nullptr;
         pipeline_ = gst_parse_launch(desc, &err);
         g_free(desc);
+
+        if (pipeline_)
+        {
+            const std::string& cam_pref = tesseract::Settings::instance().camera_device_id;
+            if (!cam_pref.empty())
+            {
+                GstElement* src_elem =
+                    gst_bin_get_by_name(GST_BIN(pipeline_), "cam_src");
+                if (src_elem)
+                {
+                    g_object_set(src_elem, "device", cam_pref.c_str(), nullptr);
+                    gst_object_unref(src_elem);
+                }
+            }
+        }
 
         if (!pipeline_ || err)
         {

@@ -12,10 +12,13 @@
 
 #include "tk/combobox.h"
 #include "tk/controls.h"
+#include "tk/device_listing.h"
 
 #include <tesseract/settings.h>
 
 #include <functional>
+#include <string>
+#include <vector>
 
 namespace tesseract::views
 {
@@ -37,6 +40,28 @@ public:
         on_media_previews_changed;
     std::function<void(bool)> on_invite_avatars_changed;
 
+    // ── Capture device selection ──────────────────────────────────────────
+    // Populate combos. Prepends "System default" (value="") automatically.
+    // Does not fire the callbacks below.
+    void set_audio_input_devices(std::vector<tk::DeviceListing> devices);
+    void set_audio_output_devices(std::vector<tk::DeviceListing> devices);
+    void set_camera_devices(std::vector<tk::DeviceListing> devices);
+
+    // Silently pre-select a value. Does not fire the callbacks.
+    void set_selected_audio_input(const std::string& id);
+    void set_selected_audio_output(const std::string& id);
+    void set_selected_camera(const std::string& id);
+
+    // Fires with the newly selected device ID (empty = system default).
+    std::function<void(std::string)> on_audio_input_changed;
+    std::function<void(std::string)> on_audio_output_changed;
+    std::function<void(std::string)> on_camera_changed;
+
+    // ComboBox accessors used by tests to simulate user selections.
+    tk::ComboBox* audio_input_combo()  const { return audio_input_combo_; }
+    tk::ComboBox* audio_output_combo() const { return audio_output_combo_; }
+    tk::ComboBox* camera_combo()       const { return camera_combo_; }
+
     // Constrain the combobox dropdown popup to the page bounds (mirrors
     // AppearanceSection) so it doesn't paint outside the settings panel.
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -45,6 +70,10 @@ private:
     tk::ComboBox*    previews_combo_    = nullptr;
     tk::CheckButton* invite_avatars_cb_ = nullptr;
     tk::CheckButton* prefetch_cb_       = nullptr;
+
+    tk::ComboBox* audio_input_combo_  = nullptr;
+    tk::ComboBox* audio_output_combo_ = nullptr;
+    tk::ComboBox* camera_combo_       = nullptr;
 };
 
 } // namespace tesseract::views

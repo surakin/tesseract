@@ -36,6 +36,16 @@ MP value_to_mp(const std::string& v)
         return MP::Private;
     return MP::On;
 }
+
+std::vector<tk::ComboBox::Option> make_device_options(
+    const std::vector<tk::DeviceListing>& devices)
+{
+    std::vector<tk::ComboBox::Option> opts;
+    opts.push_back({"System default", ""});
+    for (const auto& d : devices)
+        opts.push_back({d.display_name, d.id});
+    return opts;
+}
 } // namespace
 
 MediaSection::MediaSection()
@@ -78,6 +88,33 @@ MediaSection::MediaSection()
     {
         if (on_prefetch_changed) on_prefetch_changed(v);
     };
+
+    // ── Capture devices ─────────────────────────────────────────────────────
+    auto* dev_group = add_group("Capture devices");
+
+    auto mic_combo = std::make_unique<tk::ComboBox>();
+    mic_combo->set_options({{"System default", ""}});
+    mic_combo->on_changed = [this](std::string value)
+    {
+        if (on_audio_input_changed) on_audio_input_changed(std::move(value));
+    };
+    audio_input_combo_ = dev_group->add_widget(std::move(mic_combo));
+
+    auto spk_combo = std::make_unique<tk::ComboBox>();
+    spk_combo->set_options({{"System default", ""}});
+    spk_combo->on_changed = [this](std::string value)
+    {
+        if (on_audio_output_changed) on_audio_output_changed(std::move(value));
+    };
+    audio_output_combo_ = dev_group->add_widget(std::move(spk_combo));
+
+    auto cam_combo = std::make_unique<tk::ComboBox>();
+    cam_combo->set_options({{"System default", ""}});
+    cam_combo->on_changed = [this](std::string value)
+    {
+        if (on_camera_changed) on_camera_changed(std::move(value));
+    };
+    camera_combo_ = dev_group->add_widget(std::move(cam_combo));
 }
 
 void MediaSection::set_prefetch_checked(bool enabled)
@@ -97,11 +134,47 @@ void MediaSection::set_invite_avatars(bool enabled)
         invite_avatars_cb_->set_checked(enabled);
 }
 
+void MediaSection::set_audio_input_devices(std::vector<tk::DeviceListing> devices)
+{
+    audio_input_combo_->set_options(make_device_options(devices));
+}
+
+void MediaSection::set_audio_output_devices(std::vector<tk::DeviceListing> devices)
+{
+    audio_output_combo_->set_options(make_device_options(devices));
+}
+
+void MediaSection::set_camera_devices(std::vector<tk::DeviceListing> devices)
+{
+    camera_combo_->set_options(make_device_options(devices));
+}
+
+void MediaSection::set_selected_audio_input(const std::string& id)
+{
+    audio_input_combo_->set_selected_value(id);
+}
+
+void MediaSection::set_selected_audio_output(const std::string& id)
+{
+    audio_output_combo_->set_selected_value(id);
+}
+
+void MediaSection::set_selected_camera(const std::string& id)
+{
+    camera_combo_->set_selected_value(id);
+}
+
 void MediaSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     SettingsPage::arrange(ctx, bounds);
     if (previews_combo_)
         previews_combo_->set_popup_clip(bounds);
+    if (audio_input_combo_)
+        audio_input_combo_->set_popup_clip(bounds);
+    if (audio_output_combo_)
+        audio_output_combo_->set_popup_clip(bounds);
+    if (camera_combo_)
+        camera_combo_->set_popup_clip(bounds);
 }
 
 } // namespace tesseract::views

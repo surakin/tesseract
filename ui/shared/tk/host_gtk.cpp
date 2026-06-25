@@ -2,8 +2,11 @@
 #include "anim_image_cache.h"
 #include "canvas_cairo.h"
 #include "controls.h"
+#include "device_listing.h"
+#include "gst_hw_probe.h"
 
 #include <gtk/gtk.h>
+#include <gst/gst.h>
 
 #include <algorithm>
 #include <cmath>
@@ -1100,6 +1103,10 @@ public:
     std::unique_ptr<AudioPlayback> make_audio_playback() override;
 #endif
 
+    std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
+    std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
+    std::vector<tk::DeviceListing> enumerate_cameras()       const override;
+
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override
     {
@@ -1882,5 +1889,92 @@ std::unique_ptr<::tk::AudioPlayback> Host::make_audio_playback()
     return make_audio_playback_gtk();
 }
 #endif
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Device enumeration — GstDeviceMonitor helpers
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+
+// Enumerate GStreamer devices matching the given device class and optional
+// caps MIME type. For audio, the element property "device" is the
+// PulseAudio/PipeWire source or sink name; for video it is the /dev/videoN
+// path. Returns a DeviceListing per device found.
+std::vector<tk::DeviceListing> enumerate_gst_devices(const char* gst_class,
+                                                      const char* caps_mime)
+{
+    tk::gst::ensure_gst_init();
+
+    std::vector<tk::DeviceListing> result;
+    GstDeviceMonitor* monitor = gst_device_monitor_new();
+
+    GstCaps* caps = caps_mime ? gst_caps_new_empty_simple(caps_mime) : nullptr;
+    gst_device_monitor_add_filter(monitor, gst_class, caps);
+    if (caps)
+        gst_caps_unref(caps);
+
+    if (!gst_device_monitor_start(monitor))
+    {
+        gst_object_unref(monitor);
+        return result;
+    }
+
+    GList* devices = gst_device_monitor_get_devices(monitor);
+    for (GList* l = devices; l; l = l->next)
+    {
+        GstDevice* dev = GST_DEVICE(l->data);
+
+        GstElement* elem = gst_device_create_element(dev, nullptr);
+        if (!elem)
+        {
+            gst_object_unref(dev);
+            continue;
+        }
+
+        // For audio: "device" is the PulseAudio/PipeWire source/sink name.
+        // For video: "device" is the /dev/videoN path.
+        gchar* dev_id = nullptr;
+        g_object_get(elem, "device", &dev_id, nullptr);
+        gst_object_unref(elem);
+
+        if (!dev_id)
+        {
+            gst_object_unref(dev);
+            continue;
+        }
+
+        gchar* display = gst_device_get_display_name(dev);
+        tk::DeviceListing entry;
+        entry.id           = dev_id;
+        entry.display_name = display ? display : dev_id;
+        result.push_back(std::move(entry));
+
+        g_free(dev_id);
+        g_free(display);
+        gst_object_unref(dev);
+    }
+    g_list_free(devices);
+    gst_device_monitor_stop(monitor);
+    gst_object_unref(monitor);
+    return result;
+}
+
+} // anonymous namespace
+
+std::vector<tk::DeviceListing> Host::enumerate_audio_inputs() const
+{
+    return enumerate_gst_devices("Audio/Source", "audio/x-raw");
+}
+
+std::vector<tk::DeviceListing> Host::enumerate_audio_outputs() const
+{
+    return enumerate_gst_devices("Audio/Sink", "audio/x-raw");
+}
+
+std::vector<tk::DeviceListing> Host::enumerate_cameras() const
+{
+    return enumerate_gst_devices("Video/Source", "video/x-raw");
+}
 
 } // namespace tk::gtk4

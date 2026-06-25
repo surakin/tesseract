@@ -5,10 +5,15 @@
 
 #include "audio_capture.h"
 
+#include <tesseract/settings.h>
+
 #import <AVFoundation/AVFoundation.h>
+#import <AudioUnit/AudioUnit.h>
+#import <CoreAudio/CoreAudio.h>
 #include <algorithm>
 #include <chrono>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace
@@ -173,6 +178,70 @@ private:
 
         engine_ = [[AVAudioEngine alloc] init];
         AVAudioInputNode* input = engine_.inputNode;
+
+        // Select the preferred input device if one is configured.
+        // The stored ID is an AVFoundation UUID string (e.g. "AppleHDAEngineInput:1B,0,1,1:0"),
+        // NOT a decimal integer. Enumerate CoreAudio devices, find the one whose
+        // kAudioDevicePropertyDeviceUID matches, then set it on the audio unit.
+        const std::string& pref = tesseract::Settings::instance().audio_input_device_id;
+        if (!pref.empty())
+        {
+            AudioDeviceID dev_id = kAudioObjectUnknown;
+
+            // Get the list of all audio devices.
+            AudioObjectPropertyAddress addr{
+                kAudioHardwarePropertyDevices,
+                kAudioObjectPropertyScopeGlobal,
+                kAudioObjectPropertyElementMain
+            };
+            UInt32 data_size = 0;
+            if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &addr,
+                                              0, nullptr, &data_size) == noErr
+                && data_size > 0)
+            {
+                const UInt32 count = data_size / sizeof(AudioDeviceID);
+                std::vector<AudioDeviceID> devices(count);
+                if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr,
+                                               0, nullptr, &data_size,
+                                               devices.data()) == noErr)
+                {
+                    NSString* target_uid =
+                        [NSString stringWithUTF8String:pref.c_str()];
+                    for (AudioDeviceID candidate : devices)
+                    {
+                        AudioObjectPropertyAddress uid_addr{
+                            kAudioDevicePropertyDeviceUID,
+                            kAudioObjectPropertyScopeGlobal,
+                            kAudioObjectPropertyElementMain
+                        };
+                        CFStringRef uid_cf = nullptr;
+                        UInt32 uid_size = sizeof(uid_cf);
+                        if (AudioObjectGetPropertyData(candidate, &uid_addr,
+                                                       0, nullptr, &uid_size,
+                                                       &uid_cf) == noErr
+                            && uid_cf != nullptr)
+                        {
+                            NSString* uid_ns = (__bridge_transfer NSString*)uid_cf;
+                            if ([uid_ns isEqualToString:target_uid])
+                            {
+                                dev_id = candidate;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (dev_id != kAudioObjectUnknown)
+            {
+                AudioUnit au = input.audioUnit;
+                AudioUnitSetProperty(au,
+                                     kAudioOutputUnitProperty_CurrentDevice,
+                                     kAudioUnitScope_Global,
+                                     0, &dev_id, sizeof(dev_id));
+            }
+            // If not found, fall back to the default input device (no action needed).
+        }
 
         AVAudioFormat* fmt = [[AVAudioFormat alloc]
             initWithCommonFormat:AVAudioPCMFormatInt16

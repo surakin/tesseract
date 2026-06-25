@@ -2656,6 +2656,42 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         {
             handle_profile_field_change_(key, value_json);
         };
+
+        // Populate capture-device combos in the Media section.
+        {
+            auto& host = main_app_surface_->host();
+            auto* sv   = settings_widget_->settings_view();
+            sv->set_audio_input_devices(host.enumerate_audio_inputs());
+            sv->set_audio_output_devices(host.enumerate_audio_outputs());
+            sv->set_camera_devices(host.enumerate_cameras());
+            sv->set_selected_audio_input(
+                tesseract::Settings::instance().audio_input_device_id);
+            sv->set_selected_audio_output(
+                tesseract::Settings::instance().audio_output_device_id);
+            sv->set_selected_camera(
+                tesseract::Settings::instance().camera_device_id);
+            sv->on_audio_input_changed = [this](std::string id)
+            {
+                tesseract::Settings::instance().audio_input_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+            sv->on_audio_output_changed = [this](std::string id)
+            {
+                tesseract::Settings::instance().audio_output_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+            sv->on_camera_changed = [this](std::string id)
+            {
+                tesseract::Settings::instance().camera_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+        }
     }
 
     // Escape key: close viewer overlays. Attached to the window so it fires

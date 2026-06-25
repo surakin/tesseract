@@ -38,6 +38,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace tesseract::views
 {
@@ -88,6 +89,22 @@ public:
     // Settings mirror of the account-data config).
     void set_media_previews_pref(tesseract::Settings::MediaPreviews mode);
     void set_invite_avatars_pref(bool enabled);
+
+    // Populate device combos in the Media section.
+    // Call once when the settings view is first opened.
+    void set_audio_input_devices(std::vector<tk::DeviceListing> devices);
+    void set_audio_output_devices(std::vector<tk::DeviceListing> devices);
+    void set_camera_devices(std::vector<tk::DeviceListing> devices);
+
+    // Silently pre-select the stored device (does not fire callbacks).
+    void set_selected_audio_input(const std::string& id);
+    void set_selected_audio_output(const std::string& id);
+    void set_selected_camera(const std::string& id);
+
+    // Fires when the user picks a different device; empty = system default.
+    std::function<void(std::string)> on_audio_input_changed;
+    std::function<void(std::string)> on_audio_output_changed;
+    std::function<void(std::string)> on_camera_changed;
 
     // ----- Privacy section --------------------------------------------------
 

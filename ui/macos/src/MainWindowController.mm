@@ -5360,6 +5360,46 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_shell->apply_media_preview_config(
                     tesseract::Settings::instance().media_previews, enabled);
         };
+        // Populate capture-device combos in the Media section.
+        {
+            auto& host = _mainAppSurface->host();
+            _settingsView->set_audio_input_devices(host.enumerate_audio_inputs());
+            _settingsView->set_audio_output_devices(host.enumerate_audio_outputs());
+            _settingsView->set_camera_devices(host.enumerate_cameras());
+            _settingsView->set_selected_audio_input(
+                tesseract::Settings::instance().audio_input_device_id);
+            _settingsView->set_selected_audio_output(
+                tesseract::Settings::instance().audio_output_device_id);
+            _settingsView->set_selected_camera(
+                tesseract::Settings::instance().camera_device_id);
+            _settingsView->on_audio_input_changed = [ws](std::string id)
+            {
+                MainWindowController* s = ws;
+                if (!s) return;
+                tesseract::Settings::instance().audio_input_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+            _settingsView->on_audio_output_changed = [ws](std::string id)
+            {
+                MainWindowController* s = ws;
+                if (!s) return;
+                tesseract::Settings::instance().audio_output_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+            _settingsView->on_camera_changed = [ws](std::string id)
+            {
+                MainWindowController* s = ws;
+                if (!s) return;
+                tesseract::Settings::instance().camera_device_id =
+                    std::move(id);
+                tesseract::Settings::instance().save_to_disk(
+                    tesseract::config_dir());
+            };
+        }
         _settingsView->on_tab_changed = [ws] {
             MainWindowController* s = ws;
             if (s) s->_settingsSurface->relayout();
