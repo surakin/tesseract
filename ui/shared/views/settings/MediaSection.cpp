@@ -2,6 +2,7 @@
 
 #include "SettingsGroup.h"
 
+#include "tk/form_layout.h"
 #include "tk/i18n.h"
 #include "tesseract/settings.h"
 
@@ -92,51 +93,32 @@ MediaSection::MediaSection()
 
     // ── Capture devices ─────────────────────────────────────────────────────
     auto* dev_group = add_group("Capture devices");
+    auto* dev_form  = dev_group->add_widget(std::make_unique<tk::FormLayout>());
+    dev_form->set_label_gap(8.0f).set_spacing(8.0f);
 
+    auto mic_combo = std::make_unique<tk::ComboBox>();
+    mic_combo->set_options({{"System default", ""}});
+    mic_combo->on_changed = [this](std::string value)
     {
-        auto row = std::make_unique<tk::HBox>();
-        row->set_cross(tk::Cross::Center).set_spacing(8.0f);
-        row->add_child(std::make_unique<tk::Label>(tk::tr("Microphone")));
-        auto mic_combo = std::make_unique<tk::ComboBox>();
-        mic_combo->set_options({{"System default", ""}});
-        mic_combo->on_changed = [this](std::string value)
-        {
-            if (on_audio_input_changed) on_audio_input_changed(std::move(value));
-        };
-        mic_combo->set_layout_hints({.fill_main = true});
-        audio_input_combo_ = row->add_child(std::move(mic_combo));
-        dev_group->add_widget(std::move(row));
-    }
+        if (on_audio_input_changed) on_audio_input_changed(std::move(value));
+    };
+    audio_input_combo_ = dev_form->add_row(tk::tr("Microphone"), std::move(mic_combo));
 
+    auto spk_combo = std::make_unique<tk::ComboBox>();
+    spk_combo->set_options({{"System default", ""}});
+    spk_combo->on_changed = [this](std::string value)
     {
-        auto row = std::make_unique<tk::HBox>();
-        row->set_cross(tk::Cross::Center).set_spacing(8.0f);
-        row->add_child(std::make_unique<tk::Label>(tk::tr("Speaker")));
-        auto spk_combo = std::make_unique<tk::ComboBox>();
-        spk_combo->set_options({{"System default", ""}});
-        spk_combo->on_changed = [this](std::string value)
-        {
-            if (on_audio_output_changed) on_audio_output_changed(std::move(value));
-        };
-        spk_combo->set_layout_hints({.fill_main = true});
-        audio_output_combo_ = row->add_child(std::move(spk_combo));
-        dev_group->add_widget(std::move(row));
-    }
+        if (on_audio_output_changed) on_audio_output_changed(std::move(value));
+    };
+    audio_output_combo_ = dev_form->add_row(tk::tr("Speaker"), std::move(spk_combo));
 
+    auto cam_combo = std::make_unique<tk::ComboBox>();
+    cam_combo->set_options({{"System default", ""}});
+    cam_combo->on_changed = [this](std::string value)
     {
-        auto row = std::make_unique<tk::HBox>();
-        row->set_cross(tk::Cross::Center).set_spacing(8.0f);
-        row->add_child(std::make_unique<tk::Label>(tk::tr("Camera")));
-        auto cam_combo = std::make_unique<tk::ComboBox>();
-        cam_combo->set_options({{"System default", ""}});
-        cam_combo->on_changed = [this](std::string value)
-        {
-            if (on_camera_changed) on_camera_changed(std::move(value));
-        };
-        cam_combo->set_layout_hints({.fill_main = true});
-        camera_combo_ = row->add_child(std::move(cam_combo));
-        dev_group->add_widget(std::move(row));
-    }
+        if (on_camera_changed) on_camera_changed(std::move(value));
+    };
+    camera_combo_ = dev_form->add_row(tk::tr("Camera"), std::move(cam_combo));
 }
 
 void MediaSection::set_prefetch_checked(bool enabled)

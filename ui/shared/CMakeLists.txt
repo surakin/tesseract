@@ -48,6 +48,8 @@ set(_tk_sources
     tk/widget.cpp
     tk/layout.h
     tk/layout.cpp
+    tk/form_layout.h
+    tk/form_layout.cpp
     tk/combobox.h
     tk/combobox.cpp
     tk/controls.h

@@ -51,6 +51,7 @@ add_executable(tesseract_tests
     cpp/test_compose_bar_media.cpp
     cpp/test_media_drop.cpp
     cpp/test_media_preview_policy.cpp
+    cpp/test_tk_form_layout.cpp
     cpp/test_tk_media_section.cpp
     cpp/test_gif_engine.cpp
     cpp/test_tk_gif_popup.cpp
