@@ -1271,6 +1271,30 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             if (mainApp_)
                 mainApp_->room_view()->clear_compose_text();
         };
+        sh.on_selfie = [this]
+        {
+            if (!mainApp_)
+                return;
+            mainApp_->on_selfie_captured =
+                [this](std::vector<std::uint8_t> bgra,
+                       std::uint32_t w, std::uint32_t h)
+                {
+                    QImage img(bgra.data(), static_cast<int>(w),
+                               static_cast<int>(h), QImage::Format_ARGB32);
+                    QBuffer buf;
+                    buf.open(QIODevice::WriteOnly);
+                    img.save(&buf, "JPEG", 90);
+                    const QByteArray& ba = buf.data();
+                    if (!ba.isEmpty() && mainApp_ &&
+                        mainApp_->room_view()->compose_bar())
+                    {
+                        mainApp_->room_view()->compose_bar()->set_pending_image(
+                            std::vector<std::uint8_t>(ba.begin(), ba.end()),
+                            "image/jpeg", "selfie.jpg");
+                    }
+                };
+            mainApp_->open_camera_overlay();
+        };
         slash_controller_ =
             std::make_unique<tesseract::views::SlashCommandController>(
                 roomTextArea_.get(), slash_popup_widget_, std::move(sh));

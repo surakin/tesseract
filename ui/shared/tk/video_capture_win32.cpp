@@ -1,11 +1,15 @@
-#ifdef TESSERACT_CALLS_ENABLED
 // Win32 video capture backend for tk::VideoCapture.
 // Uses Media Foundation IMFSourceReader in async (callback) mode.
-// Requests I420 output from the software video processor MFT; falls back to
-// NV12 → I420 software conversion if the device cannot output I420 directly.
+//
+// I420 mode (calls path): requests MFVideoFormat_I420, falls back to NV12
+// with software de-interleave. Used by rtc_push_video_frame_i420.
+//
+// BGRA mode (selfie / CameraWidget): requests MFVideoFormat_ARGB32 (stored
+// B,G,R,A in little-endian memory — i.e., native BGRA). The Media Foundation
+// colour converter MFT handles the conversion; no software BT.601 loop.
 //
 // Frames are delivered on the MF reader thread via OnReadSample; the
-// FrameCallback must be thread-safe.
+// FrameCallback / BgraCallback must be thread-safe.
 
 #include "video_capture.h"
 
@@ -15,6 +19,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -32,11 +37,9 @@ void nv12_to_i420(const std::uint8_t* src_y, std::uint32_t src_stride_y,
                   std::uint32_t w, std::uint32_t h,
                   std::uint8_t* dst_y, std::uint8_t* dst_u, std::uint8_t* dst_v)
 {
-    // Copy Y plane.
     for (std::uint32_t row = 0; row < h; ++row)
         std::memcpy(dst_y + row * w, src_y + row * src_stride_y, w);
 
-    // De-interleave UV → U and V planes.
     const std::uint32_t h_uv = (h + 1) / 2;
     const std::uint32_t w_uv = (w + 1) / 2;
     for (std::uint32_t row = 0; row < h_uv; ++row)
@@ -92,43 +95,35 @@ public:
     HRESULT STDMETHODCALLTYPE OnFlush(DWORD) override { return S_OK; }
 
     HRESULT STDMETHODCALLTYPE OnReadSample(HRESULT hr,
-                                            DWORD stream_index,
-                                            DWORD stream_flags,
+                                            DWORD /*stream_index*/,
+                                            DWORD /*stream_flags*/,
                                             LONGLONG /*timestamp*/,
                                             IMFSample* sample) override
     {
         if (!running_.load() || FAILED(hr) || !sample)
         {
-            // Request the next sample even on error to keep the loop alive.
             if (reader_ && running_.load())
                 reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
                                     0, nullptr, nullptr, nullptr, nullptr);
             return S_OK;
         }
 
-        tk::VideoCapture::FrameCallback cb;
+        IMFMediaBuffer* buf = nullptr;
+        if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buf)))
         {
-            std::lock_guard<std::mutex> lk(mu_);
-            cb = callback_;
-        }
-
-        if (cb)
-        {
-            IMFMediaBuffer* buf = nullptr;
-            if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buf)))
+            BYTE* data    = nullptr;
+            DWORD max_len = 0, cur_len = 0;
+            if (SUCCEEDED(buf->Lock(&data, &max_len, &cur_len)))
             {
-                BYTE* data   = nullptr;
-                DWORD max_len = 0, cur_len = 0;
-                if (SUCCEEDED(buf->Lock(&data, &max_len, &cur_len)))
-                {
-                    deliver_frame_(cb, reinterpret_cast<std::uint8_t*>(data));
-                    buf->Unlock();
-                }
-                buf->Release();
+                if (bgra_mode_)
+                    deliver_bgra_(reinterpret_cast<std::uint8_t*>(data), cur_len);
+                else
+                    deliver_i420_(reinterpret_cast<std::uint8_t*>(data));
+                buf->Unlock();
             }
+            buf->Release();
         }
 
-        // Schedule the next read.
         if (reader_ && running_.load())
             reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
                                 0, nullptr, nullptr, nullptr, nullptr);
@@ -139,6 +134,14 @@ public:
     {
         std::lock_guard<std::mutex> lk(mu_);
         callback_ = std::move(cb);
+        bgra_mode_ = false;
+    }
+
+    void set_bgra_callback(tk::VideoCapture::BgraCallback cb) override
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        bgra_callback_ = std::move(cb);
+        bgra_mode_ = true;
     }
 
     void start() override
@@ -150,9 +153,6 @@ public:
         MFCreateAttributes(&attrs, 2);
         attrs->SetUnknown(MF_SOURCE_READER_ASYNC_CALLBACK, this);
 
-        IMFMediaSource* source = nullptr;
-
-        // Enumerate video capture devices and pick the first one.
         IMFAttributes* dev_attrs = nullptr;
         MFCreateAttributes(&dev_attrs, 1);
         dev_attrs->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
@@ -166,9 +166,10 @@ public:
         if (count == 0)
         {
             attrs->Release();
-            return; // no camera — audio-only
+            return;
         }
 
+        IMFMediaSource* source = nullptr;
         devices[0]->ActivateObject(IID_PPV_ARGS(&source));
         for (UINT32 i = 0; i < count; ++i)
             devices[i]->Release();
@@ -186,22 +187,37 @@ public:
         if (FAILED(hr))
             return;
 
-        // Request I420 output.
         IMFMediaType* type = nullptr;
         MFCreateMediaType(&type);
         type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-        type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_I420);
         MFSetAttributeSize(type, MF_MT_FRAME_SIZE, 640, 480);
         MFSetAttributeRatio(type, MF_MT_FRAME_RATE, 30, 1);
 
-        if (FAILED(reader_->SetCurrentMediaType(
-                MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type)))
+        if (bgra_mode_)
         {
-            // I420 unavailable — try NV12 and convert in software.
-            type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
-            reader_->SetCurrentMediaType(
-                MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
-            use_nv12_ = true;
+            // ARGB32 is stored B,G,R,A in little-endian memory (= BGRA).
+            // The MF colour converter MFT handles the conversion from the
+            // camera's native format.
+            type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32);
+            if (FAILED(reader_->SetCurrentMediaType(
+                    MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type)))
+            {
+                // Fallback: accept whatever the reader chooses; OnReadSample
+                // will try to deliver BGRA by re-reading the format.
+            }
+        }
+        else
+        {
+            // I420 for the RTC path.
+            type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_I420);
+            if (FAILED(reader_->SetCurrentMediaType(
+                    MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type)))
+            {
+                type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
+                reader_->SetCurrentMediaType(
+                    MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
+                use_nv12_ = true;
+            }
         }
         type->Release();
 
@@ -215,7 +231,6 @@ public:
         }
 
         running_.store(true);
-        // Kick off the async read loop.
         reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
                             0, nullptr, nullptr, nullptr, nullptr);
     }
@@ -233,18 +248,43 @@ public:
     }
 
 private:
-    void deliver_frame_(const tk::VideoCapture::FrameCallback& cb,
-                        const std::uint8_t* raw)
+    void deliver_bgra_(const std::uint8_t* raw, DWORD len)
     {
-        const std::uint32_t w  = frame_w_;
-        const std::uint32_t h  = frame_h_;
+        const std::uint32_t w = frame_w_;
+        const std::uint32_t h = frame_h_;
+        tk::VideoCapture::BgraCallback bgra_cb;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            bgra_cb = bgra_callback_;
+        }
+        if (!bgra_cb)
+            return;
+
+        // MFVideoFormat_ARGB32 contiguous buffer: B,G,R,A per pixel,
+        // stride = w*4 for the constrained 640x480 format we requested.
+        const std::uint32_t expected = w * h * 4;
+        if (len < expected)
+            return;
+        bgra_cb(raw, w, h);
+    }
+
+    void deliver_i420_(const std::uint8_t* raw)
+    {
+        const std::uint32_t w    = frame_w_;
+        const std::uint32_t h    = frame_h_;
         const std::uint32_t h_uv = (h + 1) / 2;
         const std::uint32_t w_uv = (w + 1) / 2;
 
+        tk::VideoCapture::FrameCallback cb;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            cb = callback_;
+        }
+        if (!cb)
+            return;
+
         if (!use_nv12_)
         {
-            // Raw buffer is already I420: Y | U | V, no row padding for
-            // the constrained 640x480 format we requested.
             tk::VideoCapture::Frame f;
             f.y        = raw;
             f.u        = raw + w * h;
@@ -258,11 +298,9 @@ private:
         }
         else
         {
-            // NV12: Y plane then interleaved UV. Convert to I420.
             const std::uint8_t* src_y  = raw;
             const std::uint8_t* src_uv = raw + w * h;
 
-            // Allocate I420 scratch buffer.
             const std::size_t i420_size = w * h + 2 * w_uv * h_uv;
             i420_buf_.resize(i420_size);
             std::uint8_t* dst_y = i420_buf_.data();
@@ -284,15 +322,17 @@ private:
         }
     }
 
-    LONG                            ref_count_;
-    std::atomic<bool>               running_{false};
-    IMFSourceReader*                reader_  = nullptr;
-    std::uint32_t                   frame_w_ = 640;
-    std::uint32_t                   frame_h_ = 480;
-    bool                            use_nv12_ = false;
+    LONG                              ref_count_;
+    std::atomic<bool>                 running_{false};
+    bool                              bgra_mode_  = false;
+    bool                              use_nv12_   = false;
+    IMFSourceReader*                  reader_     = nullptr;
+    std::uint32_t                     frame_w_    = 640;
+    std::uint32_t                     frame_h_    = 480;
 
     std::mutex                        mu_;
     tk::VideoCapture::FrameCallback   callback_;
+    tk::VideoCapture::BgraCallback    bgra_callback_;
     std::vector<std::uint8_t>         i420_buf_;
 };
 
@@ -303,7 +343,6 @@ namespace tk
 
 std::unique_ptr<VideoCapture> make_video_capture_win32()
 {
-    // Probe for at least one video capture device.
     IMFAttributes* attrs = nullptr;
     if (FAILED(MFCreateAttributes(&attrs, 1)))
         return nullptr;
@@ -323,5 +362,3 @@ std::unique_ptr<VideoCapture> make_video_capture_win32()
 }
 
 } // namespace tk
-
-#endif // TESSERACT_CALLS_ENABLED

@@ -5929,6 +5929,57 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             }
             if (s.args_hint.empty())
             {
+                // /selfie — open camera overlay instead of sending.
+                if (s.name == "selfie")
+                {
+                    c->_roomTextArea->set_text("");
+                    if (c->_roomView)
+                        c->_roomView->set_current_text({});
+                    if (c->_shell->main_app_)
+                    {
+                        c->_shell->main_app_->on_selfie_captured =
+                            [c](std::vector<std::uint8_t> bgra,
+                                std::uint32_t w, std::uint32_t h)
+                            {
+                                NSBitmapImageRep* rep =
+                                    [[NSBitmapImageRep alloc]
+                                        initWithBitmapDataPlanes:nullptr
+                                        pixelsWide:static_cast<NSInteger>(w)
+                                        pixelsHigh:static_cast<NSInteger>(h)
+                                        bitsPerSample:8
+                                        samplesPerPixel:4
+                                        hasAlpha:YES
+                                        isPlanar:NO
+                                        colorSpaceName:NSDeviceRGBColorSpace
+                                        bitmapFormat:NSBitmapFormatThirtyTwoBitLittleEndian
+                                        bytesPerRow:static_cast<NSInteger>(w * 4)
+                                        bitsPerPixel:32];
+                                if (rep)
+                                {
+                                    std::memcpy([rep bitmapData], bgra.data(),
+                                                bgra.size());
+                                    NSDictionary* props = @{
+                                        NSImageCompressionFactor: @0.9f
+                                    };
+                                    NSData* jpeg = [rep
+                                        representationUsingType:NSBitmapImageFileTypeJPEG
+                                        properties:props];
+                                    if (jpeg && c->_shell->main_app_ &&
+                                        c->_shell->main_app_->room_view()->compose_bar())
+                                    {
+                                        const auto* d = static_cast<const std::uint8_t*>(
+                                            jpeg.bytes);
+                                        c->_shell->main_app_->room_view()
+                                            ->compose_bar()->set_pending_image(
+                                                std::vector<std::uint8_t>(d, d + jpeg.length),
+                                                "image/jpeg", "selfie.jpg");
+                                    }
+                                }
+                            };
+                        c->_shell->main_app_->open_camera_overlay();
+                    }
+                    return;
+                }
                 std::string body = "/" + s.name;
                 (void)tesseract::dispatch_compose_send(
                     *c->_shell->client_, c->_shell->current_room_id_,

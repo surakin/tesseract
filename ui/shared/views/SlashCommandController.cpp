@@ -133,6 +133,17 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
     }
     if (s.args_hint.empty())
     {
+        // /selfie — open camera overlay instead of sending a message.
+        if (s.name == "selfie")
+        {
+            text_area_->set_text("");
+            if (hooks_.clear_composer)
+                hooks_.clear_composer();
+            if (hooks_.on_selfie)
+                hooks_.on_selfie();
+            return;
+        }
+
         // No args — dispatch immediately, then clear the composer.
         tesseract::Client* c = hooks_.client ? hooks_.client() : nullptr;
         std::string rid = hooks_.room_id ? hooks_.room_id() : std::string{};

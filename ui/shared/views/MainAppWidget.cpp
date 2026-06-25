@@ -274,6 +274,45 @@ void MainAppWidget::show_qr_grant(bool show)
     if (qr_grant_view_) qr_grant_view_->set_visible(show);
 }
 
+void MainAppWidget::open_camera_overlay()
+{
+    if (camera_widget_)
+        return; // already open
+
+    auto widget = std::make_unique<CameraWidget>();
+    camera_widget_ = widget.get();
+
+    camera_widget_->on_frame_captured =
+        [this](std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)
+        {
+            if (on_selfie_captured)
+                on_selfie_captured(std::move(bgra), w, h);
+        };
+
+    camera_widget_->on_dismissed =
+        [this]
+        {
+            close_camera_overlay();
+        };
+
+    add_child(std::move(widget));
+    camera_widget_->open();
+    // Trigger arrange + repaint so the new child gets bounds and appears.
+    if (room_view_ && room_view_->on_layout_changed)
+        room_view_->on_layout_changed();
+}
+
+void MainAppWidget::close_camera_overlay()
+{
+    if (!camera_widget_)
+        return;
+    CameraWidget* w = camera_widget_;
+    camera_widget_  = nullptr;
+    remove_child(w);
+    if (room_view_ && room_view_->on_layout_changed)
+        room_view_->on_layout_changed();
+}
+
 #ifdef TESSERACT_CALLS_ENABLED
 void MainAppWidget::mount_call_overlay(
     views::CallOverlayWidget::Mode                  initial_mode,
@@ -606,6 +645,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (quick_switcher_) quick_switcher_->arrange(ctx, bounds);
     if (message_search_) message_search_->arrange(ctx, bounds);
     if (forward_picker_) forward_picker_->arrange(ctx, bounds);
+    if (camera_widget_) camera_widget_->arrange(ctx, bounds);
 #ifdef TESSERACT_CALLS_ENABLED
     if (float_call_overlay_)
     {
@@ -773,6 +813,11 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     if (forward_picker_ && forward_picker_->visible())
     {
         forward_picker_->paint(ctx);
+    }
+    // Camera overlay — topmost, since it must cover everything while active.
+    if (camera_widget_)
+    {
+        camera_widget_->paint(ctx);
     }
 #ifdef TESSERACT_CALLS_ENABLED
     if (float_call_overlay_ && float_call_overlay_->visible())

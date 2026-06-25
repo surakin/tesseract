@@ -21,6 +21,7 @@
 //   room_search_field_rect()    → NativeTextField position
 
 #include "ConfirmDialog.h"
+#include "CameraWidget.h"
 #include "EncryptionSetupOverlay.h"
 #include "ImageViewerOverlay.h"
 #include "QRGrantView.h"
@@ -47,6 +48,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <vector>
 #include <string>
 #include <string_view>
 
@@ -97,6 +99,20 @@ public:
 
     void show_image_viewer(bool show);
     void show_video_viewer(bool show);
+
+    // Open the selfie camera overlay. The shell should set on_selfie_captured
+    // before calling this. Calling while one is already open is a no-op.
+    void open_camera_overlay();
+
+    // Called automatically when the overlay dismisses itself (post-capture or
+    // user cancel). May also be called by the shell (e.g. on window close).
+    void close_camera_overlay();
+
+    // Set by the shell before calling open_camera_overlay(). Receives the raw
+    // BGRA8888 frame; the shell encodes it to JPEG and calls set_pending_image.
+    std::function<void(std::vector<std::uint8_t> bgra,
+                       std::uint32_t w, std::uint32_t h)>
+        on_selfie_captured;
     void show_encryption_setup(bool show);
     void show_qr_grant(bool show);
     QRGrantView* qr_grant_view() const { return qr_grant_view_; }
@@ -275,6 +291,8 @@ private:
     // Full-surface lightbox overlays (painted last — highest z-order)
     ImageViewerOverlay* img_viewer_ = nullptr;
     VideoViewerOverlay* vid_viewer_ = nullptr;
+    // Selfie overlay — lazily created by open_camera_overlay(), freed on dismiss.
+    CameraWidget* camera_widget_ = nullptr;
     EncryptionSetupOverlay* encryption_setup_ = nullptr;
     QRGrantView* qr_grant_view_ = nullptr;
 

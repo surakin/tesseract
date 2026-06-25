@@ -818,6 +818,50 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             sh.room_id = [this] { return current_room_id_; };
             sh.client = [this]() -> tesseract::Client* { return client_; };
             sh.clear_composer = [this] { room_view_->clear_compose_text(); };
+            sh.on_selfie = [this]
+            {
+                main_app_->on_selfie_captured =
+                    [this](std::vector<std::uint8_t> bgra,
+                           std::uint32_t w, std::uint32_t h)
+                    {
+                        // GdkPixbuf expects RGBA; swap R and B channels.
+                        std::vector<std::uint8_t> rgba(bgra.size());
+                        for (std::size_t i = 0; i + 3 < bgra.size(); i += 4)
+                        {
+                            rgba[i + 0] = bgra[i + 2]; // R
+                            rgba[i + 1] = bgra[i + 1]; // G
+                            rgba[i + 2] = bgra[i + 0]; // B
+                            rgba[i + 3] = bgra[i + 3]; // A
+                        }
+                        GdkPixbuf* pb = gdk_pixbuf_new_from_data(
+                            rgba.data(), GDK_COLORSPACE_RGB, TRUE, 8,
+                            static_cast<int>(w), static_cast<int>(h),
+                            static_cast<int>(w * 4), nullptr, nullptr);
+                        if (pb)
+                        {
+                            GError* gerr = nullptr;
+                            gchar*  data = nullptr;
+                            gsize   sz   = 0;
+                            if (gdk_pixbuf_save_to_buffer(
+                                    pb, &data, &sz, "jpeg", &gerr,
+                                    "quality", "90", nullptr))
+                            {
+                                if (room_view_->compose_bar())
+                                {
+                                    room_view_->compose_bar()->set_pending_image(
+                                        std::vector<std::uint8_t>(
+                                            reinterpret_cast<const std::uint8_t*>(data),
+                                            reinterpret_cast<const std::uint8_t*>(data) + sz),
+                                        "image/jpeg", "selfie.jpg");
+                                }
+                                g_free(data);
+                            }
+                            if (gerr) g_error_free(gerr);
+                            g_object_unref(pb);
+                        }
+                    };
+                main_app_->open_camera_overlay();
+            };
             slash_controller_ =
                 std::make_unique<tesseract::views::SlashCommandController>(
                     room_text_area_.get(), slash_popup_widget_, std::move(sh));

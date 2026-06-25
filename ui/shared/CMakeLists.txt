@@ -121,6 +121,8 @@ set(_tk_sources
     views/AccountPicker.cpp
     views/MediaOverlayBase.h
     views/MediaOverlayBase.cpp
+    views/CameraWidget.h
+    views/CameraWidget.cpp
     views/ImageViewerOverlay.h
     views/ImageViewerOverlay.cpp
     views/VideoViewerOverlay.h
@@ -258,6 +260,19 @@ elseif(TESSERACT_UI STREQUAL "macos")
     )
 endif()
 
+# VideoCapture — unconditional so CameraWidget (/selfie) works without calls.
+list(APPEND _tk_sources
+    tk/video_capture.cpp
+    tk/video_capture_gst.cpp
+)
+if(TESSERACT_UI STREQUAL "macos")
+    list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
+    list(APPEND _tk_sources tk/video_capture_macos.mm)
+elseif(TESSERACT_UI STREQUAL "win32")
+    list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
+    list(APPEND _tk_sources tk/video_capture_win32.cpp)
+endif()
+
 if(TESSERACT_ENABLE_CALLS)
     list(APPEND _tk_sources
         views/IncomingCallBanner.h
@@ -266,18 +281,9 @@ if(TESSERACT_ENABLE_CALLS)
         views/ParticipantTile.cpp
         views/CallOverlayWidget.h
         views/CallOverlayWidget.cpp
-        tk/video_capture.cpp
-        tk/video_capture_gst.cpp
         app/CallWindowBase.h
         app/CallWindowBase.cpp
     )
-    if(TESSERACT_UI STREQUAL "macos")
-        list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
-        list(APPEND _tk_sources tk/video_capture_macos.mm)
-    elseif(TESSERACT_UI STREQUAL "win32")
-        list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
-        list(APPEND _tk_sources tk/video_capture_win32.cpp)
-    endif()
 endif()
 
 add_library(tesseract_tk STATIC ${_tk_sources})

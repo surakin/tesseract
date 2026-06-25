@@ -1,5 +1,3 @@
-#ifdef TESSERACT_CALLS_ENABLED
-
 #include "video_capture.h"
 
 namespace tk
@@ -19,5 +17,3 @@ std::unique_ptr<VideoCapture> VideoCapture::create()
 }
 
 } // namespace tk
-
-#endif // TESSERACT_CALLS_ENABLED

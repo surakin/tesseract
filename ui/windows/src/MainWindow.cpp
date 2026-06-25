@@ -3168,6 +3168,65 @@ void MainWindow::on_create(HWND hwnd)
                 if (room_view_)
                     room_view_->clear_compose_text();
             };
+            sh.on_selfie = [this]
+            {
+                if (!main_app_)
+                    return;
+                main_app_->on_selfie_captured =
+                    [this](std::vector<std::uint8_t> bgra,
+                           std::uint32_t w, std::uint32_t h)
+                    {
+                        IWICImagingFactory* wic = nullptr;
+                        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory,
+                                                    nullptr,
+                                                    CLSCTX_INPROC_SERVER,
+                                                    IID_PPV_ARGS(&wic))))
+                            return;
+                        IStream* out = nullptr;
+                        CreateStreamOnHGlobal(nullptr, TRUE, &out);
+                        IWICBitmapEncoder* enc = nullptr;
+                        if (SUCCEEDED(wic->CreateEncoder(GUID_ContainerFormatJpeg,
+                                                         nullptr, &enc)) && out)
+                        {
+                            enc->Initialize(out, WICBitmapEncoderNoCache);
+                            IWICBitmapFrameEncode* frame = nullptr;
+                            if (SUCCEEDED(enc->CreateNewFrame(&frame, nullptr)))
+                            {
+                                frame->Initialize(nullptr);
+                                frame->SetSize(w, h);
+                                WICPixelFormatGUID fmt =
+                                    GUID_WICPixelFormat32bppBGRA;
+                                frame->SetPixelFormat(&fmt);
+                                frame->WritePixels(h, w * 4, w * h * 4,
+                                                   bgra.data());
+                                frame->Commit();
+                                frame->Release();
+                            }
+                            enc->Commit();
+                            enc->Release();
+                            LARGE_INTEGER seek{};
+                            out->Seek(seek, STREAM_SEEK_SET, nullptr);
+                            STATSTG stat{};
+                            out->Stat(&stat, STATFLAG_NONAME);
+                            std::vector<std::uint8_t> jpeg(
+                                static_cast<std::size_t>(stat.cbSize.QuadPart));
+                            ULONG nread = 0;
+                            out->Read(jpeg.data(),
+                                      static_cast<ULONG>(jpeg.size()), &nread);
+                            if (jpeg.size() > 0 && main_app_ &&
+                                main_app_->room_view()->compose_bar())
+                            {
+                                main_app_->room_view()->compose_bar()
+                                    ->set_pending_image(std::move(jpeg),
+                                                        "image/jpeg",
+                                                        "selfie.jpg");
+                            }
+                        }
+                        if (out) out->Release();
+                        wic->Release();
+                    };
+                main_app_->open_camera_overlay();
+            };
             slash_controller_ =
                 std::make_unique<tesseract::views::SlashCommandController>(
                     room_text_area_.get(), slash_popup_widget_, std::move(sh));

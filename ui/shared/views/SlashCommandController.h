@@ -43,6 +43,9 @@ public:
         // after an arg-less command is dispatched. The controller already empties
         // the native text area; this keeps the view's cached text in sync.
         std::function<void()> clear_composer;
+        // Open the selfie camera overlay. Called instead of dispatch_compose_send
+        // when the user accepts /selfie. No-op if unset (e.g. popout windows).
+        std::function<void()> on_selfie;
     };
 
     SlashCommandController(tk::NativeTextArea* text_area,
