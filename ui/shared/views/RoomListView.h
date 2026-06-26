@@ -295,6 +295,8 @@ private:
     // Lucide join (+) icon, tinted accent / text_primary (pressed); the cache is
     // tint-aware so it recolors on press and on theme switch.
     tk::IconCache join_icon_;
+    // Phone icon drawn in room rows that have an active call.
+    tk::IconCache call_icon_;
     // Sticky-header interaction: section pressed on the pinned header (-1 =
     // none), and whether the pointer is currently over the pinned header.
     int  press_sticky_section_ = -1;

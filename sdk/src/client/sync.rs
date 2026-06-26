@@ -174,6 +174,12 @@ impl ClientFfi {
         // only that room's `RoomInfo` instead of walking `joined_rooms()` and
         // fanning out into per-room SQLite queries on every read-receipt /
         // latest-event burst.
+        //
+        // `m.call.member` state events are not notable updates in matrix-sdk,
+        // so a dedicated channel carries the affected room ID into the watcher
+        // loop when call-member state changes.
+        let (call_member_tx, call_member_rx) =
+            tokio::sync::mpsc::unbounded_channel::<OwnedRoomId>();
         {
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
@@ -227,6 +233,7 @@ impl ClientFfi {
             }
             let previews = Arc::clone(&self.backfill_previews);
             let dm_counterparts_w = Arc::clone(&self.dm_counterparts);
+            let mut call_member_rx = call_member_rx;
 
             self.spawn_tracked(async move {
                 use matrix_sdk::RoomState;
@@ -300,6 +307,31 @@ impl ClientFfi {
                     tokio::select! {
                         _ = stop_rx_rooms.changed() => {
                             if *stop_rx_rooms.borrow() { break; }
+                        }
+                        Some(room_id) = call_member_rx.recv() => {
+                            // A m.call.member state event arrived for this room.
+                            // Rebuild its RoomInfo so has_active_call reflects
+                            // the current call state, then emit.
+                            if let Some(room) = client_clone.get_room(&room_id) {
+                                if room.state() == RoomState::Joined {
+                                    if let Some(info) =
+                                        super::build_room_info(&client_clone, &room).await
+                                    {
+                                        cache.insert(room_id, info);
+                                    }
+                                }
+                            }
+                            refresh_dm_counterparts(&dm_counterparts_w, &cache);
+                            let sort_keys = {
+                                let mut tmp: Vec<crate::ffi::RoomInfo> =
+                                    cache.values().cloned().collect();
+                                apply_backfill_previews(&mut tmp, &previews);
+                                super::room_list_fingerprint(&tmp)
+                            };
+                            if sort_keys != prev_sort_keys {
+                                prev_sort_keys = sort_keys;
+                                emit_snapshot(&cache, &previews, &h);
+                            }
                         }
                         result = notable_rx.recv() => {
                             use tokio::sync::broadcast::error::{RecvError, TryRecvError};
@@ -510,6 +542,22 @@ impl ClientFfi {
                     }
                 }
             });
+        }
+
+        // Propagate m.call.member state changes into the room-info watcher.
+        // matrix-sdk does not emit a RoomInfoNotableUpdate for call-member
+        // state events, so without this handler the room list would never
+        // refresh has_active_call mid-session (icon persists after call ends).
+        {
+            use matrix_sdk::ruma::events::{call::member::CallMemberEventContent, SyncStateEvent};
+            self.event_handler_handles.push(client.add_event_handler(
+                move |_ev: SyncStateEvent<CallMemberEventContent>, room: Room| {
+                    let tx = call_member_tx.clone();
+                    async move {
+                        let _ = tx.send(room.room_id().to_owned());
+                    }
+                },
+            ));
         }
 
         // Recovery state watcher (Step 6).

@@ -519,6 +519,14 @@ private:
             badge_width = kDotSize; // reserve the right-aligned dot slot
             text_w -= (badge_width + kPadX);
         }
+        // Reserve space for the active-call indicator (phone icon, right-aligned
+        // to the right of the badge/dot slot).
+        constexpr float kCallIconPx  = 14.0f;
+        constexpr float kCallIconGap = 4.0f;
+        const float call_icon_w = room.has_active_call
+                                      ? kCallIconPx + kCallIconGap
+                                      : 0.f;
+        text_w -= call_icon_w;
         if (text_w < 0)
         {
             text_w = 0;
@@ -658,7 +666,7 @@ private:
 
             if (thumb)
             {
-                float thumb_right = bounds.x + bounds.w - kPadX -
+                float thumb_right = bounds.x + bounds.w - kPadX - call_icon_w -
                                     (badge_width > 0 ? badge_width + kPadX : 0.0f);
                 float iw = thumb->width()  > 0 ? static_cast<float>(thumb->width())  : kThumb;
                 float ih = thumb->height() > 0 ? static_cast<float>(thumb->height()) : kThumb;
@@ -678,7 +686,7 @@ private:
         {
             tk::Size badge_sz = cache.badge_layout->measure();
             float    pill_w   = std::max(kBadgeMinW, badge_sz.w + kBadgePadX * 2);
-            tk::Rect pill{bounds.x + bounds.w - kPadX - pill_w,
+            tk::Rect pill{bounds.x + bounds.w - kPadX - call_icon_w - pill_w,
                           bounds.y + (bounds.h - kBadgeH) * 0.5f,
                           pill_w, kBadgeH};
             const bool      is_mention = room.highlight_count > 0;
@@ -697,11 +705,21 @@ private:
         {
             // Quiet unread (messages but no notification): a small neutral dot
             // where the count pill would sit.
-            tk::Rect dot{bounds.x + bounds.w - kPadX - kDotSize,
+            tk::Rect dot{bounds.x + bounds.w - kPadX - call_icon_w - kDotSize,
                          bounds.y + (bounds.h - kDotSize) * 0.5f,
                          kDotSize, kDotSize};
             ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f,
                                          ctx.theme.palette.unread_bg);
+        }
+
+        if (room.has_active_call)
+        {
+            tk::Rect icon_box{bounds.x + bounds.w - kPadX - kCallIconPx,
+                              bounds.y + (bounds.h - kCallIconPx) * 0.5f,
+                              kCallIconPx, kCallIconPx};
+            owner_.call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg,
+                                   icon_box, kCallIconPx,
+                                   ctx.theme.palette.accent);
         }
     }
 

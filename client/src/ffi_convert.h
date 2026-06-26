@@ -176,6 +176,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .is_low_priority = r.is_low_priority,
         .topic_html = std::string(r.topic_html),
         .is_encrypted = r.is_encrypted,
+        .has_active_call = r.has_active_call,
         .history_visibility = std::string(r.history_visibility),
     };
     out.pinned_events.reserve(r.pinned_events.size());

@@ -453,6 +453,9 @@ struct RoomInfo
     std::string topic_html;
     /// True when the room has encryption enabled.
     bool is_encrypted = false;
+    /// True when any participant has an active MatrixRTC call in this room
+    /// (`m.call.member` state events with non-empty content).
+    bool has_active_call = false;
     /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
     std::string history_visibility;
     /// Snapshot of `m.room.pinned_events` resolved against the local event

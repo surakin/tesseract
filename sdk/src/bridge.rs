@@ -107,6 +107,9 @@ pub mod ffi {
         is_low_priority: bool,
         /// True when the room has encryption enabled.
         is_encrypted: bool,
+        /// True when any participant has an active MatrixRTC call in this room
+        /// (`m.call.member` state events with non-empty content).
+        has_active_call: bool,
         /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
         history_visibility: String,
         /// Snapshot of `m.room.pinned_events` resolved against the local event
@@ -2599,6 +2602,7 @@ impl Clone for ffi::RoomInfo {
             is_favorite: self.is_favorite,
             is_low_priority: self.is_low_priority,
             is_encrypted: self.is_encrypted,
+            has_active_call: self.has_active_call,
             history_visibility: self.history_visibility.clone(),
             pinned_events: self.pinned_events.clone(),
             canonical_alias: self.canonical_alias.clone(),

@@ -1856,6 +1856,23 @@ pub(super) async fn build_room_info(
         }
     };
     let is_encrypted = room.encryption_state().is_encrypted();
+    let has_active_call = {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::{call::member::CallMemberEventContent, SyncStateEvent};
+        room.get_state_events_static::<CallMemberEventContent>()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .any(|raw| match raw.deserialize() {
+                Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(o))) => {
+                    // active_memberships() filters out expired memberships using
+                    // origin_server_ts as the fallback for created_ts; non-empty
+                    // result means at least one participant is still in the call.
+                    !o.content.active_memberships(Some(o.origin_server_ts)).is_empty()
+                }
+                _ => false,
+            })
+    };
     let history_visibility = {
         use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
         match room.history_visibility_or_default() {
@@ -1946,6 +1963,7 @@ pub(super) async fn build_room_info(
         is_favorite,
         is_low_priority,
         is_encrypted,
+        has_active_call,
         history_visibility,
         pinned_events,
         canonical_alias: room
@@ -1980,7 +1998,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
 /// be unit-tested without a live client.
 pub(super) fn room_list_fingerprint(
     rooms: &[crate::ffi::RoomInfo],
-) -> Vec<(bool, bool, bool, bool, u64, String, String)> {
+) -> Vec<(bool, bool, bool, bool, bool, u64, String, String)> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -2005,6 +2023,7 @@ pub(super) fn room_list_fingerprint(
                 quiet_unread,
                 r.is_favorite,
                 r.is_low_priority,
+                r.has_active_call,
                 r.last_activity_ts,
                 r.id.clone(),
                 r.name.clone(),
@@ -2174,6 +2193,15 @@ mod tests {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.name = "New Name".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_active_call_toggles() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.has_active_call = true;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }

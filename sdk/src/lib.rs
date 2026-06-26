@@ -74,6 +74,7 @@ pub mod ffi {
         pub is_favorite: bool,
         pub is_low_priority: bool,
         pub is_encrypted: bool,
+        pub has_active_call: bool,
         pub history_visibility: String,
         pub canonical_alias: String,
     }
