@@ -92,7 +92,10 @@ public:
     void set_root(std::unique_ptr<Widget> root)
     {
         root_ = std::move(root);
-        root_->set_subtree_removing_cb([this](Widget* s){ on_subtree_removing(s); });
+        root_->set_subtree_removing_cb([this](Widget* s){
+            on_subtree_removing(s);
+            subtree_removed_during_dispatch_ = true;
+        });
         relayout();
     }
     Widget* root() const
@@ -179,6 +182,7 @@ private:
     bool drag_active_ = false;
     const AnimImageCache* anim_cache_ = nullptr;
     std::vector<Rect> anim_damage_;
+    bool subtree_removed_during_dispatch_ = false;
 };
 
 } // namespace tk::macos
@@ -1841,8 +1845,17 @@ void Host::on_layout_changed()
 
 void Host::on_pointer_down(NSPoint p)
 {
+    subtree_removed_during_dispatch_ = false;
     dispatch_pointer_down(
         {static_cast<float>(p.x), static_cast<float>(p.y)});
+    // If a widget removed itself from the tree inside on_pointer_down (e.g.
+    // CameraWidget dismissing on click), dispatch_pointer_down returns its
+    // now-freed address as pressed_widget_. on_subtree_removing fired before
+    // pressed_widget_ was written, so it couldn't clear it. Detect the case
+    // via subtree_removed_during_dispatch_ and zero pressed_widget_ directly
+    // — no on_pointer_up call, the widget is already freed.
+    if (subtree_removed_during_dispatch_ && pressed_widget_)
+        pressed_widget_ = nullptr;
 }
 
 void Host::on_pointer_up(NSPoint p)

@@ -4944,7 +4944,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 // widget tree, but native NSView overlays always sit above the
                 // canvas in AppKit's view hierarchy.
                 bool viewerOpen = (s->_imgViewer && s->_imgViewer->is_open()) ||
-                                  (s->_vidViewer && s->_vidViewer->is_open());
+                                  (s->_vidViewer && s->_vidViewer->is_open()) ||
+                                  app->camera_overlay_open();
                 if (viewerOpen)
                 {
                     s->_roomTextArea->set_visible(false);
