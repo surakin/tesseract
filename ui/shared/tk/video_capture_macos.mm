@@ -66,7 +66,9 @@
 
     if (is_bgra)
     {
-        // kCVPixelFormatType_32BGRA: single plane, BGRA layout.
+        // Requested kCVPixelFormatType_32BGRA, but AVFoundation may deliver
+        // kCVPixelFormatType_32RGBA on some hardware — check the actual format
+        // and swap R↔B channels when needed.
         tk::VideoCapture::BgraCallback bgra_cb;
         {
             std::lock_guard<std::mutex> lk(mu_);
@@ -76,16 +78,37 @@
         {
             const auto* src = static_cast<const std::uint8_t*>(
                 CVPixelBufferGetBaseAddress(pxbuf));
-            const auto w       = static_cast<std::uint32_t>(CVPixelBufferGetWidth(pxbuf));
-            const auto h       = static_cast<std::uint32_t>(CVPixelBufferGetHeight(pxbuf));
-            const auto stride  = CVPixelBufferGetBytesPerRow(pxbuf);
+            const auto w      = static_cast<std::uint32_t>(CVPixelBufferGetWidth(pxbuf));
+            const auto h      = static_cast<std::uint32_t>(CVPixelBufferGetHeight(pxbuf));
+            const auto stride = CVPixelBufferGetBytesPerRow(pxbuf);
             const std::uint32_t row_bytes = w * 4;
 
-            // Copy into a tightly-packed buffer — CVPixelBuffer may have row padding.
+            const OSType fmt          = CVPixelBufferGetPixelFormatType(pxbuf);
+            const bool delivered_bgra = (fmt == kCVPixelFormatType_32BGRA);
+            const bool delivered_rgba = (fmt == kCVPixelFormatType_32RGBA);
+
+            if (!delivered_bgra && !delivered_rgba)
+            {
+                CVPixelBufferUnlockBaseAddress(pxbuf, kCVPixelBufferLock_ReadOnly);
+                return;
+            }
+
+            // Copy into a tightly-packed buffer, converting RGBA→BGRA if needed.
             std::vector<std::uint8_t> tight(row_bytes * h);
             for (std::uint32_t row = 0; row < h; ++row)
-                std::memcpy(tight.data() + row * row_bytes,
-                            src + row * stride, row_bytes);
+            {
+                const auto* s = src + row * stride;
+                auto*       d = tight.data() + row * row_bytes;
+                if (delivered_bgra)
+                {
+                    std::memcpy(d, s, row_bytes);
+                }
+                else // RGBA → BGRA: swap byte 0 (R) and byte 2 (B)
+                {
+                    for (std::uint32_t x = 0; x < w; ++x, s += 4, d += 4)
+                        { d[0] = s[2]; d[1] = s[1]; d[2] = s[0]; d[3] = s[3]; }
+                }
+            }
 
             CVPixelBufferUnlockBaseAddress(pxbuf, kCVPixelBufferLock_ReadOnly);
             bgra_cb(tight.data(), w, h);

@@ -1410,7 +1410,15 @@ void Host::request_repaint()
 {
     if (view_)
     {
-        [view_ setNeedsDisplay:YES];
+        // Dispatch asynchronously so setNeedsDisplay:YES always runs after the
+        // current drawRect: completes. Calling it synchronously from within
+        // drawRect: is unreliable on macOS — the dirty flag can be swallowed
+        // by the active display cycle, breaking continuous-repaint animation
+        // loops (e.g. CameraWidget countdown). dispatch_async to the main
+        // queue matches how ParticipantTile drives repaints: EventHandlerBase
+        // posts via dispatch_get_main_queue() before calling request_repaint_.
+        NSView* v = view_;
+        dispatch_async(dispatch_get_main_queue(), ^{ [v setNeedsDisplay:YES]; });
     }
 }
 

@@ -6012,23 +6012,30 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                             [c](std::vector<std::uint8_t> bgra,
                                 std::uint32_t w, std::uint32_t h)
                             {
+                                CGColorSpaceRef cs =
+                                    CGColorSpaceCreateDeviceRGB();
+                                CGDataProviderRef dp =
+                                    CGDataProviderCreateWithData(
+                                        nullptr, bgra.data(), bgra.size(),
+                                        nullptr);
+                                CGImageRef cgImg = CGImageCreate(
+                                    w, h, 8, 32,
+                                    static_cast<std::size_t>(w) * 4, cs,
+                                    static_cast<CGBitmapInfo>(
+                                        kCGImageAlphaPremultipliedFirst) |
+                                        kCGBitmapByteOrder32Little,
+                                    dp, nullptr, false,
+                                    kCGRenderingIntentDefault);
+                                CGDataProviderRelease(dp);
+                                CGColorSpaceRelease(cs);
                                 NSBitmapImageRep* rep =
-                                    [[NSBitmapImageRep alloc]
-                                        initWithBitmapDataPlanes:nullptr
-                                        pixelsWide:static_cast<NSInteger>(w)
-                                        pixelsHigh:static_cast<NSInteger>(h)
-                                        bitsPerSample:8
-                                        samplesPerPixel:4
-                                        hasAlpha:YES
-                                        isPlanar:NO
-                                        colorSpaceName:NSDeviceRGBColorSpace
-                                        bitmapFormat:NSBitmapFormatThirtyTwoBitLittleEndian
-                                        bytesPerRow:static_cast<NSInteger>(w * 4)
-                                        bitsPerPixel:32];
+                                    cgImg
+                                    ? [[NSBitmapImageRep alloc]
+                                           initWithCGImage:cgImg]
+                                    : nullptr;
+                                if (cgImg) CGImageRelease(cgImg);
                                 if (rep)
                                 {
-                                    std::memcpy([rep bitmapData], bgra.data(),
-                                                bgra.size());
                                     NSDictionary* props = @{
                                         NSImageCompressionFactor: @0.9f
                                     };
