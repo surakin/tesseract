@@ -138,6 +138,19 @@ pub async fn fetch_livekit_service_url(
     ))
 }
 
+/// Returns true when the homeserver has at least one configured livekit transport.
+/// Used during server-info fetch to gate the call UI without doing a full JWT exchange.
+pub async fn probe_livekit_support(
+    http: &reqwest::Client,
+    homeserver_url: &str,
+    access_token: &str,
+    server_name: &str,
+) -> bool {
+    fetch_livekit_service_url(http, homeserver_url, access_token, server_name)
+        .await
+        .is_ok()
+}
+
 /// Look up `org.matrix.msc4143.rtc_foci` in `https://<server_name>/.well-known/matrix/client`
 /// and return the `livekit_service_url` of the first livekit focus, if present.
 async fn rtc_foci_from_well_known(http: &reqwest::Client, server_name: &str) -> Option<String> {

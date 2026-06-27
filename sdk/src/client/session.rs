@@ -242,6 +242,10 @@ impl ClientFfi {
                 url.trim_end_matches('/').to_owned()
             };
             let access_token = client.access_token().unwrap_or_default();
+            let server_name = client
+                .user_id()
+                .map(|uid| uid.server_name().to_string())
+                .unwrap_or_default();
 
             let (versions_resp, caps_resp) = tokio::join!(
                 http.get(format!("{base}/_matrix/client/versions")).send(),
@@ -312,6 +316,14 @@ impl ClientFfi {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
 
+            #[cfg(feature = "calls")]
+            let supports_calls = crate::client::rtc::transport::probe_livekit_support(
+                &http, &base, &access_token, &server_name,
+            )
+            .await;
+            #[cfg(not(feature = "calls"))]
+            let supports_calls = false;
+
             serde_json::json!({
                 "homeserver": base,
                 "spec_versions": spec_versions,
@@ -322,7 +334,8 @@ impl ClientFfi {
                 "default_room_version": default_room_ver,
                 "supports_profile_fields": supports_msc4133,
                 "profile_fields_enabled": profile_fields_enabled,
-                "supports_qr_grant": supports_qr_grant
+                "supports_qr_grant": supports_qr_grant,
+                "supports_calls": supports_calls
             })
             .to_string()
         })
@@ -350,6 +363,10 @@ impl ClientFfi {
                 url.trim_end_matches('/').to_owned()
             };
             let access_token = client.access_token().unwrap_or_default();
+            let server_name = client
+                .user_id()
+                .map(|uid| uid.server_name().to_string())
+                .unwrap_or_default();
 
             let (versions_resp, caps_resp) = tokio::join!(
                 http.get(format!("{base}/_matrix/client/versions")).send(),
@@ -420,6 +437,14 @@ impl ClientFfi {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
 
+            #[cfg(feature = "calls")]
+            let supports_calls = crate::client::rtc::transport::probe_livekit_support(
+                &http, &base, &access_token, &server_name,
+            )
+            .await;
+            #[cfg(not(feature = "calls"))]
+            let supports_calls = false;
+
             let json = serde_json::json!({
                 "homeserver": base,
                 "spec_versions": spec_versions,
@@ -430,7 +455,8 @@ impl ClientFfi {
                 "default_room_version": default_room_ver,
                 "supports_profile_fields": supports_msc4133,
                 "profile_fields_enabled": profile_fields_enabled,
-                "supports_qr_grant": supports_qr_grant
+                "supports_qr_grant": supports_qr_grant,
+                "supports_calls": supports_calls
             })
             .to_string();
 

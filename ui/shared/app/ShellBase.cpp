@@ -2730,6 +2730,14 @@ void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
             if (auto* h = rv->header())
                 h->set_jump_to_date_enabled(server_info_.supports_msc3030);
     }
+#ifdef TESSERACT_CALLS_ENABLED
+    if (room_view_ && room_view_->header())
+        room_view_->header()->set_show_call_btn(server_info_.supports_calls);
+    for (auto& [rid, w] : secondary_windows_)
+        if (auto* rv = w->room_view())
+            if (auto* h = rv->header())
+                h->set_show_call_btn(server_info_.supports_calls);
+#endif
     if (server_info_.supports_profile_fields &&
         server_info_.profile_fields_enabled)
         fetch_own_extended_profile_async_();
@@ -7273,14 +7281,11 @@ void ShellBase::after_active_room_changed_()
     }
 
 #ifdef TESSERACT_CALLS_ENABLED
-    // Show the call button for all rooms when calls are compiled in and the
-    // active call (if any) is in this room. A per-room capability gate can be
-    // added later when the server advertises RTC transport support.
     if (room_view_ && room_view_->header())
     {
         const bool in_call_room = call_session_ != nullptr &&
                                   call_session_->room_id() == current_room_id_;
-        room_view_->header()->set_show_call_btn(true);
+        room_view_->header()->set_show_call_btn(server_info_.supports_calls);
         room_view_->header()->set_call_active(in_call_room);
         // Hide the docked panel when viewing a different room; show it again
         // when the user returns. Floating/Popout: call_panel() is nullptr,
@@ -7944,6 +7949,7 @@ void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
                                            std::string notification_event_id)
 {
     if (!room_view_ || !main_app_) return;
+    if (!server_info_.supports_calls) return;
 
     // Only show the banner when the caller is in the currently-viewed room.
     if (room_id != current_room_id_) return;
