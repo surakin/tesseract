@@ -244,17 +244,19 @@ if(NOT WIN32 OR MINGW)
     target_link_libraries(tesseract_sdk_ffi-static INTERFACE ${OPUS_LIB})
 endif()
 
-if(APPLE AND TESSERACT_ENABLE_CALLS)
-    # livekit-webrtc bundles its own Opus in libwebrtc. audiopus_sys's
-    # Cargo.toml enables the "dynamic" feature on macOS (cfg(target_os="macos"))
-    # so its build.rs links the system libopus dylib instead of compiling a
-    # second static copy. We still need PKG_CONFIG_PATH so pkg-config can find
-    # the Homebrew opus during the Cargo build environment.
+if(APPLE)
+    # audiopus_sys on macOS always uses the "dynamic" Cargo feature, which calls
+    # pkg-config to locate libopus. Set PKG_CONFIG_PATH to whichever directory
+    # holds the opus.pc file (Homebrew lib/pkgconfig on arm64, or the pkgconfig/
+    # subdirectory we create alongside a source-built dylib on x86_64).
+    # PKG_CONFIG_ALLOW_CROSS lets pkg-config run during cross-compilation (arm64
+    # runner building an x86_64 target).
     # NOTE: do NOT set OPUS_STATIC here. audiopus_sys build.rs checks
     # env::var("OPUS_STATIC").is_ok() — presence, not value — so even
     # OPUS_STATIC=0 would trigger the static branch, overriding the feature.
     get_filename_component(_opus_pkgconfig_dir "${OPUS_LIB}" DIRECTORY)
     corrosion_set_env_vars(tesseract_sdk_ffi
+        PKG_CONFIG_ALLOW_CROSS=1
         "PKG_CONFIG_PATH=${_opus_pkgconfig_dir}/pkgconfig")
 endif()
 
