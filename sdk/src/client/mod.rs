@@ -1891,6 +1891,16 @@ pub(super) async fn build_room_info(
                 _ => false,
             })
     };
+    // MSC2346: presence of a uk.half-shot.bridge state event means the room is
+    // bridged to another platform. Calls and threads are suppressed for such rooms.
+    let is_bridged = {
+        use matrix_sdk::ruma::events::StateEventType;
+        !room
+            .get_state_events(StateEventType::from("uk.half-shot.bridge"))
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    };
     let history_visibility = {
         use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
         match room.history_visibility_or_default() {
@@ -1982,6 +1992,7 @@ pub(super) async fn build_room_info(
         is_low_priority,
         is_encrypted,
         has_active_call,
+        is_bridged,
         history_visibility,
         pinned_events,
         canonical_alias: room

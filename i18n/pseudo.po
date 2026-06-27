@@ -5,3 +5,11 @@ msgstr ""
 "Language: x-pseudo\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "🔒 Encrypted"
+msgstr "🔒 [Encrypted]"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "🌉 Bridged"
+msgstr "🌉 [Bridged]"

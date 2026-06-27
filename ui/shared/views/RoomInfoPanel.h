@@ -91,6 +91,7 @@ private:
     std::vector<tk::TextSpan> topic_spans_; // non-empty when plain topic has links
     bool        is_encrypted_      = false;
     std::string history_visibility_;
+    bool        is_bridged_        = false;
 
     // Members
     std::vector<tesseract::RoomMember> members_;
@@ -126,6 +127,7 @@ private:
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> badge_enc_layout_;
     std::unique_ptr<tk::TextLayout> badge_hist_layout_;
+    std::unique_ptr<tk::TextLayout> badge_bridged_layout_;
     std::unique_ptr<tk::TextLayout> topic_layout_;
     struct MemberLayout {
         std::unique_ptr<tk::TextLayout> name;

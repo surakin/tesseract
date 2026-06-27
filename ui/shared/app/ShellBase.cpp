@@ -2732,11 +2732,18 @@ void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
     }
 #ifdef TESSERACT_CALLS_ENABLED
     if (room_view_ && room_view_->header())
-        room_view_->header()->set_show_call_btn(server_info_.supports_calls);
+    {
+        const auto* main_room = room_by_id_(current_room_id_);
+        room_view_->header()->set_show_call_btn(
+            server_info_.supports_calls && !(main_room && main_room->is_bridged));
+    }
     for (auto& [rid, w] : secondary_windows_)
         if (auto* rv = w->room_view())
             if (auto* h = rv->header())
-                h->set_show_call_btn(server_info_.supports_calls);
+            {
+                const auto* r = room_by_id_(rid);
+                h->set_show_call_btn(server_info_.supports_calls && !(r && r->is_bridged));
+            }
 #endif
     if (server_info_.supports_profile_fields &&
         server_info_.profile_fields_enabled)
@@ -7141,14 +7148,17 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
     // every on_threads_updated tick (including the initial empty tick after
     // subscribe), so the button reveals when the SDK paginates non-empty and
     // hides when the list goes empty (e.g., redactions, room switch).
-    room_view_->set_show_threads_button(!threads.empty());
+    // Bridged rooms (MSC2346) never show the threads button regardless of
+    // thread count, because bridges cannot relay threads to the remote platform.
+    const auto* cur_room = room_by_id_(current_room_id_);
+    const bool show_threads = !threads.empty() && !(cur_room && cur_room->is_bridged);
+    room_view_->set_show_threads_button(show_threads);
 
     // Fan out to any popout window currently showing the same room.
-    const bool has_threads = !threads.empty();
     for (auto& [rid, w] : secondary_windows_)
     {
         if (rid == current_room_id_ && w->room_view())
-            w->room_view()->set_show_threads_button(has_threads);
+            w->room_view()->set_show_threads_button(show_threads);
     }
 
     if (room_view_->thread_list_view())
@@ -7285,7 +7295,9 @@ void ShellBase::after_active_room_changed_()
     {
         const bool in_call_room = call_session_ != nullptr &&
                                   call_session_->room_id() == current_room_id_;
-        room_view_->header()->set_show_call_btn(server_info_.supports_calls);
+        const auto* cur_room = room_by_id_(current_room_id_);
+        const bool room_is_bridged = cur_room && cur_room->is_bridged;
+        room_view_->header()->set_show_call_btn(server_info_.supports_calls && !room_is_bridged);
         room_view_->header()->set_call_active(in_call_room);
         // Hide the docked panel when viewing a different room; show it again
         // when the user returns. Floating/Popout: call_panel() is nullptr,

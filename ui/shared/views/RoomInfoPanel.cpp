@@ -2,6 +2,7 @@
 #include "html_spans.h"
 #include "media_utils.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -116,6 +117,7 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     topic_html_         = info.topic_html;
     is_encrypted_       = info.is_encrypted;
     history_visibility_ = info.history_visibility;
+    is_bridged_         = info.is_bridged;
 
     open_            = true;
     set_visible(true);
@@ -160,6 +162,7 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
     avatar_url_         = info.effective_avatar_url();
     is_encrypted_       = info.is_encrypted;
     history_visibility_ = info.history_visibility;
+    is_bridged_         = info.is_bridged;
     // Authoritative re-sync after a server-side tag change.
     if (favourite_btn_)    favourite_btn_->set_checked(info.is_favorite);
     if (low_priority_btn_) low_priority_btn_->set_checked(info.is_low_priority);
@@ -174,6 +177,7 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
     name_layout_.reset();
     badge_enc_layout_.reset();
     badge_hist_layout_.reset();
+    badge_bridged_layout_.reset();
 }
 
 void RoomInfoPanel::close()
@@ -483,7 +487,7 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             st.trim      = tk::TextTrim::Ellipsis;
             st.max_width = text_max_w;
             badge_enc_layout_ =
-                ctx.factory.build_text("\xF0\x9F\x94\x92 Encrypted", st);
+                ctx.factory.build_text(tk::tr("\xF0\x9F\x94\x92 Encrypted"), st);
         }
         if (badge_enc_layout_)
         {
@@ -508,7 +512,24 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         if (badge_hist_layout_)
         {
             cv.draw_text(*badge_hist_layout_, {badge_x, badge_y}, pal.text_muted);
+            badge_x += badge_hist_layout_->measure().w + 12.0f;
         }
+    }
+
+    if (is_bridged_)
+    {
+        if (!badge_bridged_layout_)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Small;
+            st.halign    = tk::TextHAlign::Leading;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = text_max_w;
+            badge_bridged_layout_ =
+                ctx.factory.build_text(tk::tr("\xF0\x9F\x8C\x89 Bridged"), st);
+        }
+        if (badge_bridged_layout_)
+            cv.draw_text(*badge_bridged_layout_, {badge_x, badge_y}, pal.text_muted);
     }
 
     // 8. Separator before Topic section

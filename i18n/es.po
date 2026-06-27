@@ -589,3 +589,11 @@ msgstr "Altavoz"
 #: ui/shared/views/settings/MediaSection.cpp
 msgid "Camera"
 msgstr "Cámara"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "🔒 Encrypted"
+msgstr "🔒 Cifrado"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "🌉 Bridged"
+msgstr "🌉 Con puente"

@@ -456,6 +456,9 @@ struct RoomInfo
     /// True when any participant has an active MatrixRTC call in this room
     /// (`m.call.member` state events with non-empty content).
     bool has_active_call = false;
+    /// True when the room has a `uk.half-shot.bridge` state event (MSC2346).
+    /// Calls and threads are suppressed for bridged rooms.
+    bool is_bridged = false;
     /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
     std::string history_visibility;
     /// Snapshot of `m.room.pinned_events` resolved against the local event
