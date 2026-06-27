@@ -1442,6 +1442,24 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                     let Some(orig) = ev.as_original() else {
                         return LatestPreview::default();
                     };
+                    // Edit events (m.replace) carry the real content in m.new_content;
+                    // the top-level body is a fallback that starts with "* " and must
+                    // not be used as the room-list preview.
+                    use matrix_sdk::ruma::events::room::message::Relation;
+                    if let Some(Relation::Replacement(repl)) = &orig.content.relates_to {
+                        return match &repl.new_content.msgtype {
+                            MessageType::Text(t) => {
+                                text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str()))
+                            }
+                            MessageType::Notice(n) => {
+                                text_kind(&n.body, n.formatted.as_ref().map(|f| f.body.as_str()))
+                            }
+                            MessageType::Emote(e) => {
+                                text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str()))
+                            }
+                            _ => LatestPreview::default(),
+                        };
+                    }
                     match &orig.content.msgtype {
                         MessageType::Text(t) => {
                             text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str()))
@@ -3175,6 +3193,63 @@ mod tests_latest_event_body {
             },
         };
         assert_eq!(latest_event_preview(&v), text("sent!"));
+    }
+
+    #[test]
+    fn edited_plain_uses_new_content() {
+        // Edit event: fallback body starts with "* "; m.new_content has the real text.
+        // Preview must show the new content, not the fallback.
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 2,
+            "content": {
+                "msgtype": "m.text",
+                "body": "* edited body",
+                "m.new_content": { "msgtype": "m.text", "body": "edited body" },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), text("edited body"));
+    }
+
+    #[test]
+    fn edited_formatted_uses_new_content() {
+        // Edit event with a formatted fallback body "* <p>edited body</p>".
+        // html_first_line converts <p> to \n, making "* " the first line → returns "*".
+        // The fix must read m.new_content instead.
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 2,
+            "content": {
+                "msgtype": "m.text",
+                "body": "* edited body",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "* <p>edited body</p>",
+                "m.new_content": {
+                    "msgtype": "m.text",
+                    "body": "edited body",
+                    "format": "org.matrix.custom.html",
+                    "formatted_body": "<p>edited body</p>"
+                },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), text("edited body"));
+    }
+
+    #[test]
+    fn edited_notice_uses_new_content() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 2,
+            "content": {
+                "msgtype": "m.notice",
+                "body": "* edited notice",
+                "m.new_content": { "msgtype": "m.notice", "body": "edited notice" },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), text("edited notice"));
     }
 }
 
