@@ -85,7 +85,9 @@ target_include_directories(tesseract_macos PRIVATE src)
 set_target_properties(tesseract_macos PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     MACOSX_BUNDLE_ICON_FILE  "Tesseract"
-    OUTPUT_NAME "Tesseract"
+    OUTPUT_NAME              "Tesseract"
+    BUILD_RPATH              "@executable_path/../Frameworks"
+    INSTALL_RPATH            "@executable_path/../Frameworks"
 )
 
 # opus: audiopus_sys (the Rust crate) emits a link-lib=opus directive that
@@ -94,6 +96,18 @@ set_target_properties(tesseract_macos PROPERTIES
 find_library(OPUS_LIB NAMES opus
     HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
     REQUIRED)
+
+# Resolve the Homebrew symlink to get the real versioned filename, then read
+# the embedded LC_ID_DYLIB (the string the linker writes into LC_LOAD_DYLIB
+# entries in the exe — may differ from the symlink path we found above).
+get_filename_component(_opus_real "${OPUS_LIB}" REALPATH)
+get_filename_component(_opus_filename "${_opus_real}" NAME)
+execute_process(
+    COMMAND otool -D "${_opus_real}"
+    OUTPUT_VARIABLE _opus_otool
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+string(REGEX REPLACE "^[^\n]*\n" "" _opus_id "${_opus_otool}")
+string(STRIP "${_opus_id}" _opus_id)
 
 # All three archives have circular dependencies through the FFI; link them
 # with WHOLE_ARCHIVE so every symbol is present regardless of order.
@@ -125,8 +139,28 @@ set(TESSERACT_MAC_CODESIGN_IDENTITY "" CACHE STRING
 set(TESSERACT_MAC_NOTARIZE_PROFILE "" CACHE STRING
     "notarytool keychain profile name — empty = no notarization")
 
+# Copy libopus into Contents/Frameworks and rewrite all install-name references so
+# the bundle is self-contained and works on machines without Homebrew.
+add_custom_command(TARGET tesseract_macos POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_BUNDLE_DIR:tesseract_macos>/Contents/Frameworks"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${_opus_real}"
+        "$<TARGET_BUNDLE_DIR:tesseract_macos>/Contents/Frameworks/${_opus_filename}"
+    COMMAND install_name_tool -id
+        "@rpath/${_opus_filename}"
+        "$<TARGET_BUNDLE_DIR:tesseract_macos>/Contents/Frameworks/${_opus_filename}"
+    COMMAND install_name_tool -change
+        "${_opus_id}"
+        "@rpath/${_opus_filename}"
+        "$<TARGET_BUNDLE_DIR:tesseract_macos>/Contents/MacOS/Tesseract"
+    COMMENT "Bundling ${_opus_filename} into Tesseract.app/Contents/Frameworks"
+    VERBATIM
+)
+
 # Sign the build-dir app after every build so macOS accepts UNUserNotificationCenter
 # permission requests. Uses the real identity when one is configured, ad-hoc otherwise.
+# --deep covers Contents/Frameworks/ so libopus.dylib is signed alongside the exe.
 if(TESSERACT_MAC_CODESIGN_IDENTITY)
     set(_tesseract_sign_id "${TESSERACT_MAC_CODESIGN_IDENTITY}")
 else()
