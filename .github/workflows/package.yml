@@ -155,13 +155,12 @@ jobs:
           cmake -S opus-src -B opus-build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=x86_64 \
-            -DOPUS_BUILD_SHARED_LIBRARY=OFF \
+            -DOPUS_BUILD_SHARED_LIBRARY=ON \
             -DOPUS_BUILD_PROGRAMS=OFF \
             -DOPUS_BUILD_TESTING=OFF
           cmake --build opus-build
           echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
-          echo "OPUS_STATIC=1" >> $GITHUB_ENV
 
       - name: Install Rust (stable, x86_64 target)
         uses: dtolnay/rust-toolchain@stable
