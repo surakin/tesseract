@@ -159,6 +159,9 @@ jobs:
             -DOPUS_BUILD_PROGRAMS=OFF \
             -DOPUS_BUILD_TESTING=OFF
           cmake --build opus-build
+          # Lay opus.pc where Corrosion's PKG_CONFIG_PATH (…/pkgconfig) will find it.
+          mkdir -p opus-build/pkgconfig
+          cp opus-build/opus.pc opus-build/pkgconfig/
           echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
