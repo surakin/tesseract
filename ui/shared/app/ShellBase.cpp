@@ -2286,6 +2286,33 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     }
     update_space_children_cache_();
     on_rooms_updated_();
+    // Re-evaluate call-button and threads-button visibility for the current
+    // room: bridge status (is_bridged) can change via on_rooms_updated without
+    // a room switch, so after_active_room_changed_ and handle_server_info_async
+    // won't re-run. Read from rooms_ which on_rooms_updated_() just refreshed.
+    if (!current_room_id_.empty())
+    {
+        const auto* cur_room = room_by_id_(current_room_id_);
+#ifdef TESSERACT_CALLS_ENABLED
+        if (room_view_ && room_view_->header())
+        {
+            room_view_->header()->set_show_call_btn(
+                server_info_.supports_calls && !(cur_room && cur_room->is_bridged));
+        }
+        for (auto& [rid, w] : secondary_windows_)
+        {
+            if (auto* rv = w->room_view())
+                if (auto* h = rv->header())
+                {
+                    const auto* r = room_by_id_(rid);
+                    h->set_show_call_btn(
+                        server_info_.supports_calls && !(r && r->is_bridged));
+                }
+        }
+#endif
+        if (client_ && room_view_)
+            apply_threads_list_(client_->list_room_threads(current_room_id_));
+    }
     // Refresh the pinned-events banner from the now-updated cache. Picks up
     // both pin/unpin state-event changes and PL changes that flip can_pin.
     refresh_pinned_for_current_room_();
@@ -2303,6 +2330,30 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
             if (sess && sess->client)
                 sess->client->start_background_backfill_all_uncached();
         });
+    }
+
+    // Check bridge status (MSC2346) for visible rooms. Fires only when the
+    // room-id set changes (fingerprint guard). The Rust side skips rooms
+    // already cached in SQLite and is idempotent while a check is in flight.
+    if (client_ && !rooms_.empty())
+    {
+        std::size_t fp = 0;
+        std::vector<std::string> ids;
+        ids.reserve(rooms_.size());
+        for (const auto& r : rooms_)
+        {
+            fp ^= std::hash<std::string>{}(r.id);
+            ids.push_back(r.id);
+        }
+        if (fp != bridge_check_fingerprint_)
+        {
+            bridge_check_fingerprint_ = fp;
+            auto sess = active_account_;
+            run_async_mut_([sess, ids = std::move(ids)]() mutable {
+                if (sess && sess->client)
+                    sess->client->start_bridge_status_check(ids);
+            });
+        }
     }
 
     // Proactively warm the event cache for quiet-unread rooms so opening them is
@@ -4847,9 +4898,10 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     mark_room_index_dirty_();
     // The known-user roster belongs to the previous account — drop it.
     invalidate_known_users_();
-    // The unread-prefetch fingerprint is per-account; reset so the incoming
-    // account re-fires its prefetch on the first push_rooms_ after the switch.
+    // The unread-prefetch and bridge-check fingerprints are per-account; reset
+    // so the incoming account re-fires on the first push_rooms_ after the switch.
     unread_prefetch_fingerprint_ = 0;
+    bridge_check_fingerprint_    = 0;
 
     // Restore the invite snapshot for the incoming account (parallel to rooms_).
     auto inv_it = per_account_invites_.find(my_user_id_);

@@ -233,6 +233,7 @@ impl ClientFfi {
             }
             let previews = Arc::clone(&self.backfill_previews);
             let dm_counterparts_w = Arc::clone(&self.dm_counterparts);
+            let app_cache_db_rw = Arc::clone(&self.app_cache_db);
             let mut call_member_rx = call_member_rx;
 
             self.spawn_tracked(async move {
@@ -256,7 +257,7 @@ impl ClientFfi {
                 > = std::collections::HashMap::new();
                 let mut prev_sort_keys = super::room_list_fingerprint(&[]);
                 for room in client_clone.joined_rooms() {
-                    if let Some(info) = super::build_room_info(&client_clone, &room).await {
+                    if let Some(info) = super::build_room_info(&client_clone, &room, &app_cache_db_rw).await {
                         cache.insert(room.room_id().to_owned(), info);
                     }
                 }
@@ -315,7 +316,7 @@ impl ClientFfi {
                             if let Some(room) = client_clone.get_room(&room_id) {
                                 if room.state() == RoomState::Joined {
                                     if let Some(info) =
-                                        super::build_room_info(&client_clone, &room).await
+                                        super::build_room_info(&client_clone, &room, &app_cache_db_rw).await
                                     {
                                         cache.insert(room_id, info);
                                     }
@@ -406,7 +407,7 @@ impl ClientFfi {
                                     .unwrap_or(false);
                                 if let (Some(room), true) = (room, still_joined) {
                                     if let Some(info) =
-                                        super::build_room_info(&client_clone, &room).await
+                                        super::build_room_info(&client_clone, &room, &app_cache_db_rw).await
                                     {
                                         cache.insert(room_id.clone(), info);
                                     } else {

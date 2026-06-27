@@ -378,6 +378,13 @@ public:
     /// on stop_sync / destruction). No-op if none is running.
     void stop_background_backfill();
 
+    /// For each room_id with no cached entry in the bridge_status SQLite table,
+    /// fetch GET /rooms/{id}/state and persist the uk.half-shot.bridge result.
+    /// Fires on_rooms_updated if any newly discovered bridged room changes what
+    /// the UI shows. Idempotent while a check is already in flight. Call when
+    /// the visible room set changes (same pattern as start_background_backfill).
+    Result start_bridge_status_check(const std::vector<std::string>& room_ids);
+
     /// One-shot prefetch of recent messages for the given unread rooms into the
     /// SDK event cache, so opening them is instant. The caller passes the
     /// already capped + LRU-ordered (most-recently-active first) set of unread,

@@ -178,6 +178,7 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
     badge_enc_layout_.reset();
     badge_hist_layout_.reset();
     badge_bridged_layout_.reset();
+    if (on_layout_changed) on_layout_changed();
 }
 
 void RoomInfoPanel::close()

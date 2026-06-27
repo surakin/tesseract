@@ -1514,6 +1514,17 @@ pub mod ffi {
         /// the list.
         fn start_background_backfill_all_uncached(self: &mut ClientFfi) -> OpResult;
 
+        /// For each room_id with no cached bridge-status entry (bridge_status
+        /// SQLite table), fetch GET /rooms/{id}/state, filter for
+        /// uk.half-shot.bridge, and persist. Fires on_rooms_updated if any
+        /// newly discovered bridged room changes what the UI shows. Idempotent
+        /// while a check is already in flight. Called by the shell when the
+        /// visible room set changes (same pattern as start_background_backfill).
+        fn start_bridge_status_check(
+            self: &mut ClientFfi,
+            room_ids: &CxxVector<CxxString>,
+        ) -> OpResult;
+
         /// One-shot prefetch of recent messages for the given unread rooms into
         /// the SDK event cache, so opening them is instant. The caller passes
         /// the already capped + LRU-ordered (most-recently-active first) set of

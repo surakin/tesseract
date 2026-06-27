@@ -73,7 +73,7 @@ impl ClientFfi {
             let Some(client) = self.client.clone() else {
                 return Vec::new();
             };
-            self.rt.block_on(build_room_infos(&client))
+            self.rt.block_on(build_room_infos(&client, &self.app_cache_db))
         }
         #[cfg(test)]
         {

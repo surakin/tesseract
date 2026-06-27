@@ -456,6 +456,13 @@ void Client::stop_background_backfill()
 }
 
 Result
+Client::start_bridge_status_check(const std::vector<std::string>& room_ids)
+{
+    MUT_FFI;
+    return from_ffi(impl_->ffi->start_bridge_status_check(room_ids));
+}
+
+Result
 Client::start_unread_prefetch(const std::vector<std::string>& room_ids)
 {
     MUT_FFI;

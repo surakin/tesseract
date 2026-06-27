@@ -445,6 +445,10 @@ pub struct ClientFfi {
     /// children live inside a `JoinSet` owned by the orchestrator future).
     #[cfg(not(test))]
     pub(super) backfill_task: Option<tokio::task::AbortHandle>,
+    /// Background bridge-status check task (start_bridge_status_check).
+    /// Separate handle so it never interferes with backfill or prefetch.
+    #[cfg(not(test))]
+    pub(super) bridge_check_task: Option<tokio::task::AbortHandle>,
     /// One-shot unread-prefetch orchestrator handle. Kept separate from
     /// `backfill_task` so the inactive-grouping backfill and the unread
     /// prefetch never abort one another (they share neither handle nor
@@ -673,6 +677,10 @@ impl Drop for ClientFfi {
             h.abort();
         }
         #[cfg(not(test))]
+        if let Some(h) = self.bridge_check_task.take() {
+            h.abort();
+        }
+        #[cfg(not(test))]
         if let Some(h) = self.prefetch_task.take() {
             h.abort();
         }
@@ -865,6 +873,8 @@ impl ClientFfi {
             thread_lists: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             backfill_task: None,
+            #[cfg(not(test))]
+            bridge_check_task: None,
             #[cfg(not(test))]
             prefetch_task: None,
             #[cfg(not(test))]
@@ -1799,6 +1809,7 @@ async fn resolve_pinned_event(
 pub(super) async fn build_room_info(
     client: &Client,
     room: &Room,
+    app_cache_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
 ) -> Option<crate::ffi::RoomInfo> {
     if room.is_tombstoned() {
         return None;
@@ -1893,13 +1904,37 @@ pub(super) async fn build_room_info(
     };
     // MSC2346: presence of a uk.half-shot.bridge state event means the room is
     // bridged to another platform. Calls and threads are suppressed for such rooms.
+    // HTTP fetching is deferred to start_bridge_status_check (called on demand
+    // when visible rooms change); here we only read the fast local sources.
     let is_bridged = {
         use matrix_sdk::ruma::events::StateEventType;
-        !room
+        let room_id_str = room.room_id().to_string();
+
+        // Fast path: local SSS state store (populated if the server ever
+        // delivers the event via required_state — currently always empty).
+        let in_store = !room
             .get_state_events(StateEventType::from("uk.half-shot.bridge"))
             .await
             .unwrap_or_default()
-            .is_empty()
+            .is_empty();
+
+        if in_store {
+            true
+        } else {
+            // Persistent cache from SQLite — written by start_bridge_status_check.
+            let guard = app_cache_db.lock();
+            guard
+                .as_ref()
+                .and_then(|conn| {
+                    conn.query_row(
+                        "SELECT is_bridged FROM bridge_status WHERE room_id = ?1",
+                        rusqlite::params![room_id_str],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .ok()
+                })
+                .unwrap_or(false)
+        }
     };
     let history_visibility = {
         use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
@@ -2062,10 +2097,13 @@ pub(super) fn room_list_fingerprint(
 }
 
 #[cfg(not(test))]
-pub(super) async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
+pub(super) async fn build_room_infos(
+    client: &Client,
+    app_cache_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
+) -> Vec<crate::ffi::RoomInfo> {
     let mut result = Vec::new();
     for room in client.joined_rooms() {
-        if let Some(info) = build_room_info(client, &room).await {
+        if let Some(info) = build_room_info(client, &room, app_cache_db).await {
             result.push(info);
         }
     }

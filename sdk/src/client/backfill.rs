@@ -153,7 +153,7 @@ impl ClientFfi {
                     if completed - last_update_at >= UPDATE_EVERY {
                         last_update_at = completed;
                         if let Some(ref h) = handler {
-                            let mut rooms = build_room_infos(&client).await;
+                            let mut rooms = build_room_infos(&client, &db_conn).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
                             {
                                 let guard = h.lock();
@@ -165,7 +165,7 @@ impl ClientFfi {
                 // Final update if the last batch didn't land on a boundary.
                 if completed != last_update_at {
                     if let Some(ref h) = handler {
-                        let mut rooms = build_room_infos(&client).await;
+                        let mut rooms = build_room_infos(&client, &db_conn).await;
                         apply_backfill_previews(&mut rooms, &preview_cache);
                         {
                             let guard = h.lock();
@@ -350,7 +350,7 @@ impl ClientFfi {
 
                     if any_new {
                         if let Some(ref h) = handler {
-                            let mut rooms = build_room_infos(&client).await;
+                            let mut rooms = build_room_infos(&client, &db_conn).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
                             {
                                 let guard = h.lock();
@@ -439,7 +439,7 @@ impl ClientFfi {
                     if completed - last_update_at >= UPDATE_EVERY {
                         last_update_at = completed;
                         if let Some(ref h) = handler {
-                            let mut rooms = build_room_infos(&client).await;
+                            let mut rooms = build_room_infos(&client, &db_conn).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
                             {
                                 let guard = h.lock();
@@ -450,7 +450,7 @@ impl ClientFfi {
                 }
                 if completed != last_update_at {
                     if let Some(ref h) = handler {
-                        let mut rooms = build_room_infos(&client).await;
+                        let mut rooms = build_room_infos(&client, &db_conn).await;
                         apply_backfill_previews(&mut rooms, &preview_cache);
                         {
                             let guard = h.lock();
@@ -470,6 +470,137 @@ impl ClientFfi {
         if let Some(h) = self.backfill_task.take() {
             h.abort();
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // On-demand bridge-status check
+    // -----------------------------------------------------------------------
+
+    /// For each room_id in the list that has no entry in the bridge_status
+    /// SQLite cache, fetch GET /rooms/{id}/state, filter for uk.half-shot.bridge,
+    /// and persist the result. If any new bridged room is found, emits
+    /// on_rooms_updated so the call button / threads UI updates immediately.
+    /// Idempotent: if a check is still in flight the call is a no-op.
+    /// Called by the C++ shell whenever the visible room set changes.
+    #[cfg(not(test))]
+    pub fn start_bridge_status_check(
+        &mut self,
+        room_ids: &cxx::CxxVector<cxx::CxxString>,
+    ) -> OpResult {
+        if let Some(h) = self.bridge_check_task.as_ref() {
+            if !h.is_finished() {
+                return ok("");
+            }
+        }
+        self.bridge_check_task = None;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+
+        // Collect room IDs that have no cache entry yet.
+        let uncached: Vec<matrix_sdk::ruma::OwnedRoomId> = {
+            let guard = self.app_cache_db.lock();
+            room_ids
+                .iter()
+                .filter_map(|s| s.to_str().ok()?.parse().ok())
+                .filter(|id: &matrix_sdk::ruma::OwnedRoomId| {
+                    guard
+                        .as_ref()
+                        .and_then(|conn| {
+                            conn.query_row(
+                                "SELECT 1 FROM bridge_status WHERE room_id = ?1",
+                                rusqlite::params![id.as_str()],
+                                |_| Ok(()),
+                            )
+                            .ok()
+                        })
+                        .is_none()
+                })
+                .collect()
+        };
+
+        if uncached.is_empty() {
+            return ok("");
+        }
+
+        let handler       = self.handler.clone();
+        let preview_cache = Arc::clone(&self.backfill_previews);
+        let db_conn       = Arc::clone(&self.app_cache_db);
+        let in_flight     = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+
+        let handle = self.rt.spawn(async move {
+            use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
+
+            // Fetch all rooms in parallel — room state is independent,
+            // no ordering needed.
+            let mut joinset: tokio::task::JoinSet<(matrix_sdk::ruma::OwnedRoomId, bool)> =
+                tokio::task::JoinSet::new();
+            for room_id in uncached {
+                let client     = client.clone();
+                let in_flight  = Arc::clone(&in_flight);
+                let handler    = handler.clone();
+                #[cfg(debug_assertions)]
+                let in_flight_urls = Arc::clone(&in_flight_urls);
+                #[cfg(debug_assertions)]
+                let label = format!("bridge/{room_id}");
+                joinset.spawn(async move {
+                    let _guard = super::InFlightGuard::new(
+                        &in_flight,
+                        &handler,
+                        #[cfg(debug_assertions)] &in_flight_urls,
+                        #[cfg(debug_assertions)] label,
+                    );
+                    let bridged = client
+                        .send(state_api::Request::new(room_id.clone()))
+                        .await
+                        .map(|resp| {
+                            resp.room_state.iter().any(|raw| {
+                                raw.get_field::<String>("type")
+                                    .ok()
+                                    .flatten()
+                                    .as_deref()
+                                    == Some("uk.half-shot.bridge")
+                            })
+                        })
+                        .unwrap_or(false);
+                    (room_id, bridged)
+                });
+            }
+
+            let mut any_bridged = false;
+            while let Some(Ok((room_id, bridged))) = joinset.join_next().await {
+                {
+                    let guard = db_conn.lock();
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = conn.execute(
+                            "INSERT OR REPLACE INTO bridge_status \
+                             (room_id, is_bridged) VALUES (?1, ?2)",
+                            rusqlite::params![room_id.as_str(), bridged as i32],
+                        );
+                    }
+                }
+                if bridged {
+                    any_bridged = true;
+                }
+            }
+
+            // Always re-emit after the check so the UI picks up the confirmed
+            // is_bridged values (even if none are bridged, the C++ side needs
+            // the updated data to re-evaluate the call button / badge).
+            let _ = any_bridged; // suppress unused-variable warning when no rooms bridged
+            if let Some(ref h) = handler {
+                let mut rooms = super::build_room_infos(&client, &db_conn).await;
+                apply_backfill_previews(&mut rooms, &preview_cache);
+                let guard = h.lock();
+                guard.on_rooms_updated(&rooms);
+            }
+        });
+
+        self.bridge_check_task = Some(handle.abort_handle());
+        ok("")
     }
 
     // -----------------------------------------------------------------------
@@ -848,6 +979,10 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
          );
          CREATE TABLE IF NOT EXISTS presence_forbidden (
              user_id TEXT NOT NULL PRIMARY KEY
+         );
+         CREATE TABLE IF NOT EXISTS bridge_status (
+             room_id    TEXT    NOT NULL PRIMARY KEY,
+             is_bridged INTEGER NOT NULL
          );
          DELETE FROM room_summary_cache
              WHERE fetched_at_secs < strftime('%s','now') - 2592000;",

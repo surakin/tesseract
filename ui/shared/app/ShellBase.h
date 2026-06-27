@@ -735,7 +735,8 @@ protected:
     // new unread room enters the top-N, or an existing one's unread_count grows).
     // Avoids a redundant FFI call on every sync tick. UI-thread access only;
     // reset to 0 on account switch so the incoming account re-fires.
-    std::size_t unread_prefetch_fingerprint_ = 0;
+    std::size_t unread_prefetch_fingerprint_  = 0;
+    std::size_t bridge_check_fingerprint_     = 0;
     // Max unread rooms to one-shot prefetch per reconcile; the rest (lower
     // last_activity_ts) are dropped — this resize *is* the LRU eviction.
     static constexpr std::size_t kUnreadPrefetchCap = 20;
