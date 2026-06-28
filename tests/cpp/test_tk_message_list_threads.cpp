@@ -183,6 +183,102 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "MessageListView clears thread chip hit rects when scrolling to an event",
+    "[message_list][threads]")
+{
+    Stage st;
+    MessageListView v;
+
+    std::vector<MessageRowData> msgs;
+    msgs.push_back(make_thread_root("$root", 2));
+    for (int i = 0; i < 24; ++i)
+        msgs.push_back(make_text("$filler" + std::to_string(i), "filler"));
+    msgs.push_back(make_text("$target", "target"));
+    v.set_messages(std::move(msgs), false);
+    st.run(v, {0, 0, 600, 140});
+
+    REQUIRE(v.chip_hit_rects_for_test().size() == 1);
+    const tk::Rect chip = v.chip_hit_rects_for_test()[0].rect;
+    const tk::Point centre{chip.x + chip.w * 0.5f, chip.y + chip.h * 0.5f};
+
+    REQUIRE(v.scroll_to_event_id("$target"));
+    CHECK(v.chip_hit_rects_for_test().empty());
+
+    std::string clicked;
+    v.on_thread_preview_clicked = [&](const std::string& id)
+    { clicked = id; };
+
+    v.on_pointer_down(centre);
+    CHECK(clicked.empty());
+}
+
+TEST_CASE(
+    "MessageListView clears thread chip hit rects when wheel scrolling",
+    "[message_list][threads]")
+{
+    Stage st;
+    MessageListView v;
+
+    std::vector<MessageRowData> msgs;
+    msgs.push_back(make_thread_root("$root", 2));
+    for (int i = 0; i < 24; ++i)
+        msgs.push_back(make_text("$filler" + std::to_string(i), "filler"));
+    v.set_messages(std::move(msgs), false);
+    st.run(v, {0, 0, 600, 140});
+
+    REQUIRE(v.chip_hit_rects_for_test().size() == 1);
+    const tk::Rect chip = v.chip_hit_rects_for_test()[0].rect;
+    const tk::Point centre{chip.x + chip.w * 0.5f, chip.y + chip.h * 0.5f};
+
+    REQUIRE(v.on_wheel(centre, 0.0f, 80.0f));
+    CHECK(v.chip_hit_rects_for_test().empty());
+
+    std::string clicked;
+    v.on_thread_preview_clicked = [&](const std::string& id)
+    { clicked = id; };
+
+    v.on_pointer_down(centre);
+    CHECK(clicked.empty());
+}
+
+TEST_CASE(
+    "MessageListView clears thread chip hit rects when deferred event scroll resolves",
+    "[message_list][threads]")
+{
+    Stage st;
+    MessageListView v;
+
+    v.set_messages({make_thread_root("$root", 2)}, false);
+    st.run(v, {0, 0, 600, 140});
+
+    REQUIRE(v.chip_hit_rects_for_test().size() == 1);
+    const tk::Rect chip = v.chip_hit_rects_for_test()[0].rect;
+    const tk::Point centre{chip.x + chip.w * 0.5f, chip.y + chip.h * 0.5f};
+
+    // Simulate the subscribe_room_at/reset path: the target was not in the
+    // first window, the reset replaces the timeline, then the shell re-arms the
+    // pending scroll before layout resolves it.
+    std::vector<MessageRowData> reset_rows;
+    for (int i = 0; i < 24; ++i)
+        reset_rows.push_back(make_text("$page" + std::to_string(i), "page"));
+    reset_rows.push_back(make_text("$target", "target"));
+    v.set_messages(std::move(reset_rows), false);
+    v.set_pending_scroll_event_id("$target");
+    auto lc = st.layout_ctx();
+    v.measure(lc, {600, 140});
+    v.arrange(lc, {0, 0, 600, 140});
+
+    CHECK(v.chip_hit_rects_for_test().empty());
+
+    std::string clicked;
+    v.on_thread_preview_clicked = [&](const std::string& id)
+    { clicked = id; };
+
+    v.on_pointer_down(centre);
+    CHECK(clicked.empty());
+}
+
+TEST_CASE(
     "MessageListView does NOT emit a chip for thread roots with no replies",
     "[message_list][threads]")
 {
