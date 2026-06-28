@@ -4585,10 +4585,15 @@ void MessageListView::set_preview_provider(PreviewProvider p)
 
 void MessageListView::reset_hovered_row_geom_()
 {
-    hovered_row_geom_.row_index = static_cast<std::size_t>(-1);
-    hovered_row_geom_.chips.clear();
-    hovered_row_geom_.receipt_discs.clear();
-    hovered_row_geom_.add_visible = false;
+    hovered_row_geom_ = RowChipGeom{};
+}
+
+void MessageListView::clear_scroll_hit_geometry_()
+{
+    clear_hit_geometry_();
+    reset_hovered_row_geom_();
+    hover_target_   = HoverTarget::None;
+    hover_chip_idx_ = -1;
 }
 
 void MessageListView::on_anchored_relayout_()
@@ -4836,7 +4841,15 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
         }
     }
 
-    return tk::ListView::on_wheel(local, dx, dy);
+    const float before = scroll_y();
+    const bool scrolled = tk::ListView::on_wheel(local, dx, dy);
+    if (scrolled && scroll_y() != before)
+    {
+        clear_scroll_hit_geometry_();
+        if (request_repaint_)
+            request_repaint_();
+    }
+    return scrolled;
 }
 
 void MessageListView::on_pointer_drag(tk::Point local)
@@ -4898,7 +4911,14 @@ void MessageListView::on_pointer_drag(tk::Point local)
 
     if (press_voice_kind_ != VoicePressKind::Waveform)
     {
+        const float before = scroll_y();
         tk::ListView::on_pointer_drag(local);
+        if (scroll_y() != before)
+        {
+            clear_scroll_hit_geometry_();
+            if (request_repaint_)
+                request_repaint_();
+        }
         return;
     }
     if (press_voice_event_id_.empty())
@@ -5246,6 +5266,9 @@ bool MessageListView::scroll_to_event_id(const std::string& event_id)
         if (messages_[i].event_id == event_id)
         {
             scroll_to_index(static_cast<int>(i), /*align_top=*/false);
+            clear_scroll_hit_geometry_();
+            if (request_repaint_)
+                request_repaint_();
             return true;
         }
     }

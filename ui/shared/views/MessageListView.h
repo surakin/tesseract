@@ -793,6 +793,10 @@ private:
     // on_anchored_relayout_ (layout changed under a stationary pointer).
     void reset_hovered_row_geom_();
 
+    // Drop all paint-recorded hit-test geometry after scroll_y_ changes. The
+    // next paint rebuilds it at the new world coordinates.
+    void clear_scroll_hit_geometry_();
+
     // Suppress the "start thread" hover button (set by ThreadView on its
     // embedded list — replies inside a thread don't need to open sub-threads).
     bool thread_button_visible_ = true;
