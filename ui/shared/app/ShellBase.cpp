@@ -893,6 +893,12 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             return shell_sticker_(mxc);
         });
 
+    app->room_list_view()->set_media_allowed_provider(
+        [this](const std::string& room_id, bool is_own) -> bool
+        {
+            return media_allowed_(room_id, is_own);
+        });
+
     // Restore section collapsed state from the previous session.
     {
         auto& s = tesseract::Settings::instance();

@@ -537,7 +537,10 @@ private:
         // Thumbnail lookup.
         const tk::Image* thumb     = nullptr;
         std::string      thumb_url;
-        if (!room.is_space && has_preview && owner_.sticker_provider_)
+        const bool is_own_sender = room.last_message_sender_name.empty();
+        const bool media_ok      = !owner_.media_allowed_provider_
+                                   || owner_.media_allowed_provider_(room.id, is_own_sender);
+        if (!room.is_space && has_preview && owner_.sticker_provider_ && media_ok)
         {
             const std::string& kind = room.last_message_kind;
             thumb_url = kind == "sticker" ? room.last_message_sticker_url
@@ -1150,6 +1153,11 @@ void RoomListView::set_sticker_provider(StickerProvider p)
 void RoomListView::set_presence_provider(PresenceProvider p)
 {
     presence_provider_ = std::move(p);
+}
+
+void RoomListView::set_media_allowed_provider(MediaAllowedProvider p)
+{
+    media_allowed_provider_ = std::move(p);
 }
 
 int RoomListView::item_index_for_room_(const std::string& id) const
