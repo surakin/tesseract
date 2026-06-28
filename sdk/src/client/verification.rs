@@ -25,6 +25,59 @@ use std::sync::Arc;
 #[cfg(not(test))]
 use matrix_sdk::encryption::verification::SasVerification;
 
+#[cfg(not(test))]
+const VERIFICATION_LOOKUP_ATTEMPTS: usize = 7;
+#[cfg(not(test))]
+const VERIFICATION_LOOKUP_INITIAL_DELAY_MS: u64 = 50;
+
+#[cfg(not(test))]
+async fn lookup_verification_request_with_retry(
+    client: &matrix_sdk::Client,
+    user_id: &matrix_sdk::ruma::UserId,
+    flow_id: &str,
+) -> Option<matrix_sdk::encryption::verification::VerificationRequest> {
+    let mut delay_ms = VERIFICATION_LOOKUP_INITIAL_DELAY_MS;
+    for attempt in 0..VERIFICATION_LOOKUP_ATTEMPTS {
+        if let Some(req) = client
+            .encryption()
+            .get_verification_request(user_id, flow_id)
+            .await
+        {
+            return Some(req);
+        }
+        if attempt + 1 < VERIFICATION_LOOKUP_ATTEMPTS {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            delay_ms *= 2;
+        }
+    }
+    None
+}
+
+#[cfg(not(test))]
+async fn lookup_sas_with_retry(
+    client: &matrix_sdk::Client,
+    user_id: &matrix_sdk::ruma::UserId,
+    flow_id: &str,
+) -> Option<SasVerification> {
+    use matrix_sdk::encryption::verification::Verification;
+
+    let mut delay_ms = VERIFICATION_LOOKUP_INITIAL_DELAY_MS;
+    for attempt in 0..VERIFICATION_LOOKUP_ATTEMPTS {
+        if let Some(Verification::SasV1(sas)) = client
+            .encryption()
+            .get_verification(user_id, flow_id)
+            .await
+        {
+            return Some(sas);
+        }
+        if attempt + 1 < VERIFICATION_LOOKUP_ATTEMPTS {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            delay_ms *= 2;
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Background watchers
 // ---------------------------------------------------------------------------
@@ -246,9 +299,7 @@ impl ClientFfi {
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
             let uid = <&UserId>::try_from(user_id.as_str())?;
-            let req = client
-                .encryption()
-                .get_verification_request(uid, &flow_id)
+            let req = lookup_verification_request_with_retry(&client, uid, &flow_id)
                 .await
                 .ok_or_else(|| anyhow::anyhow!("verification request not found"))?;
             req.accept().await?;
@@ -295,15 +346,24 @@ impl ClientFfi {
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
             let uid = <&UserId>::try_from(user_id.as_str())?;
-            let req = client
-                .encryption()
-                .get_verification_request(uid, &flow_id_str)
+            let req = lookup_verification_request_with_retry(&client, uid, &flow_id_str)
                 .await
                 .ok_or_else(|| anyhow::anyhow!("verification request not found"))?;
-            let sas = req
-                .start_sas()
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("SAS not supported"))?;
+            let sas = match req.start_sas().await {
+                Ok(Some(sas)) => sas,
+                Ok(None) => {
+                    lookup_sas_with_retry(&client, uid, &flow_id_str)
+                        .await
+                        .ok_or_else(|| anyhow::anyhow!("SAS not supported"))?
+                }
+                Err(e) => {
+                    if let Some(sas) = lookup_sas_with_retry(&client, uid, &flow_id_str).await {
+                        sas
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            };
             let handle = tokio::spawn(watch_sas(sas, flow_id_str, handler, emoji_cache));
             lock_or_recover(&tasks).push(handle.abort_handle());
             Ok::<(), anyhow::Error>(())
@@ -340,17 +400,12 @@ impl ClientFfi {
             #[cfg(debug_assertions)] "verification/confirm".to_string(),
         );
         match self.rt.block_on(async move {
-            use matrix_sdk::encryption::verification::Verification;
             use matrix_sdk::ruma::UserId;
             let uid = <&UserId>::try_from(user_id.as_str())?;
-            let verif = client
-                .encryption()
-                .get_verification(uid, &flow_id)
+            let sas = lookup_sas_with_retry(&client, uid, &flow_id)
                 .await
                 .ok_or_else(|| anyhow::anyhow!("verification not found"))?;
-            if let Verification::SasV1(sas) = verif {
-                sas.confirm().await?;
-            }
+            sas.confirm().await?;
             Ok::<(), anyhow::Error>(())
         }) {
             Ok(()) => ok(""),

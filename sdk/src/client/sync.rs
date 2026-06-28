@@ -14,6 +14,8 @@ use super::*;
 use matrix_sdk::SessionChange;
 use matrix_sdk_ui::sync_service::SyncService;
 
+const PRESENCE_POLL_CONCURRENCY: usize = 4;
+
 impl ClientFfi {
     /// Spawn a long-lived sync task and record its abort handle so
     /// `stop_sync` can cancel it before the C++ handler is destroyed.
@@ -993,6 +995,7 @@ async fn poll_presence_once(
     >,
     app_cache_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
 ) {
+    use futures_util::StreamExt;
     use matrix_sdk::ruma::api::client::presence::get_presence;
     use matrix_sdk::ruma::presence::PresenceState as RumaPresence;
     if client.user_id().is_none() {
@@ -1009,57 +1012,57 @@ async fn poll_presence_once(
     if counterparts.is_empty() {
         return;
     }
-    let mut futs = Vec::new();
-    for uid in counterparts {
-        let cp = client.clone();
-        let h_ref = Arc::clone(handler);
-        let forbidden_clone = Arc::clone(forbidden_presence);
-        let db_clone = Arc::clone(app_cache_db);
-        futs.push(async move {
-            let user_id: matrix_sdk::ruma::OwnedUserId = uid.parse().ok()?;
-            // Skip users known to return 403 Forbidden.
-            if forbidden_clone.lock().contains(&user_id) {
-                return None;
-            }
-            let req = get_presence::v3::Request::new(user_id.clone());
-            match cp.send(req).await {
-                Ok(resp) => {
-                    let state: u8 = match resp.presence {
-                        RumaPresence::Online => 1,
-                        RumaPresence::Unavailable => 2,
-                        _ => 3,
-                    };
-                    {
-                        let g = h_ref.lock();
-                        g.on_presence_changed(&uid, state);
-                    }
-                    Some(())
+    futures_util::stream::iter(counterparts)
+        .for_each_concurrent(PRESENCE_POLL_CONCURRENCY, |uid| {
+            let cp = client.clone();
+            let h_ref = Arc::clone(handler);
+            let forbidden_clone = Arc::clone(forbidden_presence);
+            let db_clone = Arc::clone(app_cache_db);
+            async move {
+                let Ok(user_id) = uid.parse::<matrix_sdk::ruma::OwnedUserId>() else {
+                    return;
+                };
+                // Skip users known to return 403 Forbidden.
+                if forbidden_clone.lock().contains(&user_id) {
+                    return;
                 }
-                Err(e) => {
-                    if is_presence_forbidden(e.client_api_error_kind()) {
+                let req = get_presence::v3::Request::new(user_id.clone());
+                match cp.send(req).await {
+                    Ok(resp) => {
+                        let state: u8 = match resp.presence {
+                            RumaPresence::Online => 1,
+                            RumaPresence::Unavailable => 2,
+                            _ => 3,
+                        };
                         {
-                            let mut set = forbidden_clone.lock();
-                            if set.insert(user_id) {
-                                tracing::info!(
-                                    "presence: stopping polls for {uid} \
-                                     (homeserver forbids)"
-                                );
-                                // Persist so the user is skipped after restart too.
-                                let db = db_clone.lock();
-                                if let Some(conn) = db.as_ref() {
-                                    backfill::upsert_presence_forbidden_conn(conn, &uid);
+                            let g = h_ref.lock();
+                            g.on_presence_changed(&uid, state);
+                        }
+                    }
+                    Err(e) => {
+                        if is_presence_forbidden(e.client_api_error_kind()) {
+                            {
+                                let mut set = forbidden_clone.lock();
+                                if set.insert(user_id) {
+                                    tracing::info!(
+                                        "presence: stopping polls for {uid} \
+                                         (homeserver forbids)"
+                                    );
+                                    // Persist so the user is skipped after restart too.
+                                    let db = db_clone.lock();
+                                    if let Some(conn) = db.as_ref() {
+                                        backfill::upsert_presence_forbidden_conn(conn, &uid);
+                                    }
                                 }
                             }
                         }
+                        // Other transient errors (404, 5xx, network) silently
+                        // ignored — the next tick will retry.
                     }
-                    // Other transient errors (404, 5xx, network) silently
-                    // ignored — the next tick will retry.
-                    None
                 }
             }
-        });
-    }
-    futures_util::future::join_all(futs).await;
+        })
+        .await;
 }
 
 // ---------------------------------------------------------------------------
