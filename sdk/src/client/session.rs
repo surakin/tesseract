@@ -242,6 +242,7 @@ impl ClientFfi {
                 url.trim_end_matches('/').to_owned()
             };
             let access_token = client.access_token().unwrap_or_default();
+            #[cfg(feature = "calls")]
             let server_name = client
                 .user_id()
                 .map(|uid| uid.server_name().to_string())
@@ -363,6 +364,7 @@ impl ClientFfi {
                 url.trim_end_matches('/').to_owned()
             };
             let access_token = client.access_token().unwrap_or_default();
+            #[cfg(feature = "calls")]
             let server_name = client
                 .user_id()
                 .map(|uid| uid.server_name().to_string())

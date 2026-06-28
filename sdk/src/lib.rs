@@ -1,4 +1,5 @@
 #![recursion_limit = "256"]
+#![cfg_attr(test, allow(dead_code, unused_imports, unused_variables))]
 
 mod client;
 mod highlight;

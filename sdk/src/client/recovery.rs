@@ -157,7 +157,7 @@ impl ClientFfi {
             &self.in_flight,
             &self.handler,
             #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "recovery/enable".to_string(),
+            #[cfg(debug_assertions)] "recovery/recover".to_string(),
         );
         match self
             .rt
@@ -211,7 +211,7 @@ impl ClientFfi {
             &self.in_flight,
             &self.handler,
             #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "recovery/disable".to_string(),
+            #[cfg(debug_assertions)] "recovery/enable".to_string(),
         );
 
         self.rt.block_on(async move {
@@ -358,6 +358,12 @@ impl ClientFfi {
         }
         let path_buf = std::path::PathBuf::from(path);
         let pass = passphrase.to_owned();
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "recovery/export_room_keys".to_string(),
+        );
         match self.rt.block_on(async move {
             client.encryption().export_room_keys(path_buf, &pass, |_| true).await
         }) {
@@ -380,6 +386,12 @@ impl ClientFfi {
         };
         let path_buf = std::path::PathBuf::from(path);
         let pass = passphrase.to_owned();
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)] &self.in_flight_urls,
+            #[cfg(debug_assertions)] "recovery/import_room_keys".to_string(),
+        );
         match self.rt.block_on(async move {
             client.encryption().import_room_keys(path_buf, &pass).await
         }) {
