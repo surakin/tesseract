@@ -7494,6 +7494,14 @@ bool ShellBase::foreign_cross_signing_identity_() const
     return read_own_identity_exists_() && !read_have_cross_signing_keys_();
 }
 
+void ShellBase::dismiss_encryption_setup_after_verification_()
+{
+    encryption_setup_dismissed_ = true;
+    if (main_app_)
+        main_app_->show_encryption_setup(false);
+    request_relayout_();
+}
+
 void ShellBase::handle_offline_ui_()
 {
     offline_ = true;

@@ -4846,6 +4846,7 @@ void MainWindow::handle_sas_ready_ui_(
 
 void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
 {
+    dismiss_encryption_setup_after_verification_();
     if (!mainApp_)
     {
         return;

@@ -2120,6 +2120,7 @@ protected:
                                       std::vector<VerificationEmoji> /*emojis*/)
     {
     }
+    void dismiss_encryption_setup_after_verification_();
     virtual void handle_verification_done_ui_(std::string /*flow_id*/)
     {
     }
