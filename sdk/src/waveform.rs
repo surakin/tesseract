@@ -27,15 +27,9 @@ pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
                     continue;
                 }
                 let data: &[u8] = &pkt.data;
-                if let Ok(n) =
-                    decoder.decode(Some(data), &mut pcm, false)
-                {
+                if let Ok(n) = decoder.decode(Some(data), &mut pcm, false) {
                     if n > 0 {
-                        let peak = pcm[..n]
-                            .iter()
-                            .map(|s| s.unsigned_abs())
-                            .max()
-                            .unwrap_or(0);
+                        let peak = pcm[..n].iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
                         frame_peaks.push(peak as f32 / i16::MAX as f32);
                     }
                 }
@@ -57,10 +51,7 @@ pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
             let start = (i as f32 * chunk) as usize;
             let end = ((i + 1) as f32 * chunk) as usize;
             let end = end.min(frame_peaks.len());
-            let peak = frame_peaks[start..end]
-                .iter()
-                .copied()
-                .fold(0f32, f32::max);
+            let peak = frame_peaks[start..end].iter().copied().fold(0f32, f32::max);
             (peak * 1024.0).round().min(1024.0) as u16
         })
         .collect()
@@ -78,13 +69,11 @@ mod tests {
         let pcm: Vec<i16> = (0..n_samples)
             .map(|i| {
                 let t = i as f32 / 48000.0;
-                (f32::sin(2.0 * std::f32::consts::PI * 440.0 * t) * 16000.0)
-                    as i16
+                (f32::sin(2.0 * std::f32::consts::PI * 440.0 * t) * 16000.0) as i16
             })
             .collect();
 
-        let ogg_bytes =
-            encode_voice_ogg(&pcm, &[], 480).expect("encode succeeded");
+        let ogg_bytes = encode_voice_ogg(&pcm, &[], 480).expect("encode succeeded");
         let waveform = compute_waveform_from_ogg(&ogg_bytes);
 
         assert!(!waveform.is_empty(), "waveform must be non-empty");

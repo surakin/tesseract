@@ -22,13 +22,16 @@ use super::RtcParticipantInfo;
 use crate::client::rtc::RtcEventSink;
 
 use livekit::{
-    prelude::*,
+    e2ee::{
+        key_provider::{KeyDerivationAlgorithm, KeyProvider, KeyProviderOptions},
+        E2eeOptions, EncryptionType,
+    },
     options::TrackPublishOptions,
-    e2ee::{E2eeOptions, EncryptionType, key_provider::{KeyDerivationAlgorithm, KeyProvider, KeyProviderOptions}},
+    prelude::*,
     webrtc::{
+        audio_stream::native::NativeAudioStream,
         video_frame::{BoxVideoFrame, I420Buffer, VideoFrame, VideoRotation},
         video_source::{native::NativeVideoSource, RtcVideoSource},
-        audio_stream::native::NativeAudioStream,
         video_stream::native::NativeVideoStream,
     },
     RoomEvent, RoomOptions,
@@ -105,15 +108,12 @@ impl LiveKitRoom {
         // reference, enabling echo cancellation. AudioProcessingOptions::default()
         // enables AEC, NS, and AGC. Capture is handled entirely by the platform
         // ADM — no manual PCM injection needed.
-        let platform_audio = PlatformAudio::new()
-            .map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
+        let platform_audio =
+            PlatformAudio::new().map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
         platform_audio
             .configure_audio_processing(AudioProcessingOptions::default())
             .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
-        let local_audio = LocalAudioTrack::create_audio_track(
-            "mic",
-            platform_audio.rtc_source(),
-        );
+        let local_audio = LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
         // dtx=false: always send audio packets even during silence.
         // red=false: send plain Opus instead of RED; some SFUs fail to forward
         //   RED audio to subscribers when the subscriber's codec is Opus-only.
@@ -133,7 +133,10 @@ impl LiveKitRoom {
 
         // Local video track (camera frames injected by Layer 3)
         let video_source = NativeVideoSource::new(
-            livekit::webrtc::video_source::VideoResolution { width: 640, height: 480 },
+            livekit::webrtc::video_source::VideoResolution {
+                width: 640,
+                height: 480,
+            },
             false,
         );
         let local_video = LocalVideoTrack::create_video_track(
@@ -158,13 +161,16 @@ impl LiveKitRoom {
             let local = room.local_participant();
             let local_identity = local.identity().as_str().to_owned();
             let (local_user_id, local_device_id) = split_identity(&local_identity);
-            s.on_participant_joined(session_id, RtcParticipantInfo {
-                participant_id: local_identity,
-                user_id: local_user_id,
-                device_id: local_device_id,
-                is_audio_muted: false,
-                is_video_muted: false,
-            });
+            s.on_participant_joined(
+                session_id,
+                RtcParticipantInfo {
+                    participant_id: local_identity,
+                    user_id: local_user_id,
+                    device_id: local_device_id,
+                    is_audio_muted: false,
+                    is_video_muted: false,
+                },
+            );
         }
 
         let local_identity = room.local_participant().identity().as_str().to_owned();
@@ -277,9 +283,13 @@ impl LiveKitRoom {
     /// Set our own 32-byte raw key material in the KeyProvider so LiveKit
     /// encrypts our outgoing tracks with AES-GCM.
     pub fn set_own_frame_key(&self, raw_key: &[u8], index: i32) {
-        info!("e2ee: set own frame key index={index} identity={}", self.local_identity);
+        info!(
+            "e2ee: set own frame key index={index} identity={}",
+            self.local_identity
+        );
         let identity: ParticipantIdentity = self.local_identity.clone().into();
-        self.key_provider.set_key(&identity, index, raw_key.to_vec());
+        self.key_provider
+            .set_key(&identity, index, raw_key.to_vec());
     }
 
     /// Store a peer's raw key material so LiveKit can decrypt their incoming
@@ -362,7 +372,9 @@ fn spawn_event_task(
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
-                RoomEvent::Connected { participants_with_tracks } => {
+                RoomEvent::Connected {
+                    participants_with_tracks,
+                } => {
                     // Fires once at join time and contains ALL participants who were
                     // already in the room before us. livekit-rs does NOT emit
                     // ParticipantConnected for these pre-existing participants.
@@ -377,7 +389,8 @@ fn spawn_event_task(
                             for (user_id_prefix, keys_by_index) in pending.iter() {
                                 let prefix = format!("{}:", user_id_prefix);
                                 let id_str = id.as_str();
-                                if id_str.starts_with(&prefix) || id_str == user_id_prefix.as_str() {
+                                if id_str.starts_with(&prefix) || id_str == user_id_prefix.as_str()
+                                {
                                     for (idx, raw_key) in keys_by_index {
                                         key_provider.set_key(&id, *idx, raw_key.clone());
                                     }
@@ -405,7 +418,9 @@ fn spawn_event_task(
                     info!("rtc: local track published: {:?}", track.kind());
                 }
                 RoomEvent::LocalTrackSubscribed { .. } => {}
-                RoomEvent::TrackSubscriptionFailed { participant, error, .. } => {
+                RoomEvent::TrackSubscriptionFailed {
+                    participant, error, ..
+                } => {
                     warn!(
                         "rtc: track subscription failed for {}: {error}",
                         participant.identity()
@@ -450,8 +465,14 @@ fn spawn_event_task(
                         let _ = tx.try_send(());
                     }
                 }
-                RoomEvent::TrackSubscribed { track, participant, .. } => {
-                    info!("rtc: TrackSubscribed from {} kind={:?}", participant.identity(), track.kind());
+                RoomEvent::TrackSubscribed {
+                    track, participant, ..
+                } => {
+                    info!(
+                        "rtc: TrackSubscribed from {} kind={:?}",
+                        participant.identity(),
+                        track.kind()
+                    );
                     // Re-emit participant state now that publications are populated.
                     // At ParticipantConnected time the publication list is empty
                     // (0 pubs), so is_video_muted=true and the tile shows an avatar
@@ -471,7 +492,12 @@ fn spawn_event_task(
                                 let mut stream = NativeVideoStream::new(rtc);
                                 while let Some(frame) = stream.next().await {
                                     if vif
-                                        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                                        .compare_exchange(
+                                            false,
+                                            true,
+                                            Ordering::Acquire,
+                                            Ordering::Relaxed,
+                                        )
                                         .is_err()
                                     {
                                         continue;
@@ -560,12 +586,12 @@ fn spawn_event_task(
 
 fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
     let pubs = p.track_publications();
-    let is_audio_muted = !pubs.values().any(|pub_| {
-        pub_.kind() == TrackKind::Audio && !pub_.is_muted()
-    });
-    let is_video_muted = !pubs.values().any(|pub_| {
-        pub_.kind() == TrackKind::Video && !pub_.is_muted()
-    });
+    let is_audio_muted = !pubs
+        .values()
+        .any(|pub_| pub_.kind() == TrackKind::Audio && !pub_.is_muted());
+    let is_video_muted = !pubs
+        .values()
+        .any(|pub_| pub_.kind() == TrackKind::Video && !pub_.is_muted());
     let identity = p.identity().as_str().to_owned();
     // Identity format from the JWT service: "{user_id}:{device_id}" where
     // user_id is a Matrix ID (@localpart:server).  Split at the second ':'
@@ -582,12 +608,12 @@ fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
 
 fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
     let pubs = p.track_publications();
-    let is_audio_muted = !pubs.values().any(|pub_| {
-        pub_.kind() == TrackKind::Audio && !pub_.is_muted()
-    });
-    let is_video_muted = !pubs.values().any(|pub_| {
-        pub_.kind() == TrackKind::Video && !pub_.is_muted()
-    });
+    let is_audio_muted = !pubs
+        .values()
+        .any(|pub_| pub_.kind() == TrackKind::Audio && !pub_.is_muted());
+    let is_video_muted = !pubs
+        .values()
+        .any(|pub_| pub_.kind() == TrackKind::Video && !pub_.is_muted());
     let identity = p.identity().as_str().to_owned();
     let (user_id, device_id) = split_identity(&identity);
     RtcParticipantInfo {

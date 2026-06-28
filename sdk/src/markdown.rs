@@ -77,9 +77,7 @@ fn sanitize_events<'a>(events: Vec<Event<'a>>) -> Vec<Event<'a>> {
     for event in events {
         let transformed = match event {
             // Raw HTML → escaped text (prevents XSS via user-typed tags).
-            Event::InlineHtml(html) | Event::Html(html) => {
-                Some(Event::Text(html))
-            }
+            Event::InlineHtml(html) | Event::Html(html) => Some(Event::Text(html)),
 
             // Sanitize fenced code-block language token.
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(ref info))) => {
@@ -134,14 +132,22 @@ fn parse_block(text: &str) -> Option<String> {
     let text: &str = &text;
 
     let parser_events: Vec<_> = Parser::new_ext(text, OPTIONS)
-        .map(|e| if e == Event::SoftBreak { Event::HardBreak } else { e })
+        .map(|e| {
+            if e == Event::SoftBreak {
+                Event::HardBreak
+            } else {
+                e
+            }
+        })
         .collect();
 
     // Detect whether the content is a single inline paragraph or multi-block.
-    let first_is_para =
-        parser_events.first().is_some_and(|e| matches!(e, Event::Start(Tag::Paragraph)));
-    let last_is_para =
-        parser_events.last().is_some_and(|e| matches!(e, Event::End(TagEnd::Paragraph)));
+    let first_is_para = parser_events
+        .first()
+        .is_some_and(|e| matches!(e, Event::Start(Tag::Paragraph)));
+    let last_is_para = parser_events
+        .last()
+        .is_some_and(|e| matches!(e, Event::End(TagEnd::Paragraph)));
     let mut is_inline = first_is_para && last_is_para;
     let mut has_markdown = !is_inline;
 
@@ -205,7 +211,13 @@ fn render_inline(text: &str) -> String {
     let text: &str = &text;
 
     let mut events: Vec<_> = Parser::new_ext(text, OPTIONS)
-        .map(|e| if e == Event::SoftBreak { Event::HardBreak } else { e })
+        .map(|e| {
+            if e == Event::SoftBreak {
+                Event::HardBreak
+            } else {
+                e
+            }
+        })
         .collect();
 
     // Strip the wrapping paragraph.

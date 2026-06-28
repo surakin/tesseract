@@ -154,11 +154,13 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return;
         };
-        let mode    = mode.to_owned();
+        let mode = mode.to_owned();
         let room_id = room_id.to_owned();
 
         self.rt.block_on(async move {
-            let Ok(rid) = RoomId::parse(&room_id) else { return; };
+            let Ok(rid) = RoomId::parse(&room_id) else {
+                return;
+            };
             let settings = client.notification_settings().await;
 
             let target = match mode.as_str() {

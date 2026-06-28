@@ -52,7 +52,11 @@ pub(crate) fn build_animated_image_content(
     thread_root: &str,
 ) -> serde_json::Value {
     use super::gif::GifMedia;
-    let body = if caption.is_empty() { filename } else { caption };
+    let body = if caption.is_empty() {
+        filename
+    } else {
+        caption
+    };
     let mut info = serde_json::json!({
         "mimetype": mime_type,
         "size": size,
@@ -81,7 +85,11 @@ pub(crate) fn build_animated_image_content(
     }
     if !thread_root.is_empty() {
         // MSC3440 thread relation.
-        let in_reply_to_id = if reply_event_id.is_empty() { thread_root } else { reply_event_id };
+        let in_reply_to_id = if reply_event_id.is_empty() {
+            thread_root
+        } else {
+            reply_event_id
+        };
         let mut relates = serde_json::json!({
             "rel_type": "m.thread",
             "event_id": thread_root,
@@ -217,13 +225,7 @@ pub(super) fn find_anchor_open(s: &str) -> Option<usize> {
     while i + 1 < b.len() {
         if b[i] == b'<' && (b[i + 1] == b'a' || b[i + 1] == b'A') {
             match b.get(i + 2).copied() {
-                Some(c)
-                    if c == b' '
-                        || c == b'\t'
-                        || c == b'\n'
-                        || c == b'\r'
-                        || c == b'>' =>
-                {
+                Some(c) if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' || c == b'>' => {
                     return Some(i)
                 }
                 _ => {}
@@ -243,9 +245,7 @@ pub(super) fn extract_href(open_tag: &str) -> Option<String> {
         let end = after[1..].find(q)?;
         Some(after[1..1 + end].to_string())
     } else {
-        let end = after
-            .find([' ', '>', '\t'])
-            .unwrap_or(after.len());
+        let end = after.find([' ', '>', '\t']).unwrap_or(after.len());
         Some(after[..end].to_string())
     }
 }
@@ -422,8 +422,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/message".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/message".to_string(),
         );
         // Use the live timeline if subscribed — local echo fires immediately.
         {
@@ -442,7 +444,9 @@ impl ClientFfi {
             }
         }
         // Fallback: no timeline subscribed for this room.
-        let room = try_op!(client.get_room(&room_id).ok_or_else(|| err("room not found")));
+        let room = try_op!(client
+            .get_room(&room_id)
+            .ok_or_else(|| err("room not found")));
         match self.rt.block_on(async move { room.send(content).await }) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -507,8 +511,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/abort".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/abort".to_string(),
         );
         let timeline = {
             let guard = self.timelines.read();
@@ -550,8 +556,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "send/typing".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "send/typing".to_string(),
             );
             let Some(room) = client.get_room(&room_id) else {
                 return;
@@ -585,8 +593,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/reply".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/reply".to_string(),
         );
         let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
             Ok(id) => id,
@@ -667,15 +677,19 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid thread root id: {e}")),
         };
         if !in_reply_to.is_empty()
-            && in_reply_to.parse::<matrix_sdk::ruma::OwnedEventId>().is_err()
+            && in_reply_to
+                .parse::<matrix_sdk::ruma::OwnedEventId>()
+                .is_err()
         {
             return err("invalid in_reply_to id");
         }
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/thread_message".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/thread_message".to_string(),
         );
         // When the thread timeline is subscribed, route through it so the
         // local echo arrives via on_thread_inserted immediately:
@@ -687,8 +701,11 @@ impl ClientFfi {
         let key = (room_id.clone(), root.clone());
         // Clone the timeline Arc out from under the read guard so it is not held
         // across the `block_on` below (that would risk a deadlock).
-        let thread_timeline =
-            self.thread_timelines.read().get(&key).map(|h| h.timeline.clone());
+        let thread_timeline = self
+            .thread_timelines
+            .read()
+            .get(&key)
+            .map(|h| h.timeline.clone());
         if let Some(timeline) = thread_timeline {
             let (mentions, html) = derive_mentions(formatted_body);
             let mut msg = if html.is_empty() {
@@ -706,14 +723,14 @@ impl ClientFfi {
                     Err(e) => err(e.to_string()),
                 };
             }
-            let reply_id: matrix_sdk::ruma::OwnedEventId = match in_reply_to.parse()
-            {
+            let reply_id: matrix_sdk::ruma::OwnedEventId = match in_reply_to.parse() {
                 Ok(id) => id,
                 Err(e) => return err(format!("invalid in_reply_to id: {e}")),
             };
-            return match self.rt.block_on(async move {
-                timeline.send_reply(msg.into(), reply_id).await
-            }) {
+            return match self
+                .rt
+                .block_on(async move { timeline.send_reply(msg.into(), reply_id).await })
+            {
                 Ok(_) => ok(""),
                 Err(e) => err(e.to_string()),
             };
@@ -723,17 +740,16 @@ impl ClientFfi {
         // `Room::send` so matrix-sdk handles the type tag and the local-echo
         // queue. The hand-rolled JSON path used to live here; `Relation::Thread`
         // matches the same wire shape.
-        let room = try_op!(client.get_room(&room_id).ok_or_else(|| err("room not found")));
+        let room = try_op!(client
+            .get_room(&room_id)
+            .ok_or_else(|| err("room not found")));
         let reply_owned: Option<matrix_sdk::ruma::OwnedEventId> = if in_reply_to.is_empty() {
             None
         } else {
             in_reply_to.parse().ok()
         };
         let content = build_thread_message_content(body, formatted_body, root, reply_owned);
-        match self
-            .rt
-            .block_on(async move { room.send(content).await })
-        {
+        match self.rt.block_on(async move { room.send(content).await }) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
@@ -791,8 +807,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "send/fetch_reply_details".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "send/fetch_reply_details".to_string(),
             );
             let _ = tl.fetch_details_for_event(&event_id).await;
         });
@@ -842,8 +860,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/image".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/image".to_string(),
         );
 
         // Animated GIF/WebP path: `send_attachment` strips the MSC4230
@@ -869,15 +889,12 @@ impl ClientFfi {
                         .upload_encrypted_file(&mut cur)
                         .await
                         .map_err(|e| e.to_string())?;
-                    GifMedia::Encrypted(
-                        serde_json::to_value(&file).map_err(|e| e.to_string())?,
-                    )
+                    GifMedia::Encrypted(serde_json::to_value(&file).map_err(|e| e.to_string())?)
                 } else {
-                    let mxc_uri =
-                        super::account::upload_bytes(&client, bytes_owned, &mime_owned)
-                            .await
-                            .map_err(|e| e.to_string())?
-                            .to_string();
+                    let mxc_uri = super::account::upload_bytes(&client, bytes_owned, &mime_owned)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .to_string();
                     GifMedia::Plain(mxc_uri)
                 };
                 let content = build_animated_image_content(
@@ -981,8 +998,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/file".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/file".to_string(),
         );
 
         let info = AttachmentInfo::File(BaseFileInfo {
@@ -1051,8 +1070,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/audio".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/audio".to_string(),
         );
 
         let info = AttachmentInfo::Audio(BaseAudioInfo {
@@ -1135,8 +1156,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/video".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/video".to_string(),
         );
 
         let info = AttachmentInfo::Video(BaseVideoInfo {
@@ -1217,12 +1240,17 @@ impl ClientFfi {
         use matrix_sdk::attachment::{AttachmentInfo, BaseImageInfo};
         use matrix_sdk::ruma::UInt;
 
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
+                {
+                    let g = h.lock();
+                    g.on_upload_complete(request_id, ok, msg);
+                }
             }
         };
 
@@ -1237,11 +1265,17 @@ impl ClientFfi {
         self.rt.spawn(async move {
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
-                Err(e) => { deliver(false, &e.message); return; }
+                Err(e) => {
+                    deliver(false, &e.message);
+                    return;
+                }
             };
             let mime: mime::Mime = match mime_type.parse() {
                 Ok(m) => m,
-                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+                Err(e) => {
+                    deliver(false, &format!("invalid mime: {e}"));
+                    return;
+                }
             };
 
             if is_animated {
@@ -1255,25 +1289,32 @@ impl ClientFfi {
                             .upload_encrypted_file(&mut cur)
                             .await
                             .map_err(|e| e.to_string())?;
-                        GifMedia::Encrypted(
-                            serde_json::to_value(&file).map_err(|e| e.to_string())?,
-                        )
+                        GifMedia::Encrypted(serde_json::to_value(&file).map_err(|e| e.to_string())?)
                     } else {
-                        let mxc_uri = super::account::upload_bytes(&client, bytes.clone(), &mime_owned)
-                            .await
-                            .map_err(|e| e.to_string())?
-                            .to_string();
+                        let mxc_uri =
+                            super::account::upload_bytes(&client, bytes.clone(), &mime_owned)
+                                .await
+                                .map_err(|e| e.to_string())?
+                                .to_string();
                         GifMedia::Plain(mxc_uri)
                     };
                     let content = build_animated_image_content(
-                        media, &filename, &caption, &mime_type, width, height, size,
-                        &reply_event_id, &thread_root,
+                        media,
+                        &filename,
+                        &caption,
+                        &mime_type,
+                        width,
+                        height,
+                        size,
+                        &reply_event_id,
+                        &thread_root,
                     );
                     room.send_raw("m.room.message", content)
                         .await
                         .map_err(|e| e.to_string())?;
                     Ok(())
-                }.await;
+                }
+                .await;
                 match result {
                     Ok(()) => deliver(true, ""),
                     Err(e) => deliver(false, &e),
@@ -1288,9 +1329,18 @@ impl ClientFfi {
                 blurhash: None,
                 is_animated: None,
             });
-            let config = match build_attachment_config(info, None, &caption, &reply_event_id, &thread_root) {
+            let config = match build_attachment_config(
+                info,
+                None,
+                &caption,
+                &reply_event_id,
+                &thread_root,
+            ) {
                 Ok(c) => c,
-                Err(e) => { deliver(false, &e); return; }
+                Err(e) => {
+                    deliver(false, &e);
+                    return;
+                }
             };
             match do_send_attachment(room, filename, mime, bytes, config).await {
                 Ok(()) => deliver(true, ""),
@@ -1313,7 +1363,8 @@ impl ClientFfi {
         _is_animated: bool,
         _reply_event_id: &str,
         _thread_root: &str,
-    ) {}
+    ) {
+    }
 
     #[cfg(not(test))]
     pub fn send_file_async(
@@ -1330,12 +1381,17 @@ impl ClientFfi {
         use matrix_sdk::attachment::{AttachmentInfo, BaseFileInfo};
         use matrix_sdk::ruma::UInt;
 
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
+                {
+                    let g = h.lock();
+                    g.on_upload_complete(request_id, ok, msg);
+                }
             }
         };
 
@@ -1350,16 +1406,33 @@ impl ClientFfi {
         self.rt.spawn(async move {
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
-                Err(e) => { deliver(false, &e.message); return; }
+                Err(e) => {
+                    deliver(false, &e.message);
+                    return;
+                }
             };
             let mime: mime::Mime = match mime_type.parse() {
                 Ok(m) => m,
-                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+                Err(e) => {
+                    deliver(false, &format!("invalid mime: {e}"));
+                    return;
+                }
             };
-            let info = AttachmentInfo::File(BaseFileInfo { size: UInt::new(bytes.len() as u64) });
-            let config = match build_attachment_config(info, None, &caption, &reply_event_id, &thread_root) {
+            let info = AttachmentInfo::File(BaseFileInfo {
+                size: UInt::new(bytes.len() as u64),
+            });
+            let config = match build_attachment_config(
+                info,
+                None,
+                &caption,
+                &reply_event_id,
+                &thread_root,
+            ) {
                 Ok(c) => c,
-                Err(e) => { deliver(false, &e); return; }
+                Err(e) => {
+                    deliver(false, &e);
+                    return;
+                }
             };
             match do_send_attachment(room, filename, mime, bytes, config).await {
                 Ok(()) => deliver(true, ""),
@@ -1379,7 +1452,8 @@ impl ClientFfi {
         _caption: &str,
         _reply_event_id: &str,
         _thread_root: &str,
-    ) {}
+    ) {
+    }
 
     #[cfg(not(test))]
     pub fn send_audio_async(
@@ -1398,12 +1472,17 @@ impl ClientFfi {
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
 
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
+                {
+                    let g = h.lock();
+                    g.on_upload_complete(request_id, ok, msg);
+                }
             }
         };
 
@@ -1418,20 +1497,39 @@ impl ClientFfi {
         self.rt.spawn(async move {
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
-                Err(e) => { deliver(false, &e.message); return; }
+                Err(e) => {
+                    deliver(false, &e.message);
+                    return;
+                }
             };
             let mime: mime::Mime = match mime_type.parse() {
                 Ok(m) => m,
-                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+                Err(e) => {
+                    deliver(false, &format!("invalid mime: {e}"));
+                    return;
+                }
             };
             let info = AttachmentInfo::Audio(BaseAudioInfo {
-                duration: if duration_ms > 0 { Some(Duration::from_millis(duration_ms)) } else { None },
+                duration: if duration_ms > 0 {
+                    Some(Duration::from_millis(duration_ms))
+                } else {
+                    None
+                },
                 size: UInt::new(bytes.len() as u64),
                 waveform: None,
             });
-            let config = match build_attachment_config(info, None, &caption, &reply_event_id, &thread_root) {
+            let config = match build_attachment_config(
+                info,
+                None,
+                &caption,
+                &reply_event_id,
+                &thread_root,
+            ) {
                 Ok(c) => c,
-                Err(e) => { deliver(false, &e); return; }
+                Err(e) => {
+                    deliver(false, &e);
+                    return;
+                }
             };
             match do_send_attachment(room, filename, mime, bytes, config).await {
                 Ok(()) => deliver(true, ""),
@@ -1452,7 +1550,8 @@ impl ClientFfi {
         _duration_ms: u64,
         _reply_event_id: &str,
         _thread_root: &str,
-    ) {}
+    ) {
+    }
 
     #[cfg(not(test))]
     pub fn send_video_async(
@@ -1476,12 +1575,17 @@ impl ClientFfi {
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
 
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
 
         let deliver = move |ok: bool, msg: &str| {
             if let Some(h) = &handler {
-                { let g = h.lock(); g.on_upload_complete(request_id, ok, msg); }
+                {
+                    let g = h.lock();
+                    g.on_upload_complete(request_id, ok, msg);
+                }
             }
         };
 
@@ -1497,14 +1601,24 @@ impl ClientFfi {
         self.rt.spawn(async move {
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
-                Err(e) => { deliver(false, &e.message); return; }
+                Err(e) => {
+                    deliver(false, &e.message);
+                    return;
+                }
             };
             let mime: mime::Mime = match mime_type.parse() {
                 Ok(m) => m,
-                Err(e) => { deliver(false, &format!("invalid mime: {e}")); return; }
+                Err(e) => {
+                    deliver(false, &format!("invalid mime: {e}"));
+                    return;
+                }
             };
             let info = AttachmentInfo::Video(BaseVideoInfo {
-                duration: if duration_ms > 0 { Some(Duration::from_millis(duration_ms)) } else { None },
+                duration: if duration_ms > 0 {
+                    Some(Duration::from_millis(duration_ms))
+                } else {
+                    None
+                },
                 height: UInt::new(height as u64),
                 width: UInt::new(width as u64),
                 size: UInt::new(bytes.len() as u64),
@@ -1522,9 +1636,18 @@ impl ClientFfi {
                     size: UInt::new(thumb_size).unwrap_or_default(),
                 }
             });
-            let config = match build_attachment_config(info, thumbnail, &caption, &reply_event_id, &thread_root) {
+            let config = match build_attachment_config(
+                info,
+                thumbnail,
+                &caption,
+                &reply_event_id,
+                &thread_root,
+            ) {
                 Ok(c) => c,
-                Err(e) => { deliver(false, &e); return; }
+                Err(e) => {
+                    deliver(false, &e);
+                    return;
+                }
             };
             match do_send_attachment(room, filename, mime, bytes, config).await {
                 Ok(()) => deliver(true, ""),
@@ -1550,7 +1673,8 @@ impl ClientFfi {
         _duration_ms: u64,
         _reply_event_id: &str,
         _thread_root: &str,
-    ) {}
+    ) {
+    }
 
     /// Encode `pcm` (raw signed 16-bit mono 48 kHz samples as a byte slice,
     /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
@@ -1641,8 +1765,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "send/voice".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "send/voice".to_string(),
         );
 
         match self.rt.block_on(async move {
@@ -2055,20 +2181,26 @@ impl ClientFfi {
         let key = (room_id_parsed.clone(), root.clone());
         // Clone the timeline Arc out from under the read guard so it is not held
         // across the `block_on` below.
-        let thread_timeline =
-            self.thread_timelines.read().get(&key).map(|h| h.timeline.clone());
+        let thread_timeline = self
+            .thread_timelines
+            .read()
+            .get(&key)
+            .map(|h| h.timeline.clone());
         if let Some(timeline) = thread_timeline {
             let content = StickerEventContent::new(body.to_owned(), info, uri);
-            return match self.rt.block_on(async move {
-                timeline.send(content.into()).await
-            }) {
+            return match self
+                .rt
+                .block_on(async move { timeline.send(content.into()).await })
+            {
                 Ok(_) => ok(""),
                 Err(e) => err(e.to_string()),
             };
         }
 
         // Fallback: send via room with manual m.thread relation.
-        let room = try_op!(client.get_room(&room_id_parsed).ok_or_else(|| err("room not found")));
+        let room = try_op!(client
+            .get_room(&room_id_parsed)
+            .ok_or_else(|| err("room not found")));
         let info_val = serde_json::to_value(&info).unwrap_or(serde_json::json!({}));
         let content = serde_json::json!({
             "body": body,
@@ -2081,7 +2213,10 @@ impl ClientFfi {
                 "is_falling_back": true
             }
         });
-        match self.rt.block_on(async move { room.send_raw("m.sticker", content).await }) {
+        match self
+            .rt
+            .block_on(async move { room.send_raw("m.sticker", content).await })
+        {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
@@ -2133,19 +2268,23 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "send/forward".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "send/forward".to_string(),
             );
 
             let result: Result<(), String> = async {
-                let (_, source_room) = require_room(&client, &source_room_id)
-                    .map_err(|e| e.message)?;
-                let (_, target_room) = require_room(&client, &target_room_id)
-                    .map_err(|e| e.message)?;
+                let (_, source_room) =
+                    require_room(&client, &source_room_id).map_err(|e| e.message)?;
+                let (_, target_room) =
+                    require_room(&client, &target_room_id).map_err(|e| e.message)?;
                 let event_id: matrix_sdk::ruma::OwnedEventId =
-                    event_id_str.parse().map_err(|e: matrix_sdk::ruma::IdParseError| {
-                        format!("invalid event id: {e}")
-                    })?;
+                    event_id_str
+                        .parse()
+                        .map_err(|e: matrix_sdk::ruma::IdParseError| {
+                            format!("invalid event id: {e}")
+                        })?;
                 let tl_event = source_room
                     .event(&event_id, None)
                     .await

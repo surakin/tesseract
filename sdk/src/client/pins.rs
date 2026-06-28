@@ -32,8 +32,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "pins/send".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "pins/send".to_string(),
         );
 
         // Read existing m.room.pinned_events (may be absent → start empty).
@@ -86,8 +88,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "pins/unpin".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "pins/unpin".to_string(),
         );
 
         let existing: Vec<OwnedEventId> = match self
@@ -108,10 +112,7 @@ impl ClientFfi {
             return ok(""); // not pinned — idempotent
         }
 
-        let next: Vec<OwnedEventId> = existing
-            .into_iter()
-            .filter(|id| id != &target)
-            .collect();
+        let next: Vec<OwnedEventId> = existing.into_iter().filter(|id| id != &target).collect();
         let content = RoomPinnedEventsEventContent::new(next);
 
         match self.rt.block_on(room.send_state_event(content)) {

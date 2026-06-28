@@ -132,7 +132,7 @@ pub async fn send_frame_key_to_user(
     index: u8,
 ) -> anyhow::Result<()> {
     use matrix_sdk::encryption::identities::Device;
-    use matrix_sdk::ruma::{UserId, events::AnyToDeviceEventContent};
+    use matrix_sdk::ruma::{events::AnyToDeviceEventContent, UserId};
     use matrix_sdk_base::crypto::CollectStrategy;
 
     let uid: &UserId = matrix_user_id
@@ -257,10 +257,7 @@ pub async fn broadcast_key(
         .await
         .context("get room members for key broadcast")?;
 
-    let other_members: Vec<_> = members
-        .iter()
-        .filter(|m| m.user_id() != own_user)
-        .collect();
+    let other_members: Vec<_> = members.iter().filter(|m| m.user_id() != own_user).collect();
     tracing::info!(
         "e2ee: broadcasting key index={index} to {} other member(s)",
         other_members.len()
@@ -283,18 +280,17 @@ pub async fn broadcast_key(
         }
     }
 
-    let recipient_devices: Vec<Device> =
-        all_user_devices.iter().flat_map(|ud| ud.devices()).collect();
+    let recipient_devices: Vec<Device> = all_user_devices
+        .iter()
+        .flat_map(|ud| ud.devices())
+        .collect();
 
     if recipient_devices.is_empty() {
         tracing::warn!("e2ee: no recipient devices found — key broadcast skipped (0 devices across {} user(s))", other_members.len());
         return Ok(());
     }
 
-    tracing::info!(
-        "e2ee: sending key to {} device(s)",
-        recipient_devices.len()
-    );
+    tracing::info!("e2ee: sending key to {} device(s)", recipient_devices.len());
     let refs: Vec<&Device> = recipient_devices.iter().collect();
     let failures = client
         .encryption()

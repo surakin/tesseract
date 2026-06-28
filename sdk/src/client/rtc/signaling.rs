@@ -28,7 +28,11 @@ pub struct RtcApplication {
     /// `application["m.call.intent"]` and Element Android rejects memberships
     /// where it is absent or invalid, causing our tracks to be ignored.
     /// Valid values: "voice", "video".
-    #[serde(rename = "m.call.intent", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "m.call.intent",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub call_intent: String,
     /// "m.room" for room-level calls.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -197,10 +201,7 @@ pub struct RtcEncryptionKeyEventContent {
 
 /// Open the MSC3401 call slot event. State key = call_id (empty = default room call).
 /// Idempotent — safe to re-send.
-pub async fn send_msc3401_call_open(
-    room: &matrix_sdk::Room,
-    call_id: &str,
-) -> anyhow::Result<()> {
+pub async fn send_msc3401_call_open(room: &matrix_sdk::Room, call_id: &str) -> anyhow::Result<()> {
     let content = Msc3401CallEventContent {
         intent: "m.room".to_owned(),
         kind: "m.video".to_owned(),
@@ -232,16 +233,16 @@ pub async fn send_msc3401_member_join(
     user_id: &str,
 ) -> anyhow::Result<()> {
     use matrix_sdk::ruma::{
-        OwnedUserId,
         api::client::state::send_state_event,
         events::{
-            AnyStateEventContent, StateEventType,
             call::member::{
                 ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
                 CallMemberEventContent, CallMemberStateKey, CallScope, Focus, LivekitFocus,
             },
             rtc::notification::CallIntent,
+            AnyStateEventContent, StateEventType,
         },
+        OwnedUserId,
     };
 
     // The state key uses the session part (UUID) so that each LiveKit session
@@ -258,9 +259,12 @@ pub async fn send_msc3401_member_join(
 
     let content = CallMemberEventContent::new(
         Application::Call(app_content),
-        matrix_device_id.into(),  // Real Matrix device ID so EC can target key delivery
+        matrix_device_id.into(), // Real Matrix device ID so EC can target key delivery
         ActiveFocus::Livekit(ActiveLivekitFocus::new()),
-        vec![Focus::Livekit(LivekitFocus::new(livekit_alias.to_owned(), service_url.to_owned()))],
+        vec![Focus::Livekit(LivekitFocus::new(
+            livekit_alias.to_owned(),
+            service_url.to_owned(),
+        ))],
         None,
         None,
     );
@@ -297,8 +301,8 @@ pub async fn send_msc3401_member_leave(
     membership_id: &str,
 ) -> anyhow::Result<()> {
     use matrix_sdk::ruma::{
-        OwnedUserId,
         events::call::member::{CallMemberEventContent, CallMemberStateKey},
+        OwnedUserId,
     };
 
     let session_part = membership_id
@@ -315,10 +319,7 @@ pub async fn send_msc3401_member_leave(
 /// Open or refresh the call slot. State key = slot_id.
 /// Per MSC4143 §slot: the presence of this event tells other clients that
 /// the slot is active. Idempotent — safe to re-send.
-pub async fn send_rtc_slot(
-    room: &matrix_sdk::Room,
-    slot_id: &str,
-) -> anyhow::Result<()> {
+pub async fn send_rtc_slot(room: &matrix_sdk::Room, slot_id: &str) -> anyhow::Result<()> {
     let content = RtcSlotEventContent {
         application: RtcApplication::call(),
     };
@@ -401,12 +402,8 @@ pub async fn send_rtc_member_leave(
         .map_err(|e| anyhow::anyhow!("serialize leave body: {e}"))?;
     let event_type = StateEventType::from("org.matrix.msc4143.rtc.member");
     let room_id = room.room_id().to_owned();
-    let request = send_state_event::v3::Request::new_raw(
-        room_id,
-        event_type,
-        member_id.to_owned(),
-        raw_body,
-    );
+    let request =
+        send_state_event::v3::Request::new_raw(room_id, event_type, member_id.to_owned(), raw_body);
     room.client().send(request).await?;
     Ok(())
 }
@@ -423,7 +420,11 @@ pub struct Msc4075RtcNotificationEventContent {
     pub notification_type: String,
     pub sender_ts: u64,
     pub lifetime: u64,
-    #[serde(rename = "m.call.intent", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "m.call.intent",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub call_intent: Option<String>,
 }
 
@@ -470,10 +471,10 @@ pub async fn send_ring_ack(
     notification_event_id: &str,
 ) -> anyhow::Result<()> {
     use matrix_sdk::ruma::{
-        OwnedDeviceId, OwnedUserId, TransactionId,
         api::client::to_device::send_event_to_device,
         events::{AnyToDeviceEventContent, ToDeviceEventType},
         to_device::DeviceIdOrAllDevices,
+        OwnedDeviceId, OwnedUserId, TransactionId,
     };
     use std::collections::BTreeMap;
 
@@ -498,8 +499,7 @@ pub async fn send_ring_ack(
         .context("invalid caller_user_id for ring_ack")?;
     let did: OwnedDeviceId = caller_device_id.into();
 
-    let mut per_user: BTreeMap<OwnedUserId, BTreeMap<DeviceIdOrAllDevices, _>> =
-        BTreeMap::new();
+    let mut per_user: BTreeMap<OwnedUserId, BTreeMap<DeviceIdOrAllDevices, _>> = BTreeMap::new();
     let mut per_device = BTreeMap::new();
     per_device.insert(DeviceIdOrAllDevices::DeviceId(did), raw);
     per_user.insert(uid, per_device);

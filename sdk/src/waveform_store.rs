@@ -1,6 +1,6 @@
-use rusqlite::{Connection, params};
-use std::path::Path;
 use parking_lot::Mutex;
+use rusqlite::{params, Connection};
+use std::path::Path;
 use std::sync::OnceLock;
 
 static DB: OnceLock<Mutex<Connection>> = OnceLock::new();
@@ -26,7 +26,10 @@ fn waveform_to_bytes(waveform: &[u16]) -> Vec<u8> {
 }
 
 fn bytes_to_waveform(bytes: Vec<u8>) -> Vec<u16> {
-    bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect()
+    bytes
+        .chunks_exact(2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .collect()
 }
 
 pub fn load(mxc_uri: &str) -> Vec<u16> {

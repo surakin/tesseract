@@ -50,9 +50,20 @@ impl super::ClientFfi {
         let http = self.http_client.clone();
         let repo = repo.to_owned();
         let current = current_version.to_owned();
-        match self.rt.block_on(check_github_release(&http, &repo, &current)) {
-            Some((version, url)) => crate::ffi::UpdateResult { has_update: true, version, url },
-            None => crate::ffi::UpdateResult { has_update: false, version: String::new(), url: String::new() },
+        match self
+            .rt
+            .block_on(check_github_release(&http, &repo, &current))
+        {
+            Some((version, url)) => crate::ffi::UpdateResult {
+                has_update: true,
+                version,
+                url,
+            },
+            None => crate::ffi::UpdateResult {
+                has_update: false,
+                version: String::new(),
+                url: String::new(),
+            },
         }
     }
 }

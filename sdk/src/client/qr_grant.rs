@@ -71,13 +71,7 @@ impl ClientFfi {
         let (cancel_tx, cancel_rx) = watch::channel(false);
 
         self.rt.spawn(run_grant_flow(
-            client,
-            bitmap_tx,
-            scanned_tx,
-            check_rx,
-            auth_tx,
-            done_tx,
-            cancel_rx,
+            client, bitmap_tx, scanned_tx, check_rx, auth_tx, done_tx, cancel_rx,
         ));
 
         // Block until the QR bitmap is ready (or the flow fails immediately).
@@ -90,7 +84,12 @@ impl ClientFfi {
                     done_rx: std::sync::Mutex::new(Some(done_rx)),
                     cancel_tx,
                 });
-                QrGrantBitmap { ok: true, message: String::new(), pixels, side }
+                QrGrantBitmap {
+                    ok: true,
+                    message: String::new(),
+                    pixels,
+                    side,
+                }
             }
             Err(_) => bitmap_err("QR grant flow failed before producing a bitmap"),
         }
@@ -138,7 +137,11 @@ impl ClientFfi {
             None => return auth_err("qr_grant_await_auth already called"),
         };
         match self.rt.block_on(rx) {
-            Ok(uri) => QrGrantAuth { ok: true, message: String::new(), verification_uri: uri },
+            Ok(uri) => QrGrantAuth {
+                ok: true,
+                message: String::new(),
+                verification_uri: uri,
+            },
             Err(_) => auth_err("QR grant flow ended before reaching WaitingForAuth"),
         }
     }
@@ -292,7 +295,6 @@ async fn run_grant_flow(
                 }
             }
         }
-
     }
 }
 
@@ -325,14 +327,13 @@ fn render_qr(data: &QrCodeData) -> Option<(Vec<u8>, u32)> {
             let col = i as u32 % modules as u32;
             for dy in 0..scale {
                 for dx in 0..scale {
-                    let base = (((row + quiet) * scale + dy) * side
-                        + (col + quiet) * scale
-                        + dx) as usize
+                    let base = (((row + quiet) * scale + dy) * side + (col + quiet) * scale + dx)
+                        as usize
                         * 4;
                     pixels[base] = 0; // R
                     pixels[base + 1] = 0; // G
                     pixels[base + 2] = 0; // B
-                    // base+3 (alpha) stays 255
+                                          // base+3 (alpha) stays 255
                 }
             }
         }
@@ -346,9 +347,18 @@ fn render_qr(data: &QrCodeData) -> Option<(Vec<u8>, u32)> {
 // ---------------------------------------------------------------------------
 
 fn bitmap_err(msg: &str) -> QrGrantBitmap {
-    QrGrantBitmap { ok: false, message: msg.into(), pixels: vec![], side: 0 }
+    QrGrantBitmap {
+        ok: false,
+        message: msg.into(),
+        pixels: vec![],
+        side: 0,
+    }
 }
 
 fn auth_err(msg: &str) -> QrGrantAuth {
-    QrGrantAuth { ok: false, message: msg.into(), verification_uri: String::new() }
+    QrGrantAuth {
+        ok: false,
+        message: msg.into(),
+        verification_uri: String::new(),
+    }
 }

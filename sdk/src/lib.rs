@@ -7,9 +7,9 @@ mod image_packs;
 mod markdown;
 mod matrix_uri;
 mod media_preview;
-mod text_utils;
 mod oauth;
 mod recent_emoji;
+mod text_utils;
 mod waveform;
 mod waveform_store;
 
@@ -299,8 +299,8 @@ pub mod ffi {
     #[derive(Debug, PartialEq, Default)]
     pub struct UrlSpan {
         pub start: usize,
-        pub end:   usize,
-        pub url:   String,
+        pub end: usize,
+        pub url: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -324,9 +324,29 @@ pub mod ffi {
         pub fn on_message_inserted(&self, _room_id: &str, _index: u64, _event: &TimelineEvent) {}
         pub fn on_message_updated(&self, _room_id: &str, _index: u64, _event: &TimelineEvent) {}
         pub fn on_message_removed(&self, _room_id: &str, _index: u64) {}
-        pub fn on_thread_reset(&self, _room_id: &str, _thread_root: &str, _snapshot: &Vec<TimelineEvent>) {}
-        pub fn on_thread_inserted(&self, _room_id: &str, _thread_root: &str, _index: u64, _event: &TimelineEvent) {}
-        pub fn on_thread_updated(&self, _room_id: &str, _thread_root: &str, _index: u64, _event: &TimelineEvent) {}
+        pub fn on_thread_reset(
+            &self,
+            _room_id: &str,
+            _thread_root: &str,
+            _snapshot: &Vec<TimelineEvent>,
+        ) {
+        }
+        pub fn on_thread_inserted(
+            &self,
+            _room_id: &str,
+            _thread_root: &str,
+            _index: u64,
+            _event: &TimelineEvent,
+        ) {
+        }
+        pub fn on_thread_updated(
+            &self,
+            _room_id: &str,
+            _thread_root: &str,
+            _index: u64,
+            _event: &TimelineEvent,
+        ) {
+        }
         pub fn on_thread_removed(&self, _room_id: &str, _thread_root: &str, _index: u64) {}
         pub fn on_rooms_updated(&self, _rooms: &Vec<RoomInfo>) {}
         pub fn on_invites_updated(&self, _invites: &Vec<InviteInfo>) {}
@@ -339,7 +359,8 @@ pub mod ffi {
             _recovery_key: &str,
             _backed_up: u32,
             _total: u32,
-        ) {}
+        ) {
+        }
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
         pub fn on_media_preview_config_updated(&self, _json: &str) {}
@@ -361,7 +382,8 @@ pub mod ffi {
             _call_intent: &str,
             _lifetime_ms: u64,
             _notification_event_id: &str,
-        ) {}
+        ) {
+        }
         pub fn on_rtc_participant_joined(&self, _session_id: u64, _info: &RtcParticipantInfo) {}
         pub fn on_rtc_participant_left(&self, _session_id: u64, _participant_id: &str) {}
         pub fn on_rtc_participant_updated(&self, _session_id: u64, _info: &RtcParticipantInfo) {}

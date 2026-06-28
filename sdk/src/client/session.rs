@@ -11,7 +11,7 @@ use matrix_sdk::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{err, ok, oauth_err, ClientFfi};
+use super::{err, oauth_err, ok, ClientFfi};
 use crate::ffi::{OAuthBegin, OpResult};
 use crate::oauth;
 
@@ -319,7 +319,10 @@ impl ClientFfi {
 
             #[cfg(feature = "calls")]
             let supports_calls = crate::client::rtc::transport::probe_livekit_support(
-                &http, &base, &access_token, &server_name,
+                &http,
+                &base,
+                &access_token,
+                &server_name,
             )
             .await;
             #[cfg(not(feature = "calls"))]
@@ -441,7 +444,10 @@ impl ClientFfi {
 
             #[cfg(feature = "calls")]
             let supports_calls = crate::client::rtc::transport::probe_livekit_support(
-                &http, &base, &access_token, &server_name,
+                &http,
+                &base,
+                &access_token,
+                &server_name,
             )
             .await;
             #[cfg(not(feature = "calls"))]

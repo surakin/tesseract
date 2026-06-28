@@ -134,8 +134,7 @@ pub async fn start_call(
     let session_id = next_session_id();
     let member_id = new_member_id();
 
-    let room_oid: matrix_sdk::ruma::OwnedRoomId =
-        room_id.parse().context("invalid room_id")?;
+    let room_oid: matrix_sdk::ruma::OwnedRoomId = room_id.parse().context("invalid room_id")?;
     let room = client
         .get_room(&room_oid)
         .ok_or_else(|| anyhow::anyhow!("room not found: {room_id}"))?;
@@ -149,8 +148,7 @@ pub async fn start_call(
         .user_id()
         .ok_or_else(|| anyhow::anyhow!("not logged in"))?;
     let server_name = uid.server_name().as_str();
-    let service_url =
-        fetch_livekit_service_url(http, &hs_url, &access_token, server_name).await?;
+    let service_url = fetch_livekit_service_url(http, &hs_url, &access_token, server_name).await?;
 
     let lk_alias = livekit_room_alias(room_id, slot_id);
 
@@ -196,18 +194,15 @@ pub async fn start_call(
     // event and can immediately associate our tracks with our Matrix identity.
     // Without this, Element subscribes our tracks as an "unknown" participant
     // and never re-attaches them after the state event later arrives.
-    let preflight_identity =
-        super::transport::decode_jwt_sub(&lk_transport.jwt);
+    let preflight_identity = super::transport::decode_jwt_sub(&lk_transport.jwt);
 
     // ── E2EE key handler ─────────────────────────────────────────────────
     // Register BEFORE signaling so we buffer any key events the peer sends
     // immediately on receiving our m.rtc.member. lk_holder starts as None
     // (pre-connect); it is populated after LiveKit connects and buffered keys
     // are drained at that point.
-    let early_keys: Arc<PLMutex<Vec<(String, i32, Vec<u8>)>>> =
-        Arc::new(PLMutex::new(Vec::new()));
-    let lk_holder: Arc<PLMutex<Option<Arc<LiveKitRoom>>>> =
-        Arc::new(PLMutex::new(None));
+    let early_keys: Arc<PLMutex<Vec<(String, i32, Vec<u8>)>>> = Arc::new(PLMutex::new(Vec::new()));
+    let lk_holder: Arc<PLMutex<Option<Arc<LiveKitRoom>>>> = Arc::new(PLMutex::new(None));
 
     let early_keys_h = Arc::clone(&early_keys);
     let lk_holder_h = Arc::clone(&lk_holder);
@@ -251,7 +246,13 @@ pub async fn start_call(
         info!("rtc: pre-flight signaling with identity={pid}");
         send_msc3401_call_open(&room, "").await?;
         send_msc3401_member_join(
-            &room, "", &device_id, pid, &lk_transport.service_url, &lk_alias, &user_id,
+            &room,
+            "",
+            &device_id,
+            pid,
+            &lk_transport.service_url,
+            &lk_alias,
+            &user_id,
         )
         .await?;
     }
@@ -269,7 +270,9 @@ pub async fn start_call(
             .unwrap_or_default();
 
         let has_active_members = existing.iter().any(|raw| {
-            let Ok(ev) = raw.deserialize() else { return false };
+            let Ok(ev) = raw.deserialize() else {
+                return false;
+            };
             let content = match ev {
                 SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) => o.content,
                 _ => return false,
@@ -382,15 +385,9 @@ pub async fn start_call(
                     (idx, *mgr.own_raw_key(), b64)
                 };
                 lk_r.set_own_frame_key(&raw, new_idx as i32);
-                super::e2ee::broadcast_key(
-                    &client_r,
-                    &room_r,
-                    &identity_r,
-                    &key_b64,
-                    new_idx,
-                )
-                .await
-                .unwrap_or_else(|e| warn!("e2ee rebroadcast after participant leave: {e}"));
+                super::e2ee::broadcast_key(&client_r, &room_r, &identity_r, &key_b64, new_idx)
+                    .await
+                    .unwrap_or_else(|e| warn!("e2ee rebroadcast after participant leave: {e}"));
             }
         })
         .abort_handle()
@@ -402,8 +399,8 @@ pub async fn start_call(
     // send_frame_key_to_user which bypasses room.members() and performs a
     // fresh /keys/query when their devices aren't in the local cache.
     let rebroadcast_task = rebroadcast_rx.map(|mut rx| {
-        let e2ee_r    = Arc::clone(&e2ee);
-        let client_r  = client.clone();
+        let e2ee_r = Arc::clone(&e2ee);
+        let client_r = client.clone();
         let room_id_r = room.room_id().to_string();
         let identity_r = lk_identity.clone();
         tokio::spawn(async move {
@@ -461,7 +458,11 @@ pub async fn end_call(session: &RtcSession) {
     let room_oid: matrix_sdk::ruma::OwnedRoomId =
         session.room_id.parse().unwrap_or_else(|_| unreachable!());
     if let Some(room) = session.client.get_room(&room_oid) {
-        let user_id = session.client.user_id().map(|u| u.to_string()).unwrap_or_default();
+        let user_id = session
+            .client
+            .user_id()
+            .map(|u| u.to_string())
+            .unwrap_or_default();
         // MSC3401 leave — state key must match the join (uses session member_id, not Matrix device_id)
         let _ = send_msc3401_member_leave(&room, &user_id, &session.member_id).await;
     }
@@ -483,7 +484,10 @@ pub fn register_invitation_handler(client: &matrix_sdk::Client) {
             let client = client_clone.clone();
             async move {
                 let own_user = client.user_id().map(|u| u.to_string()).unwrap_or_default();
-                let own_device = client.device_id().map(|d| d.to_string()).unwrap_or_default();
+                let own_device = client
+                    .device_id()
+                    .map(|d| d.to_string())
+                    .unwrap_or_default();
                 let sender = ev.sender().to_string();
                 let room_id = room.room_id().to_string();
 
@@ -532,8 +536,8 @@ pub fn register_invitation_handler(client: &matrix_sdk::Client) {
 /// Element Web uses this format. Called alongside `register_invitation_handler`.
 pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) {
     use matrix_sdk::ruma::events::{
-        SyncStateEvent,
         call::member::{Application, CallMemberEventContent},
+        SyncStateEvent,
     };
 
     let client_clone = client.clone();
@@ -542,7 +546,10 @@ pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) {
             let client = client_clone.clone();
             async move {
                 let own_user = client.user_id().map(|u| u.to_string()).unwrap_or_default();
-                let own_device = client.device_id().map(|d| d.to_string()).unwrap_or_default();
+                let own_device = client
+                    .device_id()
+                    .map(|d| d.to_string())
+                    .unwrap_or_default();
                 let sender = ev.sender().to_string();
                 let room_id = room.room_id().to_string();
 
@@ -588,8 +595,8 @@ pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) {
 /// Fires `on_invitation` when a ring notification arrives from another user.
 pub fn register_rtc_notification_handler(client: &matrix_sdk::Client) {
     use matrix_sdk::ruma::events::{
-        SyncMessageLikeEvent,
         rtc::notification::{CallIntent, NotificationType, RtcNotificationEventContent},
+        SyncMessageLikeEvent,
     };
 
     // Stable prefix: m.rtc.notification
@@ -747,7 +754,13 @@ fn spawn_refresh_task(
         loop {
             interval.tick().await;
             let _ = send_msc3401_member_join(
-                &room, "", &device_id, &member_id, &service_url, &lk_alias, &user_id,
+                &room,
+                "",
+                &device_id,
+                &member_id,
+                &service_url,
+                &lk_alias,
+                &user_id,
             )
             .await;
         }

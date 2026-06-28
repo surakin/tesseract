@@ -13,9 +13,8 @@ use matrix_sdk::{ruma::UserId, Room};
 
 #[cfg(not(test))]
 use matrix_sdk_ui::timeline::{
-    EncryptedMessage, EventSendState, MsgLikeContent, MsgLikeKind,
-    TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind,
-    VirtualTimelineItem,
+    EncryptedMessage, EventSendState, MsgLikeContent, MsgLikeKind, TimelineDetails, TimelineItem,
+    TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
 };
 
 #[cfg(not(test))]
@@ -102,20 +101,18 @@ pub(crate) fn utd_message_for_cause(
 ) -> &'static str {
     use matrix_sdk_base::crypto::types::events::UtdCause;
     match cause {
-        UtdCause::SentBeforeWeJoined =>
-            "🔒 Sent before you joined this room",
-        UtdCause::VerificationViolation =>
-            "🔒 Sender's identity changed since you verified them",
+        UtdCause::SentBeforeWeJoined => "🔒 Sent before you joined this room",
+        UtdCause::VerificationViolation => "🔒 Sender's identity changed since you verified them",
         UtdCause::UnsignedDevice => "🔒 Sender's device is not signed",
         UtdCause::UnknownDevice => "🔒 Sender's device is unknown",
-        UtdCause::HistoricalMessageAndBackupIsDisabled =>
-            "🔒 History unavailable (key backup is off)",
-        UtdCause::WithheldForUnverifiedOrInsecureDevice =>
-            "🔒 Sender blocked this device",
-        UtdCause::WithheldBySender =>
-            "🔒 Key was not shared with this device",
-        UtdCause::HistoricalMessageAndDeviceIsUnverified =>
-            "🔒 Verify this device to access history",
+        UtdCause::HistoricalMessageAndBackupIsDisabled => {
+            "🔒 History unavailable (key backup is off)"
+        }
+        UtdCause::WithheldForUnverifiedOrInsecureDevice => "🔒 Sender blocked this device",
+        UtdCause::WithheldBySender => "🔒 Key was not shared with this device",
+        UtdCause::HistoricalMessageAndDeviceIsUnverified => {
+            "🔒 Verify this device to access history"
+        }
         UtdCause::Unknown => "🔒 Unable to decrypt",
     }
 }
@@ -341,7 +338,10 @@ pub(super) fn reply_image_source(
             ..
         }) => match m.msgtype() {
             MessageType::Image(i) => {
-                let thumb = i.info.as_ref().and_then(|info| info.thumbnail_source.as_ref());
+                let thumb = i
+                    .info
+                    .as_ref()
+                    .and_then(|info| info.thumbnail_source.as_ref());
                 if let Some(src) = thumb {
                     split_source(src)
                 } else {
@@ -386,10 +386,14 @@ pub(super) async fn timeline_item_to_ffi(
         use matrix_sdk::ruma::events::StateEventContentChange;
         use matrix_sdk_ui::timeline::AnyOtherStateEventContentChange;
         if let AnyOtherStateEventContentChange::RoomPinnedEvents(full) = state.content() {
-            if let StateEventContentChange::Original { content, prev_content } = full {
-                let new_ids: Vec<_> = content.pinned.iter()
-                    .map(|id| id.to_string()).collect();
-                let old_ids: Vec<_> = prev_content.as_ref()
+            if let StateEventContentChange::Original {
+                content,
+                prev_content,
+            } = full
+            {
+                let new_ids: Vec<_> = content.pinned.iter().map(|id| id.to_string()).collect();
+                let old_ids: Vec<_> = prev_content
+                    .as_ref()
                     .and_then(|pc| pc.pinned.as_ref())
                     .map(|ids| ids.iter().map(|id| id.to_string()).collect())
                     .unwrap_or_default();
@@ -398,7 +402,10 @@ pub(super) async fn timeline_item_to_ffi(
                     if let TimelineDetails::Ready(p) = event_item.sender_profile() {
                         (
                             p.display_name.clone().unwrap_or_default(),
-                            p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                            p.avatar_url
+                                .as_ref()
+                                .map(|u| u.to_string())
+                                .unwrap_or_default(),
                         )
                     } else {
                         (String::new(), String::new())
@@ -406,8 +413,10 @@ pub(super) async fn timeline_item_to_ffi(
                 return Some(TimelineEvent {
                     room_id: room_id.to_owned(),
                     msg_type: "m.room.pinned_events".to_owned(),
-                    event_id: event_item.event_id()
-                        .map(|id| id.to_string()).unwrap_or_default(),
+                    event_id: event_item
+                        .event_id()
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
                     sender: event_item.sender().to_string(),
                     sender_name,
                     sender_avatar_url,
@@ -539,7 +548,10 @@ pub(super) async fn timeline_item_to_ffi(
             }
             matrix_sdk::ruma::events::sticker::StickerMediaSource::Encrypted(file) => {
                 let ms = matrix_sdk::ruma::events::room::MediaSource::Encrypted(file.clone());
-                (file.url.to_string(), serde_json::to_string(&ms).unwrap_or_default())
+                (
+                    file.url.to_string(),
+                    serde_json::to_string(&ms).unwrap_or_default(),
+                )
             }
             _ => (String::new(), String::new()),
         };
@@ -606,7 +618,10 @@ pub(super) async fn timeline_item_to_ffi(
             if let TimelineDetails::Ready(p) = event_item.sender_profile() {
                 (
                     p.display_name.clone().unwrap_or_default(),
-                    p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                    p.avatar_url
+                        .as_ref()
+                        .map(|u| u.to_string())
+                        .unwrap_or_default(),
                 )
             } else {
                 (String::new(), String::new())
@@ -614,7 +629,10 @@ pub(super) async fn timeline_item_to_ffi(
         return Some(TimelineEvent {
             room_id: room_id.to_owned(),
             msg_type: "org.matrix.msc4075.rtc.notification".to_owned(),
-            event_id: event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
+            event_id: event_item
+                .event_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
             sender: event_item.sender().to_string(),
             sender_name,
             sender_avatar_url,
@@ -790,9 +808,7 @@ pub(super) async fn timeline_item_to_ffi(
             // Parse once and extract all flags from the single Value.
             let mau_info: Option<serde_json::Value> = event_item
                 .original_json()
-                .and_then(|raw| {
-                    serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
-                })
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.json().get()).ok())
                 .and_then(|json| json.pointer("/content/info").cloned());
             let mau = |key: &str| -> bool {
                 mau_info
@@ -918,24 +934,33 @@ pub(super) async fn timeline_item_to_ffi(
     // m.in_reply_to — extract the event_id and, when the replied-to item is
     // present in the local timeline cache, its sender display name, a brief
     // body snippet, and (for m.image replies) the image thumbnail source.
-    let (in_reply_to_id, in_reply_to_sender_name, in_reply_to_body,
-         in_reply_to_image_url, in_reply_to_image_encrypted_json) =
-        match event_item.content().in_reply_to() {
-            None => (String::new(), String::new(), String::new(),
-                     String::new(), String::new()),
-            Some(details) => {
-                let id = details.event_id.to_string();
-                let (rname, rbody, img_url, img_enc) = match &details.event {
-                    TimelineDetails::Ready(replied) => {
-                        let (name, snippet, _ts) = embedded_event_preview(replied);
-                        let (iu, ie) = reply_image_source(replied);
-                        (name, snippet, iu, ie)
-                    }
-                    _ => (String::new(), String::new(), String::new(), String::new()),
-                };
-                (id, rname, rbody, img_url, img_enc)
-            }
-        };
+    let (
+        in_reply_to_id,
+        in_reply_to_sender_name,
+        in_reply_to_body,
+        in_reply_to_image_url,
+        in_reply_to_image_encrypted_json,
+    ) = match event_item.content().in_reply_to() {
+        None => (
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ),
+        Some(details) => {
+            let id = details.event_id.to_string();
+            let (rname, rbody, img_url, img_enc) = match &details.event {
+                TimelineDetails::Ready(replied) => {
+                    let (name, snippet, _ts) = embedded_event_preview(replied);
+                    let (iu, ie) = reply_image_source(replied);
+                    (name, snippet, iu, ie)
+                }
+                _ => (String::new(), String::new(), String::new(), String::new()),
+            };
+            (id, rname, rbody, img_url, img_enc)
+        }
+    };
 
     let (image_thumbnail_url, image_thumbnail_encrypted_json): (String, String) =
         match msg_content.msgtype() {
@@ -1020,45 +1045,69 @@ mod pinned_action_tests {
 
     #[test]
     fn pin_one() {
-        assert_eq!(pinned_events_action(&["$a"], &[] as &[&str]), "pinned a message");
+        assert_eq!(
+            pinned_events_action(&["$a"], &[] as &[&str]),
+            "pinned a message"
+        );
     }
 
     #[test]
     fn unpin_one() {
-        assert_eq!(pinned_events_action(&[] as &[&str], &["$a"]), "unpinned a message");
+        assert_eq!(
+            pinned_events_action(&[] as &[&str], &["$a"]),
+            "unpinned a message"
+        );
     }
 
     #[test]
     fn pin_many() {
-        assert_eq!(pinned_events_action(&["$a","$b","$c"], &[] as &[&str]), "pinned 3 messages");
+        assert_eq!(
+            pinned_events_action(&["$a", "$b", "$c"], &[] as &[&str]),
+            "pinned 3 messages"
+        );
     }
 
     #[test]
     fn unpin_many() {
-        assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b"]), "unpinned 2 messages");
+        assert_eq!(
+            pinned_events_action(&[] as &[&str], &["$a", "$b"]),
+            "unpinned 2 messages"
+        );
     }
 
     #[test]
     fn clear_all_three() {
         // "cleared" fires only when new list is empty AND old list had >=3 items.
-        assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b","$c"]), "cleared all pinned messages");
+        assert_eq!(
+            pinned_events_action(&[] as &[&str], &["$a", "$b", "$c"]),
+            "cleared all pinned messages"
+        );
     }
 
     #[test]
     fn unpin_two_below_threshold() {
         // Only 2 removed => threshold not met, so "unpinned N messages" fires instead.
-        assert_eq!(pinned_events_action(&[] as &[&str], &["$a","$b"]), "unpinned 2 messages");
+        assert_eq!(
+            pinned_events_action(&[] as &[&str], &["$a", "$b"]),
+            "unpinned 2 messages"
+        );
     }
 
     #[test]
     fn mixed_change() {
-        assert_eq!(pinned_events_action(&["$b"], &["$a"]), "changed the pinned messages");
+        assert_eq!(
+            pinned_events_action(&["$b"], &["$a"]),
+            "changed the pinned messages"
+        );
     }
 
     #[test]
     fn no_change() {
         // Callers should filter out no-op state events (old == new) before calling.
         // The fallthrough branch returns this, but a real caller won't reach it.
-        assert_eq!(pinned_events_action(&["$a"], &["$a"]), "changed the pinned messages");
+        assert_eq!(
+            pinned_events_action(&["$a"], &["$a"]),
+            "changed the pinned messages"
+        );
     }
 }

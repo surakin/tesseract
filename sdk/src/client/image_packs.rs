@@ -130,8 +130,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "image_packs/save".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/save".to_string(),
         );
         // Encrypted sticker events serialise the full MediaSource as JSON.
         // Decrypt and re-upload as unencrypted media so the saved pack entry
@@ -352,8 +354,7 @@ impl ClientFfi {
         // uses so the lookup matches even though the re-uploaded mxc URI differs.
         if image_url.starts_with('{') {
             use matrix_sdk::ruma::events::room::MediaSource;
-            if let Ok(MediaSource::Encrypted(file)) =
-                serde_json::from_str::<MediaSource>(image_url)
+            if let Ok(MediaSource::Encrypted(file)) = serde_json::from_str::<MediaSource>(image_url)
             {
                 let encrypted_media_id: String = file
                     .url
@@ -364,15 +365,14 @@ impl ClientFfi {
                     .chars()
                     .take(8)
                     .collect();
-                let network =
-                    serde_json::from_str::<serde_json::Value>(info_json)
-                        .ok()
-                        .and_then(|v| {
-                            v.get("fi.mau.bridged_sticker")?
-                                .get("network")?
-                                .as_str()
-                                .map(str::to_owned)
-                        });
+                let network = serde_json::from_str::<serde_json::Value>(info_json)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("fi.mau.bridged_sticker")?
+                            .get("network")?
+                            .as_str()
+                            .map(str::to_owned)
+                    });
                 let derived_base = match network {
                     Some(n) => format!("{n}_{encrypted_media_id}"),
                     None => encrypted_media_id,
@@ -411,8 +411,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "image_packs/fetch".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/fetch".to_string(),
         );
 
         let ev_type = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
