@@ -3838,6 +3838,8 @@ void MainWindow::onSpaceBack()
         space_stack_.pop_back();
     if (mainApp_)
         mainApp_->hide_room_preview();
+    if (mainApp_)
+        mainApp_->hide_space_root();
     refreshRoomList();
     if (!space_nav_frames_.empty())
     {

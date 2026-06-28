@@ -1404,6 +1404,10 @@ protected:
     // duplicating the space-child filter and unread-override logic.
     void refresh_room_list_();
 
+    // Show the chat-panel root view for a joined space. No-op if the room is
+    // unknown or is not a space.
+    void show_space_root_(const std::string& space_id);
+
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
 

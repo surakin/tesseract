@@ -13,3 +13,19 @@ msgstr "🔒 [Encrypted]"
 #: ui/shared/views/RoomInfoPanel.cpp
 msgid "🌉 Bridged"
 msgstr "🌉 [Bridged]"
+
+#: ui/shared/views/SpaceRootView.cpp
+msgid "{0} room"
+msgid_plural "{0} rooms"
+msgstr[0] "[{0} room]"
+msgstr[1] "[{0} rooms]"
+
+#: ui/shared/views/SpaceRootView.cpp
+msgid "{0} available to join"
+msgid_plural "{0} available to join"
+msgstr[0] "[{0} available to join]"
+msgstr[1] "[{0} available to join]"
+
+#: ui/shared/views/SpaceRootView.cpp
+msgid "Explore the rooms in this space from the room list."
+msgstr "[Explore the rooms in this space from the room list.]"

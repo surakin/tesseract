@@ -14,6 +14,16 @@
 namespace tesseract::views
 {
 
+namespace
+{
+
+bool point_in_rect(tk::Point p, tk::Rect r)
+{
+    return p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
+}
+
+} // namespace
+
 MainAppWidget::MainAppWidget()
 {
     // Space nav bar: back button + space name label.
@@ -68,6 +78,11 @@ MainAppWidget::MainAppWidget()
     auto rp = std::make_unique<RoomPreviewView>();
     room_preview_ = add_child(std::move(rp));
     // RoomPreviewView starts invisible (set_visible(false) in its constructor).
+
+    // Chat panel: joined-space root summary.
+    auto sr = std::make_unique<SpaceRootView>();
+    space_root_ = add_child(std::move(sr));
+    // SpaceRootView starts invisible (set_visible(false) in its constructor).
 
     // Full-surface lightbox overlays — added last so they win hit-testing
     // and are painted on top of everything else when visible.
@@ -196,6 +211,8 @@ void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
 {
     if (invite_card_)
         invite_card_->set_invite(invite, std::move(provider));
+    if (space_root_)
+        space_root_->clear();
     if (room_view_)
         room_view_->set_visible(false);
 }
@@ -206,6 +223,8 @@ void MainAppWidget::show_room()
         invite_card_->clear();
     if (room_preview_)
         room_preview_->clear();
+    if (space_root_)
+        space_root_->clear();
     if (room_view_)
         room_view_->set_visible(true);
 }
@@ -215,6 +234,8 @@ void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
 {
     if (invite_card_)
         invite_card_->clear();
+    if (space_root_)
+        space_root_->clear();
     if (room_view_)
         room_view_->set_visible(false);
     if (room_preview_)
@@ -232,12 +253,40 @@ void MainAppWidget::hide_room_preview()
         room_view_->set_visible(true);
 }
 
+void MainAppWidget::show_space_root(const tesseract::RoomInfo& space,
+                                    std::size_t joined_children,
+                                    std::size_t unjoined_children,
+                                    SpaceRootView::AvatarProvider provider)
+{
+    if (invite_card_)
+        invite_card_->clear();
+    if (room_preview_)
+        room_preview_->clear();
+    if (room_view_)
+        room_view_->set_visible(false);
+    if (space_root_)
+    {
+        space_root_->set_avatar_provider(std::move(provider));
+        space_root_->set_space(space, joined_children, unjoined_children);
+    }
+}
+
+void MainAppWidget::hide_space_root()
+{
+    if (space_root_)
+        space_root_->clear();
+    if (room_view_)
+        room_view_->set_visible(true);
+}
+
 void MainAppWidget::clear_content()
 {
     if (invite_card_)
         invite_card_->clear();
     if (room_preview_)
         room_preview_->clear();
+    if (space_root_)
+        space_root_->clear();
     if (room_view_)
     {
         room_view_->clear_room();
@@ -636,6 +685,10 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         room_preview_->arrange(ctx, chat_content_rect);
     }
+    if (space_root_)
+    {
+        space_root_->arrange(ctx, chat_content_rect);
+    }
 
     // ── Full-surface overlays (always at full widget bounds) ─────────────
 
@@ -777,6 +830,10 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     {
         room_preview_->paint(ctx);
     }
+    if (space_root_ && space_root_->visible())
+    {
+        space_root_->paint(ctx);
+    }
 
     // Lightbox overlays (painted last — on top of everything).
     if (img_viewer_ && img_viewer_->visible())
@@ -827,6 +884,44 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
         float_call_overlay_->paint(ctx);
     }
 #endif
+}
+
+bool MainAppWidget::on_pointer_down(tk::Point local)
+{
+    if (!space_nav_visible_ || !on_space_header)
+        return false;
+
+    constexpr float kBtnW = 32.0f;
+    constexpr float kPad = 4.0f;
+    const tk::Rect header_rect{bounds_.x + kPad + kBtnW,
+                               bounds_.y,
+                               kSidebarW - kPad - kBtnW,
+                               kSpaceNavH};
+    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+    if (point_in_rect(world, header_rect))
+    {
+        space_header_pressed_ = true;
+        return true;
+    }
+    return false;
+}
+
+void MainAppWidget::on_pointer_up(tk::Point local, bool inside_self)
+{
+    const bool was_pressed = space_header_pressed_;
+    space_header_pressed_ = false;
+    if (!was_pressed || !inside_self || !on_space_header)
+        return;
+
+    constexpr float kBtnW = 32.0f;
+    constexpr float kPad = 4.0f;
+    const tk::Rect header_rect{bounds_.x + kPad + kBtnW,
+                               bounds_.y,
+                               kSidebarW - kPad - kBtnW,
+                               kSpaceNavH};
+    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+    if (point_in_rect(world, header_rect))
+        on_space_header();
 }
 
 } // namespace tesseract::views

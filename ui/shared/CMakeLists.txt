@@ -174,6 +174,8 @@ set(_tk_sources
     views/InviteCard.cpp
     views/RoomPreviewView.h
     views/RoomPreviewView.cpp
+    views/SpaceRootView.h
+    views/SpaceRootView.cpp
     views/RoomInfoPanel.h
     views/RoomInfoPanel.cpp
     views/AlertDialog.h

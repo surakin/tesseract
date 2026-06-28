@@ -76,6 +76,22 @@ msgstr "Guardar archivo"
 msgid "All files (*.*)"
 msgstr "Todos los archivos (*.*)"
 
+#: ui/shared/views/SpaceRootView.cpp
+msgid "{0} room"
+msgid_plural "{0} rooms"
+msgstr[0] "{0} sala"
+msgstr[1] "{0} salas"
+
+#: ui/shared/views/SpaceRootView.cpp
+msgid "{0} available to join"
+msgid_plural "{0} available to join"
+msgstr[0] "{0} disponible para unirse"
+msgstr[1] "{0} disponibles para unirse"
+
+#: ui/shared/views/SpaceRootView.cpp
+msgid "Explore the rooms in this space from the room list."
+msgstr "Explora las salas de este espacio desde la lista de salas."
+
 #: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1084
 msgid "Failed to set topic: %1"
 msgstr "Error al establecer el tema: %1"

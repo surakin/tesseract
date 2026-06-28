@@ -656,6 +656,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 space_stack_.pop_back();
             if (main_app_)
                 main_app_->hide_room_preview();
+            if (main_app_)
+                main_app_->hide_space_root();
             refresh_room_list();
             if (!space_nav_frames_.empty())
             {

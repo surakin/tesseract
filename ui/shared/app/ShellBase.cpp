@@ -784,6 +784,20 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     { return account_manager_.thumbnail_cache().peek(mxc); };
 
     app->set_avatar_provider(avatar_lookup);
+    app->on_space_header = [this]
+    {
+        if (!space_stack_.empty())
+            show_space_root_(space_stack_.back());
+        else if (!current_room_id_.empty())
+            show_space_root_(current_room_id_);
+    };
+    if (auto* sr = app->space_root())
+    {
+        sr->on_avatar_needed = [this](const std::string& mxc)
+        {
+            ensure_media_thumbnail_(mxc, 64, 64, false);
+        };
+    }
     app->room_list_view()->set_avatar_provider(avatar_lookup);
     // Lazy avatar fetching: the provider above is a pure cache peek, so the
     // room list requests an avatar only when a row is first painted (visible).
@@ -2879,6 +2893,36 @@ void ShellBase::refresh_room_list_()
     if (!current_room_id_.empty())
         rlv->set_selected_room(current_room_id_);
 
+    request_relayout_();
+}
+
+void ShellBase::show_space_root_(const std::string& space_id)
+{
+    if (!main_app_ || space_id.empty())
+        return;
+
+    const RoomInfo* space = room_by_id_(space_id);
+    if (!space || !space->is_space)
+        return;
+
+    ensure_room_avatar_(*space);
+
+    std::size_t joined_children = 0;
+    if (auto it = space_children_cache_.find(space_id);
+        it != space_children_cache_.end())
+    {
+        joined_children = it->second.size();
+    }
+
+    std::size_t unjoined_children = 0;
+    if (auto it = unjoined_space_children_cache_.find(space_id);
+        it != unjoined_space_children_cache_.end())
+    {
+        unjoined_children = it->second.size();
+    }
+
+    main_app_->show_space_root(*space, joined_children, unjoined_children,
+                               make_avatar_image_provider_());
     request_relayout_();
 }
 
@@ -7301,6 +7345,15 @@ void ShellBase::after_active_room_changed_()
             if (room_nav_history_cursor_ > 0)
                 --room_nav_history_cursor_;
         }
+    }
+
+    if (const auto* cur_room = room_by_id_(current_room_id_);
+        cur_room && cur_room->is_space)
+    {
+        show_space_root_(current_room_id_);
+        if (main_app_ && main_app_->room_list_view())
+            main_app_->room_list_view()->set_selected_room(current_room_id_);
+        return;
     }
 
     // Clear the room we just left from the timeline immediately and show a clean

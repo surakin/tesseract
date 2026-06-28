@@ -27,6 +27,7 @@
 #include "QRGrantView.h"
 #include "InviteCard.h"
 #include "RoomPreviewView.h"
+#include "SpaceRootView.h"
 #include "ForwardRoomPicker.h"
 #include "QuickSwitcher.h"
 #include "MessageSearchView.h"
@@ -47,6 +48,7 @@
 #include <tesseract/visual.h>
 
 #include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <vector>
 #include <string>
@@ -91,6 +93,13 @@ public:
                            RoomPreviewView::AvatarProvider provider);
     // Hide the room preview and restore RoomView.
     void hide_room_preview();
+
+    // Show the joined-space root panel, hiding RoomView.
+    void show_space_root(const tesseract::RoomInfo& space,
+                         std::size_t joined_children,
+                         std::size_t unjoined_children,
+                         SpaceRootView::AvatarProvider provider);
+    void hide_space_root();
 
     // Hide both RoomView and the invite card (nothing selected state).
     void clear_content();
@@ -194,6 +203,10 @@ public:
     {
         return room_preview_;
     }
+    SpaceRootView* space_root() const
+    {
+        return space_root_;
+    }
     VerificationBanner* verif_banner() const
     {
         return verif_banner_;
@@ -250,12 +263,16 @@ public:
 
     // Fires when the user taps ← in the space nav bar.
     std::function<void()> on_space_back;
+    // Fires when the user clicks the current space's avatar/name in the nav bar.
+    std::function<void()> on_space_header;
 
     // ── tk::Widget overrides ──────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
 
 private:
     // True when ConfirmDialog or any RoomView-owned panel covers the canvas;
@@ -274,6 +291,7 @@ private:
     static constexpr float kNavAvatarSize = 24.0f;
 
     bool space_nav_visible_ = false;
+    bool space_header_pressed_ = false;
     std::string space_name_;
     std::string avatar_url_;
     std::function<const tk::Image*(const std::string&)> avatar_provider_;
@@ -292,6 +310,7 @@ private:
     RoomView*        room_view_    = nullptr;
     InviteCard*      invite_card_  = nullptr;
     RoomPreviewView* room_preview_ = nullptr;
+    SpaceRootView*   space_root_   = nullptr;
 
     // Full-surface lightbox overlays (painted last — highest z-order)
     ImageViewerOverlay* img_viewer_ = nullptr;

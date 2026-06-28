@@ -7482,6 +7482,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     _shell->pop_space(_roomListView);
     if (_mainApp)
         _mainApp->hide_room_preview();
+    if (_mainApp)
+        _mainApp->hide_space_root();
     [self _refreshRoomList];
 }
 
