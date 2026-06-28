@@ -151,14 +151,11 @@ impl ClientFfi {
         // reachable, then transitions back to State::Running and restarts the
         // sync child tasks — no manual stop/start cycle or exponential
         // backoff needed on our side.
-        let sync_service = match self
-            .rt
-            .block_on(
-                SyncService::builder(client.clone())
-                    .with_offline_mode()
-                    .build(),
-            )
-        {
+        let sync_service = match self.rt.block_on(
+            SyncService::builder(client.clone())
+                .with_offline_mode()
+                .build(),
+        ) {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 {
@@ -532,7 +529,13 @@ impl ClientFfi {
             let imported = Arc::clone(&self.imported_keys);
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_recovery_state(h, client_clone, state_code, imported, stop_rx));
+            self.spawn_tracked(watch_recovery_state(
+                h,
+                client_clone,
+                state_code,
+                imported,
+                stop_rx,
+            ));
         }
 
         // Backup-state watcher (Step 6).
@@ -550,7 +553,13 @@ impl ClientFfi {
             let imported = Arc::clone(&self.imported_keys);
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_backup_state(h, client_clone, state_code, imported, stop_rx));
+            self.spawn_tracked(watch_backup_state(
+                h,
+                client_clone,
+                state_code,
+                imported,
+                stop_rx,
+            ));
         }
 
         // Imported-room-keys watcher (Step 6).
@@ -571,7 +580,13 @@ impl ClientFfi {
             let imported = Arc::clone(&self.imported_keys);
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_imported_keys(h, client_clone, state_code, imported, stop_rx));
+            self.spawn_tracked(watch_imported_keys(
+                h,
+                client_clone,
+                state_code,
+                imported,
+                stop_rx,
+            ));
         }
 
         // RoomListService state watcher.
@@ -646,7 +661,11 @@ impl ClientFfi {
                         // this device" prompt on the very device that started
                         // the flow. A request is our own echo when it comes
                         // from our user *and* our own device_id.
-                        if user_id == client.user_id().map(|u| u.as_str().to_owned()).unwrap_or_default()
+                        if user_id
+                            == client
+                                .user_id()
+                                .map(|u| u.as_str().to_owned())
+                                .unwrap_or_default()
                             && client
                                 .device_id()
                                 .map(|d| d.as_str() == device_id)
@@ -1216,7 +1235,14 @@ async fn watch_presence(
         if !presence_enabled.load(std::sync::atomic::Ordering::Relaxed) {
             continue;
         }
-        poll_presence_once(&client, &h, &dm_counterparts, &forbidden_presence, &app_cache_db).await;
+        poll_presence_once(
+            &client,
+            &h,
+            &dm_counterparts,
+            &forbidden_presence,
+            &app_cache_db,
+        )
+        .await;
     }
 }
 

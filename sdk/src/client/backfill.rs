@@ -6,9 +6,9 @@
 use crate::ffi::OpResult;
 
 #[cfg(not(test))]
-use super::{build_room_infos, err, first_line, html_first_line, ClientFfi, LatestPreview};
-#[cfg(not(test))]
 use super::ok;
+#[cfg(not(test))]
+use super::{build_room_infos, err, first_line, html_first_line, ClientFfi, LatestPreview};
 
 /// Returned by `backfill_room_silent`: the preview extracted from the most
 /// recent timeline item after back-pagination, for rooms where
@@ -31,13 +31,12 @@ use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::Client;
 #[cfg(not(test))]
 use matrix_sdk_ui::timeline::{
-    MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineItemContent,
-    TimelineItemKind,
+    MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineItemContent, TimelineItemKind,
 };
 #[cfg(not(test))]
-use std::collections::HashMap;
-#[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
+use std::collections::HashMap;
 #[cfg(not(test))]
 use std::sync::Arc;
 
@@ -51,11 +50,7 @@ impl ClientFfi {
     // given room list. Callers are responsible for the idempotency guard and
     // for ensuring `to_backfill` is already filtered. No-op on empty input.
     #[cfg(not(test))]
-    fn launch_backfill_task_(
-        &mut self,
-        client: matrix_sdk::Client,
-        to_backfill: Vec<OwnedRoomId>,
-    ) {
+    fn launch_backfill_task_(&mut self, client: matrix_sdk::Client, to_backfill: Vec<OwnedRoomId>) {
         if to_backfill.is_empty() {
             return;
         }
@@ -99,11 +94,12 @@ impl ClientFfi {
                         let _guard = super::InFlightGuard::new(
                             &in_flight,
                             &handler_ref,
-                            #[cfg(debug_assertions)] &in_flight_urls,
-                            #[cfg(debug_assertions)] format!("backfill/{}", rid_label),
+                            #[cfg(debug_assertions)]
+                            &in_flight_urls,
+                            #[cfg(debug_assertions)]
+                            format!("backfill/{}", rid_label),
                         );
-                        let preview =
-                            backfill_room_silent(&client, &rid, 50).await.ok().flatten();
+                        let preview = backfill_room_silent(&client, &rid, 50).await.ok().flatten();
                         // Always record in preview_cache — even on failure — so
                         // start_background_backfill_all_uncached skips this room
                         // for the rest of the session and we don't re-queue it on
@@ -133,10 +129,7 @@ impl ClientFfi {
                                         let _ = conn.execute(
                                             "INSERT OR REPLACE INTO backfill_ts \
                                              (room_id, ts_ms) VALUES (?1, ?2)",
-                                            rusqlite::params![
-                                                &bp.room_id,
-                                                bp.timestamp_ms as i64
-                                            ],
+                                            rusqlite::params![&bp.room_id, bp.timestamp_ms as i64],
                                         );
                                     }
                                 }
@@ -288,156 +281,171 @@ impl ClientFfi {
             return err("sync not started");
         };
 
-        let handler       = self.handler.clone();
+        let handler = self.handler.clone();
         let preview_cache = Arc::clone(&self.backfill_previews);
-        let db_conn       = Arc::clone(&self.app_cache_db);
+        let db_conn = Arc::clone(&self.app_cache_db);
         // Shared with the unread prefetch so combined warm-up concurrency is
         // bounded, not summed.
-        let semaphore     = Arc::clone(&self.warm_semaphore);
+        let semaphore = Arc::clone(&self.warm_semaphore);
 
-        let abort = self.rt.spawn(async move {
-            // Process in batches of 50 so the event cache's internal broadcast
-            // channel is never overwhelmed. Subscribing all rooms at once
-            // produces a sync payload large enough to overflow the channel,
-            // which causes matrix-sdk to clear all cached events and reset
-            // latest_event_timestamp() — making the polling loop stuck.
-            //
-            // Each batch: subscribe → wait up to 30 s for sync to deliver
-            // timestamps → resolve what resolved → move on to next batch.
-            // Rooms not resolved within 30 s fall back to /messages.
-            const BATCH_SIZE: usize = 50;
-            let mut fallback: Vec<OwnedRoomId> = Vec::new();
+        let abort = self
+            .rt
+            .spawn(async move {
+                // Process in batches of 50 so the event cache's internal broadcast
+                // channel is never overwhelmed. Subscribing all rooms at once
+                // produces a sync payload large enough to overflow the channel,
+                // which causes matrix-sdk to clear all cached events and reset
+                // latest_event_timestamp() — making the polling loop stuck.
+                //
+                // Each batch: subscribe → wait up to 30 s for sync to deliver
+                // timestamps → resolve what resolved → move on to next batch.
+                // Rooms not resolved within 30 s fall back to /messages.
+                const BATCH_SIZE: usize = 50;
+                let mut fallback: Vec<OwnedRoomId> = Vec::new();
 
-            for chunk in to_backfill.chunks(BATCH_SIZE) {
-                // Subscribe this batch only. latest_event_timestamp() and
-                // latest_event() are populated by the next sync response;
-                // build_room_info() already reads both, so no manual
-                // BackfillPreview construction is needed for resolved rooms.
-                {
-                    let refs: Vec<&matrix_sdk::ruma::RoomId> =
-                        chunk.iter().map(|id| id.as_ref()).collect();
-                    sync_service.room_list_service().subscribe_to_rooms(&refs).await;
+                for chunk in to_backfill.chunks(BATCH_SIZE) {
+                    // Subscribe this batch only. latest_event_timestamp() and
+                    // latest_event() are populated by the next sync response;
+                    // build_room_info() already reads both, so no manual
+                    // BackfillPreview construction is needed for resolved rooms.
+                    {
+                        let refs: Vec<&matrix_sdk::ruma::RoomId> =
+                            chunk.iter().map(|id| id.as_ref()).collect();
+                        sync_service
+                            .room_list_service()
+                            .subscribe_to_rooms(&refs)
+                            .await;
+                    }
+
+                    let mut pending: Vec<OwnedRoomId> = chunk.to_vec();
+                    for _ in 0u32..6 {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                        let mut still_missing: Vec<OwnedRoomId> = Vec::new();
+                        let mut any_new = false;
+                        for rid in &pending {
+                            let Some(room) = client.get_room(rid) else {
+                                continue;
+                            };
+                            if let Some(ts) = room.latest_event_timestamp() {
+                                let ts_ms = u64::from(ts.0);
+                                if ts_ms != 0 {
+                                    {
+                                        let db = db_conn.lock();
+                                        if let Some(ref conn) = *db {
+                                            let _ = conn.execute(
+                                                "INSERT OR REPLACE INTO backfill_ts \
+                                             (room_id, ts_ms) VALUES (?1, ?2)",
+                                                rusqlite::params![rid.as_str(), ts_ms as i64],
+                                            );
+                                        }
+                                    }
+                                }
+                                any_new = true;
+                            } else {
+                                still_missing.push(rid.clone());
+                            }
+                        }
+                        pending = still_missing;
+
+                        if any_new {
+                            if let Some(ref h) = handler {
+                                let mut rooms = build_room_infos(&client).await;
+                                apply_backfill_previews(&mut rooms, &preview_cache);
+                                {
+                                    let guard = h.lock();
+                                    guard.on_rooms_updated(&rooms);
+                                }
+                            }
+                        }
+                        if pending.is_empty() {
+                            break;
+                        }
+                    }
+
+                    fallback.extend(pending);
                 }
 
-                let mut pending: Vec<OwnedRoomId> = chunk.to_vec();
-                for _ in 0u32..6 {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                let remaining = fallback;
 
-                    let mut still_missing: Vec<OwnedRoomId> = Vec::new();
-                    let mut any_new = false;
-                    for rid in &pending {
-                        let Some(room) = client.get_room(rid) else { continue; };
-                        if let Some(ts) = room.latest_event_timestamp() {
-                            let ts_ms = u64::from(ts.0);
-                            if ts_ms != 0 {
+                // Rooms still without a timestamp after all batch attempts.
+                // Write zero-timestamp sentinels so they aren't re-queued within
+                // this session, then fall back to per-room /messages pagination.
+                for rid in &remaining {
+                    {
+                        let mut cache = preview_cache.lock();
+                        cache.entry(rid.to_string()).or_insert(BackfillPreview {
+                            room_id: rid.to_string(),
+                            kind: String::new(),
+                            text: String::new(),
+                            sticker_url: String::new(),
+                            thumbnail_url: String::new(),
+                            sender_name: String::new(),
+                            timestamp_ms: 0,
+                        });
+                    }
+                }
+                if !remaining.is_empty() {
+                    const UPDATE_EVERY: usize = 5;
+                    let mut joinset = tokio::task::JoinSet::<()>::new();
+
+                    for rid in remaining {
+                        let client = client.clone();
+                        let sem = semaphore.clone();
+                        let preview_cache = Arc::clone(&preview_cache);
+                        let db_conn = Arc::clone(&db_conn);
+                        joinset.spawn(async move {
+                            let _permit = match sem.acquire_owned().await {
+                                Ok(p) => p,
+                                Err(_) => return,
+                            };
+                            let preview =
+                                backfill_room_silent(&client, &rid, 50).await.ok().flatten();
+                            let bp = preview.unwrap_or(BackfillPreview {
+                                room_id: rid.to_string(),
+                                kind: String::new(),
+                                text: String::new(),
+                                sticker_url: String::new(),
+                                thumbnail_url: String::new(),
+                                sender_name: String::new(),
+                                timestamp_ms: 0,
+                            });
+                            {
+                                let mut cache = preview_cache.lock();
+                                cache.insert(bp.room_id.clone(), bp.clone());
+                            }
+                            if bp.timestamp_ms != 0 {
                                 {
                                     let db = db_conn.lock();
                                     if let Some(ref conn) = *db {
                                         let _ = conn.execute(
                                             "INSERT OR REPLACE INTO backfill_ts \
-                                             (room_id, ts_ms) VALUES (?1, ?2)",
-                                            rusqlite::params![rid.as_str(), ts_ms as i64],
+                                         (room_id, ts_ms) VALUES (?1, ?2)",
+                                            rusqlite::params![&bp.room_id, bp.timestamp_ms as i64],
                                         );
                                     }
                                 }
                             }
-                            any_new = true;
-                        } else {
-                            still_missing.push(rid.clone());
-                        }
-                    }
-                    pending = still_missing;
-
-                    if any_new {
-                        if let Some(ref h) = handler {
-                            let mut rooms = build_room_infos(&client).await;
-                            apply_backfill_previews(&mut rooms, &preview_cache);
-                            {
-                                let guard = h.lock();
-                                guard.on_rooms_updated(&rooms);
-                            }
-                        }
-                    }
-                    if pending.is_empty() {
-                        break;
-                    }
-                }
-
-                fallback.extend(pending);
-            }
-
-            let remaining = fallback;
-
-            // Rooms still without a timestamp after all batch attempts.
-            // Write zero-timestamp sentinels so they aren't re-queued within
-            // this session, then fall back to per-room /messages pagination.
-            for rid in &remaining {
-                {
-                    let mut cache = preview_cache.lock();
-                    cache.entry(rid.to_string()).or_insert(BackfillPreview {
-                        room_id:           rid.to_string(),
-                        kind:              String::new(),
-                        text:              String::new(),
-                        sticker_url:       String::new(),
-                        thumbnail_url:     String::new(),
-                        sender_name:       String::new(),
-                        timestamp_ms:      0,
-                    });
-                }
-            }
-            if !remaining.is_empty() {
-                const UPDATE_EVERY: usize = 5;
-                let mut joinset = tokio::task::JoinSet::<()>::new();
-
-                for rid in remaining {
-                    let client        = client.clone();
-                    let sem           = semaphore.clone();
-                    let preview_cache = Arc::clone(&preview_cache);
-                    let db_conn       = Arc::clone(&db_conn);
-                    joinset.spawn(async move {
-                        let _permit = match sem.acquire_owned().await {
-                            Ok(p)  => p,
-                            Err(_) => return,
-                        };
-                        let preview =
-                            backfill_room_silent(&client, &rid, 50).await.ok().flatten();
-                        let bp = preview.unwrap_or(BackfillPreview {
-                            room_id:       rid.to_string(),
-                            kind:          String::new(),
-                            text:          String::new(),
-                            sticker_url:   String::new(),
-                            thumbnail_url: String::new(),
-                            sender_name:   String::new(),
-                            timestamp_ms:  0,
                         });
-                        {
-                            let mut cache = preview_cache.lock();
-                            cache.insert(bp.room_id.clone(), bp.clone());
-                        }
-                        if bp.timestamp_ms != 0 {
-                            {
-                                let db = db_conn.lock();
-                                if let Some(ref conn) = *db {
-                                    let _ = conn.execute(
-                                        "INSERT OR REPLACE INTO backfill_ts \
-                                         (room_id, ts_ms) VALUES (?1, ?2)",
-                                        rusqlite::params![
-                                            &bp.room_id,
-                                            bp.timestamp_ms as i64
-                                        ],
-                                    );
+                    }
+
+                    let mut completed: usize = 0;
+                    let mut last_update_at: usize = 0;
+                    while joinset.join_next().await.is_some() {
+                        completed += 1;
+                        if completed - last_update_at >= UPDATE_EVERY {
+                            last_update_at = completed;
+                            if let Some(ref h) = handler {
+                                let mut rooms = build_room_infos(&client).await;
+                                apply_backfill_previews(&mut rooms, &preview_cache);
+                                {
+                                    let guard = h.lock();
+                                    guard.on_rooms_updated(&rooms);
                                 }
                             }
                         }
-                    });
-                }
-
-                let mut completed: usize = 0;
-                let mut last_update_at: usize = 0;
-                while joinset.join_next().await.is_some() {
-                    completed += 1;
-                    if completed - last_update_at >= UPDATE_EVERY {
-                        last_update_at = completed;
+                    }
+                    if completed != last_update_at {
                         if let Some(ref h) = handler {
                             let mut rooms = build_room_infos(&client).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
@@ -448,18 +456,8 @@ impl ClientFfi {
                         }
                     }
                 }
-                if completed != last_update_at {
-                    if let Some(ref h) = handler {
-                        let mut rooms = build_room_infos(&client).await;
-                        apply_backfill_previews(&mut rooms, &preview_cache);
-                        {
-                            let guard = h.lock();
-                            guard.on_rooms_updated(&rooms);
-                        }
-                    }
-                }
-            }
-        }).abort_handle();
+            })
+            .abort_handle();
 
         self.backfill_task = Some(abort);
         ok("")
@@ -520,8 +518,10 @@ impl ClientFfi {
                             let _guard = super::InFlightGuard::new(
                                 &in_flight,
                                 &handler_ref,
-                                #[cfg(debug_assertions)] &in_flight_urls,
-                                #[cfg(debug_assertions)] format!("backfill/{}", rid_label),
+                                #[cfg(debug_assertions)]
+                                &in_flight_urls,
+                                #[cfg(debug_assertions)]
+                                format!("backfill/{}", rid_label),
                             );
                             // Warm the SDK event cache so the next open of this
                             // unread room renders from cache without a fetch
@@ -555,10 +555,7 @@ impl ClientFfi {
     // Skips rooms with a live foreground timeline (open room + pop-outs).
     // Idempotent while a prefetch is in flight.
     #[cfg(not(test))]
-    pub fn start_unread_prefetch(
-        &mut self,
-        room_ids: &cxx::CxxVector<cxx::CxxString>,
-    ) -> OpResult {
+    pub fn start_unread_prefetch(&mut self, room_ids: &cxx::CxxVector<cxx::CxxString>) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -611,14 +608,18 @@ impl ClientFfi {
 
     pub fn load_media_backoff(&self) -> Vec<crate::ffi::MediaBackoffEntry> {
         let guard = self.app_cache_db.lock();
-        let Some(conn) = guard.as_ref() else { return vec![] };
+        let Some(conn) = guard.as_ref() else {
+            return vec![];
+        };
         query_media_backoff(conn)
             .into_iter()
-            .map(|(url, attempts, deadline_secs)| crate::ffi::MediaBackoffEntry {
-                url,
-                attempts,
-                deadline_secs,
-            })
+            .map(
+                |(url, attempts, deadline_secs)| crate::ffi::MediaBackoffEntry {
+                    url,
+                    attempts,
+                    deadline_secs,
+                },
+            )
             .collect()
     }
 
@@ -647,14 +648,18 @@ impl ClientFfi {
 
     pub fn load_room_summary_backoff(&self) -> Vec<crate::ffi::RoomSummaryBackoffEntry> {
         let guard = self.app_cache_db.lock();
-        let Some(conn) = guard.as_ref() else { return vec![] };
+        let Some(conn) = guard.as_ref() else {
+            return vec![];
+        };
         query_room_summary_backoff(conn)
             .into_iter()
-            .map(|(room_id, attempts, deadline_secs)| crate::ffi::RoomSummaryBackoffEntry {
-                room_id,
-                attempts,
-                deadline_secs,
-            })
+            .map(
+                |(room_id, attempts, deadline_secs)| crate::ffi::RoomSummaryBackoffEntry {
+                    room_id,
+                    attempts,
+                    deadline_secs,
+                },
+            )
             .collect()
     }
 
@@ -726,7 +731,11 @@ pub(super) fn preview_from_timeline_content(content: &TimelineItemContent) -> La
             Some(html) if !html.trim().is_empty() => html_first_line(html),
             _ => String::new(),
         };
-        let line = if line.is_empty() { first_line(body) } else { line };
+        let line = if line.is_empty() {
+            first_line(body)
+        } else {
+            line
+        };
         if line.is_empty() {
             LatestPreview::default()
         } else {
@@ -907,12 +916,8 @@ pub(super) fn load_backfill_ts_conn(
 // ── media_backoff DB helpers ──────────────────────────────────────────────
 // Available in test builds (no cfg gate) so the unit-test module can call them.
 
-pub(super) fn query_media_backoff(
-    conn: &rusqlite::Connection,
-) -> Vec<(String, u32, i64)> {
-    let Ok(mut stmt) =
-        conn.prepare("SELECT url, attempts, deadline FROM media_backoff")
-    else {
+pub(super) fn query_media_backoff(conn: &rusqlite::Connection) -> Vec<(String, u32, i64)> {
+    let Ok(mut stmt) = conn.prepare("SELECT url, attempts, deadline FROM media_backoff") else {
         return vec![];
     };
     let Ok(rows) = stmt.query_map([], |row| {
@@ -950,11 +955,8 @@ pub(super) fn clear_media_backoff(conn: &rusqlite::Connection) {
 
 // ── room_summary_backoff DB helpers ───────────────────────────────────────
 
-pub(super) fn query_room_summary_backoff(
-    conn: &rusqlite::Connection,
-) -> Vec<(String, u32, i64)> {
-    let Ok(mut stmt) =
-        conn.prepare("SELECT room_id, attempts, deadline FROM room_summary_backoff")
+pub(super) fn query_room_summary_backoff(conn: &rusqlite::Connection) -> Vec<(String, u32, i64)> {
+    let Ok(mut stmt) = conn.prepare("SELECT room_id, attempts, deadline FROM room_summary_backoff")
     else {
         return vec![];
     };
@@ -1024,13 +1026,10 @@ pub(super) fn store_room_summary_conn(
     );
 }
 
-pub(super) fn load_room_summary_conn(
-    conn: &rusqlite::Connection,
-    room_id: &str,
-) -> String {
-    let Ok(mut stmt) = conn.prepare(
-        "SELECT summary_json FROM room_summary_cache WHERE room_id = ?1",
-    ) else {
+pub(super) fn load_room_summary_conn(conn: &rusqlite::Connection, room_id: &str) -> String {
+    let Ok(mut stmt) =
+        conn.prepare("SELECT summary_json FROM room_summary_cache WHERE room_id = ?1")
+    else {
         return String::new();
     };
     stmt.query_row(rusqlite::params![room_id], |row| row.get::<_, String>(0))
@@ -1229,8 +1228,9 @@ mod tests {
 
 #[cfg(test)]
 mod media_backoff_tests {
-    use super::{clear_media_backoff, delete_media_backoff, query_media_backoff,
-                upsert_media_backoff};
+    use super::{
+        clear_media_backoff, delete_media_backoff, query_media_backoff, upsert_media_backoff,
+    };
     use rusqlite::Connection;
 
     fn make_conn() -> Connection {

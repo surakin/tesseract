@@ -131,7 +131,13 @@ pub fn stats(conn: &Connection) -> IndexStats {
             "SELECT COUNT(*), COUNT(DISTINCT room_id), COALESCE(MIN(ts), 0) \
              FROM message_index",
             [],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)),
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            },
         )
         .unwrap_or((0, 0, 0));
     IndexStats {
@@ -205,10 +211,7 @@ pub fn build_match_query(input: &str) -> Option<String> {
         // unicode61 tokenizer would itself split on are dropped; doubled quotes
         // inside are escaped by FTS5's "" convention (none survive the filter,
         // but be defensive).
-        let cleaned: String = raw
-            .chars()
-            .filter(|c| c.is_alphanumeric())
-            .collect();
+        let cleaned: String = raw.chars().filter(|c| c.is_alphanumeric()).collect();
         if !cleaned.is_empty() {
             tokens.push(cleaned);
         }
@@ -380,8 +383,8 @@ async fn index_room_history(
     me: Option<&matrix_sdk::ruma::UserId>,
     target: usize,
 ) {
-    use matrix_sdk_ui::timeline::{RoomExt, TimelineItemKind};
     use super::timeline_convert::timeline_item_to_ffi;
+    use matrix_sdk_ui::timeline::{RoomExt, TimelineItemKind};
 
     let Ok(timeline) = room.timeline().await else {
         return;
@@ -586,13 +589,7 @@ impl ClientFfi {
     /// resolves room display names, and fires `on_search_results(request_id, …)`
     /// (or `on_search_failed`) on completion. The C++ controller debounces and
     /// drops stale `request_id`s.
-    pub fn search_messages_async(
-        &self,
-        request_id: u64,
-        query: &str,
-        room_id: &str,
-        limit: u32,
-    ) {
+    pub fn search_messages_async(&self, request_id: u64, query: &str, room_id: &str, limit: u32) {
         let handler = self.handler.clone();
         let db = Arc::clone(&self.search_db);
         let query = query.to_owned();

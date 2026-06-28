@@ -435,8 +435,8 @@ pub mod ffi {
     struct QrGrantBitmap {
         ok: bool,
         message: String,
-        pixels: Vec<u8>,   // RGBA, side×side×4 bytes
-        side: u32,         // width == height (QR is always square)
+        pixels: Vec<u8>, // RGBA, side×side×4 bytes
+        side: u32,       // width == height (QR is always square)
     }
 
     /// Returned when the QR grant flow reaches the WaitingForAuth phase.
@@ -679,8 +679,8 @@ pub mod ffi {
     /// `url` is the verbatim URI text (identical to `source[start..end]`).
     struct UrlSpan {
         start: usize,
-        end:   usize,
-        url:   String,
+        end: usize,
+        url: String,
     }
 
     // -------------------------------------------------------------------------
@@ -959,29 +959,17 @@ pub mod ffi {
         /// `get_url_preview_async` completes. `request_id` is the correlation
         /// token; `preview_json` is the same JSON shape `get_url_preview`
         /// returns synchronously (an empty string on failure).
-        fn on_url_preview_ready(
-            self: &EventHandlerBridge,
-            request_id: u64,
-            preview_json: &str,
-        );
+        fn on_url_preview_ready(self: &EventHandlerBridge, request_id: u64, preview_json: &str);
 
         /// Fired when an async GIF search started via `gif_search_async`
         /// completes successfully. `request_id` is the correlation token the
         /// caller passed; the C++ side drops results whose id is stale (a newer
         /// search has since been issued).
-        fn on_gif_results(
-            self: &EventHandlerBridge,
-            request_id: u64,
-            results: &Vec<GifResult>,
-        );
+        fn on_gif_results(self: &EventHandlerBridge, request_id: u64, results: &Vec<GifResult>);
 
         /// Fired when an async GIF search fails (network / provider error).
         /// `request_id` is the correlation token; `message` is human-readable.
-        fn on_gif_search_failed(
-            self: &EventHandlerBridge,
-            request_id: u64,
-            message: &str,
-        );
+        fn on_gif_search_failed(self: &EventHandlerBridge, request_id: u64, message: &str);
 
         /// Fired when `forward_event` completes successfully.
         /// `request_id` is the correlation token the caller passed.
@@ -1028,20 +1016,12 @@ pub mod ffi {
         /// `search_messages_async` completes successfully. `request_id` is the
         /// correlation token the caller passed; the C++ side drops results
         /// whose id is stale (a newer query has since been issued).
-        fn on_search_results(
-            self: &EventHandlerBridge,
-            request_id: u64,
-            results: &Vec<SearchHit>,
-        );
+        fn on_search_results(self: &EventHandlerBridge, request_id: u64, results: &Vec<SearchHit>);
 
         /// Fired when an async full-text search fails (e.g. the index is not
         /// open). `request_id` is the correlation token; `message` is
         /// human-readable.
-        fn on_search_failed(
-            self: &EventHandlerBridge,
-            request_id: u64,
-            message: &str,
-        );
+        fn on_search_failed(self: &EventHandlerBridge, request_id: u64, message: &str);
 
         /// Fired when an async pagination request started via
         /// `paginate_back_async` or `paginate_forward_async` completes (or
@@ -1074,12 +1054,7 @@ pub mod ffi {
         /// send_file_async, send_audio_async, or send_video_async completes
         /// or fails. `request_id` is the correlation token. `message` is a
         /// human-readable error on failure (empty on success).
-        fn on_upload_complete(
-            self: &EventHandlerBridge,
-            request_id: u64,
-            ok: bool,
-            message: &str,
-        );
+        fn on_upload_complete(self: &EventHandlerBridge, request_id: u64, ok: bool, message: &str);
 
         /// Fired when an async `set_or_delete_profile_field_async` completes.
         /// `key` is the field key that was written/deleted; `ok` is success;
@@ -1178,14 +1153,15 @@ pub mod ffi {
         /// Begin the OAuth login (or, when `register_account` is true,
         /// registration via OIDC prompt=create) flow. Returns the auth URL to
         /// open in a browser.
-        fn oauth_begin(self: &mut ClientFfi, homeserver: &str, register_account: bool) -> OAuthBegin;
+        fn oauth_begin(
+            self: &mut ClientFfi,
+            homeserver: &str,
+            register_account: bool,
+        ) -> OAuthBegin;
 
         /// Best-effort: does `homeserver` advertise OIDC registration support
         /// (`prompt_values_supported` contains `create`)? Blocks — worker thread.
-        fn homeserver_supports_registration(
-            self: &ClientFfi,
-            homeserver: &str,
-        ) -> bool;
+        fn homeserver_supports_registration(self: &ClientFfi, homeserver: &str) -> bool;
 
         fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
         fn oauth_cancel(self: &mut ClientFfi);
@@ -1291,11 +1267,7 @@ pub mod ffi {
 
         /// Non-blocking block-invite. Spawns leave + ignore_user as a tokio
         /// task; no callback — failures are logged internally.
-        fn block_invite_async(
-            self: &ClientFfi,
-            room_id: &str,
-            inviter_user_id: &str,
-        );
+        fn block_invite_async(self: &ClientFfi, room_id: &str, inviter_user_id: &str);
 
         // ----- Timeline subscription (Step 2) -----
 
@@ -1317,11 +1289,8 @@ pub mod ffi {
         /// callbacks at the front of the timeline (index 0, or wherever the
         /// cache grafts them in). UIs use `reached_start` to latch their
         /// scroll-up trigger off.
-        fn paginate_back_with_status(
-            self: &ClientFfi,
-            room_id: &str,
-            count: u16,
-        ) -> PaginateResult;
+        fn paginate_back_with_status(self: &ClientFfi, room_id: &str, count: u16)
+            -> PaginateResult;
 
         /// Non-blocking counterpart of `paginate_back_with_status`. Spawns the
         /// HTTP paginate as a tokio task and fires
@@ -1340,20 +1309,14 @@ pub mod ffi {
         /// event ≥ ts) or `"b"` (backward — last event ≤ ts). On success
         /// `OpResult.message` holds the event ID string; on failure it holds
         /// the error description.
-        fn timestamp_to_event(
-            self: &ClientFfi,
-            room_id: &str,
-            ts_ms: u64,
-            dir: &str,
-        ) -> OpResult;
+        fn timestamp_to_event(self: &ClientFfi, room_id: &str, ts_ms: u64, dir: &str) -> OpResult;
 
         /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
         /// specific event. Behaves like `subscribe_room` but builds a
         /// `TimelineFocus::Event` timeline centered on `focus_event_id`.
         /// Fires `on_timeline_reset` + individual event callbacks identically
         /// to `subscribe_room`.
-        fn subscribe_room_at(self: &ClientFfi, room_id: &str, focus_event_id: &str)
-            -> OpResult;
+        fn subscribe_room_at(self: &ClientFfi, room_id: &str, focus_event_id: &str) -> OpResult;
 
         // ----- Thread timeline subscription -----
 
@@ -1362,18 +1325,10 @@ pub mod ffi {
         /// `on_thread_inserted` / `on_thread_updated` / `on_thread_removed`
         /// callbacks as replies arrive. Call `paginate_thread_back` for older
         /// replies.
-        fn subscribe_thread(
-            self: &ClientFfi,
-            room_id: &str,
-            root_event_id: &str,
-        ) -> OpResult;
+        fn subscribe_thread(self: &ClientFfi, room_id: &str, root_event_id: &str) -> OpResult;
 
         /// Unsubscribe from a thread timeline and cancel its background tasks.
-        fn unsubscribe_thread(
-            self: &ClientFfi,
-            room_id: &str,
-            root_event_id: &str,
-        );
+        fn unsubscribe_thread(self: &ClientFfi, room_id: &str, root_event_id: &str);
 
         /// Paginate backwards in a subscribed thread timeline. Older replies
         /// arrive as `on_thread_inserted` callbacks at the front of the thread.
@@ -1435,10 +1390,8 @@ pub mod ffi {
         /// concurrency on a task independent of the inactive-grouping backfill,
         /// so the two never abort each other. Silent (no callbacks). Idempotent
         /// while a prefetch is in flight.
-        fn start_unread_prefetch(
-            self: &mut ClientFfi,
-            room_ids: &CxxVector<CxxString>,
-        ) -> OpResult;
+        fn start_unread_prefetch(self: &mut ClientFfi, room_ids: &CxxVector<CxxString>)
+            -> OpResult;
 
         /// Cancel an in-progress unread prefetch. No-op if none is running.
         /// Also called automatically from `stop_sync` and `Drop`.
@@ -1732,12 +1685,7 @@ pub mod ffi {
         /// with this key; redacts it when they have. Wraps matrix-sdk-ui's
         /// `Timeline::toggle_reaction`. Requires that `room_id` is
         /// currently subscribed via `subscribe_room`.
-        fn send_reaction(
-            self: &ClientFfi,
-            room_id: &str,
-            event_id: &str,
-            key: &str,
-        ) -> OpResult;
+        fn send_reaction(self: &ClientFfi, room_id: &str, event_id: &str, key: &str) -> OpResult;
 
         /// Send an MSC4027 custom-image reaction. `key` is the mxc:// URI of
         /// the image; `shortcode` is the optional human-readable fallback
@@ -1765,12 +1713,7 @@ pub mod ffi {
         /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room
         /// is currently subscribed via `subscribe_room`. Server-side
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
-        fn redact_event(
-            self: &ClientFfi,
-            room_id: &str,
-            event_id: &str,
-            reason: &str,
-        ) -> OpResult;
+        fn redact_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
 
         // ----- MSC2545 image packs (Step 8) -----
 
@@ -1865,11 +1808,7 @@ pub mod ffi {
         /// Write the global MSC4278 config, dual-writing the stable and
         /// unstable account-data types. Fire-and-forget; the echo arrives on
         /// the next sync and triggers `on_media_preview_config_updated`.
-        fn set_media_preview_config(
-            self: &ClientFfi,
-            media_previews: u8,
-            invite_avatars: bool,
-        );
+        fn set_media_preview_config(self: &ClientFfi, media_previews: u8, invite_avatars: bool);
 
         // ----- Recent emoji (io.element.recent_emoji global account-data) -----
 
@@ -2141,19 +2080,11 @@ pub mod ffi {
 
         /// Set the current user's display name in a specific room
         /// (m.room.member state event). Blocks — worker thread.
-        fn set_room_display_name(
-            self: &ClientFfi,
-            room_id: &str,
-            name: &str,
-        ) -> OpResult;
+        fn set_room_display_name(self: &ClientFfi, room_id: &str, name: &str) -> OpResult;
 
         /// Set the current user's avatar in a specific room
         /// (m.room.member state event). Blocks — worker thread.
-        fn set_room_avatar(
-            self: &ClientFfi,
-            room_id: &str,
-            mxc_uri: &str,
-        ) -> OpResult;
+        fn set_room_avatar(self: &ClientFfi, room_id: &str, mxc_uri: &str) -> OpResult;
 
         // ----- Devices / sessions -----
 
@@ -2166,11 +2097,7 @@ pub mod ffi {
 
         /// Rename a device on the homeserver (no UIA required). `device_id`
         /// must belong to the current user. Blocks — worker thread.
-        fn set_device_display_name(
-            self: &ClientFfi,
-            device_id: &str,
-            name: &str,
-        ) -> OpResult;
+        fn set_device_display_name(self: &ClientFfi, device_id: &str, name: &str) -> OpResult;
 
         /// Begin deleting a device. If the homeserver returns a UIA challenge
         /// (which it always does on a fresh request for `/devices/{id}`), the
@@ -2178,19 +2105,12 @@ pub mod ffi {
         /// fallback URL and session id the UI uses to complete auth in a
         /// browser. Pass the session back to `complete_delete_device` once
         /// the user has authenticated. Blocks — worker thread.
-        fn begin_delete_device(
-            self: &ClientFfi,
-            device_id: &str,
-        ) -> DeleteDeviceBegin;
+        fn begin_delete_device(self: &ClientFfi, device_id: &str) -> DeleteDeviceBegin;
 
         /// Retry a device deletion after the user has completed UIA in a
         /// browser. `session` is the value returned by `begin_delete_device`.
         /// Blocks — worker thread.
-        fn complete_delete_device(
-            self: &ClientFfi,
-            device_id: &str,
-            session: &str,
-        ) -> OpResult;
+        fn complete_delete_device(self: &ClientFfi, device_id: &str, session: &str) -> OpResult;
 
         // ----- Presence -----
 
@@ -2264,11 +2184,7 @@ pub mod ffi {
         /// Fetch the MSC3266 room preview for a single unjoined space child.
         /// Returns a JSON-serialised `RoomSummaryJson`, or an empty string on
         /// failure (timeout after 30 s, server error, or stop signal).
-        fn get_space_child_summary(
-            self: &ClientFfi,
-            space_id: &str,
-            room_id: &str,
-        ) -> String;
+        fn get_space_child_summary(self: &ClientFfi, space_id: &str, room_id: &str) -> String;
 
         /// Async counterpart of `get_space_child_summary`. Spawns the fetch on
         /// the tokio runtime and fires `on_space_child_summary_ready(
@@ -2295,11 +2211,7 @@ pub mod ffi {
         /// cache read on the tokio runtime and fires
         /// `on_room_preview_override_ready(request_id, override_json)` on
         /// completion. Does not pin a C++ worker thread.
-        fn room_media_preview_override_async(
-            self: &ClientFfi,
-            request_id: u64,
-            room_id: &str,
-        );
+        fn room_media_preview_override_async(self: &ClientFfi, request_id: u64, room_id: &str);
 
         // ----- Recovery / key backup (Step 6) -----
 

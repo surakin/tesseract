@@ -158,10 +158,7 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (
-                hex_nibble(bytes[i + 1]),
-                hex_nibble(bytes[i + 2]),
-            ) {
+            if let (Some(hi), Some(lo)) = (hex_nibble(bytes[i + 1]), hex_nibble(bytes[i + 2])) {
                 out.push(char::from(hi << 4 | lo));
                 i += 3;
                 continue;
@@ -189,16 +186,32 @@ mod tests {
     use super::*;
 
     fn room(id: &str) -> MatrixLinkResult {
-        MatrixLinkResult { kind: KIND_ROOM, primary: id.to_string(), event_id: String::new() }
+        MatrixLinkResult {
+            kind: KIND_ROOM,
+            primary: id.to_string(),
+            event_id: String::new(),
+        }
     }
     fn alias(a: &str) -> MatrixLinkResult {
-        MatrixLinkResult { kind: KIND_ROOM_ALIAS, primary: a.to_string(), event_id: String::new() }
+        MatrixLinkResult {
+            kind: KIND_ROOM_ALIAS,
+            primary: a.to_string(),
+            event_id: String::new(),
+        }
     }
     fn user(u: &str) -> MatrixLinkResult {
-        MatrixLinkResult { kind: KIND_USER, primary: u.to_string(), event_id: String::new() }
+        MatrixLinkResult {
+            kind: KIND_USER,
+            primary: u.to_string(),
+            event_id: String::new(),
+        }
     }
     fn event(room_id: &str, ev: &str) -> MatrixLinkResult {
-        MatrixLinkResult { kind: KIND_EVENT, primary: room_id.to_string(), event_id: ev.to_string() }
+        MatrixLinkResult {
+            kind: KIND_EVENT,
+            primary: room_id.to_string(),
+            event_id: ev.to_string(),
+        }
     }
 
     // ── matrix.to ────────────────────────────────────────────────────────────
@@ -223,9 +236,7 @@ mod tests {
 
     #[test]
     fn matrix_to_event() {
-        let r = parse_matrix_link(
-            "https://matrix.to/#/!abc123:example.com/$xyz789:example.com",
-        );
+        let r = parse_matrix_link("https://matrix.to/#/!abc123:example.com/$xyz789:example.com");
         assert_eq!(r, event("!abc123:example.com", "$xyz789:example.com"));
     }
 

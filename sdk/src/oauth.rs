@@ -50,9 +50,9 @@ const LOGO_URI: &str = "https://surakin.github.io/tesseract/favicon-160.png";
 fn build_device_display_name() -> String {
     let platform = match std::env::consts::OS {
         "windows" => "Windows",
-        "macos"   => "macOS",
-        "linux"   => "Linux",
-        other     => other,
+        "macos" => "macOS",
+        "linux" => "Linux",
+        other => other,
     };
     format!("Tesseract on {platform}")
 }
@@ -63,7 +63,11 @@ fn build_device_display_name() -> String {
 /// in homeserver / MAS access logs even before the device-display-name
 /// rename request fires.
 pub(crate) fn build_user_agent() -> String {
-    format!("Tesseract/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS)
+    format!(
+        "Tesseract/{} ({})",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS
+    )
 }
 
 /// Shared HTTP client for matrix-sdk instances. Uses a 10s connect timeout
@@ -164,7 +168,10 @@ pub async fn begin(
     // 3. Native-app client metadata for dynamic registration.
     let metadata = ClientMetadata {
         client_name: Some(Localized::new("Tesseract".to_owned(), [])),
-        logo_uri: Some(Localized::new(Url::parse(LOGO_URI).context("logo_uri")?, [])),
+        logo_uri: Some(Localized::new(
+            Url::parse(LOGO_URI).context("logo_uri")?,
+            [],
+        )),
         ..ClientMetadata::new(
             ApplicationType::Native,
             vec![OAuthGrantType::AuthorizationCode {
@@ -208,14 +215,22 @@ pub async fn begin(
     Ok(BeginResult {
         auth_url: auth_data.url.to_string(),
         redirect_uri,
-        flow: PendingFlow { client, redirect_handle, shutdown_handle },
+        flow: PendingFlow {
+            client,
+            redirect_handle,
+            shutdown_handle,
+        },
     })
 }
 
 /// Phase 2 — await the browser's loopback redirect, then ask the SDK to
 /// finalise the login.
 pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
-    let PendingFlow { client, redirect_handle, .. } = flow;
+    let PendingFlow {
+        client,
+        redirect_handle,
+        ..
+    } = flow;
 
     let query = redirect_handle
         .await

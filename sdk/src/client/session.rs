@@ -11,7 +11,7 @@ use matrix_sdk::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{err, ok, oauth_err, ClientFfi};
+use super::{err, oauth_err, ok, ClientFfi};
 use crate::ffi::{OAuthBegin, OpResult};
 use crate::oauth;
 

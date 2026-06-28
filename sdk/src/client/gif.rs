@@ -54,7 +54,10 @@ pub struct KlipyProvider {
 
 impl KlipyProvider {
     pub fn new(api_key: String, customer_id: String) -> Self {
-        Self { api_key, customer_id }
+        Self {
+            api_key,
+            customer_id,
+        }
     }
 }
 
@@ -149,9 +152,7 @@ fn parse_klipy_result(r: &Value) -> Option<GifResult> {
 
 /// Resolve `file.<tier>.<fmt>.{url,width,height}` for the first `tier` in the
 /// priority list that carries a non-empty URL for format `fmt`.
-fn pick_format(file: &Value, fmt: &str, tiers: &[&str])
-    -> Option<(String, u32, u32)>
-{
+fn pick_format(file: &Value, fmt: &str, tiers: &[&str]) -> Option<(String, u32, u32)> {
     for tier in tiers {
         let f = match file.get(tier).and_then(|t| t.get(fmt)) {
             Some(f) => f,
@@ -259,7 +260,11 @@ pub(crate) fn build_gif_video_content(
     }
 
     if !thread_root.is_empty() {
-        let in_reply_to_id = if reply_event_id.is_empty() { thread_root } else { reply_event_id };
+        let in_reply_to_id = if reply_event_id.is_empty() {
+            thread_root
+        } else {
+            reply_event_id
+        };
         let mut relates = serde_json::json!({
             "rel_type": "m.thread",
             "event_id": thread_root,
@@ -413,9 +418,8 @@ impl ClientFfi {
                     .upload_encrypted_file(&mut cur)
                     .await
                     .map_err(|e| e.to_string())?;
-                let video = GifMedia::Encrypted(
-                    serde_json::to_value(&file).map_err(|e| e.to_string())?,
-                );
+                let video =
+                    GifMedia::Encrypted(serde_json::to_value(&file).map_err(|e| e.to_string())?);
                 let thumb_media = if thumb.is_empty() {
                     None
                 } else {
@@ -493,7 +497,9 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) {
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
 
         let deliver = {
@@ -508,17 +514,20 @@ impl ClientFfi {
 
         let (_, room) = match require_room(&client, room_id) {
             Ok(v) => v,
-            Err(e) => { deliver(false, &e.message); return; }
+            Err(e) => {
+                deliver(false, &e.message);
+                return;
+            }
         };
 
-        let image_url  = image_url.to_owned();
+        let image_url = image_url.to_owned();
         let image_mime = image_mime.to_owned();
-        let body       = body.to_owned();
+        let body = body.to_owned();
         let preview_url = preview_url.to_owned();
-        let reply      = reply_event_id.to_owned();
-        let thread     = thread_root.to_owned();
-        let http       = self.http_client.clone();
-        let stop_rx    = self.stop_rx.clone();
+        let reply = reply_event_id.to_owned();
+        let thread = thread_root.to_owned();
+        let http = self.http_client.clone();
+        let stop_rx = self.stop_rx.clone();
 
         self.rt.spawn(async move {
             // Fetch image and preview in parallel.
@@ -664,11 +673,22 @@ impl ClientFfi {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn send_gif_from_urls_async(&self, _request_id: u64, _room_id: &str,
-        _image_url: &str, _image_mime: &str, _body: &str,
-        _width: u32, _height: u32, _preview_url: &str,
-        _preview_w: u32, _preview_h: u32,
-        _reply_event_id: &str, _thread_root: &str) {}
+    pub fn send_gif_from_urls_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _image_url: &str,
+        _image_mime: &str,
+        _body: &str,
+        _width: u32,
+        _height: u32,
+        _preview_url: &str,
+        _preview_w: u32,
+        _preview_h: u32,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {
+    }
 }
 
 #[cfg(test)]

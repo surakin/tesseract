@@ -53,9 +53,9 @@ impl ClientFfi {
         };
         use matrix_sdk::encryption::recovery::RecoveryState;
         match client.encryption().recovery().state() {
-            RecoveryState::Unknown    => 0,
-            RecoveryState::Disabled   => 1,
-            RecoveryState::Enabled    => 2,
+            RecoveryState::Unknown => 0,
+            RecoveryState::Disabled => 1,
+            RecoveryState::Enabled => 2,
             RecoveryState::Incomplete => 3,
         }
     }
@@ -143,9 +143,7 @@ impl ClientFfi {
     /// runs asynchronously; observe `on_backup_progress` for progress.
     #[cfg(not(test))]
     pub fn recover(&self, key_or_passphrase: &str) -> OpResult {
-        use matrix_sdk::encryption::{
-            recovery::RecoveryError, secret_storage::SecretStorageError,
-        };
+        use matrix_sdk::encryption::{recovery::RecoveryError, secret_storage::SecretStorageError};
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -156,8 +154,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "recovery/enable".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "recovery/enable".to_string(),
         );
         match self
             .rt
@@ -177,10 +177,10 @@ impl ClientFfi {
                 }
                 ok("")
             }
-            Err(RecoveryError::SecretStorage(SecretStorageError::MissingKeyInfo { .. })) => err(
-                "No recovery key is configured for this account. \
-                 Please verify this device using another signed-in device instead.",
-            ),
+            Err(RecoveryError::SecretStorage(SecretStorageError::MissingKeyInfo { .. })) => {
+                err("No recovery key is configured for this account. \
+                 Please verify this device using another signed-in device instead.")
+            }
             Err(e) => err(e.to_string()),
         }
     }
@@ -197,8 +197,8 @@ impl ClientFfi {
     /// Progress is reported via `on_enable_recovery_progress` before this returns.
     #[cfg(not(test))]
     pub fn enable_recovery(&self, passphrase: &str) -> OpResult {
-        use matrix_sdk::encryption::recovery::{EnableProgress, RecoveryError};
         use futures_util::StreamExt as _;
+        use matrix_sdk::encryption::recovery::{EnableProgress, RecoveryError};
 
         let Some(client) = self.client.clone() else {
             return err("not logged in");
@@ -210,8 +210,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "recovery/disable".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "recovery/disable".to_string(),
         );
 
         self.rt.block_on(async move {
@@ -225,8 +227,10 @@ impl ClientFfi {
             // (incl. one set up on another device — that case is routed to the
             // Recover flow, not here). OAuth/OIDC servers permit the initial
             // upload without extra UIA.
-            if let Err(e) =
-                client.encryption().bootstrap_cross_signing_if_needed(None).await
+            if let Err(e) = client
+                .encryption()
+                .bootstrap_cross_signing_if_needed(None)
+                .await
             {
                 // This only does work (and can fail) when no cross-signing
                 // identity exists yet — it is a no-op when one is already
@@ -270,9 +274,12 @@ impl ClientFfi {
                             EnableProgress::Starting => (0, String::new(), 0, 0),
                             EnableProgress::CreatingBackup => (1, String::new(), 0, 0),
                             EnableProgress::CreatingRecoveryKey => (2, String::new(), 0, 0),
-                            EnableProgress::BackingUp(ref counts) => {
-                                (3, String::new(), counts.backed_up as u32, counts.total as u32)
-                            }
+                            EnableProgress::BackingUp(ref counts) => (
+                                3,
+                                String::new(),
+                                counts.backed_up as u32,
+                                counts.total as u32,
+                            ),
                             EnableProgress::RoomKeyUploadError => (6, String::new(), 0, 0),
                             EnableProgress::Done { ref recovery_key } => {
                                 (4, recovery_key.clone(), 0, 0)
@@ -294,9 +301,7 @@ impl ClientFfi {
                         progress_task.abort();
                         let _ = progress_task.await;
                         // Delete the orphaned server backup, then retry enable().
-                        if let Err(e) =
-                            client.encryption().backups().disable_and_delete().await
-                        {
+                        if let Err(e) = client.encryption().backups().disable_and_delete().await {
                             {
                                 let g = handler.lock();
                                 g.on_enable_recovery_progress(5, &e.to_string(), 0, 0);
@@ -359,7 +364,10 @@ impl ClientFfi {
         let path_buf = std::path::PathBuf::from(path);
         let pass = passphrase.to_owned();
         match self.rt.block_on(async move {
-            client.encryption().export_room_keys(path_buf, &pass, |_| true).await
+            client
+                .encryption()
+                .export_room_keys(path_buf, &pass, |_| true)
+                .await
         }) {
             Ok(()) => ok(""),
             Err(e) => err(e.to_string()),
@@ -380,9 +388,10 @@ impl ClientFfi {
         };
         let path_buf = std::path::PathBuf::from(path);
         let pass = passphrase.to_owned();
-        match self.rt.block_on(async move {
-            client.encryption().import_room_keys(path_buf, &pass).await
-        }) {
+        match self
+            .rt
+            .block_on(async move { client.encryption().import_room_keys(path_buf, &pass).await })
+        {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }

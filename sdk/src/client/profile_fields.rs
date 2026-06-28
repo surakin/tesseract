@@ -178,16 +178,11 @@ impl ClientFfi {
     /// `on_profile_field_result(request_id, key, ok, message)` on completion.
     /// Does not pin a C++ worker thread.
     #[cfg(not(test))]
-    pub fn set_or_delete_profile_field_async(
-        &self,
-        request_id: u64,
-        key: &str,
-        value_json: &str,
-    ) {
+    pub fn set_or_delete_profile_field_async(&self, request_id: u64, key: &str, value_json: &str) {
         if key.is_empty() {
             if let Some(ref h) = self.handler {
-                h.lock().on_profile_field_result(request_id, key, false,
-                                                 "key must not be empty");
+                h.lock()
+                    .on_profile_field_result(request_id, key, false, "key must not be empty");
             }
             return;
         }
@@ -197,7 +192,9 @@ impl ClientFfi {
             None => {
                 if let Some(ref h) = self.handler {
                     h.lock().on_profile_field_result(
-                        request_id, key, false,
+                        request_id,
+                        key,
+                        false,
                         "server does not support MSC4133 profile field writes",
                     );
                 }
@@ -207,14 +204,15 @@ impl ClientFfi {
 
         let Some(client) = self.client.as_ref() else {
             if let Some(ref h) = self.handler {
-                h.lock().on_profile_field_result(request_id, key, false, "not logged in");
+                h.lock()
+                    .on_profile_field_result(request_id, key, false, "not logged in");
             }
             return;
         };
         let Some(uid) = client.user_id() else {
             if let Some(ref h) = self.handler {
-                h.lock().on_profile_field_result(request_id, key, false,
-                                                 "no user_id available");
+                h.lock()
+                    .on_profile_field_result(request_id, key, false, "no user_id available");
             }
             return;
         };
@@ -222,7 +220,8 @@ impl ClientFfi {
         let base = base.trim_end_matches('/').to_owned();
         let Some(access_token) = client.access_token() else {
             if let Some(ref h) = self.handler {
-                h.lock().on_profile_field_result(request_id, key, false, "no access token");
+                h.lock()
+                    .on_profile_field_result(request_id, key, false, "no access token");
             }
             return;
         };
@@ -236,7 +235,9 @@ impl ClientFfi {
                 Err(e) => {
                     if let Some(ref h) = self.handler {
                         h.lock().on_profile_field_result(
-                            request_id, key, false,
+                            request_id,
+                            key,
+                            false,
                             &format!("invalid JSON for field value: {e}"),
                         );
                     }
@@ -258,8 +259,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] if is_delete {
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                if is_delete {
                     format!("profile_fields/delete/{key_owned}")
                 } else {
                     format!("profile_fields/set/{key_owned}")
@@ -278,7 +281,13 @@ impl ClientFfi {
                 }
             } else {
                 let body = serde_json::json!({ &key_owned: value });
-                match http.put(&url).bearer_auth(&access_token).json(&body).send().await {
+                match http
+                    .put(&url)
+                    .bearer_auth(&access_token)
+                    .json(&body)
+                    .send()
+                    .await
+                {
                     Ok(r) if r.status().is_success() => ok(""),
                     Ok(r) => {
                         let status = r.status();

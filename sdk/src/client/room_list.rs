@@ -11,9 +11,7 @@ use crate::ffi::OpResult;
 use std::sync::Arc;
 
 #[cfg(not(test))]
-use super::{
-    build_invite_infos, build_room_infos, require_room, stop_fut, try_op,
-};
+use super::{build_invite_infos, build_room_infos, require_room, stop_fut, try_op};
 
 #[cfg(not(test))]
 use matrix_sdk::ruma::OwnedRoomId;
@@ -23,16 +21,16 @@ use matrix_sdk::ruma::OwnedRoomId;
 #[cfg(not(test))]
 #[derive(serde::Serialize)]
 struct RoomSummaryJson {
-    room_id:            String,
-    canonical_alias:    String,
-    name:               String,
-    topic:              String,
-    avatar_url:         String,
+    room_id: String,
+    canonical_alias: String,
+    name: String,
+    topic: String,
+    avatar_url: String,
     num_joined_members: u64,
-    join_rule:          String,
-    world_readable:     bool,
-    is_space:           bool,
-    membership:         String,
+    join_rule: String,
+    world_readable: bool,
+    is_space: bool,
+    membership: String,
 }
 
 #[cfg(not(test))]
@@ -42,25 +40,26 @@ impl From<matrix_sdk::room_preview::RoomPreview> for RoomSummaryJson {
         use matrix_sdk_base::RoomState;
 
         RoomSummaryJson {
-            room_id:            p.room_id.to_string(),
-            canonical_alias:    p.canonical_alias.map(|a| a.to_string()).unwrap_or_default(),
-            name:               p.name.unwrap_or_default(),
-            topic:              p.topic.unwrap_or_default(),
-            avatar_url:         p.avatar_url.map(|u| u.to_string()).unwrap_or_default(),
+            room_id: p.room_id.to_string(),
+            canonical_alias: p.canonical_alias.map(|a| a.to_string()).unwrap_or_default(),
+            name: p.name.unwrap_or_default(),
+            topic: p.topic.unwrap_or_default(),
+            avatar_url: p.avatar_url.map(|u| u.to_string()).unwrap_or_default(),
             num_joined_members: p.num_joined_members,
-            join_rule:          p.join_rule
-                                    .as_ref()
-                                    .map(|j| j.as_str().to_owned())
-                                    .unwrap_or_else(|| "public".to_owned()),
-            world_readable:     p.is_world_readable.unwrap_or(false),
-            is_space:           matches!(p.room_type, Some(RoomType::Space)),
-            membership:         match p.state {
-                Some(RoomState::Joined)  => "join".to_owned(),
-                Some(RoomState::Left)    => "leave".to_owned(),
+            join_rule: p
+                .join_rule
+                .as_ref()
+                .map(|j| j.as_str().to_owned())
+                .unwrap_or_else(|| "public".to_owned()),
+            world_readable: p.is_world_readable.unwrap_or(false),
+            is_space: matches!(p.room_type, Some(RoomType::Space)),
+            membership: match p.state {
+                Some(RoomState::Joined) => "join".to_owned(),
+                Some(RoomState::Left) => "leave".to_owned(),
                 Some(RoomState::Invited) => "invite".to_owned(),
                 Some(RoomState::Knocked) => "knock".to_owned(),
-                Some(RoomState::Banned)  => "ban".to_owned(),
-                None                     => String::new(),
+                Some(RoomState::Banned) => "ban".to_owned(),
+                None => String::new(),
             },
         }
     }
@@ -128,11 +127,19 @@ impl ClientFfi {
                     .into_iter()
                     .filter_map(|ev| match ev.deserialize() {
                         Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e))) => {
-                            if e.content.via.is_empty() { None } else { Some(e.state_key.to_owned()) }
+                            if e.content.via.is_empty() {
+                                None
+                            } else {
+                                Some(e.state_key.to_owned())
+                            }
                         }
                         Ok(SyncOrStrippedState::Sync(SyncStateEvent::Redacted(_))) => None,
                         Ok(SyncOrStrippedState::Stripped(e)) => {
-                            if e.content.via.as_ref().map_or(true, |v| v.is_empty()) { None } else { Some(e.state_key.to_owned()) }
+                            if e.content.via.as_ref().map_or(true, |v| v.is_empty()) {
+                                None
+                            } else {
+                                Some(e.state_key.to_owned())
+                            }
                         }
                         Err(_) => None,
                     })
@@ -175,8 +182,12 @@ impl ClientFfi {
     pub fn get_room_summary(&self, room_id_or_alias: &str) -> String {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
-        let Some(client) = self.client.clone() else { return String::new(); };
-        if room_id_or_alias.is_empty() { return String::new(); }
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        if room_id_or_alias.is_empty() {
+            return String::new();
+        }
 
         let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
             Ok(id) => id,
@@ -187,8 +198,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/get_summary".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/get_summary".to_string(),
         );
         let json = self.rt.block_on(async move {
             tokio::select! {
@@ -225,16 +238,24 @@ impl ClientFfi {
         use matrix_sdk::ruma::events::SyncStateEvent;
         use matrix_sdk::ruma::{OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName};
 
-        let Some(client) = self.client.clone() else { return String::new(); };
-        let Ok(rid) = OwnedRoomId::try_from(room_id) else { return String::new(); };
-        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else { return String::new(); };
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        let Ok(rid) = OwnedRoomId::try_from(room_id) else {
+            return String::new();
+        };
+        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else {
+            return String::new();
+        };
         let room_id_or_alias: OwnedRoomOrAliasId = rid.clone().into();
         let stop_rx = self.stop_rx.clone();
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] format!("room_list/space_child/{}", room_id),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            format!("room_list/space_child/{}", room_id),
         );
 
         // Per-request deadline: a homeserver that never replies would otherwise
@@ -256,9 +277,7 @@ impl ClientFfi {
                                 {
                                     Some(e.content.via)
                                 }
-                                Ok(SyncOrStrippedState::Stripped(e))
-                                    if e.state_key == rid =>
-                                {
+                                Ok(SyncOrStrippedState::Stripped(e)) if e.state_key == rid => {
                                     Some(e.content.via.unwrap_or_default())
                                 }
                                 _ => None,
@@ -299,12 +318,7 @@ impl ClientFfi {
     /// tokio runtime and fires `on_space_child_summary_ready(request_id, json)`
     /// on completion (empty string on failure or timeout). Does not pin a thread.
     #[cfg(not(test))]
-    pub fn get_space_child_summary_async(
-        &self,
-        request_id: u64,
-        space_id: &str,
-        room_id: &str,
-    ) {
+    pub fn get_space_child_summary_async(&self, request_id: u64, space_id: &str, room_id: &str) {
         use matrix_sdk::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
         use matrix_sdk::ruma::events::SyncStateEvent;
@@ -317,9 +331,18 @@ impl ClientFfi {
             }
         };
 
-        let Some(client) = self.client.clone() else { deliver(String::new()); return; };
-        let Ok(rid) = OwnedRoomId::try_from(room_id) else { deliver(String::new()); return; };
-        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else { deliver(String::new()); return; };
+        let Some(client) = self.client.clone() else {
+            deliver(String::new());
+            return;
+        };
+        let Ok(rid) = OwnedRoomId::try_from(room_id) else {
+            deliver(String::new());
+            return;
+        };
+        let Ok(space_room_id) = OwnedRoomId::try_from(space_id) else {
+            deliver(String::new());
+            return;
+        };
         let room_id_or_alias: OwnedRoomOrAliasId = rid.clone().into();
 
         let handler = self.handler.clone();
@@ -335,7 +358,8 @@ impl ClientFfi {
                 let _guard = super::InFlightGuard::new(
                     &in_flight,
                     &handler,
-                    #[cfg(debug_assertions)] &in_flight_urls,
+                    #[cfg(debug_assertions)]
+                    &in_flight_urls,
                     #[cfg(debug_assertions)]
                     format!("room_list/space_child/{}", room_id_owned),
                 );
@@ -355,9 +379,7 @@ impl ClientFfi {
                                     {
                                         Some(e.content.via)
                                     }
-                                    Ok(SyncOrStrippedState::Stripped(e))
-                                        if e.state_key == rid =>
-                                    {
+                                    Ok(SyncOrStrippedState::Stripped(e)) if e.state_key == rid => {
                                         Some(e.content.via.unwrap_or_default())
                                     }
                                     _ => None,
@@ -389,12 +411,7 @@ impl ClientFfi {
                     .map(|d| d.as_secs() as i64)
                     .unwrap_or(0);
                 if let Some(ref conn) = *app_cache_db.lock() {
-                    super::backfill::store_room_summary_conn(
-                        conn,
-                        &room_id_owned,
-                        &json,
-                        now,
-                    );
+                    super::backfill::store_room_summary_conn(conn, &room_id_owned, &json, now);
                 }
             }
 
@@ -411,27 +428,20 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn get_space_child_summary(
-        &self,
-        _space_id: &str,
-        _room_id: &str,
-    ) -> String {
+    pub fn get_space_child_summary(&self, _space_id: &str, _room_id: &str) -> String {
         String::new()
     }
 
     #[cfg(test)]
-    pub fn get_space_child_summary_async(
-        &self,
-        _request_id: u64,
-        _space_id: &str,
-        _room_id: &str,
-    ) {
+    pub fn get_space_child_summary_async(&self, _request_id: u64, _space_id: &str, _room_id: &str) {
     }
 
     #[cfg(not(test))]
     pub fn get_cached_room_summary(&self, room_id: &str) -> String {
         let guard = self.app_cache_db.lock();
-        let Some(ref conn) = *guard else { return String::new() };
+        let Some(ref conn) = *guard else {
+            return String::new();
+        };
         super::backfill::load_room_summary_conn(conn, room_id)
     }
 
@@ -459,8 +469,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/join".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/join".to_string(),
         );
         self.rt.block_on(async move {
             tokio::select! {
@@ -495,8 +507,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/leave".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/leave".to_string(),
         );
         match self.rt.block_on(room.leave()) {
             Ok(_) => ok(""),
@@ -515,7 +529,9 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn accept_invite_async(&self, request_id: u64, room_id: &str) {
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
         let room_id_str = room_id.to_owned();
 
@@ -533,7 +549,10 @@ impl ClientFfi {
 
         let room_id_parsed: OwnedRoomId = match room_id_str.parse() {
             Ok(id) => id,
-            Err(e) => { deliver(false, "", &format!("invalid room id: {e}")); return; }
+            Err(e) => {
+                deliver(false, "", &format!("invalid room id: {e}"));
+                return;
+            }
         };
 
         let in_flight = self.in_flight.clone();
@@ -544,8 +563,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "room_list/accept_invite".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/accept_invite".to_string(),
             );
             let Some(room) = client.get_room(&room_id_parsed) else {
                 deliver(false, "", "room not found");
@@ -554,7 +575,9 @@ impl ClientFfi {
             let was_direct = room.is_direct().await.unwrap_or(false);
             match room.join().await {
                 Ok(_) => {
-                    if was_direct { let _ = room.set_is_direct(true).await; }
+                    if was_direct {
+                        let _ = room.set_is_direct(true).await;
+                    }
                     deliver(true, &room_id_str, "");
                 }
                 Err(e) => deliver(false, "", &e.to_string()),
@@ -567,7 +590,9 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn decline_invite_async(&self, room_id: &str) {
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let room_id_parsed: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(_) => return,
@@ -580,8 +605,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "room_list/decline_invite".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/decline_invite".to_string(),
             );
             if let Some(room) = client.get_room(&room_id_parsed) {
                 let _ = room.leave().await;
@@ -594,12 +621,16 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn block_invite_async(&self, room_id: &str, inviter_user_id: &str) {
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let room_id_parsed: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(_) => return,
         };
-        let Ok(uid) = matrix_sdk::ruma::UserId::parse(inviter_user_id) else { return; };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(inviter_user_id) else {
+            return;
+        };
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
@@ -608,8 +639,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "room_list/block_invite".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/block_invite".to_string(),
             );
             if let Some(room) = client.get_room(&room_id_parsed) {
                 let _ = room.leave().await;
@@ -625,7 +658,9 @@ impl ClientFfi {
     pub fn join_room_async(&self, request_id: u64, room_id_or_alias: &str) {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
         let id_str = room_id_or_alias.to_owned();
         let stop_rx = self.stop_rx.clone();
@@ -641,7 +676,10 @@ impl ClientFfi {
 
         let id: OwnedRoomOrAliasId = match id_str.as_str().try_into() {
             Ok(id) => id,
-            Err(_) => { deliver(false, "", "invalid room id or alias"); return; }
+            Err(_) => {
+                deliver(false, "", "invalid room id or alias");
+                return;
+            }
         };
 
         let in_flight = self.in_flight.clone();
@@ -652,8 +690,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "room_list/join".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/join".to_string(),
             );
             let result = tokio::select! {
                 r = client.join_room_by_id_or_alias(&id, &[]) => {
@@ -673,7 +713,9 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn leave_room_async(&self, request_id: u64, room_id: &str) {
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let handler = self.handler.clone();
         let room_id_str = room_id.to_owned();
 
@@ -688,7 +730,10 @@ impl ClientFfi {
 
         let room_id_parsed: OwnedRoomId = match room_id_str.parse() {
             Ok(id) => id,
-            Err(e) => { deliver(false, &format!("invalid room id: {e}")); return; }
+            Err(e) => {
+                deliver(false, &format!("invalid room id: {e}"));
+                return;
+            }
         };
 
         let in_flight = self.in_flight.clone();
@@ -699,8 +744,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "room_list/leave".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/leave".to_string(),
             );
             let Some(room) = client.get_room(&room_id_parsed) else {
                 deliver(false, "room not found");
@@ -719,12 +766,16 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn invite_user_async(&self, room_id: &str, user_id: &str) {
         use matrix_sdk::ruma::UserId;
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let room_id_parsed: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(_) => return,
         };
-        let Ok(uid) = UserId::parse(user_id) else { return; };
+        let Ok(uid) = UserId::parse(user_id) else {
+            return;
+        };
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
@@ -733,8 +784,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_for_guard,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "room_list/invite_user".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/invite_user".to_string(),
             );
             if let Some(room) = client.get_room(&room_id_parsed) {
                 let _ = room.invite_user_by_id(&uid).await;
@@ -762,10 +815,15 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/get_members".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/get_members".to_string(),
         );
-        match self.rt.block_on(room.members(matrix_sdk::RoomMemberships::JOIN)) {
+        match self
+            .rt
+            .block_on(room.members(matrix_sdk::RoomMemberships::JOIN))
+        {
             Ok(members) => members
                 .into_iter()
                 .map(|m| crate::ffi::RoomMember {
@@ -800,8 +858,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/set_topic".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_topic".to_string(),
         );
         match self.rt.block_on(room.send_state_event(content)) {
             Ok(_) => ok(""),
@@ -830,8 +890,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/set_display_name".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_display_name".to_string(),
         );
 
         let mut content = match self.rt.block_on(room.get_member(user_id)) {
@@ -843,10 +905,17 @@ impl ClientFfi {
             _ => RoomMemberEventContent::new(MembershipState::Join),
         };
 
-        content.displayname = if name.is_empty() { None } else { Some(name.to_owned()) };
+        content.displayname = if name.is_empty() {
+            None
+        } else {
+            Some(name.to_owned())
+        };
 
-        match self.rt.block_on(room.send_state_event_for_key(user_id, content)) {
-            Ok(_)  => ok(""),
+        match self
+            .rt
+            .block_on(room.send_state_event_for_key(user_id, content))
+        {
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -874,14 +943,16 @@ impl ClientFfi {
         let (_, room) = try_op!(require_room(client, room_id));
 
         let mxc: OwnedMxcUri = match mxc_uri.try_into() {
-            Ok(u)  => u,
+            Ok(u) => u,
             Err(_) => return err("invalid mxc URI"),
         };
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "room_list/set_avatar".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_avatar".to_string(),
         );
 
         let mut content = match self.rt.block_on(room.get_member(user_id)) {
@@ -895,8 +966,11 @@ impl ClientFfi {
 
         content.avatar_url = Some(mxc);
 
-        match self.rt.block_on(room.send_state_event_for_key(user_id, content)) {
-            Ok(_)  => ok(""),
+        match self
+            .rt
+            .block_on(room.send_state_event_for_key(user_id, content))
+        {
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }

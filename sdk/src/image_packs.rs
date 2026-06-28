@@ -73,12 +73,18 @@ fn decode_usage<'a>(iter: impl Iterator<Item = &'a str>) -> u8 {
         "emoticon" => m | USAGE_EMOTICON,
         _ => m,
     });
-    if mask == 0 { USAGE_ANY } else { mask }
+    if mask == 0 {
+        USAGE_ANY
+    } else {
+        mask
+    }
 }
 
 /// Convert a `usage` array of strings (from `PackImage`) to a bitmask.
 fn usage_strs_to_mask(strs: &[String]) -> u8 {
-    if strs.is_empty() { return USAGE_ANY; }
+    if strs.is_empty() {
+        return USAGE_ANY;
+    }
     decode_usage(strs.iter().map(|s| s.as_str()))
 }
 
@@ -166,7 +172,9 @@ impl ImagePack {
 /// "any usage allowed" per MSC2545; an array containing only unknown values
 /// is treated the same way (forwards-compat).
 fn usage_array_to_mask(arr: &[Value]) -> u8 {
-    if arr.is_empty() { return USAGE_ANY; }
+    if arr.is_empty() {
+        return USAGE_ANY;
+    }
     decode_usage(arr.iter().filter_map(|v| v.as_str()))
 }
 

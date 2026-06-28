@@ -63,10 +63,8 @@ async fn lookup_sas_with_retry(
 
     let mut delay_ms = VERIFICATION_LOOKUP_INITIAL_DELAY_MS;
     for attempt in 0..VERIFICATION_LOOKUP_ATTEMPTS {
-        if let Some(Verification::SasV1(sas)) = client
-            .encryption()
-            .get_verification(user_id, flow_id)
-            .await
+        if let Some(Verification::SasV1(sas)) =
+            client.encryption().get_verification(user_id, flow_id).await
         {
             return Some(sas);
         }
@@ -230,8 +228,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "verification/start".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "verification/start".to_string(),
         );
 
         match self.rt.block_on(async move {
@@ -293,8 +293,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "verification/accept".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "verification/accept".to_string(),
         );
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
@@ -339,8 +341,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "verification/start_sas".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "verification/start_sas".to_string(),
         );
 
         match self.rt.block_on(async move {
@@ -351,11 +355,9 @@ impl ClientFfi {
                 .ok_or_else(|| anyhow::anyhow!("verification request not found"))?;
             let sas = match req.start_sas().await {
                 Ok(Some(sas)) => sas,
-                Ok(None) => {
-                    lookup_sas_with_retry(&client, uid, &flow_id_str)
-                        .await
-                        .ok_or_else(|| anyhow::anyhow!("SAS not supported"))?
-                }
+                Ok(None) => lookup_sas_with_retry(&client, uid, &flow_id_str)
+                    .await
+                    .ok_or_else(|| anyhow::anyhow!("SAS not supported"))?,
                 Err(e) => {
                     if let Some(sas) = lookup_sas_with_retry(&client, uid, &flow_id_str).await {
                         sas
@@ -396,8 +398,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "verification/confirm".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "verification/confirm".to_string(),
         );
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
@@ -435,8 +439,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "verification/cancel".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "verification/cancel".to_string(),
         );
         match self.rt.block_on(async move {
             use matrix_sdk::encryption::verification::Verification;

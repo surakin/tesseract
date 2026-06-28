@@ -5,13 +5,13 @@
 use crate::ffi::{OpResult, PaginateResult};
 
 #[cfg(not(test))]
-use super::{err, ok, ClientFfi, ThreadListHandle, TimelineHandle};
-#[cfg(not(test))]
 use super::timeline::TimelineChannel;
 #[cfg(not(test))]
 use super::timeline_convert::msglike_snippet;
 #[cfg(test)]
 use super::ClientFfi;
+#[cfg(not(test))]
+use super::{err, ok, ClientFfi, ThreadListHandle, TimelineHandle};
 
 #[cfg(not(test))]
 use crate::ffi::{ThreadInfo, TimelineEvent};
@@ -34,11 +34,7 @@ impl ClientFfi {
     /// (empty), then live `on_thread_*` callbacks as replies arrive.
     /// Call `paginate_thread_back` for older replies.
     #[cfg(not(test))]
-    pub fn subscribe_thread(
-        &self,
-        room_id: &str,
-        root_event_id: &str,
-    ) -> OpResult {
+    pub fn subscribe_thread(&self, room_id: &str, root_event_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -105,9 +101,12 @@ impl ClientFfi {
         // immediately from the server. Results arrive as VectorDiff events in
         // the streaming task above and are forwarded to C++ via on_thread_inserted.
         let tl_for_paginate = Arc::clone(&timeline);
-        let paginate_abort = self.rt.spawn(async move {
-            let _ = tl_for_paginate.paginate_backwards(50).await;
-        }).abort_handle();
+        let paginate_abort = self
+            .rt
+            .spawn(async move {
+                let _ = tl_for_paginate.paginate_backwards(50).await;
+            })
+            .abort_handle();
 
         // Install atomically: if a concurrent subscribe for the same key raced
         // in after our early remove, insert returns its handle — cancel + abort
@@ -131,11 +130,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn subscribe_thread(
-        &self,
-        _room_id: &str,
-        _root_event_id: &str,
-    ) -> OpResult {
+    pub fn subscribe_thread(&self, _room_id: &str, _root_event_id: &str) -> OpResult {
         super::err("not logged in")
     }
 
@@ -309,19 +304,15 @@ impl ClientFfi {
                 // and re-fetch `room.event(root)` whenever a thread's
                 // `latest_event` event_id changes, using its
                 // `thread_summary.num_replies` as the authoritative count.
-                let mut chip_cache: std::collections::HashMap<
-                    String,
-                    ChipCount,
-                > = std::collections::HashMap::new();
+                let mut chip_cache: std::collections::HashMap<String, ChipCount> =
+                    std::collections::HashMap::new();
 
-                let (_initial, mut stream) =
-                    svc_for_watch.subscribe_to_items_updates();
+                let (_initial, mut stream) = svc_for_watch.subscribe_to_items_updates();
                 {
                     let g = h.lock();
                     g.on_threads_updated(&rid_str);
                 }
-                if let (Some(ref tl), Some(ref room)) =
-                    (&room_timeline_for_chips, &room_for_chips)
+                if let (Some(ref tl), Some(ref room)) = (&room_timeline_for_chips, &room_for_chips)
                 {
                     apply_thread_chips(
                         tl,
@@ -360,8 +351,10 @@ impl ClientFfi {
         // A single guarded insert (vs. a separate remove up front) means a
         // concurrent subscribe for the same room aborts the loser instead of
         // leaking its watcher task.
-        if let Some(prev) =
-            self.thread_lists.write().insert(rid, ThreadListHandle { service, abort })
+        if let Some(prev) = self
+            .thread_lists
+            .write()
+            .insert(rid, ThreadListHandle { service, abort })
         {
             prev.abort.abort();
         }
@@ -396,15 +389,15 @@ impl ClientFfi {
         };
         // Clone the service Arc out from under the read guard before walking
         // its items (keeps the guard window minimal).
-        let Some(service) = self.thread_lists.read().get(&rid).map(|h| h.service.clone())
+        let Some(service) = self
+            .thread_lists
+            .read()
+            .get(&rid)
+            .map(|h| h.service.clone())
         else {
             return Vec::new();
         };
-        service
-            .items()
-            .iter()
-            .map(thread_info_from_item)
-            .collect()
+        service.items().iter().map(thread_info_from_item).collect()
     }
 
     #[cfg(test)]
@@ -429,7 +422,11 @@ impl ClientFfi {
         };
         // Clone the service Arc out from under the read guard so the guard is
         // not held across the `block_on` below.
-        let Some(svc) = self.thread_lists.read().get(&rid).map(|h| h.service.clone())
+        let Some(svc) = self
+            .thread_lists
+            .read()
+            .get(&rid)
+            .map(|h| h.service.clone())
         else {
             return PaginateResult {
                 ok: false,
@@ -558,10 +555,7 @@ async fn apply_thread_chips(
                 // `Room::event` only writes to the store via `save_events`
                 // (doc'd as not notifying observers), so it can't cause
                 // the room timeline to gain a duplicate row.
-                let server_count = match room
-                    .event(&item.root_event.event_id, None)
-                    .await
-                {
+                let server_count = match room.event(&item.root_event.event_id, None).await {
                     Ok(fetched) => fetched
                         .thread_summary
                         .summary()
@@ -619,8 +613,12 @@ async fn apply_thread_chips(
                     matrix_sdk::ruma::events::StateEventContentChange::Original { .. }
                 )
             ),
-            TimelineItemContent::MsgLike(MsgLikeContent { kind, thread_root, .. }) => match kind {
-                MsgLikeKind::UnableToDecrypt(_) | MsgLikeKind::Redacted | MsgLikeKind::Sticker(_) => true,
+            TimelineItemContent::MsgLike(MsgLikeContent {
+                kind, thread_root, ..
+            }) => match kind {
+                MsgLikeKind::UnableToDecrypt(_)
+                | MsgLikeKind::Redacted
+                | MsgLikeKind::Sticker(_) => true,
                 // Thread replies are excluded from the Room channel.
                 MsgLikeKind::Message(_) => thread_root.is_none(),
                 // Reactions, polls, and other kinds are filtered out.

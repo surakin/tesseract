@@ -20,13 +20,12 @@ pub fn find_url_spans(text: &str) -> Vec<UrlSpan> {
     let finder = LinkFinder::new();
     for link in finder.links(text) {
         let s = link.as_str();
-        if link.kind() == &LinkKind::Url
-            && (s.starts_with("https://") || s.starts_with("http://"))
+        if link.kind() == &LinkKind::Url && (s.starts_with("https://") || s.starts_with("http://"))
         {
             spans.push(UrlSpan {
                 start: link.start(),
-                end:   link.end(),
-                url:   s.to_string(),
+                end: link.end(),
+                url: s.to_string(),
             });
         }
     }
@@ -95,11 +94,21 @@ fn matrix_uri_spans(text: &str, out: &mut Vec<UrlSpan>) {
 
         // Basic sanity: must have a known segment after "matrix:".
         let rest = &uri[slen..];
-        let segment = rest.split('/').next().unwrap_or("").split('?').next().unwrap_or("");
+        let segment = rest
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .split('?')
+            .next()
+            .unwrap_or("");
         let valid = matches!(segment, "u" | "r" | "roomid" | "e");
 
         if valid {
-            out.push(UrlSpan { start, end, url: uri.to_string() });
+            out.push(UrlSpan {
+                start,
+                end,
+                url: uri.to_string(),
+            });
         }
 
         i = end;

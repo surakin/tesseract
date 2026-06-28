@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use matrix_sdk::Client;
 #[cfg(not(test))]
 use matrix_sdk::ruma::{events::room::message::RoomMessageEventContent, OwnedRoomId};
+use matrix_sdk::Client;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
@@ -11,9 +11,7 @@ use crate::oauth;
 
 mod account;
 mod backfill;
-mod qr_grant;
 mod crypto_reset;
-mod profile_fields;
 pub(crate) mod gif;
 mod image_packs;
 mod media;
@@ -21,6 +19,8 @@ mod media_gate;
 mod media_queue;
 mod notifications;
 mod pins;
+mod profile_fields;
+mod qr_grant;
 mod recovery;
 mod room_list;
 pub(crate) mod search;
@@ -130,12 +130,16 @@ impl Drop for InFlightGuard {
             if let Some(pos) = list.iter().position(|l| l == &self.label) {
                 list.swap_remove(pos);
             }
-            let prev = self.counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            let prev = self
+                .counter
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             Self::notify(&self.handler, prev.saturating_sub(1), &list);
         }
         #[cfg(not(debug_assertions))]
         {
-            let prev = self.counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            let prev = self
+                .counter
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             Self::notify(&self.handler, prev.saturating_sub(1));
         }
     }
@@ -161,9 +165,9 @@ use matrix_sdk::{ruma::UserId, Room};
 #[cfg(not(test))]
 use matrix_sdk_ui::sync_service::SyncService;
 #[cfg(not(test))]
-use std::collections::HashMap;
-#[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
+use std::collections::HashMap;
 #[cfg(not(test))]
 use std::sync::Arc;
 
@@ -232,7 +236,10 @@ pub(super) async fn member_display_name(
     uid: &matrix_sdk::ruma::UserId,
 ) -> String {
     match room.get_member_no_sync(uid).await {
-        Ok(Some(m)) => m.display_name().map(str::to_owned).unwrap_or_else(|| uid.to_string()),
+        Ok(Some(m)) => m
+            .display_name()
+            .map(str::to_owned)
+            .unwrap_or_else(|| uid.to_string()),
         _ => uid.to_string(),
     }
 }
@@ -244,7 +251,10 @@ pub(super) async fn member_display_name_local(
     uid: &matrix_sdk::ruma::UserId,
 ) -> String {
     match room.get_member_no_sync(uid).await {
-        Ok(Some(m)) => m.display_name().map(str::to_owned).unwrap_or_else(|| uid.localpart().to_string()),
+        Ok(Some(m)) => m
+            .display_name()
+            .map(str::to_owned)
+            .unwrap_or_else(|| uid.localpart().to_string()),
         _ => uid.localpart().to_string(),
     }
 }
@@ -256,9 +266,7 @@ pub(super) fn build_uia_fallback_url(homeserver: &str, stage: &str, session: &st
     let base = homeserver.trim_end_matches('/');
     let stage_enc = urlencoding_encode_segment(stage);
     let session_enc = urlencoding_encode_segment(session);
-    format!(
-        "{base}/_matrix/client/v3/auth/{stage_enc}/fallback/web?session={session_enc}",
-    )
+    format!("{base}/_matrix/client/v3/auth/{stage_enc}/fallback/web?session={session_enc}",)
 }
 
 /// Minimal percent-encoder for a single path segment / query value. Encodes
@@ -428,10 +436,8 @@ pub struct ClientFfi {
     /// `&self` and run concurrently under the C++ shared lock — see the locking
     /// note in `client/src/client.cpp`.
     #[cfg(not(test))]
-    pub(super) thread_timelines: parking_lot::RwLock<HashMap<
-        (OwnedRoomId, matrix_sdk::ruma::OwnedEventId),
-        TimelineHandle,
-    >>,
+    pub(super) thread_timelines:
+        parking_lot::RwLock<HashMap<(OwnedRoomId, matrix_sdk::ruma::OwnedEventId), TimelineHandle>>,
     /// Active thread-list subscriptions keyed by room_id. Each entry holds a
     /// `ThreadListService` and an abort handle for the items-watcher task.
     /// `RwLock`-wrapped for the same `&self` reason as `thread_timelines`.
@@ -455,8 +461,7 @@ pub struct ClientFfi {
     /// messages that arrive mid-prefetch get warmed without waiting for the next
     /// fingerprint change. Coalesced — only the latest set is kept.
     #[cfg(not(test))]
-    pub(super) pending_prefetch:
-        Arc<parking_lot::Mutex<Option<Vec<OwnedRoomId>>>>,
+    pub(super) pending_prefetch: Arc<parking_lot::Mutex<Option<Vec<OwnedRoomId>>>>,
     /// Shared concurrency limiter for all silent room warm-up pagination — the
     /// inactive-grouping backfill and the unread prefetch both acquire from it,
     /// so their *combined* in-flight `backfill_room_silent` count is bounded
@@ -467,8 +472,7 @@ pub struct ClientFfi {
     /// held between `begin_reset_crypto_identity` and the background poll /
     /// `cancel_reset_crypto_identity`. `None` when no reset is pending.
     #[cfg(not(test))]
-    pub(super) crypto_reset_handle:
-        Option<Arc<matrix_sdk::encryption::CrossSigningResetHandle>>,
+    pub(super) crypto_reset_handle: Option<Arc<matrix_sdk::encryption::CrossSigningResetHandle>>,
     /// Count of in-flight extra HTTP operations (media downloads, /messages
     /// back-pagination). Does not include the sync long-poll (always 1 when
     /// Running). Wrapped in Arc so it can be cloned into spawned tasks.
@@ -585,8 +589,7 @@ pub struct ClientFfi {
     /// not have to walk every joined room (with the per-room
     /// `dm_other_user` member-list lookup that goes with it) on every tick.
     #[cfg(not(test))]
-    pub(super) dm_counterparts:
-        Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
+    pub(super) dm_counterparts: Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
     /// Users that returned 403 Forbidden on the presence endpoint —
     /// typically bridge puppet accounts with presence privacy enabled.
     /// They never recover mid-session so we record them and skip future
@@ -637,8 +640,7 @@ pub struct ClientFfi {
     /// completion. Interior-mutable so the `&self` media methods can register
     /// without `&self`. Also drained wholesale in `stop_sync`.
     #[cfg(not(test))]
-    pub(super) media_tasks:
-        Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
+    pub(super) media_tasks: Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
     /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
     /// SQLite store already holds. `fetch_media_async` uses this to skip the
     /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
@@ -774,20 +776,15 @@ pub(crate) fn encode_voice_ogg(
     // OpusHead identification header.
     let mut opus_head = Vec::with_capacity(19);
     opus_head.extend_from_slice(b"OpusHead");
-    opus_head.push(1);                                    // version
-    opus_head.push(1);                                    // channel count (mono)
-    opus_head.extend_from_slice(&312u16.to_le_bytes());   // pre-skip
+    opus_head.push(1); // version
+    opus_head.push(1); // channel count (mono)
+    opus_head.extend_from_slice(&312u16.to_le_bytes()); // pre-skip
     opus_head.extend_from_slice(&48000u32.to_le_bytes()); // input sample rate
-    opus_head.extend_from_slice(&0i16.to_le_bytes());     // output gain
-    opus_head.push(0);                                    // channel mapping family
-    // RFC 7845 §3: each header MUST begin on its own page.
-    pw.write_packet(
-        opus_head,
-        0x1234_5678,
-        ogg::PacketWriteEndInfo::EndPage,
-        0,
-    )
-    .map_err(|e| e.to_string())?;
+    opus_head.extend_from_slice(&0i16.to_le_bytes()); // output gain
+    opus_head.push(0); // channel mapping family
+                       // RFC 7845 §3: each header MUST begin on its own page.
+    pw.write_packet(opus_head, 0x1234_5678, ogg::PacketWriteEndInfo::EndPage, 0)
+        .map_err(|e| e.to_string())?;
 
     // OpusTags comment header.
     let vendor = b"tesseract";
@@ -796,13 +793,8 @@ pub(crate) fn encode_voice_ogg(
     tags.extend_from_slice(&(vendor.len() as u32).to_le_bytes());
     tags.extend_from_slice(vendor);
     tags.extend_from_slice(&0u32.to_le_bytes()); // zero user comments
-    pw.write_packet(
-        tags,
-        0x1234_5678,
-        ogg::PacketWriteEndInfo::EndPage,
-        0,
-    )
-    .map_err(|e| e.to_string())?;
+    pw.write_packet(tags, 0x1234_5678, ogg::PacketWriteEndInfo::EndPage, 0)
+        .map_err(|e| e.to_string())?;
 
     // Audio pages.
     let mut granule: u64 = 0;
@@ -820,7 +812,6 @@ pub(crate) fn encode_voice_ogg(
 
     Ok(ogg_bytes)
 }
-
 
 impl ClientFfi {
     #[cfg(not(test))]
@@ -910,13 +901,9 @@ impl ClientFfi {
                 std::collections::HashSet::new(),
             )),
             #[cfg(not(test))]
-            dm_counterparts: Arc::new(parking_lot::RwLock::new(
-                std::collections::HashSet::new(),
-            )),
+            dm_counterparts: Arc::new(parking_lot::RwLock::new(std::collections::HashSet::new())),
             #[cfg(not(test))]
-            forbidden_presence: Arc::new(Mutex::new(
-                std::collections::HashSet::new(),
-            )),
+            forbidden_presence: Arc::new(Mutex::new(std::collections::HashSet::new())),
             #[cfg(not(test))]
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
@@ -927,11 +914,12 @@ impl ClientFfi {
             // downloads (which stop counting after the stall deadline) while
             // bounding how many hung connections a mass stall can accumulate.
             #[cfg(not(test))]
-            media_gate_fg: media_gate::PriorityGate::new(
-                MEDIA_FG_PERMITS, MEDIA_FG_PERMITS * 2),
+            media_gate_fg: media_gate::PriorityGate::new(MEDIA_FG_PERMITS, MEDIA_FG_PERMITS * 2),
             #[cfg(not(test))]
             media_gate_bulk: media_gate::PriorityGate::new(
-                MEDIA_BULK_PERMITS, MEDIA_BULK_PERMITS * 2),
+                MEDIA_BULK_PERMITS,
+                MEDIA_BULK_PERMITS * 2,
+            ),
             #[cfg(not(test))]
             media_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
@@ -960,9 +948,7 @@ impl ClientFfi {
             media_upload_limit: AtomicU64::new(0),
             data_dir: default_data_dir(),
             http_client: reqwest::Client::new(),
-            presence_polling_enabled: std::sync::Arc::new(
-                std::sync::atomic::AtomicBool::new(true),
-            ),
+            presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -984,7 +970,6 @@ impl ClientFfi {
         let _ = std::fs::create_dir_all(&p);
         self.data_dir = p;
     }
-
 
     // -----------------------------------------------------------------------
     // Sync loop (Step 2: SyncService + RoomListService)
@@ -1009,8 +994,6 @@ impl ClientFfi {
             *self.pending_prefetch.lock() = None;
         }
     }
-
-
 
     // Sync the full set of currently open rooms to the server's sliding-sync
     // subscription. Must be called after every subscribe_room/unsubscribe_room
@@ -1052,10 +1035,6 @@ impl ClientFfi {
         });
     }
 
-
-
-
-
     // -----------------------------------------------------------------------
     // Presence polling toggle
     // -----------------------------------------------------------------------
@@ -1074,7 +1053,6 @@ impl ClientFfi {
     /// (which lives in `client::sync` and needs the watcher task to exist).
     #[cfg(test)]
     pub fn poll_presence_now(&mut self) {}
-
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,7 +1078,6 @@ pub(super) async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
         }
     }
 }
-
 
 /// Rebuild the aggregated image-pack cache. Reads prefer the unstable
 /// `im.ponies.*` names (first entry in `EMOTE_ROOMS_TYPES` / `ROOM_PACK_TYPES`)
@@ -1220,9 +1197,9 @@ pub(super) async fn rebuild_image_packs(
                             state_key.clone(),
                         );
                         if let Ok(response) = client.send(req).await {
-                            if let Ok(content) = serde_json::from_str::<Value>(
-                                response.event_or_content.get(),
-                            ) {
+                            if let Ok(content) =
+                                serde_json::from_str::<Value>(response.event_or_content.get())
+                            {
                                 fetched = Some(content);
                                 break;
                             }
@@ -1451,8 +1428,7 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                             let url = match &img.source {
                                 MediaSource::Plain(uri) => uri.to_string(),
                                 MediaSource::Encrypted(_) => {
-                                    serde_json::to_string(&img.source)
-                                        .unwrap_or_default()
+                                    serde_json::to_string(&img.source).unwrap_or_default()
                                 }
                             };
                             LatestPreview {
@@ -1766,10 +1742,7 @@ async fn resolve_pinned_event(
 /// incremental room-info-update watcher in `sync.rs` so we don't pay the
 /// O(N) SQLite fan-out cost when only one room changed.
 #[cfg(not(test))]
-pub(super) async fn build_room_info(
-    client: &Client,
-    room: &Room,
-) -> Option<crate::ffi::RoomInfo> {
+pub(super) async fn build_room_info(client: &Client, room: &Room) -> Option<crate::ffi::RoomInfo> {
     if room.is_tombstoned() {
         return None;
     }
@@ -1785,14 +1758,15 @@ pub(super) async fn build_room_info(
     // which on E2EE-heavy accounts means every room reports 0 unreads.
     // See matrix-sdk-base 0.17 docs on `Room::num_unread_notifications`.
     let notification_count = room.num_unread_notifications();
-    let highlight_count    = room.num_unread_mentions();
+    let highlight_count = room.num_unread_mentions();
     // Total unread (regardless of push rules) drives the room-list quiet-unread
     // dot; muted rooms are excluded from it. Same client-side read-receipt
     // source as the counts above (reliable for encrypted rooms).
     let unread_count = room.num_unread_messages();
     let muted = matches!(
         room.cached_user_defined_notification_mode(),
-        Some(matrix_sdk::notification_settings::RoomNotificationMode::Mute));
+        Some(matrix_sdk::notification_settings::RoomNotificationMode::Mute)
+    );
     let last_activity_ts = room
         .latest_event_timestamp()
         .map(|t| u64::from(t.0))
@@ -1877,7 +1851,10 @@ pub(super) async fn build_room_info(
         None
     };
     let dm_avatar_url = if avatar_url.is_empty() {
-        dm_other.as_ref().map(|m| m.avatar_url.clone()).unwrap_or_default()
+        dm_other
+            .as_ref()
+            .map(|m| m.avatar_url.clone())
+            .unwrap_or_default()
     } else {
         String::new()
     };
@@ -1902,11 +1879,10 @@ pub(super) async fn build_room_info(
             },
             _ => Vec::new(),
         };
-        let mut resolved: Vec<crate::ffi::PinnedEvent> =
-            futures_util::future::join_all(
-                pinned_ids.iter().map(|id| resolve_pinned_event(room, id)),
-            )
-            .await;
+        let mut resolved: Vec<crate::ffi::PinnedEvent> = futures_util::future::join_all(
+            pinned_ids.iter().map(|id| resolve_pinned_event(room, id)),
+        )
+        .await;
         resolved.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         resolved
     };
@@ -2050,13 +2026,15 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
                                 .display_name()
                                 .map(str::to_owned)
                                 .unwrap_or_else(|| details.inviter_id.localpart().to_string());
-                            let av = m
-                                .avatar_url()
-                                .map(|u| u.to_string())
-                                .unwrap_or_default();
+                            let av = m.avatar_url().map(|u| u.to_string()).unwrap_or_default();
                             (uid, dn, av, ts)
                         }
-                        None => (uid, details.inviter_id.localpart().to_string(), String::new(), ts),
+                        None => (
+                            uid,
+                            details.inviter_id.localpart().to_string(),
+                            String::new(),
+                            ts,
+                        ),
                     }
                 }
                 Err(_) => (String::new(), String::new(), String::new(), 0),
@@ -2260,8 +2238,7 @@ mod tests {
 
     #[test]
     fn derive_mentions_strips_via_params() {
-        let src =
-            r#"<a href="https://matrix.to/#/@alice:example.org?via=example.org">A</a>"#;
+        let src = r#"<a href="https://matrix.to/#/@alice:example.org?via=example.org">A</a>"#;
         let (m, _) = derive_mentions(src);
         let m = m.expect("mentions");
         assert!(m
@@ -2395,11 +2372,17 @@ mod tests {
     #[test]
     fn set_presence_polling_enabled_roundtrips() {
         let c = ClientFfi::new();
-        assert!(c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(c
+            .presence_polling_enabled
+            .load(std::sync::atomic::Ordering::Relaxed));
         c.set_presence_polling_enabled(false);
-        assert!(!c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(!c
+            .presence_polling_enabled
+            .load(std::sync::atomic::Ordering::Relaxed));
         c.set_presence_polling_enabled(true);
-        assert!(c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(c
+            .presence_polling_enabled
+            .load(std::sync::atomic::Ordering::Relaxed));
     }
 
     #[test]
@@ -2628,7 +2611,10 @@ mod tests {
         assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
         assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
         // No explicit in-thread reply target: fall back to the root and flag it.
-        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$root:server");
+        assert_eq!(
+            val["m.relates_to"]["m.in_reply_to"]["event_id"],
+            "$root:server"
+        );
         assert_eq!(val["m.relates_to"]["is_falling_back"], true);
     }
 
@@ -2659,8 +2645,7 @@ mod tests {
     #[test]
     fn send_thread_reply_not_logged_in() {
         let c = ClientFfi::new();
-        let r =
-            c.send_thread_reply("!room:server", "$root:server", "$reply:server", "hi", "");
+        let r = c.send_thread_reply("!room:server", "$root:server", "$reply:server", "hi", "");
         assert!(!r.ok);
     }
 
@@ -2725,8 +2710,19 @@ mod tests {
     fn send_video_not_logged_in() {
         let c = ClientFfi::new();
         let r = c.send_video(
-            "!room:server", &[], "video/mp4", "clip.mp4", "",
-            0, 0, &[], 0, 0, 0, "", "",
+            "!room:server",
+            &[],
+            "video/mp4",
+            "clip.mp4",
+            "",
+            0,
+            0,
+            &[],
+            0,
+            0,
+            0,
+            "",
+            "",
         );
         assert!(!r.ok);
         assert!(r.message.contains("not logged in"), "got: {}", r.message);
@@ -2801,30 +2797,54 @@ mod tests {
         );
         assert_eq!(val["body"], "Look at this");
         assert_eq!(val["filename"], "cat.gif");
-        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$reply:server");
+        assert_eq!(
+            val["m.relates_to"]["m.in_reply_to"]["event_id"],
+            "$reply:server"
+        );
     }
 
     #[test]
     fn animated_image_content_threaded() {
         let val = build_animated_image_content(
-            GifMedia::Plain("mxc://server/abc".into()), "a.gif", "", "image/gif", 1, 1, 10, "", "$root:server",
+            GifMedia::Plain("mxc://server/abc".into()),
+            "a.gif",
+            "",
+            "image/gif",
+            1,
+            1,
+            10,
+            "",
+            "$root:server",
         );
         assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
         assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
-        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$root:server");
+        assert_eq!(
+            val["m.relates_to"]["m.in_reply_to"]["event_id"],
+            "$root:server"
+        );
         assert_eq!(val["m.relates_to"]["is_falling_back"], true);
     }
 
     #[test]
     fn animated_image_content_threaded_reply() {
         let val = build_animated_image_content(
-            GifMedia::Plain("mxc://server/abc".into()), "a.gif", "", "image/gif", 1, 1, 10, "$reply:server",
+            GifMedia::Plain("mxc://server/abc".into()),
+            "a.gif",
+            "",
+            "image/gif",
+            1,
+            1,
+            10,
+            "$reply:server",
             "$root:server",
         );
         assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
         assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
         // Explicit in-thread reply target: point at it, not the root, and no fallback flag.
-        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$reply:server");
+        assert_eq!(
+            val["m.relates_to"]["m.in_reply_to"]["event_id"],
+            "$reply:server"
+        );
         assert!(val["m.relates_to"]["is_falling_back"].is_null());
     }
 
@@ -3014,7 +3034,11 @@ mod tests_latest_event_body {
 
     #[test]
     fn remote_video_file_audio_kinds() {
-        for (mt, kind) in [("m.video", "video"), ("m.file", "file"), ("m.audio", "audio")] {
+        for (mt, kind) in [
+            ("m.video", "video"),
+            ("m.file", "file"),
+            ("m.audio", "audio"),
+        ] {
             let v = remote(serde_json::json!({
                 "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
                 "sender": "@a:e.com", "origin_server_ts": 1,
@@ -3180,13 +3204,15 @@ mod location_tests {
                 "thumbnail_info": { "w": 320, "h": 200, "mimetype": "image/jpeg" }
             }
         });
-        let content: ImageMessageEventContent =
-            serde_json::from_value(json).expect("deserialises");
+        let content: ImageMessageEventContent = serde_json::from_value(json).expect("deserialises");
         let thumb_src = content
             .info
             .as_ref()
             .and_then(|info| info.thumbnail_source.as_ref());
-        assert!(thumb_src.is_some(), "thumbnail_source must be populated from thumbnail_url");
+        assert!(
+            thumb_src.is_some(),
+            "thumbnail_source must be populated from thumbnail_url"
+        );
         match thumb_src.unwrap() {
             matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => {
                 assert_eq!(uri.to_string(), "mxc://example.org/thumb");
@@ -3204,8 +3230,7 @@ mod location_tests {
             "url": "mxc://example.org/full",
             "info": { "w": 800, "h": 600, "mimetype": "image/png" }
         });
-        let content: ImageMessageEventContent =
-            serde_json::from_value(json).expect("deserialises");
+        let content: ImageMessageEventContent = serde_json::from_value(json).expect("deserialises");
         let thumb_src = content
             .info
             .as_ref()
@@ -3231,11 +3256,8 @@ mod uia_fallback_url_tests {
 
     #[test]
     fn builds_spec_compliant_url() {
-        let url = build_uia_fallback_url(
-            "https://matrix-client.matrix.org",
-            "m.login.sso",
-            "abc123",
-        );
+        let url =
+            build_uia_fallback_url("https://matrix-client.matrix.org", "m.login.sso", "abc123");
         assert_eq!(
             url,
             "https://matrix-client.matrix.org/_matrix/client/v3/auth/m.login.sso/fallback/web?session=abc123",
@@ -3244,22 +3266,14 @@ mod uia_fallback_url_tests {
 
     #[test]
     fn trims_trailing_slash_on_homeserver() {
-        let url = build_uia_fallback_url(
-            "https://matrix.example.org/",
-            "m.login.password",
-            "s",
-        );
+        let url = build_uia_fallback_url("https://matrix.example.org/", "m.login.password", "s");
         assert!(url.starts_with("https://matrix.example.org/_matrix/client/v3/auth/"));
         assert!(!url.contains("//_matrix"));
     }
 
     #[test]
     fn percent_encodes_session_special_chars() {
-        let url = build_uia_fallback_url(
-            "https://h",
-            "m.login.password",
-            "with space&plus+slash/",
-        );
+        let url = build_uia_fallback_url("https://h", "m.login.password", "with space&plus+slash/");
         assert!(url.ends_with("session=with%20space%26plus%2Bslash%2F"));
     }
 
@@ -3280,8 +3294,10 @@ mod set_presence_tests {
         for byte in [1u8, 2, 3] {
             let r = ffi.set_presence(byte);
             assert!(!r.ok, "no client → must fail");
-            assert_eq!(r.message, "not logged in",
-                       "byte {byte} should pass validation");
+            assert_eq!(
+                r.message, "not logged in",
+                "byte {byte} should pass validation"
+            );
         }
     }
 
@@ -3293,7 +3309,8 @@ mod set_presence_tests {
             assert!(!r.ok);
             assert!(
                 r.message.starts_with("invalid presence state"),
-                "byte {byte} message was {:?}", r.message
+                "byte {byte} message was {:?}",
+                r.message
             );
         }
     }

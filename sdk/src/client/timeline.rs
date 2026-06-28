@@ -27,14 +27,12 @@ use matrix_sdk::{ruma::OwnedRoomId, ruma::UInt, ruma::UserId, Client, Room};
 #[cfg(not(test))]
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
-    timeline::{
-        RoomExt, TimelineEventFocusThreadMode, TimelineFocus, TimelineItem,
-    },
+    timeline::{RoomExt, TimelineEventFocusThreadMode, TimelineFocus, TimelineItem},
 };
 #[cfg(not(test))]
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(test))]
 use std::sync::Arc;
 
@@ -92,7 +90,10 @@ pub(super) fn emit_timeline_batch(
 
     let mut pending = Pending::None;
 
-    let flush = |p: Pending, handler: &Arc<Mutex<SendHandler>>, ch: &TimelineChannel, room_id: &str| {
+    let flush = |p: Pending,
+                 handler: &Arc<Mutex<SendHandler>>,
+                 ch: &TimelineChannel,
+                 room_id: &str| {
         match p {
             Pending::None => {}
             Pending::Prepended(mut evs) => {
@@ -100,14 +101,18 @@ pub(super) fn emit_timeline_batch(
                 let g = handler.lock();
                 match ch {
                     TimelineChannel::Room => g.on_messages_prepended(room_id, &evs),
-                    TimelineChannel::Thread(root) => g.on_thread_messages_prepended(room_id, root, &evs),
+                    TimelineChannel::Thread(root) => {
+                        g.on_thread_messages_prepended(room_id, root, &evs)
+                    }
                 }
             }
             Pending::Appended(evs) => {
                 let g = handler.lock();
                 match ch {
                     TimelineChannel::Room => g.on_messages_appended(room_id, &evs),
-                    TimelineChannel::Thread(root) => g.on_thread_messages_appended(room_id, root, &evs),
+                    TimelineChannel::Thread(root) => {
+                        g.on_thread_messages_appended(room_id, root, &evs)
+                    }
                 }
             }
             Pending::Updated(indices, evs) => {
@@ -115,12 +120,16 @@ pub(super) fn emit_timeline_batch(
                     let g = handler.lock();
                     match ch {
                         TimelineChannel::Room => g.on_message_updated(room_id, indices[0], &evs[0]),
-                        TimelineChannel::Thread(root) => g.on_thread_updated(room_id, root, indices[0], &evs[0]),
+                        TimelineChannel::Thread(root) => {
+                            g.on_thread_updated(room_id, root, indices[0], &evs[0])
+                        }
                     }
                 } else {
                     let g = handler.lock();
                     match ch {
-                        TimelineChannel::Room => g.on_messages_updated_batch(room_id, &indices, &evs),
+                        TimelineChannel::Room => {
+                            g.on_messages_updated_batch(room_id, &indices, &evs)
+                        }
                         // Thread batch-update not yet in the bridge; fall back to singles.
                         TimelineChannel::Thread(root) => {
                             for (idx, ev) in indices.iter().zip(evs.iter()) {
@@ -145,24 +154,20 @@ pub(super) fn emit_timeline_batch(
                     TimelineChannel::Thread(root) => g.on_thread_reset(room_id, root, &snap),
                 }
             }
-            EmitOp::Prepended(evs) => {
-                match &mut pending {
-                    Pending::Prepended(acc) => acc.extend(evs),
-                    _ => {
-                        let prev = std::mem::replace(&mut pending, Pending::Prepended(evs));
-                        flush(prev, handler, ch, room_id);
-                    }
+            EmitOp::Prepended(evs) => match &mut pending {
+                Pending::Prepended(acc) => acc.extend(evs),
+                _ => {
+                    let prev = std::mem::replace(&mut pending, Pending::Prepended(evs));
+                    flush(prev, handler, ch, room_id);
                 }
-            }
-            EmitOp::Appended(evs) => {
-                match &mut pending {
-                    Pending::Appended(acc) => acc.extend(evs),
-                    _ => {
-                        let prev = std::mem::replace(&mut pending, Pending::Appended(evs));
-                        flush(prev, handler, ch, room_id);
-                    }
+            },
+            EmitOp::Appended(evs) => match &mut pending {
+                Pending::Appended(acc) => acc.extend(evs),
+                _ => {
+                    let prev = std::mem::replace(&mut pending, Pending::Appended(evs));
+                    flush(prev, handler, ch, room_id);
                 }
-            }
+            },
             EmitOp::Inserted(idx, ev) => {
                 let prev = std::mem::replace(&mut pending, Pending::None);
                 flush(prev, handler, ch, room_id);
@@ -172,18 +177,17 @@ pub(super) fn emit_timeline_batch(
                     TimelineChannel::Thread(root) => g.on_thread_inserted(room_id, root, idx, &ev),
                 }
             }
-            EmitOp::Updated(idx, ev) => {
-                match &mut pending {
-                    Pending::Updated(idxs, evs) => {
-                        idxs.push(idx);
-                        evs.push(ev);
-                    }
-                    _ => {
-                        let prev = std::mem::replace(&mut pending, Pending::Updated(vec![idx], vec![ev]));
-                        flush(prev, handler, ch, room_id);
-                    }
+            EmitOp::Updated(idx, ev) => match &mut pending {
+                Pending::Updated(idxs, evs) => {
+                    idxs.push(idx);
+                    evs.push(ev);
                 }
-            }
+                _ => {
+                    let prev =
+                        std::mem::replace(&mut pending, Pending::Updated(vec![idx], vec![ev]));
+                    flush(prev, handler, ch, room_id);
+                }
+            },
             EmitOp::Removed(idx) => {
                 let prev = std::mem::replace(&mut pending, Pending::None);
                 flush(prev, handler, ch, room_id);
@@ -284,7 +288,9 @@ pub(super) async fn collect_timeline_ops(
     search_index: &Option<super::search::SearchIndexCtx>,
     ops: &mut Vec<EmitOp>,
 ) {
-    if cancelled.load(Ordering::Acquire) { return; }
+    if cancelled.load(Ordering::Acquire) {
+        return;
+    }
     match diff {
         VectorDiff::Append { values } => {
             // Collect all visible items from the Append batch into one
@@ -562,17 +568,16 @@ async fn refresh_receipts(
     let mut batch_events: Vec<TimelineEvent> = Vec::new();
 
     for (slot_idx, item) in items.iter().enumerate() {
-        if cancelled.load(Ordering::Acquire) { return; }
+        if cancelled.load(Ordering::Acquire) {
+            return;
+        }
         // matrix-sdk-ui's snapshot has more slots than our shadow — the
         // streaming task is behind on inserts. Let it catch up.
         if slot_idx >= visible.len() {
             break;
         }
 
-        let ev = filter_for_channel(
-            timeline_item_to_ffi(item, room_id, room, me).await,
-            channel,
-        );
+        let ev = filter_for_channel(timeline_item_to_ffi(item, room_id, room, me).await, channel);
         let was_visible_in_shadow = visible[slot_idx];
         let is_visible_now = ev.is_some();
         if was_visible_in_shadow != is_visible_now {
@@ -580,7 +585,9 @@ async fn refresh_receipts(
             // let the streaming task apply it.
             break;
         }
-        let Some(ev) = ev else { continue; };
+        let Some(ev) = ev else {
+            continue;
+        };
 
         // Shadow vs. items() event-id mismatch at the same slot means
         // matrix-sdk-ui has shifted items via Insert/Remove that the
@@ -607,7 +614,9 @@ async fn refresh_receipts(
         emit_updated(&g, channel, room_id, batch_indices[0], &batch_events[0]);
     } else {
         match channel {
-            TimelineChannel::Room => g.on_messages_updated_batch(room_id, &batch_indices, &batch_events),
+            TimelineChannel::Room => {
+                g.on_messages_updated_batch(room_id, &batch_indices, &batch_events)
+            }
             TimelineChannel::Thread(_) => {
                 // Thread batch-update not yet in the bridge; emit individually.
                 for (idx, ev) in batch_indices.iter().zip(batch_events.iter()) {
@@ -658,8 +667,7 @@ impl ClientFfi {
         // `tokio::select!` only runs one branch at a time, so the refresh
         // computes its emit indices against the same `visible`/`visible_ids`
         // shadow that the diff loop maintains — they can't drift apart.
-        let (members_done_tx, members_done_rx) =
-            tokio::sync::mpsc::channel::<()>(1);
+        let (members_done_tx, members_done_rx) = tokio::sync::mpsc::channel::<()>(1);
 
         let abort = rt
             .spawn(async move {
@@ -709,7 +717,9 @@ impl ClientFfi {
                     Some(members_done_rx);
 
                 loop {
-                    if cancelled_stream.load(Ordering::Acquire) { break; }
+                    if cancelled_stream.load(Ordering::Acquire) {
+                        break;
+                    }
                     tokio::select! {
                         // `biased`: drain diffs first so the shadow stays in
                         // step with C++ before any refresh can run.
@@ -826,9 +836,7 @@ impl ClientFfi {
         {
             let mut guard = self.timelines.write();
             if let Some(existing) = guard.get_mut(&room_id) {
-                if !existing.is_focused
-                    && !existing.cancelled.load(Ordering::Acquire)
-                {
+                if !existing.is_focused && !existing.cancelled.load(Ordering::Acquire) {
                     // Cancel the OLD tasks' in-flight emissions before aborting:
                     // tokio abort is cooperative, so without this an old streaming
                     // task can emit one more VectorDiff (stale, pre-reset indices)
@@ -852,7 +860,7 @@ impl ClientFfi {
                         self.search_index_ctx(),
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
-                    existing.cancelled  = new_cancelled;
+                    existing.cancelled = new_cancelled;
                     drop(guard);
                     self.sync_room_subscriptions();
                     let _ = self.subscribe_room_threads(room_id.as_str());
@@ -880,17 +888,15 @@ impl ClientFfi {
         // worker that drives this FFI call (EXC_BAD_ACCESS). Worker threads
         // have the widened 8 MB stack configured on the runtime above.
         let room_for_build = room.clone();
-        let timeline = match self.rt.block_on(
-            self.rt.spawn(async move {
-                room_for_build
-                    .timeline_builder()
-                    .with_focus(TimelineFocus::Live {
-                        hide_threaded_events: true,
-                    })
-                    .build()
-                    .await
-            }),
-        ) {
+        let timeline = match self.rt.block_on(self.rt.spawn(async move {
+            room_for_build
+                .timeline_builder()
+                .with_focus(TimelineFocus::Live {
+                    hide_threaded_events: true,
+                })
+                .build()
+                .await
+        })) {
             Ok(Ok(t)) => Arc::new(t),
             Ok(Err(e)) => return err(format!("build timeline: {e}")),
             Err(e) => return err(format!("build timeline task: {e}")),
@@ -906,8 +912,17 @@ impl ClientFfi {
         // ordering).
 
         let cancelled = Arc::new(AtomicBool::new(false));
-        let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled), self.search_index_ctx());
+        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+            &timeline,
+            &room,
+            room_id_str,
+            &handler,
+            &client,
+            &self.rt,
+            TimelineChannel::Room,
+            Arc::clone(&cancelled),
+            self.search_index_ctx(),
+        );
 
         self.timelines.write().insert(
             room_id.clone(),
@@ -975,8 +990,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "timeline/paginate".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "timeline/paginate".to_string(),
         );
 
         // Race the network round-trip against the shutdown signal so that
@@ -1051,7 +1068,11 @@ impl ClientFfi {
         let tl = {
             let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
-                deliver(false, false, "room not subscribed; call subscribe_room first");
+                deliver(
+                    false,
+                    false,
+                    "room not subscribed; call subscribe_room first",
+                );
                 return;
             };
             Arc::clone(&handle.timeline)
@@ -1066,8 +1087,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "timeline/paginate".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "timeline/paginate".to_string(),
             );
             let deliver = move |ok: bool, reached_start: bool, msg: &str| {
                 if let Some(h) = &handler {
@@ -1135,7 +1158,11 @@ impl ClientFfi {
         let tl = {
             let guard = self.timelines.read();
             let Some(handle) = guard.get(&room_id) else {
-                deliver(false, false, "room not subscribed; call subscribe_room_at first");
+                deliver(
+                    false,
+                    false,
+                    "room not subscribed; call subscribe_room_at first",
+                );
                 return;
             };
             if !handle.is_focused {
@@ -1154,8 +1181,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "timeline/paginate".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "timeline/paginate".to_string(),
             );
             let deliver = move |ok: bool, reached_end: bool, msg: &str| {
                 if let Some(h) = &handler {
@@ -1239,8 +1268,10 @@ impl ClientFfi {
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
-            #[cfg(debug_assertions)] &self.in_flight_urls,
-            #[cfg(debug_assertions)] "timeline/load".to_string(),
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "timeline/load".to_string(),
         );
 
         // No shutdown-race here: timestamp lookups are typically fast (single HTTP
@@ -1328,8 +1359,17 @@ impl ClientFfi {
         }
 
         let cancelled = Arc::new(AtomicBool::new(false));
-        let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled), self.search_index_ctx());
+        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+            &timeline,
+            &room,
+            room_id_str,
+            &handler,
+            &client,
+            &self.rt,
+            TimelineChannel::Room,
+            Arc::clone(&cancelled),
+            self.search_index_ctx(),
+        );
 
         self.timelines.write().insert(
             room_id,
@@ -1348,5 +1388,4 @@ impl ClientFfi {
     pub fn subscribe_room_at(&self, _room_id: &str, _focus_event_id: &str) -> OpResult {
         err("not logged in")
     }
-
 }

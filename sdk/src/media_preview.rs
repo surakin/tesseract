@@ -190,7 +190,11 @@ mod tests {
 
     #[test]
     fn round_trips_through_serialize() {
-        for mp in [MediaPreviews::Off, MediaPreviews::Private, MediaPreviews::On] {
+        for mp in [
+            MediaPreviews::Off,
+            MediaPreviews::Private,
+            MediaPreviews::On,
+        ] {
             for inv in [true, false] {
                 let cfg = Config {
                     media_previews: mp,
@@ -203,7 +207,11 @@ mod tests {
 
     #[test]
     fn u8_round_trip() {
-        for mp in [MediaPreviews::Off, MediaPreviews::Private, MediaPreviews::On] {
+        for mp in [
+            MediaPreviews::Off,
+            MediaPreviews::Private,
+            MediaPreviews::On,
+        ] {
             assert_eq!(MediaPreviews::from_u8(mp.to_u8()), mp);
         }
         // Out-of-range u8 decodes to On (the permissive default).

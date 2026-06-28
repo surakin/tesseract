@@ -10,15 +10,12 @@ use super::ClientFfi;
 use super::{stop_fut, SendHandler};
 
 #[cfg(not(test))]
-use matrix_sdk::{
-    ruma::OwnedRoomId,
-    Client, Room,
-};
+use matrix_sdk::{ruma::OwnedRoomId, Client, Room};
 
 #[cfg(not(test))]
-use std::collections::HashMap;
-#[cfg(not(test))]
 use parking_lot::Mutex;
+#[cfg(not(test))]
+use std::collections::HashMap;
 #[cfg(not(test))]
 use std::sync::Arc;
 
@@ -48,8 +45,7 @@ pub(super) const MAX_URL_BYTES: usize = 1024 * 1024;
 /// generous bound. On timeout the fetch returns its empty default and the next
 /// trigger (room update, reopen) re-fetches, since nothing was cached.
 #[cfg(not(test))]
-pub(super) const THUMBNAIL_FETCH_TIMEOUT: std::time::Duration =
-    std::time::Duration::from_secs(30);
+pub(super) const THUMBNAIL_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 #[cfg(not(test))]
 pub(super) const FULL_MEDIA_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(120);
@@ -110,14 +106,19 @@ pub(super) async fn emit_notification(
     preview_source: Option<matrix_sdk::ruma::events::room::MediaSource>,
     handler: &Arc<Mutex<SendHandler>>,
 ) {
-    use matrix_sdk::ruma::events::room::MediaSource;
     use super::notifications;
+    use matrix_sdk::ruma::events::room::MediaSource;
     if client.user_id() == Some(sender_id) {
         return;
     }
     let room_id = room.room_id().as_str().to_owned();
     let synthetic = notifications::build_push_rule_json(
-        &room_id, event_id, sender_id.as_str(), body, msg_type_str, ts,
+        &room_id,
+        event_id,
+        sender_id.as_str(),
+        body,
+        msg_type_str,
+        ts,
     );
     let (should_notify, is_mention) =
         notifications::evaluate_push_rules(client, &room, &synthetic).await;
@@ -176,7 +177,15 @@ pub(super) async fn emit_notification(
     };
     {
         let g = handler.lock();
-        g.on_notification(&room_id, &room_name, &sender_name, body, is_mention, &avatar, &preview);
+        g.on_notification(
+            &room_id,
+            &room_name,
+            &sender_name,
+            body,
+            is_mention,
+            &avatar,
+            &preview,
+        );
     }
 }
 
@@ -207,9 +216,7 @@ async fn download_media(
     h: u32,
     animated: bool,
 ) -> Vec<u8> {
-    use matrix_sdk::media::{
-        MediaFormat, MediaRequestParameters, MediaThumbnailSettings,
-    };
+    use matrix_sdk::media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings};
     use matrix_sdk::ruma::events::room::MediaSource;
     use matrix_sdk::ruma::OwnedMxcUri;
 
@@ -240,7 +247,11 @@ async fn download_media(
                 format: MediaFormat::Thumbnail(settings),
             };
             cap_media_bytes(
-                client.media().get_media_content(&request, true).await.unwrap_or_default(),
+                client
+                    .media()
+                    .get_media_content(&request, true)
+                    .await
+                    .unwrap_or_default(),
             )
         }
         MEDIA_KIND_SOURCE_THUMB => {
@@ -261,9 +272,16 @@ async fn download_media(
                     Err(_) => return Vec::new(),
                 }
             };
-            let request = MediaRequestParameters { source: media_source, format };
+            let request = MediaRequestParameters {
+                source: media_source,
+                format,
+            };
             cap_media_bytes(
-                client.media().get_media_content(&request, true).await.unwrap_or_default(),
+                client
+                    .media()
+                    .get_media_content(&request, true)
+                    .await
+                    .unwrap_or_default(),
             )
         }
         // MEDIA_KIND_SOURCE_FULL (and any unknown kind) → full file.
@@ -288,7 +306,11 @@ async fn download_media(
                 format: MediaFormat::File,
             };
             cap_media_bytes(
-                client.media().get_media_content(&request, true).await.unwrap_or_default(),
+                client
+                    .media()
+                    .get_media_content(&request, true)
+                    .await
+                    .unwrap_or_default(),
             )
         }
     }
@@ -319,9 +341,7 @@ pub(super) async fn download_url(client: &reqwest::Client, url: &str, max_bytes:
     };
     if let Some(len) = resp.content_length() {
         if len as usize > max_bytes {
-            tracing::warn!(
-                "download_url: {url} declared {len} bytes > {max_bytes} cap; rejecting"
-            );
+            tracing::warn!("download_url: {url} declared {len} bytes > {max_bytes} cap; rejecting");
             return Vec::new();
         }
     }
@@ -356,11 +376,7 @@ pub(super) async fn download_url(client: &reqwest::Client, url: &str, max_bytes:
 /// Deliver a completed media download to C++ via `on_media_ready`. Tolerates a
 /// detached handler (shutdown) and a contended mutex by simply dropping.
 #[cfg(not(test))]
-fn deliver_media(
-    handler: &Option<Arc<Mutex<SendHandler>>>,
-    request_id: u64,
-    bytes: &[u8],
-) {
+fn deliver_media(handler: &Option<Arc<Mutex<SendHandler>>>, request_id: u64, bytes: &[u8]) {
     if let Some(h) = handler {
         {
             let g = h.lock();
@@ -452,8 +468,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] format!("media/source/{}", source_label),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/source/{}", source_label),
             );
             let media = client.media();
             tokio::select! {
@@ -513,8 +531,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] format!("media/source/{}", source_label),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/source/{}", source_label),
             );
             let media = client.media();
             let bytes = tokio::select! {
@@ -558,8 +578,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] format!("media/url/{}", url),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/url/{}", url),
             );
             let bytes = tokio::select! {
                 b = download_url(&client, &url, MAX_URL_BYTES) => b,
@@ -569,7 +591,12 @@ impl ClientFfi {
             deliver_media(&handler, request_id, &bytes);
         });
 
-        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+        register_media_task(
+            &self.media_tasks,
+            group_id,
+            request_id,
+            handle.abort_handle(),
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -659,8 +686,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] format!("media/source/{}", source),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/source/{}", source),
             );
             let bytes = tokio::select! {
                 b = download_media(&client, kind, &source, w, h, animated) => b,
@@ -673,7 +702,12 @@ impl ClientFfi {
             deliver_media(&handler, request_id, &bytes);
         });
 
-        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+        register_media_task(
+            &self.media_tasks,
+            group_id,
+            request_id,
+            handle.abort_handle(),
+        );
     }
 
     /// Raise the scheduling priority of still-pending `fetch_media_async` tasks
@@ -770,8 +804,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler_task,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] format!("media/url/{}", url_str),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                format!("media/url/{}", url_str),
             );
             let req = Request::new(url_str);
             let json = tokio::select! {
@@ -788,13 +824,20 @@ impl ClientFfi {
             deliver(&json);
         });
 
-        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+        register_media_task(
+            &self.media_tasks,
+            group_id,
+            request_id,
+            handle.abort_handle(),
+        );
     }
 }
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn fetch_source_bytes(&self, _source: &str) -> Vec<u8> { Vec::new() }
+    pub fn fetch_source_bytes(&self, _source: &str) -> Vec<u8> {
+        Vec::new()
+    }
     pub fn fetch_source_bytes_async(&self, _request_id: u64, _source: &str) {}
 }
 
@@ -806,8 +849,16 @@ mod tests {
     // caught immediately.
     #[test]
     fn cap_constants_have_expected_values() {
-        assert_eq!(MAX_MEDIA_BYTES, 64 * 1024 * 1024, "MAX_MEDIA_BYTES should be 64 MiB");
-        assert_eq!(NOTIF_IMAGE_CAP, 2 * 1024 * 1024, "NOTIF_IMAGE_CAP should be 2 MiB");
+        assert_eq!(
+            MAX_MEDIA_BYTES,
+            64 * 1024 * 1024,
+            "MAX_MEDIA_BYTES should be 64 MiB"
+        );
+        assert_eq!(
+            NOTIF_IMAGE_CAP,
+            2 * 1024 * 1024,
+            "NOTIF_IMAGE_CAP should be 2 MiB"
+        );
         assert!(
             NOTIF_IMAGE_CAP < MAX_MEDIA_BYTES,
             "notification cap should be tighter than the general media cap"

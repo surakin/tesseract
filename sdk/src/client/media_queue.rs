@@ -61,7 +61,9 @@ pub(super) struct MediaQueue<T> {
 
 impl<T> MediaQueue<T> {
     pub(super) fn new() -> Self {
-        Self { heap: BinaryHeap::new() }
+        Self {
+            heap: BinaryHeap::new(),
+        }
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -81,7 +83,13 @@ impl<T> MediaQueue<T> {
         group_id: u64,
         payload: T,
     ) {
-        self.heap.push(Entry { priority, seq, request_id, group_id, payload });
+        self.heap.push(Entry {
+            priority,
+            seq,
+            request_id,
+            group_id,
+            payload,
+        });
     }
 
     /// Remove and return the highest-priority entry, or `None` if empty.
@@ -175,7 +183,11 @@ mod tests {
         q.push(PRIO_NORMAL, 2, 3, 5, 3);
         let bumped = q.prioritize(5, &[3], PRIO_VISIBLE);
         assert_eq!(bumped, 1);
-        assert_eq!(q.pop_highest().unwrap().request_id, 3, "bumped req pops first");
+        assert_eq!(
+            q.pop_highest().unwrap().request_id,
+            3,
+            "bumped req pops first"
+        );
         // Remaining keep FIFO order.
         assert_eq!(q.pop_highest().unwrap().request_id, 1);
         assert_eq!(q.pop_highest().unwrap().request_id, 2);
@@ -211,7 +223,11 @@ mod tests {
         let bumped = q.prioritize(5, &[1, 2], PRIO_VISIBLE);
         assert_eq!(bumped, 1, "only the normal entry is bumped");
         assert_eq!(q.pop_highest().unwrap().request_id, 2, "visible pops first");
-        assert_eq!(q.pop_highest().unwrap().request_id, 1, "backoff stays lowest");
+        assert_eq!(
+            q.pop_highest().unwrap().request_id,
+            1,
+            "backoff stays lowest"
+        );
     }
 
     #[test]

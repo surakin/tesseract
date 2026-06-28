@@ -187,7 +187,10 @@ impl PriorityGate {
             // Fast path: capacity is available and no one is ahead of us in line.
             if inner.queue.is_empty() && inner.can_grant(now) {
                 let id = inner.admit(now);
-                return Some(GatePermit { gate: self.clone(), id });
+                return Some(GatePermit {
+                    gate: self.clone(),
+                    id,
+                });
             }
             let seq = inner.seq;
             inner.seq = inner.seq.wrapping_add(1);
@@ -204,7 +207,10 @@ impl PriorityGate {
         };
         // Park until granted (rx delivers our slot id) or cancelled (rx errors).
         match rx.await {
-            Ok(id) => Some(GatePermit { gate: self.clone(), id }),
+            Ok(id) => Some(GatePermit {
+                gate: self.clone(),
+                id,
+            }),
             Err(_) => None,
         }
     }
@@ -307,11 +313,11 @@ impl Drop for GatePermit {
 
 #[cfg(test)]
 mod tests {
-    use super::{PriorityGate, RECHECK_INTERVAL, STALL_DEADLINE};
     use super::super::media_queue::{PRIO_NORMAL, PRIO_VISIBLE};
-    use std::time::Duration;
+    use super::{PriorityGate, RECHECK_INTERVAL, STALL_DEADLINE};
     use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     use std::sync::Arc;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn release_grants_highest_priority_waiter_first() {
@@ -368,7 +374,10 @@ mod tests {
         }
         // Every download completes far faster than STALL_DEADLINE, so all held
         // slots stay fresh and concurrency never exceeds the base limit.
-        assert!(max_seen.load(SeqCst) <= 2, "never more than 2 fresh slots in use");
+        assert!(
+            max_seen.load(SeqCst) <= 2,
+            "never more than 2 fresh slots in use"
+        );
         assert_eq!(concurrent.load(SeqCst), 0);
         // No slot leaked: fresh acquires still succeed immediately.
         let _a = gate.acquire(PRIO_NORMAL, 100, 1).await.unwrap();
@@ -402,7 +411,10 @@ mod tests {
         // Awaiting the parked waiter lets paused time auto-advance through the
         // recheck ticks until p0 crosses the stall deadline and is demoted.
         let permit = h.await.unwrap();
-        assert!(permit.is_some(), "waiter admitted on the reclaimed stale slot");
+        assert!(
+            permit.is_some(),
+            "waiter admitted on the reclaimed stale slot"
+        );
         assert_eq!(gate.active_len(), 2, "stale p0 + the newly admitted waiter");
     }
 
@@ -446,7 +458,9 @@ mod tests {
         drop(p0);
         assert_eq!(gate.dynamic_limit(), 2, "MD halves limit when >50% stalled");
 
-        drop(p1); drop(p2); drop(p3);
+        drop(p1);
+        drop(p2);
+        drop(p3);
     }
 
     // After MD has lowered dynamic_limit, releasing a slot with no remaining
@@ -490,7 +504,11 @@ mod tests {
         }
         tokio::time::advance(STALL_DEADLINE * 3 + RECHECK_INTERVAL).await;
         tokio::task::yield_now().await;
-        assert_eq!(gate.pending_len(), 1, "ceiling blocks a 3rd concurrent download");
+        assert_eq!(
+            gate.pending_len(),
+            1,
+            "ceiling blocks a 3rd concurrent download"
+        );
         assert_eq!(gate.active_len(), 2);
         drop(h2);
     }
