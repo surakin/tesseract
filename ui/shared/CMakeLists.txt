@@ -285,9 +285,20 @@ if(TESSERACT_ENABLE_CALLS)
         views/ParticipantTile.cpp
         views/CallOverlayWidget.h
         views/CallOverlayWidget.cpp
+        views/ScreenPickerWidget.h
+        views/ScreenPickerWidget.cpp
         app/CallWindowBase.h
         app/CallWindowBase.cpp
+        tk/screen_capture.cpp
+        tk/screen_capture_gst.cpp
     )
+    if(TESSERACT_UI STREQUAL "macos")
+        list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
+        list(APPEND _tk_sources tk/screen_capture_macos.mm)
+    elseif(TESSERACT_UI STREQUAL "win32")
+        list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
+        list(APPEND _tk_sources tk/screen_capture_win32.cpp)
+    endif()
 endif()
 
 add_library(tesseract_tk STATIC ${_tk_sources})
@@ -343,6 +354,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-expand.svg"
     "${_lucide_dir}/lucide-minimize.svg"
     "${_lucide_dir}/lucide-pip.svg"
+    "${_lucide_dir}/lucide-monitor.svg"
 )
 
 add_custom_command(

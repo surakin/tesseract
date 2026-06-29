@@ -29,3 +29,23 @@ msgstr[1] "[{0} available to join]"
 #: ui/shared/views/SpaceRootView.cpp
 msgid "Explore the rooms in this space from the room list."
 msgstr "[Explore the rooms in this space from the room list.]"
+
+#: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/CallOverlayWidget.cpp
+msgid "Share screen"
+msgstr "[Share screen]"
+
+#: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/CallOverlayWidget.cpp
+msgid "Stop sharing"
+msgstr "[Stop sharing]"
+
+#: ui/shared/views/ScreenPickerWidget.cpp
+msgid "Select what to share"
+msgstr "[Select what to share]"
+
+#: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/ParticipantTile.cpp
+msgid "Screen"
+msgstr "[Screen]"
+
+#: ui/shared/views/ScreenPickerWidget.cpp
+msgid "Cancel"
+msgstr "[Cancel]"

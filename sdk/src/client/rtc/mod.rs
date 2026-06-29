@@ -43,6 +43,15 @@ pub trait RtcEventSink: Send + Sync + 'static {
         height: u32,
         rgba: Vec<u8>,
     );
+    /// Decoded RGBA screen share frame from a remote participant (~15fps).
+    fn on_screen_frame(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    );
     /// S16LE 48kHz mono PCM from a remote participant's audio track.
     fn on_audio_frame(
         &self,

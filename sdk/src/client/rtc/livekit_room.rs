@@ -1,4 +1,4 @@
-#![cfg(feature = "calls")]
+﻿#![cfg(feature = "calls")]
 
 //! LiveKit room connection and media track management.
 //!
@@ -44,10 +44,15 @@ pub struct LiveKitRoom {
     audio_publication: LocalTrackPublication,
     video_publication: LocalTrackPublication,
     /// Drop-if-busy flag: prevents queuing more than one pending video frame
-    /// callback at a time (avoids flooding the UI thread at 30fps × N callers).
+    /// callback at a time (avoids flooding the UI thread at 30fps Ã— N callers).
     video_frame_in_flight: Arc<AtomicBool>,
     /// Separate gate for the local self-view loopback.
     local_video_in_flight: Arc<AtomicBool>,
+    /// Screen share source and publication; None until start_screen_share().
+    screen_source: StdMutex<Option<NativeVideoSource>>,
+    screen_publication: StdMutex<Option<LocalTrackPublication>>,
+    /// Separate in-flight gate for screen frames â€” must not share with camera.
+    screen_frame_in_flight: Arc<AtomicBool>,
     local_identity: String,
     sink: Option<Arc<dyn RtcEventSink>>,
     session_id: u64,
@@ -55,7 +60,7 @@ pub struct LiveKitRoom {
     key_provider: KeyProvider,
     /// Monotonic start time used to generate RTP timestamps for video frames.
     call_start: std::time::Instant,
-    /// Pending peer keys keyed by Matrix user_id → key index → raw bytes.
+    /// Pending peer keys keyed by Matrix user_id â†’ key index â†’ raw bytes.
     /// All received indices are stored so frames encrypted before a rotation
     /// can still be decrypted when the participant first appears in LiveKit.
     pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>>,
@@ -91,7 +96,7 @@ impl LiveKitRoom {
             key_ring_size: 16,
             ..KeyProviderOptions::default()
         });
-        // RoomOptions is #[non_exhaustive] in the external crate — must use
+        // RoomOptions is #[non_exhaustive] in the external crate â€” must use
         // Default::default() then field-assign rather than struct literal.
         let mut room_options = RoomOptions::default();
         if use_e2ee {
@@ -107,7 +112,7 @@ impl LiveKitRoom {
         // PlatformAudio gives libwebrtc's AEC3 access to the speaker-output
         // reference, enabling echo cancellation. AudioProcessingOptions::default()
         // enables AEC, NS, and AGC. Capture is handled entirely by the platform
-        // ADM — no manual PCM injection needed.
+        // ADM â€” no manual PCM injection needed.
         let platform_audio =
             PlatformAudio::new().map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
         platform_audio
@@ -169,6 +174,7 @@ impl LiveKitRoom {
                     device_id: local_device_id,
                     is_audio_muted: false,
                     is_video_muted: false,
+                    is_screen_sharing: false,
                 },
             );
         }
@@ -176,6 +182,7 @@ impl LiveKitRoom {
         let local_identity = room.local_participant().identity().as_str().to_owned();
         let video_frame_in_flight = Arc::new(AtomicBool::new(false));
         let local_video_in_flight = Arc::new(AtomicBool::new(false));
+        let screen_frame_in_flight = Arc::new(AtomicBool::new(false));
         let pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>> =
             Arc::new(StdMutex::new(HashMap::new()));
         let event_task = spawn_event_task(
@@ -183,6 +190,7 @@ impl LiveKitRoom {
             events,
             session_id,
             Arc::clone(&video_frame_in_flight),
+            Arc::clone(&screen_frame_in_flight),
             sink.clone(),
             key_provider.clone(),
             Arc::clone(&pending_peer_keys),
@@ -199,6 +207,9 @@ impl LiveKitRoom {
             video_publication,
             video_frame_in_flight,
             local_video_in_flight,
+            screen_source: StdMutex::new(None),
+            screen_publication: StdMutex::new(None),
+            screen_frame_in_flight,
             local_identity,
             sink,
             session_id,
@@ -273,6 +284,85 @@ impl LiveKitRoom {
         }
     }
 
+    /// Publish a new screen share track. Creates the NativeVideoSource and
+    /// LocalTrackPublication with TrackSource::Screenshare and stores them.
+    pub async fn start_screen_share(&self) -> anyhow::Result<()> {
+        let screen_source = NativeVideoSource::new(
+            livekit::webrtc::video_source::VideoResolution {
+                width: 1920,
+                height: 1080,
+            },
+            false,
+        );
+        let screen_track = LocalVideoTrack::create_video_track(
+            "screenshare",
+            RtcVideoSource::Native(screen_source.clone()),
+        );
+        let opts = TrackPublishOptions {
+            simulcast: false,
+            source: TrackSource::Screenshare,
+            ..Default::default()
+        };
+        let pub_ = self
+            .room
+            .local_participant()
+            .publish_track(LocalTrack::Video(screen_track), opts)
+            .await?;
+        *self.screen_source.lock().unwrap() = Some(screen_source);
+        *self.screen_publication.lock().unwrap() = Some(pub_);
+        Ok(())
+    }
+
+    /// Mute and drop the screen share track.
+    pub fn stop_screen_share(&self) {
+        if let Some(ref pub_) = *self.screen_publication.lock().unwrap() {
+            pub_.mute();
+        }
+        *self.screen_source.lock().unwrap() = None;
+        *self.screen_publication.lock().unwrap() = None;
+    }
+
+    /// Inject a raw I420 screen frame. No-op when no screen share is active.
+    pub fn push_screen_frame_i420(
+        &self,
+        y: &[u8],
+        u: &[u8],
+        v: &[u8],
+        width: u32,
+        height: u32,
+        stride_y: u32,
+        stride_u: u32,
+        stride_v: u32,
+    ) {
+        let src_guard = self.screen_source.lock().unwrap();
+        let Some(ref src) = *src_guard else { return };
+        if self
+            .screen_frame_in_flight
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+        let mut buf = I420Buffer::new(width, height);
+        {
+            let (dy, du, dv) = buf.data_mut();
+            copy_plane(y, dy, width as usize, height as usize, stride_y as usize);
+            let h_uv = ((height as usize) + 1) / 2;
+            let w_uv = ((width as usize) + 1) / 2;
+            copy_plane(u, du, w_uv, h_uv, stride_u as usize);
+            copy_plane(v, dv, w_uv, h_uv, stride_v as usize);
+        }
+        let timestamp_us = self.call_start.elapsed().as_micros() as i64;
+        let frame = VideoFrame {
+            rotation: VideoRotation::VideoRotation0,
+            timestamp_us,
+            frame_metadata: None,
+            buffer: buf,
+        };
+        src.capture_frame(&frame);
+        self.screen_frame_in_flight.store(false, Ordering::Release);
+    }
+
     /// The LiveKit participant identity assigned by the JWT service.
     /// Must be used as `member_id` in m.rtc.member and m.rtc.encryption_key
     /// events so other clients can correlate our key with our tracks.
@@ -339,7 +429,7 @@ impl LiveKitRoom {
 /// Copy one I420 plane from a (possibly padded) source into a tightly-packed
 /// destination. `src` has `stride` bytes per row; `dst` has exactly
 /// `width * rows` bytes (no padding). Panics only if `dst` is smaller than
-/// `width * rows` — that invariant is guaranteed by `I420Buffer::new`.
+/// `width * rows` â€” that invariant is guaranteed by `I420Buffer::new`.
 fn copy_plane(src: &[u8], dst: &mut [u8], width: usize, rows: usize, stride: usize) {
     if stride == width {
         // Fast path: already tightly packed.
@@ -363,6 +453,7 @@ fn spawn_event_task(
     mut events: tokio::sync::mpsc::UnboundedReceiver<RoomEvent>,
     session_id: u64,
     video_in_flight: Arc<AtomicBool>,
+    screen_in_flight: Arc<AtomicBool>,
     sink: Option<Arc<dyn RtcEventSink>>,
     key_provider: KeyProvider,
     pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>>,
@@ -409,10 +500,10 @@ fn spawn_event_task(
                     }
                     // TrackSubscribed events for these participants' tracks will
                     // follow asynchronously once WebRTC subscription negotiation
-                    // completes — handled by the TrackSubscribed arm below.
+                    // completes â€” handled by the TrackSubscribed arm below.
                 }
                 RoomEvent::ConnectionStateChanged(state) => {
-                    info!("rtc: connection state → {state:?}");
+                    info!("rtc: connection state â†’ {state:?}");
                 }
                 RoomEvent::LocalTrackPublished { track, .. } => {
                     info!("rtc: local track published: {:?}", track.kind());
@@ -483,11 +574,26 @@ fn spawn_event_task(
                     let pid = participant.identity().as_str().to_owned();
                     match track {
                         RemoteTrack::Video(video_track) => {
+                            // Determine if this is a screen share track by inspecting
+                            // the publication source before the async stream starts.
+                            let is_screen = {
+                                let pubs = participant.track_publications();
+                                pubs.values().any(|p| {
+                                    p.source() == TrackSource::Screenshare
+                                        && p.kind() == TrackKind::Video
+                                        && !p.is_muted()
+                                })
+                            };
                             let sink2 = sink.clone();
-                            let vif = Arc::clone(&video_in_flight);
+                            let vif = if is_screen {
+                                Arc::clone(&screen_in_flight)
+                            } else {
+                                Arc::clone(&video_in_flight)
+                            };
                             let sid = session_id;
                             let pid2 = pid.clone();
                             let rtc = video_track.rtc_track();
+                            let is_scr = is_screen;
                             tokio::spawn(async move {
                                 let mut stream = NativeVideoStream::new(rtc);
                                 while let Some(frame) = stream.next().await {
@@ -507,7 +613,11 @@ fn spawn_event_task(
                                             let buf = frame.buffer.as_ref();
                                             let w = buf.width();
                                             let h = buf.height();
-                                            s.on_video_frame(sid, &pid2, w, h, rgba);
+                                            if is_scr {
+                                                s.on_screen_frame(sid, &pid2, w, h, rgba);
+                                            } else {
+                                                s.on_video_frame(sid, &pid2, w, h, rgba);
+                                            }
                                         }
                                     }
                                     vif.store(false, Ordering::Release);
@@ -563,7 +673,7 @@ fn spawn_event_task(
                     }
                 }
                 RoomEvent::Reconnecting => {
-                    warn!("rtc: livekit reconnecting…");
+                    warn!("rtc: livekit reconnectingâ€¦");
                 }
                 RoomEvent::Reconnected => {
                     info!("rtc: livekit reconnected");
@@ -592,10 +702,13 @@ fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
     let is_video_muted = !pubs
         .values()
         .any(|pub_| pub_.kind() == TrackKind::Video && !pub_.is_muted());
+    let is_screen_sharing = pubs
+        .values()
+        .any(|pub_| pub_.source() == TrackSource::Screenshare && !pub_.is_muted());
     let identity = p.identity().as_str().to_owned();
     // Identity format from the JWT service: "{user_id}:{device_id}" where
     // user_id is a Matrix ID (@localpart:server).  Split at the second ':'
-    // to recover the user_id — the first ':' is inside the Matrix ID itself.
+    // to recover the user_id â€” the first ':' is inside the Matrix ID itself.
     let (user_id, device_id) = split_identity(&identity);
     RtcParticipantInfo {
         participant_id: identity,
@@ -603,6 +716,7 @@ fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
         device_id,
         is_audio_muted,
         is_video_muted,
+        is_screen_sharing,
     }
 }
 
@@ -614,6 +728,9 @@ fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
     let is_video_muted = !pubs
         .values()
         .any(|pub_| pub_.kind() == TrackKind::Video && !pub_.is_muted());
+    let is_screen_sharing = pubs
+        .values()
+        .any(|pub_| pub_.source() == TrackSource::Screenshare && !pub_.is_muted());
     let identity = p.identity().as_str().to_owned();
     let (user_id, device_id) = split_identity(&identity);
     RtcParticipantInfo {
@@ -622,6 +739,7 @@ fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
         device_id,
         is_audio_muted,
         is_video_muted,
+        is_screen_sharing,
     }
 }
 
@@ -661,9 +779,9 @@ fn split_identity(identity: &str) -> (String, String) {
     (identity.to_owned(), String::new())
 }
 
-/// Software I420 → RGBA conversion from raw planes (BT.601 full-range).
+/// Software I420 â†’ RGBA conversion from raw planes (BT.601 full-range).
 /// Used for the local self-view loopback where we have the planes directly.
-/// BT.601 full-range YUV → RGBA using integer fixed-point (1/1024 units).
+/// BT.601 full-range YUV â†’ RGBA using integer fixed-point (1/1024 units).
 /// Avoids per-pixel f32 casts and floating-point multiplies.
 #[inline(always)]
 fn yuv_to_rgba_pixel(y: u8, u: u8, v: u8) -> [u8; 4] {
@@ -704,7 +822,7 @@ fn i420_planes_to_rgba(
     rgba
 }
 
-/// Software I420 → RGBA conversion (BT.601 full-range).
+/// Software I420 â†’ RGBA conversion (BT.601 full-range).
 /// Returns None if the received frame buffer isn't I420 type.
 fn i420_to_rgba(frame: &BoxVideoFrame) -> Option<Vec<u8>> {
     let buf = frame.buffer.as_ref();

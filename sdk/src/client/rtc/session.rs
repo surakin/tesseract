@@ -95,6 +95,35 @@ impl RtcSession {
         self.lk
             .push_video_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
     }
+
+    /// Start publishing a screen share track. Runs asynchronously.
+    pub fn start_screen_share(&self) {
+        let lk = Arc::clone(&self.lk);
+        tokio::spawn(async move {
+            let _ = lk.start_screen_share().await;
+        });
+    }
+
+    /// Stop the screen share track.
+    pub fn stop_screen_share(&self) {
+        self.lk.stop_screen_share();
+    }
+
+    /// Inject a raw I420 screen frame.
+    pub fn push_screen_frame_i420(
+        &self,
+        y: &[u8],
+        u: &[u8],
+        v: &[u8],
+        width: u32,
+        height: u32,
+        stride_y: u32,
+        stride_u: u32,
+        stride_v: u32,
+    ) {
+        self.lk
+            .push_screen_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
+    }
 }
 
 impl Drop for RtcSession {

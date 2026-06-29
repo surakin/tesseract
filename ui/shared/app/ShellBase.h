@@ -21,6 +21,7 @@
 #ifdef TESSERACT_CALLS_ENABLED
 #include <tesseract/call_session.h>
 #include "tk/video_capture.h"
+#include "tk/screen_capture.h"
 #include "app/CallWindowBase.h"
 #include "views/CallOverlayWidget.h"
 #endif
@@ -1957,6 +1958,25 @@ protected:
         std::uint32_t height,
         std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
+    // Screen share frame from a remote participant. Routed to the call overlay
+    // using participant_id + ":screen" as the tile key.
+    virtual void handle_rtc_screen_frame_ui_(
+        std::uint64_t session_id,
+        const std::string& participant_id,
+        std::uint32_t width,
+        std::uint32_t height,
+        std::shared_ptr<std::vector<std::uint8_t>> bgra);
+
+    // Start/stop local screen capture and the LiveKit screen track.
+    void start_screen_share_();
+    void stop_screen_share_();
+
+    // Final step of start_screen_share_(): configures and starts the capture
+    // object with the chosen source, then wires it to the live session.
+    // Called either directly (single source) or from the picker callback.
+    void do_start_screen_share_(const std::string& source_id,
+                                 std::unique_ptr<tk::ScreenCapture> cap);
+
     // Thread-safe entry point for incoming PCM audio from the worker thread.
     // AudioPlayback::push_frame() is documented thread-safe; the mutex protects
     // the call_audio_output_ pointer itself from concurrent reset on teardown.
@@ -1995,6 +2015,7 @@ protected:
 protected:
     std::unique_ptr<CallSession>                call_session_;
     std::unique_ptr<tk::VideoCapture>           call_video_capture_;
+    std::unique_ptr<tk::ScreenCapture>          screen_capture_;
     // Guarded by call_audio_mutex_: accessed by worker threads via
     // push_call_audio_bgnd_() and reset on the UI thread at call teardown.
     std::mutex                                  call_audio_mutex_;

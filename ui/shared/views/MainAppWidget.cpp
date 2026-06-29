@@ -418,6 +418,40 @@ void MainAppWidget::unmount_call_overlay()
         room_view_->on_layout_changed();
 }
 
+void MainAppWidget::mount_screen_picker(
+    std::vector<tk::ScreenSource>    sources,
+    std::function<void(std::string)> on_selected,
+    std::function<void()>            on_cancelled)
+{
+    unmount_screen_picker(); // remove any stale picker first
+
+    auto w = std::make_unique<views::ScreenPickerWidget>(std::move(sources));
+    screen_picker_ = add_child(std::move(w));
+
+    screen_picker_->on_source_selected = [this, cb = std::move(on_selected)](std::string id)
+    {
+        unmount_screen_picker();
+        if (cb) cb(std::move(id));
+    };
+    screen_picker_->on_cancelled = [this, cb = std::move(on_cancelled)]()
+    {
+        unmount_screen_picker();
+        if (cb) cb();
+    };
+
+    if (room_view_ && room_view_->on_layout_changed)
+        room_view_->on_layout_changed();
+}
+
+void MainAppWidget::unmount_screen_picker()
+{
+    if (!screen_picker_) return;
+    remove_child(screen_picker_);
+    screen_picker_ = nullptr;
+    if (room_view_ && room_view_->on_layout_changed)
+        room_view_->on_layout_changed();
+}
+
 views::CallOverlayWidget* MainAppWidget::call_panel_for_room() const
 {
     if (float_call_overlay_)
@@ -702,6 +736,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (forward_picker_) forward_picker_->arrange(ctx, bounds);
     if (camera_widget_) camera_widget_->arrange(ctx, bounds);
 #ifdef TESSERACT_CALLS_ENABLED
+    if (screen_picker_) screen_picker_->arrange(ctx, bounds);
     if (float_call_overlay_)
     {
         const auto [cx, cy] = float_call_overlay_->float_position();
@@ -879,6 +914,12 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
         camera_widget_->paint(ctx);
     }
 #ifdef TESSERACT_CALLS_ENABLED
+    // Screen picker sits above the call overlay so the user can choose what
+    // to share without the overlay getting in the way.
+    if (screen_picker_)
+    {
+        screen_picker_->paint(ctx);
+    }
     if (float_call_overlay_ && float_call_overlay_->visible())
     {
         float_call_overlay_->paint(ctx);

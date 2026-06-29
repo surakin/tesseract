@@ -127,12 +127,17 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
 
         // All backends implement draw_bgra_premult_pixels(); the buffer was
         // pre-converted from RGBA to premultiplied BGRA on the worker thread.
-        // is_self=true mirrors the local camera feed via a native canvas
-        // transform — no per-pixel copy.
+        // is_self=true mirrors the local camera feed — screen share is never mirrored.
+        const bool mirror = state_.is_self && !state_.is_screen_share_tile;
         ctx.canvas.draw_bgra_premult_pixels(
             state_.pending_bgra->data(), state_.pending_w,
-            state_.pending_h, draw_rect, state_.is_self);
+            state_.pending_h, draw_rect, mirror);
         video_rect = draw_rect;
+    }
+    else if (state_.is_screen_share_tile)
+    {
+        // No avatar for screen share tiles; the dark background is sufficient.
+        // video_rect stays as the full media area for badge anchoring.
     }
     else
     {

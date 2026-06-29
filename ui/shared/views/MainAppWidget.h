@@ -38,6 +38,7 @@
 #include "VideoViewerOverlay.h"
 #ifdef TESSERACT_CALLS_ENABLED
 #include "CallOverlayWidget.h"
+#include "ScreenPickerWidget.h"
 #endif
 
 #include "tk/controls.h"
@@ -177,6 +178,20 @@ public:
     // Returns the active CallOverlayWidget in the main room view (Docked /
     // DockedExpanded) or the floating layer (Floating mode), or nullptr.
     views::CallOverlayWidget* call_panel_for_room() const;
+
+    // Show the screen source picker as a full-area modal overlay.
+    // on_selected fires with the chosen source_id; on_cancelled fires if the
+    // user dismisses without choosing. Both callbacks remove the picker.
+    void mount_screen_picker(
+        std::vector<tk::ScreenSource> sources,
+        std::function<void(std::string)> on_selected,
+        std::function<void()>            on_cancelled);
+
+    // Remove the screen picker if currently shown.
+    void unmount_screen_picker();
+
+    // True while the screen picker modal is visible.
+    bool screen_picker_open() const { return screen_picker_ != nullptr; }
 #endif
 
     // Field-rect delegation — called from the shell's layout hook.
@@ -341,6 +356,10 @@ private:
     // when initial_mode == Floating, removed by unmount_call_overlay().
     // nullptr when no floating call is active. Ownership is in children_.
     views::CallOverlayWidget* float_call_overlay_ = nullptr;
+
+    // Screen source picker — shown modally over the full app area while the
+    // user selects what to share. Removed immediately on selection or cancel.
+    views::ScreenPickerWidget* screen_picker_ = nullptr;
 
 #endif
 

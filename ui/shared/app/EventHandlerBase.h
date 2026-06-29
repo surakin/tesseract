@@ -174,6 +174,11 @@ public:
                               std::uint32_t width, std::uint32_t height,
                               const std::uint8_t* rgba,
                               std::size_t rgba_size) override;
+    void on_call_screen_frame(std::uint64_t session_id,
+                               const std::string& participant_id,
+                               std::uint32_t width, std::uint32_t height,
+                               const std::uint8_t* rgba,
+                               std::size_t rgba_size) override;
     void on_call_audio_frame(std::uint64_t session_id,
                               const std::string& participant_id,
                               const std::int16_t* samples,

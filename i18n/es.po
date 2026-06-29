@@ -613,3 +613,23 @@ msgstr "🔒 Cifrado"
 #: ui/shared/views/RoomInfoPanel.cpp
 msgid "🌉 Bridged"
 msgstr "🌉 Con puente"
+
+#: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/CallOverlayWidget.cpp
+msgid "Share screen"
+msgstr "Compartir pantalla"
+
+#: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/CallOverlayWidget.cpp
+msgid "Stop sharing"
+msgstr "Dejar de compartir"
+
+#: ui/shared/views/ScreenPickerWidget.cpp
+msgid "Select what to share"
+msgstr "Seleccionar qué compartir"
+
+#: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/ParticipantTile.cpp
+msgid "Screen"
+msgstr "Pantalla"
+
+#: ui/shared/views/ScreenPickerWidget.cpp
+msgid "Cancel"
+msgstr "Cancelar"

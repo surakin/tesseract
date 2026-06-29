@@ -54,6 +54,15 @@ CallOverlayWidget::CallOverlayWidget()
         if (repaint_requester_) repaint_requester_();
     });
 
+    auto screen = std::make_unique<tk::Button>("", std::function<void()>{},
+                                               tk::Button::Variant::Icon);
+    screen_btn_ = add_child(std::move(screen));
+    screen_btn_->set_on_click([this] {
+        screen_sharing_ = !screen_sharing_;
+        if (on_toggle_screen_share) on_toggle_screen_share(screen_sharing_);
+        if (repaint_requester_) repaint_requester_();
+    });
+
     auto hang = std::make_unique<tk::Button>("", std::function<void()>{},
                                              tk::Button::Variant::Icon);
     hangup_btn_ = add_child(std::move(hang));
@@ -209,6 +218,8 @@ void CallOverlayWidget::update_participants(
     // ── Remove departed participants ───────────────────────────────────────
 
     // Diff incoming list against tile_ids_: remove departed tiles, add new ones.
+    // Screen-share tiles use participant_id + ":screen" as their id; they are
+    // removed when the participant leaves OR stops screen sharing.
     {
         std::vector<ParticipantTile*>       keep;
         std::vector<std::string>            keep_ids;
@@ -220,10 +231,24 @@ void CallOverlayWidget::update_participants(
         for (std::size_t i = 0; i < tiles_.size(); ++i)
         {
             const std::string& id = tile_ids_[i];
-            const bool still_present = std::any_of(ps.begin(), ps.end(),
-                [&](const tesseract::RtcParticipantInfo& p) {
-                    return p.participant_id == id;
-                });
+            const bool is_screen_tile = id.size() > 7 &&
+                id.substr(id.size() - 7) == ":screen";
+            bool still_present = false;
+            if (is_screen_tile)
+            {
+                const std::string base_id = id.substr(0, id.size() - 7);
+                still_present = std::any_of(ps.begin(), ps.end(),
+                    [&](const tesseract::RtcParticipantInfo& p) {
+                        return p.participant_id == base_id && p.is_screen_sharing;
+                    });
+            }
+            else
+            {
+                still_present = std::any_of(ps.begin(), ps.end(),
+                    [&](const tesseract::RtcParticipantInfo& p) {
+                        return p.participant_id == id;
+                    });
+            }
             if (!still_present)
             {
                 remove_child(tiles_[i]);
@@ -241,6 +266,61 @@ void CallOverlayWidget::update_participants(
         tile_states_ = std::move(keep_states);
     }
 
+    // Helper lambda: add one tile (camera or screen-share) for a participant.
+    auto add_tile = [&](const tesseract::RtcParticipantInfo& p,
+                        const std::string& tile_id,
+                        bool is_screen_tile)
+    {
+        auto tile_up = std::make_unique<ParticipantTile>();
+        ParticipantTile* tile = add_child(std::move(tile_up));
+
+        tile->set_repaint_requester(repaint_requester_);
+        if (avatar_provider_)
+            tile->set_avatar_provider(avatar_provider_);
+        tile->on_pin_toggled = [this](const std::string& pid) {
+            if (pinned_participant_ == pid)
+                pinned_participant_.clear();
+            else
+                pinned_participant_ = pid;
+            for (std::size_t i = 0; i < tiles_.size(); ++i)
+                tiles_[i]->set_pinned(pinned_participant_ == tile_ids_[i]);
+            if (relayout_requester_) relayout_requester_();
+            else if (repaint_requester_) repaint_requester_();
+        };
+
+        std::string dname = p.user_id;
+        if (display_name_provider_ && !p.user_id.empty())
+        {
+            const auto n = display_name_provider_(p.user_id);
+            if (!n.empty()) dname = n;
+        }
+        if (dname.empty()) dname = p.participant_id;
+
+        ParticipantTile::State s;
+        s.participant_id     = tile_id;
+        s.user_id            = p.user_id;
+        s.display_name       = dname;
+        s.audio_muted        = p.is_audio_muted;
+        s.video_muted        = p.is_video_muted;
+        s.is_self            = (!local_user_id_.empty() && p.user_id == local_user_id_);
+        s.pinned             = (pinned_participant_ == tile_id);
+        s.is_screen_share_tile = is_screen_tile;
+        tile->set_state(std::move(s));
+
+        tiles_.push_back(tile);
+        tile_ids_.push_back(tile_id);
+        ParticipantTile::State shadow;
+        shadow.participant_id     = tile_id;
+        shadow.user_id            = p.user_id;
+        shadow.display_name       = dname;
+        shadow.audio_muted        = p.is_audio_muted;
+        shadow.video_muted        = p.is_video_muted;
+        shadow.is_self            = s.is_self;
+        shadow.pinned             = s.pinned;
+        shadow.is_screen_share_tile = is_screen_tile;
+        tile_states_.push_back(std::move(shadow));
+    };
+
     // Add new participants and update existing ones.
     for (const auto& p : ps)
     {
@@ -248,58 +328,7 @@ void CallOverlayWidget::update_participants(
                                   p.participant_id);
         if (it == tile_ids_.end())
         {
-            // New participant.
-            auto tile_up = std::make_unique<ParticipantTile>();
-            ParticipantTile* tile = add_child(std::move(tile_up));
-
-            tile->set_repaint_requester(repaint_requester_);
-            if (avatar_provider_)
-                tile->set_avatar_provider(avatar_provider_);
-            tile->on_pin_toggled = [this](const std::string& pid) {
-                if (pinned_participant_ == pid)
-                    pinned_participant_.clear();
-                else
-                    pinned_participant_ = pid;
-                // Sync pinned flag on every tile immediately so the pin icon
-                // recolors in the same frame as the layout change, without
-                // waiting for the next update_participants() call.
-                for (std::size_t i = 0; i < tiles_.size(); ++i)
-                    tiles_[i]->set_pinned(pinned_participant_ == tile_ids_[i]);
-                if (relayout_requester_) relayout_requester_();
-                else if (repaint_requester_) repaint_requester_();
-            };
-
-            // Resolve display name.
-            std::string dname = p.user_id;
-            if (display_name_provider_ && !p.user_id.empty())
-            {
-                const auto n = display_name_provider_(p.user_id);
-                if (!n.empty()) dname = n;
-            }
-            if (dname.empty()) dname = p.participant_id;
-
-            ParticipantTile::State s;
-            s.participant_id = p.participant_id;
-            s.user_id        = p.user_id;
-            s.display_name   = dname;
-            s.audio_muted    = p.is_audio_muted;
-            s.video_muted    = p.is_video_muted;
-            s.is_self        = (!local_user_id_.empty() && p.user_id == local_user_id_);
-            s.pinned         = (pinned_participant_ == p.participant_id);
-            tile->set_state(std::move(s));
-
-            tiles_.push_back(tile);
-            tile_ids_.push_back(p.participant_id);
-            // Mirror non-video fields in tile_states_ to track current metadata.
-            ParticipantTile::State shadow;
-            shadow.participant_id = p.participant_id;
-            shadow.user_id        = p.user_id;
-            shadow.display_name   = dname;
-            shadow.audio_muted    = p.is_audio_muted;
-            shadow.video_muted    = p.is_video_muted;
-            shadow.is_self        = s.is_self;
-            shadow.pinned         = (pinned_participant_ == p.participant_id);
-            tile_states_.push_back(std::move(shadow));
+            add_tile(p, p.participant_id, /*is_screen_tile=*/false);
         }
         else
         {
@@ -317,23 +346,30 @@ void CallOverlayWidget::update_participants(
 
             const bool this_is_self = (!local_user_id_.empty() && p.user_id == local_user_id_);
             ParticipantTile::State s;
-            s.participant_id = p.participant_id;
-            s.user_id        = p.user_id;
-            s.display_name   = dname;
-            s.audio_muted    = p.is_audio_muted;
-            s.video_muted    = p.is_video_muted;
-            s.is_self        = this_is_self;
-            s.pinned         = (pinned_participant_ == p.participant_id);
-            // set_state replaces the entire State (including pending_bgra).
-            // The tile reverts to avatar until the next push_video_frame (~1 frame).
+            s.participant_id     = p.participant_id;
+            s.user_id            = p.user_id;
+            s.display_name       = dname;
+            s.audio_muted        = p.is_audio_muted;
+            s.video_muted        = p.is_video_muted;
+            s.is_self            = this_is_self;
+            s.pinned             = (pinned_participant_ == p.participant_id);
+            s.is_screen_share_tile = false;
             tile->set_state(std::move(s));
-            // Keep shadow in sync for reference by other code.
-            tile_states_[idx].user_id        = p.user_id;
-            tile_states_[idx].display_name   = dname;
-            tile_states_[idx].audio_muted    = p.is_audio_muted;
-            tile_states_[idx].video_muted    = p.is_video_muted;
-            tile_states_[idx].is_self        = this_is_self;
-            tile_states_[idx].pinned         = (pinned_participant_ == p.participant_id);
+            tile_states_[idx].user_id            = p.user_id;
+            tile_states_[idx].display_name       = dname;
+            tile_states_[idx].audio_muted        = p.is_audio_muted;
+            tile_states_[idx].video_muted        = p.is_video_muted;
+            tile_states_[idx].is_self            = this_is_self;
+            tile_states_[idx].pinned             = (pinned_participant_ == p.participant_id);
+        }
+
+        // Add or keep a screen-share tile for this participant when sharing.
+        if (p.is_screen_sharing)
+        {
+            const std::string screen_id = p.participant_id + ":screen";
+            const auto sit = std::find(tile_ids_.begin(), tile_ids_.end(), screen_id);
+            if (sit == tile_ids_.end())
+                add_tile(p, screen_id, /*is_screen_tile=*/true);
         }
     }
 
@@ -354,6 +390,23 @@ void CallOverlayWidget::on_video_frame(const std::string& participant_id,
     // Forward the shared_ptr without copying; push_video_frame() stores it and
     // fires repaint_requester_. No second memcpy on the UI thread.
     tiles_[idx]->push_video_frame(w, h, std::move(bgra));
+}
+
+void CallOverlayWidget::on_screen_frame(const std::string& tile_id,
+                                        std::uint32_t w, std::uint32_t h,
+                                        std::shared_ptr<std::vector<std::uint8_t>> bgra)
+{
+    // tile_id already has ":screen" suffix; delegate to the same path as camera frames.
+    const auto it = std::find(tile_ids_.begin(), tile_ids_.end(), tile_id);
+    if (it == tile_ids_.end()) return;
+    const std::size_t idx = static_cast<std::size_t>(it - tile_ids_.begin());
+    tiles_[idx]->push_video_frame(w, h, std::move(bgra));
+}
+
+void CallOverlayWidget::set_screen_sharing(bool sharing)
+{
+    screen_sharing_ = sharing;
+    if (repaint_requester_) repaint_requester_();
 }
 
 void CallOverlayWidget::set_audio_muted(bool m)
@@ -466,20 +519,32 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     // ── Control buttons ────────────────────────────────────────────────────
-    const int   btn_count = show_video_btn_ ? 3 : 2;
-    const float total_w   = btn_count * kBtnSz + (btn_count - 1) * kBtnGap;
-    const float start_x   = controls_rect_.x + (controls_rect_.w - total_w) * 0.5f;
-    const float btn_y     = controls_rect_.y + (kControlsH - kBtnSz) * 0.5f;
+    // Order: mic | video (opt) | screen-share | hang-up
+    int   btn_count = 2; // mic + hang-up always present
+    if (show_video_btn_) ++btn_count; // video
+    ++btn_count;                      // screen-share always shown
+    const float total_w = btn_count * kBtnSz + (btn_count - 1) * kBtnGap;
+    const float start_x = controls_rect_.x + (controls_rect_.w - total_w) * 0.5f;
+    const float btn_y   = controls_rect_.y + (kControlsH - kBtnSz) * 0.5f;
 
+    float bx = start_x;
     if (mute_btn_)
-        mute_btn_->arrange(ctx, {start_x, btn_y, kBtnSz, kBtnSz});
-    if (video_btn_ && show_video_btn_)
-        video_btn_->arrange(ctx, {start_x + kBtnSz + kBtnGap, btn_y, kBtnSz, kBtnSz});
-    if (hangup_btn_)
     {
-        const float hx = start_x + (btn_count - 1) * (kBtnSz + kBtnGap);
-        hangup_btn_->arrange(ctx, {hx, btn_y, kBtnSz, kBtnSz});
+        mute_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
+        bx += kBtnSz + kBtnGap;
     }
+    if (video_btn_ && show_video_btn_)
+    {
+        video_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
+        bx += kBtnSz + kBtnGap;
+    }
+    if (screen_btn_)
+    {
+        screen_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
+        bx += kBtnSz + kBtnGap;
+    }
+    if (hangup_btn_)
+        hangup_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
 
     // ── Expand + pip buttons (top-right corner) ──────────────────────────────
     // expand_btn_: Docked ↔ DockedExpanded toggle; hidden otherwise.
@@ -582,6 +647,14 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         else
             video_icon_.draw(ctx.canvas, ctx.factory, kVideoSvg,
                              video_btn_->bounds(), kBtnIconPx, kWhite);
+    }
+
+    if (screen_btn_)
+    {
+        screen_btn_->paint(ctx);
+        const tk::Color scr_color = screen_sharing_ ? kMutedRed : kWhite;
+        screen_icon_.draw(ctx.canvas, ctx.factory, kMonitorSvg,
+                          screen_btn_->bounds(), kBtnIconPx, scr_color);
     }
 
     if (hangup_btn_)

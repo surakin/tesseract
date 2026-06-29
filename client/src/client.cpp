@@ -2070,6 +2070,38 @@ void Client::rtc_push_video_frame_i420(const std::uint8_t* y,
         rust::Slice<const std::uint8_t>{v, v_size},
         width, height, stride_y, stride_u, stride_v);
 }
+
+void Client::rtc_start_screen_share()
+{
+    MUT_FFI;
+    (void)impl_->ffi->rtc_start_screen_share();
+}
+
+void Client::rtc_stop_screen_share()
+{
+    MUT_FFI;
+    impl_->ffi->rtc_stop_screen_share();
+}
+
+void Client::rtc_push_screen_frame_i420(const std::uint8_t* y,
+                                         const std::uint8_t* u,
+                                         const std::uint8_t* v,
+                                         std::uint32_t width, std::uint32_t height,
+                                         std::uint32_t stride_y,
+                                         std::uint32_t stride_u,
+                                         std::uint32_t stride_v)
+{
+    if (!y || !u || !v || width == 0 || height == 0) return;
+    const std::uint32_t h_uv   = (height + 1) / 2;
+    const std::size_t   y_size = static_cast<std::size_t>(stride_y) * height;
+    const std::size_t   u_size = static_cast<std::size_t>(stride_u) * h_uv;
+    const std::size_t   v_size = static_cast<std::size_t>(stride_v) * h_uv;
+    impl_->ffi->rtc_push_screen_frame_i420(
+        rust::Slice<const std::uint8_t>{y, y_size},
+        rust::Slice<const std::uint8_t>{u, u_size},
+        rust::Slice<const std::uint8_t>{v, v_size},
+        width, height, stride_y, stride_u, stride_v);
+}
 #endif // TESSERACT_CALLS_ENABLED
 
 } // namespace tesseract

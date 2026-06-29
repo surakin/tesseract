@@ -8124,6 +8124,86 @@ void ShellBase::handle_rtc_video_frame_ui_(
         ov->on_video_frame(participant_id, width, height, std::move(bgra));
 }
 
+void ShellBase::handle_rtc_screen_frame_ui_(
+    std::uint64_t /*session_id*/,
+    const std::string& participant_id,
+    std::uint32_t width,
+    std::uint32_t height,
+    std::shared_ptr<std::vector<std::uint8_t>> bgra)
+{
+    if (auto* ov = active_call_overlay_())
+        ov->on_screen_frame(participant_id + ":screen", width, height, std::move(bgra));
+}
+
+void ShellBase::start_screen_share_()
+{
+    if (!call_session_)
+        return;
+    auto cap = tk::ScreenCapture::create();
+    if (!cap)
+        return;
+    auto sources = cap->enumerate_sources();
+    if (sources.empty())
+        return;
+
+    if (sources.size() == 1)
+    {
+        // Only one source (single monitor, no windows) — skip the picker.
+        do_start_screen_share_(sources[0].id, std::move(cap));
+        return;
+    }
+
+    // Multiple sources: show the picker modal. Transfer cap ownership into the
+    // lambda so it is ready to use immediately when the user selects a source.
+    auto cap_ptr = std::make_shared<std::unique_ptr<tk::ScreenCapture>>(std::move(cap));
+    if (main_app_)
+    {
+        main_app_->mount_screen_picker(
+            sources,
+            [this, cap_ptr](std::string source_id)
+            {
+                if (*cap_ptr)
+                    do_start_screen_share_(source_id, std::move(*cap_ptr));
+            },
+            [this]()
+            {
+                // User cancelled — reset the button state in the overlay.
+                if (auto* ov = active_call_overlay_())
+                    ov->set_screen_sharing(false);
+            });
+    }
+}
+
+void ShellBase::do_start_screen_share_(const std::string& source_id,
+                                        std::unique_ptr<tk::ScreenCapture> cap)
+{
+    cap->set_source(source_id);
+    cap->set_callback([this](const tk::ScreenCapture::Frame& f) {
+        if (client_)
+            client_->rtc_push_screen_frame_i420(
+                f.y, f.u, f.v, f.width, f.height,
+                f.stride_y, f.stride_u, f.stride_v);
+    });
+    cap->start();
+    screen_capture_ = std::move(cap);
+    call_session_->start_screen_share();
+    if (auto* ov = active_call_overlay_())
+        ov->set_screen_sharing(true);
+}
+
+void ShellBase::stop_screen_share_()
+{
+    if (screen_capture_)
+    {
+        screen_capture_->stop();
+        screen_capture_.reset();
+    }
+    if (call_session_)
+        call_session_->stop_screen_share();
+    if (auto* ov = active_call_overlay_())
+        ov->set_screen_sharing(false);
+}
+
 void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
                                        std::size_t sample_count,
                                        std::uint32_t sample_rate,
@@ -8230,6 +8310,11 @@ void ShellBase::end_call()
 #endif
 
     call_video_capture_.reset();
+    if (screen_capture_)
+    {
+        screen_capture_->stop();
+        screen_capture_.reset();
+    }
     // cancel() stops capture without firing on_stopped (which would try to send a voice msg).
     if (capture_ && capture_->is_recording())
         capture_->cancel();
@@ -8471,6 +8556,13 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         ov->on_toggle_video = [this](bool muted)
         {
             if (call_session_) call_session_->mute_video(muted);
+        };
+        ov->on_toggle_screen_share = [this](bool sharing)
+        {
+            if (sharing)
+                start_screen_share_();
+            else
+                stop_screen_share_();
         };
         ov->on_mode_change_requested = [this](views::CallOverlayWidget::Mode nm)
         {

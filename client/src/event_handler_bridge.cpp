@@ -915,6 +915,22 @@ void EventHandlerBridge::on_rtc_video_frame(std::uint64_t session_id,
           });
 }
 
+void EventHandlerBridge::on_rtc_screen_frame(std::uint64_t session_id,
+                                             rust::Str participant_id,
+                                             std::uint32_t width,
+                                             std::uint32_t height,
+                                             rust::Slice<const uint8_t> rgba) const
+{
+    with_handler("on_rtc_screen_frame", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_call_screen_frame(session_id,
+                                              std::string(participant_id),
+                                              width, height,
+                                              rgba.data(), rgba.size());
+          });
+}
+
 void EventHandlerBridge::on_rtc_audio_frame(std::uint64_t session_id,
                                             rust::Str participant_id,
                                             rust::Slice<const int16_t> samples,

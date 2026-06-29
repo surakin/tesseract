@@ -849,6 +849,55 @@ void EventHandlerBase::on_call_video_frame(std::uint64_t session_id,
         });
 }
 
+void EventHandlerBase::on_call_screen_frame(std::uint64_t session_id,
+                                             const std::string& participant_id,
+                                             std::uint32_t width,
+                                             std::uint32_t height,
+                                             const std::uint8_t* rgba,
+                                             std::size_t rgba_size)
+{
+    struct Payload
+    {
+        std::uint64_t session_id;
+        std::string   participant_id;
+        std::uint32_t width;
+        std::uint32_t height;
+        std::shared_ptr<std::vector<std::uint8_t>> bgra;
+    };
+    const std::size_t n_px = static_cast<std::size_t>(width) * height;
+    auto bgra = std::make_shared<std::vector<std::uint8_t>>(rgba_size);
+    const bool opaque = (rgba_size > 0 && rgba[3] == 255);
+    if (opaque)
+    {
+        for (std::size_t i = 0; i < n_px; ++i)
+        {
+            (*bgra)[i * 4 + 0] = rgba[i * 4 + 2]; // B
+            (*bgra)[i * 4 + 1] = rgba[i * 4 + 1]; // G
+            (*bgra)[i * 4 + 2] = rgba[i * 4 + 0]; // R
+            (*bgra)[i * 4 + 3] = 255u;
+        }
+    }
+    else
+    {
+        for (std::size_t i = 0; i < n_px; ++i)
+        {
+            const unsigned a = rgba[i * 4 + 3];
+            (*bgra)[i * 4 + 0] = static_cast<std::uint8_t>((rgba[i*4+2] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 1] = static_cast<std::uint8_t>((rgba[i*4+1] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 2] = static_cast<std::uint8_t>((rgba[i*4+0] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 3] = static_cast<std::uint8_t>(a);
+        }
+    }
+    auto p = std::make_shared<Payload>(
+        Payload{session_id, participant_id, width, height, std::move(bgra)});
+    shell()->post_to_ui_(
+        [shell = shell(), p]()
+        {
+            shell->handle_rtc_screen_frame_ui_(p->session_id, p->participant_id,
+                                               p->width, p->height, p->bgra);
+        });
+}
+
 void EventHandlerBase::on_call_audio_frame(std::uint64_t session_id,
                                             const std::string& /*participant_id*/,
                                             const std::int16_t* samples,

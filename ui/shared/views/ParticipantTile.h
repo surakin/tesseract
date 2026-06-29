@@ -45,6 +45,9 @@ public:
         // The video is horizontally mirrored so it matches a mirror reflection.
         bool is_self = false;
         bool pinned  = false;
+        // True when this tile displays a screen-share track rather than a camera.
+        // Screen tiles: no mirror flip, prefer 16:9 aspect, show "Screen" label.
+        bool is_screen_share_tile = false;
     };
 
     ParticipantTile();

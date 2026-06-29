@@ -29,6 +29,10 @@ public:
     void mute_video(bool muted);
     /// Gracefully leave and release resources (calls rtc_end_call on the client).
     void hang_up();
+    /// Start publishing a screen share track.
+    void start_screen_share();
+    /// Stop the screen share track.
+    void stop_screen_share();
 
     const std::string& room_id() const { return room_id_; }
     const std::string& slot_id() const { return slot_id_; }

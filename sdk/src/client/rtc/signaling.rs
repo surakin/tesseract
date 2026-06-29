@@ -13,6 +13,7 @@ pub struct RtcParticipantInfo {
     pub device_id: String,
     pub is_audio_muted: bool,
     pub is_video_muted: bool,
+    pub is_screen_sharing: bool,
 }
 
 /// Application type for an RTC slot (MSC4196 "m.call").

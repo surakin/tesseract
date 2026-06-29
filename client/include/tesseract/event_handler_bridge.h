@@ -204,6 +204,9 @@ public:
     void on_rtc_video_frame(std::uint64_t session_id, rust::Str participant_id,
                              std::uint32_t width, std::uint32_t height,
                              rust::Slice<const uint8_t> rgba) const;
+    void on_rtc_screen_frame(std::uint64_t session_id, rust::Str participant_id,
+                              std::uint32_t width, std::uint32_t height,
+                              rust::Slice<const uint8_t> rgba) const;
     void on_rtc_audio_frame(std::uint64_t session_id, rust::Str participant_id,
                              rust::Slice<const int16_t> samples,
                              std::uint32_t sample_rate,

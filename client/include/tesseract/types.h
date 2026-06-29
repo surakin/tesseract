@@ -689,8 +689,9 @@ struct RtcParticipantInfo
     std::string participant_id;
     std::string user_id;
     std::string device_id;
-    bool is_audio_muted = false;
-    bool is_video_muted = false;
+    bool is_audio_muted    = false;
+    bool is_video_muted    = false;
+    bool is_screen_sharing = false;
 };
 
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via

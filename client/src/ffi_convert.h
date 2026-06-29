@@ -57,6 +57,7 @@ inline RtcParticipantInfo from_ffi(const tesseract_ffi::RtcParticipantInfo& p)
         std::string(p.device_id),
         p.is_audio_muted,
         p.is_video_muted,
+        p.is_screen_sharing,
     };
 }
 

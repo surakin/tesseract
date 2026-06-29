@@ -414,6 +414,7 @@ pub mod ffi {
         device_id: String,
         is_audio_muted: bool,
         is_video_muted: bool,
+        is_screen_sharing: bool,
     }
 
     /// Result of a GitHub release update check.
@@ -1142,6 +1143,17 @@ pub mod ffi {
         /// Fired per decoded RGBA video frame from a remote participant (~30fps).
         /// `rgba` is `width * height * 4` bytes, row-major.
         fn on_rtc_video_frame(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            participant_id: &str,
+            width: u32,
+            height: u32,
+            rgba: &[u8],
+        );
+
+        /// Fired per decoded RGBA screen share frame from a remote participant (~15fps).
+        /// `rgba` is `width * height * 4` bytes, row-major.
+        fn on_rtc_screen_frame(
             self: &EventHandlerBridge,
             session_id: u64,
             participant_id: &str,
@@ -2488,6 +2500,25 @@ pub mod ffi {
             stride_u: u32,
             stride_v: u32,
         );
+
+        /// Start publishing a local screen share track. No-op when no call is active.
+        fn rtc_start_screen_share(self: &mut ClientFfi) -> OpResult;
+
+        /// Stop the local screen share track. No-op when no call is active.
+        fn rtc_stop_screen_share(self: &mut ClientFfi);
+
+        /// Inject a raw I420 screen frame into the live session. No-op when no call active.
+        fn rtc_push_screen_frame_i420(
+            self: &mut ClientFfi,
+            y: &[u8],
+            u: &[u8],
+            v: &[u8],
+            width: u32,
+            height: u32,
+            stride_y: u32,
+            stride_u: u32,
+            stride_v: u32,
+        );
     }
 }
 
@@ -2588,6 +2619,7 @@ impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
                 device_id: info.device_id,
                 is_audio_muted: info.is_audio_muted,
                 is_video_muted: info.is_video_muted,
+                is_screen_sharing: info.is_screen_sharing,
             },
         );
     }
@@ -2611,6 +2643,7 @@ impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
                 device_id: info.device_id,
                 is_audio_muted: info.is_audio_muted,
                 is_video_muted: info.is_video_muted,
+                is_screen_sharing: info.is_screen_sharing,
             },
         );
     }
@@ -2630,6 +2663,18 @@ impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
     ) {
         let g = self.handler.lock();
         g.on_rtc_video_frame(session_id, participant_id, width, height, &rgba);
+    }
+
+    fn on_screen_frame(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) {
+        let g = self.handler.lock();
+        g.on_rtc_screen_frame(session_id, participant_id, width, height, &rgba);
     }
 
     fn on_audio_frame(

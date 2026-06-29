@@ -37,6 +37,18 @@ void CallSession::hang_up()
     client_->rtc_end_call();
 }
 
+void CallSession::start_screen_share()
+{
+    if (!ended_)
+        client_->rtc_start_screen_share();
+}
+
+void CallSession::stop_screen_share()
+{
+    if (!ended_)
+        client_->rtc_stop_screen_share();
+}
+
 std::vector<RtcParticipantInfo> CallSession::participants() const
 {
     std::lock_guard<std::mutex> lk(mu_);

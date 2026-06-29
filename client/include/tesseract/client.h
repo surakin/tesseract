@@ -1446,6 +1446,23 @@ public:
                                    std::uint32_t stride_y,
                                    std::uint32_t stride_u,
                                    std::uint32_t stride_v);
+
+    /// Start publishing a screen-share track in the active session.
+    /// No-op when no call is active.
+    void rtc_start_screen_share();
+
+    /// Stop the screen-share track. No-op when no call is active or not sharing.
+    void rtc_stop_screen_share();
+
+    /// Push a raw I420 screen frame into the active session's screen track.
+    /// No-op when no call is active or no screen-share track is published.
+    void rtc_push_screen_frame_i420(const std::uint8_t* y,
+                                    const std::uint8_t* u,
+                                    const std::uint8_t* v,
+                                    std::uint32_t width, std::uint32_t height,
+                                    std::uint32_t stride_y,
+                                    std::uint32_t stride_u,
+                                    std::uint32_t stride_v);
 #endif // TESSERACT_CALLS_ENABLED
 
 private:

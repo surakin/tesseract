@@ -83,6 +83,15 @@ public:
                         std::uint32_t w, std::uint32_t h,
                         std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
+    // Deliver a screen-share frame. tile_id must include the ":screen" suffix
+    // (appended by ShellBase::handle_rtc_screen_frame_ui_ before calling here).
+    void on_screen_frame(const std::string& tile_id,
+                         std::uint32_t w, std::uint32_t h,
+                         std::shared_ptr<std::vector<std::uint8_t>> bgra);
+
+    // Reflect local screen-sharing state on the share button icon.
+    void set_screen_sharing(bool sharing);
+
     void set_audio_muted(bool m);
     void set_video_muted(bool m);
 
@@ -105,6 +114,7 @@ public:
     std::function<void()>             on_hang_up;
     std::function<void(bool)>         on_toggle_audio;
     std::function<void(bool)>         on_toggle_video;
+    std::function<void(bool)>         on_toggle_screen_share;
     std::function<void(Mode)>         on_mode_change_requested;
     std::function<void(float, float)> on_float_position_changed;
 
@@ -161,14 +171,16 @@ private:
     float     drag_start_fx_  = 0.0f;
     float     drag_start_fy_  = 0.0f;
 
-    // ── Local mute state ──────────────────────────────────────────────────────
+    // ── Local mute / share state ──────────────────────────────────────────────
     bool audio_muted_      = false;
     bool video_muted_      = false;
     bool show_video_btn_   = true;
+    bool screen_sharing_   = false;
 
     // ── Control buttons (always present, managed by the widget tree) ──────────
     tk::Button* mute_btn_   = nullptr;
     tk::Button* video_btn_  = nullptr;
+    tk::Button* screen_btn_ = nullptr; // Share screen toggle
     tk::Button* hangup_btn_ = nullptr;
     tk::Button* expand_btn_ = nullptr; // Docked ↔ DockedExpanded toggle
     tk::Button* pip_btn_    = nullptr; // Popout (picture-in-picture) window
@@ -182,6 +194,7 @@ private:
     tk::IconCache mic_off_icon_;
     tk::IconCache video_icon_;
     tk::IconCache video_off_icon_;
+    tk::IconCache screen_icon_;   // lucide-monitor (screen share active/inactive)
     tk::IconCache phone_off_icon_;
     tk::IconCache expand_icon_;   // lucide-expand (Docked → DockedExpanded)
     tk::IconCache minimize_icon_; // lucide-minimize (DockedExpanded → Docked)

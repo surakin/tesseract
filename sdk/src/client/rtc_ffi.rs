@@ -110,4 +110,51 @@ impl ClientFfi {
             session.push_video_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
         }
     }
+
+    /// Start publishing a local screen share track. No-op when no call is active.
+    pub fn rtc_start_screen_share(&mut self) -> crate::ffi::OpResult {
+        #[cfg(not(feature = "calls"))]
+        return err("calls feature not enabled in this build");
+
+        #[cfg(feature = "calls")]
+        {
+            let _guard = self.rt.enter();
+            if let Some(session) = &self.active_rtc_call {
+                session.start_screen_share();
+                ok("screen share started")
+            } else {
+                err("no active call")
+            }
+        }
+    }
+
+    /// Stop the local screen share track. No-op when no call is active.
+    pub fn rtc_stop_screen_share(&mut self) {
+        #[cfg(feature = "calls")]
+        {
+            let _guard = self.rt.enter();
+            if let Some(session) = &self.active_rtc_call {
+                session.stop_screen_share();
+            }
+        }
+    }
+
+    /// Inject a raw I420 screen frame into the live session. No-op when no call active.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rtc_push_screen_frame_i420(
+        &mut self,
+        y: &[u8],
+        u: &[u8],
+        v: &[u8],
+        width: u32,
+        height: u32,
+        stride_y: u32,
+        stride_u: u32,
+        stride_v: u32,
+    ) {
+        #[cfg(feature = "calls")]
+        if let Some(session) = &self.active_rtc_call {
+            session.push_screen_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
+        }
+    }
 }
