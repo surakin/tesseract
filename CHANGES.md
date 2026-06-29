@@ -3,6 +3,36 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.10 — 2026-06-29
+
+- fix(verification): device verification now retries `get_verification_request`
+  and `get_verification` lookups with exponential back-off (up to 7 attempts,
+  starting at 50 ms, doubling each attempt) instead of failing on the first
+  miss. Under load the matrix-sdk crypto store can lag behind the sync handler
+  that fires the verification-started callback, causing a single-shot lookup to
+  find nothing and silently drop the request. Presence polling is also bounded
+  to `PRESENCE_POLL_CONCURRENCY = 4` concurrent coroutines to prevent a
+  thundering-herd on sync start.
+
+- fix(message-list): thread chip and action-button hit rectangles are now
+  cleared on every programmatic scroll — `scroll_to_event_id`, wheel, and
+  pointer-drag. A new `clear_scroll_hit_geometry_()` helper resets the hit
+  geometry, hovered-row geometry, `hover_target_`, and `hover_chip_idx_` in one
+  call; previously stale rects caused phantom thread-chip taps and mis-fired
+  action buttons after the timeline scrolled to an event. Covered by a new
+  Catch2 test in `test_tk_message_list_threads`.
+
+- fix(macos): macOS app packages no longer require Homebrew for voice/video.
+  `libopus.dylib` is now copied into `Contents/Frameworks` at `POST_BUILD`;
+  `install_name_tool` rewrites its `LC_ID_DYLIB` and the binary's
+  `LC_LOAD_DYLIB` entry to `@rpath`-relative paths, and
+  `@executable_path/../Frameworks` is added as `BUILD_RPATH`/`INSTALL_RPATH`.
+  The existing `--deep` codesign step covers the bundled dylib automatically.
+  The x86_64 CI packaging job now builds a shared `libopus.dylib` (was a static
+  archive, which `install_name_tool` rejects) and correctly sets
+  `PKG_CONFIG_PATH` and `PKG_CONFIG_ALLOW_CROSS=1` so `audiopus_sys` can locate
+  the source-built library in cross-compile jobs.
+
 ## v0.8.9 — 2026-06-24
 
 - feat(room-list): "Group unread rooms" toggle in Appearance settings (off by
