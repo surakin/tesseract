@@ -25,10 +25,17 @@ RoomInfo unread_room(const std::string& id, std::uint64_t ts,
 
 } // namespace
 
-TEST_CASE("prefetch set: only quiet unread, non-muted, non-current rooms")
+TEST_CASE("prefetch set: all unread non-muted non-current rooms")
 {
     std::vector<RoomInfo> rooms;
-    rooms.push_back(unread_room("!unread:ex.org", 100));
+    rooms.push_back(unread_room("!unread:ex.org", 100)); // quiet unread (Dot)
+
+    RoomInfo notifying;
+    notifying.id = "!notifying:ex.org";
+    notifying.notification_count = 2;
+    notifying.unread_count = 2;
+    notifying.last_activity_ts = 150;
+    rooms.push_back(notifying); // Count → now included
 
     RoomInfo read;
     read.id = "!read:ex.org";
@@ -44,7 +51,12 @@ TEST_CASE("prefetch set: only quiet unread, non-muted, non-current rooms")
 
     auto sel = compute_unread_prefetch_set(rooms, "!open:ex.org", 20);
 
-    REQUIRE(sel.ids == std::vector<std::string>{"!unread:ex.org"});
+    // Both the quiet-unread and the notifying room must be included.
+    REQUIRE(sel.ids.size() == 2);
+    auto has = [&](const std::string& id)
+    { return std::find(sel.ids.begin(), sel.ids.end(), id) != sel.ids.end(); };
+    REQUIRE(has("!unread:ex.org"));
+    REQUIRE(has("!notifying:ex.org"));
 }
 
 TEST_CASE("prefetch set: cap drops the least-recently-active rooms")
@@ -91,6 +103,23 @@ TEST_CASE("prefetch set: fingerprint changes when unread_count grows")
 
     auto sb = compute_unread_prefetch_set(before, "", 20);
     auto sa = compute_unread_prefetch_set(after, "", 20);
+
+    REQUIRE(sb.fingerprint != sa.fingerprint);
+}
+
+TEST_CASE("prefetch set: fingerprint changes when notification_count grows")
+{
+    RoomInfo before;
+    before.id = "!a:ex.org";
+    before.notification_count = 1;
+    before.unread_count = 1;
+    before.last_activity_ts = 100;
+
+    RoomInfo after = before;
+    after.notification_count = 3; // new mention
+
+    auto sb = compute_unread_prefetch_set({before}, "", 20);
+    auto sa = compute_unread_prefetch_set({after}, "", 20);
 
     REQUIRE(sb.fingerprint != sa.fingerprint);
 }
