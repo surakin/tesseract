@@ -85,6 +85,11 @@ public:
     void activateOnStartup();
     void openMatrixLink(const std::string& uri) { open_matrix_link(uri); }
 
+    bool is_main_window_visible_() const override
+    {
+        return isVisible() && !isMinimized();
+    }
+
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
     void keyPressEvent(QKeyEvent* ev) override;
@@ -92,6 +97,7 @@ protected:
     void moveEvent(QMoveEvent* ev) override;
     void closeEvent(QCloseEvent* ev) override;
     void changeEvent(QEvent* ev) override;
+    void showEvent(QShowEvent* ev) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
 
 private slots:
@@ -107,6 +113,7 @@ private slots:
     /// Advances frames in `anim_cache_` and repaints `msgSurface_`
     /// when at least one frame changes.
     void onMessageAnimTick_();
+    void onInflightTick_();
 
     void on_portal_setting_changed_(const QString& ns, const QString& key,
                                     const QDBusVariant& value);
@@ -257,6 +264,9 @@ private:
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
     void repaint_anim_frame_() override;
+    void start_inflight_tick_() override;
+    void stop_inflight_tick_() override;
+    void repaint_inflight_spinner_() override;
     void repaint_pickers_() override;
 
     // Tab management hooks.
@@ -436,6 +446,7 @@ private:
     // Animated inline-media (GIF / WebP / APNG). `tk_anim_timer_` fires at
     // ~60 Hz and calls anim_cache_.advance(); a true return triggers repaint.
     QTimer* tk_anim_timer_ = nullptr;
+    QTimer* tk_inflight_timer_ = nullptr;
     QTimer* presence_tick_timer_ = nullptr;
 
     // ── Slash-command popup ──────────────────────────────────────────────────

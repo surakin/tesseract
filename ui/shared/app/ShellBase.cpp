@@ -5595,10 +5595,24 @@ ShellBase::cached_gif_source_bytes_(const std::string& url) const
     return account_manager_.media_disk_cache().load(gif_src_disk_key_(url));
 }
 
+bool ShellBase::any_window_visible_() const
+{
+    if (is_main_window_visible_()) return true;
+    for (const auto& w : owned_secondary_windows_)
+        if (w && w->is_visible()) return true;
+    return false;
+}
+
 bool ShellBase::tick_anim_()
 {
+    // Stop immediately when every shell window is hidden or minimized.
+    if (!any_window_visible_())
+    {
+        stop_anim_tick_();
+        return false;
+    }
+
     const std::int64_t now = monotonic_ms_();
-    spin_tick_(now);
 
     // Stop once nothing animated is on-screen — entries linger in the cache
     // after scrolling away / switching rooms, so checking emptiness would keep
@@ -5609,14 +5623,13 @@ bool ShellBase::tick_anim_()
     // scheduled display update is never processed until mouse movement.
     const bool spinner_active = room_view_ && room_view_->message_list() &&
                                 room_view_->message_list()->paginating();
-    if (!account_manager_.anim_cache().any_visible() && !inflight_needs_anim_() &&
-        !spinner_active)
+    if (!account_manager_.anim_cache().any_visible() && !spinner_active)
     {
         stop_anim_tick_();
         return false;
     }
     const bool gif_frame = account_manager_.anim_cache().advance(now);
-    if (gif_frame || inflight_needs_anim_())
+    if (gif_frame)
     {
         repaint_anim_frame_();
         // Pop-out windows have their own surfaces (and pickers) the shell's
@@ -5627,6 +5640,18 @@ bool ShellBase::tick_anim_()
                 w->repaint_anim_frame();
         }
     }
+    return true;
+}
+
+bool ShellBase::inflight_tick_()
+{
+    if (!any_window_visible_() || !inflight_needs_anim_())
+    {
+        stop_inflight_tick_();
+        return false;
+    }
+    spin_tick_(monotonic_ms_());
+    repaint_inflight_spinner_();
     return true;
 }
 

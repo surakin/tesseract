@@ -1156,8 +1156,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
             g.valid = true;
             self->save_settings_debounced_();
+            self->start_anim_tick_();   // restart after restore from minimized
         }
         return 0;
+
+    case WM_SHOWWINDOW:
+        if (wParam)   // window being shown (e.g. restored from tray)
+            self->start_anim_tick_();
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_MOVING:
     {
@@ -1420,6 +1426,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             self->on_anim_tick();
             return 0;
         }
+        if (wParam == kInflightTimerId)
+        {
+            self->inflight_tick_();
+            return 0;
+        }
         if (wParam == kScrollDebounceTimerId)
         {
             KillTimer(hwnd, kScrollDebounceTimerId);
@@ -1456,7 +1467,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         if (wParam == kPresenceTickTimerId)
         {
             // Periodic (30 s); auto-reschedules — do not kill.
-            self->notify_presence_tick_();
+            // Skip the sweep while the window is not visible (e.g. minimized).
+            if (IsWindowVisible(hwnd) && !IsIconic(hwnd))
+                self->notify_presence_tick_();
             return 0;
         }
         if (wParam == kSyncStatusDebounceTimerId)
@@ -4053,6 +4066,11 @@ void MainWindow::on_destroy()
         KillTimer(hwnd_, kAnimTimerId);
         anim_timer_running_ = false;
     }
+    if (inflight_timer_running_ && hwnd_)
+    {
+        KillTimer(hwnd_, kInflightTimerId);
+        inflight_timer_running_ = false;
+    }
     // Signal Rust's cancellation channel first so any worker thread
     // currently blocked inside a `block_on(tokio::select! { stop_rx })`
     // FFI call returns immediately.  drain() can then join all threads
@@ -5150,14 +5168,6 @@ void MainWindow::stop_anim_tick_()
 
 void MainWindow::repaint_anim_frame_()
 {
-    if (hStatus_ && inflight_needs_anim_())
-    {
-        const uint32_t phase_enc =
-            static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u;
-        SetPropW(hStatus_, L"TesseractStatusPhase",
-                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(phase_enc)));
-        InvalidateRect(hStatus_, nullptr, FALSE);
-    }
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
         InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
@@ -5426,6 +5436,36 @@ void MainWindow::start_anim_tick_()
     {
         SetTimer(hwnd_, kAnimTimerId, kAnimTimerHz, nullptr);
         anim_timer_running_ = true;
+    }
+}
+
+void MainWindow::start_inflight_tick_()
+{
+    if (!inflight_timer_running_ && hwnd_)
+    {
+        SetTimer(hwnd_, kInflightTimerId, kAnimTimerHz, nullptr);
+        inflight_timer_running_ = true;
+    }
+}
+
+void MainWindow::stop_inflight_tick_()
+{
+    if (inflight_timer_running_ && hwnd_)
+    {
+        KillTimer(hwnd_, kInflightTimerId);
+        inflight_timer_running_ = false;
+    }
+}
+
+void MainWindow::repaint_inflight_spinner_()
+{
+    if (hStatus_)
+    {
+        const uint32_t phase_enc =
+            static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u;
+        SetPropW(hStatus_, L"TesseractStatusPhase",
+                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(phase_enc)));
+        InvalidateRect(hStatus_, nullptr, FALSE);
     }
 }
 

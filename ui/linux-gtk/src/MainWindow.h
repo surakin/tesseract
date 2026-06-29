@@ -88,6 +88,7 @@ private:
     // ── EventHandlerBase UI-thread hook overrides (GTK4) ──────────────────────
     // timeline-reset + message insert/update/remove are now concrete in
     // ShellBase (they drive room_view_ + request_relayout_ directly).
+    bool is_main_window_visible_() const override;
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
@@ -271,6 +272,9 @@ private:
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
     void repaint_anim_frame_() override;
+    void start_inflight_tick_() override;
+    void stop_inflight_tick_() override;
+    void repaint_inflight_spinner_() override;
     void repaint_pickers_() override;
 
     // Tab management hooks.
@@ -317,6 +321,7 @@ private:
     void start_anim_tick_if_needed_();
     void invalidate_anim_consumers_();
     static gboolean on_tk_anim_tick_(gpointer user_data);
+    static gboolean on_tk_inflight_tick_(gpointer user_data);
 
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;
@@ -475,6 +480,7 @@ private:
     std::unique_ptr<GtkSniTrayIcon> tray_;
 
     guint tk_anim_tick_id_ = 0;
+    guint tk_inflight_tick_id_ = 0;
     guint presence_tick_id_ = 0;
 
     guint scroll_debounce_id_ = 0;
