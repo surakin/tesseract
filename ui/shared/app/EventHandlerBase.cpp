@@ -500,12 +500,10 @@ void EventHandlerBase::on_inflight_changed(uint32_t count)
             // delivery is possible in theory but self-corrects on the next
             // callback; a briefly stale spinner is far preferable to a freeze.
             shell->last_inflight_ = n;
-            // Advance the spin phase accumulator to keep it continuous across
-            // speed changes, then ensure the animation ticker is running when
-            // there are enough in-flight requests to show the ring.
-            shell->spin_tick_(shell->monotonic_ms_());
             if (shell->inflight_needs_anim_())
-                shell->start_anim_tick_();
+                shell->start_inflight_tick_();
+            else
+                shell->stop_inflight_tick_();
             shell->on_inflight_ui_();
         });
 }
@@ -518,9 +516,10 @@ void EventHandlerBase::on_inflight_changed_debug(uint32_t count, std::string url
         {
             shell->last_inflight_ = n;
             shell->last_inflight_urls_ = std::move(u);
-            shell->spin_tick_(shell->monotonic_ms_());
             if (shell->inflight_needs_anim_())
-                shell->start_anim_tick_();
+                shell->start_inflight_tick_();
+            else
+                shell->stop_inflight_tick_();
             shell->on_inflight_ui_();
         });
 }

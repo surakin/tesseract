@@ -165,10 +165,21 @@ protected:
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
+    bool is_main_window_visible_() const override
+    {
+        if (!ctrl_) return false;
+        NSWindow* w = ctrl_.window;
+        return w && !w.isMiniaturized &&
+               (w.occlusionState & NSWindowOcclusionStateVisible);
+    }
+
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
     void repaint_anim_frame_() override;
+    void start_inflight_tick_() override;
+    void stop_inflight_tick_() override;
+    void repaint_inflight_spinner_() override;
     void repaint_pickers_() override;
 
     // handle_timeline_reset_ui_ and handle_message_{inserted,updated,removed}_ui_
@@ -394,6 +405,7 @@ public:
     // Misc one-liners
     void init_pool_callbacks();
     bool tick_anim();
+    bool tick_inflight();
     tesseract::Settings::WindowGeometry clamp_to_screens(
         const tesseract::Settings::WindowGeometry& saved,
         int default_w, int default_h);
@@ -743,6 +755,10 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_startAnimTickIfNeeded;
 - (void)_stopAnimTick;
 - (void)_animTick:(NSTimer*)timer;
+- (void)_startInflightTickIfNeeded;
+- (void)_stopInflightTick;
+- (void)_inflightTick:(NSTimer*)timer;
+- (void)_repaintInflightSpinner;
 - (void)_ensureStickerImageAsync:(std::string)url;
 - (void)_ensureEmojiImageAsync:(std::string)url;
 - (void)_applyTheme:(const tk::Theme&)t;
@@ -1542,6 +1558,24 @@ void MacShell::repaint_anim_frame_()
     }
 }
 
+void MacShell::start_inflight_tick_()
+{
+    if (ctrl_)
+        [ctrl_ _startInflightTickIfNeeded];
+}
+
+void MacShell::stop_inflight_tick_()
+{
+    if (ctrl_)
+        [ctrl_ _stopInflightTick];
+}
+
+void MacShell::repaint_inflight_spinner_()
+{
+    if (ctrl_)
+        [ctrl_ _repaintInflightSpinner];
+}
+
 void MacShell::repaint_pickers_()
 {
     if (ctrl_)
@@ -2220,6 +2254,7 @@ void MacShell::set_verification_banner_dismissed(bool b)
     { verification_banner_dismissed_ = b; }
 void MacShell::init_pool_callbacks() { init_pool_callbacks_(); }
 bool MacShell::tick_anim()           { return tick_anim_(); }
+bool MacShell::tick_inflight()        { return inflight_tick_(); }
 tesseract::Settings::WindowGeometry MacShell::clamp_to_screens(
     const tesseract::Settings::WindowGeometry& saved, int default_w, int default_h)
 {
@@ -2403,6 +2438,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     InflightDotView* _inflightDotView;
 
     NSTimer* _animTimer;
+    NSTimer* _inflightTimer;
     NSTimer* _markReadTimer;
     NSTimer* _presenceTickTimer;
 
@@ -5592,6 +5628,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         [_presenceTickTimer invalidate];
         _presenceTickTimer = nil;
     }
+    if (_inflightTimer)
+    {
+        [_inflightTimer invalidate];
+        _inflightTimer = nil;
+    }
 }
 
 - (void)observeValueForKeyPath:(NSString*)keyPath
@@ -7661,6 +7702,19 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     }
 }
 
+- (void)windowDidDeminiaturize:(NSNotification*)notification
+{
+    (void)notification;
+    [self _startAnimTickIfNeeded];
+}
+
+- (void)windowDidChangeOcclusionState:(NSNotification*)notification
+{
+    (void)notification;
+    if (self.window.occlusionState & NSWindowOcclusionStateVisible)
+        [self _startAnimTickIfNeeded];
+}
+
 - (void)handleNotification:(std::string)roomId
                   roomName:(std::string)roomName
                     sender:(std::string)sender
@@ -8368,9 +8422,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
 - (void)_startAnimTickIfNeeded
 {
-    const bool need_anim = !_shell->account_manager_.anim_cache().empty()
-                           || _shell->inflight_needs_anim();
-    if (_animTimer || !need_anim)
+    if (_animTimer || _shell->account_manager_.anim_cache().empty())
     {
         return;
     }
@@ -8387,20 +8439,49 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 - (void)_animTick:(NSTimer*)timer
 {
     if (_shell)
-    {
         _shell->tick_anim();
-        if (_inflightDotView && _shell->inflight_needs_anim())
-        {
-            _inflightDotView.spinPhase = _shell->inflight_info().spin_phase;
-            [_inflightDotView setNeedsDisplay:YES];
-        }
-    }
 }
 
 - (void)_stopAnimTick
 {
     [_animTimer invalidate];
     _animTimer = nil;
+}
+
+- (void)_startInflightTickIfNeeded
+{
+    if (_inflightTimer)
+        return;
+    __weak MainWindowController* weakSelf = self;
+    _inflightTimer =
+        [NSTimer scheduledTimerWithTimeInterval:0.016
+                                        repeats:YES
+                                          block:^(NSTimer* t) {
+                                              [weakSelf _inflightTick:t];
+                                          }];
+    [[NSRunLoop currentRunLoop] addTimer:_inflightTimer
+                                 forMode:NSRunLoopCommonModes];
+}
+
+- (void)_stopInflightTick
+{
+    [_inflightTimer invalidate];
+    _inflightTimer = nil;
+}
+
+- (void)_inflightTick:(NSTimer*)timer
+{
+    if (_shell)
+        _shell->tick_inflight();
+}
+
+- (void)_repaintInflightSpinner
+{
+    if (_inflightDotView && _shell && _shell->inflight_needs_anim())
+    {
+        _inflightDotView.spinPhase = _shell->inflight_info().spin_phase;
+        [_inflightDotView setNeedsDisplay:YES];
+    }
 }
 
 - (void)_ensureStickerImageAsync:(std::string)url

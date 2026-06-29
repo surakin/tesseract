@@ -496,6 +496,7 @@ private:
     // run_async_, pool_ are inherited from tesseract::ShellBase.
 
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
+    static constexpr UINT_PTR kInflightTimerId = 0xA02u;
     static constexpr UINT_PTR kScrollDebounceTimerId = 4;
     static constexpr UINT_PTR kVerifDoneTimerId = 5;
     static constexpr UINT_PTR kMarkReadTimerId = 6;
@@ -503,9 +504,14 @@ private:
     static constexpr UINT_PTR kPresenceTickTimerId = 8;
     static constexpr UINT kAnimTimerHz = 16; // ~60 fps
     bool anim_timer_running_ = false;
+    bool inflight_timer_running_ = false;
     std::string pending_search_text_;
 
     // ShellBase virtual hooks (Win32 implementations).
+    bool is_main_window_visible_() const override
+    {
+        return hwnd_ && IsWindowVisible(hwnd_) && !IsIconic(hwnd_);
+    }
     bool is_room_search_active_() const override
     {
         return !pending_search_text_.empty();
@@ -567,6 +573,9 @@ private:
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
     void repaint_anim_frame_() override;
+    void start_inflight_tick_() override;
+    void stop_inflight_tick_() override;
+    void repaint_inflight_spinner_() override;
     void repaint_pickers_() override;
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;

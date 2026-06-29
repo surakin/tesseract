@@ -88,6 +88,11 @@ public:
     // override to also repaint visible emoji/sticker pickers.
     virtual void repaint_anim_frame();
 
+    // Returns true if this secondary window is currently on-screen (not
+    // minimized, not hidden). Default: true — conservative, so platforms
+    // that do not override never accidentally starve the animation timer.
+    virtual bool is_visible() const { return true; }
+
     // Platform overrides.
     virtual void bring_to_front() = 0;
     virtual void close_window() = 0;

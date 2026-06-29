@@ -2830,6 +2830,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                                             kAttentionNotifId);
                                     }
                                     self->notify_window_active_(active);
+                                    if (active)
+                                        self->start_anim_tick_if_needed_();
                                 }),
                      this);
 
@@ -3889,6 +3891,15 @@ void MainWindow::invalidate_anim_consumers_()
     }
 }
 
+bool MainWindow::is_main_window_visible_() const
+{
+    if (!window_ || !gtk_widget_is_visible(GTK_WIDGET(window_))) return false;
+    auto* surface = gtk_native_get_surface(GTK_NATIVE(window_));
+    if (!surface) return true;  // surface not yet realized — assume visible
+    return !(gdk_toplevel_get_state(GDK_TOPLEVEL(surface)) &
+             GDK_TOPLEVEL_STATE_MINIMIZED);
+}
+
 gboolean MainWindow::on_tk_anim_tick_(gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
@@ -3905,11 +3916,31 @@ void MainWindow::stop_anim_tick_()
     tk_anim_tick_id_ = 0;
 }
 
+gboolean MainWindow::on_tk_inflight_tick_(gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    return self->inflight_tick_() ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
+}
+
+void MainWindow::start_inflight_tick_()
+{
+    if (!tk_inflight_tick_id_)
+        tk_inflight_tick_id_ = g_timeout_add(16, on_tk_inflight_tick_, this);
+}
+
+void MainWindow::stop_inflight_tick_()
+{
+    tk_inflight_tick_id_ = 0;
+}
+
+void MainWindow::repaint_inflight_spinner_()
+{
+    if (inflight_dot_)
+        gtk_widget_queue_draw(inflight_dot_);
+}
+
 void MainWindow::repaint_anim_frame_()
 {
-    if (inflight_dot_ && inflight_needs_anim_())
-        gtk_widget_queue_draw(inflight_dot_);
-
     // GTK4 has no partial-widget invalidation (gtk_widget_queue_draw_area was
     // removed; the render-node model only supports whole-widget queue_draw),
     // so we can't scope the repaint to the animated rects the way Qt6/macOS

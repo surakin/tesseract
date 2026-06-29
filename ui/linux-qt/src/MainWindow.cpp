@@ -2256,6 +2256,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     connect(tk_anim_timer_, &QTimer::timeout, this,
             &MainWindow::onMessageAnimTick_);
 
+    tk_inflight_timer_ = new QTimer(this);
+    tk_inflight_timer_->setInterval(16);
+    connect(tk_inflight_timer_, &QTimer::timeout, this,
+            &MainWindow::onInflightTick_);
+
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
     setupLocalServer_();
 
@@ -2685,6 +2690,17 @@ void MainWindow::changeEvent(QEvent* ev)
         // decay (the periodic tick handles the actual transition).
         notify_window_active_(isActiveWindow());
     }
+    else if (ev->type() == QEvent::WindowStateChange)
+    {
+        if (!isMinimized() && isVisible())
+            start_anim_tick_();
+    }
+}
+
+void MainWindow::showEvent(QShowEvent* ev)
+{
+    QMainWindow::showEvent(ev);
+    start_anim_tick_();
 }
 
 // ---------------------------------------------------------------------------
@@ -3752,13 +3768,34 @@ void MainWindow::stop_anim_tick_()
     }
 }
 
-void MainWindow::repaint_anim_frame_()
+void MainWindow::onInflightTick_()
 {
-    if (inflightDot_ && inflight_needs_anim_())
+    inflight_tick_();
+}
+
+void MainWindow::start_inflight_tick_()
+{
+    if (tk_inflight_timer_ && !tk_inflight_timer_->isActive())
+        tk_inflight_timer_->start();
+}
+
+void MainWindow::stop_inflight_tick_()
+{
+    if (tk_inflight_timer_)
+        tk_inflight_timer_->stop();
+}
+
+void MainWindow::repaint_inflight_spinner_()
+{
+    if (inflightDot_)
     {
         inflightDot_->update_phase(inflight_spin_phase_());
         inflightDot_->update();
     }
+}
+
+void MainWindow::repaint_anim_frame_()
+{
     if (mainAppSurface_)
     {
         mainAppSurface_->update_anim_regions();

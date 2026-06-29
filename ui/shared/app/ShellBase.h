@@ -1624,12 +1624,37 @@ protected:
     {
     }
 
+    // Start the shell's inflight-spinner tick timer if not already running.
+    // Separate from the GIF animation timer so the two concerns are independent.
+    virtual void start_inflight_tick_() {}
+
+    // Stop the inflight-spinner tick timer.
+    virtual void stop_inflight_tick_() {}
+
+    // Repaint only the spinning inflight-dot widget/region. Called by
+    // inflight_tick_() each tick. Default no-op; overridden in each shell.
+    virtual void repaint_inflight_spinner_() {}
+
+    // Returns true if the main application window is currently visible and not
+    // minimized/iconified. Default: true — conservative, so shells that do not
+    // override never accidentally prevent the timer from running.
+    virtual bool is_main_window_visible_() const { return true; }
+
+    // True if any shell-owned window (main or any secondary/pop-out window) is
+    // currently visible. Used by tick_anim_() to gate the animation timer.
+    bool any_window_visible_() const;
+
     // Concrete shared body of every shell's 60 Hz animation timer callback:
     // stop when nothing animated is on-screen, otherwise advance the frames
     // and repaint. Returns false when the timer was stopped (GTK uses this to
     // return G_SOURCE_REMOVE). Each shell's platform timer callback simply
     // calls this.
     bool tick_anim_();
+
+    // Concrete shared body of every shell's inflight-spinner timer callback.
+    // Advances the spin phase and repaints the inflight dot; stops the timer
+    // when the dot is no longer needed or all windows are hidden.
+    bool inflight_tick_();
 
     // Repaint whichever picker surfaces are visible (relayout + invalidate).
     // Default no-op.
