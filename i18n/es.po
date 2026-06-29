@@ -16,63 +16,63 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxQtTrayIcon.cpp:32
+#: ui/linux-qt/src/LinuxQtTrayIcon.cpp:32
 msgid "Show App"
 msgstr "Mostrar aplicación"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/LinuxQtTrayIcon.cpp:33
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3693
+#: ui/linux-qt/src/LinuxQtTrayIcon.cpp:33
+#: ui/linux-qt/src/MainWindow.cpp:3693
 msgid "Quit"
 msgstr "Salir"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:459
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:104
+#: ui/linux-qt/src/MainWindow.cpp:459
+#: ui/linux-qt/src/RoomWindow.cpp:104
 msgid "Copy"
 msgstr "Copiar"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:689
+#: ui/linux-qt/src/MainWindow.cpp:689
 msgid "Send reply failed: %1"
 msgstr "Error al enviar respuesta: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:710
+#: ui/linux-qt/src/MainWindow.cpp:710
 msgid "Edit failed: %1"
 msgstr "Error al editar: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:750
+#: ui/linux-qt/src/MainWindow.cpp:750
 msgid "Image decode failed"
 msgstr "Error al decodificar la imagen"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:771
+#: ui/linux-qt/src/MainWindow.cpp:771
 msgid "Send image failed: %1"
 msgstr "Error al enviar imagen: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:802
+#: ui/linux-qt/src/MainWindow.cpp:802
 msgid "Send video failed: %1"
 msgstr "Error al enviar vídeo: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:828
+#: ui/linux-qt/src/MainWindow.cpp:828
 msgid "Send audio failed: %1"
 msgstr "Error al enviar audio: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:853
+#: ui/linux-qt/src/MainWindow.cpp:853
 msgid "Send file failed: %1"
 msgstr "Error al enviar archivo: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:957
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:54
+#: ui/linux-qt/src/MainWindow.cpp:957
+#: ui/linux-qt/src/RoomWindow.cpp:54
 msgid "Save image"
 msgstr "Guardar imagen"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:959
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:55
+#: ui/linux-qt/src/MainWindow.cpp:959
+#: ui/linux-qt/src/RoomWindow.cpp:55
 msgid "Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)"
 msgstr "Imágenes (*.jpg *.jpeg *.png *.gif *.webp);;Todos los archivos (*.*)"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1015
+#: ui/linux-qt/src/MainWindow.cpp:1015
 msgid "Save file"
 msgstr "Guardar archivo"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1017
+#: ui/linux-qt/src/MainWindow.cpp:1017
 msgid "All files (*.*)"
 msgstr "Todos los archivos (*.*)"
 
@@ -92,505 +92,506 @@ msgstr[1] "{0} disponibles para unirse"
 msgid "Explore the rooms in this space from the room list."
 msgstr "Explora las salas de este espacio desde la lista de salas."
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1084
+#: ui/linux-qt/src/MainWindow.cpp:1084
 msgid "Failed to set topic: %1"
 msgstr "Error al establecer el tema: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1142
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:68
+#: ui/linux-qt/src/MainWindow.cpp:1142
+#: ui/linux-qt/src/RoomWindow.cpp:68
 msgid "Save video"
 msgstr "Guardar vídeo"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1144
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:69
+#: ui/linux-qt/src/MainWindow.cpp:1144
+#: ui/linux-qt/src/RoomWindow.cpp:69
 msgid "Videos (*.mp4 *.webm *.mkv);;All files (*.*)"
 msgstr "Vídeos (*.mp4 *.webm *.mkv);;Todos los archivos (*.*)"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1177
-#: /home/rayden/src/tesseract/ui/linux-qt/src/RoomWindow.cpp:118
+#: ui/linux-qt/src/MainWindow.cpp:1177
+#: ui/linux-qt/src/RoomWindow.cpp:118
 msgid "Message…"
 msgstr "Mensaje…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1466
+#: ui/linux-qt/src/MainWindow.cpp:1466
 msgid "Search rooms…"
 msgstr "Buscar salas…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1632
+#: ui/linux-qt/src/MainWindow.cpp:1632
 msgid "Already in Saved Stickers"
 msgstr "Ya está en pegatinas guardadas"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1633
+#: ui/linux-qt/src/MainWindow.cpp:1633
 msgid "Add to Saved Stickers"
 msgstr "Añadir a pegatinas guardadas"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:1750
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2132
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2241
+#: ui/linux-qt/src/MainWindow.cpp:1750
+#: ui/linux-qt/src/MainWindow.cpp:2132
+#: ui/linux-qt/src/MainWindow.cpp:2241
 msgid "Not logged in"
 msgstr "Sin sesión iniciada"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2136
+#: ui/linux-qt/src/MainWindow.cpp:2136
 msgid "Restoring sessions…"
 msgstr "Restaurando sesiones…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2161
+#: ui/linux-qt/src/MainWindow.cpp:2161
 msgid "Account %1 expired: %2"
 msgstr "Cuenta %1 caducada: %2"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2264
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2473
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3656
+#: ui/linux-qt/src/MainWindow.cpp:2264
+#: ui/linux-qt/src/MainWindow.cpp:2473
+#: ui/linux-qt/src/MainWindow.cpp:3656
 msgid "Connected"
 msgstr "Conectado"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2305
+#: ui/linux-qt/src/MainWindow.cpp:2305
 msgid "Sign-in failed: no user id"
 msgstr "Error al iniciar sesión: sin identificador de usuario"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2316
+#: ui/linux-qt/src/MainWindow.cpp:2316
 msgid "Already signed in as %1"
 msgstr "Ya has iniciado sesión como %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2341
+#: ui/linux-qt/src/MainWindow.cpp:2341
 msgid "Sign-in failed: empty session"
 msgstr "Error al iniciar sesión: sesión vacía"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2370
+#: ui/linux-qt/src/MainWindow.cpp:2370
 msgid "Sign-in failed: couldn't persist matrix store: %1"
 msgstr "Error al iniciar sesión: no se pudo guardar el almacén de Matrix: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2383
+#: ui/linux-qt/src/MainWindow.cpp:2383
 msgid "Sign-in failed: couldn't persist session"
 msgstr "Error al iniciar sesión: no se pudo guardar la sesión"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2399
+#: ui/linux-qt/src/MainWindow.cpp:2399
 msgid "Sign-in failed at restore: %1"
 msgstr "Error al iniciar sesión al restaurar: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2684
+#: ui/linux-qt/src/MainWindow.cpp:2684
 msgid "Subscribe failed: %1"
 msgstr "Error al suscribirse: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2742
+#: ui/linux-qt/src/MainWindow.cpp:2742
 msgid "Jump to Date"
 msgstr "Ir a fecha"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:2775
+#: ui/linux-qt/src/MainWindow.cpp:2775
 msgid "Jump to date failed: %1"
 msgstr "Error al ir a la fecha: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3045
+#: ui/linux-qt/src/MainWindow.cpp:3045
 msgid "Select image"
 msgstr "Seleccionar imagen"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3046
+#: ui/linux-qt/src/MainWindow.cpp:3046
 msgid "Images (*.png *.jpg *.jpeg *.gif *.webp)"
 msgstr "Imágenes (*.png *.jpg *.jpeg *.gif *.webp)"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3618
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3628
+#: ui/linux-qt/src/MainWindow.cpp:3618
+#: ui/linux-qt/src/MainWindow.cpp:3628
 msgid "Syncing rooms…"
 msgstr "Sincronizando salas…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3641
+#: ui/linux-qt/src/MainWindow.cpp:3641
 msgid "Reconnecting…"
 msgstr "Reconectando…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3648
+#: ui/linux-qt/src/MainWindow.cpp:3648
 msgid "Downloading encryption keys (%1)…"
 msgstr "Descargando claves de cifrado (%1)…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3684
+#: ui/linux-qt/src/MainWindow.cpp:3684
 msgid "Add Account…"
 msgstr "Añadir cuenta…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3685
+#: ui/linux-qt/src/MainWindow.cpp:3685
 msgid "Settings…"
 msgstr "Ajustes…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3687
+#: ui/linux-qt/src/MainWindow.cpp:3687
 msgid "Log Out %1"
 msgstr "Cerrar sesión de %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3892
+#: ui/linux-qt/src/MainWindow.cpp:3892
 msgid "Sync error: reconnecting…"
 msgstr "Error de sincronización: reconectando…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3920
+#: ui/linux-qt/src/MainWindow.cpp:3920
 msgid "Reconnecting session…"
 msgstr "Reconectando sesión…"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3932
+#: ui/linux-qt/src/MainWindow.cpp:3932
 msgid "Reconnected"
 msgstr "Reconectado"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3942
+#: ui/linux-qt/src/MainWindow.cpp:3942
 msgid "Session expired; please log in again."
 msgstr "La sesión ha caducado; vuelve a iniciar sesión."
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:3948
+#: ui/linux-qt/src/MainWindow.cpp:3948
 msgid "Sync error: %1"
 msgstr "Error de sincronización: %1"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4159
+#: ui/linux-qt/src/MainWindow.cpp:4159
 msgid "1 request in flight"
 msgstr "1 solicitud en curso"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4160
+#: ui/linux-qt/src/MainWindow.cpp:4160
 msgid "%1 requests in flight"
 msgstr "%1 solicitudes en curso"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4350
+#: ui/linux-qt/src/MainWindow.cpp:4350
 msgid "Add Account"
 msgstr "Añadir cuenta"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4430
+#: ui/linux-qt/src/MainWindow.cpp:4430
 msgid "Signed out"
 msgstr "Sesión cerrada"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/MainWindow.cpp:4439
+#: ui/linux-qt/src/MainWindow.cpp:4439
 msgid "Signed out of %1"
 msgstr "Sesión de %1 cerrada"
 
-#: /home/rayden/src/tesseract/ui/linux-qt/src/StickerPicker.cpp:53
+#: ui/linux-qt/src/StickerPicker.cpp:53
 msgid "Search stickers"
 msgstr "Buscar pegatinas"
 
-#: /home/rayden/src/tesseract/ui/macos/src/MainWindowController.mm:1687
+#: ui/macos/src/MainWindowController.mm:1687
 #, c++-format
 msgid "Log Out {0}"
 msgstr "Cerrar sesión de {0}"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:120
+#: ui/shared/views/ComposeBar.cpp:120
 msgid "Send"
 msgstr "Enviar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1046
+#: ui/shared/views/ComposeBar.cpp:1046
 msgid "Editing message"
 msgstr "Editando mensaje"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ComposeBar.cpp:1100
+#: ui/shared/views/ComposeBar.cpp:1100
 #, c++-format
 msgid "Replying to {0}"
 msgstr "Respondiendo a {0}"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:54
+#: ui/shared/views/JoinRoomView.cpp:54
 msgid "Public"
 msgstr "Pública"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:58
+#: ui/shared/views/JoinRoomView.cpp:58
 msgid "Knock"
 msgstr "Llamar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:62
+#: ui/shared/views/JoinRoomView.cpp:62
 msgid "Restricted"
 msgstr "Restringida"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:66
+#: ui/shared/views/JoinRoomView.cpp:66
 msgid "Knock+Restricted"
 msgstr "Llamar+Restringida"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:70
+#: ui/shared/views/JoinRoomView.cpp:70
 msgid "Invite only"
 msgstr "Solo por invitación"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:74
+#: ui/shared/views/JoinRoomView.cpp:74
 msgid "Private"
 msgstr "Privada"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:76
+#: ui/shared/views/JoinRoomView.cpp:76
 msgid "Unknown"
 msgstr "Desconocida"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:84
+#: ui/shared/views/JoinRoomView.cpp:84
 msgid "Look up"
 msgstr "Buscar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:95
+#: ui/shared/views/JoinRoomView.cpp:95
 msgid "Join"
 msgstr "Unirse"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:113
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:70
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:217
+#: ui/shared/views/JoinRoomView.cpp:113
+#: ui/shared/views/LoginView.cpp:70
+#: ui/shared/views/VerificationBanner.cpp:217
+#: ui/shared/views/ScreenPickerWidget.cpp
 msgid "Cancel"
 msgstr "Cancelar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:191
+#: ui/shared/views/JoinRoomView.cpp:191
 msgid "Looking up room…"
 msgstr "Buscando sala…"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:196
+#: ui/shared/views/JoinRoomView.cpp:196
 msgid "Room not found."
 msgstr "Sala no encontrada."
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:303
+#: ui/shared/views/JoinRoomView.cpp:303
 msgid "Join a Room"
 msgstr "Unirse a una sala"
 
-#: /home/rayden/src/tesseract/ui/shared/views/JoinRoomView.cpp:407
+#: ui/shared/views/JoinRoomView.cpp:407
 #, c++-format
 msgid "{0} member"
 msgid_plural "{0} members"
 msgstr[0] "{0} miembro"
 msgstr[1] "{0} miembros"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:41
+#: ui/shared/views/LoginView.cpp:41
 msgid "Sign in to Matrix"
 msgstr "Iniciar sesión en Matrix"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:45
+#: ui/shared/views/LoginView.cpp:45
 msgid "We'll open your browser to complete sign-in."
 msgstr "Abriremos tu navegador para completar el inicio de sesión."
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:49
+#: ui/shared/views/LoginView.cpp:49
 msgid "Homeserver or Matrix ID"
 msgstr "Servidor de inicio o ID de Matrix"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:65
+#: ui/shared/views/LoginView.cpp:65
 msgid "Sign in"
 msgstr "Iniciar sesión"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:182
+#: ui/shared/views/LoginView.cpp:182
 msgid "Checking…"
 msgstr "Comprobando…"
 
-#: /home/rayden/src/tesseract/ui/shared/views/LoginView.cpp:194
+#: ui/shared/views/LoginView.cpp:194
 msgid "Could not reach this server"
 msgstr "No se pudo conectar con este servidor"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:605
-#: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp:71
+#: ui/shared/views/MessageListView.cpp:605
+#: ui/shared/views/ThreadListView.cpp:71
 msgid "Today"
 msgstr "Hoy"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:617
-#: /home/rayden/src/tesseract/ui/shared/views/ThreadListView.cpp:83
+#: ui/shared/views/MessageListView.cpp:617
+#: ui/shared/views/ThreadListView.cpp:83
 msgid "Yesterday"
 msgstr "Ayer"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1438
+#: ui/shared/views/MessageListView.cpp:1438
 msgid "Retry"
 msgstr "Reintentar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1701
+#: ui/shared/views/MessageListView.cpp:1701
 msgid "New messages"
 msgstr "Mensajes nuevos"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1734
+#: ui/shared/views/MessageListView.cpp:1734
 msgid "Start of conversation"
 msgstr "Inicio de la conversación"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:2089
+#: ui/shared/views/MessageListView.cpp:2089
 msgid "Message deleted"
 msgstr "Mensaje eliminado"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:3005
+#: ui/shared/views/MessageListView.cpp:3005
 msgid "Loading map…"
 msgstr "Cargando mapa…"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6809
+#: ui/shared/views/MessageListView.cpp:6809
 msgid "Reacted with :"
 msgstr "Reaccionó con :"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6818
+#: ui/shared/views/MessageListView.cpp:6818
 msgid "Reacted by:"
 msgstr "Reaccionado por:"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:6822
+#: ui/shared/views/MessageListView.cpp:6822
 msgid "Reacted with "
 msgstr "Reaccionó con "
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:261
+#: ui/shared/views/RoomListView.cpp:261
 #, c++-format
 msgid "Invitations ({0})"
 msgstr "Invitaciones ({0})"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.cpp:266
+#: ui/shared/views/RoomListView.cpp:266
 #, c++-format
 msgid "Inactive ({0})"
 msgstr "Inactivo ({0})"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:22
+#: ui/shared/views/SettingsView.cpp:22
 msgid "← Back"
 msgstr "← Atrás"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:141
+#: ui/shared/views/SettingsView.cpp:141
 msgid "Account"
 msgstr "Cuenta"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:142
+#: ui/shared/views/SettingsView.cpp:142
 msgid "Sessions"
 msgstr "Sesiones"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:143
+#: ui/shared/views/SettingsView.cpp:143
 msgid "Appearance"
 msgstr "Apariencia"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:144
+#: ui/shared/views/SettingsView.cpp:144
 msgid "Notifications"
 msgstr "Notificaciones"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:145
+#: ui/shared/views/SettingsView.cpp:145
 msgid "Media"
 msgstr "Multimedia"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:146
+#: ui/shared/views/SettingsView.cpp:146
 msgid "Privacy"
 msgstr "Privacidad"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:147
+#: ui/shared/views/SettingsView.cpp:147
 msgid "Server"
 msgstr "Servidor"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:148
+#: ui/shared/views/SettingsView.cpp:148
 msgid "Language"
 msgstr "Idioma"
 
-#: /home/rayden/src/tesseract/ui/shared/views/SettingsView.cpp:149
+#: ui/shared/views/SettingsView.cpp:149
 msgid "About"
 msgstr "Acerca de"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:37
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:206
+#: ui/shared/views/VerificationBanner.cpp:37
+#: ui/shared/views/VerificationBanner.cpp:206
 msgid "Verify"
 msgstr "Verificar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:70
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:213
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+#: ui/shared/views/VerificationBanner.cpp:70
+#: ui/shared/views/VerificationBanner.cpp:213
+#: ui/shared/views/IncomingCallBanner.cpp
 msgid "Decline"
 msgstr "Rechazar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:116
+#: ui/shared/views/VerificationBanner.cpp:116
 msgid "Use recovery key"
 msgstr "Usar clave de recuperación"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:169
+#: ui/shared/views/VerificationBanner.cpp:169
 msgid "Verify this device to confirm your identity."
 msgstr "Verifica este dispositivo para confirmar tu identidad."
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:171
+#: ui/shared/views/VerificationBanner.cpp:171
 msgid "Another device wants to verify. Accept to compare emoji."
 msgstr "Otro dispositivo quiere verificar. Acepta para comparar los emoji."
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:173
+#: ui/shared/views/VerificationBanner.cpp:173
 msgid "Waiting for the other device to accept…"
 msgstr "Esperando a que el otro dispositivo acepte…"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:175
+#: ui/shared/views/VerificationBanner.cpp:175
 msgid "Do these emoji match what the other device shows?"
 msgstr "¿Coinciden estos emoji con los que muestra el otro dispositivo?"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:177
+#: ui/shared/views/VerificationBanner.cpp:177
 msgid "Confirming…"
 msgstr "Confirmando…"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:179
+#: ui/shared/views/VerificationBanner.cpp:179
 msgid "Device verified ✓"
 msgstr "Dispositivo verificado ✓"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:182
+#: ui/shared/views/VerificationBanner.cpp:182
 msgid "Verification cancelled."
 msgstr "Verificación cancelada."
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:183
+#: ui/shared/views/VerificationBanner.cpp:183
 #, c++-format
 msgid "Verification cancelled: {0}"
 msgstr "Verificación cancelada: {0}"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:211
+#: ui/shared/views/VerificationBanner.cpp:211
 msgid "Accept"
 msgstr "Aceptar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:221
+#: ui/shared/views/VerificationBanner.cpp:221
 msgid "They Match"
 msgstr "Coinciden"
 
-#: /home/rayden/src/tesseract/ui/shared/views/VerificationBanner.cpp:223
+#: ui/shared/views/VerificationBanner.cpp:223
 msgid "No Match"
 msgstr "No coinciden"
 
-#: /home/rayden/src/tesseract/ui/shared/views/settings/LanguageSection.cpp:17
+#: ui/shared/views/settings/LanguageSection.cpp:17
 msgid "Auto"
 msgstr "Automático"
 
-#: /home/rayden/src/tesseract/ui/shared/views/settings/LanguageSection.cpp:18
+#: ui/shared/views/settings/LanguageSection.cpp:18
 msgid "English"
 msgstr "Inglés"
 
-#: /home/rayden/src/tesseract/ui/shared/views/settings/LanguageSection.cpp:19
+#: ui/shared/views/settings/LanguageSection.cpp:19
 msgid "Spanish"
 msgstr "Español"
 
-#: /home/rayden/src/tesseract/ui/shared/views/settings/LanguageSection.cpp:30
+#: ui/shared/views/settings/LanguageSection.cpp:30
 msgid "Changes take effect after restart."
 msgstr "Los cambios se aplican tras reiniciar."
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp:184
+#: ui/shared/views/RoomView.cpp:184
 msgid "Forward message"
 msgstr "Reenviar mensaje"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:392
+#: ui/shared/views/ForwardRoomPicker.cpp:392
 msgid "Forward"
 msgstr "Reenviar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:391
+#: ui/shared/views/ForwardRoomPicker.cpp:391
 msgid "Forward ({0})"
 msgstr "Reenviar ({0})"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:413
+#: ui/shared/views/ForwardRoomPicker.cpp:413
 msgid "No rooms"
 msgstr "Sin salas"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp:89
+#: ui/shared/views/ForwardRoomPicker.cpp:89
 msgid "Unnamed room"
 msgstr "Sala sin nombre"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+#: ui/shared/views/ForwardRoomPicker.cpp
 msgid "Failed to forward to {0}: {1}"
 msgstr "Error al reenviar a {0}: {1}"
 
-#: /home/rayden/src/tesseract/ui/shared/views/ForwardRoomPicker.cpp
+#: ui/shared/views/ForwardRoomPicker.cpp
 #, c++-format
 msgid "Forwarding to {0} room…"
 msgid_plural "Forwarding to {0} rooms…"
 msgstr[0] "Reenviando a {0} sala…"
 msgstr[1] "Reenviando a {0} salas…"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5042
+#: ui/shared/views/MessageListView.cpp:5042
 msgid "Add reaction"
 msgstr "Añadir reacción"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5043
+#: ui/shared/views/MessageListView.cpp:5043
 msgid "Reply"
 msgstr "Responder"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5044
+#: ui/shared/views/MessageListView.cpp:5044
 msgid "Reply in thread"
 msgstr "Responder en hilo"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5045
+#: ui/shared/views/MessageListView.cpp:5045
 msgid "Edit"
 msgstr "Editar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:5046
+#: ui/shared/views/MessageListView.cpp:5046
 msgid "More"
 msgstr "Más"
 
-#: /home/rayden/src/tesseract/ui/shared/views/RoomListView.h:163
+#: ui/shared/views/RoomListView.h:163
 msgid "Unread"
 msgstr "No leído"
 
-#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:278
+#: ui/shared/views/settings/AppearanceSection.cpp:278
 msgid "Group unread rooms"
 msgstr "Agrupar salas no leídas"
 
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+#: ui/shared/views/IncomingCallBanner.cpp
 msgid "Answer"
 msgstr "Contestar"
 
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
+#: ui/shared/views/IncomingCallBanner.cpp
 msgid "is calling"
 msgstr "está llamando"
 
@@ -629,7 +630,3 @@ msgstr "Seleccionar qué compartir"
 #: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/ParticipantTile.cpp
 msgid "Screen"
 msgstr "Pantalla"
-
-#: ui/shared/views/ScreenPickerWidget.cpp
-msgid "Cancel"
-msgstr "Cancelar"
