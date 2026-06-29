@@ -1,16 +1,16 @@
 // GStreamer screen capture backend for tk::ScreenCapture.
-// Wayland: PipeWire portal via xdg-desktop-portal (pipewiresrc).
-// X11 fallback: ximagesrc.
+// X11 only — captures via ximagesrc.  On Wayland the portal backend
+// (screen_capture_portal.cpp) is used instead; this file is the fallback.
 //
-// Pipeline (resolved at start() based on source_id):
-//   pipewiresrc | ximagesrc ! videoconvert ! video/x-raw,format=I420 ! appsink
+// Pipeline: ximagesrc ! videoconvert ! video/x-raw,format=I420 ! appsink
 //
 // Frames are delivered at ~15 fps on a GStreamer streaming thread.
 #ifdef TESSERACT_CALLS_ENABLED
 #include "screen_capture.h"
+#include "i18n.h"
 
-#include <gst/app/gstappsink.h>
 #include <gst/gst.h>
+#include <gst/app/gstappsink.h>
 
 #include <mutex>
 #include <string>
@@ -26,13 +26,8 @@ public:
 
     std::vector<tk::ScreenSource> enumerate_sources() override
     {
-        std::vector<tk::ScreenSource> sources;
-        // Always offer at least "entire screen" via the portal / ximagesrc.
-        sources.push_back({"screen:0", "Entire Screen", false});
-        // Expose a generic window entry for X11 xid-based selection.
-        if (gst_element_factory_find("ximagesrc"))
-            sources.push_back({"window:", "Select Window", true});
-        return sources;
+        return {{"screen:0", std::string(tk::tr("Entire Screen")), false},
+                {"window:", std::string(tk::tr("Select Window")), true}};
     }
 
     void set_source(const std::string& source_id) override
@@ -58,25 +53,11 @@ public:
             sid = source_id_;
         }
 
-        GError* err = nullptr;
-        const bool have_pipewire = (gst_element_factory_find("pipewiresrc") != nullptr);
-        const bool is_window     = (sid.rfind("window:", 0) == 0);
-
-        gchar* desc = nullptr;
-        if (have_pipewire && !is_window)
-        {
-            desc = g_strdup(
-                "pipewiresrc ! videoconvert ! "
-                "video/x-raw,format=I420,framerate=15/1 ! "
-                "appsink name=ssink emit-signals=true max-buffers=2 drop=true");
-        }
-        else
-        {
-            desc = g_strdup(
-                "ximagesrc name=xsrc use-damage=false ! videoconvert ! "
-                "video/x-raw,format=I420,framerate=15/1 ! "
-                "appsink name=ssink emit-signals=true max-buffers=2 drop=true");
-        }
+        GError* err  = nullptr;
+        gchar*  desc = g_strdup(
+            "ximagesrc name=xsrc use-damage=false ! videoconvert ! "
+            "video/x-raw,format=I420,framerate=15/1 ! "
+            "appsink name=ssink emit-signals=true max-buffers=2 drop=true");
 
         pipeline_ = gst_parse_launch(desc, &err);
         g_free(desc);
@@ -188,13 +169,10 @@ namespace tk
 
 std::unique_ptr<ScreenCapture> make_screen_capture_gst()
 {
-    // Require either pipewiresrc (Wayland) or ximagesrc (X11).
-    GstElementFactory* pw = gst_element_factory_find("pipewiresrc");
     GstElementFactory* xi = gst_element_factory_find("ximagesrc");
-    if (!pw && !xi)
+    if (!xi)
         return nullptr;
-    if (pw) gst_object_unref(pw);
-    if (xi) gst_object_unref(xi);
+    gst_object_unref(xi);
     return std::make_unique<ScreenCaptureGst>();
 }
 

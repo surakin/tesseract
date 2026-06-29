@@ -111,17 +111,21 @@ impl ClientFfi {
         }
     }
 
-    /// Start publishing a local screen share track. No-op when no call is active.
+    /// Start publishing a local screen share track. Blocks until the LiveKit
+    /// SDP round-trip completes so the caller can immediately begin pushing
+    /// frames without racing against a None screen_source.
     pub fn rtc_start_screen_share(&mut self) -> crate::ffi::OpResult {
         #[cfg(not(feature = "calls"))]
         return err("calls feature not enabled in this build");
 
         #[cfg(feature = "calls")]
         {
-            let _guard = self.rt.enter();
+            let handle = self.rt.handle().clone();
             if let Some(session) = &self.active_rtc_call {
-                session.start_screen_share();
-                ok("screen share started")
+                match session.start_screen_share(handle) {
+                    Ok(()) => ok("screen share started"),
+                    Err(e) => err(e.to_string()),
+                }
             } else {
                 err("no active call")
             }

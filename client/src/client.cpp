@@ -2096,6 +2096,7 @@ void Client::rtc_push_screen_frame_i420(const std::uint8_t* y,
     const std::size_t   y_size = static_cast<std::size_t>(stride_y) * height;
     const std::size_t   u_size = static_cast<std::size_t>(stride_u) * h_uv;
     const std::size_t   v_size = static_cast<std::size_t>(stride_v) * h_uv;
+    MUT_FFI;
     impl_->ffi->rtc_push_screen_frame_i420(
         rust::Slice<const std::uint8_t>{y, y_size},
         rust::Slice<const std::uint8_t>{u, u_size},

@@ -8202,6 +8202,11 @@ void ShellBase::start_screen_share_()
 void ShellBase::do_start_screen_share_(const std::string& source_id,
                                         std::unique_ptr<tk::ScreenCapture> cap)
 {
+    // Publish the LiveKit track first (blocks until SDP round-trip completes)
+    // so screen_source is set before the capture callback fires. Starting
+    // capture before publish_track finishes causes all early frames to be
+    // silently dropped inside push_screen_frame_i420 (screen_source == None).
+    call_session_->start_screen_share();
     cap->set_source(source_id);
     cap->set_callback([this](const tk::ScreenCapture::Frame& f) {
         if (client_)
@@ -8211,7 +8216,6 @@ void ShellBase::do_start_screen_share_(const std::string& source_id,
     });
     cap->start();
     screen_capture_ = std::move(cap);
-    call_session_->start_screen_share();
     if (auto* ov = active_call_overlay_())
         ov->set_screen_sharing(true);
 }

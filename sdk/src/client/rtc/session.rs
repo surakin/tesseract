@@ -96,12 +96,17 @@ impl RtcSession {
             .push_video_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
     }
 
-    /// Start publishing a screen share track. Runs asynchronously.
-    pub fn start_screen_share(&self) {
+    /// Publish the screen share track synchronously.
+    /// Spawns a dedicated thread (same pattern as rtc_start_call) so the
+    /// LiveKit SDP round-trip doesn't overflow the caller's stack.
+    pub fn start_screen_share(&self, handle: tokio::runtime::Handle) -> anyhow::Result<()> {
         let lk = Arc::clone(&self.lk);
-        tokio::spawn(async move {
-            let _ = lk.start_screen_share().await;
-        });
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || handle.block_on(lk.start_screen_share()))
+            .map_err(|e| anyhow::anyhow!("failed to spawn screen share thread: {e}"))?
+            .join()
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("screen share thread panicked")))
     }
 
     /// Stop the screen share track.

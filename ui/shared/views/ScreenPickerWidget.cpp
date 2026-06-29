@@ -150,10 +150,14 @@ bool ScreenPickerWidget::on_pointer_down(tk::Point local)
             // destroy `this` (and on_source_selected with it) during the call.
             auto cb = std::move(on_source_selected);
             if (cb) cb(sources_[i].id);
-            return true;
+            // Return false: the callback destroys this widget, so we must not
+            // claim pointer capture — pressed_widget_ in the host would be set
+            // to a dangling pointer and crash on the matching pointer-up.
+            return false;
         }
     }
-    return false;
+    // Eat clicks outside tiles so they don't fall through to the call overlay.
+    return true;
 }
 
 } // namespace tesseract::views

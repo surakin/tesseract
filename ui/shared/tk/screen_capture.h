@@ -67,6 +67,7 @@ public:
 std::unique_ptr<ScreenCapture> make_screen_capture_win32();
 std::unique_ptr<ScreenCapture> make_screen_capture_macos();
 std::unique_ptr<ScreenCapture> make_screen_capture_gst();
+std::unique_ptr<ScreenCapture> make_screen_capture_portal(); // Linux/Wayland via xdg-desktop-portal
 
 } // namespace tk
 #endif // TESSERACT_CALLS_ENABLED

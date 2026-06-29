@@ -298,6 +298,8 @@ if(TESSERACT_ENABLE_CALLS)
     elseif(TESSERACT_UI STREQUAL "win32")
         list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
         list(APPEND _tk_sources tk/screen_capture_win32.cpp)
+    else()
+        list(APPEND _tk_sources tk/screen_capture_portal.cpp)
     endif()
 endif()
 
