@@ -4092,14 +4092,12 @@ void MainWindow::on_destroy()
     if (pending_login_client_)
         pending_login_client_->stop_sync();
 
-    // On Win32 the main thread is an STA (OleInitialize), and some WIC codec
-    // operations inside decode_image_ marshal internally back to the STA via
-    // the message queue.  A plain drain() → join() blocks the STA message
-    // pump, so those WIC calls can never complete → deadlock.
-    // CoWaitForMultipleHandles keeps the STA pump running while we wait,
-    // allowing in-flight WIC decodes to finish.  WorkerPool::~WorkerPool still
-    // calls drain(), but by then every thread is already joined (joinable()
-    // returns false), so it is a no-op.
+    // Stop queued work and join all pool threads. decode_image now creates a
+    // per-call WIC factory in the worker's own MTA apartment, so there is no
+    // longer any COM marshaling back to the STA message queue — a plain join()
+    // is sufficient. WorkerPool::~WorkerPool also calls drain(), but by then
+    // every thread is already joined (joinable() returns false), so it is a
+    // no-op.
     auto com_drain = [](WorkerPool& wp)
     {
         {
@@ -4112,14 +4110,8 @@ void MainWindow::on_destroy()
         wp.cv_.notify_all();
         for (auto& t : wp.threads_)
         {
-            if (!t.joinable())
-                continue;
-            HANDLE h      = t.native_handle();
-            DWORD  ignored = 0;
-            CoWaitForMultipleHandles(
-                COWAIT_DISPATCH_CALLS | COWAIT_DISPATCH_WINDOW_MESSAGES,
-                INFINITE, 1, &h, &ignored);
-            t.join();
+            if (t.joinable())
+                t.join();
         }
     };
     com_drain(pool_);
