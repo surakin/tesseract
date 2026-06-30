@@ -1147,6 +1147,22 @@ public:
         }
     }
 
+    bool on_key_down(const KeyEvent& event)
+    {
+        fire_user_activity_();
+        if (popup_ && popup_->dispatch_key_down(event))
+        {
+            request_repaint();
+            return true;
+        }
+        if (root_ && root_->dispatch_key_down(event))
+        {
+            request_repaint();
+            return true;
+        }
+        return false;
+    }
+
     void detach_surface()
     {
         surface_ = nullptr;
@@ -1183,6 +1199,7 @@ Surface::Surface(const Theme& theme, QWidget* parent, bool transparent)
         setAttribute(Qt::WA_OpaquePaintEvent, true);
     }
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
 }
 
 Surface::~Surface()
@@ -1273,6 +1290,71 @@ bool drop_is_acceptable(const QMimeData* md)
     return md->hasImage();
 }
 
+Key key_from_qt(int key)
+{
+    switch (key)
+    {
+    case Qt::Key_Escape: return Key::Escape;
+    case Qt::Key_Return:
+    case Qt::Key_Enter: return Key::Enter;
+    case Qt::Key_Space: return Key::Space;
+    case Qt::Key_Tab: return Key::Tab;
+    case Qt::Key_Backtab: return Key::Backtab;
+    case Qt::Key_Up: return Key::Up;
+    case Qt::Key_Down: return Key::Down;
+    case Qt::Key_Left: return Key::Left;
+    case Qt::Key_Right: return Key::Right;
+    case Qt::Key_Home: return Key::Home;
+    case Qt::Key_End: return Key::End;
+    case Qt::Key_PageUp: return Key::PageUp;
+    case Qt::Key_PageDown: return Key::PageDown;
+    case Qt::Key_Backspace: return Key::Backspace;
+    case Qt::Key_Delete: return Key::Delete;
+    default: return Key::Unknown;
+    }
+}
+
+std::string character_text_from_qt(QKeyEvent* e)
+{
+    const QString text = e->text();
+    if (!text.isEmpty() && text.front().isPrint())
+    {
+        return text.toStdString();
+    }
+
+    const int key = e->key();
+    if (key >= Qt::Key_A && key <= Qt::Key_Z)
+    {
+        const char base = (e->modifiers() & Qt::ShiftModifier) ? 'A' : 'a';
+        return std::string(1, static_cast<char>(base + key - Qt::Key_A));
+    }
+    if (key >= Qt::Key_0 && key <= Qt::Key_9)
+    {
+        return std::string(1, static_cast<char>('0' + key - Qt::Key_0));
+    }
+    return {};
+}
+
+KeyEvent translate_key_event(QKeyEvent* e)
+{
+    KeyEvent out{};
+    out.key = key_from_qt(e->key());
+    out.ctrl = e->modifiers() & Qt::ControlModifier;
+    out.shift = e->modifiers() & Qt::ShiftModifier;
+    out.alt = e->modifiers() & Qt::AltModifier;
+    out.meta = e->modifiers() & Qt::MetaModifier;
+    out.repeat = e->isAutoRepeat();
+    if (out.key == Key::Unknown)
+    {
+        out.text = character_text_from_qt(e);
+        if (!out.text.empty())
+        {
+            out.key = Key::Character;
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 void Surface::paintEvent(QPaintEvent* ev)
@@ -1328,6 +1410,7 @@ void Surface::resizeEvent(QResizeEvent*)
 
 void Surface::mousePressEvent(QMouseEvent* e)
 {
+    setFocus(Qt::MouseFocusReason);
     tk::Point pt{static_cast<float>(e->position().x()),
                  static_cast<float>(e->position().y())};
     if (e->button() == Qt::LeftButton)
@@ -1365,6 +1448,17 @@ void Surface::mouseMoveEvent(QMouseEvent* e)
     host_->on_pointer_move({static_cast<float>(e->position().x()),
                             static_cast<float>(e->position().y())});
     QWidget::mouseMoveEvent(e);
+}
+
+void Surface::keyPressEvent(QKeyEvent* e)
+{
+    KeyEvent event = translate_key_event(e);
+    if (event.key != Key::Unknown && host_->on_key_down(event))
+    {
+        e->accept();
+        return;
+    }
+    QWidget::keyPressEvent(e);
 }
 
 void Surface::wheelEvent(QWheelEvent* e)

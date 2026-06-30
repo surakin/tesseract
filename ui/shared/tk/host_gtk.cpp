@@ -1544,6 +1544,22 @@ public:
         }
     }
 
+    bool on_key_down(const KeyEvent& event)
+    {
+        fire_user_activity_();
+        if (popup_ && popup_->dispatch_key_down(event))
+        {
+            request_repaint();
+            return true;
+        }
+        if (root_ && root_->dispatch_key_down(event))
+        {
+            request_repaint();
+            return true;
+        }
+        return false;
+    }
+
     void cache_pointer_pos(double x, double y)
     {
         last_pointer_x_ = x;
@@ -1654,6 +1670,80 @@ gboolean scroll_cb(GtkEventControllerScroll*, double dx, double dy, gpointer p)
     return TRUE;
 }
 
+Key key_from_gdk(guint keyval)
+{
+    switch (keyval)
+    {
+    case GDK_KEY_Escape: return Key::Escape;
+    case GDK_KEY_Return:
+    case GDK_KEY_KP_Enter:
+    case GDK_KEY_ISO_Enter: return Key::Enter;
+    case GDK_KEY_space: return Key::Space;
+    case GDK_KEY_Tab: return Key::Tab;
+    case GDK_KEY_ISO_Left_Tab: return Key::Backtab;
+    case GDK_KEY_Up: return Key::Up;
+    case GDK_KEY_Down: return Key::Down;
+    case GDK_KEY_Left: return Key::Left;
+    case GDK_KEY_Right: return Key::Right;
+    case GDK_KEY_Home: return Key::Home;
+    case GDK_KEY_End: return Key::End;
+    case GDK_KEY_Page_Up: return Key::PageUp;
+    case GDK_KEY_Page_Down: return Key::PageDown;
+    case GDK_KEY_BackSpace: return Key::Backspace;
+    case GDK_KEY_Delete: return Key::Delete;
+    default: return Key::Unknown;
+    }
+}
+
+std::string character_text_from_gdk(guint keyval)
+{
+    gunichar ch = gdk_keyval_to_unicode(keyval);
+    if (ch == 0 || !g_unichar_isprint(ch))
+    {
+        return {};
+    }
+
+    char buf[7]{};
+    int len = g_unichar_to_utf8(ch, buf);
+    return len > 0 ? std::string(buf, static_cast<std::size_t>(len))
+                   : std::string{};
+}
+
+KeyEvent translate_key_event(guint keyval, GdkModifierType state)
+{
+    KeyEvent out{};
+    out.key = key_from_gdk(keyval);
+    out.ctrl = state & GDK_CONTROL_MASK;
+    out.shift = state & GDK_SHIFT_MASK;
+    out.alt = state & GDK_ALT_MASK;
+    out.meta = state & GDK_META_MASK;
+    if (out.key == Key::Unknown)
+    {
+        out.text = character_text_from_gdk(keyval);
+        if (!out.text.empty())
+        {
+            out.key = Key::Character;
+        }
+    }
+    return out;
+}
+
+gboolean key_pressed_cb(GtkEventControllerKey*, guint keyval, guint,
+                        GdkModifierType state, gpointer p)
+{
+    Host* host = static_cast<Host*>(p);
+    if (!host)
+    {
+        return FALSE;
+    }
+    KeyEvent event = translate_key_event(keyval, state);
+    if (event.key == Key::Unknown)
+    {
+        return FALSE;
+    }
+    return host->on_key_down(event) ? TRUE : FALSE;
+}
+
 // GtkDropTarget "drop" signal. Receives a GValue holding either a
 // GdkFileList (multi-file drag from Nautilus) or a single GFile (URI
 // drag from Firefox etc.). Iterates over every dropped file; the shell
@@ -1722,6 +1812,7 @@ Surface::Surface(const Theme& theme, bool transparent)
     GtkWidget* drawing_area = gtk_drawing_area_new();
     gtk_widget_set_hexpand(drawing_area, TRUE);
     gtk_widget_set_vexpand(drawing_area, TRUE);
+    gtk_widget_set_focusable(drawing_area, TRUE);
     gtk_overlay_set_child(GTK_OVERLAY(overlay), drawing_area);
 
     host_ = std::make_unique<Host>(overlay, drawing_area, theme, transparent);
@@ -1763,6 +1854,12 @@ Surface::Surface(const Theme& theme, bool transparent)
             GTK_EVENT_CONTROLLER_SCROLL_DISCRETE));
     g_signal_connect(scroll, "scroll", G_CALLBACK(&scroll_cb), host_.get());
     gtk_widget_add_controller(drawing_area, scroll);
+
+    GtkEventController* key = gtk_event_controller_key_new();
+    gtk_event_controller_set_propagation_phase(key, GTK_PHASE_BUBBLE);
+    g_signal_connect(key, "key-pressed", G_CALLBACK(&key_pressed_cb),
+                     host_.get());
+    gtk_widget_add_controller(drawing_area, key);
 
     // Drop target — accepts both single-file (Firefox URI) and
     // multi-file (Nautilus) drags. The drop callback hands the first

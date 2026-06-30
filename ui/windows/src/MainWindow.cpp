@@ -1200,23 +1200,57 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // show_user_context_menu_ (no PostMessageW).
         if (LOWORD(wParam) == IDC_QUICK_SWITCH)
         {
-            self->open_quick_switch_();
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Character;
+                event.text = "k";
+                event.ctrl = true;
+                self->main_app_->dispatch_key_down(event);
+            }
         }
         if (LOWORD(wParam) == IDC_MESSAGE_SEARCH)
         {
-            self->open_message_search_();
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Character;
+                event.text = "f";
+                event.ctrl = true;
+                event.shift = true;
+                self->main_app_->dispatch_key_down(event);
+            }
         }
         if (LOWORD(wParam) == IDC_FIND_IN_ROOM)
         {
-            self->open_find_in_room_();
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Character;
+                event.text = "f";
+                event.ctrl = true;
+                self->main_app_->dispatch_key_down(event);
+            }
         }
         if (LOWORD(wParam) == IDC_NAV_BACK)
         {
-            self->navigate_history_back();
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Left;
+                event.alt = true;
+                self->main_app_->dispatch_key_down(event);
+            }
         }
         if (LOWORD(wParam) == IDC_NAV_FWD)
         {
-            self->navigate_history_forward();
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Right;
+                event.alt = true;
+                self->main_app_->dispatch_key_down(event);
+            }
         }
         return 0;
 
@@ -1375,39 +1409,39 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE)
         {
-            // Quick switcher is the topmost modal — close it first.
-            if (self->main_app_ && self->main_app_->quick_switcher() &&
-                self->main_app_->quick_switcher()->is_open())
+            const bool had_quick_switch = self->main_app_ &&
+                self->main_app_->quick_switcher() &&
+                self->main_app_->quick_switcher()->is_open();
+            const bool had_message_search = self->main_app_ &&
+                self->main_app_->message_search() &&
+                self->main_app_->message_search()->is_open();
+            const bool had_room_search = self->main_app_ &&
+                self->main_app_->room_view() &&
+                self->main_app_->room_view()->room_search_open();
+            if (self->main_app_ &&
+                self->main_app_->dispatch_key_down({tk::Key::Escape}))
             {
-                self->close_quick_switch_();
-                return 0;
-            }
-            if (self->main_app_ && self->main_app_->message_search() &&
-                self->main_app_->message_search()->is_open())
-            {
-                self->close_message_search_();
-                return 0;
-            }
-            if (self->vid_viewer_ && self->vid_viewer_->is_open())
-            {
-                self->vid_viewer_->close();
-                return 0;
-            }
-            if (self->img_viewer_ && self->img_viewer_->is_open())
-            {
-                self->img_viewer_->close();
-                return 0;
-            }
-            if (self->main_app_ && self->main_app_->room_view() &&
-                self->main_app_->room_view()->room_search_open())
-            {
-                self->close_find_in_room_();
+                if (had_quick_switch)
+                    self->close_quick_switch_();
+                else if (had_message_search)
+                    self->close_message_search_();
+                else if (had_room_search)
+                    self->close_find_in_room_();
+                else if (self->main_app_surface_)
+                    self->main_app_surface_->relayout();
                 return 0;
             }
         }
         if (wParam == 'K' && (GetKeyState(VK_CONTROL) & 0x8000))
         {
-            self->open_quick_switch_();
+            if (self->main_app_)
+            {
+                tk::KeyEvent event{};
+                event.key = tk::Key::Character;
+                event.text = "k";
+                event.ctrl = true;
+                self->main_app_->dispatch_key_down(event);
+            }
             return 0;
         }
         if (wParam == 'C' && (GetKeyState(VK_CONTROL) & 0x8000))
@@ -1729,6 +1763,13 @@ void MainWindow::on_create(HWND hwnd)
         {
             on_space_back();
         };
+        main_app_->on_quick_switch_shortcut = [this] { open_quick_switch_(); };
+        main_app_->on_message_search_shortcut =
+            [this] { open_message_search_(); };
+        main_app_->on_find_in_room_shortcut = [this] { open_find_in_room_(); };
+        main_app_->on_history_back_shortcut = [this] { navigate_history_back(); };
+        main_app_->on_history_forward_shortcut =
+            [this] { navigate_history_forward(); };
 
         tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
@@ -3601,17 +3642,43 @@ void MainWindow::on_create(HWND hwnd)
                                   (main_app_ && main_app_->camera_overlay_open()) ||
                                   (main_app_ && main_app_->screen_picker_open());
 
-                // Compose text area. Hidden while a viewer is open or while
-                // voice recording is active (rect is empty in that case).
+                const auto overlays = main_app_->native_overlays();
+                auto compact_rect = [](tk::Rect r)
+                {
+                    r.x += 2;
+                    r.y += 2;
+                    r.w -= 4;
+                    r.h -= 4;
+                    return r;
+                };
+                auto apply_field = [&overlays, compact_rect](
+                    tk::NativeOverlayId id,
+                    const std::unique_ptr<tk::NativeTextField>& field,
+                    bool force_hidden = false,
+                    bool compact = false)
+                {
+                    if (!field)
+                        return;
+                    const auto* entry = overlays.find(id);
+                    const bool visible = entry && entry->visible && !force_hidden;
+                    field->set_visible(visible);
+                    if (visible)
+                    {
+                        field->set_rect(compact ? compact_rect(entry->rect)
+                                                : entry->rect);
+                    }
+                };
+
                 if (room_text_area_)
                 {
-                    const tk::Rect ta = main_app_->compose_text_area_rect();
-                    const bool show_ta = !hide && !ta.empty();
+                    const auto* entry =
+                        overlays.find(tk::NativeOverlayId::ComposeTextArea);
+                    const bool show_ta = entry && entry->visible && !hide;
                     const bool was_visible = room_text_area_->visible();
                     room_text_area_->set_visible(show_ta);
                     if (show_ta)
                     {
-                        room_text_area_->set_rect(ta);
+                        room_text_area_->set_rect(entry->rect);
                         if (!was_visible && focus_compose_on_show_)
                         {
                             room_text_area_->set_focused(true);
@@ -3638,119 +3705,22 @@ void MainWindow::on_create(HWND hwnd)
                     }
                 }
 
-                // Room search field.
-                if (room_search_field_)
-                {
-                    bool srch = !hide && main_app_->room_search_field_visible();
-                    room_search_field_->set_visible(srch);
-                    if (srch)
-                    {
-                        tk::Rect r = main_app_->room_search_field_rect();
-                        r.x += 2;
-                        r.y += 2;
-                        r.w -= 4;
-                        r.h -= 4;
-                        room_search_field_->set_rect(r);
-                    }
-                }
-
-                // Quick switcher search field — the switcher IS the topmost
-                // modal, so it is NOT gated on `hide`; its own visibility query
-                // already keys off the switcher's open state.
-                if (quick_switch_field_)
-                {
-                    bool vis = main_app_->quick_switch_field_visible();
-                    quick_switch_field_->set_visible(vis);
-                    if (vis)
-                    {
-                        tk::Rect r = main_app_->quick_switch_field_rect();
-                        r.x += 2;
-                        r.y += 2;
-                        r.w -= 4;
-                        r.h -= 4;
-                        quick_switch_field_->set_rect(r);
-                    }
-                }
-
-                // Message search field — same topmost-modal treatment as the
-                // quick switcher (not gated on `hide`).
-                if (message_search_field_)
-                {
-                    bool vis = main_app_->message_search_field_visible();
-                    message_search_field_->set_visible(vis);
-                    if (vis)
-                    {
-                        tk::Rect r = main_app_->message_search_field_rect();
-                        r.x += 2;
-                        r.y += 2;
-                        r.w -= 4;
-                        r.h -= 4;
-                        message_search_field_->set_rect(r);
-                    }
-                }
-
-                if (forward_picker_field_)
-                {
-                    bool vis = main_app_->forward_picker_field_visible();
-                    forward_picker_field_->set_visible(vis);
-                    if (vis)
-                    {
-                        tk::Rect r = main_app_->forward_picker_field_rect();
-                        r.x += 2;
-                        r.y += 2;
-                        r.w -= 4;
-                        r.h -= 4;
-                        forward_picker_field_->set_rect(r);
-                    }
-                }
-
-                // Per-room find-in-conversation field (Ctrl+F).
-                if (find_in_room_field_)
-                {
-                    bool vis = main_app_->in_room_search_field_visible();
-                    find_in_room_field_->set_visible(vis);
-                    if (vis)
-                    {
-                        tk::Rect r = main_app_->in_room_search_field_rect();
-                        r.x += 2;
-                        r.y += 2;
-                        r.w -= 4;
-                        r.h -= 4;
-                        find_in_room_field_->set_rect(r);
-                    }
-                }
-
-                // Encryption setup passphrase field.
-                if (enc_passphrase_field_)
-                {
-                    bool vis = !hide &&
-                               main_app_->encryption_setup_passphrase_field_visible();
-                    enc_passphrase_field_->set_visible(vis);
-                    if (vis)
-                        enc_passphrase_field_->set_rect(
-                            main_app_->encryption_setup_passphrase_field_rect());
-                }
-
-                // Encryption setup key-display field.
-                if (enc_key_field_)
-                {
-                    bool vis = !hide &&
-                               main_app_->encryption_setup_key_field_visible();
-                    enc_key_field_->set_visible(vis);
-                    if (vis)
-                        enc_key_field_->set_rect(
-                            main_app_->encryption_setup_key_field_rect());
-                }
-
-                // QR grant check-code input field.
-                if (qr_check_code_field_)
-                {
-                    bool vis = main_app_->qr_grant_check_code_field_visible();
-                    qr_check_code_field_->set_visible(vis);
-                    if (vis)
-                        qr_check_code_field_->set_rect(
-                            main_app_->qr_grant_check_code_field_rect());
-                }
+                apply_field(tk::NativeOverlayId::RoomSearchField,
+                            room_search_field_, hide, true);
+                apply_field(tk::NativeOverlayId::QuickSwitchField,
+                            quick_switch_field_, false, true);
+                apply_field(tk::NativeOverlayId::MessageSearchField,
+                            message_search_field_, false, true);
+                apply_field(tk::NativeOverlayId::ForwardPickerField,
+                            forward_picker_field_, false, true);
+                apply_field(tk::NativeOverlayId::FindInRoomField,
+                            find_in_room_field_, false, true);
+                apply_field(tk::NativeOverlayId::EncryptionPassphraseField,
+                            enc_passphrase_field_, hide);
+                apply_field(tk::NativeOverlayId::EncryptionKeyField,
+                            enc_key_field_, hide);
+                apply_field(tk::NativeOverlayId::QrGrantCheckCodeField,
+                            qr_check_code_field_);
             });
     }
 
@@ -4115,7 +4085,12 @@ void MainWindow::on_destroy()
         {
             if (!t.joinable())
                 continue;
-            HANDLE h      = t.native_handle();
+            HANDLE h =
+#ifdef __MINGW32__
+                reinterpret_cast<HANDLE>(t.native_handle());
+#else
+                t.native_handle();
+#endif
             DWORD  ignored = 0;
             CoWaitForMultipleHandles(
                 COWAIT_DISPATCH_CALLS | COWAIT_DISPATCH_WINDOW_MESSAGES,

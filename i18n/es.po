@@ -532,6 +532,18 @@ msgstr "Los cambios se aplican tras reiniciar."
 msgid "Forward message"
 msgstr "Reenviar mensaje"
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
+msgid "Delete message"
+msgstr "Eliminar mensaje"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
+msgid "Unpin message"
+msgstr "Desfijar mensaje"
+
+#: /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp
+msgid "Pin message"
+msgstr "Fijar mensaje"
+
 #: ui/shared/views/ForwardRoomPicker.cpp:392
 msgid "Forward"
 msgstr "Reenviar"

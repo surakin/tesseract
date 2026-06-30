@@ -26,17 +26,16 @@ struct UnreadPrefetchSet
 };
 
 // Select the rooms to one-shot prefetch from the current room list:
-//   - quiet unread only — `unread_style_for(...) == UnreadStyle::Dot`, the same
-//     notion the room list renders (unread, not muted, and NOT already notifying;
-//     notifying rooms reach the user through other channels and are out of scope)
+//   - all unread rooms — `unread_style_for(...) != UnreadStyle::None`, covering
+//     quiet (Dot), notifying (Count), and mention (Mention) rooms, excluding muted
 //   - exclude the currently-open room (already subscribed / warm)
 //   - sort most-recently-active first (LRU), then cap at `cap`
 //
-// The fingerprint XOR-combines each surviving (id, unread_count) pair — mirroring
-// the codebase's known_users_room_set_hash_ idiom. It is order-independent (a
-// pure reorder among the capped set does NOT re-fire) but mixes unread_count in,
-// so new messages arriving in an already-prefetched room (a higher unread_count)
-// DO re-fire the warm-up. An empty set yields fingerprint 0.
+// The fingerprint XOR-combines each surviving (id, notification_count, unread_count)
+// triple — mirroring the codebase's known_users_room_set_hash_ idiom. It is
+// order-independent (a pure reorder among the capped set does NOT re-fire) but
+// mixes in both counts so new messages or a new mention in an already-prefetched
+// room DO re-fire the warm-up. An empty set yields fingerprint 0.
 inline UnreadPrefetchSet
 compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
                            const std::string&           current_room_id,
@@ -49,8 +48,8 @@ compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
         if (r.id == current_room_id)
             continue;
         if (views::unread_style_for(r.notification_count, r.highlight_count,
-                                    r.unread_count, r.muted) !=
-            views::UnreadStyle::Dot)
+                                    r.unread_count, r.muted) ==
+            views::UnreadStyle::None)
             continue;
         unread.push_back(&r);
     }
@@ -70,8 +69,10 @@ compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
     out.ids.reserve(unread.size());
     for (const auto* r : unread)
     {
-        std::size_t h = tk::hash_combine(std::hash<std::string>{}(r->id),
-                                         std::hash<std::uint64_t>{}(r->unread_count));
+        std::size_t h = tk::hash_combine(
+            tk::hash_combine(std::hash<std::string>{}(r->id),
+                             std::hash<std::uint64_t>{}(r->notification_count)),
+            std::hash<std::uint64_t>{}(r->unread_count));
         out.fingerprint ^= h;
         out.ids.push_back(r->id);
     }

@@ -49,3 +49,19 @@ msgstr "[Screen]"
 #: ui/shared/views/ScreenPickerWidget.cpp
 msgid "Cancel"
 msgstr "[Cancel]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Forward message"
+msgstr "[Forward message]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Delete message"
+msgstr "[Delete message]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Unpin message"
+msgstr "[Unpin message]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Pin message"
+msgstr "[Pin message]"

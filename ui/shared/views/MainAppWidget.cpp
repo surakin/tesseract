@@ -3,12 +3,14 @@
 #include "icons.h"
 #include "media_utils.h"
 #include "tk/i18n.h"
+#include "tk/layout.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <tesseract/visual.h>
 
 #include <algorithm>
+#include <cctype>
 #include <memory>
 
 namespace tesseract::views
@@ -22,110 +24,610 @@ bool point_in_rect(tk::Point p, tk::Rect r)
     return p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
 }
 
+bool shortcut_char(const tk::KeyEvent& event, char ch)
+{
+    if (event.key != tk::Key::Character || event.text.size() != 1)
+        return false;
+    return static_cast<char>(std::tolower(
+               static_cast<unsigned char>(event.text.front()))) == ch;
+}
+
+bool primary_shortcut(const tk::KeyEvent& event)
+{
+    return (event.ctrl || event.meta) && !event.alt;
+}
+
 } // namespace
+
+class MainAppWidget::SpaceNavWidget : public tk::Widget
+{
+public:
+    SpaceNavWidget()
+    {
+        auto back = std::make_unique<tk::Button>(
+            "",
+            [this]
+            {
+                if (on_back)
+                    on_back();
+            },
+            tk::Button::Variant::Icon);
+        back_btn_ = add_child(std::move(back));
+
+        auto name = std::make_unique<tk::Label>("", tk::FontRole::Body);
+        name_lbl_ = add_child(std::move(name));
+        name_lbl_->set_halign(tk::TextHAlign::Leading);
+        name_lbl_->set_trim(tk::TextTrim::Ellipsis);
+    }
+
+    std::function<void()> on_back;
+    std::function<void()> on_header;
+
+    void set_avatar_provider(
+        std::function<const tk::Image*(const std::string&)> provider)
+    {
+        avatar_provider_ = std::move(provider);
+    }
+
+    void set_space(std::string_view name, std::string_view avatar_url)
+    {
+        space_name_ = std::string(name);
+        avatar_url_ = std::string(avatar_url);
+        if (name_lbl_)
+            name_lbl_->set_text(space_name_);
+    }
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return {constraints.w, kHeight};
+    }
+
+    void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
+    {
+        bounds_ = bounds;
+        const float btn_y = bounds.y + (kHeight - 24.0f) / 2.0f;
+        if (back_btn_)
+            back_btn_->arrange(ctx, {bounds.x + kPad, btn_y, kBtnW, 24.0f});
+
+        constexpr float kNameH = 18.0f;
+        const float name_x = bounds.x + kPad + kBtnW + kPad + kAvatarSize + kPad;
+        const float name_w = std::max(0.0f, bounds.x + bounds.w - name_x - kPad);
+        if (name_lbl_)
+        {
+            name_lbl_->arrange(ctx,
+                               {name_x, bounds.y + (kHeight - kNameH) * 0.5f,
+                                name_w, kNameH});
+        }
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        const auto& pal = ctx.theme.palette;
+        ctx.canvas.fill_rect(bounds_, pal.chrome_bg);
+
+        if (name_lbl_)
+            name_lbl_->paint(ctx);
+
+        const tk::Point avatar_centre{
+            bounds_.x + kPad + kBtnW + kPad + kAvatarSize * 0.5f,
+            bounds_.y + kHeight * 0.5f};
+        const bool has_provider = avatar_provider_ && !avatar_url_.empty();
+        const tk::Image* space_img =
+            has_provider ? avatar_provider_(avatar_url_) : nullptr;
+        if (has_provider || !space_name_.empty())
+        {
+            draw_avatar(ctx.canvas, space_img, avatar_centre, kAvatarSize,
+                        space_name_, pal.avatar_initials_bg,
+                        pal.avatar_initials_text);
+        }
+
+        if (back_btn_)
+        {
+            back_btn_->paint(ctx);
+            back_icon_.draw(ctx.canvas, ctx.factory, kArrowLeftSvg,
+                            back_btn_->bounds(), kNavIconPx,
+                            pal.text_primary);
+        }
+    }
+
+    bool on_pointer_down(tk::Point local) override
+    {
+        if (!on_header)
+            return false;
+        if (point_in_rect({bounds_.x + local.x, bounds_.y + local.y},
+                          header_rect_()))
+        {
+            header_pressed_ = true;
+            return true;
+        }
+        return false;
+    }
+
+    void on_pointer_up(tk::Point local, bool inside_self) override
+    {
+        const bool was_pressed = header_pressed_;
+        header_pressed_ = false;
+        if (!was_pressed || !inside_self || !on_header)
+            return;
+
+        if (point_in_rect({bounds_.x + local.x, bounds_.y + local.y},
+                          header_rect_()))
+        {
+            on_header();
+        }
+    }
+
+private:
+    tk::Rect header_rect_() const
+    {
+        return {bounds_.x + kPad + kBtnW,
+                bounds_.y,
+                std::max(0.0f, bounds_.w - kPad - kBtnW),
+                kHeight};
+    }
+
+    static constexpr float kHeight = MainAppWidget::kSpaceNavH;
+    static constexpr float kBtnW = 32.0f;
+    static constexpr float kPad = 4.0f;
+    static constexpr float kAvatarSize = MainAppWidget::kNavAvatarSize;
+    static constexpr float kNavIconPx = 16.0f;
+
+    tk::Button* back_btn_ = nullptr;
+    tk::Label* name_lbl_ = nullptr;
+    tk::IconCache back_icon_;
+    bool header_pressed_ = false;
+    std::string space_name_;
+    std::string avatar_url_;
+    std::function<const tk::Image*(const std::string&)> avatar_provider_;
+};
+
+class MainAppWidget::SidebarWidget : public tk::Widget
+{
+public:
+    SidebarWidget()
+    {
+        auto nav = std::make_unique<SpaceNavWidget>();
+        space_nav_ = add_child(std::move(nav));
+        space_nav_->set_visible(false);
+
+        auto rlv = std::make_unique<RoomListView>();
+        room_list_view_ = add_child(std::move(rlv));
+
+        auto ui = std::make_unique<UserInfo>();
+        user_info_ = add_child(std::move(ui));
+    }
+
+    SpaceNavWidget* space_nav() const { return space_nav_; }
+    RoomListView* room_list_view() const { return room_list_view_; }
+    UserInfo* user_info() const { return user_info_; }
+
+    void set_space_nav(bool show, std::string_view space_name,
+                       std::string_view avatar_url)
+    {
+        space_nav_visible_ = show;
+        if (space_nav_)
+        {
+            space_nav_->set_visible(show);
+            space_nav_->set_space(show ? space_name : std::string_view{},
+                                  show ? avatar_url : std::string_view{});
+        }
+    }
+
+    void set_avatar_provider(
+        std::function<const tk::Image*(const std::string&)> provider)
+    {
+        if (space_nav_)
+            space_nav_->set_avatar_provider(std::move(provider));
+    }
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return {kSidebarW, constraints.h};
+    }
+
+    void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
+    {
+        bounds_ = bounds;
+
+        float content_y = bounds.y;
+        if (space_nav_visible_ && space_nav_)
+        {
+            space_nav_->arrange(ctx, {bounds.x, bounds.y, bounds.w, kSpaceNavH});
+            content_y = bounds.y + kSpaceNavH;
+        }
+
+        const float user_strip_y = bounds.y + bounds.h - kUserStripH;
+        if (user_info_)
+            user_info_->arrange(ctx, {bounds.x, user_strip_y, bounds.w, kUserStripH});
+
+        if (room_list_view_)
+        {
+            room_list_view_->arrange(ctx,
+                                     {bounds.x, content_y, bounds.w,
+                                      std::max(0.0f, user_strip_y - content_y)});
+        }
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        const auto& pal = ctx.theme.palette;
+        ctx.canvas.fill_rect(bounds_, pal.sidebar_bg);
+
+        const float strip_y = bounds_.y + bounds_.h - kUserStripH;
+        ctx.canvas.fill_rect({bounds_.x, strip_y, bounds_.w, kUserStripH},
+                             pal.sidebar_bg);
+        ctx.canvas.fill_rect({bounds_.x, strip_y, bounds_.w, 1.0f},
+                             pal.separator);
+
+        paint_children(ctx);
+    }
+
+private:
+    static constexpr float kSidebarW = MainAppWidget::kSidebarW;
+    static constexpr float kSpaceNavH = MainAppWidget::kSpaceNavH;
+    static constexpr float kUserStripH = MainAppWidget::kUserStripH;
+
+    SpaceNavWidget* space_nav_ = nullptr;
+    RoomListView* room_list_view_ = nullptr;
+    UserInfo* user_info_ = nullptr;
+    bool space_nav_visible_ = false;
+};
+
+class MainAppWidget::OfflineBannerWidget : public tk::Widget
+{
+public:
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return {constraints.w, kHeight};
+    }
+
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
+    {
+        if (bounds.w != bounds_.w)
+        {
+            layout_.reset();
+        }
+        bounds_ = bounds;
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        constexpr tk::Color kBg{0xFF, 0xB3, 0x00, 0xFF};
+        constexpr tk::Color kFg{0x33, 0x26, 0x00, 0xFF};
+        ctx.canvas.fill_rect(bounds_, kBg);
+        if (!layout_)
+        {
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Small;
+            st.max_width = bounds_.w - 16.0f;
+            layout_ = ctx.factory.build_text(
+                tk::tr("No internet connection \xe2\x80\x94 reconnecting\xe2\x80\xa6"), st);
+        }
+        if (layout_)
+        {
+            tk::Size ts = layout_->measure();
+            const float tx = bounds_.x + (bounds_.w - ts.w) * 0.5f;
+            const float ty = bounds_.y + (bounds_.h - ts.h) * 0.5f;
+            ctx.canvas.draw_text(*layout_, {tx, ty}, kFg);
+        }
+    }
+
+private:
+    static constexpr float kHeight = MainAppWidget::kOfflineBannerH;
+    std::unique_ptr<tk::TextLayout> layout_;
+};
+
+class MainAppWidget::ChatContentStack : public tk::Stack
+{
+};
+
+class MainAppWidget::ChatPanelWidget : public tk::Widget
+{
+public:
+    ChatPanelWidget()
+    {
+        auto offline = std::make_unique<OfflineBannerWidget>();
+        offline_banner_ = add_child(std::move(offline));
+        offline_banner_->set_visible(false);
+
+        auto ver = std::make_unique<VerificationBanner>();
+        verif_banner_ = add_child(std::move(ver));
+        verif_banner_->set_visible(false);
+
+        auto tb = std::make_unique<tk::TabBar>();
+        tab_bar_ = add_child(std::move(tb));
+        tab_bar_->set_visible(false);
+
+        auto content = std::make_unique<ChatContentStack>();
+        chat_content_ = add_child(std::move(content));
+    }
+
+    OfflineBannerWidget* offline_banner() const { return offline_banner_; }
+    VerificationBanner* verif_banner() const { return verif_banner_; }
+    tk::TabBar* tab_bar() const { return tab_bar_; }
+    ChatContentStack* chat_content() const { return chat_content_; }
+
+    void set_offline(bool offline)
+    {
+        if (offline_banner_)
+            offline_banner_->set_visible(offline);
+    }
+
+    void set_verification_requested(bool show)
+    {
+        verif_requested_ = show;
+        update_verification_visibility_();
+    }
+
+    void refresh_verification_visibility()
+    {
+        update_verification_visibility_();
+    }
+
+    void set_tab_bar_visible(bool visible)
+    {
+        tab_bar_visible_ = visible;
+        if (tab_bar_)
+            tab_bar_->set_visible(visible);
+    }
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return constraints;
+    }
+
+    void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
+    {
+        bounds_ = bounds;
+        float y = bounds.y;
+
+        if (offline_banner_ && offline_banner_->visible())
+        {
+            offline_banner_->arrange(ctx,
+                                     {bounds.x, y, bounds.w, kOfflineBannerH});
+            y += kOfflineBannerH;
+        }
+
+        update_verification_visibility_();
+        if (verif_banner_ && verif_banner_->visible())
+        {
+            const float verif_h =
+                verif_banner_->measure(ctx, {bounds.w, bounds.h - (y - bounds.y)}).h;
+            verif_banner_->arrange(ctx, {bounds.x, y, bounds.w, verif_h});
+            y += verif_h;
+        }
+
+        if (tab_bar_visible_ && tab_bar_)
+        {
+            tab_bar_->arrange(ctx, {bounds.x, y, bounds.w, tk::TabBar::kHeight});
+            y += tk::TabBar::kHeight;
+        }
+
+        if (chat_content_)
+        {
+            chat_content_->arrange(ctx,
+                                   {bounds.x, y, bounds.w,
+                                    std::max(0.0f, bounds.y + bounds.h - y)});
+        }
+    }
+
+    std::function<bool()> verification_suppressed;
+
+private:
+    void update_verification_visibility_()
+    {
+        const bool suppressed = verification_suppressed && verification_suppressed();
+        if (verif_banner_)
+            verif_banner_->set_visible(verif_requested_ && !suppressed);
+    }
+
+    OfflineBannerWidget* offline_banner_ = nullptr;
+    VerificationBanner* verif_banner_ = nullptr;
+    tk::TabBar* tab_bar_ = nullptr;
+    ChatContentStack* chat_content_ = nullptr;
+    bool verif_requested_ = false;
+    bool tab_bar_visible_ = false;
+};
+
+class MainAppWidget::RootLayoutWidget : public tk::Widget
+{
+public:
+    RootLayoutWidget()
+    {
+        auto sidebar = std::make_unique<SidebarWidget>();
+        sidebar_ = add_child(std::move(sidebar));
+
+        auto panel = std::make_unique<ChatPanelWidget>();
+        chat_panel_ = add_child(std::move(panel));
+    }
+
+    SidebarWidget* sidebar() const { return sidebar_; }
+    ChatPanelWidget* chat_panel() const { return chat_panel_; }
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return constraints;
+    }
+
+    void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
+    {
+        bounds_ = bounds;
+
+        if (sidebar_)
+        {
+            sidebar_->arrange(ctx, {bounds.x, bounds.y, kSidebarW, bounds.h});
+        }
+
+        if (chat_panel_)
+        {
+            const float chat_x = bounds.x + kSidebarW + kSepW;
+            chat_panel_->arrange(
+                ctx, {chat_x, bounds.y, bounds.w - kSidebarW - kSepW, bounds.h});
+        }
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        const auto& pal = ctx.theme.palette;
+        ctx.canvas.fill_rect({bounds_.x + kSidebarW, bounds_.y, kSepW, bounds_.h},
+                             pal.separator);
+        paint_children(ctx);
+    }
+
+private:
+    static constexpr float kSidebarW = MainAppWidget::kSidebarW;
+    static constexpr float kSepW = MainAppWidget::kSepW;
+
+    SidebarWidget* sidebar_ = nullptr;
+    ChatPanelWidget* chat_panel_ = nullptr;
+};
+
+class MainAppWidget::OverlayStackWidget : public tk::Stack
+{
+};
+
+#ifdef TESSERACT_CALLS_ENABLED
+class MainAppWidget::FloatingCallLayerWidget : public tk::Widget
+{
+public:
+    views::CallOverlayWidget* add_call_overlay(
+        std::unique_ptr<views::CallOverlayWidget> widget)
+    {
+        return add_child(std::move(widget));
+    }
+
+    void remove_call_overlay(views::CallOverlayWidget* widget)
+    {
+        remove_child(widget);
+    }
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return constraints;
+    }
+
+    void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
+    {
+        bounds_ = bounds;
+        for (auto& child : children())
+        {
+            auto* call = static_cast<views::CallOverlayWidget*>(child.get());
+            const auto [cx, cy] = call->float_position();
+            const float fx = std::max(bounds.x,
+                std::min(cx, bounds.x + bounds.w - kFloatingCallW));
+            const float fy = std::max(bounds.y,
+                std::min(cy, bounds.y + bounds.h - kFloatingCallH));
+            call->arrange(ctx, {fx, fy, kFloatingCallW, kFloatingCallH});
+        }
+    }
+
+private:
+    static constexpr float kFloatingCallW = 320.0f;
+    static constexpr float kFloatingCallH = 240.0f;
+};
+#endif
 
 MainAppWidget::MainAppWidget()
 {
-    // Space nav bar: back button + space name label.
-    // Both start hidden; set_space_nav() shows them.
-    auto back = std::make_unique<tk::Button>(
-        "",
-        [this]
+    auto root_layout = std::make_unique<RootLayoutWidget>();
+    root_layout_ = add_child(std::move(root_layout));
+    sidebar_ = root_layout_->sidebar();
+    SpaceNavWidget* space_nav = sidebar_->space_nav();
+    room_list_view_ = sidebar_->room_list_view();
+    user_info_ = sidebar_->user_info();
+    space_nav->on_back = [this]
+    {
+        if (on_space_back)
         {
-            if (on_space_back)
-            {
-                on_space_back();
-            }
-        },
-        tk::Button::Variant::Icon);
-    nav_back_btn_ = add_child(std::move(back));
-    nav_back_btn_->set_visible(false);
+            on_space_back();
+        }
+    };
+    space_nav->on_header = [this]
+    {
+        if (on_space_header)
+        {
+            on_space_header();
+        }
+    };
 
-    auto name = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    nav_name_lbl_ = add_child(std::move(name));
-    nav_name_lbl_->set_halign(tk::TextHAlign::Leading);
-    nav_name_lbl_->set_trim(tk::TextTrim::Ellipsis);
-    nav_name_lbl_->set_visible(false);
-
-    // Sidebar: room list fills available space above the user strip.
-    auto rlv = std::make_unique<RoomListView>();
-    room_list_view_ = add_child(std::move(rlv));
-
-    // Sidebar footer: logged-in user identity strip.
-    auto ui = std::make_unique<UserInfo>();
-    user_info_ = add_child(std::move(ui));
-
-    // Chat panel: banners (hidden by default).
-    auto ver = std::make_unique<VerificationBanner>();
-    verif_banner_ = add_child(std::move(ver));
-    verif_banner_->set_visible(false);
-
-    // Chat panel: tab bar (hidden until 2+ tabs open).
-    auto tb = std::make_unique<tk::TabBar>();
-    tab_bar_ = add_child(std::move(tb));
-    tab_bar_->set_visible(false);
+    chat_panel_ = root_layout_->chat_panel();
+    chat_panel_->verification_suppressed = [this]
+    {
+        return encryption_setup_ && encryption_setup_->visible();
+    };
+    verif_banner_ = chat_panel_->verif_banner();
+    tab_bar_ = chat_panel_->tab_bar();
+    ChatContentStack* chat_content = chat_panel_->chat_content();
 
     // Chat panel: main room view (header + messages + compose bar).
     auto rv = std::make_unique<RoomView>();
-    room_view_ = add_child(std::move(rv));
+    room_view_ = chat_content->add_child(std::move(rv));
 
     // Chat panel: invite card (shown instead of room_view_ for pending invites).
     auto ic = std::make_unique<InviteCard>();
-    invite_card_ = add_child(std::move(ic));
+    invite_card_ = chat_content->add_child(std::move(ic));
     // InviteCard starts invisible (clear() is called in its constructor).
 
     // Chat panel: room preview (shown for unjoined space-child rooms).
     auto rp = std::make_unique<RoomPreviewView>();
-    room_preview_ = add_child(std::move(rp));
+    room_preview_ = chat_content->add_child(std::move(rp));
     // RoomPreviewView starts invisible (set_visible(false) in its constructor).
 
     // Chat panel: joined-space root summary.
     auto sr = std::make_unique<SpaceRootView>();
-    space_root_ = add_child(std::move(sr));
+    space_root_ = chat_content->add_child(std::move(sr));
     // SpaceRootView starts invisible (set_visible(false) in its constructor).
 
-    // Full-surface lightbox overlays — added last so they win hit-testing
-    // and are painted on top of everything else when visible.
+    // Full-surface overlays — added last so they win hit-testing and are
+    // painted on top of the sidebar/chat content when visible.
+    auto overlays = std::make_unique<OverlayStackWidget>();
+    overlay_stack_ = add_child(std::move(overlays));
+
     auto img = std::make_unique<ImageViewerOverlay>();
-    img_viewer_ = add_child(std::move(img));
+    img_viewer_ = overlay_stack_->add_child(std::move(img));
     img_viewer_->set_visible(false);
 
     auto vid = std::make_unique<VideoViewerOverlay>();
-    vid_viewer_ = add_child(std::move(vid));
+    vid_viewer_ = overlay_stack_->add_child(std::move(vid));
     vid_viewer_->set_visible(false);
 
     auto enc = std::make_unique<EncryptionSetupOverlay>(EncryptionSetupOverlay::Mode::Fresh);
-    encryption_setup_ = add_child(std::move(enc));
+    encryption_setup_ = overlay_stack_->add_child(std::move(enc));
     encryption_setup_->set_visible(false);
 
     {
         auto v = std::make_unique<QRGrantView>();
         v->set_visible(false);
-        qr_grant_view_ = add_child(std::move(v));
+        qr_grant_view_ = overlay_stack_->add_child(std::move(v));
     }
 
     // Modal confirmation overlay — added after the lightboxes so it paints
     // on top of *everything*. Visibility is gated by ConfirmDialog::open()
     // / close() so an idle dialog doesn't capture hit-tests.
     auto confirm = std::make_unique<ConfirmDialog>();
-    confirm_dialog_ = add_child(std::move(confirm));
+    confirm_dialog_ = overlay_stack_->add_child(std::move(confirm));
 
     // Ctrl+K quick switcher — added last so it paints above (and hit-tests
     // before) every other overlay. Hidden until show_quick_switch(true).
     auto qs = std::make_unique<QuickSwitcher>();
-    quick_switcher_ = add_child(std::move(qs));
+    quick_switcher_ = overlay_stack_->add_child(std::move(qs));
     quick_switcher_->set_visible(false);
 
     // Ctrl+Shift+F message search — topmost overlay alongside the switcher.
     auto ms = std::make_unique<MessageSearchView>();
-    message_search_ = add_child(std::move(ms));
+    message_search_ = overlay_stack_->add_child(std::move(ms));
     message_search_->set_visible(false);
 
     // Forward room picker — topmost modal, opened by the "Forward message"
     // action. Added after message_search so it paints above all other overlays.
     auto fp = std::make_unique<ForwardRoomPicker>();
-    forward_picker_ = add_child(std::move(fp));
+    forward_picker_ = overlay_stack_->add_child(std::move(fp));
     forward_picker_->set_visible(false);
+
+#ifdef TESSERACT_CALLS_ENABLED
+    auto floating_calls = std::make_unique<FloatingCallLayerWidget>();
+    floating_call_layer_ = add_child(std::move(floating_calls));
+#endif
 
     // Hand RoomView a closure that opens this dialog with caller-supplied
     // options. Downstream destructive actions (leave room, …) route through
@@ -142,8 +644,7 @@ MainAppWidget::MainAppWidget()
         // shared on_layout_changed chain so the shell hides the compose
         // textarea + room-search overlays while the dialog is up.
         confirm_dialog_->on_layout_changed = [this]() {
-            if (room_view_ && room_view_->on_layout_changed)
-                room_view_->on_layout_changed();
+            notify_layout_changed_();
         };
     }
 }
@@ -153,57 +654,182 @@ MainAppWidget::MainAppWidget()
 void MainAppWidget::set_space_nav(bool show, std::string_view space_name,
                                   std::string_view avatar_url)
 {
-    space_nav_visible_ = show;
-    space_name_ = show ? std::string(space_name) : std::string{};
-    avatar_url_ = show ? std::string(avatar_url) : std::string{};
-    if (nav_back_btn_)
+    if (sidebar_)
     {
-        nav_back_btn_->set_visible(show);
-    }
-    if (nav_name_lbl_)
-    {
-        nav_name_lbl_->set_visible(show);
-        nav_name_lbl_->set_text(std::string(space_name));
+        sidebar_->set_space_nav(show, space_name, avatar_url);
     }
 }
 
 void MainAppWidget::set_avatar_provider(
     std::function<const tk::Image*(const std::string& mxc_url)> provider)
 {
-    avatar_provider_ = std::move(provider);
+    if (sidebar_)
+    {
+        sidebar_->set_avatar_provider(provider);
+    }
     if (quick_switcher_)
     {
-        quick_switcher_->set_avatar_provider(avatar_provider_);
+        quick_switcher_->set_avatar_provider(std::move(provider));
     }
 }
 
 void MainAppWidget::show_verif_banner(bool show)
 {
-    verif_visible_ = show;
-    if (verif_banner_)
+    if (chat_panel_)
     {
-        verif_banner_->set_visible(show);
+        chat_panel_->set_verification_requested(show);
     }
 }
 
 void MainAppWidget::set_offline(bool offline)
 {
-    if (offline_visible_ == offline) return;
-    offline_visible_ = offline;
-    offline_layout_.reset();
+    if (chat_panel_)
+    {
+        chat_panel_->set_offline(offline);
+    }
 }
 
 void MainAppWidget::set_tab_bar_visible(bool visible)
 {
-    tab_bar_visible_ = visible;
-    if (tab_bar_)
+    if (chat_panel_)
     {
-        tab_bar_->set_visible(visible);
+        chat_panel_->set_tab_bar_visible(visible);
     }
     if (room_view_ && room_view_->header())
     {
         room_view_->header()->set_condensed(visible);
     }
+}
+
+void MainAppWidget::clear_alternate_content_()
+{
+    if (invite_card_)
+        invite_card_->clear();
+    if (room_preview_)
+        room_preview_->clear();
+    if (space_root_)
+        space_root_->clear();
+}
+
+void MainAppWidget::notify_layout_changed_()
+{
+    if (room_view_ && room_view_->on_layout_changed)
+        room_view_->on_layout_changed();
+}
+
+void MainAppWidget::set_room_visible_(bool visible)
+{
+    if (room_view_)
+        room_view_->set_visible(visible);
+}
+
+bool MainAppWidget::handle_primary_shortcut_(const tk::KeyEvent& event)
+{
+    if (primary_shortcut(event) && shortcut_char(event, 'k') && !event.shift)
+    {
+        if (on_quick_switch_shortcut)
+        {
+            on_quick_switch_shortcut();
+            return true;
+        }
+    }
+    if (primary_shortcut(event) && shortcut_char(event, 'f'))
+    {
+        if (event.shift)
+        {
+            if (on_message_search_shortcut)
+            {
+                on_message_search_shortcut();
+                return true;
+            }
+        }
+        else if (on_find_in_room_shortcut)
+        {
+            on_find_in_room_shortcut();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MainAppWidget::handle_history_shortcut_(const tk::KeyEvent& event)
+{
+    const bool linux_windows_back = event.alt && !event.ctrl && !event.meta &&
+        event.key == tk::Key::Left;
+    const bool linux_windows_forward = event.alt && !event.ctrl && !event.meta &&
+        event.key == tk::Key::Right;
+    const bool mac_back = event.meta && !event.ctrl && !event.alt && !event.shift &&
+        event.key == tk::Key::Character && event.text == "[";
+    const bool mac_forward = event.meta && !event.ctrl && !event.alt && !event.shift &&
+        event.key == tk::Key::Character && event.text == "]";
+
+    if (linux_windows_back || mac_back)
+    {
+        if (on_history_back_shortcut)
+        {
+            on_history_back_shortcut();
+            return true;
+        }
+    }
+    if (linux_windows_forward || mac_forward)
+    {
+        if (on_history_forward_shortcut)
+        {
+            on_history_forward_shortcut();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MainAppWidget::dismiss_top_transient_()
+{
+    // Match visual priority for transient overlays. Native text controls may
+    // still handle Escape before this when they own focus; this path is for the
+    // shared canvas/widget tree and lets shells stop duplicating canvas policy.
+    if (camera_widget_)
+    {
+        close_camera_overlay();
+        return true;
+    }
+    if (forward_picker_ && forward_picker_->is_open())
+    {
+        forward_picker_->close();
+        return true;
+    }
+    if (message_search_ && message_search_->is_open())
+    {
+        message_search_->close();
+        return true;
+    }
+    if (quick_switcher_ && quick_switcher_->is_open())
+    {
+        quick_switcher_->close();
+        return true;
+    }
+    if (confirm_dialog_ && confirm_dialog_->is_open())
+    {
+        confirm_dialog_->close();
+        return true;
+    }
+    if (vid_viewer_ && vid_viewer_->is_open())
+    {
+        vid_viewer_->close();
+        vid_viewer_->set_visible(false);
+        return true;
+    }
+    if (img_viewer_ && img_viewer_->is_open())
+    {
+        img_viewer_->close();
+        img_viewer_->set_visible(false);
+        return true;
+    }
+    if (room_view_ && room_view_->room_search_open())
+    {
+        room_view_->close_room_search();
+        return true;
+    }
+    return false;
 }
 
 void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
@@ -213,20 +839,13 @@ void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
         invite_card_->set_invite(invite, std::move(provider));
     if (space_root_)
         space_root_->clear();
-    if (room_view_)
-        room_view_->set_visible(false);
+    set_room_visible_(false);
 }
 
 void MainAppWidget::show_room()
 {
-    if (invite_card_)
-        invite_card_->clear();
-    if (room_preview_)
-        room_preview_->clear();
-    if (space_root_)
-        space_root_->clear();
-    if (room_view_)
-        room_view_->set_visible(true);
+    clear_alternate_content_();
+    set_room_visible_(true);
 }
 
 void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
@@ -236,8 +855,7 @@ void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
         invite_card_->clear();
     if (space_root_)
         space_root_->clear();
-    if (room_view_)
-        room_view_->set_visible(false);
+    set_room_visible_(false);
     if (room_preview_)
     {
         room_preview_->set_avatar_provider(std::move(provider));
@@ -249,8 +867,7 @@ void MainAppWidget::hide_room_preview()
 {
     if (room_preview_)
         room_preview_->clear();
-    if (room_view_)
-        room_view_->set_visible(true);
+    set_room_visible_(true);
 }
 
 void MainAppWidget::show_space_root(const tesseract::RoomInfo& space,
@@ -262,8 +879,7 @@ void MainAppWidget::show_space_root(const tesseract::RoomInfo& space,
         invite_card_->clear();
     if (room_preview_)
         room_preview_->clear();
-    if (room_view_)
-        room_view_->set_visible(false);
+    set_room_visible_(false);
     if (space_root_)
     {
         space_root_->set_avatar_provider(std::move(provider));
@@ -275,23 +891,17 @@ void MainAppWidget::hide_space_root()
 {
     if (space_root_)
         space_root_->clear();
-    if (room_view_)
-        room_view_->set_visible(true);
+    set_room_visible_(true);
 }
 
 void MainAppWidget::clear_content()
 {
-    if (invite_card_)
-        invite_card_->clear();
-    if (room_preview_)
-        room_preview_->clear();
-    if (space_root_)
-        space_root_->clear();
+    clear_alternate_content_();
     if (room_view_)
     {
         room_view_->clear_room();
-        room_view_->set_visible(true);
     }
+    set_room_visible_(true);
 }
 
 void MainAppWidget::show_image_viewer(bool show)
@@ -316,6 +926,10 @@ void MainAppWidget::show_encryption_setup(bool show)
     {
         encryption_setup_->set_visible(show);
     }
+    if (chat_panel_)
+    {
+        chat_panel_->refresh_verification_visibility();
+    }
 }
 
 void MainAppWidget::show_qr_grant(bool show)
@@ -328,6 +942,8 @@ void MainAppWidget::open_camera_overlay()
     if (camera_widget_)
         return; // already open
     if (is_call_active && is_call_active())
+        return;
+    if (!overlay_stack_)
         return;
 
     auto widget = std::make_unique<CameraWidget>();
@@ -346,11 +962,10 @@ void MainAppWidget::open_camera_overlay()
             close_camera_overlay();
         };
 
-    add_child(std::move(widget));
+    overlay_stack_->add_child(std::move(widget));
     camera_widget_->open();
     // Trigger arrange + repaint so the new child gets bounds and appears.
-    if (room_view_ && room_view_->on_layout_changed)
-        room_view_->on_layout_changed();
+    notify_layout_changed_();
 }
 
 void MainAppWidget::close_camera_overlay()
@@ -359,9 +974,9 @@ void MainAppWidget::close_camera_overlay()
         return;
     CameraWidget* w = camera_widget_;
     camera_widget_  = nullptr;
-    remove_child(w);
-    if (room_view_ && room_view_->on_layout_changed)
-        room_view_->on_layout_changed();
+    if (overlay_stack_)
+        overlay_stack_->remove_child(w);
+    notify_layout_changed_();
 }
 
 #ifdef TESSERACT_CALLS_ENABLED
@@ -374,14 +989,15 @@ void MainAppWidget::mount_call_overlay(
 {
     if (initial_mode == views::CallOverlayWidget::Mode::Floating)
     {
-        // Floating mode: create a CallOverlayWidget child in the overlay layer.
+        // Floating mode: create a CallOverlayWidget child in the floating layer.
         auto w = std::make_unique<views::CallOverlayWidget>();
         w->set_post_delayed(std::move(post_delayed));
         w->set_repaint_requester(std::move(repaint_requester));
         w->set_avatar_provider(std::move(avatar_provider));
         w->set_display_name_provider(std::move(display_name_provider));
         w->set_mode(views::CallOverlayWidget::Mode::Floating);
-        float_call_overlay_ = add_child(std::move(w));
+        if (floating_call_layer_)
+            float_call_overlay_ = floating_call_layer_->add_call_overlay(std::move(w));
     }
     else
     {
@@ -396,8 +1012,7 @@ void MainAppWidget::mount_call_overlay(
                 std::move(display_name_provider));
         }
     }
-    if (room_view_ && room_view_->on_layout_changed)
-        room_view_->on_layout_changed();
+    notify_layout_changed_();
 }
 
 void MainAppWidget::unmount_call_overlay()
@@ -410,12 +1025,12 @@ void MainAppWidget::unmount_call_overlay()
     if (float_call_overlay_)
     {
         float_call_overlay_->stop_timer();
-        remove_child(float_call_overlay_);
+        if (floating_call_layer_)
+            floating_call_layer_->remove_call_overlay(float_call_overlay_);
         float_call_overlay_ = nullptr;
     }
 
-    if (room_view_ && room_view_->on_layout_changed)
-        room_view_->on_layout_changed();
+    notify_layout_changed_();
 }
 
 void MainAppWidget::mount_screen_picker(
@@ -426,7 +1041,7 @@ void MainAppWidget::mount_screen_picker(
     unmount_screen_picker(); // remove any stale picker first
 
     auto w = std::make_unique<views::ScreenPickerWidget>(std::move(sources));
-    screen_picker_ = add_child(std::move(w));
+    screen_picker_ = overlay_stack_->add_child(std::move(w));
 
     screen_picker_->on_source_selected = [this, cb = std::move(on_selected)](std::string id)
     {
@@ -439,17 +1054,15 @@ void MainAppWidget::mount_screen_picker(
         if (cb) cb();
     };
 
-    if (room_view_ && room_view_->on_layout_changed)
-        room_view_->on_layout_changed();
+    notify_layout_changed_();
 }
 
 void MainAppWidget::unmount_screen_picker()
 {
     if (!screen_picker_) return;
-    remove_child(screen_picker_);
+    overlay_stack_->remove_child(screen_picker_);
     screen_picker_ = nullptr;
-    if (room_view_ && room_view_->on_layout_changed)
-        room_view_->on_layout_changed();
+    notify_layout_changed_();
 }
 
 views::CallOverlayWidget* MainAppWidget::call_panel_for_room() const
@@ -621,6 +1234,42 @@ tk::Rect MainAppWidget::in_room_search_field_rect() const
     return room_view_ ? room_view_->room_search_field_rect() : tk::Rect{};
 }
 
+tk::NativeOverlayRegistry MainAppWidget::native_overlays() const
+{
+    tk::NativeOverlayRegistry registry;
+    const tk::Rect compose = compose_text_area_rect();
+    registry.add(tk::NativeOverlayId::ComposeTextArea,
+                 tk::NativeOverlayKind::TextArea, !compose.empty(), compose);
+    registry.add(tk::NativeOverlayId::RoomSearchField,
+                 tk::NativeOverlayKind::TextField, room_search_field_visible(),
+                 room_search_field_rect());
+    registry.add(tk::NativeOverlayId::QuickSwitchField,
+                 tk::NativeOverlayKind::TextField, quick_switch_field_visible(),
+                 quick_switch_field_rect());
+    registry.add(tk::NativeOverlayId::MessageSearchField,
+                 tk::NativeOverlayKind::TextField, message_search_field_visible(),
+                 message_search_field_rect());
+    registry.add(tk::NativeOverlayId::ForwardPickerField,
+                 tk::NativeOverlayKind::TextField, forward_picker_field_visible(),
+                 forward_picker_field_rect());
+    registry.add(tk::NativeOverlayId::FindInRoomField,
+                 tk::NativeOverlayKind::TextField, in_room_search_field_visible(),
+                 in_room_search_field_rect());
+    registry.add(tk::NativeOverlayId::EncryptionPassphraseField,
+                 tk::NativeOverlayKind::TextField,
+                 encryption_setup_passphrase_field_visible(),
+                 encryption_setup_passphrase_field_rect());
+    registry.add(tk::NativeOverlayId::EncryptionKeyField,
+                 tk::NativeOverlayKind::TextField,
+                 encryption_setup_key_field_visible(),
+                 encryption_setup_key_field_rect());
+    registry.add(tk::NativeOverlayId::QrGrantCheckCodeField,
+                 tk::NativeOverlayKind::TextField,
+                 qr_grant_check_code_field_visible(),
+                 qr_grant_check_code_field_rect());
+    return registry;
+}
+
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size MainAppWidget::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -628,341 +1277,23 @@ tk::Size MainAppWidget::measure(tk::LayoutCtx&, tk::Size constraints)
     return constraints;
 }
 
-void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
+bool MainAppWidget::on_key_down(const tk::KeyEvent& event)
 {
-    bounds_ = bounds;
-
-    const float x = bounds.x;
-    const float y = bounds.y;
-    const float w = bounds.w;
-    const float h = bounds.h;
-
-    // ── Sidebar ──────────────────────────────────────────────────────────
-
-    float sidebar_content_y = y;
-
-    if (space_nav_visible_)
+    if (handle_primary_shortcut_(event))
     {
-        constexpr float kBtnW = 32.0f;
-        constexpr float kPad = 4.0f;
-        const float btn_y = y + (kSpaceNavH - 24.0f) / 2.0f;
-        nav_back_btn_->arrange(ctx, {x + kPad, btn_y, kBtnW, 24.0f});
-        // Label is left-aligned just right of the space avatar and elides
-        // with an ellipsis when the name is too long for the remaining width.
-        // Label::paint draws at bounds_.y so we vertically centre the rect
-        // ourselves.  kNameH = 18 px matches the body-font line height used by
-        // RoomHeader; centering it in kSpaceNavH gives 9 px margins.
-        constexpr float kNameH = 18.0f;
-        // Text starts after: pad + back button + pad + avatar + pad.
-        const float name_x = x + kPad + kBtnW + kPad + kNavAvatarSize + kPad;
-        const float name_w = std::max(0.0f, (x + kSidebarW) - name_x - kPad);
-        nav_name_lbl_->arrange(
-            ctx, {name_x, y + (kSpaceNavH - kNameH) * 0.5f, name_w, kNameH});
-        sidebar_content_y = y + kSpaceNavH;
-    }
-
-    // User strip is pinned to the bottom of the sidebar.
-    const float user_strip_y = y + h - kUserStripH;
-    user_info_->arrange(ctx, {x, user_strip_y, kSidebarW, kUserStripH});
-
-    // Room list fills the space between nav bar (or top) and user strip.
-    const float room_list_h = std::max(0.0f, user_strip_y - sidebar_content_y);
-    room_list_view_->arrange(ctx,
-                             {x, sidebar_content_y, kSidebarW, room_list_h});
-
-    // ── Chat panel ───────────────────────────────────────────────────────
-
-    const float chat_x = x + kSidebarW + kSepW;
-    const float chat_w = w - kSidebarW - kSepW;
-    float chat_y = y;
-
-    if (offline_visible_)
-    {
-        offline_banner_rect_ = {chat_x, chat_y, chat_w, kOfflineBannerH};
-        chat_y += kOfflineBannerH;
-    }
-    else
-    {
-        offline_banner_rect_ = {};
-    }
-
-    // The banner must never show while the initial key-setup overlay is open
-    // (its backdrop is dimmed, not opaque, so the banner would peek through).
-    // set_visible() here also keeps pointer dispatch / hit_test consistent.
-    const bool show_verif =
-        verif_visible_ &&
-        !(encryption_setup_ && encryption_setup_->visible());
-    if (verif_banner_) verif_banner_->set_visible(show_verif);
-    if (show_verif)
-    {
-        // VerificationBanner is taller when showing the emoji grid.
-        const float verif_h =
-            verif_banner_->measure(ctx, {chat_w, h - (chat_y - y)}).h;
-        verif_banner_->arrange(ctx, {chat_x, chat_y, chat_w, verif_h});
-        chat_y += verif_h;
-    }
-
-    if (tab_bar_visible_ && tab_bar_)
-    {
-        tab_bar_->arrange(ctx, {chat_x, chat_y, chat_w, tk::TabBar::kHeight});
-        chat_y += tk::TabBar::kHeight;
-    }
-
-    const float room_h = std::max(0.0f, y + h - chat_y);
-    const tk::Rect chat_content_rect{chat_x, chat_y, chat_w, room_h};
-    room_view_->arrange(ctx, chat_content_rect);
-    if (invite_card_)
-    {
-        invite_card_->arrange(ctx, chat_content_rect);
-    }
-    if (room_preview_)
-    {
-        room_preview_->arrange(ctx, chat_content_rect);
-    }
-    if (space_root_)
-    {
-        space_root_->arrange(ctx, chat_content_rect);
-    }
-
-    // ── Full-surface overlays (always at full widget bounds) ─────────────
-
-    img_viewer_->arrange(ctx, bounds);
-    vid_viewer_->arrange(ctx, bounds);
-    if (encryption_setup_) encryption_setup_->arrange(ctx, bounds);
-    if (qr_grant_view_) qr_grant_view_->arrange(ctx, bounds);
-    if (confirm_dialog_) confirm_dialog_->arrange(ctx, bounds);
-    if (quick_switcher_) quick_switcher_->arrange(ctx, bounds);
-    if (message_search_) message_search_->arrange(ctx, bounds);
-    if (forward_picker_) forward_picker_->arrange(ctx, bounds);
-    if (camera_widget_) camera_widget_->arrange(ctx, bounds);
-#ifdef TESSERACT_CALLS_ENABLED
-    if (screen_picker_) screen_picker_->arrange(ctx, bounds);
-    if (float_call_overlay_)
-    {
-        const auto [cx, cy] = float_call_overlay_->float_position();
-        const float fx = std::max(bounds_.x,
-            std::min(cx, bounds_.x + bounds_.w - 320.0f));
-        const float fy = std::max(bounds_.y,
-            std::min(cy, bounds_.y + bounds_.h - 240.0f));
-        float_call_overlay_->arrange(ctx, {fx, fy, 320.0f, 240.0f});
-    }
-#endif
-}
-
-void MainAppWidget::paint(tk::PaintCtx& ctx)
-{
-    const auto& pal = ctx.theme.palette;
-
-    // Sidebar background.
-    ctx.canvas.fill_rect({bounds_.x, bounds_.y, kSidebarW, bounds_.h},
-                         pal.sidebar_bg);
-
-    // User strip footer: same background as sidebar + 1px top border.
-    const float strip_y = bounds_.y + bounds_.h - kUserStripH;
-    ctx.canvas.fill_rect({bounds_.x, strip_y, kSidebarW, kUserStripH},
-                         pal.sidebar_bg);
-    ctx.canvas.fill_rect({bounds_.x, strip_y, kSidebarW, 1.0f}, pal.separator);
-
-    // Space nav bar background (overlays the top of the sidebar).
-    if (space_nav_visible_)
-    {
-        ctx.canvas.fill_rect({bounds_.x, bounds_.y, kSidebarW, kSpaceNavH},
-                             pal.chrome_bg);
-        if (nav_name_lbl_)
-        {
-            nav_name_lbl_->paint(ctx);
-        }
-        // Space avatar (circle image or initials disc) just right of the
-        // back button, painted on top of the label.
-        constexpr float kBtnW = 32.0f;
-        constexpr float kPad = 4.0f;
-        const tk::Point avatar_centre{
-            bounds_.x + kPad + kBtnW + kPad + kNavAvatarSize * 0.5f,
-            bounds_.y + kSpaceNavH * 0.5f};
-        const bool has_provider = avatar_provider_ && !avatar_url_.empty();
-        const tk::Image* space_img =
-            has_provider ? avatar_provider_(avatar_url_) : nullptr;
-        // When a provider+url is present we always draw (image, else initials);
-        // otherwise the initials disc is drawn only when a name exists.
-        if (has_provider || !space_name_.empty())
-        {
-            draw_avatar(ctx.canvas, space_img, avatar_centre, kNavAvatarSize,
-                        space_name_, pal.avatar_initials_bg,
-                        pal.avatar_initials_text);
-        }
-        // Back button painted last so it renders above the label and avatar.
-        if (nav_back_btn_)
-        {
-            nav_back_btn_->paint(ctx);
-            constexpr float kNavIconPx = 16.0f;
-            nav_back_icon_.draw(ctx.canvas, ctx.factory, kArrowLeftSvg,
-                                nav_back_btn_->bounds(), kNavIconPx,
-                                pal.text_primary);
-        }
-    }
-
-    // Sidebar content.
-    if (room_list_view_)
-    {
-        room_list_view_->paint(ctx);
-    }
-    if (user_info_)
-    {
-        user_info_->paint(ctx);
-    }
-
-    // 1px vertical separator between sidebar and chat panel.
-    ctx.canvas.fill_rect({bounds_.x + kSidebarW, bounds_.y, kSepW, bounds_.h},
-                         pal.separator);
-
-    // Offline connectivity banner (top of chat panel, above all chat content).
-    if (offline_visible_ && offline_banner_rect_.w > 0.0f)
-    {
-        constexpr tk::Color kBg{0xFF, 0xB3, 0x00, 0xFF};   // amber
-        constexpr tk::Color kFg{0x33, 0x26, 0x00, 0xFF};   // dark amber text
-        ctx.canvas.fill_rect(offline_banner_rect_, kBg);
-        if (!offline_layout_)
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Small;
-            st.max_width = offline_banner_rect_.w - 16.0f;
-            offline_layout_ = ctx.factory.build_text(
-                tk::tr("No internet connection \xe2\x80\x94 reconnecting\xe2\x80\xa6"), st);
-        }
-        if (offline_layout_)
-        {
-            tk::Size ts = offline_layout_->measure();
-            float    tx = offline_banner_rect_.x +
-                          (offline_banner_rect_.w - ts.w) * 0.5f;
-            float    ty = offline_banner_rect_.y +
-                          (offline_banner_rect_.h - ts.h) * 0.5f;
-            ctx.canvas.draw_text(*offline_layout_, {tx, ty}, kFg);
-        }
-    }
-
-    // Chat panel.
-    // Recompute from live overlay state (not the flag set during arrange()) so
-    // a repaint without an intervening relayout still hides the banner while
-    // the key-setup overlay is open.
-    if (verif_visible_ && verif_banner_ &&
-        !(encryption_setup_ && encryption_setup_->visible()))
-    {
-        verif_banner_->paint(ctx);
-    }
-    if (tab_bar_visible_ && tab_bar_)
-    {
-        tab_bar_->paint(ctx);
-    }
-    if (room_view_ && room_view_->visible())
-    {
-        room_view_->paint(ctx);
-    }
-    if (invite_card_ && invite_card_->visible())
-    {
-        invite_card_->paint(ctx);
-    }
-    if (room_preview_ && room_preview_->visible())
-    {
-        room_preview_->paint(ctx);
-    }
-    if (space_root_ && space_root_->visible())
-    {
-        space_root_->paint(ctx);
-    }
-
-    // Lightbox overlays (painted last — on top of everything).
-    if (img_viewer_ && img_viewer_->visible())
-    {
-        img_viewer_->paint(ctx);
-    }
-    if (vid_viewer_ && vid_viewer_->visible())
-    {
-        vid_viewer_->paint(ctx);
-    }
-    if (encryption_setup_ && encryption_setup_->visible())
-    {
-        encryption_setup_->paint(ctx);
-    }
-    if (qr_grant_view_ && qr_grant_view_->visible())
-    {
-        qr_grant_view_->paint(ctx);
-    }
-    // Modal confirmation — drawn above the lightboxes so destructive prompts
-    // are still reachable when the image/video viewer is up.
-    if (confirm_dialog_ && confirm_dialog_->visible())
-    {
-        confirm_dialog_->paint(ctx);
-    }
-    // Quick switcher — drawn last so it sits above every other overlay.
-    if (quick_switcher_ && quick_switcher_->visible())
-    {
-        quick_switcher_->paint(ctx);
-    }
-    // Message search — same topmost overlay band as the quick switcher (only
-    // one is ever open at a time).
-    if (message_search_ && message_search_->visible())
-    {
-        message_search_->paint(ctx);
-    }
-    if (forward_picker_ && forward_picker_->visible())
-    {
-        forward_picker_->paint(ctx);
-    }
-    // Camera overlay — topmost, since it must cover everything while active.
-    if (camera_widget_)
-    {
-        camera_widget_->paint(ctx);
-    }
-#ifdef TESSERACT_CALLS_ENABLED
-    // Screen picker sits above the call overlay so the user can choose what
-    // to share without the overlay getting in the way.
-    if (screen_picker_)
-    {
-        screen_picker_->paint(ctx);
-    }
-    if (float_call_overlay_ && float_call_overlay_->visible())
-    {
-        float_call_overlay_->paint(ctx);
-    }
-#endif
-}
-
-bool MainAppWidget::on_pointer_down(tk::Point local)
-{
-    if (!space_nav_visible_ || !on_space_header)
-        return false;
-
-    constexpr float kBtnW = 32.0f;
-    constexpr float kPad = 4.0f;
-    const tk::Rect header_rect{bounds_.x + kPad + kBtnW,
-                               bounds_.y,
-                               kSidebarW - kPad - kBtnW,
-                               kSpaceNavH};
-    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
-    if (point_in_rect(world, header_rect))
-    {
-        space_header_pressed_ = true;
         return true;
     }
-    return false;
-}
 
-void MainAppWidget::on_pointer_up(tk::Point local, bool inside_self)
-{
-    const bool was_pressed = space_header_pressed_;
-    space_header_pressed_ = false;
-    if (!was_pressed || !inside_self || !on_space_header)
-        return;
+    if (handle_history_shortcut_(event))
+    {
+        return true;
+    }
 
-    constexpr float kBtnW = 32.0f;
-    constexpr float kPad = 4.0f;
-    const tk::Rect header_rect{bounds_.x + kPad + kBtnW,
-                               bounds_.y,
-                               kSidebarW - kPad - kBtnW,
-                               kSpaceNavH};
-    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
-    if (point_in_rect(world, header_rect))
-        on_space_header();
+    if (event.key != tk::Key::Escape)
+    {
+        return false;
+    }
+    return dismiss_top_transient_();
 }
 
 } // namespace tesseract::views

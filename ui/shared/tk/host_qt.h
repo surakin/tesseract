@@ -92,6 +92,7 @@ protected:
     void mousePressEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
+    void keyPressEvent(QKeyEvent*) override;
     void wheelEvent(QWheelEvent*) override;
     void leaveEvent(QEvent*) override;
     void dragEnterEvent(QDragEnterEvent*) override;

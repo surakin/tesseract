@@ -1,8 +1,9 @@
 #pragma once
 
-// Flex-style 1D layout containers. VBox stacks children top-to-bottom;
-// HBox left-to-right. Both honour padding, spacing, Main/Cross alignment,
-// and per-child LayoutHints::fill_main / fill_cross.
+// Common layout containers. VBox stacks children top-to-bottom; HBox
+// left-to-right. Both honour padding, spacing, Main/Cross alignment, and
+// per-child LayoutHints::fill_main / fill_cross. Stack layers children in the
+// same bounds, useful for root content + modal overlays.
 
 #include "widget.h"
 
@@ -46,7 +47,6 @@ public:
 
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;
-    void paint(PaintCtx&) override;
 
     Axis axis() const
     {
@@ -102,6 +102,26 @@ public:
 
 private:
     float main_size_;
+};
+
+class FixedBox : public Widget
+{
+public:
+    explicit FixedBox(Size size) : size_(size)
+    {
+    }
+
+    Size measure(LayoutCtx&, Size constraints) override;
+
+private:
+    Size size_{};
+};
+
+class Stack : public Widget
+{
+public:
+    Size measure(LayoutCtx&, Size constraints) override;
+    void arrange(LayoutCtx&, Rect bounds) override;
 };
 
 } // namespace tk

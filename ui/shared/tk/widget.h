@@ -100,6 +100,40 @@ struct PaintCtx
     Host*           host        = nullptr;
 };
 
+enum class Key
+{
+    Unknown,
+    Escape,
+    Enter,
+    Space,
+    Tab,
+    Backtab,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Backspace,
+    Delete,
+    Character
+};
+
+struct KeyEvent
+{
+    Key key = Key::Unknown;
+    // Populated when key == Character. Stored as UTF-8 so platform hosts do
+    // not need to expose native string types to shared widgets.
+    std::string text;
+    bool ctrl   = false;
+    bool shift  = false;
+    bool alt    = false;
+    bool meta   = false;
+    bool repeat = false;
+};
+
 class Widget
 {
 public:
@@ -113,9 +147,11 @@ public:
     // children at the same bounds (overridden by layout containers).
     virtual void arrange(LayoutCtx&, Rect bounds);
 
-    // Paint into the canvas at this widget's bounds (in parent-local
-    // coordinates — the parent has already translated the canvas).
-    virtual void paint(PaintCtx&) = 0;
+    // Paint into the canvas at this widget's bounds. The default paints all
+    // visible children in insertion order, matching hit-test / overlay order.
+    // Leaf widgets override this; containers can either inherit it or call
+    // paint_children() around their own chrome drawing.
+    virtual void paint(PaintCtx&);
 
     // Second paint pass, called by the host after the entire widget tree's
     // paint() has finished. Default propagates to children so every
@@ -194,6 +230,29 @@ public:
     virtual bool on_right_click(Point /*local*/)
     {
         return false;
+    }
+
+    // Keyboard input. Platform surfaces translate native key events into this
+    // shared shape, then dispatch from the root or focused widget. Return true
+    // to consume. The default dispatcher gives visible children first refusal
+    // in reverse paint order, then calls on_key_down() on this widget.
+    virtual bool on_key_down(const KeyEvent&)
+    {
+        return false;
+    }
+    virtual bool dispatch_key_down(const KeyEvent&);
+
+    // Focus hooks for keyboard-capable widgets. Surface-level focus ownership
+    // will call these as platform key routing is migrated into tk.
+    virtual bool focusable() const
+    {
+        return false;
+    }
+    virtual void on_focus_gained()
+    {
+    }
+    virtual void on_focus_lost()
+    {
     }
 
     // Walk into the deepest visible child under `world`, then bubble
@@ -297,6 +356,8 @@ public:
     }
 
 protected:
+    void paint_children(PaintCtx&);
+
     Rect bounds_{};
     LayoutHints hints_{};
     bool visible_ = true;
