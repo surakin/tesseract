@@ -676,6 +676,8 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
         if (image_provider_ && !mem.avatar_url.empty())
         {
             mem_img = image_provider_(mem.avatar_url);
+            if (!mem_img && on_member_avatar_needed)
+                on_member_avatar_needed(mem);
         }
         {
             std::string_view disp_sv =

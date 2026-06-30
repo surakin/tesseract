@@ -581,7 +581,7 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 &in_flight_urls,
                 #[cfg(debug_assertions)]
-                format!("media/url/{}", url),
+                format!("media/url/{} group={}", url, group_id),
             );
             let bytes = tokio::select! {
                 b = download_url(&client, &url, MAX_URL_BYTES) => b,
@@ -689,7 +689,7 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 &in_flight_urls,
                 #[cfg(debug_assertions)]
-                format!("media/source/{}", source),
+                format!("media/source/{} group={}", source, group_id),
             );
             let bytes = tokio::select! {
                 b = download_media(&client, kind, &source, w, h, animated) => b,
@@ -807,7 +807,7 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 &in_flight_urls,
                 #[cfg(debug_assertions)]
-                format!("media/url/{}", url_str),
+                format!("media/url/{} group={}", url_str, group_id),
             );
             let req = Request::new(url_str);
             let json = tokio::select! {

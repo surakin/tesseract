@@ -430,7 +430,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         continue;
                     if (m.avatar_url.empty())
                         return nullptr;
-                    ensure_user_avatar_(m.avatar_url);
+                    ensure_user_avatar_(
+                        m.avatar_url,
+                        media_group_for_room_(current_room_id_));
                     return account_manager_.thumbnail_cache().peek(m.avatar_url);
                 }
                 return nullptr;
@@ -1090,9 +1092,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         {
                             if (mainApp_)
                             {
-                                for (const auto& m : members)
-                                    ensure_user_avatar_(m.avatar_url);
-                                // Cache for the mention popup + pill avatars.
+                                // Only names/avatar_urls are cached — no
+                                // avatar bytes are fetched until a mention
+                                // pill or the info panel actually needs one
+                                // (set_mention_avatar_provider below).
                                 cached_room_members_ = members;
                                 cached_members_room_ = room_id;
                                 mainApp_->room_view()->set_room_members(

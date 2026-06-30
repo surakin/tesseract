@@ -63,6 +63,13 @@ public:
     std::function<void(std::string user_id,
                        std::string display_name,
                        std::string avatar_url)>             on_member_clicked;
+    // Fired from paint() when a visible member row's avatar is a cache miss
+    // (image_provider_ returned nullptr) — mirrors RoomListView's
+    // on_room_avatar_needed: only members actually scrolled into view in the
+    // open panel trigger a fetch. Safe to fire on every paint of that row;
+    // the shell's own dedup (media_fetches_in_flight_) makes repeat calls a
+    // no-op until the fetch resolves.
+    std::function<void(const tesseract::RoomMember&)>       on_member_avatar_needed;
     std::function<void(std::string avatar_url,
                        std::string display_name)>           on_avatar_clicked;
     std::function<void(std::string url)>                    on_link_clicked;
