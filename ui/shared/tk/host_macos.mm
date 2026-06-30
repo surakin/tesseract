@@ -138,6 +138,7 @@ public:
     void on_pointer_leave();
     void on_wheel(NSPoint p, CGFloat dx, CGFloat dy);
     void on_right_click(NSPoint p);
+    bool on_key_down(const KeyEvent& event);
 
     // Drag-and-drop. `pasteboard_has_dropable` is consulted from
     // -draggingEntered: to gate the cursor; `dispatch_file_drop` runs
@@ -186,6 +187,82 @@ private:
 };
 
 } // namespace tk::macos
+
+namespace
+{
+
+tk::Key key_from_macos(NSEvent* event)
+{
+    NSString* chars = event.charactersIgnoringModifiers;
+    if (chars.length == 0)
+    {
+        return tk::Key::Unknown;
+    }
+
+    const unichar ch = [chars characterAtIndex:0];
+    switch (ch)
+    {
+    case 0x1B: return tk::Key::Escape;
+    case '\r':
+    case '\n': return tk::Key::Enter;
+    case ' ': return tk::Key::Space;
+    case '\t':
+        return (event.modifierFlags & NSEventModifierFlagShift)
+                   ? tk::Key::Backtab
+                   : tk::Key::Tab;
+    case NSUpArrowFunctionKey: return tk::Key::Up;
+    case NSDownArrowFunctionKey: return tk::Key::Down;
+    case NSLeftArrowFunctionKey: return tk::Key::Left;
+    case NSRightArrowFunctionKey: return tk::Key::Right;
+    case NSHomeFunctionKey: return tk::Key::Home;
+    case NSEndFunctionKey: return tk::Key::End;
+    case NSPageUpFunctionKey: return tk::Key::PageUp;
+    case NSPageDownFunctionKey: return tk::Key::PageDown;
+    case 0x7F: return tk::Key::Backspace;
+    case NSDeleteFunctionKey: return tk::Key::Delete;
+    default: return tk::Key::Unknown;
+    }
+}
+
+std::string character_text_from_macos(NSEvent* event)
+{
+    NSString* chars = event.characters;
+    if (chars.length == 0)
+    {
+        return {};
+    }
+
+    const unichar ch = [chars characterAtIndex:0];
+    if ([[NSCharacterSet controlCharacterSet] characterIsMember:ch])
+    {
+        return {};
+    }
+
+    const char* utf8 = chars.UTF8String;
+    return utf8 ? std::string(utf8) : std::string{};
+}
+
+tk::KeyEvent translate_key_event(NSEvent* event)
+{
+    tk::KeyEvent out{};
+    out.key = key_from_macos(event);
+    out.ctrl = event.modifierFlags & NSEventModifierFlagControl;
+    out.shift = event.modifierFlags & NSEventModifierFlagShift;
+    out.alt = event.modifierFlags & NSEventModifierFlagOption;
+    out.meta = event.modifierFlags & NSEventModifierFlagCommand;
+    out.repeat = event.isARepeat;
+    if (out.key == tk::Key::Unknown)
+    {
+        out.text = character_text_from_macos(event);
+        if (!out.text.empty())
+        {
+            out.key = tk::Key::Character;
+        }
+    }
+    return out;
+}
+
+} // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
 //  TKSurfaceView — the NSView subclass
@@ -290,6 +367,7 @@ private:
 
 - (void)mouseDown:(NSEvent*)e
 {
+    [self.window makeFirstResponder:self];
     if (self.hostPtr)
     {
         self.hostPtr->on_pointer_down([self tkLocationFromEvent:e]);
@@ -360,6 +438,19 @@ private:
         dy = -e.scrollingDeltaY * 10.0;
     }
     self.hostPtr->on_wheel(loc, dx, dy);
+}
+
+- (void)keyDown:(NSEvent*)e
+{
+    if (self.hostPtr)
+    {
+        tk::KeyEvent event = translate_key_event(e);
+        if (event.key != tk::Key::Unknown && self.hostPtr->on_key_down(event))
+        {
+            return;
+        }
+    }
+    [super keyDown:e];
 }
 
 // ── Drag-and-drop destination ───────────────────────────────────────────
@@ -1897,6 +1988,22 @@ void Host::on_right_click(NSPoint p)
         root_->dispatch_right_click(pt);
     if (on_right_click_)
         on_right_click_(pt);
+}
+
+bool Host::on_key_down(const KeyEvent& event)
+{
+    fire_user_activity_();
+    if (popup_ && popup_->dispatch_key_down(event))
+    {
+        request_repaint();
+        return true;
+    }
+    if (root_ && root_->dispatch_key_down(event))
+    {
+        request_repaint();
+        return true;
+    }
+    return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

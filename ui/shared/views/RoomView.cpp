@@ -233,7 +233,7 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         {
             items.push_back({"", // SVG icon below
                              kRedactSvg,
-                             "Delete message", /*destructive=*/true,
+                             tk::tr("Delete message"), /*destructive=*/true,
                              [this, event_id]
                              {
                                  if (on_delete_requested)
@@ -244,7 +244,8 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         {
             items.push_back({"", // SVG icon below
                              kPinSvg,
-                             is_pinned ? "Unpin message" : "Pin message",
+                             is_pinned ? tk::tr("Unpin message")
+                                       : tk::tr("Pin message"),
                              /*destructive=*/false,
                              [this, event_id, is_pinned]
                              {

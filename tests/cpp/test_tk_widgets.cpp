@@ -7,6 +7,7 @@
 #include "tk/theme.h"
 #include "tk/widget.h"
 #include "views/LoginView.h"
+#include "views/MainAppWidget.h"
 #include "tk_test_surface.h"
 #include <tesseract/settings.h>
 
@@ -14,6 +15,7 @@
 
 using namespace tk;
 using tesseract::views::LoginView;
+using tesseract::views::MainAppWidget;
 
 namespace
 {
@@ -51,6 +53,49 @@ bool nearly(Color a, Color b, int tol = 12)
     return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol &&
            delta(a.b, b.b) <= tol;
 }
+
+class PaintProbe : public Widget
+{
+public:
+    explicit PaintProbe(int& count) : count_(count)
+    {
+    }
+
+    Size measure(LayoutCtx&, Size constraints) override
+    {
+        return constraints;
+    }
+
+    void paint(PaintCtx&) override
+    {
+        ++count_;
+    }
+
+private:
+    int& count_;
+};
+
+class KeyProbe : public FixedBox
+{
+public:
+    KeyProbe(int& count, bool consume)
+        : FixedBox({10, 10}), count_(count), consume_(consume)
+    {
+    }
+
+    bool on_key_down(const KeyEvent& event) override
+    {
+        if (event.key == Key::Escape)
+        {
+            ++count_;
+        }
+        return consume_;
+    }
+
+private:
+    int& count_;
+    bool consume_ = false;
+};
 
 } // namespace
 
@@ -131,6 +176,315 @@ TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]")
     // Cross stretch on row's cross axis (height) → both fill 50.
     CHECK(a->bounds().h == 50.0f);
     CHECK(b->bounds().h == 50.0f);
+}
+
+TEST_CASE("Widget default paint traverses visible children",
+          "[tk][widget][layout]")
+{
+    Stage st;
+    FixedBox root({100, 100});
+    int painted_a = 0;
+    int painted_b = 0;
+    root.add_child(std::make_unique<PaintProbe>(painted_a));
+    auto* hidden = root.add_child(std::make_unique<PaintProbe>(painted_b));
+    hidden->set_visible(false);
+
+    auto pc = st.paint_ctx();
+    root.paint(pc);
+
+    CHECK(painted_a == 1);
+    CHECK(painted_b == 0);
+}
+
+TEST_CASE("Stack arranges visible children to the same bounds",
+          "[tk][widget][layout]")
+{
+    Stage st;
+    Stack stack;
+    auto* a = stack.add_child(std::make_unique<FixedBox>(Size{20, 30}));
+    auto* b = stack.add_child(std::make_unique<FixedBox>(Size{40, 10}));
+
+    auto lc = st.layout_ctx();
+    Size measured = stack.measure(lc, {100, 80});
+    stack.arrange(lc, {5, 6, 100, 80});
+
+    CHECK(measured.w == 40.0f);
+    CHECK(measured.h == 30.0f);
+    CHECK(a->bounds().x == 5.0f);
+    CHECK(a->bounds().y == 6.0f);
+    CHECK(a->bounds().w == 100.0f);
+    CHECK(a->bounds().h == 80.0f);
+    CHECK(b->bounds().x == 5.0f);
+    CHECK(b->bounds().y == 6.0f);
+    CHECK(b->bounds().w == 100.0f);
+    CHECK(b->bounds().h == 80.0f);
+}
+
+TEST_CASE("Keyboard dispatch routes to topmost visible child first",
+          "[tk][widget][key]")
+{
+    FixedBox root({100, 100});
+    int lower = 0;
+    int upper = 0;
+    int hidden = 0;
+    root.add_child(std::make_unique<KeyProbe>(lower, true));
+    auto* h = root.add_child(std::make_unique<KeyProbe>(hidden, true));
+    h->set_visible(false);
+    root.add_child(std::make_unique<KeyProbe>(upper, true));
+
+    CHECK(root.dispatch_key_down({Key::Escape}) == true);
+    CHECK(lower == 0);
+    CHECK(hidden == 0);
+    CHECK(upper == 1);
+}
+
+TEST_CASE("Keyboard dispatch bubbles to parent when children ignore it",
+          "[tk][widget][key]")
+{
+    class ParentProbe : public FixedBox
+    {
+    public:
+        explicit ParentProbe(int& count) : FixedBox({100, 100}), count_(count)
+        {
+        }
+        bool on_key_down(const KeyEvent& event) override
+        {
+            if (event.key == Key::Escape)
+            {
+                ++count_;
+                return true;
+            }
+            return false;
+        }
+
+    private:
+        int& count_;
+    };
+
+    int child = 0;
+    int parent = 0;
+    ParentProbe root(parent);
+    root.add_child(std::make_unique<KeyProbe>(child, false));
+
+    CHECK(root.dispatch_key_down({Key::Escape}) == true);
+    CHECK(child == 1);
+    CHECK(parent == 1);
+}
+
+TEST_CASE("MainAppWidget Escape closes the topmost transient overlay first",
+          "[tk][widget][key]")
+{
+    MainAppWidget app;
+    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
+    app.show_image_viewer(true);
+    app.show_quick_switch(true);
+
+    CHECK(app.dispatch_key_down({Key::Escape}) == true);
+
+    CHECK(app.quick_switcher()->is_open() == false);
+    CHECK(app.image_viewer()->is_open() == true);
+    CHECK(app.image_viewer()->visible() == true);
+}
+
+TEST_CASE("MainAppWidget Escape closes and hides media lightboxes",
+          "[tk][widget][key]")
+{
+    MainAppWidget app;
+    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
+    app.show_image_viewer(true);
+
+    CHECK(app.dispatch_key_down({Key::Escape}) == true);
+
+    CHECK(app.image_viewer()->is_open() == false);
+    CHECK(app.image_viewer()->visible() == false);
+}
+
+TEST_CASE("MainAppWidget Escape closes in-room search",
+          "[tk][widget][key]")
+{
+    MainAppWidget app;
+    app.room_view()->set_room({.id = "!room:example.org", .name = "Room"});
+    app.room_view()->open_room_search();
+
+    CHECK(app.room_view()->room_search_open() == true);
+    CHECK(app.dispatch_key_down({Key::Escape}) == true);
+    CHECK(app.room_view()->room_search_open() == false);
+}
+
+TEST_CASE("MainAppWidget routes primary shortcut callbacks",
+          "[tk][widget][key]")
+{
+    MainAppWidget app;
+    int quick_switch = 0;
+    int message_search = 0;
+    int find_in_room = 0;
+    app.on_quick_switch_shortcut = [&] { ++quick_switch; };
+    app.on_message_search_shortcut = [&] { ++message_search; };
+    app.on_find_in_room_shortcut = [&] { ++find_in_room; };
+
+    KeyEvent quick{};
+    quick.key = Key::Character;
+    quick.text = "k";
+    quick.ctrl = true;
+    CHECK(app.dispatch_key_down(quick) == true);
+
+    KeyEvent find{};
+    find.key = Key::Character;
+    find.text = "f";
+    find.ctrl = true;
+    CHECK(app.dispatch_key_down(find) == true);
+
+    KeyEvent search{};
+    search.key = Key::Character;
+    search.text = "F";
+    search.ctrl = true;
+    search.shift = true;
+    CHECK(app.dispatch_key_down(search) == true);
+
+    CHECK(quick_switch == 1);
+    CHECK(find_in_room == 1);
+    CHECK(message_search == 1);
+}
+
+TEST_CASE("MainAppWidget accepts Command as the primary shortcut modifier",
+          "[tk][widget][key]")
+{
+    MainAppWidget app;
+    int quick_switch = 0;
+    app.on_quick_switch_shortcut = [&] { ++quick_switch; };
+
+    KeyEvent quick{};
+    quick.key = Key::Character;
+    quick.text = "k";
+    quick.meta = true;
+
+    CHECK(app.dispatch_key_down(quick) == true);
+    CHECK(quick_switch == 1);
+}
+
+TEST_CASE("MainAppWidget routes history navigation shortcuts",
+          "[tk][widget][key]")
+{
+    MainAppWidget app;
+    int back = 0;
+    int forward = 0;
+    app.on_history_back_shortcut = [&] { ++back; };
+    app.on_history_forward_shortcut = [&] { ++forward; };
+
+    KeyEvent alt_left{};
+    alt_left.key = Key::Left;
+    alt_left.alt = true;
+    CHECK(app.dispatch_key_down(alt_left) == true);
+
+    KeyEvent alt_right{};
+    alt_right.key = Key::Right;
+    alt_right.alt = true;
+    CHECK(app.dispatch_key_down(alt_right) == true);
+
+    KeyEvent cmd_bracket{};
+    cmd_bracket.key = Key::Character;
+    cmd_bracket.text = "[";
+    cmd_bracket.meta = true;
+    CHECK(app.dispatch_key_down(cmd_bracket) == true);
+
+    KeyEvent cmd_close_bracket{};
+    cmd_close_bracket.key = Key::Character;
+    cmd_close_bracket.text = "]";
+    cmd_close_bracket.meta = true;
+    CHECK(app.dispatch_key_down(cmd_close_bracket) == true);
+
+    CHECK(back == 2);
+    CHECK(forward == 2);
+}
+
+TEST_CASE("MainAppWidget space nav routes header and back clicks",
+          "[tk][widget][pointer]")
+{
+    MainAppWidget app;
+    int back = 0;
+    int header = 0;
+    app.on_space_back = [&] { ++back; };
+    app.on_space_header = [&] { ++header; };
+    app.set_space_nav(true, "Space", "");
+
+    Stage st;
+    auto lc = st.layout_ctx();
+    app.arrange(lc, {0, 0, 400, 600});
+
+    Widget* header_hit = app.dispatch_pointer_down({80, 12});
+    REQUIRE(header_hit != nullptr);
+    header_hit->on_pointer_up(header_hit->world_to_local({80, 12}), true);
+
+    Widget* back_hit = app.dispatch_pointer_down({12, 12});
+    REQUIRE(back_hit != nullptr);
+    back_hit->on_pointer_up(back_hit->world_to_local({12, 12}), true);
+
+    CHECK(header == 1);
+    CHECK(back == 1);
+}
+
+TEST_CASE("MainAppWidget hides verification banner behind encryption setup",
+          "[tk][widget]")
+{
+    MainAppWidget app;
+
+    app.show_verif_banner(true);
+    REQUIRE(app.verif_banner()->visible() == true);
+    app.show_encryption_setup(true);
+    CHECK(app.verif_banner()->visible() == false);
+    app.show_encryption_setup(false);
+    CHECK(app.verif_banner()->visible() == true);
+
+    app.show_verif_banner(false);
+    app.show_encryption_setup(true);
+    app.show_verif_banner(true);
+    CHECK(app.verif_banner()->visible() == false);
+}
+
+TEST_CASE("MainAppWidget offline banner shifts chat content",
+          "[tk][widget][layout]")
+{
+    MainAppWidget app;
+    app.room_view()->set_room({.id = "!room:example.org", .name = "Room"});
+
+    Stage st;
+    auto lc = st.layout_ctx();
+    app.arrange(lc, {0, 0, 400, 600});
+    const auto online_bounds = app.room_view()->bounds();
+
+    app.set_offline(true);
+    app.arrange(lc, {0, 0, 400, 600});
+    const auto offline_bounds = app.room_view()->bounds();
+
+    CHECK(online_bounds.h > 0.0f);
+    CHECK(offline_bounds.y == online_bounds.y + 32.0f);
+    CHECK(offline_bounds.h == online_bounds.h - 32.0f);
+}
+
+TEST_CASE("MainAppWidget publishes native overlay registry entries",
+          "[tk][widget][layout]")
+{
+    MainAppWidget app;
+    Stage st;
+    auto lc = st.layout_ctx();
+    app.arrange(lc, {0, 0, 400, 600});
+
+    auto overlays = app.native_overlays();
+    CHECK(overlays.entries().size() == 9);
+    REQUIRE(overlays.find(NativeOverlayId::ComposeTextArea) != nullptr);
+    REQUIRE(overlays.find(NativeOverlayId::RoomSearchField) != nullptr);
+    REQUIRE(overlays.find(NativeOverlayId::QuickSwitchField) != nullptr);
+    CHECK(overlays.find(NativeOverlayId::QuickSwitchField)->visible == false);
+
+    app.show_quick_switch(true);
+    app.arrange(lc, {0, 0, 400, 600});
+    overlays = app.native_overlays();
+
+    const auto* quick = overlays.find(NativeOverlayId::QuickSwitchField);
+    REQUIRE(quick != nullptr);
+    CHECK(quick->kind == NativeOverlayKind::TextField);
+    CHECK(quick->visible == true);
+    CHECK(quick->rect.empty() == false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

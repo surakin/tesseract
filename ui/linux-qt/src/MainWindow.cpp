@@ -182,6 +182,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         {
             onSpaceBack();
         };
+        mainApp_->on_quick_switch_shortcut = [this] { openQuickSwitch_(); };
+        mainApp_->on_message_search_shortcut = [this] { openMessageSearch_(); };
+        mainApp_->on_find_in_room_shortcut = [this] { openFindInRoom_(); };
+        mainApp_->on_history_back_shortcut = [this] { navigate_history_back(); };
+        mainApp_->on_history_forward_shortcut = [this] { navigate_history_forward(); };
 
         // ---- Provider wiring (avatar/image/sticker/preview/user-info) ----
         wire_main_app_widget_(mainApp_);
@@ -1904,7 +1909,17 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     {
         auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this);
         sc->setContext(Qt::ApplicationShortcut);
-        connect(sc, &QShortcut::activated, this, [this] { openQuickSwitch_(); });
+        connect(sc, &QShortcut::activated, this,
+                [this]
+                {
+                    if (!mainApp_)
+                        return;
+                    tk::KeyEvent event{};
+                    event.key = tk::Key::Character;
+                    event.text = "k";
+                    event.ctrl = true;
+                    mainApp_->dispatch_key_down(event);
+                });
     }
     // Ctrl+Shift+F: open global message search (application-scoped so it fires
     // while the compose box holds focus).
@@ -1913,7 +1928,17 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F), this);
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this,
-                [this] { openMessageSearch_(); });
+                [this]
+                {
+                    if (!mainApp_)
+                        return;
+                    tk::KeyEvent event{};
+                    event.key = tk::Key::Character;
+                    event.text = "f";
+                    event.ctrl = true;
+                    event.shift = true;
+                    mainApp_->dispatch_key_down(event);
+                });
     }
     // Ctrl+F: open per-room "find in conversation" (application-scoped so it
     // fires while the compose box holds focus; no-op when no room is open).
@@ -1921,7 +1946,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         auto* sc = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this);
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this,
-                [this] { openFindInRoom_(); });
+                [this]
+                {
+                    if (!mainApp_)
+                        return;
+                    tk::KeyEvent event{};
+                    event.key = tk::Key::Character;
+                    event.text = "f";
+                    event.ctrl = true;
+                    mainApp_->dispatch_key_down(event);
+                });
     }
     // Alt+Left / Alt+Right: navigate room history back / forward.
     // ApplicationShortcut so these fire while the compose box holds focus.
@@ -1929,85 +1963,74 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         auto* sc = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_Left), this);
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this,
-                [this] { navigate_history_back(); });
+                [this]
+                {
+                    if (mainApp_)
+                    {
+                        tk::KeyEvent event{};
+                        event.key = tk::Key::Left;
+                        event.alt = true;
+                        mainApp_->dispatch_key_down(event);
+                    }
+                });
     }
     {
         auto* sc = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_Right), this);
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this,
-                [this] { navigate_history_forward(); });
+                [this]
+                {
+                    if (mainApp_)
+                    {
+                        tk::KeyEvent event{};
+                        event.key = tk::Key::Right;
+                        event.alt = true;
+                        mainApp_->dispatch_key_down(event);
+                    }
+                });
     }
 
     mainAppSurface_->set_on_layout(
         [this]
         {
-            if (mainApp_ && roomTextArea_)
+            if (!mainApp_)
+                return;
+
+            const auto overlays = mainApp_->native_overlays();
+            auto apply_field = [&overlays](tk::NativeOverlayId id,
+                                           const std::unique_ptr<tk::NativeTextField>& field)
             {
-                const tk::Rect ta = mainApp_->compose_text_area_rect();
-                roomTextArea_->set_visible(!ta.empty());
-                if (!ta.empty())
-                    roomTextArea_->set_rect(ta);
-            }
-            if (mainApp_ && roomSearchField_)
+                if (!field)
+                    return;
+                const auto* entry = overlays.find(id);
+                const bool visible = entry && entry->visible;
+                field->set_visible(visible);
+                if (visible)
+                    field->set_rect(entry->rect);
+            };
+            auto apply_area = [&overlays](tk::NativeOverlayId id,
+                                          const std::unique_ptr<tk::NativeTextArea>& area)
             {
-                roomSearchField_->set_visible(
-                    mainApp_->room_search_field_visible());
-                roomSearchField_->set_rect(mainApp_->room_search_field_rect());
-            }
-            if (mainApp_ && quickSwitchField_)
-            {
-                const bool vis = mainApp_->quick_switch_field_visible();
-                quickSwitchField_->set_visible(vis);
-                if (vis)
-                    quickSwitchField_->set_rect(
-                        mainApp_->quick_switch_field_rect());
-            }
-            if (mainApp_ && messageSearchField_)
-            {
-                const bool vis = mainApp_->message_search_field_visible();
-                messageSearchField_->set_visible(vis);
-                if (vis)
-                    messageSearchField_->set_rect(
-                        mainApp_->message_search_field_rect());
-            }
-            if (mainApp_ && forwardPickerField_)
-            {
-                const bool vis = mainApp_->forward_picker_field_visible();
-                forwardPickerField_->set_visible(vis);
-                if (vis)
-                    forwardPickerField_->set_rect(
-                        mainApp_->forward_picker_field_rect());
-            }
-            if (mainApp_ && findInRoomField_)
-            {
-                const bool vis = mainApp_->in_room_search_field_visible();
-                findInRoomField_->set_visible(vis);
-                if (vis)
-                    findInRoomField_->set_rect(
-                        mainApp_->in_room_search_field_rect());
-            }
-            if (mainApp_ && encPassphraseField_)
-            {
-                encPassphraseField_->set_visible(
-                    mainApp_->encryption_setup_passphrase_field_visible());
-                encPassphraseField_->set_rect(
-                    mainApp_->encryption_setup_passphrase_field_rect());
-            }
-            if (mainApp_ && encKeyField_)
-            {
-                encKeyField_->set_visible(
-                    mainApp_->encryption_setup_key_field_visible());
-                encKeyField_->set_rect(
-                    mainApp_->encryption_setup_key_field_rect());
-            }
-            if (mainApp_ && qrCheckCodeField_)
-            {
-                const bool vis = mainApp_->qr_grant_check_code_field_visible();
-                qrCheckCodeField_->set_visible(vis);
-                if (vis)
-                    qrCheckCodeField_->set_rect(
-                        mainApp_->qr_grant_check_code_field_rect());
-            }
+                if (!area)
+                    return;
+                const auto* entry = overlays.find(id);
+                const bool visible = entry && entry->visible;
+                area->set_visible(visible);
+                if (visible)
+                    area->set_rect(entry->rect);
+            };
+
+            apply_area(tk::NativeOverlayId::ComposeTextArea, roomTextArea_);
+            apply_field(tk::NativeOverlayId::RoomSearchField, roomSearchField_);
+            apply_field(tk::NativeOverlayId::QuickSwitchField, quickSwitchField_);
+            apply_field(tk::NativeOverlayId::MessageSearchField, messageSearchField_);
+            apply_field(tk::NativeOverlayId::ForwardPickerField, forwardPickerField_);
+            apply_field(tk::NativeOverlayId::FindInRoomField, findInRoomField_);
+            apply_field(tk::NativeOverlayId::EncryptionPassphraseField,
+                        encPassphraseField_);
+            apply_field(tk::NativeOverlayId::EncryptionKeyField, encKeyField_);
+            apply_field(tk::NativeOverlayId::QrGrantCheckCodeField, qrCheckCodeField_);
+
             if (mainApp_ && topicTextArea_)
             {
                 const tk::Rect tr =
@@ -2603,34 +2626,22 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
 {
     if (ev->key() == Qt::Key_Escape)
     {
-        // Quick switcher is the topmost modal — close it first.
-        if (mainApp_ && mainApp_->quick_switcher() &&
-            mainApp_->quick_switcher()->is_open())
+        const bool had_quick_switch = mainApp_ && mainApp_->quick_switcher() &&
+                                      mainApp_->quick_switcher()->is_open();
+        const bool had_message_search = mainApp_ && mainApp_->message_search() &&
+                                        mainApp_->message_search()->is_open();
+        const bool had_room_search = mainApp_ && mainApp_->room_view() &&
+                                     mainApp_->room_view()->room_search_open();
+        if (mainApp_ && mainApp_->dispatch_key_down({tk::Key::Escape}))
         {
-            closeQuickSwitch_();
-            ev->accept();
-            return;
-        }
-        if (mainApp_ && mainApp_->video_viewer()->is_open())
-        {
-            mainApp_->video_viewer()->close();
-            mainApp_->show_video_viewer(false);
-            mainAppSurface_->relayout();
-            ev->accept();
-            return;
-        }
-        if (mainApp_ && mainApp_->image_viewer()->is_open())
-        {
-            mainApp_->image_viewer()->close();
-            mainApp_->show_image_viewer(false);
-            mainAppSurface_->relayout();
-            ev->accept();
-            return;
-        }
-        if (mainApp_ && mainApp_->room_view() &&
-            mainApp_->room_view()->room_search_open())
-        {
-            closeFindInRoom_();
+            if (had_quick_switch)
+                closeQuickSwitch_();
+            else if (had_message_search)
+                closeMessageSearch_();
+            else if (had_room_search)
+                closeFindInRoom_();
+            else if (mainAppSurface_)
+                mainAppSurface_->relayout();
             ev->accept();
             return;
         }

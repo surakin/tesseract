@@ -2686,6 +2686,31 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         // UserInfo callbacks: left-click → account picker, right-click → context menu.
         // (image_provider is wired in wire_main_app_widget_ below.)
         __weak MainWindowController* weakSelf = self;
+        _mainApp->on_quick_switch_shortcut = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s) [s _openQuickSwitch];
+        };
+        _mainApp->on_message_search_shortcut = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s) [s _openMessageSearch];
+        };
+        _mainApp->on_find_in_room_shortcut = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s) [s _openFindInRoom];
+        };
+        _mainApp->on_history_back_shortcut = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s) [s _navigateHistoryBack];
+        };
+        _mainApp->on_history_forward_shortcut = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s) [s _navigateHistoryForward];
+        };
         _mainApp->user_info()->on_primary = [weakSelf](tk::Point /*p*/)
         {
             MainWindowController* s = weakSelf;
@@ -5038,13 +5063,34 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     (void)surf;
                     return;
                 }
-                // Compose text area.
+                const auto overlays = app->native_overlays();
+                auto applyField = [&overlays](
+                    tk::NativeOverlayId id,
+                    const std::unique_ptr<tk::NativeTextField>& field)
                 {
-                    const tk::Rect ta = app->compose_text_area_rect();
-                    s->_roomTextArea->set_visible(!ta.empty());
-                    if (!ta.empty())
-                        s->_roomTextArea->set_rect(ta);
-                }
+                    if (!field)
+                        return;
+                    const auto* entry = overlays.find(id);
+                    const bool visible = entry && entry->visible;
+                    field->set_visible(visible);
+                    if (visible)
+                        field->set_rect(entry->rect);
+                };
+                auto applyArea = [&overlays](
+                    tk::NativeOverlayId id,
+                    const std::unique_ptr<tk::NativeTextArea>& area)
+                {
+                    if (!area)
+                        return;
+                    const auto* entry = overlays.find(id);
+                    const bool visible = entry && entry->visible;
+                    area->set_visible(visible);
+                    if (visible)
+                        area->set_rect(entry->rect);
+                };
+
+                applyArea(tk::NativeOverlayId::ComposeTextArea,
+                          s->_roomTextArea);
                 // Topic-edit text area.
                 {
                     const tk::Rect tr = app->room_view()->topic_edit_rect();
@@ -5058,80 +5104,22 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                                 app->room_view()->topic_edit_initial_text());
                     }
                 }
-                // Room search field.
-                bool searchVisible = app->room_search_field_visible();
-                s->_roomSearchField->set_visible(searchVisible);
-                if (searchVisible)
-                {
-                    s->_roomSearchField->set_rect(
-                        app->room_search_field_rect());
-                }
-                // Quick switcher search field (topmost modal — keys off its
-                // own open state, not gated by other overlays).
-                if (s->_quickSwitchField)
-                {
-                    bool qsVisible = app->quick_switch_field_visible();
-                    s->_quickSwitchField->set_visible(qsVisible);
-                    if (qsVisible)
-                        s->_quickSwitchField->set_rect(
-                            app->quick_switch_field_rect());
-                }
-                // Message search field (topmost modal like the switcher).
-                if (s->_messageSearchField)
-                {
-                    bool msVisible = app->message_search_field_visible();
-                    s->_messageSearchField->set_visible(msVisible);
-                    if (msVisible)
-                        s->_messageSearchField->set_rect(
-                            app->message_search_field_rect());
-                }
-                // Forward room picker search field.
-                if (s->_forwardPickerField)
-                {
-                    bool fpVisible = app->forward_picker_field_visible();
-                    s->_forwardPickerField->set_visible(fpVisible);
-                    if (fpVisible)
-                        s->_forwardPickerField->set_rect(
-                            app->forward_picker_field_rect());
-                }
-                // Per-room find-in-conversation field (⌘F).
-                if (s->_findInRoomField)
-                {
-                    bool vis = app->in_room_search_field_visible();
-                    s->_findInRoomField->set_visible(vis);
-                    if (vis)
-                        s->_findInRoomField->set_rect(
-                            app->in_room_search_field_rect());
-                }
-                // Encryption setup passphrase field.
-                if (s->_shell->enc_passphrase_field_ && app->encryption_setup())
-                {
-                    auto* ov = app->encryption_setup();
-                    bool ppVisible = ov->passphrase_field_rect_visible();
-                    s->_shell->enc_passphrase_field_->set_visible(ppVisible);
-                    if (ppVisible)
-                        s->_shell->enc_passphrase_field_->set_rect(
-                            ov->passphrase_field_rect_value());
-                }
-                // Encryption setup recovery-key field.
-                if (s->_shell->enc_key_field_ && app->encryption_setup())
-                {
-                    auto* ov = app->encryption_setup();
-                    bool kfVisible = ov->key_field_rect_visible();
-                    s->_shell->enc_key_field_->set_visible(kfVisible);
-                    if (kfVisible)
-                        s->_shell->enc_key_field_->set_rect(
-                            ov->key_field_rect_value());
-                }
-                // QR grant check-code input field.
-                if (s->_shell->qr_check_code_field_ && app->qr_grant_view())
-                {
-                    bool vis = app->qr_grant_check_code_field_visible();
-                    s->_shell->qr_check_code_field_->set_visible(vis);
-                    if (vis)
-                        s->_shell->qr_check_code_field_->set_rect(
-                            app->qr_grant_check_code_field_rect());
-                }
+                applyField(tk::NativeOverlayId::RoomSearchField,
+                           s->_roomSearchField);
+                applyField(tk::NativeOverlayId::QuickSwitchField,
+                           s->_quickSwitchField);
+                applyField(tk::NativeOverlayId::MessageSearchField,
+                           s->_messageSearchField);
+                applyField(tk::NativeOverlayId::ForwardPickerField,
+                           s->_forwardPickerField);
+                applyField(tk::NativeOverlayId::FindInRoomField,
+                           s->_findInRoomField);
+                applyField(tk::NativeOverlayId::EncryptionPassphraseField,
+                           s->_shell->enc_passphrase_field_);
+                applyField(tk::NativeOverlayId::EncryptionKeyField,
+                           s->_shell->enc_key_field_);
+                applyField(tk::NativeOverlayId::QrGrantCheckCodeField,
+                           s->_shell->qr_check_code_field_);
                 (void)surf;
             });
 
@@ -5144,120 +5132,132 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                                              if (!s)
                                                  return event;
                                              // ⌘K → open quick switcher.
-                                             if ((event.modifierFlags &
-                                                  NSEventModifierFlagCommand) &&
-                                                 [event.charactersIgnoringModifiers
-                                                     isEqualToString:@"k"])
-                                             {
-                                                 [s _openQuickSwitch];
-                                                 return (NSEvent*)nil;
-                                             }
+                                              if ((event.modifierFlags &
+                                                   NSEventModifierFlagCommand) &&
+                                                  [event.charactersIgnoringModifiers
+                                                      isEqualToString:@"k"])
+                                              {
+                                                  if (s->_mainApp)
+                                                  {
+                                                      tk::KeyEvent key{};
+                                                      key.key = tk::Key::Character;
+                                                      key.text = "k";
+                                                      key.meta = true;
+                                                      s->_mainApp->dispatch_key_down(key);
+                                                  }
+                                                  return (NSEvent*)nil;
+                                              }
                                              // ⌘⇧F → open global message search.
                                              if ((event.modifierFlags &
                                                   NSEventModifierFlagCommand) &&
                                                  (event.modifierFlags &
                                                   NSEventModifierFlagShift) &&
                                                  [[event.charactersIgnoringModifiers
-                                                     lowercaseString]
-                                                     isEqualToString:@"f"])
-                                             {
-                                                 [s _openMessageSearch];
-                                                 return (NSEvent*)nil;
-                                             }
+                                                      lowercaseString]
+                                                      isEqualToString:@"f"])
+                                              {
+                                                  if (s->_mainApp)
+                                                  {
+                                                      tk::KeyEvent key{};
+                                                      key.key = tk::Key::Character;
+                                                      key.text = "f";
+                                                      key.meta = true;
+                                                      key.shift = true;
+                                                      s->_mainApp->dispatch_key_down(key);
+                                                  }
+                                                  return (NSEvent*)nil;
+                                              }
                                              // ⌘F → open per-room find in conversation.
                                              if ((event.modifierFlags &
                                                   NSEventModifierFlagCommand) &&
                                                  !(event.modifierFlags &
                                                    NSEventModifierFlagShift) &&
                                                  [[event.charactersIgnoringModifiers
-                                                     lowercaseString]
-                                                     isEqualToString:@"f"])
-                                             {
-                                                 [s _openFindInRoom];
-                                                 return (NSEvent*)nil;
-                                             }
+                                                      lowercaseString]
+                                                      isEqualToString:@"f"])
+                                              {
+                                                  if (s->_mainApp)
+                                                  {
+                                                      tk::KeyEvent key{};
+                                                      key.key = tk::Key::Character;
+                                                      key.text = "f";
+                                                      key.meta = true;
+                                                      s->_mainApp->dispatch_key_down(key);
+                                                  }
+                                                  return (NSEvent*)nil;
+                                              }
                                              // ⌘[ → navigate room history back.
-                                             if ((event.modifierFlags &
-                                                  NSEventModifierFlagCommand) &&
-                                                 [event.charactersIgnoringModifiers
-                                                     isEqualToString:@"["])
-                                             {
-                                                 [s _navigateHistoryBack];
-                                                 return (NSEvent*)nil;
-                                             }
+                                              if ((event.modifierFlags &
+                                                   NSEventModifierFlagCommand) &&
+                                                  [event.charactersIgnoringModifiers
+                                                      isEqualToString:@"["])
+                                              {
+                                                  if (s->_mainApp)
+                                                  {
+                                                      tk::KeyEvent key{};
+                                                      key.key = tk::Key::Character;
+                                                      key.text = "[";
+                                                      key.meta = true;
+                                                      s->_mainApp->dispatch_key_down(key);
+                                                  }
+                                                  return (NSEvent*)nil;
+                                              }
                                              // ⌘] → navigate room history forward.
-                                             if ((event.modifierFlags &
-                                                  NSEventModifierFlagCommand) &&
-                                                 [event.charactersIgnoringModifiers
-                                                     isEqualToString:@"]"])
-                                             {
-                                                 [s _navigateHistoryForward];
-                                                 return (NSEvent*)nil;
-                                             }
-                                             if (event.keyCode == 53)
-                                             { // Escape
-                                                 // Quick switcher is topmost.
-                                                 if (s->_mainApp &&
-                                                     s->_mainApp
-                                                         ->quick_switcher() &&
-                                                     s->_mainApp->quick_switcher()
-                                                         ->is_open())
-                                                 {
-                                                     [s _closeQuickSwitch];
-                                                     return (NSEvent*)nil;
-                                                 }
-                                                 if (s->_mainApp &&
-                                                     s->_mainApp
-                                                         ->message_search() &&
-                                                     s->_mainApp->message_search()
-                                                         ->is_open())
-                                                 {
-                                                     [s _closeMessageSearch];
-                                                     return (NSEvent*)nil;
-                                                 }
-                                                 if (s->_mainApp &&
-                                                     s->_mainApp->room_view() &&
-                                                     s->_mainApp->room_view()
-                                                         ->room_search_open())
-                                                 {
-                                                     [s _closeFindInRoom];
-                                                     return (NSEvent*)nil;
-                                                 }
-                                                 if (s->_vidViewer &&
-                                                     s->_vidViewer->is_open())
-                                                 {
-                                                     s->_vidViewer->close();
-                                                     s->_mainApp
-                                                         ->show_video_viewer(
-                                                             false);
-                                                     s->_mainAppSurface
-                                                         ->relayout();
-                                                     if (!s->_mainApp
-                                                              ->compose_text_area_rect()
-                                                              .empty())
-                                                         s->_roomTextArea
-                                                             ->set_focused(
-                                                                 true);
-                                                     return (NSEvent*)nil;
-                                                 }
-                                                 if (s->_imgViewer &&
-                                                     s->_imgViewer->is_open())
-                                                 {
-                                                     s->_imgViewer->close();
-                                                     s->_mainApp
-                                                         ->show_image_viewer(
-                                                             false);
-                                                     s->_mainAppSurface
-                                                         ->relayout();
-                                                     if (!s->_mainApp
-                                                              ->compose_text_area_rect()
-                                                              .empty())
-                                                         s->_roomTextArea
-                                                             ->set_focused(
-                                                                 true);
-                                                     return (NSEvent*)nil;
-                                                 }
-                                             }
+                                              if ((event.modifierFlags &
+                                                   NSEventModifierFlagCommand) &&
+                                                  [event.charactersIgnoringModifiers
+                                                      isEqualToString:@"]"])
+                                              {
+                                                  if (s->_mainApp)
+                                                  {
+                                                      tk::KeyEvent key{};
+                                                      key.key = tk::Key::Character;
+                                                      key.text = "]";
+                                                      key.meta = true;
+                                                      s->_mainApp->dispatch_key_down(key);
+                                                  }
+                                                  return (NSEvent*)nil;
+                                              }
+                                              if (event.keyCode == 53)
+                                              { // Escape
+                                                  const bool hadQuickSwitch =
+                                                      s->_mainApp &&
+                                                      s->_mainApp->quick_switcher() &&
+                                                      s->_mainApp->quick_switcher()
+                                                          ->is_open();
+                                                  const bool hadMessageSearch =
+                                                      s->_mainApp &&
+                                                      s->_mainApp->message_search() &&
+                                                      s->_mainApp->message_search()
+                                                          ->is_open();
+                                                  const bool hadRoomSearch =
+                                                      s->_mainApp &&
+                                                      s->_mainApp->room_view() &&
+                                                      s->_mainApp->room_view()
+                                                          ->room_search_open();
+                                                  if (s->_mainApp &&
+                                                      s->_mainApp
+                                                          ->dispatch_key_down(
+                                                              {tk::Key::Escape}))
+                                                  {
+                                                      if (hadQuickSwitch)
+                                                          [s _closeQuickSwitch];
+                                                      else if (hadMessageSearch)
+                                                          [s _closeMessageSearch];
+                                                      else if (hadRoomSearch)
+                                                          [s _closeFindInRoom];
+                                                      else if (s->_mainAppSurface)
+                                                          s->_mainAppSurface
+                                                              ->relayout();
+                                                      if (s->_roomTextArea &&
+                                                          !s->_mainApp
+                                                               ->compose_text_area_rect()
+                                                               .empty())
+                                                          s->_roomTextArea
+                                                              ->set_focused(true);
+                                                      return (NSEvent*)nil;
+                                                  }
+                                              }
                                              return event;
                                          }];
     }

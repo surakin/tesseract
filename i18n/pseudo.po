@@ -29,3 +29,19 @@ msgstr[1] "[{0} available to join]"
 #: ui/shared/views/SpaceRootView.cpp
 msgid "Explore the rooms in this space from the room list."
 msgstr "[Explore the rooms in this space from the room list.]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Forward message"
+msgstr "[Forward message]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Delete message"
+msgstr "[Delete message]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Unpin message"
+msgstr "[Unpin message]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Pin message"
+msgstr "[Pin message]"

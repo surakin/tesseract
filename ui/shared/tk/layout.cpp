@@ -56,6 +56,11 @@ struct AxisOps
     }
 };
 
+float clamp_constraint(float value, float constraint)
+{
+    return constraint >= 0.0f ? std::min(value, constraint) : value;
+}
+
 } // namespace
 
 Size FlexBox::measure(LayoutCtx& ctx, Size constraints)
@@ -224,15 +229,31 @@ void FlexBox::arrange(LayoutCtx& ctx, Rect bounds)
     }
 }
 
-void FlexBox::paint(PaintCtx& ctx)
+Size FixedBox::measure(LayoutCtx&, Size constraints)
 {
+    return {clamp_constraint(size_.w, constraints.w),
+            clamp_constraint(size_.h, constraints.h)};
+}
+
+Size Stack::measure(LayoutCtx& ctx, Size constraints)
+{
+    Size out{};
     for (auto& ch : children())
     {
         if (ch->visible())
         {
-            ch->paint(ctx);
+            Size s = ch->measure(ctx, constraints);
+            out.w = std::max(out.w, s.w);
+            out.h = std::max(out.h, s.h);
         }
     }
+    return {clamp_constraint(out.w, constraints.w),
+            clamp_constraint(out.h, constraints.h)};
+}
+
+void Stack::arrange(LayoutCtx& ctx, Rect bounds)
+{
+    Widget::arrange(ctx, bounds);
 }
 
 } // namespace tk

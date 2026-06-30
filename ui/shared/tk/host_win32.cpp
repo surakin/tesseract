@@ -3795,6 +3795,22 @@ public:
         }
     }
 
+    bool on_key_down(const KeyEvent& event)
+    {
+        fire_user_activity_();
+        if (popup_ && popup_->dispatch_key_down(event))
+        {
+            request_repaint();
+            return true;
+        }
+        if (root_ && root_->dispatch_key_down(event))
+        {
+            request_repaint();
+            return true;
+        }
+        return false;
+    }
+
     void detach()
     {
         hwnd_ = nullptr;
@@ -3922,6 +3938,64 @@ namespace
 
 constexpr const wchar_t* kSurfaceClass = L"tk_win32_Surface";
 
+Key key_from_win32(WPARAM vk, bool shift)
+{
+    switch (vk)
+    {
+    case VK_ESCAPE: return Key::Escape;
+    case VK_RETURN: return Key::Enter;
+    case VK_SPACE: return Key::Space;
+    case VK_TAB: return shift ? Key::Backtab : Key::Tab;
+    case VK_UP: return Key::Up;
+    case VK_DOWN: return Key::Down;
+    case VK_LEFT: return Key::Left;
+    case VK_RIGHT: return Key::Right;
+    case VK_HOME: return Key::Home;
+    case VK_END: return Key::End;
+    case VK_PRIOR: return Key::PageUp;
+    case VK_NEXT: return Key::PageDown;
+    case VK_BACK: return Key::Backspace;
+    case VK_DELETE: return Key::Delete;
+    default: return Key::Unknown;
+    }
+}
+
+std::string character_text_from_win32(WPARAM vk, bool shift)
+{
+    if (vk >= 'A' && vk <= 'Z')
+    {
+        const char base = shift ? 'A' : 'a';
+        return std::string(1, static_cast<char>(base + vk - 'A'));
+    }
+    if (vk >= '0' && vk <= '9')
+    {
+        return std::string(1, static_cast<char>('0' + vk - '0'));
+    }
+    return {};
+}
+
+KeyEvent translate_key_event(WPARAM vk, LPARAM lParam)
+{
+    const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    KeyEvent out{};
+    out.key = key_from_win32(vk, shift);
+    out.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    out.shift = shift;
+    out.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    out.meta = (GetKeyState(VK_LWIN) & 0x8000) != 0 ||
+               (GetKeyState(VK_RWIN) & 0x8000) != 0;
+    out.repeat = (lParam & (1L << 30)) != 0;
+    if (out.key == Key::Unknown)
+    {
+        out.text = character_text_from_win32(vk, shift);
+        if (!out.text.empty())
+        {
+            out.key = Key::Character;
+        }
+    }
+    return out;
+}
+
 LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                                   LPARAM lParam)
 {
@@ -3963,6 +4037,8 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         if (HWND root = GetAncestor(hwnd, GA_ROOT))
             SetForegroundWindow(root);
         return MA_NOACTIVATE;
+    case WM_GETDLGCODE:
+        return DLGC_WANTARROWS | DLGC_WANTCHARS | DLGC_WANTTAB;
     case WM_ERASEBKGND:
         return 1; // we paint the full client area in WM_PAINT
     case WM_PAINT:
@@ -3984,6 +4060,7 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_LBUTTONDOWN:
         if (host)
         {
+            SetFocus(hwnd);
             host->on_pointer_down(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         }
         return 0;
@@ -4057,6 +4134,19 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             host->on_wheel(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), delta);
         }
         return 0;
+    }
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+    {
+        if (host)
+        {
+            KeyEvent event = translate_key_event(wParam, lParam);
+            if (event.key != Key::Unknown && host->on_key_down(event))
+            {
+                return 0;
+            }
+        }
+        break;
     }
     case WM_CTLCOLOREDIT:
     {

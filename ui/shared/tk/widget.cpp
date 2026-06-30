@@ -27,6 +27,22 @@ void Widget::arrange(LayoutCtx& ctx, Rect bounds)
     }
 }
 
+void Widget::paint(PaintCtx& ctx)
+{
+    paint_children(ctx);
+}
+
+void Widget::paint_children(PaintCtx& ctx)
+{
+    for (auto& ch : children_)
+    {
+        if (ch->visible())
+        {
+            ch->paint(ctx);
+        }
+    }
+}
+
 bool Widget::contains_world(Point world) const
 {
     return world.x >= bounds_.x && world.y >= bounds_.y &&
@@ -90,6 +106,27 @@ Widget* Widget::dispatch_right_click(Point world)
     }
     Point local{world.x - bounds_.x, world.y - bounds_.y};
     return on_right_click(local) ? this : nullptr;
+}
+
+bool Widget::dispatch_key_down(const KeyEvent& event)
+{
+    if (!visible_)
+    {
+        return false;
+    }
+
+    for (Widget* ch : snapshot_children_rev(children()))
+    {
+        if (!ch->visible())
+        {
+            continue;
+        }
+        if (ch->dispatch_key_down(event))
+        {
+            return true;
+        }
+    }
+    return on_key_down(event);
 }
 
 Widget* Widget::dispatch_pointer_move(Point world, bool* dirty)

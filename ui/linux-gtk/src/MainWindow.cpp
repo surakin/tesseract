@@ -553,6 +553,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         verif_shared_ = main_app_->verif_banner();
         img_viewer_ = main_app_->image_viewer();
         vid_viewer_ = main_app_->video_viewer();
+        main_app_->on_quick_switch_shortcut = [this] { open_quick_switch_(); };
+        main_app_->on_message_search_shortcut =
+            [this] { open_message_search_(); };
+        main_app_->on_find_in_room_shortcut = [this] { open_find_in_room_(); };
+        main_app_->on_history_back_shortcut = [this] { navigate_history_back(); };
+        main_app_->on_history_forward_shortcut =
+            [this] { navigate_history_forward(); };
 
         // Wire TabBar callbacks.
         main_app_->tab_bar()->on_tab_selected =
@@ -2437,71 +2444,43 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     return;
                 }
 
-                bool search_visible = main_app_->room_search_field_visible();
-                if (room_search_field_)
+                const auto overlays = main_app_->native_overlays();
+                auto apply_field = [&overlays](
+                    tk::NativeOverlayId id,
+                    const std::unique_ptr<tk::NativeTextField>& field)
                 {
-                    room_search_field_->set_visible(search_visible);
-                    if (search_visible)
-                    {
-                        room_search_field_->set_rect(
-                            main_app_->room_search_field_rect());
-                    }
-                }
+                    if (!field)
+                        return;
+                    const auto* entry = overlays.find(id);
+                    const bool visible = entry && entry->visible;
+                    field->set_visible(visible);
+                    if (visible)
+                        field->set_rect(entry->rect);
+                };
+                auto apply_area = [&overlays](
+                    tk::NativeOverlayId id,
+                    const std::unique_ptr<tk::NativeTextArea>& area)
+                {
+                    if (!area)
+                        return;
+                    const auto* entry = overlays.find(id);
+                    const bool visible = entry && entry->visible;
+                    area->set_visible(visible);
+                    if (visible)
+                        area->set_rect(entry->rect);
+                };
 
-                if (quick_switch_field_)
-                {
-                    const bool qs_vis = main_app_->quick_switch_field_visible();
-                    quick_switch_field_->set_visible(qs_vis);
-                    if (qs_vis)
-                    {
-                        quick_switch_field_->set_rect(
-                            main_app_->quick_switch_field_rect());
-                    }
-                }
-
-                if (message_search_field_)
-                {
-                    const bool ms_vis =
-                        main_app_->message_search_field_visible();
-                    message_search_field_->set_visible(ms_vis);
-                    if (ms_vis)
-                    {
-                        message_search_field_->set_rect(
-                            main_app_->message_search_field_rect());
-                    }
-                }
-
-                if (forward_picker_field_)
-                {
-                    const bool fp_vis =
-                        main_app_->forward_picker_field_visible();
-                    forward_picker_field_->set_visible(fp_vis);
-                    if (fp_vis)
-                    {
-                        forward_picker_field_->set_rect(
-                            main_app_->forward_picker_field_rect());
-                    }
-                }
-
-                if (find_in_room_field_)
-                {
-                    const bool fir_vis =
-                        main_app_->in_room_search_field_visible();
-                    find_in_room_field_->set_visible(fir_vis);
-                    if (fir_vis)
-                    {
-                        find_in_room_field_->set_rect(
-                            main_app_->in_room_search_field_rect());
-                    }
-                }
-
-                if (room_text_area_)
-                {
-                    const tk::Rect ta = main_app_->compose_text_area_rect();
-                    room_text_area_->set_visible(!ta.empty());
-                    if (!ta.empty())
-                        room_text_area_->set_rect(ta);
-                }
+                apply_field(tk::NativeOverlayId::RoomSearchField,
+                            room_search_field_);
+                apply_field(tk::NativeOverlayId::QuickSwitchField,
+                            quick_switch_field_);
+                apply_field(tk::NativeOverlayId::MessageSearchField,
+                            message_search_field_);
+                apply_field(tk::NativeOverlayId::ForwardPickerField,
+                            forward_picker_field_);
+                apply_field(tk::NativeOverlayId::FindInRoomField,
+                            find_in_room_field_);
+                apply_area(tk::NativeOverlayId::ComposeTextArea, room_text_area_);
 
                 if (topic_text_area_)
                 {
@@ -2517,39 +2496,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     }
                 }
 
-                if (enc_passphrase_field_)
-                {
-                    bool visible =
-                        main_app_->encryption_setup_passphrase_field_visible();
-                    enc_passphrase_field_->set_visible(visible);
-                    if (visible)
-                    {
-                        enc_passphrase_field_->set_rect(
-                            main_app_->encryption_setup_passphrase_field_rect());
-                    }
-                }
-
-                if (enc_key_field_)
-                {
-                    bool visible =
-                        main_app_->encryption_setup_key_field_visible();
-                    enc_key_field_->set_visible(visible);
-                    if (visible)
-                    {
-                        enc_key_field_->set_rect(
-                            main_app_->encryption_setup_key_field_rect());
-                    }
-                }
-
-                if (qr_check_code_field_)
-                {
-                    const bool vis =
-                        main_app_->qr_grant_check_code_field_visible();
-                    qr_check_code_field_->set_visible(vis);
-                    if (vis)
-                        qr_check_code_field_->set_rect(
-                            main_app_->qr_grant_check_code_field_rect());
-                }
+                apply_field(tk::NativeOverlayId::EncryptionPassphraseField,
+                            enc_passphrase_field_);
+                apply_field(tk::NativeOverlayId::EncryptionKeyField,
+                            enc_key_field_);
+                apply_field(tk::NativeOverlayId::QrGrantCheckCodeField,
+                            qr_check_code_field_);
             });
 
         main_app_surface_->set_root(std::move(main_app_owner));
@@ -5655,7 +5607,14 @@ gboolean MainWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*,
                                                gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
-    self->open_quick_switch_();
+    if (self->main_app_)
+    {
+        tk::KeyEvent event{};
+        event.key = tk::Key::Character;
+        event.text = "k";
+        event.ctrl = true;
+        self->main_app_->dispatch_key_down(event);
+    }
     return TRUE;
 }
 
@@ -5663,7 +5622,15 @@ gboolean MainWindow::on_message_search_shortcut_(GtkWidget*, GVariant*,
                                                  gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
-    self->open_message_search_();
+    if (self->main_app_)
+    {
+        tk::KeyEvent event{};
+        event.key = tk::Key::Character;
+        event.text = "f";
+        event.ctrl = true;
+        event.shift = true;
+        self->main_app_->dispatch_key_down(event);
+    }
     return TRUE;
 }
 
@@ -5699,21 +5666,43 @@ void MainWindow::close_find_in_room_()
 gboolean MainWindow::on_find_in_room_shortcut_(GtkWidget*, GVariant*,
                                                gpointer user_data)
 {
-    static_cast<MainWindow*>(user_data)->open_find_in_room_();
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->main_app_)
+    {
+        tk::KeyEvent event{};
+        event.key = tk::Key::Character;
+        event.text = "f";
+        event.ctrl = true;
+        self->main_app_->dispatch_key_down(event);
+    }
     return TRUE;
 }
 
 gboolean MainWindow::on_nav_back_shortcut_(GtkWidget*, GVariant*,
                                            gpointer user_data)
 {
-    static_cast<MainWindow*>(user_data)->navigate_history_back();
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->main_app_)
+    {
+        tk::KeyEvent event{};
+        event.key = tk::Key::Left;
+        event.alt = true;
+        self->main_app_->dispatch_key_down(event);
+    }
     return TRUE;
 }
 
 gboolean MainWindow::on_nav_fwd_shortcut_(GtkWidget*, GVariant*,
                                           gpointer user_data)
 {
-    static_cast<MainWindow*>(user_data)->navigate_history_forward();
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->main_app_)
+    {
+        tk::KeyEvent event{};
+        event.key = tk::Key::Right;
+        event.alt = true;
+        self->main_app_->dispatch_key_down(event);
+    }
     return TRUE;
 }
 
@@ -5804,43 +5793,26 @@ gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
     }
     if (keyval == GDK_KEY_Escape)
     {
-        // Quick switcher is the topmost modal — close it first.
-        if (self->main_app_ && self->main_app_->quick_switcher() &&
-            self->main_app_->quick_switcher()->is_open())
+        const bool had_quick_switch = self->main_app_ &&
+            self->main_app_->quick_switcher() &&
+            self->main_app_->quick_switcher()->is_open();
+        const bool had_message_search = self->main_app_ &&
+            self->main_app_->message_search() &&
+            self->main_app_->message_search()->is_open();
+        const bool had_room_search = self->main_app_ &&
+            self->main_app_->room_view() &&
+            self->main_app_->room_view()->room_search_open();
+        if (self->main_app_ &&
+            self->main_app_->dispatch_key_down({tk::Key::Escape}))
         {
-            self->close_quick_switch_();
-            return TRUE;
-        }
-        if (self->vid_viewer_ && self->vid_viewer_->is_open())
-        {
-            self->vid_viewer_->close();
-            if (self->main_app_)
-            {
-                self->main_app_->show_video_viewer(false);
-            }
-            if (self->main_app_surface_)
-            {
+            if (had_quick_switch)
+                self->close_quick_switch_();
+            else if (had_message_search)
+                self->close_message_search_();
+            else if (had_room_search)
+                self->close_find_in_room_();
+            else if (self->main_app_surface_)
                 self->main_app_surface_->relayout();
-            }
-            return TRUE;
-        }
-        if (self->img_viewer_ && self->img_viewer_->is_open())
-        {
-            self->img_viewer_->close();
-            if (self->main_app_)
-            {
-                self->main_app_->show_image_viewer(false);
-            }
-            if (self->main_app_surface_)
-            {
-                self->main_app_surface_->relayout();
-            }
-            return TRUE;
-        }
-        if (self->main_app_ && self->main_app_->room_view() &&
-            self->main_app_->room_view()->room_search_open())
-        {
-            self->close_find_in_room_();
             return TRUE;
         }
     }

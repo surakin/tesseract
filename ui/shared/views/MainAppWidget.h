@@ -11,7 +11,7 @@
 //     UserInfo (kUserStripH)
 //   1px Separator
 //   Chat panel (flex)
-//     VerificationBanner (kBannerH…124, hidden by default)
+//     VerificationBanner (variable height, hidden by default)
 //     RoomView (flex)
 //   ImageViewerOverlay (full widget bounds, hidden by default)
 //   VideoViewerOverlay (full widget bounds, hidden by default)
@@ -41,6 +41,7 @@
 #endif
 
 #include "tk/controls.h"
+#include "tk/native_overlay_registry.h"
 #include "tk/svg.h"
 #include "tk/tab_bar.h"
 #include "tk/widget.h"
@@ -135,6 +136,7 @@ public:
 
     // ── Quick switcher (Ctrl+K) ───────────────────────────────────────────
 
+    std::function<void()> on_quick_switch_shortcut;
     void show_quick_switch(bool show);
     QuickSwitcher* quick_switcher() const { return quick_switcher_; }
     bool     quick_switch_field_visible() const;
@@ -142,6 +144,7 @@ public:
 
     // ── Message search (Ctrl+Shift+F) ─────────────────────────────────────
 
+    std::function<void()> on_message_search_shortcut;
     void show_message_search(bool show);
     MessageSearchView* message_search() const { return message_search_; }
     bool     message_search_field_visible() const;
@@ -258,27 +261,47 @@ public:
     // Distinct from room_search_field_* (sidebar room-list filter).
     bool     in_room_search_field_visible() const;
     tk::Rect in_room_search_field_rect()    const;
+    tk::NativeOverlayRegistry native_overlays() const;
 
     // ── Callbacks ─────────────────────────────────────────────────────────
 
     // Fires when the user taps ← in the space nav bar.
     std::function<void()> on_space_back;
+    // Fires when the user presses Ctrl/Cmd+F in the canvas widget tree.
+    std::function<void()> on_find_in_room_shortcut;
+    // Fires for shared room-history navigation shortcuts.
+    std::function<void()> on_history_back_shortcut;
+    std::function<void()> on_history_forward_shortcut;
     // Fires when the user clicks the current space's avatar/name in the nav bar.
     std::function<void()> on_space_header;
 
     // ── tk::Widget overrides ──────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
-    bool on_pointer_down(tk::Point local) override;
-    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_key_down(const tk::KeyEvent& event) override;
 
 private:
+    class SpaceNavWidget;
+    class SidebarWidget;
+    class OfflineBannerWidget;
+    class ChatContentStack;
+    class ChatPanelWidget;
+    class RootLayoutWidget;
+    class OverlayStackWidget;
+#ifdef TESSERACT_CALLS_ENABLED
+    class FloatingCallLayerWidget;
+#endif
+
     // True when ConfirmDialog or any RoomView-owned panel covers the canvas;
     // drives compose_text_area_rect() / room_search_field_visible() so the
     // native OS controls hide while overlays are up.
     bool any_modal_open_() const;
+    void clear_alternate_content_();
+    void notify_layout_changed_();
+    void set_room_visible_(bool visible);
+    bool handle_primary_shortcut_(const tk::KeyEvent& event);
+    bool handle_history_shortcut_(const tk::KeyEvent& event);
+    bool dismiss_top_transient_();
 
     static constexpr float kSidebarW =
         static_cast<float>(tesseract::visual::kSidebarWidth);
@@ -286,33 +309,26 @@ private:
     static constexpr float kSpaceNavH = 36.0f;
     static constexpr float kUserStripH =
         static_cast<float>(tesseract::visual::kUserStripHeight);
-    static constexpr float kBannerH = 48.0f;
 
     static constexpr float kNavAvatarSize = 24.0f;
 
-    bool space_nav_visible_ = false;
-    bool space_header_pressed_ = false;
-    std::string space_name_;
-    std::string avatar_url_;
-    std::function<const tk::Image*(const std::string&)> avatar_provider_;
-
-    // Sidebar children — borrowed raw pointers back from add_child()
-    tk::Button* nav_back_btn_ = nullptr;
-    tk::IconCache nav_back_icon_;
-    tk::Label* nav_name_lbl_ = nullptr;
+    // Primary split layout
+    RootLayoutWidget* root_layout_ = nullptr;
+    SidebarWidget* sidebar_ = nullptr;
     RoomListView* room_list_view_ = nullptr;
     UserInfo* user_info_ = nullptr;
 
     // Chat panel children
+    ChatPanelWidget* chat_panel_ = nullptr;
     VerificationBanner* verif_banner_ = nullptr;
     tk::TabBar* tab_bar_ = nullptr;
-    bool tab_bar_visible_ = false;
     RoomView*        room_view_    = nullptr;
     InviteCard*      invite_card_  = nullptr;
     RoomPreviewView* room_preview_ = nullptr;
     SpaceRootView*   space_root_   = nullptr;
 
     // Full-surface lightbox overlays (painted last — highest z-order)
+    OverlayStackWidget* overlay_stack_ = nullptr;
     ImageViewerOverlay* img_viewer_ = nullptr;
     VideoViewerOverlay* vid_viewer_ = nullptr;
     // Selfie overlay — lazily created by open_camera_overlay(), freed on dismiss.
@@ -337,19 +353,13 @@ private:
     ForwardRoomPicker* forward_picker_ = nullptr;
 
 #ifdef TESSERACT_CALLS_ENABLED
+    FloatingCallLayerWidget* floating_call_layer_ = nullptr;
     // Floating-mode CallOverlayWidget — lazily created by mount_call_overlay()
     // when initial_mode == Floating, removed by unmount_call_overlay().
-    // nullptr when no floating call is active. Ownership is in children_.
+    // nullptr when no floating call is active. Ownership is in floating_call_layer_.
     views::CallOverlayWidget* float_call_overlay_ = nullptr;
 
 #endif
-
-    bool verif_visible_ = false;
-
-    // Offline connectivity banner state
-    bool     offline_visible_    = false;
-    tk::Rect offline_banner_rect_{};
-    std::unique_ptr<tk::TextLayout> offline_layout_;
 
     static constexpr float kOfflineBannerH = 32.0f;
 };
