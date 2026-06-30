@@ -8,7 +8,7 @@ name      = "tesseract_sdk_ffi"
 crate-type = ["staticlib"]
 
 [features]
-calls = ["dep:livekit", "dep:hkdf", "dep:base64ct", "dep:rand", "dep:rustls"]
+calls = ["dep:livekit", "dep:hkdf", "dep:base64ct", "dep:rand", "dep:rustls", "dep:webrtc-sys"]
 
 [dependencies]
 cxx        = "1.0"
@@ -48,6 +48,10 @@ rustls    = { version = "0.23", optional = true, features = ["aws_lc_rs"] }
 hkdf      = { version = "0.12", optional = true }
 base64ct  = { version = "1",    optional = true, features = ["alloc"] }
 rand      = { version = "0.8",  optional = true }
+# Exact pin: webrtc-sys 0.3.36 added user_data to FrameMetadata and a 4th arg
+# to store_frame_metadata, breaking libwebrtc 0.3.38 (which requires "0.3.35").
+# Cargo.lock is gitignored so this forces the resolver to stay at 0.3.35.
+webrtc-sys = { version = "=0.3.35", optional = true }
 
 # On macOS, livekit-webrtc bundles its own Opus in libwebrtc. audiopus_sys's
 # build.rs checks cfg!(feature = "dynamic") before env-var branches, so this
