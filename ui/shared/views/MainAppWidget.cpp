@@ -484,6 +484,22 @@ private:
 
 class MainAppWidget::OverlayStackWidget : public tk::Stack
 {
+public:
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override
+    {
+        if (!visible())
+            return nullptr;
+        const auto& ch = children();
+        for (auto it = ch.rbegin(); it != ch.rend(); ++it)
+        {
+            auto* child = it->get();
+            if (!child->visible())
+                continue;
+            if (tk::Widget* hit = child->dispatch_pointer_move(world, dirty))
+                return hit;
+        }
+        return nullptr;
+    }
 };
 
 #ifdef TESSERACT_CALLS_ENABLED
@@ -519,6 +535,29 @@ public:
                 std::min(cy, bounds.y + bounds.h - kFloatingCallH));
             call->arrange(ctx, {fx, fy, kFloatingCallW, kFloatingCallH});
         }
+    }
+
+    // This layer spans the full app bounds so the floating call bubble can be
+    // dragged anywhere, but it has no content of its own when no call is
+    // active. The base Widget::dispatch_pointer_move falls back to claiming
+    // `this` whenever no child absorbs the hit, which would swallow every
+    // pointer-move over the whole app (blocking message-row hover) even with
+    // no call running. Stay transparent instead: only return a hit if a real
+    // child (the call bubble) claimed it.
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override
+    {
+        if (!visible())
+            return nullptr;
+        const auto& ch = children();
+        for (auto it = ch.rbegin(); it != ch.rend(); ++it)
+        {
+            auto* child = it->get();
+            if (!child->visible())
+                continue;
+            if (tk::Widget* hit = child->dispatch_pointer_move(world, dirty))
+                return hit;
+        }
+        return nullptr;
     }
 
 private:

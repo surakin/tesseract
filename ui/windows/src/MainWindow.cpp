@@ -1891,6 +1891,26 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return shortcode_for_mxc_(mxc);
             });
+        // Avatar inside received mention pills: resolve user id -> member
+        // avatar mxc -> cached image (kicking a fetch on miss; the row
+        // repaints when the bytes arrive).
+        room_view_->message_list()->set_mention_avatar_provider(
+            [this](const std::string& user_id) -> const tk::Image*
+            {
+                for (const auto& m : cached_room_members_)
+                {
+                    if (m.user_id != user_id)
+                        continue;
+                    if (m.avatar_url.empty())
+                        return nullptr;
+                    ensure_user_avatar_(
+                        m.avatar_url,
+                        media_group_for_room_(current_room_id_));
+                    return account_manager_.thumbnail_cache().peek(
+                        m.avatar_url);
+                }
+                return nullptr;
+            });
         if (auto player = main_app_surface_->host().make_audio_player())
         {
             room_view_->set_audio_player(std::move(player));
@@ -2404,13 +2424,17 @@ void MainWindow::on_create(HWND hwnd)
                 [this, c, room_id = std::move(room_id)]() mutable
                 {
                     auto members = c->get_room_members(room_id);
+                    // Only names/avatar_urls are cached — no avatar bytes
+                    // are fetched until a mention pill or the info panel
+                    // actually needs one (set_mention_avatar_provider above).
                     post_to_ui_(
-                        [this, members = std::move(members)]() mutable
+                        [this, room_id,
+                         members = std::move(members)]() mutable
                         {
                             if (main_app_)
                             {
-                                for (const auto& m : members)
-                                    ensure_user_avatar_(m.avatar_url);
+                                cached_room_members_ = members;
+                                cached_members_room_ = room_id;
                                 main_app_->room_view()->set_room_members(
                                     std::move(members));
                             }
@@ -4063,14 +4087,12 @@ void MainWindow::on_destroy()
     if (pending_login_client_)
         pending_login_client_->stop_sync();
 
-    // On Win32 the main thread is an STA (OleInitialize), and some WIC codec
-    // operations inside decode_image_ marshal internally back to the STA via
-    // the message queue.  A plain drain() → join() blocks the STA message
-    // pump, so those WIC calls can never complete → deadlock.
-    // CoWaitForMultipleHandles keeps the STA pump running while we wait,
-    // allowing in-flight WIC decodes to finish.  WorkerPool::~WorkerPool still
-    // calls drain(), but by then every thread is already joined (joinable()
-    // returns false), so it is a no-op.
+    // Stop queued work and join all pool threads. decode_image now creates a
+    // per-call WIC factory in the worker's own MTA apartment, so there is no
+    // longer any COM marshaling back to the STA message queue — a plain join()
+    // is sufficient. WorkerPool::~WorkerPool also calls drain(), but by then
+    // every thread is already joined (joinable() returns false), so it is a
+    // no-op.
     auto com_drain = [](WorkerPool& wp)
     {
         {
@@ -4083,19 +4105,8 @@ void MainWindow::on_destroy()
         wp.cv_.notify_all();
         for (auto& t : wp.threads_)
         {
-            if (!t.joinable())
-                continue;
-            HANDLE h =
-#ifdef __MINGW32__
-                reinterpret_cast<HANDLE>(t.native_handle());
-#else
-                t.native_handle();
-#endif
-            DWORD  ignored = 0;
-            CoWaitForMultipleHandles(
-                COWAIT_DISPATCH_CALLS | COWAIT_DISPATCH_WINDOW_MESSAGES,
-                INFINITE, 1, &h, &ignored);
-            t.join();
+            if (t.joinable())
+                t.join();
         }
     };
     com_drain(pool_);
