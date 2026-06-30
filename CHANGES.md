@@ -3,6 +3,50 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.11 — 2026-06-30
+
+- fix(macos): fixed a stack-overflow crash on macOS when a thread's timeline
+  reset while the message list was mid-layout. `set_repaint_requester` was
+  wired to `Surface::relayout()` — a full synchronous layout pass — instead of
+  a deferred OS repaint like the other three platforms (`update()` /
+  `gtk_widget_queue_draw()` / `InvalidateRect`). `MessageListView::arrange()`
+  applying a deferred scroll for a just-arrived event called
+  `scroll_to_event_id()`, which fired the repaint requester, which re-entered
+  `relayout()` from inside the layout pass it was already running, recursing
+  until the stack guard page was hit (~18,600 frames in the field crash
+  report). Fixed by routing the macOS repaint requester through
+  `host().request_repaint()` (`setNeedsDisplay:`), matching the other shells.
+
+- fix(media): media requests no longer appear to freeze in rooms that trigger
+  many of them at once, and the in-flight indicator no longer lingers
+  indefinitely after switching away from a media-heavy room. Several
+  contributing issues, found via a debug-tooltip instrumentation pass that
+  labels each in-flight request with its cancellation group:
+  - The download gate's hard ceiling on total in-flight requests counted
+    long-stale (presumed-stuck) slots the same as healthy ones, so a burst of
+    legitimately-needed media against a merely slow homeserver could block
+    *all* further downloads until something timed out, in discrete
+    freeze-then-burst waves. A second, longer stale threshold now exempts
+    those slots from the ceiling too, while a shorter one already protected
+    the soft per-lane limit.
+  - The initial-room-open media prefetch fetched a fixed trailing window of
+    50 timeline events regardless of how many rows actually fit on screen;
+    it now scales to the message list's real viewport height.
+  - Sender/read-receipt avatars and reaction-emoji images for timeline rows
+    were fetched outside any cancellable group, so they kept downloading
+    after the user left the room. They're now grouped with the rest of the
+    room's media.
+  - The dominant cause: every room switch eagerly fetched an avatar for
+    *every* member of the room (for mention-pill / mention-click
+    resolution), uncancelled — a large room's full membership reproduced the
+    "looks frozen" symptom on every switch. Removed the bulk fetch entirely
+    in favor of an on-demand fetch when a mention pill actually renders
+    (already implemented on Qt6; now wired on GTK4, Win32, and macOS too,
+    closing a platform gap where the supporting cache field existed but was
+    never connected). The room-info panel's member-avatar list gained the
+    same on-demand fetch, which it had been missing and was relying on the
+    now-removed bulk prefetch to keep populated.
+
 ## v0.8.10 — 2026-06-29
 
 - fix(verification): device verification now retries `get_verification_request`
