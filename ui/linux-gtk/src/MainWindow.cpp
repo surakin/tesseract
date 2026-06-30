@@ -785,6 +785,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             {
                 return shortcode_for_mxc_(mxc);
             });
+        // Avatar inside received mention pills: resolve user id -> member
+        // avatar mxc -> cached image (kicking a fetch on miss; the row
+        // repaints when the bytes arrive).
+        room_view_->message_list()->set_mention_avatar_provider(
+            [this](const std::string& user_id) -> const tk::Image*
+            {
+                for (const auto& m : cached_room_members_)
+                {
+                    if (m.user_id != user_id)
+                        continue;
+                    if (m.avatar_url.empty())
+                        return nullptr;
+                    ensure_user_avatar_(
+                        m.avatar_url,
+                        media_group_for_room_(current_room_id_));
+                    return account_manager_.thumbnail_cache().peek(
+                        m.avatar_url);
+                }
+                return nullptr;
+            });
         if (auto player = main_app_surface_->host().make_audio_player())
         {
             room_view_->set_audio_player(std::move(player));
@@ -1848,12 +1868,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             run_async_([this, c, room_id = std::move(room_id)]() mutable
             {
                 auto members = c->get_room_members(room_id);
-                post_to_ui_([this, members = std::move(members)]() mutable
+                // Only names/avatar_urls are cached — no avatar bytes are
+                // fetched until a mention pill or the info panel actually
+                // needs one (set_mention_avatar_provider above).
+                post_to_ui_([this, room_id,
+                            members = std::move(members)]() mutable
                 {
                     if (room_view_)
                     {
-                        for (const auto& m : members)
-                            ensure_user_avatar_(m.avatar_url);
+                        cached_room_members_ = members;
+                        cached_members_room_ = room_id;
                         room_view_->set_room_members(std::move(members));
                     }
                 });

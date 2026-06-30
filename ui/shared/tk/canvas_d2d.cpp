@@ -2135,7 +2135,7 @@ int read_frame_delay_ms(IWICBitmapFrameDecode* frame)
 
 } // namespace
 
-std::unique_ptr<Image> decode_image(Backend& b,
+std::unique_ptr<Image> decode_image(Backend& /*b*/,
                                     std::span<const std::uint8_t> bytes)
 {
     if (bytes.empty())
@@ -2143,10 +2143,31 @@ std::unique_ptr<Image> decode_image(Backend& b,
         return nullptr;
     }
 
-    Backend::Impl& impl = b.impl();
+    // Create a per-call WIC factory in the calling thread's own apartment.
+    // CoInitializeEx is ref-counted per thread: S_OK means we initialised and
+    // must call CoUninitialize; S_FALSE / RPC_E_CHANGED_MODE means the thread
+    // already has COM and we must not uninitialise it on exit.
+    // Using a thread-local factory avoids cross-apartment COM marshaling to the
+    // STA — previously all factory calls marshaled through the UI thread, which
+    // (a) serialised concurrent decodes and (b) required the UI thread to pump
+    // its message queue during shutdown.
+    const HRESULT coinit_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    struct ComGuard
+    {
+        bool owned;
+        ~ComGuard() { if (owned) CoUninitialize(); }
+    } com_guard{coinit_hr == S_OK};
+
+    ComPtr<IWICImagingFactory> wic;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&wic))))
+    {
+        return nullptr;
+    }
 
     ComPtr<IWICStream> stream;
-    if (FAILED(impl.wic->CreateStream(stream.GetAddressOf())))
+    if (FAILED(wic->CreateStream(stream.GetAddressOf())))
     {
         return nullptr;
     }
@@ -2157,9 +2178,9 @@ std::unique_ptr<Image> decode_image(Backend& b,
     }
 
     ComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(impl.wic->CreateDecoderFromStream(stream.Get(), nullptr,
-                                                 WICDecodeMetadataCacheOnLoad,
-                                                 decoder.GetAddressOf())))
+    if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
+                                            WICDecodeMetadataCacheOnLoad,
+                                            decoder.GetAddressOf())))
     {
         return nullptr;
     }
@@ -2223,7 +2244,7 @@ std::unique_ptr<Image> decode_image(Backend& b,
     IWICBitmapSource* decode_source = frame.Get();
     if (exif_transform != WICBitmapTransformRotate0)
     {
-        if (SUCCEEDED(impl.wic->CreateBitmapFlipRotator(
+        if (SUCCEEDED(wic->CreateBitmapFlipRotator(
                 rotator.GetAddressOf())) &&
             SUCCEEDED(rotator->Initialize(frame.Get(), exif_transform)))
         {
@@ -2232,7 +2253,7 @@ std::unique_ptr<Image> decode_image(Backend& b,
     }
 
     ComPtr<IWICFormatConverter> converter;
-    if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
+    if (FAILED(wic->CreateFormatConverter(converter.GetAddressOf())))
     {
         return nullptr;
     }
@@ -2248,7 +2269,7 @@ std::unique_ptr<Image> decode_image(Backend& b,
     // IWICStream, which was initialised from caller-owned memory that
     // does not outlive this call.
     ComPtr<IWICBitmap> cached;
-    if (FAILED(impl.wic->CreateBitmapFromSource(
+    if (FAILED(wic->CreateBitmapFromSource(
             converter.Get(), WICBitmapCacheOnLoad, cached.GetAddressOf())))
     {
         return nullptr;

@@ -280,6 +280,11 @@ protected:
     std::string room_id_;
     views::RoomView* room_view_ =
         nullptr; // borrowed; owned by surface widget tree
+    // Room-switch member-list cache backing the received-mention-pill avatar
+    // provider (set_mention_avatar_provider) — holds names + avatar_urls only;
+    // no avatar bytes are fetched until a pill actually paints.
+    std::vector<tesseract::RoomMember> cached_room_members_;
+    std::string cached_members_room_;
     // Media overlays — set by the subclass ctor before wire_room_view_().
     // When non-null, image/video click callbacks are wired to open them.
     views::ImageViewerOverlay* img_viewer_ = nullptr; // borrowed

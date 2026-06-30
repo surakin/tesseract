@@ -25,6 +25,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
@@ -507,7 +508,8 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
                           /*animated=*/false, MediaKind::RoomAvatar);
 }
 
-void ShellBase::ensure_user_avatar_(const std::string& mxc)
+void ShellBase::ensure_user_avatar_(const std::string& mxc,
+                                    std::uint64_t group_id)
 {
     if (mxc.empty() || media_decode_failed_.count(mxc) ||
         media_fetch_backed_off_(mxc))
@@ -528,9 +530,11 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc)
     {
         return;
     }
-    // Avatars are small, shared across rooms, and cheap to re-fetch (disk
-    // cached), so they are never cancelled on room switch → group 0.
-    fetch_media_pipeline_(mxc, tkey, tkey, /*group_id=*/0,
+    // Timeline-row callers pass the active room's group so leaving cancels
+    // them; account-wide callers (quick switcher roster, invites) pass the
+    // default 0 — those avatars are reused across rooms and cheap to
+    // re-fetch, so there's nothing to gain from cancelling on room switch.
+    fetch_media_pipeline_(mxc, tkey, tkey, group_id,
                           tesseract::Client::MediaReqKind::MxcThumbnail, mxc,
                           visual::kAvatarCacheSize, visual::kAvatarCacheSize,
                           /*animated=*/false, MediaKind::UserAvatar);
@@ -970,7 +974,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         [this](const std::vector<std::string>& urls)
     {
         for (const auto& url : urls)
-            ensure_user_avatar_(url);
+            ensure_user_avatar_(url, active_media_group_);
     };
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
@@ -1028,6 +1032,15 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     };
     app->room_list_view()->set_presence_provider(presence_lookup);
     app->room_view()->room_info_panel()->set_presence_provider(presence_lookup);
+    // Lazy avatar fetching: image_provider above (avatar_lookup) is a pure
+    // cache peek, so the panel requests a member's avatar only when their row
+    // is actually visible in the open panel — mirrors room_list_view's
+    // on_room_avatar_needed.
+    app->room_view()->room_info_panel()->on_member_avatar_needed =
+        [this](const tesseract::RoomMember& m)
+    {
+        ensure_user_avatar_(m.avatar_url, media_group_for_room_(current_room_id_));
+    };
 
     // Avatar click in UserProfilePanel → open the image viewer. The list only
     // holds an ≤80px thumbnail, so kick a full-size fetch into account_manager_.image_cache();
@@ -1462,21 +1475,28 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         tesseract::init_waveform_cache(
             (tesseract::cache_dir() / "waveforms.db").string());
     }
-    if (fetch_avatars)
-    {
-        ensure_user_avatar_(ev.sender_avatar_url);
-        for (const auto& rr : ev.read_receipts)
-        {
-            ensure_user_avatar_(rr.avatar_url);
-        }
-    }
-
     // MSC4278: gate media (image/sticker/video thumbnails + URL previews)
     // behind the media-preview config. A suppressed item is not fetched until
     // the user reveals it individually. Sender avatars, reactions, voice/audio,
     // and the BlurHash placeholder are not gated.
     const std::string& gate_room =
         ev.room_id.empty() ? current_room_id_ : ev.room_id;
+    // Inline media (image/sticker/video) is large, slow, and room-specific, so
+    // it is grouped under the originating room and cancelled when the user
+    // switches away — see cancel_media_group_ in after_active_room_changed_.
+    // Sender/read-receipt avatars are room-scoped too (the same row), so they
+    // share this group and get cancelled along with the rest of the row.
+    const std::uint64_t media_group = media_group_for_room_(gate_room);
+
+    if (fetch_avatars)
+    {
+        ensure_user_avatar_(ev.sender_avatar_url, media_group);
+        for (const auto& rr : ev.read_receipts)
+        {
+            ensure_user_avatar_(rr.avatar_url, media_group);
+        }
+    }
+
     // The user's own media is exempt from public-room suppression (Private
     // mode), so it is fetched here just like revealed media — otherwise the
     // placeholder would be gone but the bytes never fetched.
@@ -1484,10 +1504,6 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         media_allowed_(gate_room, !my_user_id_.empty() &&
                                       ev.sender == my_user_id_) ||
         revealed_events_.count(ev.event_id) != 0;
-    // Inline media (image/sticker/video) is large, slow, and room-specific, so
-    // it is grouped under the originating room and cancelled when the user
-    // switches away — see cancel_media_group_ in after_active_room_changed_.
-    const std::uint64_t media_group = media_group_for_room_(gate_room);
 
     if (ev.type == EventType::Image)
     {
@@ -1629,7 +1645,10 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     {
         if (r.source)
         {
-            ensure_media_image_(r.source->fetch_token(), 20, 20, 0,
+            // Custom-emoji reaction images are row-scoped like the rest of
+            // this event's media (a room with heavy reaction use can have
+            // dozens of distinct ones), so they share the room's cancel group.
+            ensure_media_image_(r.source->fetch_token(), 20, 20, media_group,
                                 MediaKind::Reaction);
         }
     }
@@ -1688,18 +1707,19 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
 {
     using Kind = views::MessageRowData::Kind;
 
+    const std::uint64_t media_group = media_group_for_room_(current_room_id_);
+
     if (fetch_avatars)
     {
-        ensure_user_avatar_(row.sender_avatar_url);
+        ensure_user_avatar_(row.sender_avatar_url, media_group);
         for (const auto& rr : row.read_receipts)
-            ensure_user_avatar_(rr.avatar_url);
+            ensure_user_avatar_(rr.avatar_url, media_group);
     }
 
     const bool preview =
         media_allowed_(current_room_id_,
                        !my_user_id_.empty() && row.is_own) ||
         revealed_events_.count(row.event_id) != 0;
-    const std::uint64_t media_group = media_group_for_room_(current_room_id_);
 
     if (row.kind == Kind::Image)
     {
@@ -1820,7 +1840,9 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
     for (const auto& r : row.reactions)
     {
         if (r.source)
-            ensure_media_image_(r.source->fetch_token(), 20, 20, 0,
+            // Same room-scoped cancel group as the rest of this row's media —
+            // see the comment in the Event overload above.
+            ensure_media_image_(r.source->fetch_token(), 20, 20, media_group,
                                 MediaKind::Reaction);
     }
 
@@ -2152,6 +2174,24 @@ void ShellBase::handle_media_preview_config_fetched_ui_(std::uint64_t /*request_
     request_relayout_();
 }
 
+std::size_t ShellBase::media_prefetch_window_() const
+{
+    // Deliberately small: shorter than any real row (which always has at
+    // least avatar-height + padding, or a line of body text), so dividing by
+    // it overestimates row count rather than under-fetching.
+    constexpr float kConservativeRowHeightPx = 20.0f;
+    // Fallback for the rare case bounds aren't established yet (e.g. before
+    // the shell's first layout pass) — small, since on_visible_rows_changed_
+    // covers anything this window misses once real heights are known.
+    constexpr std::size_t kFallbackWindow = 20;
+    if (!room_view_ || !room_view_->message_list())
+        return kFallbackWindow;
+    const float h = room_view_->message_list()->bounds().h;
+    if (h <= 0.0f)
+        return kFallbackWindow;
+    return static_cast<std::size_t>(std::ceil(h / kConservativeRowHeightPx));
+}
+
 std::vector<views::MessageRowData>
 ShellBase::build_rows_(const EventList& snapshot)
 {
@@ -2160,14 +2200,14 @@ ShellBase::build_rows_(const EventList& snapshot)
     // Only prefetch media for the trailing window — events at the top of the
     // snapshot are above the initial viewport and their media is fetched lazily
     // as the user scrolls up (via on_visible_rows_changed_).
-    constexpr std::size_t kMediaPrefetchWindow = 50;
+    const std::size_t media_prefetch_window = media_prefetch_window_();
     const std::size_t n = snapshot.size();
     for (std::size_t i = 0; i < n; ++i)
     {
         const auto& ev = snapshot[i];
         if (!ev)
             continue;
-        if (i + kMediaPrefetchWindow >= n)
+        if (i + media_prefetch_window >= n)
         {
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             media_prepped_event_ids_.insert(ev->event_id);
@@ -2184,14 +2224,14 @@ ShellBase::build_rows_(const std::vector<Event*>& snapshot)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
-    constexpr std::size_t kMediaPrefetchWindow = 50;
+    const std::size_t media_prefetch_window = media_prefetch_window_();
     const std::size_t n = snapshot.size();
     for (std::size_t i = 0; i < n; ++i)
     {
         auto* ev = snapshot[i];
         if (!ev)
             continue;
-        if (i + kMediaPrefetchWindow >= n)
+        if (i + media_prefetch_window >= n)
         {
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             media_prepped_event_ids_.insert(ev->event_id);
