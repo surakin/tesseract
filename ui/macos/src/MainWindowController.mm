@@ -3823,7 +3823,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 MainWindowController* s = weakSelf;
                 if (s && s->_mainAppSurface)
                 {
-                    s->_mainAppSurface->relayout();
+                    s->_mainAppSurface->host().request_repaint();
                 }
             });
         _mainApp->room_view()->set_post_delayed(

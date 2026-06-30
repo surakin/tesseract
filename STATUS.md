@@ -1,6 +1,34 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-24** (v0.8.9).
+Snapshot of every feature that has landed on `master`. Last updated **2026-06-30** (v0.8.11).
+
+> **Room-switch media fetching overhaul (2026-06-30, v0.8.11).**
+> Fixed media requests appearing to freeze in rooms that trigger many at once, and
+> the in-flight indicator lingering indefinitely after leaving a media-heavy room.
+> The download gate's hard ceiling now exempts long-stale slots the same way the
+> soft per-lane limit already did, so a burst against a slow homeserver no longer
+> blocks all further downloads in freeze-then-burst waves. The initial-room-open
+> media prefetch scales to the message list's real viewport height instead of a
+> fixed 50-event window. The dominant cause, found via a new debug-tooltip
+> instrumentation pass: every room switch eagerly fetched an avatar for the
+> *entire* membership list (for mention-pill resolution), uncancelled — removed in
+> favor of an on-demand fetch when a mention pill actually renders, now wired
+> consistently on all four shells (previously Qt6-only) and in the room-info
+> panel's member list. Sender/read-receipt avatars and reaction images for
+> timeline rows are now grouped with the rest of the room's media so they cancel
+> on room switch too. 895 C++ + 300 Rust tests.
+
+<!-- -->
+
+> **macOS thread-reset stack-overflow fix (2026-06-30, v0.8.11).**
+> Fixed a crash when a thread's timeline reset while the message list was
+> mid-layout: macOS wired its repaint requester to a full synchronous
+> `Surface::relayout()` instead of a deferred OS repaint like the other three
+> platforms, so a deferred scroll-to-event firing during layout re-entered
+> `relayout()` from inside itself and recursed until the stack guard was hit.
+> Now routes through `host().request_repaint()`, matching Qt6/GTK4/Win32.
+
+<!-- -->
 
 > **Group unread rooms (2026-06-24, v0.8.9).**
 > An optional "Group unread rooms" toggle in Appearance settings adds an **Unread**
