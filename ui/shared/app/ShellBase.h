@@ -2315,7 +2315,10 @@ protected:
     // Avatar / media prefetch — each method is idempotent (dedup via the
     // media_fetches_in_flight_ set + cache-presence check).
     void ensure_room_avatar_(const RoomInfo& r);
-    void ensure_user_avatar_(const std::string& mxc);
+    // group_id = 0 (default) for account-wide callers (quick switcher roster,
+    // invites) whose avatars aren't tied to the active room. Timeline-row
+    // callers pass the row's room group so leaving the room cancels them.
+    void ensure_user_avatar_(const std::string& mxc, std::uint64_t group_id = 0);
 
     // Non-blocking voice/audio byte provider for the playback path. Returns the
     // clip's bytes if already warmed (moving them out of voice_bytes_cache_),
@@ -2584,6 +2587,16 @@ protected:
     // on_invite_avatars_changed to this.
     void apply_media_preview_config_(tesseract::Settings::MediaPreviews mode,
                                      bool invite_avatars);
+
+    // Estimate how many trailing rows of a freshly-loaded snapshot could
+    // plausibly be on screen, for build_rows_()'s synchronous media-prefetch
+    // window. Real per-row heights (text wrap, inline images) aren't known
+    // until the new rows are laid out, so this uses the message list's
+    // current (stable, content-independent) viewport height divided by a
+    // deliberately small per-row estimate — biased to overestimate rather
+    // than under-fetch. Any row this window misses still gets its media via
+    // on_visible_rows_changed_ once the real layout runs.
+    std::size_t media_prefetch_window_() const;
 
     // Build MessageRowData rows from an event snapshot: prep media, request
     // reply details, make_row_data. Used by every shell's timeline-reset and

@@ -417,7 +417,11 @@ private:
     }
 
     // ── @mention popup ────────────────────────────────────────────────────
+    // cached_room_members_ also backs the received-mention-pill avatar
+    // provider (set_mention_avatar_provider); the MentionController fetches
+    // its own member list independently for autocomplete.
     std::vector<tesseract::RoomMember> cached_room_members_;
+    std::string cached_members_room_;
     HWND mention_popup_hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;

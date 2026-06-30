@@ -111,6 +111,15 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             return shell_->presence_for_(uid);
         });
+    // Lazy avatar fetching: set_avatar_provider above (shell_avatar_) is a
+    // pure cache peek, so the panel requests a member's avatar only when
+    // their row is actually visible in the open panel.
+    rv->room_info_panel()->on_member_avatar_needed =
+        [this](const tesseract::RoomMember& m)
+    {
+        shell_->ensure_user_avatar_(
+            m.avatar_url, shell_->media_group_for_room_(room_id_));
+    };
     rv->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {
@@ -139,6 +148,26 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         [this](const std::string& mxc) -> std::string
         {
             return shell_->shortcode_for_mxc_(mxc);
+        });
+    // Avatar inside received mention pills: resolve user id -> member avatar
+    // mxc -> cached image, kicking a fetch on miss (room-scoped, so it
+    // cancels along with the rest of this room's media on switch/close). The
+    // row repaints when the bytes arrive.
+    rv->message_list()->set_mention_avatar_provider(
+        [this](const std::string& user_id) -> const tk::Image*
+        {
+            for (const auto& m : cached_room_members_)
+            {
+                if (m.user_id != user_id)
+                    continue;
+                if (m.avatar_url.empty())
+                    return nullptr;
+                shell_->ensure_user_avatar_(
+                    m.avatar_url, shell_->media_group_for_room_(room_id_));
+                return shell_->account_manager_.thumbnail_cache().peek(
+                    m.avatar_url);
+            }
+            return nullptr;
         });
     rv->set_preview_provider(
         [this](
@@ -202,9 +231,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     };
 
     // ── Room info panel: members + topic / leave / ignore ─────────────────
-    // The room info panel fetches its member list lazily through this
-    // callback; pre-cache each avatar into the shared cache before handing
-    // the members to the view so rows paint with pictures.
+    // The room info panel (and the mention-pill avatar provider above) fetch
+    // their member list lazily through this callback. Only names/avatar_urls
+    // are cached here — no avatar bytes are fetched until a mention pill or
+    // the info panel actually needs one, via set_mention_avatar_provider /
+    // shell_avatar_'s own on-miss fetch.
     rv->on_fetch_room_members = [this, rv](std::string room_id) {
         if (!shell_->client_) return;
         auto sess = shell_->active_account();
@@ -213,10 +244,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             if (!sess || !sess->client) return;
             auto members = sess->client->get_room_members(room_id);
             post_to_ui_([this, rv, alive = std::move(alive),
-                         members = std::move(members)]() mutable {
+                         room_id, members = std::move(members)]() mutable {
                 if (!*alive) return;
-                for (const auto& m : members)
-                    shell_->ensure_user_avatar_(m.avatar_url);
+                cached_room_members_ = members;
+                cached_members_room_ = room_id;
                 rv->set_room_members(std::move(members));
             });
         });

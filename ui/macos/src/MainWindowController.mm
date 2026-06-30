@@ -267,7 +267,9 @@ public:
     void navigate_tray_unread();
 
     // Media / asset fetching
-    void ensure_user_avatar(const std::string& mxc);
+    void ensure_user_avatar(const std::string& mxc,
+                            std::uint64_t group_id = 0);
+    std::uint64_t media_group_for_room(const std::string& room_id);
     void ensure_room_avatar(const tesseract::RoomInfo& r);
     void ensure_media_image(const std::string& url, int max_w, int max_h,
                             std::uint64_t group_id = 0);
@@ -528,6 +530,14 @@ public:
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
+
+    // Room-switch member-list cache backing the received-mention-pill avatar
+    // provider (set_mention_avatar_provider) — names/avatar_urls only; no
+    // avatar bytes are fetched until a pill actually paints. The
+    // MentionController fetches its own member list independently for
+    // autocomplete.
+    std::vector<tesseract::RoomMember> cached_room_members_;
+    std::string cached_members_room_;
 
 private:
     MainWindowController*
@@ -2015,8 +2025,11 @@ const std::vector<tesseract::RoomSummary>& MacShell::cached_unjoined_summaries()
 // MacShell public media / asset API
 // ─────────────────────────────────────────────────────────────────────────────
 
-void MacShell::ensure_user_avatar(const std::string& mxc)
-    { ensure_user_avatar_(mxc); }
+void MacShell::ensure_user_avatar(const std::string& mxc,
+                                  std::uint64_t group_id)
+    { ensure_user_avatar_(mxc, group_id); }
+std::uint64_t MacShell::media_group_for_room(const std::string& room_id)
+    { return media_group_for_room_(room_id); }
 void MacShell::ensure_room_avatar(const tesseract::RoomInfo& r)
     { ensure_room_avatar_(r); }
 void MacShell::ensure_media_image(const std::string& url, int max_w, int max_h,
@@ -2972,6 +2985,30 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 MainWindowController* s = weakSelf;
                 return s ? s->_shell->shortcode_for_mxc(mxc) : std::string();
             });
+        // Avatar inside received mention pills: resolve user id -> member
+        // avatar mxc -> cached image (kicking a fetch on miss; the row
+        // repaints when the bytes arrive).
+        _mainApp->room_view()->message_list()->set_mention_avatar_provider(
+            [weakSelf](const std::string& user_id) -> const tk::Image*
+            {
+                MainWindowController* s = weakSelf;
+                if (!s)
+                    return nullptr;
+                for (const auto& m : s->_shell->cached_room_members_)
+                {
+                    if (m.user_id != user_id)
+                        continue;
+                    if (m.avatar_url.empty())
+                        return nullptr;
+                    s->_shell->ensure_user_avatar(
+                        m.avatar_url,
+                        s->_shell->media_group_for_room(
+                            s->_shell->current_room_id_));
+                    return s->_shell->account_manager_.thumbnail_cache().peek(
+                        m.avatar_url);
+                }
+                return nullptr;
+            });
         _mainApp->room_view()->set_voice_bytes_provider(
             [weakSelf](
                 const std::string& source_json) -> std::vector<std::uint8_t>
@@ -3631,8 +3668,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         MainWindowController* s2 = weakSelf;
                         if (!s2 || !s2->_mainApp)
                             return;
-                        for (const auto& m : *members_holder)
-                            s2->_shell->ensure_user_avatar(m.avatar_url);
+                        // Only names/avatar_urls are cached — no avatar
+                        // bytes are fetched until a mention pill or the
+                        // info panel actually needs one
+                        // (set_mention_avatar_provider above).
+                        s2->_shell->cached_room_members_ = *members_holder;
+                        s2->_shell->cached_members_room_ = room_id;
                         s2->_mainApp->room_view()->set_room_members(
                             std::move(*members_holder));
                     });

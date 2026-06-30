@@ -22,11 +22,20 @@
 //! slot. To prevent this, a slot held past [`STALL_DEADLINE`] stops counting
 //! against the lane `dynamic_limit`: it is presumed stuck, so the gate grants
 //! its effective capacity to the next (highest-priority) waiter while the stuck
-//! download keeps draining in the background under its own hard timeout. A hard
-//! `ceiling` on total in-flight (held fresh + held stale) bounds how many hung
-//! connections a dead homeserver can accumulate. Because no release fires when a
-//! slot merely goes stale, each parked waiter re-evaluates on a
-//! [`RECHECK_INTERVAL`] tick.
+//! download keeps draining in the background under its own hard timeout.
+//!
+//! The hard `ceiling` on total in-flight bounds how many hung connections a
+//! dead homeserver can accumulate, but it needs its own, longer exemption: a
+//! burst that legitimately exceeds the lane limit (e.g. a large room needing
+//! many distinct avatars at once) climbs toward the ceiling as each batch goes
+//! stale at `STALL_DEADLINE`, and without a separate exemption the ceiling
+//! would then block *all* further admissions until something held actually
+//! finishes — stalling the whole lane in 30s/120s-long waves even though
+//! nothing is truly dead, just slow. So a slot held past the longer
+//! [`CEILING_STALL_DEADLINE`] also stops counting against `ceiling`, while
+//! still bounding genuinely-stuck connections more strictly than waiting for
+//! their outer fetch timeout. Because no release fires when a slot merely goes
+//! stale, each parked waiter re-evaluates on a [`RECHECK_INTERVAL`] tick.
 //!
 //! ## Adaptive concurrency (AIMD)
 //!
@@ -60,6 +69,12 @@ use super::media_queue::MediaQueue;
 /// than the outer media-fetch timeouts (30s/60s) yet long enough that a merely
 /// slow-but-progressing download is not prematurely treated as stuck.
 pub(super) const STALL_DEADLINE: Duration = Duration::from_secs(8);
+/// A slot held longer than this no longer counts against the hard `ceiling`
+/// either. Longer than `STALL_DEADLINE` so a merely-slow burst isn't treated
+/// as "presumed dead" as readily as it loses its claim on the soft limit, but
+/// still comfortably under the outer 30s/120s fetch timeouts so a genuinely
+/// dead lane can't hide behind it indefinitely.
+pub(super) const CEILING_STALL_DEADLINE: Duration = Duration::from_secs(20);
 /// How often a parked waiter re-checks for reclaimed capacity when no slot has
 /// been released (a held slot crossing `STALL_DEADLINE` produces no event).
 pub(super) const RECHECK_INTERVAL: Duration = Duration::from_secs(1);
@@ -107,10 +122,19 @@ impl GateInner {
         self.active.len() - self.fresh(now)
     }
 
+    /// Count of held slots not yet past the (longer) ceiling stall deadline.
+    fn fresh_for_ceiling(&self, now: Instant) -> usize {
+        self.active
+            .values()
+            .filter(|&&t| now.saturating_duration_since(t) < CEILING_STALL_DEADLINE)
+            .count()
+    }
+
     /// Capacity to start one more download: room under `dynamic_limit` (stale
-    /// slots don't count) and under the hard `ceiling` on total in-flight.
+    /// slots don't count) and under the hard `ceiling` on total in-flight
+    /// (slots stale past `CEILING_STALL_DEADLINE` don't count there either).
     fn can_grant(&self, now: Instant) -> bool {
-        self.fresh(now) < self.dynamic_limit && self.active.len() < self.ceiling
+        self.fresh(now) < self.dynamic_limit && self.fresh_for_ceiling(now) < self.ceiling
     }
 
     /// Record a freshly granted slot and return its id.
@@ -314,7 +338,7 @@ impl Drop for GatePermit {
 #[cfg(test)]
 mod tests {
     use super::super::media_queue::{PRIO_NORMAL, PRIO_VISIBLE};
-    use super::{PriorityGate, RECHECK_INTERVAL, STALL_DEADLINE};
+    use super::{CEILING_STALL_DEADLINE, PriorityGate, RECHECK_INTERVAL, STALL_DEADLINE};
     use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     use std::sync::Arc;
     use std::time::Duration;
@@ -484,7 +508,9 @@ mod tests {
     }
 
     // Once total in-flight reaches the ceiling, no further download starts even
-    // when every held slot is stale — bounding hung connections under a stall.
+    // when every held slot is stale (past STALL_DEADLINE) — bounding hung
+    // connections under a stall, up until CEILING_STALL_DEADLINE (see the next
+    // test for what happens past that longer deadline).
     #[tokio::test(start_paused = true)]
     async fn ceiling_caps_total_inflight_under_mass_stall() {
         let gate = PriorityGate::new(1, 2);
@@ -496,20 +522,75 @@ mod tests {
         let _p1 = h1.await.unwrap().expect("admitted on p0's reclaimed slot");
         assert_eq!(gate.active_len(), 2, "p0 (stale) + p1 == ceiling");
 
-        // A third waiter cannot start: active == ceiling, even as p0/p1 go stale.
+        // A third waiter cannot start: active == ceiling, even though both p0
+        // and p1 are past STALL_DEADLINE (the soft limit's exemption) — only
+        // CEILING_STALL_DEADLINE (checked in the next test) exempts a slot from
+        // the ceiling itself. This advance stays under that longer deadline.
         let g2 = gate.clone();
         let h2 = tokio::spawn(async move { g2.acquire(PRIO_NORMAL, 2, 1).await });
         while gate.pending_len() < 1 {
             tokio::task::yield_now().await;
         }
-        tokio::time::advance(STALL_DEADLINE * 3 + RECHECK_INTERVAL).await;
+        tokio::time::advance(STALL_DEADLINE + RECHECK_INTERVAL).await;
         tokio::task::yield_now().await;
         assert_eq!(
             gate.pending_len(),
             1,
-            "ceiling blocks a 3rd concurrent download"
+            "ceiling blocks a 3rd concurrent download before CEILING_STALL_DEADLINE"
         );
         assert_eq!(gate.active_len(), 2);
         drop(h2);
+    }
+
+    // Past CEILING_STALL_DEADLINE, a held slot stops counting against the
+    // ceiling too, so a parked waiter is finally admitted — this is what
+    // prevents a burst that legitimately exceeds the ceiling (e.g. a large
+    // room needing many distinct avatars at once against a merely slow
+    // homeserver) from freezing the whole lane until each held download's
+    // outer 30s/120s timeout fires.
+    #[tokio::test(start_paused = true)]
+    async fn ceiling_admits_past_limit_once_slots_cross_ceiling_stall_deadline() {
+        let gate = PriorityGate::new(1, 2);
+        let _p0 = gate.acquire(PRIO_NORMAL, 0, 1).await.unwrap(); // held forever
+
+        let g1 = gate.clone();
+        let h1 = tokio::spawn(async move { g1.acquire(PRIO_NORMAL, 1, 1).await });
+        let _p1 = h1.await.unwrap().expect("admitted on p0's reclaimed slot");
+        assert_eq!(gate.active_len(), 2, "p0 (stale) + p1 == ceiling");
+
+        let g2 = gate.clone();
+        let h2 = tokio::spawn(async move { g2.acquire(PRIO_NORMAL, 2, 1).await });
+        while gate.pending_len() < 1 {
+            tokio::task::yield_now().await;
+        }
+
+        // g2 parked at the instant p1 was admitted, i.e. STALL_DEADLINE after
+        // p0's own admission — so p0 (the oldest slot) crosses
+        // CEILING_STALL_DEADLINE this much further out. Advance to just
+        // before that and confirm the ceiling still blocks.
+        tokio::time::advance(
+            CEILING_STALL_DEADLINE - STALL_DEADLINE - RECHECK_INTERVAL,
+        )
+        .await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            gate.pending_len(),
+            1,
+            "ceiling still blocks just under CEILING_STALL_DEADLINE"
+        );
+
+        // Awaiting h2 lets paused time auto-advance through the remaining
+        // recheck tick(s) until p0 crosses CEILING_STALL_DEADLINE and is
+        // excluded from the ceiling count, admitting the parked waiter.
+        let permit = h2.await.unwrap();
+        assert!(
+            permit.is_some(),
+            "3rd waiter admitted once p0 crosses CEILING_STALL_DEADLINE"
+        );
+        assert_eq!(
+            gate.active_len(),
+            3,
+            "p0 (ceiling-stale) + p1 (still ceiling-fresh) + the newly admitted waiter"
+        );
     }
 }
