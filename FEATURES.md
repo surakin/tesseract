@@ -36,7 +36,7 @@ version) are noted where relevant.
 - Decryption retry as keys arrive (no permanent "unable to decrypt" placeholders)
 - Pinned messages — full support (pin/unpin) with power-level checks
 - Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`; extensible)
-- Media captions (MSC2530); emoji-only captions render at 2× body size
+- Media captions (MSC2530); emoji-only captions render at 2× body size; bare URLs in a caption are linkified the same as in a regular message body
 - Inline Unicode emoji in message bodies rendered at ~125% of body font size
 
 ## Media
@@ -59,8 +59,10 @@ version) are noted where relevant.
 ## Rooms & navigation
 
 - Room list with sections: Favorites, DMs, Rooms, Spaces (tag-aware: `m.favourite`); spaces show a collapsible "Not joined" sub-section for unjoined child rooms
+- A phone icon appears on rooms with an active call
+- A 🌉 Bridged badge appears in the room-info panel for rooms bridged to a third-party network (MSC2346)
 - Sticky section headers — the current section's header pins to the top while scrolling (interactive: click to collapse/expand)
-- Space navigation with drill-down and recursive subspace support; unjoined child rooms shown with a preview panel (name, avatar, topic, member count, Join button)
+- Space navigation with drill-down and recursive subspace support; unjoined child rooms shown with a preview panel (name, avatar, topic, member count, Join button); selecting a joined space itself shows a summary panel (avatar, topic, joined/unjoined child counts)
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
 - Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
@@ -82,6 +84,15 @@ version) are noted where relevant.
 - Clicking a notification opens the relevant room
 - Per-room notification settings (mute / mentions / all) via server-side push rules
 - Respects the user's server-side push rules
+
+## Calls
+
+- Native LiveKit-based MatrixRTC voice/video calls (MSC4143), behind `TESSERACT_ENABLE_CALLS`; interoperates with Element X and Element Call
+- End-to-end encryption (HKDF key derivation matching Element Call's wire format); echo cancellation via each platform's native audio device manager
+- Docked, expanded, floating (draggable, position persisted), and popout (dedicated OS window) call overlay modes
+- Mute/video/hang-up controls, call duration timer, pinned-participant grid layout
+- MSC4075 ring notifications for incoming calls
+- Call button and incoming-call banner hidden when the server doesn't advertise LiveKit transport support, or for bridged rooms
 
 ## Security & privacy
 
@@ -111,7 +122,7 @@ version) are noted where relevant.
 - Notifications (per-room)
 - Appearance (light / dark / system theme; room-list inactive grouping; auto-scroll to unread rooms)
 - Privacy (presence controls; search index toggle with live stats and on-disk size; update-checker opt-in)
-- Media (automatic full-media fetch)
+- Media (automatic full-media fetch; microphone/speaker/camera device selection)
 - About (version, with branded view)
 
 ## Composer
@@ -119,7 +130,7 @@ version) are noted where relevant.
 - Markdown input
 - Emoji shortcode autocomplete popup
 - User mention (`@`) autocomplete
-- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`; popup autocomplete)
+- Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`, `/selfie`; popup autocomplete)
 - Send on Enter, newline on Shift+Enter
 
 ---

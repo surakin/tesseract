@@ -1,6 +1,84 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-06-30** (v0.8.11).
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-01** (v0.8.12-unreleased). 913 C++ + 306 Rust tests.
+
+> **Media caption linkify (2026-07-01, v0.8.12-unreleased).**
+> Captions on image/file/video messages now go through the same rich-text
+> pipeline as regular message bodies instead of a plain-text-only paint path.
+> Bare URLs in a caption render as clickable links and are hit-tested the same
+> way a link in a normal text message is, with no Rust/FFI changes needed —
+> the shared body-layout helper only ever read the body/formatted-body/event-id
+> fields and never branched on message kind.
+
+<!-- -->
+
+> **Room-switch viewport auto-backfill (2026-07-01, v0.8.12-unreleased).**
+> Switching rooms only ever fetched one fixed-size page of history up front;
+> the only other backfill trigger required a manual scroll gesture and was
+> skipped outright while the view was still pinned to the bottom (always true
+> right after a switch). If that first page rendered fewer rows than the
+> viewport could hold, the timeline sat under-filled until the user scrolled.
+> The shared list view now proactively requests the next page whenever
+> just-laid-out content doesn't fill the viewport, chaining through the
+> existing prepend → relayout cycle until either the viewport fills or the
+> room's real history is exhausted. Benefits both the room timeline and the
+> thread panel, which share the same mechanism.
+
+<!-- -->
+
+> **MatrixRTC voice/video calls (2026-06-25, v0.8.12-unreleased).**
+> Native LiveKit-based MatrixRTC calls (MSC4143), behind
+> `TESSERACT_ENABLE_CALLS`, interoperating with Element X and Element Call.
+> End-to-end encryption uses HKDF key derivation matching Element Call's wire
+> format; echo cancellation runs through each platform's native audio device
+> manager. The call overlay (`ParticipantTile`, `CallOverlayWidget`) has four
+> modes — Docked, DockedExpanded, Floating (draggable, position persisted),
+> and Popout (a dedicated OS window via `CallWindowBase`) — with mute/video/
+> hang-up controls, a duration timer, and a pinned-tile 70/30 grid split.
+> `IncomingCallBanner` surfaces MSC4075 ring notifications. The call button
+> and incoming-call banner are hidden entirely when the server doesn't
+> advertise LiveKit transport support, and for bridged rooms (MSC2346).
+
+<!-- -->
+
+> **`/selfie` slash command (2026-06-25, v0.8.12-unreleased).**
+> Typing `/selfie` in the composer opens a full-surface camera overlay with a
+> 3-second countdown and mirrored live preview; the captured still is
+> JPEG-encoded via each platform's native API and inserted as a compose-bar
+> attachment. Disabled while a call is active.
+
+<!-- -->
+
+> **Audio/video device selection (2026-06-25, v0.8.12-unreleased).**
+> Settings → Media gained microphone, speaker, and camera dropdowns,
+> enumerated at settings-open time and applied at the next session start.
+> Backed by `QMediaDevices`/`GstDeviceMonitor` (Qt6/GTK4), WASAPI + Media
+> Foundation (Win32), and `AVCaptureDeviceDiscoverySession` + CoreAudio
+> (macOS). A new `tk::FormLayout` widget auto-sizes the label column to the
+> widest label, fixing three previously-misaligned rows.
+
+<!-- -->
+
+> **Bridged-room detection (2026-06-27, v0.8.12-unreleased).**
+> Rooms bridged via a third-party network (MSC2346 `uk.half-shot.bridge`
+> state events) suppress the call button and threads panel and show a
+> 🌉 Bridged badge in the room-info panel.
+
+<!-- -->
+
+> **Space root view (2026-06-28, v0.8.12-unreleased).**
+> Selecting a joined space itself (rather than drilling into a child room)
+> now shows `SpaceRootView` — a centred summary panel with avatar, name,
+> topic, and joined/unjoined child counts — mirroring `RoomPreviewView`'s
+> layout for unjoined rooms.
+
+<!-- -->
+
+> **Phone icon for active calls (2026-06-27, v0.8.12-unreleased).**
+> The room list shows a phone icon on any room with an active call, driven
+> by `m.call.member` state filtered to non-expired memberships.
+
+<!-- -->
 
 > **Room-switch media fetching overhaul (2026-06-30, v0.8.11).**
 > Fixed media requests appearing to freeze in rooms that trigger many at once, and
