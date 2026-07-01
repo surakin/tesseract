@@ -1,0 +1,395 @@
+# Companion to package.yml for ad-hoc single/multi-platform test builds.
+# Lets you manually pick which platform(s) to build instead of running the
+# full 5-platform matrix — useful when only one platform's build is broken
+# and you want to iterate on it without waiting on (or re-running) the rest.
+#
+# This workflow never creates a GitHub Release; it only uploads build
+# artifacts for manual download from the Actions run.
+#
+# NOTE: job bodies here are intentionally duplicated from package.yml rather
+# than shared via a reusable workflow, to keep the tag-triggered release
+# pipeline untouched. If you change dependency installs, CMake flags, or
+# packaging steps in package.yml, mirror the change here too.
+
+name: Build Platform
+
+on:
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: 'Windows (NSIS .exe)'
+        type: boolean
+        default: true
+      macos_arm64:
+        description: 'macOS arm64 (DMG)'
+        type: boolean
+        default: true
+      macos_x86_64:
+        description: 'macOS x86_64 (DMG)'
+        type: boolean
+        default: true
+      linux_packages:
+        description: 'Linux DEB + RPM'
+        type: boolean
+        default: true
+      linux_appimage:
+        description: 'Linux AppImage'
+        type: boolean
+        default: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Windows — NSIS installer (.exe)
+  # ---------------------------------------------------------------------------
+  windows:
+    if: ${{ inputs.windows }}
+    name: Windows (NSIS)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk -> ../build/windows-release
+
+      # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
+      # The id lets us hand the exact interpreter to CMake below — otherwise
+      # find_package(Python3) picks the newest interpreter on the runner
+      # (3.14 in the hosted toolcache), which has no resvg_py installed.
+      - name: Set up Python (icon generation)
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install resvg-py (icon generation)
+        run: pip install resvg-py
+
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
+
+      # The Ninja generator does not auto-activate MSVC like the Visual Studio
+      # generator does. Without vcvars on PATH, CMake's compiler probe can't
+      # find cl.exe and silently falls back to the runner's bundled MinGW gcc.
+      # This step runs vcvars and exports INCLUDE/LIB/PATH so Ninja picks MSVC.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # opus is required by matrix-sdk-ui (MSC3245 voice messages).
+      # Build from source so the CRT (/MD) and generator (Ninja+MSVC) match
+      # the rest of the project exactly — avoids vcpkg triplet and GITHUB_ENV
+      # encoding issues.
+      - name: Build opus from source
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+            -DOPUS_BUILD_SHARED_LIBRARY=OFF `
+            -DOPUS_BUILD_PROGRAMS=OFF `
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          $lib = (Resolve-Path opus-build).Path
+          $inc = (Resolve-Path opus-src/include).Path
+          "OPUS_LIB_DIR=$lib" >> $env:GITHUB_ENV
+          "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+          "OPUS_STATIC=1" >> $env:GITHUB_ENV
+
+      # cmake, ninja, Go, and Strawberry Perl are pre-installed on
+      # windows-latest; Go and Perl satisfy the aws-lc-sys CMake builder.
+      - name: Configure (Release)
+        # Force CMake to use the same Python interpreter we installed
+        # resvg-py into; otherwise FindPython3 picks the newest version
+        # available on the runner (3.14) regardless of PATH.
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/windows-release
+
+      - name: Package (CPack → NSIS)
+        run: cmake --build build/windows-release --target package
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-windows
+          path: build/windows-release/Tesseract-*.exe
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # macOS arm64 (Apple Silicon) — DragNDrop DMG
+  # ---------------------------------------------------------------------------
+  macos-arm64:
+    if: ${{ inputs.macos_arm64 }}
+    name: macOS arm64 (DMG)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install go librsvg autoconf automake libtool opus
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(brew --prefix opus)/lib" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(brew --prefix opus)/include" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable, aarch64 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk -> ../build/macos-appkit-arm64-release
+
+      - name: Configure (Release, arm64)
+        run: cmake --preset macos-appkit-arm64-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/macos-appkit-arm64-release
+
+      - name: Package (CPack → DMG)
+        run: cmake --build build/macos-appkit-arm64-release --target package
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-macos-arm64
+          path: build/macos-appkit-arm64-release/Tesseract-*.dmg
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # macOS x86_64 (Intel) — DragNDrop DMG
+  # ---------------------------------------------------------------------------
+  macos-x86_64:
+    if: ${{ inputs.macos_x86_64 }}
+    name: macOS x86_64 (DMG)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install go librsvg autoconf automake libtool
+
+      # macos-latest is arm64; Homebrew only ships an arm64 opus, which won't
+      # link into the x86_64 binary. Build opus from source for x86_64 instead
+      # (clang cross-compiles fine via CMAKE_OSX_ARCHITECTURES).
+      - name: Build opus from source (x86_64)
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DOPUS_BUILD_SHARED_LIBRARY=ON \
+            -DOPUS_BUILD_PROGRAMS=OFF \
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          # Lay opus.pc where Corrosion's PKG_CONFIG_PATH (…/pkgconfig) will find it.
+          mkdir -p opus-build/pkgconfig
+          cp opus-build/opus.pc opus-build/pkgconfig/
+          echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
+
+      - name: Install Rust (stable, x86_64 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk -> ../build/macos-appkit-x86_64-release
+
+      - name: Configure (Release, x86_64)
+        run: cmake --preset macos-appkit-x86_64-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/macos-appkit-x86_64-release
+
+      - name: Package (CPack → DMG)
+        run: cmake --build build/macos-appkit-x86_64-release --target package
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-macos-x86_64
+          path: build/macos-appkit-x86_64-release/Tesseract-*.dmg
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Linux x86_64 — DEB + RPM (Qt6 backend, CPack)
+  # ---------------------------------------------------------------------------
+  linux-packages:
+    if: ${{ inputs.linux_packages }}
+    name: Linux x86_64 (DEB + RPM)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            ninja-build \
+            libgl-dev \
+            libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            golang perl \
+            libwayland-dev \
+            libxtst-dev \
+            rpm
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk -> ../build/linux-qt6-release
+
+      - name: Configure (Release)
+        run: cmake --preset linux-qt6-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/linux-qt6-release
+
+      - name: Package (CPack → DEB + RPM)
+        run: cmake --build build/linux-qt6-release --target package
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-linux-deb
+          path: build/linux-qt6-release/*.deb
+          if-no-files-found: error
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-linux-rpm
+          path: build/linux-qt6-release/*.rpm
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Linux x86_64 — AppImage (Qt6 backend)
+  # ---------------------------------------------------------------------------
+  linux-appimage:
+    if: ${{ inputs.linux_appimage }}
+    name: Linux x86_64 (AppImage)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
+            ninja-build \
+            libgl-dev \
+            libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            golang perl \
+            libwayland-dev \
+            libxtst-dev \
+            patchelf \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk -> ../build/linux-qt6-release
+
+      - name: Configure (Release)
+        run: cmake --preset linux-qt6-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/linux-qt6-release
+
+      - name: Install into AppDir
+        run: cmake --install build/linux-qt6-release --prefix AppDir/usr
+
+      - name: Copy Wayland platform/shell/graphics/decoration plugins + Qt Wayland library, fix RPATHs
+        run: |
+          PLUGINS=$(qmake6 -query QT_INSTALL_PLUGINS)
+          LIBS=$(qmake6 -query QT_INSTALL_LIBS)
+          mkdir -p AppDir/usr/lib AppDir/usr/plugins/platforms
+          # Platform plugins
+          cp "$PLUGINS/platforms/libqwayland-generic.so" AppDir/usr/plugins/platforms/
+          cp "$PLUGINS/platforms/libqwayland-egl.so"     AppDir/usr/plugins/platforms/ 2>/dev/null || true
+          # Sub-plugin directories: shell integrations (xdg-shell etc.),
+          # graphics integrations (wayland-egl client buffer), decoration client
+          for subdir in wayland-shell-integration wayland-graphics-integration-client wayland-decoration-client; do
+            if [ -d "$PLUGINS/$subdir" ]; then
+              mkdir -p "AppDir/usr/plugins/$subdir"
+              cp "$PLUGINS/$subdir"/*.so "AppDir/usr/plugins/$subdir/" 2>/dev/null || true
+            fi
+          done
+          # patchelf every wayland plugin so its deps resolve inside AppDir/usr/lib
+          for f in AppDir/usr/plugins/platforms/libqwayland-*.so \
+                   AppDir/usr/plugins/wayland-shell-integration/*.so \
+                   AppDir/usr/plugins/wayland-graphics-integration-client/*.so \
+                   AppDir/usr/plugins/wayland-decoration-client/*.so; do
+            [ -f "$f" ] && patchelf --set-rpath '$ORIGIN/../../lib' "$f"
+          done
+          # Qt Wayland client lib — dep of all wayland plugins; not auto-bundled
+          cp -L "$LIBS/libQt6WaylandClient.so.6" AppDir/usr/lib/
+          patchelf --set-rpath '$ORIGIN' AppDir/usr/lib/libQt6WaylandClient.so.6
+
+      - name: Download linuxdeploy and Qt + GStreamer plugins
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
+
+      - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          QMAKE: /usr/bin/qmake6
+        run: |
+          ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --plugin qt \
+            --plugin gstreamer \
+            --output appimage
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-linux-appimage
+          path: Tesseract-*.AppImage
+          if-no-files-found: error
