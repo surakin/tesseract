@@ -5341,7 +5341,13 @@ void MessageListView::append_messages(std::vector<MessageRowData> rows)
     if (rows.empty())
         return;
 
-    const bool at_bottom = scroll_y() + bounds().h + 1.0f >= content_height();
+    // While browsing history (forward-pagination results, not a live tail),
+    // don't follow the appended rows down — the "near bottom" trigger that
+    // requested this page fires exactly when the user is at/near the bottom
+    // of the loaded window, so at_bottom would almost always be true here
+    // and yank the view to the new bottom instead of leaving it in place.
+    const bool at_bottom = !historical_mode_ &&
+                          scroll_y() + bounds().h + 1.0f >= content_height();
     // New real messages require the read marker to be repositioned.
     suppress_read_marker_ = true;
     for (auto& row : rows)
