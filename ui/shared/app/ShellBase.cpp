@@ -2968,6 +2968,8 @@ void ShellBase::show_space_root_(const std::string& space_id)
 
 void ShellBase::cancel_unjoined_summaries_()
 {
+    if (!active_space_id_.empty() && client_)
+        client_->cancel_space_summaries(active_space_id_);
     ++unjoined_fetch_gen_;
     unjoined_fetch_pending_.clear();
     pending_summaries_.clear();
@@ -2980,6 +2982,8 @@ ShellBase::get_cached_unjoined_summaries_(const std::string& space_id)
 {
     if (active_space_id_ != space_id)
     {
+        if (!active_space_id_.empty() && client_)
+            client_->cancel_space_summaries(active_space_id_);
         active_space_id_ = space_id;
         ++unjoined_fetch_gen_;
         unjoined_fetch_pending_.clear();

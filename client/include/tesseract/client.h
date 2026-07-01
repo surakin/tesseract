@@ -1071,6 +1071,11 @@ public:
     void get_space_child_summary_async(std::uint64_t request_id,
                                        const std::string& space_id,
                                        const std::string& room_id);
+    /// Abort every still-running `get_space_child_summary_async` fetch
+    /// registered under `space_id`. Call when the user navigates away from a
+    /// space so its still-pending unjoined-room preview fetches stop hitting
+    /// the homeserver once their results can no longer be used.
+    void cancel_space_summaries(const std::string& space_id);
     /// Return the locally-cached MSC3266 room summary for `room_id`, or
     /// std::nullopt when no cached entry exists. No network, safe on any thread.
     std::optional<RoomSummary>
