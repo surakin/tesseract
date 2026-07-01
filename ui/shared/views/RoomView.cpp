@@ -1067,6 +1067,17 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
         if (user_profile_panel_)
             user_profile_panel_->close();
         close_room_search();
+        // The action-pill "more" submenu and the call-type popup are backdrop
+        // overlays that only close via their own click-outside handling
+        // (on_dismissed); without this they stay open across a room switch
+        // until the user happens to click in the new room's timeline. Run
+        // the same cleanup on_dismissed does rather than a bare close() so
+        // hover-locked rows aren't left stuck.
+        if (overflow_menu_ && overflow_menu_->is_open() &&
+            overflow_menu_->on_dismissed)
+            overflow_menu_->on_dismissed();
+        if (call_popup_ && call_popup_->is_open() && call_popup_->on_dismissed)
+            call_popup_->on_dismissed();
     }
     else if (room_info_panel_ && room_info_panel_->is_open())
     {
