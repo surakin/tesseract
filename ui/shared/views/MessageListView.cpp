@@ -53,7 +53,14 @@ static std::string link_at_world(const LinkLayout& le, tk::Point world)
         return {};
     }
     if (!le.layout) return {};
-    return le.layout->link_at({world.x - le.origin.x, world.y - le.origin.y});
+    tk::Point ll{world.x - le.origin.x, world.y - le.origin.y};
+    // Qt's FuzzyHit hit-test (canvas_qpainter.cpp) matches the nearest
+    // character regardless of distance, so an unbounded call here would
+    // resolve clicks anywhere below a caption's origin (e.g. on the image
+    // itself) to whatever link is nearest. Bound to the layout's own height,
+    // matching the sections branch above.
+    if (ll.y < 0.0f || ll.y >= le.layout->measure().h) return {};
+    return le.layout->link_at(ll);
 }
 
 static int char_at_world(const LinkLayout& le, tk::Point world)
@@ -2071,8 +2078,7 @@ private:
             float h = sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
-                h += 4.0f + measure_text_height(m.body, ctx, col_w,
-                                                is_emoji_only(m.body));
+                h += 4.0f + measure_body_text(m, ctx, col_w);
             }
             return quote_h + h;
         }
@@ -2106,8 +2112,7 @@ private:
         {
             float h = kFileCardH;
             if (m.has_filename_caption && !m.body.empty())
-                h += 4.0f + measure_text_height(m.body, ctx, col_w,
-                                                is_emoji_only(m.body));
+                h += 4.0f + measure_body_text(m, ctx, col_w);
             return quote_h + h;
         }
         case MessageRowData::Kind::Audio:
@@ -2125,8 +2130,7 @@ private:
             float h = sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
-                h += 4.0f + measure_text_height(m.body, ctx, col_w,
-                                                is_emoji_only(m.body));
+                h += 4.0f + measure_body_text(m, ctx, col_w);
             }
             return quote_h + h;
         }
@@ -2376,10 +2380,8 @@ private:
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
-                const bool cap_eo = is_emoji_only(m.body);
-                float ch = paint_wrapped_text(m.body, ctx, x, cursor, col_w,
-                                              ctx.theme.palette.text_primary,
-                                              cap_eo);
+                float ch = paint_body_text(m, ctx, x, cursor, col_w,
+                                           ctx.theme.palette.text_primary);
                 cursor += ch;
             }
             return cursor;
@@ -2440,10 +2442,8 @@ private:
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
-                const bool cap_eo = is_emoji_only(m.body);
-                float ch = paint_wrapped_text(m.body, ctx, x, cursor, col_w,
-                                              ctx.theme.palette.text_primary,
-                                              cap_eo);
+                float ch = paint_body_text(m, ctx, x, cursor, col_w,
+                                           ctx.theme.palette.text_primary);
                 cursor += ch;
             }
             return cursor;
@@ -2493,10 +2493,8 @@ private:
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
-                const bool cap_eo = is_emoji_only(m.body);
-                float ch = paint_wrapped_text(m.body, ctx, x, cursor, col_w,
-                                              ctx.theme.palette.text_primary,
-                                              cap_eo);
+                float ch = paint_body_text(m, ctx, x, cursor, col_w,
+                                           ctx.theme.palette.text_primary);
                 cursor += ch;
             }
             return cursor;
