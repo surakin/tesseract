@@ -44,15 +44,21 @@ TEST_CASE("set_can_pin flips the flag", "[message_list][pinning]")
     CHECK_FALSE(v.can_pin());
 }
 
-TEST_CASE("set_messages(.., room_switch=true) clears pinning state",
+TEST_CASE("set_messages(.., room_switch=true) preserves pinning state",
           "[message_list][pinning]")
 {
+    // ShellBase::refresh_pinned_for_current_room_() pushes the new room's
+    // pinning state via set_pinned_event_ids()/set_can_pin() synchronously on
+    // room switch, *before* the async timeline-reset callback that calls
+    // set_messages(room_switch=true) can land. set_messages() must not clear
+    // that already-correct state back to empty/false — see ShellBase.cpp's
+    // handle_timeline_reset_ui_ for the call-ordering this relies on.
     MessageListView v;
     v.set_pinned_event_ids({"$a"});
     v.set_can_pin(true);
     v.set_messages({make_row("$x")}, /*room_switch=*/true);
-    CHECK(v.pinned_event_ids().empty());
-    CHECK_FALSE(v.can_pin());
+    CHECK(v.pinned_event_ids().count("$a") == 1);
+    CHECK(v.can_pin());
 }
 
 TEST_CASE("set_messages(.., room_switch=false) preserves pinning state",

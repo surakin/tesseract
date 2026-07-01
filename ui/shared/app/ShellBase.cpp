@@ -5727,6 +5727,15 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
                                  (ml && ml->messages().empty());
         view_displayed_room_id_ = room_id;
         room_view_->set_messages(std::move(rows), room_switch);
+        // Re-assert the pin banner/permission state on a genuine switch.
+        // after_active_room_changed_() already did this for the common case,
+        // but a room_switch can also happen here without that call running
+        // (e.g. re-population of an emptied view without current_room_id_
+        // changing) — refresh_pinned_for_current_room_() is idempotent, so
+        // calling it again is cheap and removes any dependency on ordering
+        // between this async callback and that synchronous call.
+        if (room_switch)
+            refresh_pinned_for_current_room_();
         // set_messages() clears MessageListView::pending_scroll_event_id_.
         // Re-arm it so arrange() still applies the deferred scroll with
         // up-to-date row_offsets_ (handles the subscribe_room_at reset path).
