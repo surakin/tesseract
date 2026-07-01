@@ -308,6 +308,7 @@ public:
     void play(const std::uint8_t* data, std::size_t size,
               std::string_view /*mime*/) override
     {
+        reached_end_ = false;
         if (player_)
         {
             [player_ stop];
@@ -401,6 +402,7 @@ public:
     }
     void resume() override
     {
+        reached_end_ = false;
         if (player_)
         {
             [player_ play];
@@ -426,6 +428,7 @@ public:
 
     void seek(std::uint64_t ms) override
     {
+        reached_end_ = false;
         if (!player_)
         {
             return;
@@ -492,9 +495,17 @@ public:
     {
         return player_ && player_.playing;
     }
+    bool reached_end() const override
+    {
+        return reached_end_;
+    }
 
     void on_finished()
     {
+        // AVAudioPlayer does not reset currentTime to 0 on natural
+        // completion (it stays at/near duration), so this delegate callback
+        // — fired only for genuine end-of-clip — is the reliable signal.
+        reached_end_ = true;
         stop_timer();
         if (on_progress)
         {
@@ -531,6 +542,7 @@ private:
     TkAvDelegate* delegate_ = nil;
     NSTimer* timer_ = nil;
     float rate_ = 1.0f;
+    bool reached_end_ = false;
 };
 
 std::unique_ptr<tk::AudioPlayer> make_audio_player_macos()

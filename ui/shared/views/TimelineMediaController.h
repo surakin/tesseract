@@ -62,10 +62,23 @@ public:
         tk::Rect    card_bounds{};
     };
 
+    // Given the event_id of a voice clip that just finished playing on its
+    // own, returns the next MessageRowData that should auto-start (e.g. the
+    // next voice message from the same sender), or nullptr if there is none.
+    // Injected by MessageListView, the only place with cheap access to
+    // messages_. The returned pointer is only used synchronously within
+    // on_audio_progress().
+    using NextVoiceLookup = std::function<const MessageRowData*(
+        const std::string& finished_event_id)>;
+
     // --- wiring (forwarded from MessageListView's public API) ---
     void set_player(std::unique_ptr<tk::AudioPlayer> player);
     void set_bytes_provider(VoiceBytesProvider provider);
     void set_repaint(std::function<void()> request_repaint);
+    void set_next_voice_lookup(NextVoiceLookup lookup)
+    {
+        next_voice_lookup_ = std::move(lookup);
+    }
 
     bool has_player() const { return static_cast<bool>(audio_player_); }
     bool has_bytes_provider() const
@@ -74,7 +87,14 @@ public:
     }
 
     // --- handlers (dispatched from on_pointer_down / on_pointer_up / drag) ---
-    void handle_voice_play_click(const MessageRowData& row);
+    // `is_auto_advance` marks a click arising from auto-advance (see
+    // on_audio_progress()) rather than a real user click. On a cache miss it
+    // tags the armed pending play so MessageListView's retry logic knows to
+    // bypass the "is this row still visible?" abandonment check — that check
+    // exists to abandon a stale *manual* click after the user scrolls away,
+    // which doesn't apply here since the user never looked at this row.
+    void handle_voice_play_click(const MessageRowData& row,
+                                 bool                   is_auto_advance = false);
     void handle_voice_scrub_at(const MessageRowData& row, float world_x);
     void handle_voice_speed_click();
     void handle_audio_play_click(const MessageRowData& row);
@@ -94,6 +114,13 @@ public:
     bool has_pending_play() const { return !pending_play_event_id_.empty(); }
     // The event id of the armed pending play (empty when none).
     const std::string& pending_play_event_id() const { return pending_play_event_id_; }
+    // True when the armed pending play came from auto-advance rather than a
+    // manual click, so MessageListView's retry should bypass the
+    // still-visible check that exists only to abandon a stale manual click.
+    bool pending_play_skip_visibility_gate() const
+    {
+        return pending_play_skip_visibility_gate_;
+    }
 
     // --- geometry: written by paint, read by the pointer hit-test ---
     void clear_geometry()
@@ -133,6 +160,13 @@ private:
     std::unique_ptr<tk::AudioPlayer> audio_player_;
     VoiceBytesProvider               voice_bytes_provider_;
     std::function<void()>            request_repaint_;
+    NextVoiceLookup                  next_voice_lookup_;
+
+    // True while stop() is being called as part of an explicit row switch
+    // (handle_*_play_click / handle_*_scrub_at). Suppresses auto-advance
+    // during the reentrant on_audio_progress() a same-thread audio backend
+    // may fire synchronously from inside stop().
+    bool switching_clip_ = false;
 
     // The event_id of the currently-loaded clip in `audio_player_`. Empty
     // when nothing is loaded.
@@ -158,6 +192,7 @@ private:
     std::string pending_play_token_;
     std::string pending_play_mime_;
     bool        pending_play_is_voice_ = false; // voice → playback_rate_; audio → 1.0f
+    bool        pending_play_skip_visibility_gate_ = false;
 
     mutable std::unordered_map<std::string, VoiceCardGeom> voice_card_geom_;
     mutable std::unordered_map<std::string, AudioCardGeom> audio_card_geom_;

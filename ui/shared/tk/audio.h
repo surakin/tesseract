@@ -58,6 +58,17 @@ public:
     // pause(), stop(), end-of-stream, or a load error.
     virtual bool is_playing() const = 0;
 
+    // True once the backend has observed its own native "reached the end of
+    // the clip" signal since the last play()/resume()/seek() call. This is
+    // the reliable way to distinguish natural completion from a pause or an
+    // explicit stop() — several backends do NOT reset position_ms() to 0 on
+    // natural completion (it stays at/near the clip's duration), so callers
+    // must not rely on position_ms()==0 alone. Backends that can't detect
+    // this precisely may leave the default (false); callers should combine
+    // this with the position_ms()==0 check so behavior is unchanged where a
+    // backend doesn't override it.
+    virtual bool reached_end() const { return false; }
+
     // Fired on the UI thread roughly every 60 ms while playing, and once
     // more on completion / error. Implementations marshal through
     // `tk::Host::post_to_ui` before invoking. Safe to read position_ms() /

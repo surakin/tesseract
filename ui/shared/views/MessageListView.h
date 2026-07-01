@@ -1069,6 +1069,12 @@ private:
     // pointer-down/up/drag pipeline; it only names the controller's geometry.
     TimelineMediaController media_;
 
+    // Auto-advance lookup handed to `media_` (see set_next_voice_lookup):
+    // scans messages_ forward from the just-finished voice row for the next
+    // Kind::Voice row from the same sender.
+    const MessageRowData*
+    find_next_voice_from_same_sender_(const std::string& finished_event_id) const;
+
     // View-wide repaint requester. Wired by `set_repaint_requester` and used
     // throughout the view (gate reveal, selection drag, async hops, …); also
     // handed to `media_` so the playback subsystem can drive its own repaints.

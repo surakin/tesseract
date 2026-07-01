@@ -4709,6 +4709,30 @@ void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
 {
     // Ownership + the on_progress wiring move into the playback controller.
     media_.set_player(std::move(player));
+    media_.set_next_voice_lookup(
+        [this](const std::string& eid)
+        { return find_next_voice_from_same_sender_(eid); });
+}
+
+const MessageRowData* MessageListView::find_next_voice_from_same_sender_(
+    const std::string& finished_event_id) const
+{
+    auto it = std::find_if(messages_.begin(), messages_.end(),
+                           [&](const MessageRowData& r)
+                           { return r.event_id == finished_event_id; });
+    if (it == messages_.end() || it->kind != MessageRowData::Kind::Voice)
+    {
+        return nullptr;
+    }
+    const std::string& sender = it->sender;
+    for (auto next = std::next(it); next != messages_.end(); ++next)
+    {
+        if (next->kind == MessageRowData::Kind::Voice && next->sender == sender)
+        {
+            return &*next;
+        }
+    }
+    return nullptr;
 }
 
 void MessageListView::set_voice_bytes_provider(VoiceBytesProvider provider)
@@ -4781,10 +4805,13 @@ void MessageListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // But arrange() also runs on scroll / new messages, so only retry while the
     // armed clip is still on screen: if the user scrolled away before the bytes
     // warmed, abandon the pending play rather than auto-starting audio for a
-    // clip they are no longer looking at.
+    // clip they are no longer looking at. Auto-advance-armed plays skip this
+    // check — the user never looked at that row to begin with, and the whole
+    // point is to keep playing regardless of what's currently scrolled into view.
     if (media_.has_pending_play())
     {
-        if (is_event_visible_(media_.pending_play_event_id()))
+        if (media_.pending_play_skip_visibility_gate() ||
+            is_event_visible_(media_.pending_play_event_id()))
         {
             media_.retry_pending_voice_play();
         }

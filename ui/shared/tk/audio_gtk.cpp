@@ -38,6 +38,7 @@ public:
     void play(const std::uint8_t* data, std::size_t size,
               std::string_view /*mime*/) override
     {
+        reached_end_ = false;
         bytes_.assign(data, data + size);
         // mem:// URIs aren't a standard GStreamer scheme; build a giostream
         // source on the fly instead. playbin can consume a `giostreamsrc`
@@ -128,6 +129,7 @@ public:
     }
     void resume() override
     {
+        reached_end_ = false;
         if (current_pipeline_)
         {
             gst_element_set_state(current_pipeline_, GST_STATE_PLAYING);
@@ -180,9 +182,14 @@ public:
     {
         return playing_;
     }
+    bool reached_end() const override
+    {
+        return reached_end_;
+    }
 
     void seek(std::uint64_t ms) override
     {
+        reached_end_ = false;
         if (!current_pipeline_)
         {
             return;
@@ -285,6 +292,15 @@ private:
         switch (GST_MESSAGE_TYPE(msg))
         {
         case GST_MESSAGE_EOS:
+            self->reached_end_ = true;
+            if (self->current_pipeline_)
+            {
+                gst_element_set_state(self->current_pipeline_, GST_STATE_NULL);
+            }
+            self->playing_ = false;
+            self->stop_timer();
+            self->fire_progress();
+            break;
         case GST_MESSAGE_ERROR:
             if (self->current_pipeline_)
             {
@@ -306,6 +322,7 @@ private:
     GstElement* current_pipeline_ = nullptr;
     std::vector<std::uint8_t> bytes_;
     bool playing_ = false;
+    bool reached_end_ = false;
     guint tick_source_id_ = 0;
     guint bus_watch_id_ = 0;
     std::uint64_t position_ns_ = 0;

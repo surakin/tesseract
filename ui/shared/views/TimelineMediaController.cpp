@@ -161,7 +161,9 @@ void TimelineMediaController::handle_voice_scrub_at(const MessageRowData& row,
         }
         if (!playing_event_id_.empty())
         {
+            switching_clip_ = true;
             audio_player_->stop();
+            switching_clip_ = false;
         }
         playing_event_id_    = row.event_id;
         playing_position_ms_ = target_ms;
@@ -220,16 +222,33 @@ void TimelineMediaController::on_audio_progress()
         {
             playing_ever_active_ = true;
         }
-        // Only treat position-0 + not-playing as "clip ended" once the clip
-        // was confirmed to have started. Without this guard the same condition
-        // fires during Qt's async-load window (is_playing()==false while the
-        // FFmpeg probe is in flight), clearing playing_event_id_ before the
-        // first repaint so the play button never flips to active.
-        if (!playing_is_active_ && playing_position_ms_ == 0 &&
+        // Only treat this as "clip ended" once the clip was confirmed to have
+        // started (playing_ever_active_) — without that guard the same
+        // condition fires during the async-load window (is_playing()==false
+        // while the clip is still loading), clearing playing_event_id_ before
+        // the first repaint so the play button never flips to active.
+        //
+        // "Ended" itself is position_ms()==0 OR the backend's own reached_end()
+        // signal — several backends (e.g. Qt's QMediaPlayer) do not reset
+        // position_ms() to 0 on natural completion, leaving it at/near the
+        // clip's duration, so position==0 alone misses that case entirely.
+        if (!playing_is_active_ &&
+            (playing_position_ms_ == 0 || audio_player_->reached_end()) &&
             playing_ever_active_)
         {
+            std::string finished_event_id = playing_event_id_;
             playing_event_id_.clear();
             playing_ever_active_ = false;
+            if (!switching_clip_ && next_voice_lookup_ &&
+                !finished_event_id.empty())
+            {
+                if (const MessageRowData* next =
+                        next_voice_lookup_(finished_event_id))
+                {
+                    handle_voice_play_click(*next, /*is_auto_advance=*/true);
+                    return;
+                }
+            }
         }
     }
     if (request_repaint_)
@@ -238,7 +257,8 @@ void TimelineMediaController::on_audio_progress()
     }
 }
 
-void TimelineMediaController::handle_voice_play_click(const MessageRowData& row)
+void TimelineMediaController::handle_voice_play_click(const MessageRowData& row,
+                                                       bool is_auto_advance)
 {
     if (!audio_player_ || !voice_bytes_provider_)
     {
@@ -263,7 +283,9 @@ void TimelineMediaController::handle_voice_play_click(const MessageRowData& row)
     // Switching rows — stop the current clip cleanly first.
     if (!playing_event_id_.empty())
     {
+        switching_clip_ = true;
         audio_player_->stop();
+        switching_clip_ = false;
     }
 
     std::vector<std::uint8_t> bytes = voice_bytes_provider_(
@@ -284,6 +306,7 @@ void TimelineMediaController::handle_voice_play_click(const MessageRowData& row)
             row.audio_source ? row.audio_source->fetch_token() : std::string{};
         pending_play_mime_     = row.audio_mime;
         pending_play_is_voice_ = true;
+        pending_play_skip_visibility_gate_ = is_auto_advance;
         if (request_repaint_)
         {
             request_repaint_();
@@ -324,7 +347,9 @@ void TimelineMediaController::handle_audio_play_click(const MessageRowData& row)
     }
     if (!playing_event_id_.empty())
     {
+        switching_clip_ = true;
         audio_player_->stop();
+        switching_clip_ = false;
     }
     std::vector<std::uint8_t> bytes = voice_bytes_provider_(
         row.audio_source ? row.audio_source->fetch_token() : std::string{});
@@ -366,6 +391,7 @@ void TimelineMediaController::reset_pending_play()
     pending_play_token_.clear();
     pending_play_mime_.clear();
     pending_play_is_voice_ = false;
+    pending_play_skip_visibility_gate_ = false;
 }
 
 void TimelineMediaController::retry_pending_voice_play()
@@ -442,7 +468,9 @@ void TimelineMediaController::handle_audio_scrub_at(const MessageRowData& row,
         }
         if (!playing_event_id_.empty())
         {
+            switching_clip_ = true;
             audio_player_->stop();
+            switching_clip_ = false;
         }
         playing_event_id_    = row.event_id;
         playing_position_ms_ = target_ms;
