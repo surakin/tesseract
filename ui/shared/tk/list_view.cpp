@@ -391,6 +391,15 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         anchored_relayout_pending_ = false;
         on_anchored_relayout_();
     }
+    if (on_near_top && adapter_->count() > 0 && content_height() < bounds_.h)
+    {
+        // Loaded content doesn't fill the viewport — request the next page
+        // immediately rather than waiting for a scroll gesture. Safe to call
+        // on every arrange: the consumer's own in-flight/reached-start gate
+        // (see ShellBase::pagination_) makes redundant calls harmless no-ops,
+        // and it naturally stops once the room's real history is exhausted.
+        on_near_top();
+    }
 }
 
 void ListView::preserve_top_through(const std::function<void()>& mutate)
