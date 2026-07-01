@@ -948,6 +948,16 @@ impl ClientFfi {
                 }
             }
         }
+        // Same use-after-free risk as media_tasks above, for in-flight
+        // get_space_child_summary_async fetches.
+        {
+            let mut m = self.space_summary_tasks.lock();
+            for (_, v) in m.drain() {
+                for (_, h) in v {
+                    h.abort();
+                }
+            }
+        }
         if let Some(svc) = self.sync_service.take() {
             self.rt.block_on(async move {
                 let _ = svc.stop().await;

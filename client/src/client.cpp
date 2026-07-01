@@ -1023,6 +1023,12 @@ void Client::cancel_media_group(std::uint64_t group_id)
     impl_->ffi->cancel_media_group(group_id);
 }
 
+void Client::cancel_space_summaries(const std::string& space_id)
+{
+    SH_FFI;
+    impl_->ffi->cancel_space_summaries(space_id);
+}
+
 void Client::get_url_preview_async(std::uint64_t request_id,
                                    std::uint64_t group_id,
                                    const std::string& url)
