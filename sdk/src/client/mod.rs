@@ -648,6 +648,15 @@ pub struct ClientFfi {
     /// without `&self`. Also drained wholesale in `stop_sync`.
     #[cfg(not(test))]
     pub(super) media_tasks: Arc<Mutex<HashMap<u64, Vec<(u64, tokio::task::AbortHandle)>>>>,
+    /// Abort handles for in-flight `get_space_child_summary_async` tasks, keyed
+    /// by `space_id` (unlike `media_tasks` this needs no hash — a space's room
+    /// id is already a unique, stable key). `cancel_space_summaries` drains and
+    /// aborts a space's tasks when the user navigates away from it. Each task
+    /// removes its own `(request_id, handle)` on completion. Also drained
+    /// wholesale in `stop_sync`.
+    #[cfg(not(test))]
+    pub(super) space_summary_tasks:
+        Arc<Mutex<HashMap<String, Vec<(u64, tokio::task::AbortHandle)>>>>,
     /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
     /// SQLite store already holds. `fetch_media_async` uses this to skip the
     /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
@@ -941,6 +950,8 @@ impl ClientFfi {
             ),
             #[cfg(not(test))]
             media_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            space_summary_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sdk_media_fetched: Arc::new(Mutex::new(std::collections::HashSet::new())),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),

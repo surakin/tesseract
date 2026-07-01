@@ -2292,6 +2292,12 @@ pub mod ffi {
             room_id: &str,
         );
 
+        /// Abort every still-running `get_space_child_summary_async` fetch
+        /// registered under `space_id`. Used when the user navigates away from
+        /// a space so its still-pending unjoined-room preview fetches don't
+        /// keep running.
+        fn cancel_space_summaries(self: &ClientFfi, space_id: &str);
+
         /// Async counterpart of `get_server_info`. Spawns the fetch on the
         /// tokio runtime and fires `on_server_info_ready(request_id, info_json)`
         /// on completion. Does not pin a thread.

@@ -65,6 +65,36 @@ impl From<matrix_sdk::room_preview::RoomPreview> for RoomSummaryJson {
     }
 }
 
+type SpaceSummaryTasks =
+    std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<String, Vec<(u64, tokio::task::AbortHandle)>>>>;
+
+/// Register a `get_space_child_summary_async` task's abort handle under
+/// `space_id` so `abort_space_summary_group` can abort it later. Prunes
+/// already-finished handles first to keep the per-space `Vec` from growing
+/// unbounded across a long browsing session. Not `ClientFfi`-specific, so it's
+/// unit-testable without a real client (see `tests` module below).
+fn register_space_summary_task(
+    map: &SpaceSummaryTasks,
+    space_id: String,
+    request_id: u64,
+    handle: tokio::task::AbortHandle,
+) {
+    let mut m = map.lock();
+    let v = m.entry(space_id).or_default();
+    v.retain(|(_, h)| !h.is_finished());
+    v.push((request_id, handle));
+}
+
+/// Abort and drop every task registered under `space_id`, if any.
+fn abort_space_summary_group(map: &SpaceSummaryTasks, space_id: &str) {
+    let mut m = map.lock();
+    if let Some(v) = m.remove(space_id) {
+        for (_, h) in v {
+            h.abort();
+        }
+    }
+}
+
 impl ClientFfi {
     pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
         #[cfg(not(test))]
@@ -353,8 +383,9 @@ impl ClientFfi {
         #[cfg(debug_assertions)]
         let in_flight_urls = self.in_flight_urls.clone();
         let room_id_owned = room_id.to_owned();
+        let space_id_owned = space_id.to_owned();
 
-        self.rt.spawn(async move {
+        let handle = self.rt.spawn(async move {
             let json = {
                 let _guard = super::InFlightGuard::new(
                     &in_flight,
@@ -421,7 +452,26 @@ impl ClientFfi {
                 g.on_space_child_summary_ready(request_id, &json);
             }
         });
+
+        register_space_summary_task(
+            &self.space_summary_tasks,
+            space_id_owned,
+            request_id,
+            handle.abort_handle(),
+        );
     }
+
+    /// Abort every still-running `get_space_child_summary_async` fetch
+    /// registered under `space_id`. Called when the user navigates away from a
+    /// space so its still-pending unjoined-room preview fetches stop hitting
+    /// the homeserver once their results can no longer be used.
+    #[cfg(not(test))]
+    pub fn cancel_space_summaries(&self, space_id: &str) {
+        abort_space_summary_group(&self.space_summary_tasks, space_id);
+    }
+
+    #[cfg(test)]
+    pub fn cancel_space_summaries(&self, _space_id: &str) {}
 
     #[cfg(test)]
     pub fn get_room_summary(&self, _room_id_or_alias: &str) -> String {
@@ -979,5 +1029,63 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn set_room_avatar(&self, _room_id: &str, _mxc_uri: &str) -> OpResult {
         err("not logged in")
+    }
+}
+
+#[cfg(test)]
+mod space_summary_task_tests {
+    use super::{abort_space_summary_group, register_space_summary_task, SpaceSummaryTasks};
+
+    fn new_map() -> SpaceSummaryTasks {
+        std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()))
+    }
+
+    #[tokio::test]
+    async fn abort_group_aborts_only_that_spaces_tasks() {
+        let map = new_map();
+        let rt = tokio::runtime::Handle::current();
+
+        let a1 = rt.spawn(std::future::pending::<()>());
+        let a2 = rt.spawn(std::future::pending::<()>());
+        let b1 = rt.spawn(std::future::pending::<()>());
+        register_space_summary_task(&map, "space-a".to_string(), 1, a1.abort_handle());
+        register_space_summary_task(&map, "space-a".to_string(), 2, a2.abort_handle());
+        register_space_summary_task(&map, "space-b".to_string(), 3, b1.abort_handle());
+
+        abort_space_summary_group(&map, "space-a");
+
+        assert!(a1.await.unwrap_err().is_cancelled());
+        assert!(a2.await.unwrap_err().is_cancelled());
+        assert!(map.lock().get("space-a").is_none());
+
+        // space-b's task is untouched.
+        assert!(map.lock().get("space-b").is_some());
+        b1.abort();
+    }
+
+    #[tokio::test]
+    async fn register_prunes_already_finished_handles() {
+        let map = new_map();
+        let rt = tokio::runtime::Handle::current();
+
+        let finished = rt.spawn(async {});
+        let finished_abort = finished.abort_handle();
+        finished.await.unwrap();
+        register_space_summary_task(&map, "space-a".to_string(), 1, finished_abort);
+        assert_eq!(map.lock().get("space-a").unwrap().len(), 1);
+
+        // `finished`'s entry is already done, so registering a second task
+        // under the same space should prune it rather than accumulate it.
+        let live = rt.spawn(std::future::pending::<()>());
+        register_space_summary_task(&map, "space-a".to_string(), 2, live.abort_handle());
+        {
+            let m = map.lock();
+            let v = m.get("space-a").unwrap();
+            assert_eq!(v.len(), 1);
+            assert_eq!(v[0].0, 2);
+        }
+
+        abort_space_summary_group(&map, "space-a");
+        assert!(live.await.unwrap_err().is_cancelled());
     }
 }
