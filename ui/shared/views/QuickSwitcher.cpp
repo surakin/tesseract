@@ -552,11 +552,9 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
             room.name.empty() ? std::string("Unnamed") : room.name, ls);
         if (lo)
         {
-            const tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(
-                *lo,
-                {chip.x + (chip.w - sz.w) * 0.5f, chip_y + kRecentAvatar + kLabelGap},
-                pal.text_primary);
+            ctx.canvas.draw_text(*lo,
+                                 {chip.x, chip_y + kRecentAvatar + kLabelGap},
+                                 pal.text_primary);
         }
 
         recent_chips_.push_back({chip, room.id});
