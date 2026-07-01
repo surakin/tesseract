@@ -311,6 +311,16 @@ if(MSVC)
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "" FORCE)
     else()
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL" CACHE STRING "" FORCE)
+        # Corrosion probes rustc's default link requirements once per configure
+        # (cached as Rust_CARGO_TARGET_LINK_OPTIONS) and attaches whatever it finds
+        # to tesseract_sdk_ffi-static's INTERFACE_LINK_OPTIONS. On *-pc-windows-msvc
+        # that probe reports "/defaultlib:libcmt" (the static CRT) even though our
+        # C++ targets link the dynamic CRT (/MD, MultiThreadedDLL above) to match
+        # Rust's actual default. Left alone, that stray defaultlib wins over the
+        # /MD objects' embedded MSVCRT defaultlib pragma and every consumer of the
+        # Rust static lib fails with unresolved __imp_* CRT thunks (fgetc, wassert,
+        # etc.). Cancel it explicitly; MSVCRT still comes in automatically via /MD.
+        add_link_options("/NODEFAULTLIB:libcmt")
     endif()
 
     # --- derive MSVC tools dir from cl.exe path ---

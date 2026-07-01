@@ -3663,8 +3663,11 @@ void MainWindow::on_create(HWND hwnd)
                 // Win32 child HWNDs always paint over canvas-drawn overlays.
                 const bool hide = (img_viewer_ && img_viewer_->is_open()) ||
                                   (vid_viewer_ && vid_viewer_->is_open()) ||
-                                  (main_app_ && main_app_->camera_overlay_open()) ||
-                                  (main_app_ && main_app_->screen_picker_open());
+                                  (main_app_ && main_app_->camera_overlay_open())
+#ifdef TESSERACT_CALLS_ENABLED
+                                  || (main_app_ && main_app_->screen_picker_open())
+#endif
+                    ;
 
                 const auto overlays = main_app_->native_overlays();
                 auto compact_rect = [](tk::Rect r)
