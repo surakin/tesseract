@@ -73,3 +73,33 @@ TEST_CASE("RoomView clears the compose text-area rect after the room closes",
     st.run(view, {0, 0, 800, 600});
     CHECK(view.compose_text_area_rect().empty());
 }
+
+TEST_CASE("RoomView closes the action-pill overflow menu on room switch",
+          "[tk][view][room]")
+{
+    Stage st;
+    RoomView view;
+
+    tesseract::RoomInfo room_a;
+    room_a.id   = "!a:example.org";
+    room_a.name = "Room A";
+    view.set_room(room_a);
+    st.run(view, {0, 0, 800, 600});
+
+    REQUIRE(view.overflow_menu() != nullptr);
+    view.overflow_menu()->open({{"", {}, "Pin message", false, [] {}}},
+                               {10, 10, 20, 20});
+    REQUIRE(view.overflow_menu()->is_open());
+
+    // Switching to a different room must not leave the previous room's
+    // action-pill submenu open — it used to stay open until the user
+    // happened to click in the timeline, which triggers the popup's own
+    // backdrop-dismiss handler.
+    tesseract::RoomInfo room_b;
+    room_b.id   = "!b:example.org";
+    room_b.name = "Room B";
+    view.set_room(room_b);
+    st.run(view, {0, 0, 800, 600});
+
+    CHECK_FALSE(view.overflow_menu()->is_open());
+}

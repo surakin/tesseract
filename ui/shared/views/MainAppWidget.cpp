@@ -500,6 +500,27 @@ public:
         }
         return nullptr;
     }
+
+    // Button hover is driven by Host via hit_test + dynamic_cast<Button*>,
+    // not dispatch_pointer_move above. Without this override, the base
+    // Widget::hit_test falls back to claiming `this` whenever no child
+    // absorbs the hit, which swallows every button hover in the app since
+    // this stack always spans the full window.
+    tk::Widget* hit_test(tk::Point world) override
+    {
+        if (!visible())
+            return nullptr;
+        const auto& ch = children();
+        for (auto it = ch.rbegin(); it != ch.rend(); ++it)
+        {
+            auto* child = it->get();
+            if (!child->visible())
+                continue;
+            if (tk::Widget* hit = child->hit_test(world))
+                return hit;
+        }
+        return nullptr;
+    }
 };
 
 #ifdef TESSERACT_CALLS_ENABLED
@@ -555,6 +576,27 @@ public:
             if (!child->visible())
                 continue;
             if (tk::Widget* hit = child->dispatch_pointer_move(world, dirty))
+                return hit;
+        }
+        return nullptr;
+    }
+
+    // Same reasoning as dispatch_pointer_move above, but for the hit_test
+    // path that Host uses to drive Button hover (hit_test + dynamic_cast
+    // <Button*>). Without this override, the base Widget::hit_test falls
+    // back to claiming `this` whenever no child absorbs the hit, which
+    // swallows every button hover in the app while this layer exists.
+    tk::Widget* hit_test(tk::Point world) override
+    {
+        if (!visible())
+            return nullptr;
+        const auto& ch = children();
+        for (auto it = ch.rbegin(); it != ch.rend(); ++it)
+        {
+            auto* child = it->get();
+            if (!child->visible())
+                continue;
+            if (tk::Widget* hit = child->hit_test(world))
                 return hit;
         }
         return nullptr;
