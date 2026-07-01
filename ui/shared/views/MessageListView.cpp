@@ -4069,8 +4069,13 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         // Discard any voice/audio play armed in the previous room so a clip
         // whose fetch is still in flight can't auto-start here.
         media_.reset_pending_play();
-        pinned_event_ids_.clear();
-        can_pin_ = false;
+        // Do NOT clear pinned_event_ids_/can_pin_ here: ShellBase already
+        // pushed the new room's correct values via set_pinned_event_ids() /
+        // set_can_pin() (refresh_pinned_for_current_room_(), called
+        // synchronously on room switch, before this async timeline-reset
+        // callback can land). Clearing them here would clobber that correct
+        // state back to "no pin permission, nothing pinned" until the next
+        // unrelated room-list refresh happens to run.
         messages_ = std::move(msgs);
         for (auto& m : messages_)
         {
