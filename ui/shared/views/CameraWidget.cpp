@@ -35,13 +35,14 @@ void CameraWidget::open()
         [this](const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h)
         {
             std::lock_guard<std::mutex> lk(frame_mu_);
+            if (!start_)
+                start_ = std::chrono::steady_clock::now();
             last_bgra_.assign(bgra, bgra + static_cast<std::size_t>(w) * h * 4);
             frame_w_ = w;
             frame_h_ = h;
         });
 
     capture_->start();
-    start_ = std::chrono::steady_clock::now();
 }
 
 void CameraWidget::dismiss()
@@ -97,28 +98,37 @@ void CameraWidget::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Countdown number.
-    const auto now     = std::chrono::steady_clock::now();
-    const float elapsed =
-        std::chrono::duration<float>(now - start_).count();
-    const float remaining = kCountdownSecs - elapsed;
-
-    if (remaining > 0.0f && !captured_)
+    // Countdown number — only once the first frame has arrived.
+    if (start_ && !captured_)
     {
-        const int digit = static_cast<int>(std::ceil(remaining));
-        const std::string label = std::to_string(digit);
+        const auto now      = std::chrono::steady_clock::now();
+        const float elapsed = std::chrono::duration<float>(now - *start_).count();
+        const float remaining = kCountdownSecs - elapsed;
 
-        tk::TextStyle st;
-        st.role      = tk::FontRole::BigEmoji;
-        st.halign    = tk::TextHAlign::Leading;
-        st.valign    = tk::TextVAlign::Top;
-        st.max_width = -1.0f;
-        if (auto lo = ctx.factory.build_text(label, st))
+        if (remaining > 0.0f)
         {
-            const tk::Size sz = lo->measure();
-            const float tx = bounds.x + (bounds.w - sz.w) * 0.5f;
-            const float ty = bounds.y + (bounds.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 230));
+            const int digit = static_cast<int>(std::ceil(remaining));
+            const std::string label = std::to_string(digit);
+
+            tk::TextStyle st;
+            st.role      = tk::FontRole::BigEmoji;
+            st.halign    = tk::TextHAlign::Leading;
+            st.valign    = tk::TextVAlign::Top;
+            st.max_width = -1.0f;
+            if (auto lo = ctx.factory.build_text(label, st))
+            {
+                const tk::Size sz = lo->measure();
+                const float tx = bounds.x + (bounds.w - sz.w) * 0.5f;
+                const float ty = bounds.y + (bounds.h - sz.h) * 0.5f;
+                ctx.canvas.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 230));
+            }
+        }
+
+        // Trigger capture when countdown expires.
+        if (remaining <= 0.0f)
+        {
+            do_capture_();
+            return;
         }
     }
 
@@ -136,13 +146,6 @@ void CameraWidget::paint(tk::PaintCtx& ctx)
             const float ty = bounds.y + bounds.h - sz.h - 16.0f;
             ctx.canvas.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 140));
         }
-    }
-
-    // Trigger capture when countdown expires.
-    if (remaining <= 0.0f && !captured_)
-    {
-        do_capture_();
-        return;
     }
 
     // Keep repainting to animate the live preview and countdown.

@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace tesseract::views
@@ -19,7 +20,8 @@ namespace tesseract::views
 // called immediately on the first paint without showing any UI.
 //
 // Lifecycle:
-//   1. open() — starts the camera and the countdown clock.
+//   1. open() — starts the camera; the countdown clock starts when the first
+//      frame arrives (so any OS permission dialog doesn't eat into the timer).
 //   2. After kCountdownSecs: on_frame_captured(bgra, w, h) fires, then
 //      on_dismissed fires.
 //   3. Escape key (or dismiss() call): on_dismissed fires without capture.
@@ -63,7 +65,7 @@ private:
     std::uint32_t           frame_w_  = 0;
     std::uint32_t           frame_h_  = 0;
 
-    std::chrono::steady_clock::time_point start_;
+    std::optional<std::chrono::steady_clock::time_point> start_;
     bool opened_    = false;
     bool captured_  = false;
     bool dismissed_ = false;

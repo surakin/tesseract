@@ -1026,6 +1026,8 @@ void MainAppWidget::open_camera_overlay()
         return;
     if (!overlay_stack_)
         return;
+    if (!tk::VideoCapture::create())
+        return; // no camera device, or permission denied/restricted
 
     auto widget = std::make_unique<CameraWidget>();
     camera_widget_ = widget.get();
