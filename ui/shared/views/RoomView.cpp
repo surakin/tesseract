@@ -646,6 +646,14 @@ void RoomView::wire_internal_callbacks()
     };
     room_info_panel_->on_save_topic = [this](std::string room_id, std::string t)
     {
+        // Optimistically update the header so it reflects the new topic
+        // immediately, without waiting for the SDK to echo the state event back.
+        if (room_id == current_room_info_.id && header_)
+        {
+            current_room_info_.topic      = t;
+            current_room_info_.topic_html = {};
+            header_->set_room(current_room_info_);
+        }
         if (on_save_topic) on_save_topic(std::move(room_id), std::move(t));
     };
     room_info_panel_->on_leave_room = [this](std::string room_id)

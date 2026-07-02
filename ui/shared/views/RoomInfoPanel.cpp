@@ -75,6 +75,15 @@ RoomInfoPanel::RoomInfoPanel()
         if (on_layout_changed) on_layout_changed();
     });
     save_btn_->set_on_click([this]() {
+        // Optimistically reflect the new topic immediately; refresh_info()
+        // will reconcile when the SDK echoes the state event back.
+        if (topic_ != topic_edit_text_)
+        {
+            topic_      = topic_edit_text_;
+            topic_html_ = {};
+            topic_spans_ = autolink_plain_to_spans(topic_);
+            topic_layout_.reset();
+        }
         if (on_save_topic) on_save_topic(room_id_, topic_edit_text_);
         editing_topic_ = false;
         if (on_layout_changed) on_layout_changed();
