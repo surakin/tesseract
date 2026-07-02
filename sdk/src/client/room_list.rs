@@ -928,7 +928,7 @@ impl ClientFfi {
     /// Set the current user's display name in a specific room (m.room.member
     /// state event). Preserves all other existing member event fields. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn set_room_display_name(&self, room_id: &str, name: &str) -> OpResult {
+    pub fn set_user_room_display_name(&self, room_id: &str, name: &str) -> OpResult {
         use matrix_sdk::ruma::events::room::member::{MembershipState, RoomMemberEventContent};
 
         let Some(client) = self.client.as_ref() else {
@@ -972,14 +972,14 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn set_room_display_name(&self, _room_id: &str, _name: &str) -> OpResult {
+    pub fn set_user_room_display_name(&self, _room_id: &str, _name: &str) -> OpResult {
         err("not logged in")
     }
 
     /// Set the current user's avatar in a specific room (m.room.member state
     /// event). Preserves all other existing member event fields. Blocks — worker thread.
     #[cfg(not(test))]
-    pub fn set_room_avatar(&self, room_id: &str, mxc_uri: &str) -> OpResult {
+    pub fn set_user_room_avatar(&self, room_id: &str, mxc_uri: &str) -> OpResult {
         use matrix_sdk::ruma::{
             events::room::member::{MembershipState, RoomMemberEventContent},
             OwnedMxcUri,
@@ -1027,8 +1027,233 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
+    pub fn set_user_room_avatar(&self, _room_id: &str, _mxc_uri: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Send an m.room.name state event to set the room's own display name
+    /// (visible to all members) — distinct from set_user_room_display_name,
+    /// which only sets the current user's per-room member override. Blocks —
+    /// worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_display_name(&self, room_id: &str, name: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        use matrix_sdk::ruma::events::room::name::RoomNameEventContent;
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let content = RoomNameEventContent::new(name.to_owned());
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_room_name".to_string(),
+        );
+        match self.rt.block_on(room.send_state_event(content)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_display_name(&self, _room_id: &str, _name: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Set or clear the room's m.room.avatar state event (visible to all
+    /// members) — distinct from set_user_room_avatar, which only sets the
+    /// current user's per-room member override. Pass an empty mxc_uri to
+    /// clear the room avatar (sends an empty `{}` content object rather than
+    /// `{"url":null}` — RoomAvatarEventContent::url has no
+    /// skip_serializing_if, so a literal `None` would serialize an explicit
+    /// null, which some homeservers may reject). Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_avatar(&self, room_id: &str, mxc_uri: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        use matrix_sdk::ruma::{events::room::avatar::RoomAvatarEventContent, OwnedMxcUri};
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_room_avatar".to_string(),
+        );
+
+        let result = if mxc_uri.is_empty() {
+            self.rt
+                .block_on(room.send_state_event_raw(
+                    "m.room.avatar",
+                    "",
+                    serde_json::json!({}),
+                ))
+                .map(|_| ())
+        } else {
+            let mxc: OwnedMxcUri = match mxc_uri.try_into() {
+                Ok(u) => u,
+                Err(_) => return err("invalid mxc URI"),
+            };
+            // RoomAvatarEventContent is #[non_exhaustive] outside its
+            // defining crate — build via new() then set the field, rather
+            // than a struct literal (which would not compile here).
+            let mut content = RoomAvatarEventContent::new();
+            content.url = Some(mxc);
+            self.rt.block_on(room.send_state_event(content)).map(|_| ())
+        };
+
+        match result {
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
     pub fn set_room_avatar(&self, _room_id: &str, _mxc_uri: &str) -> OpResult {
         err("not logged in")
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.name in this room. Cached read — no network
+    /// round-trip. False on any uncertainty. Mirrors can_pin_in_room
+    /// (pins.rs).
+    #[cfg(not(test))]
+    pub fn can_set_room_name(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomName),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_name(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.topic in this room. Cached read — no network
+    /// round-trip. False on any uncertainty. Mirrors can_pin_in_room
+    /// (pins.rs).
+    #[cfg(not(test))]
+    pub fn can_set_room_topic(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomTopic),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_topic(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.avatar in this room. Cached read — no network
+    /// round-trip. False on any uncertainty. Mirrors can_pin_in_room
+    /// (pins.rs).
+    #[cfg(not(test))]
+    pub fn can_set_room_avatar(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomAvatar),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_avatar(&self, _room_id: &str) -> bool {
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests (content-shape only — state-event sends require a live homeserver).
+// Mirrors the style of pins.rs's `mod tests`.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod room_settings_tests {
+    use matrix_sdk::ruma::events::room::{
+        avatar::RoomAvatarEventContent, name::RoomNameEventContent,
+    };
+
+    #[test]
+    fn room_name_content_serializes_name() {
+        let c = RoomNameEventContent::new("My Room".to_owned());
+        let v = serde_json::to_value(&c).unwrap();
+        assert_eq!(v["name"], "My Room");
+    }
+
+    #[test]
+    fn clear_avatar_content_has_no_url_key() {
+        // Mirrors what set_room_avatar sends for an empty mxc_uri: a bare
+        // `{}` rather than `{"url": null}`.
+        let v = serde_json::json!({});
+        assert!(v.get("url").is_none());
+    }
+
+    #[test]
+    fn set_avatar_content_serializes_url() {
+        let mxc: matrix_sdk::ruma::OwnedMxcUri = "mxc://example.org/abc".into();
+        let mut c = RoomAvatarEventContent::new();
+        c.url = Some(mxc);
+        let v = serde_json::to_value(&c).unwrap();
+        assert_eq!(v["url"], "mxc://example.org/abc");
+        // info was never set — must be omitted, not null, per its
+        // skip_serializing_if.
+        assert!(v.get("info").is_none());
     }
 }
 

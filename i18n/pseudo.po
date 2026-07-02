@@ -217,3 +217,15 @@ msgid "{0}'s request to join was denied"
 msgid_plural "{0}'s requests to join were denied"
 msgstr[0] "[{0}'s request to join was denied]"
 msgstr[1] "[{0}'s requests to join were denied]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Room Settings"
+msgstr "[Room Settings]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Name"
+msgstr "[Name]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Topic"
+msgstr "[Topic]"

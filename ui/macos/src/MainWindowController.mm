@@ -488,6 +488,21 @@ public:
         update_typing_bar_(text, visible);
     }
 
+    // Public methods to call the protected Room Settings helpers.
+    void stage_room_settings_avatar_upload(const std::string& room_id)
+    {
+        stage_room_settings_avatar_upload_(room_id);
+    }
+    static ShellBase::RoomSettingsCommitOutcome apply_room_settings(
+        tesseract::Client* client, const std::string& room_id,
+        const std::optional<std::string>& new_name,
+        const std::optional<std::string>& new_topic,
+        const std::optional<std::string>& new_avatar_mxc)
+    {
+        return ShellBase::apply_room_settings_(client, room_id, new_name,
+                                               new_topic, new_avatar_mxc);
+    }
+
     std::vector<tk::Rect> get_screen_work_areas_() const override
     {
         std::vector<tk::Rect> result;
@@ -2393,6 +2408,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     std::unique_ptr<tk::NativeTextField> _findInRoomField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
+    std::unique_ptr<tk::NativeTextField> _roomSettingsNameField;
+    bool _roomSettingsNameFieldVisible = false;
+    std::unique_ptr<tk::NativeTextArea> _roomSettingsTopicArea;
 
     // Settings name field — positioned via _settingsSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _settingsNameField;
@@ -3836,6 +3854,58 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     }
                 });
         };
+        _mainApp->room_view()->on_room_settings_opened =
+            [weakSelf](std::string room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            auto* v = s->_mainApp->room_view()->room_settings_view();
+            if (!v)
+                return;
+            if (!s->_shell->client_)
+            {
+                v->set_field_permissions(false, false, false);
+                return;
+            }
+            v->set_field_permissions(
+                s->_shell->client_->can_set_room_name(room_id),
+                s->_shell->client_->can_set_room_topic(room_id),
+                s->_shell->client_->can_set_room_avatar(room_id));
+        };
+        _mainApp->room_view()->on_room_settings_avatar_upload_requested =
+            [weakSelf](std::string room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->stage_room_settings_avatar_upload(room_id);
+        };
+        _mainApp->room_view()->room_settings_view()->on_accept =
+            [weakSelf](std::string room_id,
+                      tesseract::views::RoomSettingsChanges changes)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_)
+                return;
+            auto* c = s->_shell->client_;
+            s->_shell->run_async_mut_(
+                [weakSelf, c, room_id = std::move(room_id),
+                 changes = std::move(changes)]() mutable
+                {
+                    auto outcome = MacShell::apply_room_settings(
+                        c, room_id, changes.name, changes.topic,
+                        changes.avatar_mxc);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        MainWindowController* s2 = weakSelf;
+                        if (!s2)
+                            return;
+                        if (auto* v =
+                                s2->_mainApp->room_view()->room_settings_view())
+                            v->set_commit_result(outcome.ok, outcome.error);
+                    });
+                });
+        };
         _shell->setup_dm_callbacks();
         _mainApp->room_view()->on_ignore_user =
             [weakSelf](std::string user_id)
@@ -4446,6 +4516,33 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     s->_mainApp->room_view()->set_topic_edit_text(t);
             });
         _topicTextArea->set_visible(false);
+        _roomSettingsNameField = _mainAppSurface->host().make_text_field();
+        _roomSettingsNameField->set_on_changed(
+            [weakSelf](const std::string& t)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->room_view()->room_settings_view()->set_name_edit_text(t);
+            });
+        _roomSettingsNameField->set_visible(false);
+        _roomSettingsTopicArea = _mainAppSurface->host().make_text_area();
+        _roomSettingsTopicArea->set_on_changed(
+            [weakSelf](const std::string& t)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->room_view()->room_settings_view()->set_topic_edit_text(t);
+            });
+        _roomSettingsTopicArea->set_on_height_changed(
+            [weakSelf](float h)
+            {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_mainApp)
+                    return;
+                s->_mainApp->room_view()->room_settings_view()->set_topic_area_natural_height(h);
+                [s _relayoutChatSurface];
+            });
+        _roomSettingsTopicArea->set_visible(false);
         _roomTextArea->set_on_changed(
             [weakSelf](const std::string& s)
             {
@@ -5105,6 +5202,33 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         if (!wasVisible)
                             s->_topicTextArea->set_text(
                                 app->room_view()->topic_edit_initial_text());
+                    }
+                }
+                if (s->_roomSettingsNameField && s->_roomSettingsTopicArea)
+                {
+                    auto* rsv = app->room_view()->room_settings_view();
+
+                    const tk::Rect nr = rsv->name_field_rect();
+                    const bool nameWasVisible = s->_roomSettingsNameFieldVisible;
+                    s->_roomSettingsNameFieldVisible = !nr.empty();
+                    s->_roomSettingsNameField->set_visible(!nr.empty());
+                    if (!nr.empty())
+                    {
+                        s->_roomSettingsNameField->set_rect(nr);
+                        if (!nameWasVisible)
+                            s->_roomSettingsNameField->set_text(
+                                rsv->name_edit_initial_text());
+                    }
+
+                    const tk::Rect tr2 = rsv->topic_edit_rect();
+                    const bool topicWasVisible = s->_roomSettingsTopicArea->visible();
+                    s->_roomSettingsTopicArea->set_visible(!tr2.empty());
+                    if (!tr2.empty())
+                    {
+                        s->_roomSettingsTopicArea->set_rect(tr2);
+                        if (!topicWasVisible)
+                            s->_roomSettingsTopicArea->set_text(
+                                rsv->topic_edit_initial_text());
                     }
                 }
                 applyField(tk::NativeOverlayId::RoomSearchField,

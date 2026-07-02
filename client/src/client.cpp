@@ -1509,6 +1509,20 @@ Result Client::set_room_topic(const std::string& room_id, const std::string& top
     return from_ffi(impl_->ffi->set_room_topic(room_id, topic));
 }
 
+Result Client::set_user_room_display_name(const std::string& room_id,
+                                          const std::string& name)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_user_room_display_name(room_id, name));
+}
+
+Result Client::set_user_room_avatar(const std::string& room_id,
+                                    const std::string& mxc_uri)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_user_room_avatar(room_id, mxc_uri));
+}
+
 Result Client::set_room_display_name(const std::string& room_id,
                                       const std::string& name)
 {
@@ -1539,6 +1553,24 @@ bool Client::can_pin_in_room(const std::string& room_id)
 {
     SH_FFI;
     return impl_->ffi->can_pin_in_room(room_id);
+}
+
+bool Client::can_set_room_name(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_name(room_id);
+}
+
+bool Client::can_set_room_topic(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_topic(room_id);
+}
+
+bool Client::can_set_room_avatar(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_avatar(room_id);
 }
 
 std::string Client::get_room_notification_mode(std::string room_id) const

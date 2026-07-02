@@ -346,6 +346,9 @@ private:
     std::unique_ptr<tk::NativeTextField> find_in_room_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
+    std::unique_ptr<tk::NativeTextField> room_settings_name_field_;
+    bool room_settings_name_field_visible_ = false;
+    std::unique_ptr<tk::NativeTextArea> room_settings_topic_area_;
     GtkWidget* emoji_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> emoji_picker_surface_;
     tesseract::views::EmojiPicker* emoji_picker_shared_ = nullptr;

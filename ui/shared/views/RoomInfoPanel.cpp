@@ -19,6 +19,9 @@ RoomInfoPanel::RoomInfoPanel()
     close_btn_ = add_child(
         std::make_unique<tk::Button>("\xC3\x97", std::function<void()>{},
                                      tk::Button::Variant::Icon));
+    settings_btn_ = add_child(
+        std::make_unique<tk::Button>("\xF0\x9F\x94\xA7", std::function<void()>{},
+                                     tk::Button::Variant::Icon));
     edit_topic_btn_ = add_child(
         std::make_unique<tk::Button>("\xE2\x9C\x8E", std::function<void()>{},
                                      tk::Button::Variant::Icon));
@@ -68,6 +71,9 @@ RoomInfoPanel::RoomInfoPanel()
 
     close_btn_->set_on_click([this]() {
         if (on_close) on_close();
+    });
+    settings_btn_->set_on_click([this]() {
+        if (on_room_settings_requested) on_room_settings_requested();
     });
     edit_topic_btn_->set_on_click([this]() {
         editing_topic_   = true;
@@ -294,10 +300,14 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float px = panel_rect_.x;
     const float iw = kPanelW - kPadX * 2.0f;
 
-    // Close button: fixed at the top of the panel, never scrolls.
+    // Settings (wrench) and Close buttons: fixed at the top of the panel,
+    // never scroll. Settings sits top-left, Close top-right.
     constexpr float kCloseSz = 32.0f;
+    if (settings_btn_)
+        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f, kCloseSz, kCloseSz});
     if (close_btn_)
-        close_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f, kCloseSz, kCloseSz});
+        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kCloseSz, panel_rect_.y + 8.0f,
+                                 kCloseSz, kCloseSz});
 
     // Everything below the close button scrolls. Compute the y origin of the
     // scrollable viewport and clamp scroll_offset_ to valid range.
@@ -804,8 +814,15 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 
     ctx.canvas.pop_clip();
 
-    // 16. Close button — painted outside the clip so it's always visible
-    //     regardless of scroll position.
+    // 16. Settings + Close buttons — painted outside the clip so they're
+    //     always visible regardless of scroll position.
+    if (settings_btn_)
+    {
+        settings_btn_->paint(ctx);
+        settings_icon_.draw(ctx.canvas, ctx.factory, kWrenchSvg,
+                            settings_btn_->bounds(), 16.0f,
+                            ctx.theme.palette.text_secondary);
+    }
     if (close_btn_)
     {
         close_btn_->paint(ctx);

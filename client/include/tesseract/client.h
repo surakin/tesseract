@@ -1127,12 +1127,31 @@ public:
     Result set_room_topic(const std::string& room_id, const std::string& topic);
 
     /// Set the current user's display name in a specific room
-    /// (m.room.member state event). Blocks the calling thread — call from a worker thread.
+    /// (m.room.member state event) — distinct from set_room_display_name,
+    /// which sets the room's own m.room.name (visible to all members).
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_user_room_display_name(const std::string& room_id,
+                                       const std::string& name);
+
+    /// Set the current user's avatar in a specific room
+    /// (m.room.member state event) — distinct from set_room_avatar, which
+    /// sets the room's own m.room.avatar (visible to all members).
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_user_room_avatar(const std::string& room_id,
+                                const std::string& mxc_uri);
+
+    /// Send an m.room.name state event to set the room's own display name
+    /// (visible to all members) — distinct from set_user_room_display_name,
+    /// which only sets the current user's per-room member override.
+    /// Blocks the calling thread — call from a worker thread.
     Result set_room_display_name(const std::string& room_id,
                                   const std::string& name);
 
-    /// Set the current user's avatar in a specific room
-    /// (m.room.member state event). Blocks the calling thread — call from a worker thread.
+    /// Set or clear the room's m.room.avatar state event (visible to all
+    /// members) — distinct from set_user_room_avatar, which only sets the
+    /// current user's per-room member override. Pass an empty mxc_uri to
+    /// clear the room avatar. Blocks the calling thread — call from a
+    /// worker thread.
     Result set_room_avatar(const std::string& room_id,
                            const std::string& mxc_uri);
 
@@ -1150,6 +1169,14 @@ public:
     /// m.room.pinned_events in this room. Cached read — no network.
     /// Returns false on any uncertainty.
     bool can_pin_in_room(const std::string& room_id);
+
+    /// True iff the current user's PL meets the requirement for sending
+    /// m.room.name/m.room.topic/m.room.avatar respectively in this room.
+    /// Cached reads — no network. Independent per field. Returns false on
+    /// any uncertainty.
+    bool can_set_room_name(const std::string& room_id);
+    bool can_set_room_topic(const std::string& room_id);
+    bool can_set_room_avatar(const std::string& room_id);
 
     /// Returns "default" | "all" | "mentions" | "off" from the local push-rule
     /// cache. Blocks the calling thread — call from a worker thread.

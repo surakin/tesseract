@@ -809,3 +809,15 @@ msgstr "🔒 Cifrado"
 #: ui/shared/views/RoomInfoPanel.cpp
 msgid "🌉 Bridged"
 msgstr "🌉 Con puente"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Room Settings"
+msgstr "Ajustes de la sala"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Name"
+msgstr "Nombre"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Topic"
+msgstr "Tema"

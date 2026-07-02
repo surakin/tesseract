@@ -2196,11 +2196,31 @@ pub mod ffi {
 
         /// Set the current user's display name in a specific room
         /// (m.room.member state event). Blocks — worker thread.
-        fn set_room_display_name(self: &ClientFfi, room_id: &str, name: &str) -> OpResult;
+        fn set_user_room_display_name(self: &ClientFfi, room_id: &str, name: &str) -> OpResult;
 
         /// Set the current user's avatar in a specific room
         /// (m.room.member state event). Blocks — worker thread.
+        fn set_user_room_avatar(self: &ClientFfi, room_id: &str, mxc_uri: &str) -> OpResult;
+
+        /// Send an m.room.name state event to set the room's own display name
+        /// (visible to all members) — distinct from set_user_room_display_name,
+        /// which only sets the current user's per-room member override.
+        /// Blocks — worker thread.
+        fn set_room_display_name(self: &ClientFfi, room_id: &str, name: &str) -> OpResult;
+
+        /// Set or clear the room's m.room.avatar state event (visible to all
+        /// members) — distinct from set_user_room_avatar, which only sets the
+        /// current user's per-room member override. Pass an empty mxc_uri to
+        /// clear the room avatar. Blocks — worker thread.
         fn set_room_avatar(self: &ClientFfi, room_id: &str, mxc_uri: &str) -> OpResult;
+
+        /// True iff the current user's power level meets the requirement for
+        /// sending m.room.name/m.room.topic/m.room.avatar respectively in this
+        /// room. Independent per field; false on any uncertainty. Blocks —
+        /// worker thread (reads cached power levels, no network round-trip).
+        fn can_set_room_name(self: &ClientFfi, room_id: &str) -> bool;
+        fn can_set_room_topic(self: &ClientFfi, room_id: &str) -> bool;
+        fn can_set_room_avatar(self: &ClientFfi, room_id: &str) -> bool;
 
         // ----- Devices / sessions -----
 

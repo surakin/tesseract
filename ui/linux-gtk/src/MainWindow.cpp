@@ -1353,6 +1353,29 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         });
         topic_text_area_->set_visible(false);
 
+        room_settings_name_field_ = main_app_surface_->host().make_text_field();
+        room_settings_name_field_->set_on_changed([this](const std::string& t)
+        {
+            if (main_app_)
+                main_app_->room_view()->room_settings_view()->set_name_edit_text(t);
+        });
+        room_settings_name_field_->set_visible(false);
+
+        room_settings_topic_area_ = main_app_surface_->host().make_text_area();
+        room_settings_topic_area_->set_on_changed([this](const std::string& t)
+        {
+            if (main_app_)
+                main_app_->room_view()->room_settings_view()->set_topic_edit_text(t);
+        });
+        room_settings_topic_area_->set_on_height_changed([this](float h)
+        {
+            if (!main_app_ || !main_app_surface_)
+                return;
+            main_app_->room_view()->room_settings_view()->set_topic_area_natural_height(h);
+            main_app_surface_->relayout();
+        });
+        room_settings_topic_area_->set_visible(false);
+
         // File drop. Shared dispatch routes the payload into the compose bar
         // by MIME type; the per-shell hook probes video/audio + gif animation.
         auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
@@ -1911,6 +1934,44 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     }
                 });
             });
+        };
+        room_view_->on_room_settings_opened = [this](std::string room_id)
+        {
+            auto* v = room_view_->room_settings_view();
+            if (!v) return;
+            if (!client_)
+            {
+                v->set_field_permissions(false, false, false);
+                return;
+            }
+            v->set_field_permissions(client_->can_set_room_name(room_id),
+                                     client_->can_set_room_topic(room_id),
+                                     client_->can_set_room_avatar(room_id));
+        };
+        room_view_->on_room_settings_avatar_upload_requested =
+            [this](std::string room_id)
+        {
+            stage_room_settings_avatar_upload_(room_id);
+        };
+        room_view_->room_settings_view()->on_accept =
+            [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
+        {
+            if (!client_) return;
+            auto* c = client_;
+            run_async_mut_(
+                [this, c, room_id = std::move(room_id),
+                 changes = std::move(changes)]() mutable
+                {
+                    auto outcome = ShellBase::apply_room_settings_(
+                        c, room_id, changes.name, changes.topic,
+                        changes.avatar_mxc);
+                    post_to_ui_([this, outcome]() mutable
+                    {
+                        if (!room_view_) return;
+                        if (auto* v = room_view_->room_settings_view())
+                            v->set_commit_result(outcome.ok, outcome.error);
+                    });
+                });
         };
         setup_dm_callbacks();
         room_view_->on_ignore_user = [this](std::string user_id)
@@ -2493,6 +2554,34 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                         if (!was_visible)
                             topic_text_area_->set_text(
                                 main_app_->room_view()->topic_edit_initial_text());
+                    }
+                }
+
+                if (room_settings_name_field_ && room_settings_topic_area_)
+                {
+                    auto* rsv = main_app_->room_view()->room_settings_view();
+
+                    const tk::Rect nr = rsv->name_field_rect();
+                    const bool name_was_visible = room_settings_name_field_visible_;
+                    room_settings_name_field_visible_ = !nr.empty();
+                    room_settings_name_field_->set_visible(!nr.empty());
+                    if (!nr.empty())
+                    {
+                        room_settings_name_field_->set_rect(nr);
+                        if (!name_was_visible)
+                            room_settings_name_field_->set_text(
+                                rsv->name_edit_initial_text());
+                    }
+
+                    const tk::Rect tr2 = rsv->topic_edit_rect();
+                    const bool topic_was_visible = room_settings_topic_area_->visible();
+                    room_settings_topic_area_->set_visible(!tr2.empty());
+                    if (!tr2.empty())
+                    {
+                        room_settings_topic_area_->set_rect(tr2);
+                        if (!topic_was_visible)
+                            room_settings_topic_area_->set_text(
+                                rsv->topic_edit_initial_text());
                     }
                 }
 

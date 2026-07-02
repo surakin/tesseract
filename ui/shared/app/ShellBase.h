@@ -1598,6 +1598,33 @@ protected:
     // Call from the UI thread (e.g. when /myroomavatar is sent with no args).
     void pick_and_set_room_avatar_(const std::string& room_id);
 
+    // Room Settings view support ------------------------------------------
+
+    // Open a file picker, upload the selected image as raw media (never
+    // committing it to any room/profile state), and stage the resulting
+    // mxc:// URI into room_view_'s RoomSettingsView via set_staged_avatar().
+    // The room-level m.room.avatar state event is only sent when the user
+    // clicks Accept (see apply_room_settings_). No-op if not logged in or
+    // room_view_ is unset. Call from the UI thread.
+    void stage_room_settings_avatar_upload_(const std::string& room_id);
+
+    // Outcome of a RoomSettingsView Accept commit.
+    struct RoomSettingsCommitOutcome
+    {
+        bool ok = false;
+        std::string error; // joined per-field failures, e.g. "name: M_FORBIDDEN"
+    };
+
+    // Send up to 3 state events for whichever optionals are populated,
+    // attempting every one even if an earlier call fails so a partial
+    // success (e.g. topic saved, avatar denied) isn't silently lost.
+    // Blocks — call from a worker thread (run_async_mut_).
+    static RoomSettingsCommitOutcome apply_room_settings_(
+        tesseract::Client* client, const std::string& room_id,
+        const std::optional<std::string>& new_name,
+        const std::optional<std::string>& new_topic,
+        const std::optional<std::string>& new_avatar_mxc);
+
     // Monotonic clock in ms from the SAME epoch the shell's animation
     // timer / anim_cache_.advance() uses (Qt: QDateTime msecs; GTK:
     // g_get_monotonic_time/1000; macOS: NSDate*1000; Win32: GetTickCount64).

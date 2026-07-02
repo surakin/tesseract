@@ -1164,6 +1164,52 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         Qt::QueuedConnection);
                 });
         };
+        mainApp_->room_view()->on_room_settings_opened =
+            [this](const std::string& room_id)
+        {
+            auto* v = mainApp_->room_view()->room_settings_view();
+            if (!v)
+                return;
+            if (!client_)
+            {
+                v->set_field_permissions(false, false, false);
+                return;
+            }
+            v->set_field_permissions(client_->can_set_room_name(room_id),
+                                     client_->can_set_room_topic(room_id),
+                                     client_->can_set_room_avatar(room_id));
+        };
+        mainApp_->room_view()->on_room_settings_avatar_upload_requested =
+            [this](const std::string& room_id)
+        {
+            stage_room_settings_avatar_upload_(room_id);
+        };
+        mainApp_->room_view()->room_settings_view()->on_accept =
+            [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            run_async_mut_(
+                [this, c, room_id = std::move(room_id),
+                 changes = std::move(changes)]()
+                {
+                    auto outcome = ShellBase::apply_room_settings_(
+                        c, room_id, changes.name, changes.topic,
+                        changes.avatar_mxc);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, outcome]()
+                        {
+                            if (!mainApp_)
+                                return;
+                            if (auto* v =
+                                    mainApp_->room_view()->room_settings_view())
+                                v->set_commit_result(outcome.ok, outcome.error);
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
         setup_dm_callbacks();
         mainApp_->room_view()->on_ignore_user =
             [this](const std::string& user_id)
@@ -1692,6 +1738,37 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
     topicTextArea_->set_visible(false);
 
+    roomSettingsNameField_ = mainAppSurface_->host().make_text_field();
+    roomSettingsNameField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    roomSettingsNameField_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (mainApp_)
+                mainApp_->room_view()->room_settings_view()->set_name_edit_text(t);
+        });
+    roomSettingsNameField_->set_visible(false);
+
+    roomSettingsTopicArea_ = mainAppSurface_->host().make_text_area();
+    roomSettingsTopicArea_->set_font_role(tk::FontRole::Body);
+    roomSettingsTopicArea_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    roomSettingsTopicArea_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (mainApp_)
+                mainApp_->room_view()->room_settings_view()->set_topic_edit_text(t);
+        });
+    roomSettingsTopicArea_->set_on_height_changed(
+        [this](float h)
+        {
+            if (!mainApp_ || !mainAppSurface_)
+                return;
+            mainApp_->room_view()->room_settings_view()->set_topic_area_natural_height(h);
+            mainAppSurface_->relayout();
+        });
+    roomSettingsTopicArea_->set_visible(false);
+
     roomSearchField_ = mainAppSurface_->host().make_text_field();
     roomSearchField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
@@ -2048,6 +2125,34 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                     if (!was_visible)
                         topicTextArea_->set_text(
                             mainApp_->room_view()->topic_edit_initial_text());
+                }
+            }
+
+            if (mainApp_ && roomSettingsNameField_ && roomSettingsTopicArea_)
+            {
+                auto* rsv = mainApp_->room_view()->room_settings_view();
+                const tk::Rect nr = rsv->name_field_rect();
+                const bool name_now_visible = !nr.empty();
+                const bool name_was_visible = roomSettingsNameFieldVisible_;
+                roomSettingsNameFieldVisible_ = name_now_visible;
+                roomSettingsNameField_->set_visible(name_now_visible);
+                if (name_now_visible)
+                {
+                    roomSettingsNameField_->set_rect(nr);
+                    if (!name_was_visible)
+                        roomSettingsNameField_->set_text(rsv->name_edit_initial_text());
+                }
+
+                const tk::Rect tr2 = rsv->topic_edit_rect();
+                const bool topic_now_visible = !tr2.empty();
+                const bool topic_was_visible = roomSettingsTopicAreaVisible_;
+                roomSettingsTopicAreaVisible_ = topic_now_visible;
+                roomSettingsTopicArea_->set_visible(topic_now_visible);
+                if (topic_now_visible)
+                {
+                    roomSettingsTopicArea_->set_rect(tr2);
+                    if (!topic_was_visible)
+                        roomSettingsTopicArea_->set_text(rsv->topic_edit_initial_text());
                 }
             }
         });

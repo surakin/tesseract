@@ -176,8 +176,12 @@ set(_tk_sources
     views/RoomPreviewView.cpp
     views/SpaceRootView.h
     views/SpaceRootView.cpp
+    views/AvatarEditControl.h
+    views/AvatarEditControl.cpp
     views/RoomInfoPanel.h
     views/RoomInfoPanel.cpp
+    views/RoomSettingsView.h
+    views/RoomSettingsView.cpp
     views/AlertDialog.h
     views/AlertDialog.cpp
     views/ConfirmDialog.h
@@ -343,6 +347,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-expand.svg"
     "${_lucide_dir}/lucide-minimize.svg"
     "${_lucide_dir}/lucide-pip.svg"
+    "${_lucide_dir}/lucide-wrench.svg"
 )
 
 add_custom_command(

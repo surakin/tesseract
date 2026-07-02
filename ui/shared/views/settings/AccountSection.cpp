@@ -6,7 +6,7 @@
 #include "tk/layout.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
-#include "views/media_utils.h"
+#include "views/AvatarEditControl.h"
 
 #include <algorithm>
 #include <memory>
@@ -39,8 +39,6 @@ constexpr float kNameH            = 20.0f;
 constexpr float kIdH              = 17.0f;
 constexpr float kErrorGap         = 4.0f;
 constexpr float kErrorH           = 14.0f;
-constexpr float kRemoveChipR      = 9.0f;
-constexpr float kXChipTolerance   = kRemoveChipR + 4.0f;
 
 } // namespace
 
@@ -86,28 +84,20 @@ public:
 private:
     void invalidate_text();
 
-    bool in_disc(tk::Point local) const;
-    bool in_remove_chip(tk::Point local) const;
-    tk::Point disc_centre() const;
+    tk::Point disc_centre_local() const;
 
     std::string display_name_;
     std::string user_id_;
-    std::string avatar_url_;
-    ImageProvider image_provider_;
 
     bool name_editable_  = false;
     bool name_busy_      = false;
     std::string name_error_;
 
-    bool avatar_editable_ = false;
-    bool avatar_busy_     = false;
-    std::string avatar_error_;
-    bool avatar_hovered_  = false;
+    AvatarEditControl avatar_;
 
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> uid_layout_;
     std::unique_ptr<tk::TextLayout> name_error_layout_;
-    std::unique_ptr<tk::TextLayout> avatar_error_layout_;
 };
 
 void AccountSection::Content::set_display_name(std::string name)
@@ -126,12 +116,12 @@ void AccountSection::Content::set_user_id(std::string uid)
 
 void AccountSection::Content::set_avatar_url(std::string mxc_url)
 {
-    avatar_url_ = std::move(mxc_url);
+    avatar_.set_avatar_url(std::move(mxc_url));
 }
 
 void AccountSection::Content::set_image_provider(ImageProvider p)
 {
-    image_provider_ = std::move(p);
+    avatar_.set_image_provider(std::move(p));
 }
 
 void AccountSection::Content::set_editable(bool editable)
@@ -142,7 +132,7 @@ void AccountSection::Content::set_editable(bool editable)
 
 void AccountSection::Content::set_avatar_editable(bool editable)
 {
-    avatar_editable_ = editable;
+    avatar_.set_editable(editable);
 }
 
 void AccountSection::Content::set_name_busy(bool busy)
@@ -160,15 +150,12 @@ void AccountSection::Content::set_name_error(std::string error)
 
 void AccountSection::Content::set_avatar_busy(bool busy)
 {
-    avatar_busy_ = busy;
-    if (busy) avatar_error_.clear();
-    avatar_error_layout_.reset();
+    avatar_.set_busy(busy);
 }
 
 void AccountSection::Content::set_avatar_error(std::string error)
 {
-    avatar_error_ = std::move(error);
-    avatar_error_layout_.reset();
+    avatar_.set_error(std::move(error));
 }
 
 void AccountSection::Content::invalidate_text()
@@ -178,28 +165,9 @@ void AccountSection::Content::invalidate_text()
     name_error_layout_.reset();
 }
 
-tk::Point AccountSection::Content::disc_centre() const
+tk::Point AccountSection::Content::disc_centre_local() const
 {
-    return {bounds_.x + kPadX + kAvatarRadius,
-            bounds_.y + kPadY + kAvatarRadius};
-}
-
-bool AccountSection::Content::in_disc(tk::Point local) const
-{
-    const float cx = kPadX + kAvatarRadius;
-    const float cy = kPadY + kAvatarRadius;
-    const float dx = local.x - cx;
-    const float dy = local.y - cy;
-    return (dx * dx + dy * dy) <= (kAvatarRadius * kAvatarRadius);
-}
-
-bool AccountSection::Content::in_remove_chip(tk::Point local) const
-{
-    const float cx = kPadX + kAvatarDiameter - kRemoveChipR;
-    const float cy = kPadY + kRemoveChipR;
-    const float dx = local.x - cx;
-    const float dy = local.y - cy;
-    return (dx * dx + dy * dy) <= (kXChipTolerance * kXChipTolerance);
+    return {kPadX + kAvatarRadius, kPadY + kAvatarRadius};
 }
 
 tk::Rect AccountSection::Content::name_field_rect() const
@@ -221,7 +189,7 @@ tk::Size AccountSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
     const float text_col_h = kNameH + kLineGap + kIdH;
     const float extra_h =
         (!name_error_.empty() ? kErrorGap + kErrorH : 0.0f) +
-        (!avatar_error_.empty() ? kErrorGap + kErrorH : 0.0f);
+        (avatar_.has_error() ? kErrorGap + kErrorH : 0.0f);
     const float h =
         std::max(kAvatarDiameter, text_col_h) + 2.0f * kPadY + extra_h;
     return {w, h};
@@ -230,141 +198,46 @@ tk::Size AccountSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
 void AccountSection::Content::arrange(tk::LayoutCtx&, tk::Rect bounds)
 {
     bounds_ = bounds;
+    avatar_.set_geometry(disc_centre_local(), kAvatarDiameter);
 }
 
 bool AccountSection::Content::on_pointer_down(tk::Point local)
 {
-    if (!avatar_editable_ || avatar_busy_)
-        return false;
-    if (!avatar_url_.empty() && in_remove_chip(local))
+    switch (avatar_.hit_test(local))
     {
+    case AvatarEditControl::HitZone::RemoveChip:
         if (on_avatar_remove_clicked) on_avatar_remove_clicked();
         return true;
-    }
-    if (in_disc(local))
-    {
+    case AvatarEditControl::HitZone::Disc:
         if (on_avatar_upload_clicked) on_avatar_upload_clicked();
         return true;
+    case AvatarEditControl::HitZone::None:
+        return false;
     }
     return false;
 }
 
 bool AccountSection::Content::on_pointer_move(tk::Point local)
 {
-    if (!avatar_editable_) return false;
-    const bool was = avatar_hovered_;
-    avatar_hovered_ = in_disc(local);
-    return avatar_hovered_ != was;
+    return avatar_.on_pointer_move(local);
 }
 
 void AccountSection::Content::on_pointer_leave()
 {
-    if (avatar_hovered_)
-    {
-        avatar_hovered_ = false;
-    }
+    avatar_.on_pointer_leave();
 }
 
 void AccountSection::Content::paint(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
-    const tk::Point centre = disc_centre();
-
-    const tk::Image* img = (image_provider_ && !avatar_url_.empty())
-                               ? image_provider_(avatar_url_)
-                               : nullptr;
     {
         std::string_view name_source = display_name_.empty()
             ? (user_id_.empty() ? ""
                                 : std::string_view{user_id_}.substr(
                                       user_id_.front() == '@' ? 1 : 0))
             : std::string_view{display_name_};
-        draw_avatar(ctx.canvas, img, centre, kAvatarDiameter, name_source,
-                    pal.avatar_initials_bg, pal.avatar_initials_text);
-    }
-
-    if (avatar_editable_)
-    {
-        const tk::Rect disc_rect{bounds_.x + kPadX,
-                                 bounds_.y + kPadY,
-                                 kAvatarDiameter,
-                                 kAvatarDiameter};
-
-        if (avatar_busy_)
-        {
-            ctx.canvas.push_clip_rounded_rect(disc_rect, kAvatarRadius);
-            ctx.canvas.fill_rect(disc_rect, tk::Color::rgba(0, 0, 0, 160));
-            ctx.canvas.pop_clip();
-            tk::TextStyle st;
-            st.role = tk::FontRole::Title;
-            auto lay = ctx.factory.build_text("\xe2\x80\xa6", st);
-            if (lay)
-            {
-                const tk::Size sz = lay->measure();
-                ctx.canvas.draw_text(*lay,
-                                     {centre.x - sz.w * 0.5f,
-                                      centre.y - sz.h * 0.5f},
-                                     tk::Color::rgb(0xffffff));
-            }
-        }
-        else if (avatar_hovered_)
-        {
-            ctx.canvas.push_clip_rounded_rect(disc_rect, kAvatarRadius);
-            ctx.canvas.fill_rect(disc_rect, tk::Color::rgba(0, 0, 0, 128));
-            ctx.canvas.pop_clip();
-            tk::TextStyle st;
-            st.role = tk::FontRole::Title;
-            auto lay = ctx.factory.build_text("+", st);
-            if (lay)
-            {
-                const tk::Size sz = lay->measure();
-                ctx.canvas.draw_text(*lay,
-                                     {centre.x - sz.w * 0.5f,
-                                      centre.y - sz.h * 0.5f},
-                                     tk::Color::rgb(0xffffff));
-            }
-
-            if (!avatar_url_.empty())
-            {
-                const float cx = bounds_.x + kPadX + kAvatarDiameter - kRemoveChipR;
-                const float cy = bounds_.y + kPadY + kRemoveChipR;
-                ctx.canvas.fill_rounded_rect(
-                    {cx - kRemoveChipR, cy - kRemoveChipR,
-                     kRemoveChipR * 2.0f, kRemoveChipR * 2.0f},
-                    kRemoveChipR,
-                    tk::Color::rgba(40, 40, 40, 220));
-                tk::TextStyle xs;
-                xs.role = tk::FontRole::Small;
-                auto xlay = ctx.factory.build_text("\xc3\x97", xs);
-                if (xlay)
-                {
-                    const tk::Size xsz = xlay->measure();
-                    ctx.canvas.draw_text(*xlay,
-                                         {cx - xsz.w * 0.5f,
-                                          cy - xsz.h * 0.5f},
-                                         tk::Color::rgb(0xffffff));
-                }
-            }
-        }
-
-        if (!avatar_error_.empty())
-        {
-            if (!avatar_error_layout_)
-            {
-                tk::TextStyle st;
-                st.role      = tk::FontRole::Small;
-                st.halign    = tk::TextHAlign::Leading;
-                st.valign    = tk::TextVAlign::Top;
-                st.max_width = kAvatarDiameter;
-                avatar_error_layout_ =
-                    ctx.factory.build_text(avatar_error_, st);
-            }
-            ctx.canvas.draw_text(*avatar_error_layout_,
-                                 {bounds_.x + kPadX,
-                                  bounds_.y + kPadY + kAvatarDiameter + kErrorGap},
-                                 tk::Color::rgb(0xcc3333));
-        }
+        avatar_.paint(ctx, {bounds_.x, bounds_.y}, name_source);
     }
 
     const float text_x = bounds_.x + kPadX + kAvatarDiameter + kAvatarTextGap;

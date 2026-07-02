@@ -66,6 +66,8 @@ add_executable(tesseract_tests
     cpp/test_session_persist_queue.cpp
     cpp/test_server_info.cpp
     cpp/test_tk_account_section.cpp
+    cpp/test_room_settings_diff.cpp
+    cpp/test_tk_room_settings_view.cpp
     cpp/test_settings_controller.cpp
     cpp/test_tk_devices_section.cpp
     cpp/test_presence_tracker.cpp

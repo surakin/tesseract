@@ -7757,9 +7757,95 @@ void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
                     auto upload = sess->client->upload_media(bytes, mime);
                     if (!upload.ok)
                         return;
-                    sess->client->set_room_avatar(room_id, upload.message);
+                    sess->client->set_user_room_avatar(room_id, upload.message);
                 });
         });
+}
+
+void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id)
+{
+    auto* c = client_;
+    if (!c || !room_view_)
+        return;
+
+    if (auto* v = room_view_->room_settings_view())
+        v->set_avatar_busy(true);
+
+    pick_image_file_(
+        [this, c, room_id](std::vector<uint8_t> bytes, std::string mime) mutable
+        {
+            if (bytes.empty())
+            {
+                // Cancelled — clear the busy indicator.
+                if (room_view_)
+                    if (auto* v = room_view_->room_settings_view())
+                        v->set_avatar_busy(false);
+                return;
+            }
+            if (c != client_)
+                return; // logged out between pick and callback
+            auto sess = active_account_;
+            run_async_mut_(
+                [this, sess, room_id,
+                 bytes = std::move(bytes),
+                 mime  = std::move(mime)]() mutable
+                {
+                    if (!sess || !sess->client)
+                        return;
+                    auto upload = sess->client->upload_media(bytes, mime);
+                    post_to_ui_alive_(
+                        [this, sess, upload = std::move(upload)]() mutable
+                        {
+                            if (sess != active_account_ || !room_view_)
+                                return;
+                            auto* v = room_view_->room_settings_view();
+                            if (!v)
+                                return;
+                            v->set_avatar_busy(false);
+                            if (upload.ok)
+                                v->set_staged_avatar(upload.message);
+                            else
+                                v->set_avatar_error(upload.message);
+                        });
+                });
+        });
+}
+
+ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
+    tesseract::Client* client, const std::string& room_id,
+    const std::optional<std::string>& new_name,
+    const std::optional<std::string>& new_topic,
+    const std::optional<std::string>& new_avatar_mxc)
+{
+    RoomSettingsCommitOutcome out;
+    if (!client)
+    {
+        out.error = "not logged in";
+        return out;
+    }
+    std::vector<std::string> errors;
+    if (new_name)
+    {
+        auto r = client->set_room_display_name(room_id, *new_name);
+        if (!r.ok) errors.push_back("name: " + r.message);
+    }
+    if (new_topic)
+    {
+        auto r = client->set_room_topic(room_id, *new_topic);
+        if (!r.ok) errors.push_back("topic: " + r.message);
+    }
+    if (new_avatar_mxc)
+    {
+        auto r = client->set_room_avatar(room_id, *new_avatar_mxc);
+        if (!r.ok) errors.push_back("avatar: " + r.message);
+    }
+    out.ok = errors.empty();
+    for (std::size_t i = 0; i < errors.size(); ++i)
+    {
+        if (i) out.error += "; ";
+        out.error += errors[i];
+    }
+    return out;
 }
 
 // ── Encryption setup detection ───────────────────────────────────────────────
