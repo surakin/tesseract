@@ -4436,7 +4436,6 @@ void MainWindow::handle_notification_ui_(
     apply_notification_redaction_(sender, room_name, body, avatar_bytes,
                                   image_bytes);
 
-    bool win_visible = isVisible() && !isMinimized();
     bool win_focused = isActiveWindow();
 
     auto sess = account_manager_.find(user_id);
@@ -4448,11 +4447,6 @@ void MainWindow::handle_notification_ui_(
             current_room_id_ == room_id)
         {
             return;
-        }
-        // Flash the taskbar when the window is visible but not the active app.
-        if (win_visible && !win_focused)
-        {
-            QApplication::alert(this, 0);
         }
         // Send a system notification regardless of window state unless already
         // watching the exact room above.
