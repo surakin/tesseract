@@ -132,6 +132,13 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         s.autoscroll_unread_rooms = enabled;
         s.save_to_disk(tesseract::config_dir());
     };
+    settings_view_->on_show_membership_events_changed = [this](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.show_room_join_leave_events = enabled;
+        s.save_to_disk(tesseract::config_dir());
+        emit membershipEventsPrefChanged(enabled);
+    };
 
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
 
@@ -229,7 +236,14 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().inactive_room_threshold_days);
     settings_view_->set_autoscroll_unread_pref(
         tesseract::Settings::instance().autoscroll_unread_rooms);
+    settings_view_->set_show_membership_events_pref(
+        tesseract::Settings::instance().show_room_join_leave_events);
     surface_->relayout();
+}
+
+void SettingsWidget::set_show_membership_events_pref(bool enabled)
+{
+    settings_view_->set_show_membership_events_pref(enabled);
 }
 
 void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)

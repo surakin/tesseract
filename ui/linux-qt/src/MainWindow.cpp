@@ -4106,6 +4106,14 @@ void MainWindow::openSettings()
                         mainApp_->room_list_view()->refresh();
                     }
                 });
+        connect(settingsWidget_, &SettingsWidget::membershipEventsPrefChanged,
+                this,
+                [this](bool enabled)
+                {
+                    if (client_) client_->set_show_membership_events(enabled);
+                    if (client_ && !current_room_id_.empty())
+                        client_->subscribe_room(current_room_id_);
+                });
 
         connect(settingsWidget_, &SettingsWidget::clearCachesRequested, this,
                 [this]

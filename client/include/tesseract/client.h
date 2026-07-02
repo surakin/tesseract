@@ -1357,6 +1357,14 @@ public:
     /// called from the UI thread.
     void set_presence_polling_enabled(bool enabled);
 
+    /// Enable or disable rendering of room membership-change rows
+    /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
+    /// variants) in the timeline. Thread-safe. Takes effect on the next
+    /// timeline reset for currently-subscribed rooms — call
+    /// `subscribe_room_at`/re-subscribe the active room after toggling to
+    /// refresh it immediately.
+    void set_show_membership_events(bool enabled);
+
     /// Issue one immediate round of DM presence polls without waiting for
     /// the 60s interval. Called by the shell when the window returns to
     /// focus so contacts don't appear stale after un-minimize. No-op if

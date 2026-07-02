@@ -2341,6 +2341,13 @@ protected:
     // every logged-in account (enable → lazy backfill; disable → clear index).
     void handle_index_messages_toggle_(bool enabled);
 
+    // Toggle handler for the "Show room join/leave events" Appearance
+    // setting. Persists the setting, applies it to the active account's
+    // client, and re-subscribes the currently-open room (when any) so the
+    // change is reflected immediately instead of waiting for the next room
+    // switch.
+    void handle_show_membership_events_toggle_(bool enabled);
+
 #ifdef TESSERACT_GITHUB_REPO
     // Persists the "check for updates automatically" preference.
     void handle_check_for_updates_toggle_(bool enabled);
@@ -2349,6 +2356,12 @@ protected:
     // Resume live search indexing for a freshly-synced account if the global
     // "index messages for search" preference is enabled. Called after start_sync.
     void apply_search_indexing_pref_(tesseract::AccountSession& session);
+
+    // Apply the persisted "show room join/leave events" preference to a
+    // freshly-synced account's Rust client. Called after start_sync so the
+    // very first room subscription already reflects the setting instead of
+    // defaulting to the Rust-side AtomicBool's off default. Non-blocking.
+    void apply_membership_events_pref_(tesseract::AccountSession& session);
 
     // ── Search-index stats (Settings panel) ───────────────────────────────
     // Each shell points `settings_view_` at its shared SettingsView once, and

@@ -265,6 +265,16 @@ pub(super) fn filter_for_channel(
     }
 }
 
+// Runtime-toggleable visibility gate for membership-change rows, applied at
+// the same call sites as filter_for_channel so it participates in the
+// visible/visible_ids index bookkeeping for free (see visible_index_of).
+// `show` is a fresh snapshot of ClientFfi::show_membership_events, read once
+// per collect_timeline_ops/refresh_receipts call by the caller.
+#[cfg(not(test))]
+fn filter_membership(ev: Option<TimelineEvent>, show: bool) -> Option<TimelineEvent> {
+    ev.filter(|e| show || e.msg_type != "m.room.member")
+}
+
 /// Process one VectorDiff, mutating `visible`/`visible_ids` in place and
 /// pushing the resulting emit operation(s) onto `ops`.  Does **not** cross
 /// the FFI boundary — emission is deferred to `emit_timeline_batch` so the
@@ -282,7 +292,7 @@ pub(super) async fn collect_timeline_ops(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
-    _client: &Client,
+    show_membership_events: &AtomicBool,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     search_index: &Option<super::search::SearchIndexCtx>,
@@ -291,15 +301,19 @@ pub(super) async fn collect_timeline_ops(
     if cancelled.load(Ordering::Acquire) {
         return;
     }
+    let show_membership = show_membership_events.load(Ordering::Relaxed);
     match diff {
         VectorDiff::Append { values } => {
             // Collect all visible items from the Append batch into one
             // Appended op so the whole group crosses the FFI in a single call.
             let mut batch: Vec<TimelineEvent> = Vec::new();
             for item in values {
-                let ev = filter_for_channel(
-                    timeline_item_to_ffi(&item, room_id, room, me).await,
-                    channel,
+                let ev = filter_membership(
+                    filter_for_channel(
+                        timeline_item_to_ffi(&item, room_id, room, me).await,
+                        channel,
+                    ),
+                    show_membership,
                 );
                 if let Some(ev) = ev {
                     visible.push(true);
@@ -318,9 +332,12 @@ pub(super) async fn collect_timeline_ops(
             }
         }
         VectorDiff::PushBack { value } => {
-            let ev = filter_for_channel(
-                timeline_item_to_ffi(&value, room_id, room, me).await,
-                channel,
+            let ev = filter_membership(
+                filter_for_channel(
+                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    channel,
+                ),
+                show_membership,
             );
             if let Some(ev) = ev {
                 visible.push(true);
@@ -335,9 +352,12 @@ pub(super) async fn collect_timeline_ops(
             }
         }
         VectorDiff::PushFront { value } => {
-            let ev = filter_for_channel(
-                timeline_item_to_ffi(&value, room_id, room, me).await,
-                channel,
+            let ev = filter_membership(
+                filter_for_channel(
+                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    channel,
+                ),
+                show_membership,
             );
             if let Some(ev) = ev {
                 visible.insert(0, true);
@@ -358,9 +378,12 @@ pub(super) async fn collect_timeline_ops(
             // emit that, but a bad index on a task thread must not crash
             // timeline tracking — clamp to an append.
             let index = index.min(visible.len());
-            let ev = filter_for_channel(
-                timeline_item_to_ffi(&value, room_id, room, me).await,
-                channel,
+            let ev = filter_membership(
+                filter_for_channel(
+                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    channel,
+                ),
+                show_membership,
             );
             if let Some(ev) = ev {
                 let v_idx = visible_index_of(visible, index);
@@ -397,9 +420,12 @@ pub(super) async fn collect_timeline_ops(
                 );
                 return;
             }
-            let new_ev = filter_for_channel(
-                timeline_item_to_ffi(&value, room_id, room, me).await,
-                channel,
+            let new_ev = filter_membership(
+                filter_for_channel(
+                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    channel,
+                ),
+                show_membership,
             );
             let was_visible = visible.get(index).copied().unwrap_or(false);
             match (was_visible, new_ev) {
@@ -513,9 +539,12 @@ pub(super) async fn collect_timeline_ops(
             visible_ids.reserve(values.len());
             let mut snapshot: Vec<TimelineEvent> = Vec::new();
             for item in &values {
-                let ev = filter_for_channel(
-                    timeline_item_to_ffi(item, room_id, room, me).await,
-                    channel,
+                let ev = filter_membership(
+                    filter_for_channel(
+                        timeline_item_to_ffi(item, room_id, room, me).await,
+                        channel,
+                    ),
+                    show_membership,
                 );
                 if let Some(ev) = ev {
                     visible.push(true);
@@ -557,10 +586,12 @@ async fn refresh_receipts(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
+    show_membership_events: &AtomicBool,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
 ) {
     let items = tl.items().await;
+    let show_membership = show_membership_events.load(Ordering::Relaxed);
 
     // Collect all receipt-bearing updates first, then emit as a single batch
     // instead of N individual on_message_updated calls.
@@ -577,7 +608,10 @@ async fn refresh_receipts(
             break;
         }
 
-        let ev = filter_for_channel(timeline_item_to_ffi(item, room_id, room, me).await, channel);
+        let ev = filter_membership(
+            filter_for_channel(timeline_item_to_ffi(item, room_id, room, me).await, channel),
+            show_membership,
+        );
         let was_visible_in_shadow = visible[slot_idx];
         let is_visible_now = ev.is_some();
         if was_visible_in_shadow != is_visible_now {
@@ -650,13 +684,13 @@ impl ClientFfi {
         channel: TimelineChannel,
         cancelled: Arc<AtomicBool>,
         index: Option<super::search::SearchIndexCtx>,
+        show_membership_events: Arc<AtomicBool>,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
         let tl = Arc::clone(timeline);
         let h = Arc::clone(handler);
         let rid = room_id_str;
         let room_clone = room.clone();
         let me = client.user_id().map(|u| u.to_owned());
-        let client_ref = client.clone();
         let ch = channel;
         let cancelled_stream = cancelled;
 
@@ -677,15 +711,20 @@ impl ClientFfi {
                 // The mirror is `true` for every matrix-sdk-ui timeline slot
                 // whose `timeline_item_to_ffi` yields Some — this covers both
                 // real message events and virtual items (day-dividers,
-                // read-markers, timeline-start). State events and membership
-                // changes remain `false` so they are silently filtered.
+                // read-markers, timeline-start). Membership-change rows are
+                // visible only when show_membership_events is enabled; all
+                // other state events remain always filtered.
                 let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
                 let mut visible_ids: Vec<String> = Vec::with_capacity(initial_items.len());
                 let mut snapshot: Vec<TimelineEvent> = Vec::new();
+                let show_membership = show_membership_events.load(Ordering::Relaxed);
                 for item in initial_items.iter() {
-                    let ev = filter_for_channel(
-                        timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await,
-                        &ch,
+                    let ev = filter_membership(
+                        filter_for_channel(
+                            timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await,
+                            &ch,
+                        ),
+                        show_membership,
                     );
                     if let Some(ev) = ev {
                         visible.push(true);
@@ -739,7 +778,7 @@ impl ClientFfi {
                                     &rid,
                                     &room_clone,
                                     me.as_deref(),
-                                    &client_ref,
+                                    &show_membership_events,
                                     &ch,
                                     &cancelled_stream,
                                     &index,
@@ -770,6 +809,7 @@ impl ClientFfi {
                                     &rid,
                                     &room_clone,
                                     me.as_deref(),
+                                    &show_membership_events,
                                     &ch,
                                     &cancelled_stream,
                                 )
@@ -858,6 +898,7 @@ impl ClientFfi {
                         TimelineChannel::Room,
                         Arc::clone(&new_cancelled),
                         self.search_index_ctx(),
+                        Arc::clone(&self.show_membership_events),
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
                     existing.cancelled = new_cancelled;
@@ -922,6 +963,7 @@ impl ClientFfi {
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),
+            Arc::clone(&self.show_membership_events),
         );
 
         self.timelines.write().insert(
@@ -1369,6 +1411,7 @@ impl ClientFfi {
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),
+            Arc::clone(&self.show_membership_events),
         );
 
         self.timelines.write().insert(

@@ -2611,6 +2611,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             s.autoscroll_unread_rooms = enabled;
             s.save_to_disk(tesseract::config_dir());
         };
+        settings_widget_->on_show_membership_events_changed = [this](bool enabled)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.show_room_join_leave_events = enabled;
+            s.save_to_disk(tesseract::config_dir());
+            if (client_) client_->set_show_membership_events(enabled);
+            if (client_ && !current_room_id_.empty())
+                client_->subscribe_room(current_room_id_);
+        };
         settings_widget_->on_clear_caches = [this]
         {
             clear_all_caches_(
@@ -5125,6 +5134,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().inactive_room_threshold_days);
     settings_widget_->set_autoscroll_unread_pref(
         tesseract::Settings::instance().autoscroll_unread_rooms);
+    settings_widget_->set_show_membership_events_pref(
+        tesseract::Settings::instance().show_room_join_leave_events);
     if (settings_controller_)
         settings_widget_->set_controller(settings_controller_.get(),
                                          my_display_name_);

@@ -582,6 +582,12 @@ pub struct ClientFfi {
     /// so it can be updated from the UI thread while the polling task runs on
     /// a worker thread without requiring a lock or a full stop/restart.
     pub(super) presence_polling_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// When `false` (the default), room membership-change rows
+    /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
+    /// variants) are filtered out at the same point pinned-events/etc.
+    /// visibility is decided (see `filter_membership` in `client::timeline`).
+    /// Controlled by `set_show_membership_events`.
+    pub(super) show_membership_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Last set of room IDs pushed to `RoomListService::subscribe_to_rooms`.
     /// Used by `sync_room_subscriptions` to skip the re-push (and the SQL
     /// fan-out it triggers inside matrix-sdk) when the subscribed set is
@@ -924,6 +930,7 @@ impl ClientFfi {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(not(test))]
             last_sync_room_subscriptions: Arc::new(parking_lot::Mutex::new(
                 std::collections::HashSet::new(),
@@ -980,6 +987,7 @@ impl ClientFfi {
             data_dir: default_data_dir(),
             http_client: reqwest::Client::new(),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             #[cfg(feature = "calls")]
             active_rtc_call: None,
@@ -1086,6 +1094,15 @@ impl ClientFfi {
     /// (which lives in `client::sync` and needs the watcher task to exist).
     #[cfg(test)]
     pub fn poll_presence_now(&mut self) {}
+
+    /// Enable or disable membership-change timeline rows. Thread-safe.
+    /// (Production impl lives alongside `set_presence_polling_enabled` in
+    /// `client::sync`; this test stub mirrors that behaviour.)
+    #[cfg(test)]
+    pub fn set_show_membership_events(&self, enabled: bool) {
+        self.show_membership_events
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2505,6 +2522,22 @@ mod tests {
         c.set_presence_polling_enabled(true);
         assert!(c
             .presence_polling_enabled
+            .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn set_show_membership_events_roundtrips() {
+        let c = ClientFfi::new();
+        assert!(!c
+            .show_membership_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_show_membership_events(true);
+        assert!(c
+            .show_membership_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_show_membership_events(false);
+        assert!(!c
+            .show_membership_events
             .load(std::sync::atomic::Ordering::Relaxed));
     }
 

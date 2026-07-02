@@ -235,6 +235,53 @@ TEST_CASE("make_event dispatches m.location to LocationEvent",
     CHECK(loc->description == "New York");
 }
 
+TEST_CASE("make_event dispatches m.room.member to MembershipStateEvent",
+          "[ffi][make_event]")
+{
+    auto ffi = make_ffi_event("m.room.member");
+    ffi.membership_action = "kicked";
+    ffi.membership_target_user_id = "@bob:server";
+    ffi.membership_target_name = "Bob";
+    ffi.membership_target_avatar_url = "mxc://server/bob";
+    auto ev = tesseract::make_event(ffi);
+    auto* mem = dynamic_cast<tesseract::MembershipStateEvent*>(ev.get());
+    REQUIRE(mem != nullptr);
+    CHECK(mem->action == tesseract::MembershipAction::Kicked);
+    CHECK(mem->target_user_id == "@bob:server");
+    CHECK(mem->target_display_name == "Bob");
+    CHECK(mem->target_avatar_url == "mxc://server/bob");
+}
+
+TEST_CASE("parse_membership_action round-trips every known discriminant",
+          "[ffi][make_event]")
+{
+    using tesseract::MembershipAction;
+    CHECK(tesseract::parse_membership_action("joined") == MembershipAction::Joined);
+    CHECK(tesseract::parse_membership_action("left") == MembershipAction::Left);
+    CHECK(tesseract::parse_membership_action("banned") == MembershipAction::Banned);
+    CHECK(tesseract::parse_membership_action("unbanned") == MembershipAction::Unbanned);
+    CHECK(tesseract::parse_membership_action("kicked") == MembershipAction::Kicked);
+    CHECK(tesseract::parse_membership_action("invited") == MembershipAction::Invited);
+    CHECK(tesseract::parse_membership_action("kicked_and_banned") ==
+          MembershipAction::KickedAndBanned);
+    CHECK(tesseract::parse_membership_action("invitation_accepted") ==
+          MembershipAction::InvitationAccepted);
+    CHECK(tesseract::parse_membership_action("invitation_rejected") ==
+          MembershipAction::InvitationRejected);
+    CHECK(tesseract::parse_membership_action("invitation_revoked") ==
+          MembershipAction::InvitationRevoked);
+    CHECK(tesseract::parse_membership_action("knocked") == MembershipAction::Knocked);
+    CHECK(tesseract::parse_membership_action("knock_accepted") ==
+          MembershipAction::KnockAccepted);
+    CHECK(tesseract::parse_membership_action("knock_retracted") ==
+          MembershipAction::KnockRetracted);
+    CHECK(tesseract::parse_membership_action("knock_denied") ==
+          MembershipAction::KnockDenied);
+    // Unreachable in practice (Rust only ever emits a known discriminant);
+    // must not crash on garbage input.
+    CHECK(tesseract::parse_membership_action("garbage") == MembershipAction::Joined);
+}
+
 TEST_CASE("make_event dispatches virtual.date_divider to DaySeparatorEvent",
           "[ffi][make_event]")
 {

@@ -1495,6 +1495,12 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         {
             ensure_user_avatar_(rr.avatar_url, media_group);
         }
+        if (ev.type == EventType::Membership)
+        {
+            ensure_user_avatar_(
+                static_cast<const MembershipStateEvent&>(ev).target_avatar_url,
+                media_group);
+        }
     }
 
     // The user's own media is exempt from public-room suppression (Private
@@ -1714,6 +1720,7 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
         ensure_user_avatar_(row.sender_avatar_url, media_group);
         for (const auto& rr : row.read_receipts)
             ensure_user_avatar_(rr.avatar_url, media_group);
+        ensure_user_avatar_(row.membership_target_avatar_url, media_group);
     }
 
     const bool preview =
@@ -4706,6 +4713,7 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
         session->client->start_sync(session->bridge.get());
         session->sync_started = true;
         apply_search_indexing_pref_(*session);
+        apply_membership_events_pref_(*session);
 
         // Per-account notifier (native) and Linux-only UnifiedPush connector.
         install_account_notifier_(*session);
@@ -4834,6 +4842,7 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     session->client->start_sync(session->bridge.get());
     session->sync_started = true;
     apply_search_indexing_pref_(*session);
+    apply_membership_events_pref_(*session);
 
     // Per-account notifier (native) and Linux-only UnifiedPush connector.
     install_account_notifier_(*session);
@@ -6475,6 +6484,20 @@ void ShellBase::handle_index_messages_toggle_(bool enabled)
     }
 }
 
+void ShellBase::handle_show_membership_events_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.show_room_join_leave_events = enabled;
+    s.save_to_disk(tesseract::config_dir());
+
+    if (client_)
+    {
+        client_->set_show_membership_events(enabled);
+        if (!current_room_id_.empty())
+            client_->subscribe_room(current_room_id_);
+    }
+}
+
 #ifdef TESSERACT_GITHUB_REPO
 void ShellBase::handle_check_for_updates_toggle_(bool enabled)
 {
@@ -6492,6 +6515,16 @@ void ShellBase::apply_search_indexing_pref_(tesseract::AccountSession& session)
     // call is non-blocking, so it is safe on the UI thread.
     if (session.client && tesseract::Settings::instance().index_messages_for_search)
         session.client->set_search_indexing_enabled(true);
+}
+
+void ShellBase::apply_membership_events_pref_(tesseract::AccountSession& session)
+{
+    // The Rust-side AtomicBool defaults to false; only push the flag when the
+    // persisted preference is on so the first room subscription for this
+    // account already surfaces membership-change rows instead of waiting for
+    // the user to toggle the checkbox after launch.
+    if (session.client && tesseract::Settings::instance().show_room_join_leave_events)
+        session.client->set_show_membership_events(true);
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text)

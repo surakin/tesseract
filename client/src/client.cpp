@@ -1948,6 +1948,12 @@ void Client::set_presence_polling_enabled(bool enabled)
     impl_->ffi->set_presence_polling_enabled(enabled);
 }
 
+void Client::set_show_membership_events(bool enabled)
+{
+    SH_FFI;
+    impl_->ffi->set_show_membership_events(enabled);
+}
+
 void Client::poll_presence_now()
 {
     MUT_FFI;

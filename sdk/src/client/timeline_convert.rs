@@ -88,6 +88,10 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         thread_latest_sender_name: String::new(),
         thread_latest_body: String::new(),
         thread_latest_ts: 0,
+        membership_action: String::new(),
+        membership_target_user_id: String::new(),
+        membership_target_name: String::new(),
+        membership_target_avatar_url: String::new(),
     }
 }
 
@@ -271,6 +275,35 @@ pub(crate) fn pinned_events_action(
     }
 }
 
+/// Map a matrix-sdk-ui `MembershipChange` (computed from an `m.room.member`
+/// state-event diff) to the stable, English-free FFI discriminant consumed
+/// by the C++ i18n layer (see CLAUDE.md's i18n rule — this must never be
+/// user-facing prose; C++ owns all phrase composition via `tk::tr()`).
+/// Returns `None` for `None`/`Error`/`NotImplemented`, which are not real
+/// user-facing transitions.
+pub(crate) fn membership_action_str(
+    change: matrix_sdk_ui::timeline::MembershipChange,
+) -> Option<&'static str> {
+    use matrix_sdk_ui::timeline::MembershipChange as M;
+    Some(match change {
+        M::Joined => "joined",
+        M::Left => "left",
+        M::Banned => "banned",
+        M::Unbanned => "unbanned",
+        M::Kicked => "kicked",
+        M::Invited => "invited",
+        M::KickedAndBanned => "kicked_and_banned",
+        M::InvitationAccepted => "invitation_accepted",
+        M::InvitationRejected => "invitation_rejected",
+        M::InvitationRevoked => "invitation_revoked",
+        M::Knocked => "knocked",
+        M::KnockAccepted => "knock_accepted",
+        M::KnockRetracted => "knock_retracted",
+        M::KnockDenied => "knock_denied",
+        M::None | M::Error | M::NotImplemented => return None,
+    })
+}
+
 /// Shared so the in-reply-to quote block and the thread latest-event preview
 /// emit identical snippet text.
 #[cfg(not(test))]
@@ -428,6 +461,54 @@ pub(super) async fn timeline_item_to_ffi(
         }
         // StateEventContentChange::Redacted: no content to diff — silently drop.
         return None; // all other state events (and redacted pins) remain filtered
+    }
+
+    // m.room.member state events representing an actual membership
+    // transition (join/leave/kick/ban/invite/knock and their
+    // accept/reject/revoke counterparts). Visibility is gated downstream by
+    // the caller (see `filter_membership` in timeline.rs) — this conversion
+    // is unconditional, matching the m.room.pinned_events precedent above.
+    // Profile-only changes while already joined are
+    // TimelineItemContent::ProfileChange — a distinct variant never matched
+    // here; it falls through to the catch-all `None` below, by design.
+    if let TimelineItemContent::MembershipChange(change) = event_item.content() {
+        let Some(action) = change.change().and_then(membership_action_str) else {
+            // None/Error/NotImplemented, or a redacted state event whose
+            // `.change()` cannot be computed — not a real transition, drop.
+            return None;
+        };
+        let (sender_name, sender_avatar_url) =
+            if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+                (
+                    p.display_name.clone().unwrap_or_default(),
+                    p.avatar_url
+                        .as_ref()
+                        .map(|u| u.to_string())
+                        .unwrap_or_default(),
+                )
+            } else {
+                (String::new(), String::new())
+            };
+        return Some(TimelineEvent {
+            room_id: room_id.to_owned(),
+            msg_type: "m.room.member".to_owned(),
+            event_id: event_item
+                .event_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            sender: event_item.sender().to_string(),
+            sender_name,
+            sender_avatar_url,
+            membership_action: action.to_owned(),
+            membership_target_user_id: change.user_id().to_string(),
+            membership_target_name: change.display_name().unwrap_or_default(),
+            membership_target_avatar_url: change
+                .avatar_url()
+                .map(|u| u.to_string())
+                .unwrap_or_default(),
+            timestamp: event_item.timestamp().get().into(),
+            ..ffi_event_defaults()
+        });
     }
 
     // Compute pending fields once for all non-virtual event paths.
@@ -1109,5 +1190,54 @@ mod pinned_action_tests {
             pinned_events_action(&["$a"], &["$a"]),
             "changed the pinned messages"
         );
+    }
+}
+
+#[cfg(test)]
+mod membership_action_tests {
+    use super::membership_action_str;
+    use matrix_sdk_ui::timeline::MembershipChange as M;
+
+    #[test]
+    fn real_transitions_map_to_stable_discriminants() {
+        assert_eq!(membership_action_str(M::Joined), Some("joined"));
+        assert_eq!(membership_action_str(M::Left), Some("left"));
+        assert_eq!(membership_action_str(M::Banned), Some("banned"));
+        assert_eq!(membership_action_str(M::Unbanned), Some("unbanned"));
+        assert_eq!(membership_action_str(M::Kicked), Some("kicked"));
+        assert_eq!(membership_action_str(M::Invited), Some("invited"));
+        assert_eq!(
+            membership_action_str(M::KickedAndBanned),
+            Some("kicked_and_banned")
+        );
+        assert_eq!(
+            membership_action_str(M::InvitationAccepted),
+            Some("invitation_accepted")
+        );
+        assert_eq!(
+            membership_action_str(M::InvitationRejected),
+            Some("invitation_rejected")
+        );
+        assert_eq!(
+            membership_action_str(M::InvitationRevoked),
+            Some("invitation_revoked")
+        );
+        assert_eq!(membership_action_str(M::Knocked), Some("knocked"));
+        assert_eq!(
+            membership_action_str(M::KnockAccepted),
+            Some("knock_accepted")
+        );
+        assert_eq!(
+            membership_action_str(M::KnockRetracted),
+            Some("knock_retracted")
+        );
+        assert_eq!(membership_action_str(M::KnockDenied), Some("knock_denied"));
+    }
+
+    #[test]
+    fn non_transitions_drop() {
+        assert_eq!(membership_action_str(M::None), None);
+        assert_eq!(membership_action_str(M::Error), None);
+        assert_eq!(membership_action_str(M::NotImplemented), None);
     }
 }

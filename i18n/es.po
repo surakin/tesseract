@@ -590,6 +590,182 @@ msgstr "Editar"
 msgid "More"
 msgstr "Más"
 
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} joined the room"
+msgstr "{0} se unió a la sala"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} left the room"
+msgstr "{0} abandonó la sala"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was banned by {1}"
+msgstr "{0} fue baneado por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was banned"
+msgstr "{0} fue baneado"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was unbanned by {1}"
+msgstr "{0} fue desbaneado por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} is no longer banned"
+msgstr "{0} ya no está baneado"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was removed by {1}"
+msgstr "{0} fue expulsado por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was removed"
+msgstr "{0} fue expulsado"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was invited by {1}"
+msgstr "{0} fue invitado por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} received an invitation"
+msgstr "{0} recibió una invitación"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was removed and banned by {1}"
+msgstr "{0} fue expulsado y baneado por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} was kicked and banned"
+msgstr "{0} fue expulsado y baneado"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} has accepted the invitation"
+msgstr "{0} aceptó la invitación"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} has rejected the invitation"
+msgstr "{0} rechazó la invitación"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0}'s invitation was revoked by {1}"
+msgstr "La invitación de {0} fue revocada por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0}'s invitation was revoked"
+msgstr "La invitación de {0} fue revocada"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} requested to join"
+msgstr "{0} solicitó unirse"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0}'s request to join was approved by {1}"
+msgstr "La solicitud de {0} para unirse fue aprobada por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0}'s join request was approved"
+msgstr "La solicitud de {0} para unirse fue aprobada"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} withdrew their request to join"
+msgstr "{0} retiró su solicitud para unirse"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0}'s request to join was denied by {1}"
+msgstr "La solicitud de {0} para unirse fue denegada por {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0}'s join request was denied"
+msgstr "La solicitud de {0} para unirse fue denegada"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+msgid "{0} and {1}"
+msgstr "{0} y {1}"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0}, {1} and {2} other"
+msgid_plural "{0}, {1} and {2} others"
+msgstr[0] "{0}, {1} y {2} otro más"
+msgstr[1] "{0}, {1} y {2} otros más"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} was banned from the room"
+msgid_plural "{0} were banned from the room"
+msgstr[0] "{0} fue baneado de la sala"
+msgstr[1] "{0} fueron baneados de la sala"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} was unbanned"
+msgid_plural "{0} were unbanned"
+msgstr[0] "{0} fue desbaneado"
+msgstr[1] "{0} fueron desbaneados"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} was removed from the room"
+msgid_plural "{0} were removed from the room"
+msgstr[0] "{0} fue expulsado de la sala"
+msgstr[1] "{0} fueron expulsados de la sala"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} was invited"
+msgid_plural "{0} were invited"
+msgstr[0] "{0} fue invitado"
+msgstr[1] "{0} fueron invitados"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} was removed and banned"
+msgid_plural "{0} were removed and banned"
+msgstr[0] "{0} fue expulsado y baneado"
+msgstr[1] "{0} fueron expulsados y baneados"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} accepted the invitation"
+msgid_plural "{0} accepted their invitations"
+msgstr[0] "{0} aceptó la invitación"
+msgstr[1] "{0} aceptaron sus invitaciones"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} rejected the invitation"
+msgid_plural "{0} rejected their invitations"
+msgstr[0] "{0} rechazó la invitación"
+msgstr[1] "{0} rechazaron sus invitaciones"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} had their invitation revoked"
+msgid_plural "{0} had their invitations revoked"
+msgstr[0] "La invitación de {0} fue revocada"
+msgstr[1] "Las invitaciones de {0} fueron revocadas"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0}'s request to join was approved"
+msgid_plural "{0}'s requests to join were approved"
+msgstr[0] "La solicitud de {0} para unirse fue aprobada"
+msgstr[1] "Las solicitudes de {0} para unirse fueron aprobadas"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} cancelled their request to join"
+msgid_plural "{0} cancelled their requests to join"
+msgstr[0] "{0} canceló su solicitud para unirse"
+msgstr[1] "{0} cancelaron sus solicitudes para unirse"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0}'s request to join was denied"
+msgid_plural "{0}'s requests to join were denied"
+msgstr[0] "La solicitud de {0} para unirse fue denegada"
+msgstr[1] "Las solicitudes de {0} para unirse fueron denegadas"
+
 #: /home/rayden/src/tesseract/ui/shared/views/RoomListView.h:163
 msgid "Unread"
 msgstr "No leído"
@@ -597,6 +773,14 @@ msgstr "No leído"
 #: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp:278
 msgid "Group unread rooms"
 msgstr "Agrupar salas no leídas"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline"
+msgstr "Línea de tiempo"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AppearanceSection.cpp
+msgid "Show room join/leave events"
+msgstr "Mostrar eventos de entrada/salida de sala"
 
 #: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
 msgid "Answer"

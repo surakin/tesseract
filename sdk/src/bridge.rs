@@ -397,6 +397,26 @@ pub mod ffi {
         thread_latest_body: String,
         /// Unix-ms timestamp of the latest thread reply. 0 when unavailable.
         thread_latest_ts: u64,
+        /// "m.room.member" only: stable discriminant for the membership
+        /// transition this row represents. One of "joined" | "left" |
+        /// "banned" | "unbanned" | "kicked" | "invited" |
+        /// "kicked_and_banned" | "invitation_accepted" |
+        /// "invitation_rejected" | "invitation_revoked" | "knocked" |
+        /// "knock_accepted" | "knock_retracted" | "knock_denied". Never
+        /// English prose — the C++ layer maps this to a tk::tr()/tk::trf()
+        /// phrase (see CLAUDE.md's i18n rule). Empty for all other msg_types.
+        membership_action: String,
+        /// "m.room.member" only: Matrix user ID whose membership changed —
+        /// the *subject*/target of the change. May differ from `sender`
+        /// (e.g. an admin `sender` banning/kicking/inviting a different
+        /// target).
+        membership_target_user_id: String,
+        /// "m.room.member" only: target's display name as recorded in this
+        /// state event's content. Empty when the target had no display name.
+        membership_target_name: String,
+        /// "m.room.member" only: mxc:// avatar URL of the target as
+        /// recorded in this state event's content. Empty when absent.
+        membership_target_avatar_url: String,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -2225,6 +2245,14 @@ pub mod ffi {
         /// presence values are left unchanged. Thread-safe; may be called on
         /// any thread.
         fn set_presence_polling_enabled(self: &ClientFfi, enabled: bool);
+
+        /// Enable or disable rendering of room membership-change rows
+        /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
+        /// variants) in the timeline. Thread-safe; may be called on any
+        /// thread. Takes effect on the next timeline reset for
+        /// currently-subscribed rooms — callers should re-`subscribe_room`
+        /// the active room after toggling to refresh it immediately.
+        fn set_show_membership_events(self: &ClientFfi, enabled: bool);
 
         /// Issue one immediate round of DM presence polls without waiting
         /// for the 60s interval. Used by the UI shell when the window

@@ -976,6 +976,21 @@ impl ClientFfi {
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
+    // -----------------------------------------------------------------------
+    // Membership-change timeline rows toggle
+    // -----------------------------------------------------------------------
+
+    /// Enable or disable rendering of room membership-change rows
+    /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
+    /// variants) in the timeline. Thread-safe. Takes effect on the next
+    /// timeline reset for currently-subscribed rooms — callers should
+    /// re-`subscribe_room` the active room after toggling to refresh it
+    /// immediately.
+    pub fn set_show_membership_events(&self, enabled: bool) {
+        self.show_membership_events
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Issue one immediate round of DM presence polls, regardless of the
     /// 60s interval cadence. Used by the UI shell when the window returns
     /// to focus so contacts don't appear stale for up to a minute after

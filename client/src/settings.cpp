@@ -49,6 +49,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     send_presence                = j.value("send_presence",                true);
     index_messages_for_search    = j.value("index_messages_for_search",   false);
     check_for_updates            = j.value("check_for_updates",            true);
+    show_room_join_leave_events  = j.value("show_room_join_leave_events", false);
 
     audio_input_device_id  = j.value("audio_input_device_id",  std::string{});
     audio_output_device_id = j.value("audio_output_device_id", std::string{});
@@ -160,6 +161,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"send_presence",                    send_presence},
         {"index_messages_for_search",        index_messages_for_search},
         {"check_for_updates",                check_for_updates},
+        {"show_room_join_leave_events",      show_room_join_leave_events},
         {"room_section_invites_collapsed",   room_section_invites_collapsed},
         {"room_section_favorites_collapsed", room_section_favorites_collapsed},
         {"room_section_dms_collapsed",       room_section_dms_collapsed},

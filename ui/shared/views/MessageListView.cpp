@@ -333,6 +333,16 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     case tesseract::EventType::CallNotification:
         row.kind = Kind::CallNotification;
         break;
+    case tesseract::EventType::Membership:
+    {
+        row.kind = Kind::Membership;
+        const auto& mem = static_cast<const tesseract::MembershipStateEvent&>(ev);
+        row.membership_action = mem.action;
+        row.membership_target_user_id = mem.target_user_id;
+        row.membership_target_name = mem.target_display_name;
+        row.membership_target_avatar_url = mem.target_avatar_url;
+        break;
+    }
     }
 
     // Extract the first URL from text messages for preview card display.
@@ -350,6 +360,41 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     }
 
     return row;
+}
+
+bool is_membership_group_start(const std::vector<MessageRowData>& msgs,
+                               std::size_t index)
+{
+    if (msgs[index].kind != MessageRowData::Kind::Membership)
+        return false;
+    if (index == 0)
+        return true;
+    const auto& prev = msgs[index - 1];
+    return prev.kind != MessageRowData::Kind::Membership ||
+           prev.membership_action != msgs[index].membership_action;
+}
+
+std::size_t membership_group_end(const std::vector<MessageRowData>& msgs,
+                                 std::size_t start)
+{
+    std::size_t j = start + 1;
+    while (j < msgs.size() &&
+           msgs[j].kind == MessageRowData::Kind::Membership &&
+           msgs[j].membership_action == msgs[start].membership_action)
+    {
+        ++j;
+    }
+    return j;
+}
+
+std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
+                                      std::size_t index)
+{
+    while (!is_membership_group_start(msgs, index))
+    {
+        --index;
+    }
+    return index;
 }
 
 namespace
@@ -691,6 +736,148 @@ std::string format_day_label(std::uint64_t timestamp_ms)
     return std::string(buf);
 }
 
+// Per-event expanded-line phrase for a single m.room.member row, e.g.
+// "Alice joined the room" or "Bob was removed by Alice". The "by {actor}"
+// clause is included only when the sender differs from the target (i.e.
+// an admin acted on someone else) — self-service transitions (join, leave,
+// accept, reject, knock, retract) never show an actor since sender==target.
+// Rust never sends English prose here (see membership_action_str in
+// sdk/src/client/timeline_convert.rs) — this is the sole place that
+// composes the display string, entirely through tk::tr()/tk::trf().
+std::string membership_expanded_phrase(const MessageRowData& m)
+{
+    using A = tesseract::MembershipAction;
+    const std::string t = m.membership_target_name.empty()
+                              ? m.membership_target_user_id
+                              : m.membership_target_name;
+    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    const bool by_actor = m.sender != m.membership_target_user_id;
+    switch (m.membership_action)
+    {
+    case A::Joined:
+        return tk::trf(tk::tr("{0} joined the room"), {t});
+    case A::Left:
+        return tk::trf(tk::tr("{0} left the room"), {t});
+    case A::Banned:
+        return by_actor ? tk::trf(tk::tr("{0} was banned by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0} was banned"), {t});
+    case A::Unbanned:
+        return by_actor ? tk::trf(tk::tr("{0} was unbanned by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0} is no longer banned"), {t});
+    case A::Kicked:
+        return by_actor ? tk::trf(tk::tr("{0} was removed by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0} was removed"), {t});
+    case A::Invited:
+        return by_actor ? tk::trf(tk::tr("{0} was invited by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0} received an invitation"), {t});
+    case A::KickedAndBanned:
+        return by_actor
+                   ? tk::trf(tk::tr("{0} was removed and banned by {1}"), {t, s})
+                   : tk::trf(tk::tr("{0} was kicked and banned"), {t});
+    case A::InvitationAccepted:
+        return tk::trf(tk::tr("{0} has accepted the invitation"), {t});
+    case A::InvitationRejected:
+        return tk::trf(tk::tr("{0} has rejected the invitation"), {t});
+    case A::InvitationRevoked:
+        return by_actor
+                   ? tk::trf(tk::tr("{0}'s invitation was revoked by {1}"), {t, s})
+                   : tk::trf(tk::tr("{0}'s invitation was revoked"), {t});
+    case A::Knocked:
+        return tk::trf(tk::tr("{0} requested to join"), {t});
+    case A::KnockAccepted:
+        return by_actor
+                   ? tk::trf(tk::tr("{0}'s request to join was approved by {1}"),
+                            {t, s})
+                   : tk::trf(tk::tr("{0}'s join request was approved"), {t});
+    case A::KnockRetracted:
+        return tk::trf(tk::tr("{0} withdrew their request to join"), {t});
+    case A::KnockDenied:
+        return by_actor
+                   ? tk::trf(tk::tr("{0}'s request to join was denied by {1}"),
+                            {t, s})
+                   : tk::trf(tk::tr("{0}'s join request was denied"), {t});
+    }
+    return t;
+}
+
+// Build the "Alice, Bob and 3 others" style name list for a collapsed
+// membership-group summary.
+std::string membership_names_label(const std::vector<std::string>& names)
+{
+    if (names.empty())
+        return {};
+    if (names.size() == 1)
+        return names[0];
+    if (names.size() == 2)
+        return tk::trf(tk::tr("{0} and {1}"), {names[0], names[1]});
+    const long others = static_cast<long>(names.size() - 2);
+    return tk::trf(tk::trn("{0}, {1} and {2} other", "{0}, {1} and {2} others",
+                          others),
+                   {names[0], names[1], std::to_string(others)});
+}
+
+// Collapsed-summary phrase for a membership group, e.g. "Alice, Bob and 3
+// others joined the room". Pluralised via tk::trn() on the member count.
+std::string membership_summary_phrase(tesseract::MembershipAction action,
+                                      const std::vector<std::string>& names)
+{
+    const std::string label = membership_names_label(names);
+    const long n = static_cast<long>(names.size());
+    using A = tesseract::MembershipAction;
+    switch (action)
+    {
+    case A::Joined:
+        return tk::trf(tk::tr("{0} joined the room"), {label});
+    case A::Left:
+        return tk::trf(tk::tr("{0} left the room"), {label});
+    case A::Banned:
+        return tk::trf(tk::trn("{0} was banned from the room",
+                              "{0} were banned from the room", n),
+                       {label});
+    case A::Unbanned:
+        return tk::trf(tk::trn("{0} was unbanned", "{0} were unbanned", n),
+                       {label});
+    case A::Kicked:
+        return tk::trf(tk::trn("{0} was removed from the room",
+                              "{0} were removed from the room", n),
+                       {label});
+    case A::Invited:
+        return tk::trf(tk::trn("{0} was invited", "{0} were invited", n),
+                       {label});
+    case A::KickedAndBanned:
+        return tk::trf(tk::trn("{0} was removed and banned",
+                              "{0} were removed and banned", n),
+                       {label});
+    case A::InvitationAccepted:
+        return tk::trf(tk::trn("{0} accepted the invitation",
+                              "{0} accepted their invitations", n),
+                       {label});
+    case A::InvitationRejected:
+        return tk::trf(tk::trn("{0} rejected the invitation",
+                              "{0} rejected their invitations", n),
+                       {label});
+    case A::InvitationRevoked:
+        return tk::trf(tk::trn("{0} had their invitation revoked",
+                              "{0} had their invitations revoked", n),
+                       {label});
+    case A::Knocked:
+        return tk::trf(tk::tr("{0} requested to join"), {label});
+    case A::KnockAccepted:
+        return tk::trf(tk::trn("{0}'s request to join was approved",
+                              "{0}'s requests to join were approved", n),
+                       {label});
+    case A::KnockRetracted:
+        return tk::trf(tk::trn("{0} cancelled their request to join",
+                              "{0} cancelled their requests to join", n),
+                       {label});
+    case A::KnockDenied:
+        return tk::trf(tk::trn("{0}'s request to join was denied",
+                              "{0}'s requests to join were denied", n),
+                       {label});
+    }
+    return label;
+}
+
 } // namespace
 
 static bool is_virtual_event(MessageRowData::Kind k)
@@ -698,7 +885,7 @@ static bool is_virtual_event(MessageRowData::Kind k)
     using Kind = MessageRowData::Kind;
     return k == Kind::DaySeparator || k == Kind::ReadMarker ||
            k == Kind::TimelineStart || k == Kind::PinnedEvent ||
-           k == Kind::CallNotification;
+           k == Kind::CallNotification || k == Kind::Membership;
 }
 
 class MessageListView::Adapter : public tk::ListAdapter
@@ -745,6 +932,24 @@ public:
                 return true;
         }
         return false;
+    }
+
+    // Thin delegates over owner_.messages_ — the actual logic lives in the
+    // free functions of the same name (declared in MessageListView.h) so it
+    // is unit-testable without a live MessageListView/Adapter.
+    bool is_membership_group_start(std::size_t index) const
+    {
+        return tesseract::views::is_membership_group_start(owner_.messages_,
+                                                            index);
+    }
+    std::size_t membership_group_end(std::size_t start) const
+    {
+        return tesseract::views::membership_group_end(owner_.messages_, start);
+    }
+    std::size_t membership_group_start_of(std::size_t index) const
+    {
+        return tesseract::views::membership_group_start_of(owner_.messages_,
+                                                            index);
     }
 
     std::size_t count() const override
@@ -928,6 +1133,23 @@ public:
         {
             return kPinnedEventH;
         }
+        if (m.kind == Kind::Membership)
+        {
+            // Group-start rows are always one line tall (either the
+            // collapsed summary or the first member's own expanded line).
+            // Non-start rows are 0 height while their group is collapsed
+            // (absorbed into the start row's summary) and one line tall
+            // once expanded.
+            if (is_membership_group_start(index))
+            {
+                return kPinnedEventH;
+            }
+            std::size_t start = membership_group_start_of(index);
+            return owner_.membership_groups_.is_expanded(
+                       owner_.messages_[start].event_id)
+                       ? kPinnedEventH
+                       : 0.0f;
+        }
         bool cont = is_cont(index);
         float body_w = std::max(0.0f, body_text_max_width(width) -
                                           receipt_reserve_width(m));
@@ -1018,6 +1240,32 @@ public:
         if (m.kind == Kind::CallNotification)
         {
             paint_call_notification(m, ctx, bounds);
+            return;
+        }
+        if (m.kind == Kind::Membership)
+        {
+            if (is_membership_group_start(index))
+            {
+                std::size_t end = membership_group_end(index);
+                bool single = (end - index) == 1;
+                if (single || !owner_.membership_groups_.is_expanded(m.event_id))
+                {
+                    paint_membership_summary(index, end, ctx, bounds);
+                }
+                else
+                {
+                    paint_membership_line(m, ctx, bounds);
+                }
+            }
+            else
+            {
+                std::size_t start = membership_group_start_of(index);
+                if (owner_.membership_groups_.is_expanded(
+                        owner_.messages_[start].event_id))
+                {
+                    paint_membership_line(m, ctx, bounds);
+                }
+            }
             return;
         }
 
@@ -2007,6 +2255,124 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
+    // One expanded membership-group member: a small target avatar, the
+    // per-event phrase (see membership_expanded_phrase), and the event
+    // timestamp right-aligned. Left-aligned like a compact row header
+    // (rather than the pinned/call-notification centred-banner style) so a
+    // stack of these reads naturally as a small list.
+    void paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx,
+                               tk::Rect bounds) const
+    {
+        constexpr float kAvatarD = 18.0f;
+        constexpr float kGap = 6.0f;
+        const float cy = bounds.y + kPinnedEventH * 0.5f;
+
+        const tk::Image* img = nullptr;
+        if (owner_.avatar_provider_ && !m.membership_target_avatar_url.empty())
+        {
+            img = owner_.avatar_provider_(m.membership_target_avatar_url);
+        }
+        draw_avatar(ctx.canvas, img, {bounds.x + kPadX + kAvatarD * 0.5f, cy},
+                    kAvatarD,
+                    m.membership_target_name.empty()
+                        ? m.membership_target_user_id
+                        : m.membership_target_name,
+                    ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
+
+        const float text_x = bounds.x + kPadX + kAvatarD + kGap;
+
+        const std::string ts = format_hhmm(m.timestamp_ms);
+        tk::TextStyle ts_st{};
+        ts_st.role = tk::FontRole::Timestamp;
+        auto ts_layout = ts.empty() ? nullptr : ctx.factory.build_text(ts, ts_st);
+        const float ts_w =
+            ts_layout ? ts_layout->measure().w + kPadX : 0.0f;
+
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width =
+            std::max(0.0f, bounds.x + bounds.w - kPadX - ts_w - text_x);
+        auto lo = ctx.factory.build_text(membership_expanded_phrase(m), st);
+        if (lo)
+        {
+            tk::Size sz = lo->measure();
+            ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f},
+                                 ctx.theme.palette.text_muted);
+        }
+        if (ts_layout)
+        {
+            tk::Size tsz = ts_layout->measure();
+            ctx.canvas.draw_text(
+                *ts_layout,
+                {bounds.x + bounds.w - kPadX - tsz.w, cy - tsz.h * 0.5f},
+                ctx.theme.palette.text_muted);
+        }
+    }
+
+    // Collapsed membership-group summary: up to 3 stacked target avatars
+    // followed by a pluralised summary phrase built from every member's
+    // name (e.g. "Alice, Bob and 3 others joined the room"). Covers rows
+    // [start, end) of messages_, all sharing the same membership_action.
+    void paint_membership_summary(std::size_t start, std::size_t end,
+                                  tk::PaintCtx& ctx, tk::Rect bounds) const
+    {
+        const auto& msgs = owner_.messages_;
+        constexpr float kAvatarD = 18.0f;
+        constexpr float kStride = 12.0f;
+        constexpr std::size_t kCap = 3;
+        const std::size_t total = end - start;
+        const std::size_t visible = std::min(total, kCap);
+        const float cy = bounds.y + kPinnedEventH * 0.5f;
+
+        std::vector<std::string> names;
+        names.reserve(total);
+        for (std::size_t i = start; i < end; ++i)
+        {
+            const auto& mm = msgs[i];
+            names.push_back(mm.membership_target_name.empty()
+                                 ? mm.membership_target_user_id
+                                 : mm.membership_target_name);
+        }
+
+        float cx = bounds.x + kPadX + kAvatarD * 0.5f;
+        for (std::size_t i = 0; i < visible; ++i)
+        {
+            const auto& mm = msgs[start + i];
+            const tk::Image* img = nullptr;
+            if (owner_.avatar_provider_ &&
+                !mm.membership_target_avatar_url.empty())
+            {
+                img = owner_.avatar_provider_(mm.membership_target_avatar_url);
+            }
+            draw_avatar(ctx.canvas, img, {cx, cy}, kAvatarD, names[i],
+                        ctx.theme.palette.avatar_initials_bg,
+                        ctx.theme.palette.avatar_initials_text);
+            cx += kStride;
+        }
+
+        const float text_x =
+            bounds.x + kPadX + kAvatarD +
+            (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) +
+            6.0f;
+
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds.x + bounds.w - kPadX - text_x);
+        auto lo = ctx.factory.build_text(
+            membership_summary_phrase(msgs[start].membership_action, names), st);
+        if (lo)
+        {
+            tk::Size sz = lo->measure();
+            ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f},
+                                 ctx.theme.palette.text_muted);
+        }
+    }
+
     // Trailing synthetic "X is typing…" row. Left-aligned + ellipsized
     // muted text, matching the look the old RoomView strip had.
     void paint_typing_row(tk::PaintCtx& ctx, tk::Rect bounds) const
@@ -2178,6 +2544,7 @@ private:
         case MessageRowData::Kind::TimelineStart:
         case MessageRowData::Kind::PinnedEvent:
         case MessageRowData::Kind::CallNotification:
+        case MessageRowData::Kind::Membership:
             return 0.0f;
         }
         return quote_h;
@@ -2512,6 +2879,7 @@ private:
         case MessageRowData::Kind::TimelineStart:
         case MessageRowData::Kind::PinnedEvent:
         case MessageRowData::Kind::CallNotification:
+        case MessageRowData::Kind::Membership:
             break;
         }
         return y;
@@ -4046,6 +4414,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
 
     video_playlist_.clear();
     spoilers_.clear();
+    membership_groups_.clear();
     // NB: do NOT clear link_cache_ here. It is the content-addressed body-text
     // layout cache (keyed by {width, theme, revealed, hash_body}), so retaining
     // it across a room switch lets a return to a previously-viewed room reuse
@@ -5991,6 +6360,19 @@ bool MessageListView::on_pointer_down(tk::Point local)
         if (row < messages_.size())
         {
             const auto& m = messages_[row];
+            if (m.kind == MessageRowData::Kind::Membership)
+            {
+                std::size_t start = adapter_->membership_group_start_of(row);
+                std::size_t end = adapter_->membership_group_end(start);
+                // Single-member "groups" have nothing to expand; leave the
+                // click unconsumed (falls through, same as other system rows).
+                if (end - start > 1)
+                {
+                    press_membership_group_ = true;
+                    press_membership_group_key_ = messages_[start].event_id;
+                    return true;
+                }
+            }
             if (m.formatted_body.find("data-mx-spoiler") != std::string::npos &&
                 !spoilers_.is_revealed(m.event_id))
             {
@@ -6114,6 +6496,29 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             spoilers_.reveal(eid);
             invalidate_data();
+        }
+        return;
+    }
+    if (press_membership_group_)
+    {
+        bool fire = inside_self && !press_membership_group_key_.empty();
+        std::string key = std::move(press_membership_group_key_);
+        press_membership_group_ = false;
+        press_membership_group_key_.clear();
+        if (fire)
+        {
+            membership_groups_.toggle(key);
+            int start_idx = message_index_of(key);
+            if (start_idx >= 0)
+            {
+                std::size_t start = static_cast<std::size_t>(start_idx);
+                std::size_t end = adapter_->membership_group_end(start);
+                invalidate_rows(start, end);
+            }
+            else
+            {
+                invalidate_data();
+            }
         }
         return;
     }
@@ -6704,6 +7109,11 @@ std::vector<std::string> MessageListView::collect_visible_avatar_urls_() const
         if (!m.sender_avatar_url.empty() && seen.insert(m.sender_avatar_url).second)
         {
             urls.push_back(m.sender_avatar_url);
+        }
+        if (!m.membership_target_avatar_url.empty() &&
+            seen.insert(m.membership_target_avatar_url).second)
+        {
+            urls.push_back(m.membership_target_avatar_url);
         }
         for (const auto& rr : m.read_receipts)
         {

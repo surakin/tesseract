@@ -287,6 +287,7 @@ public:
     void notify_presence_tick();
     void handle_send_presence_toggle(bool enabled);
     void handle_index_messages_toggle(bool enabled);
+    void handle_show_membership_events_toggle(bool enabled);
 #ifdef TESSERACT_GITHUB_REPO
     void handle_check_for_updates_toggle(bool enabled);
 #endif
@@ -2076,6 +2077,8 @@ void MacShell::handle_send_presence_toggle(bool enabled)
     { handle_send_presence_toggle_(enabled); }
 void MacShell::handle_index_messages_toggle(bool enabled)
     { handle_index_messages_toggle_(enabled); }
+void MacShell::handle_show_membership_events_toggle(bool enabled)
+    { handle_show_membership_events_toggle_(enabled); }
 #ifdef TESSERACT_GITHUB_REPO
 void MacShell::handle_check_for_updates_toggle(bool enabled)
     { handle_check_for_updates_toggle_(enabled); }
@@ -5434,6 +5437,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        _settingsView->on_show_membership_events_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_show_membership_events_toggle(enabled);
+        };
         _settingsView->on_send_presence_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
@@ -7367,6 +7375,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         tesseract::Settings::instance().inactive_room_threshold_days);
     _settingsView->set_autoscroll_unread_pref(
         tesseract::Settings::instance().autoscroll_unread_rooms);
+    _settingsView->set_show_membership_events_pref(
+        tesseract::Settings::instance().show_room_join_leave_events);
     _settingsView->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
     _settingsView->set_index_messages_pref(
