@@ -1,5 +1,6 @@
 #include "RoomInfoPanel.h"
 #include "html_spans.h"
+#include "icons.h"
 #include "media_utils.h"
 
 #include "tk/i18n.h"
@@ -554,7 +555,13 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     }
 
     // 9. Edit topic button (only when not editing)
-    if (edit_topic_btn_ && !editing_topic_) edit_topic_btn_->paint(ctx);
+    if (edit_topic_btn_ && !editing_topic_)
+    {
+        edit_topic_btn_->paint(ctx);
+        edit_topic_icon_.draw(ctx.canvas, ctx.factory, kEditSvg,
+                              edit_topic_btn_->bounds(), 16.0f,
+                              ctx.theme.palette.text_secondary);
+    }
 
     // 10. Topic text (drawn when not editing)
     if (!editing_topic_)
@@ -790,7 +797,13 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 
     // 16. Close button — painted outside the clip so it's always visible
     //     regardless of scroll position.
-    if (close_btn_) close_btn_->paint(ctx);
+    if (close_btn_)
+    {
+        close_btn_->paint(ctx);
+        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg,
+                         close_btn_->bounds(), 16.0f,
+                         ctx.theme.palette.text_secondary);
+    }
 }
 
 // ── pointer events ────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 #include <tesseract/client.h>
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <functional>
@@ -78,6 +79,8 @@ private:
 
     // Child widgets (borrowed pointers)
     tk::Button* close_btn_  = nullptr;
+
+    tk::IconCache close_icon_;
     tk::Button* dm_btn_     = nullptr;
     tk::Button* ignore_btn_ = nullptr;
 

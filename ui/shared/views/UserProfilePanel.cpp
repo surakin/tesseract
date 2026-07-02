@@ -1,4 +1,5 @@
 #include "UserProfilePanel.h"
+#include "icons.h"
 #include "media_utils.h"
 
 #include "tk/i18n.h"
@@ -333,7 +334,13 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     }
 
     // Child buttons.
-    if (close_btn_)  close_btn_->paint(ctx);
+    if (close_btn_)
+    {
+        close_btn_->paint(ctx);
+        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg,
+                         close_btn_->bounds(), 16.0f,
+                         ctx.theme.palette.text_secondary);
+    }
     if (dm_btn_)     dm_btn_->paint(ctx);
     if (ignore_btn_) ignore_btn_->paint(ctx);
 }

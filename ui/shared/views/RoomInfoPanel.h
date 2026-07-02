@@ -3,6 +3,7 @@
 #include "tk/canvas.h"
 #include "tk/combobox.h"
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -115,6 +116,9 @@ private:
     tk::SwitchButton* low_priority_btn_ = nullptr;
     tk::Button* close_btn_      = nullptr;
     tk::Button* edit_topic_btn_ = nullptr;
+
+    tk::IconCache close_icon_;
+    tk::IconCache edit_topic_icon_;
     tk::Button* save_btn_       = nullptr;
     tk::Button* cancel_btn_     = nullptr;
     tk::Button* expand_btn_     = nullptr;
