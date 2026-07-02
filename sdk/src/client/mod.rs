@@ -1835,6 +1835,8 @@ pub(super) async fn build_room_info(
     // dot; muted rooms are excluded from it. Same client-side read-receipt
     // source as the counts above (reliable for encrypted rooms).
     let unread_count = room.num_unread_messages();
+    let (notification_count, highlight_count) =
+        clamp_notification_counts(notification_count, highlight_count, unread_count);
     let muted = matches!(
         room.cached_user_defined_notification_mode(),
         Some(matrix_sdk::notification_settings::RoomNotificationMode::Mute)
@@ -2044,6 +2046,33 @@ pub(super) async fn build_room_info(
             .map(|a| a.to_string())
             .unwrap_or_default(),
     })
+}
+
+/// matrix-sdk's client-side notification/mention counts aren't gated by the
+/// same "is this a real message" filter as its unread-message count
+/// (`marks_as_unread` in matrix-sdk's read-receipts module excludes state
+/// events; the notification/mention tally does not). A room-wide "All
+/// Messages" notification override installs a Matrix `room`-kind push rule
+/// that matches every event in the room regardless of type, so a state
+/// event (e.g. an avatar/topic/name change by another member) can bump the
+/// notification count even though it never counts as an unread message —
+/// and because such events never advance the read-receipt target
+/// (`Room::latest_event()` skips state events), that stray count doesn't
+/// clear when the room is opened either. A notification is only meaningful
+/// if there's a corresponding real unread message, so cap both counts to
+/// `unread_count`.
+///
+/// Not `#[cfg(not(test))]`: it is pure so it can be unit-tested without a
+/// live client.
+pub(super) fn clamp_notification_counts(
+    notification_count: u64,
+    highlight_count: u64,
+    unread_count: u64,
+) -> (u64, u64) {
+    (
+        notification_count.min(unread_count),
+        highlight_count.min(unread_count),
+    )
 }
 
 /// Sort a room-list snapshot in the order the UI expects: unread rooms first,
@@ -2282,6 +2311,33 @@ mod tests {
         r.has_active_call = true;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
+    }
+
+    #[test]
+    fn clamp_notification_counts_zeroes_when_no_real_unread() {
+        // A room-wide "All Messages" push rule matches state events too (e.g.
+        // an avatar change by another member), so matrix-sdk can report a
+        // nonzero notification/highlight count with zero real unread
+        // messages. That's a false positive — clamp it away.
+        assert_eq!(clamp_notification_counts(3, 1, 0), (0, 0));
+    }
+
+    #[test]
+    fn clamp_notification_counts_passes_through_when_below_unread() {
+        assert_eq!(clamp_notification_counts(2, 1, 5), (2, 1));
+    }
+
+    #[test]
+    fn clamp_notification_counts_caps_to_real_unread_in_mixed_case() {
+        // One real unread message plus a couple of state-event false
+        // positives: cap to the true message count instead of dropping to
+        // zero, so a genuine notification still shows.
+        assert_eq!(clamp_notification_counts(3, 3, 1), (1, 1));
+    }
+
+    #[test]
+    fn clamp_notification_counts_clamps_independently() {
+        assert_eq!(clamp_notification_counts(1, 4, 2), (1, 2));
     }
 
     #[test]
