@@ -2100,7 +2100,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
 /// be unit-tested without a live client.
 pub(super) fn room_list_fingerprint(
     rooms: &[crate::ffi::RoomInfo],
-) -> Vec<(bool, bool, bool, bool, bool, u64, String, String)> {
+) -> Vec<(bool, bool, bool, bool, bool, u64, String, String, String, String)> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -2120,6 +2120,12 @@ pub(super) fn room_list_fingerprint(
             // Include the favourite / low-priority tags: they change a room's
             // room-list section without affecting recency/unread ordering, so
             // omitting them here suppresses the live update for tag toggles.
+            //
+            // avatar_url / dm_avatar_url: a room (or DM-counterpart) avatar
+            // change doesn't touch unread/name/recency, so without these the
+            // fingerprint is unchanged and the live update is silently
+            // dropped — the room list keeps painting the stale avatar until
+            // some unrelated change happens to perturb the fingerprint.
             (
                 unread,
                 quiet_unread,
@@ -2129,6 +2135,8 @@ pub(super) fn room_list_fingerprint(
                 r.last_activity_ts,
                 r.id.clone(),
                 r.name.clone(),
+                r.avatar_url.clone(),
+                r.dm_avatar_url.clone(),
             )
         })
         .collect()
@@ -2300,6 +2308,27 @@ mod tests {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.name = "New Name".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_avatar_url_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.avatar_url = "mxc://example.org/new-avatar".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_dm_avatar_url_changes() {
+        // DM-counterpart fallback avatar (room.effective_avatar_url()) is the
+        // same render path as the room's own avatar_url, so it must also
+        // perturb the fingerprint.
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.dm_avatar_url = "mxc://example.org/counterpart-avatar".to_owned();
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }
