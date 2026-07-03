@@ -15,6 +15,7 @@
 #include "tk/video.h"
 #include "views/LinkLayoutCache.h"
 #include "views/LocationMapPanner.h"
+#include "views/MembershipGroupExpander.h"
 #include "views/ReadReceiptTracker.h"
 #include "views/RoomSwitchGateKeeper.h"
 #include "views/SpoilerRevealer.h"
@@ -62,6 +63,7 @@ struct MessageRowData
         PinnedEvent,        // m.room.pinned_events state-event row
         CallNotification,  // org.matrix.msc4075.rtc.notification
         Location,
+        Membership,         // m.room.member state-event row
     };
 
     Kind kind = Kind::Text;
@@ -185,12 +187,39 @@ struct MessageRowData
     std::string thread_latest_sender_name;
     std::string thread_latest_body;
     std::uint64_t thread_latest_ts = 0;
+
+    // Membership change (Kind::Membership only). `membership_target_*`
+    // identifies whose membership changed (the target), which may differ
+    // from `sender`/`sender_name` (who performed the action, e.g. an admin
+    // kicking/banning/inviting a different user).
+    tesseract::MembershipAction membership_action = tesseract::MembershipAction::Joined;
+    std::string membership_target_user_id;
+    std::string membership_target_name;
+    std::string membership_target_avatar_url; // mxc
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
 // consumes. `my_user_id` is used to set `is_own` on the returned row.
 MessageRowData make_row_data(const tesseract::Event& ev,
                              const std::string& my_user_id);
+
+// Membership-group boundary helpers, factored out as pure functions (over
+// `msgs`/an index) so they're unit-testable without a live MessageListView.
+// MessageListView::Adapter's row-height/paint/click logic delegates to
+// these. A "group" is a maximal run of consecutive Kind::Membership rows
+// sharing the same membership_action; any other kind (including a virtual
+// day-separator row) or a different action starts a new group. No
+// time-based splitting — arbitrarily distant same-action rows still group
+// as long as nothing else is interleaved.
+bool is_membership_group_start(const std::vector<MessageRowData>& msgs,
+                               std::size_t index);
+// Exclusive end index of the group starting at `start` (which must satisfy
+// is_membership_group_start(msgs, start)).
+std::size_t membership_group_end(const std::vector<MessageRowData>& msgs,
+                                 std::size_t start);
+// Walk backward from any Membership row to the start of its group.
+std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
+                                      std::size_t index);
 
 struct UrlPreviewData
 {
@@ -1025,6 +1054,13 @@ private:
     bool press_spoiler_ = false;
     std::string press_spoiler_eid_;
 
+    // Membership-group (join/leave/etc.) expand/collapse state. The expanded
+    // set lives in MembershipGroupExpander, keyed by the event_id of the
+    // first row in the collapsed run; the press-FSM fields stay here.
+    MembershipGroupExpander membership_groups_;
+    bool press_membership_group_ = false;
+    std::string press_membership_group_key_;
+
     // Scroll-to-bottom pill. Geometry is recomputed in paint() (after
     // ListView::paint has updated scroll state), so the rect + visible
     // flag are mutable — same trick as hovered_row_geom_ above.
@@ -1068,6 +1104,12 @@ private:
     // no-op. The press FSM below stays on the view because it is part of the
     // pointer-down/up/drag pipeline; it only names the controller's geometry.
     TimelineMediaController media_;
+
+    // Auto-advance lookup handed to `media_` (see set_next_voice_lookup):
+    // scans messages_ forward from the just-finished voice row for the next
+    // Kind::Voice row from the same sender.
+    const MessageRowData*
+    find_next_voice_from_same_sender_(const std::string& finished_event_id) const;
 
     // View-wide repaint requester. Wired by `set_repaint_requester` and used
     // throughout the view (gate reveal, selection drag, async hops, …); also

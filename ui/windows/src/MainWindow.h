@@ -357,6 +357,9 @@ private:
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     bool                                 focus_compose_on_show_ = false;
     std::unique_ptr<tk::NativeTextArea> topic_text_area_;
+    std::unique_ptr<tk::NativeTextField> room_settings_name_field_;
+    bool room_settings_name_field_visible_ = false;
+    std::unique_ptr<tk::NativeTextArea> room_settings_topic_area_;
     std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
     std::unique_ptr<tk::NativeTextField> enc_key_field_;
     std::unique_ptr<tk::NativeTextField> qr_check_code_field_;

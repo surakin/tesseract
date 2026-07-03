@@ -324,6 +324,13 @@ public:
     {
         return engine_ && !engine_->IsPaused() && !engine_->IsEnded();
     }
+    bool reached_end() const override
+    {
+        // IMFMediaEngine::GetCurrentTime() does not reset to 0 on natural
+        // completion (it stays at/near GetDuration()), so query the engine's
+        // own end-of-media flag directly rather than inferring from position.
+        return engine_ && engine_->IsEnded();
+    }
 
 private:
     void init_engine()

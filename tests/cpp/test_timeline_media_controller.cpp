@@ -26,6 +26,10 @@ struct FakeAudioPlayer : tk::AudioPlayer
     float         rate       = 1.0f;
     bool          playing    = false;
     std::uint64_t pos        = 0;
+    // Mirrors real backends (e.g. Qt's QMediaPlayer): natural completion does
+    // NOT reset pos to 0 — it stays at/near the clip's duration. `ended` is
+    // the backend-native "genuinely reached the end" signal instead.
+    bool          ended      = false;
 
     void play(const std::uint8_t*, std::size_t size, std::string_view mime) override
     {
@@ -34,16 +38,35 @@ struct FakeAudioPlayer : tk::AudioPlayer
         last_mime = std::string(mime);
         playing   = true;
         pos       = 0;
+        ended     = false;
     }
-    void          pause() override { playing = false; }
-    void          resume() override { playing = true; }
-    void          stop() override { playing = false; }
-    void          seek(std::uint64_t ms) override { pos = ms; }
+    void pause() override { playing = false; }
+    void resume() override
+    {
+        playing = true;
+        ended   = false;
+    }
+    // Real backends (e.g. Qt's QMediaPlayer on a same-thread direct
+    // connection) commonly emit their state-change signal synchronously
+    // from within stop(). Mirror that here so tests can exercise the
+    // reentrancy guard in TimelineMediaController::on_audio_progress().
+    void stop() override
+    {
+        playing = false;
+        pos     = 0;
+        ended   = false;
+        if (on_progress)
+        {
+            on_progress();
+        }
+    }
+    void          seek(std::uint64_t ms) override { pos = ms; ended = false; }
     void          set_playback_rate(float r) override { rate = r; }
     float         playback_rate() const override { return rate; }
     std::uint64_t position_ms() const override { return pos; }
     std::uint64_t duration_ms() const override { return 0; }
     bool          is_playing() const override { return playing; }
+    bool          reached_end() const override { return ended; }
 };
 
 MessageRowData make_voice_row(const std::string& event_id, const std::string& mxc)
@@ -160,4 +183,171 @@ TEST_CASE("reset_pending_play discards an armed play (room switch)", "[media]")
     controller.retry_pending_voice_play();
     CHECK(fake->play_count == 0);
     CHECK(controller.playing_event_id().empty());
+}
+
+TEST_CASE("Voice: natural finish auto-advances via the next-voice lookup",
+          "[media][voice][autoadvance]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2, 3}; });
+
+    MessageRowData next_row = make_voice_row("$ev2", "mxc://x/2");
+    int            lookup_calls = 0;
+    controller.set_next_voice_lookup(
+        [&](const std::string& finished_event_id) -> const MessageRowData*
+        {
+            ++lookup_calls;
+            CHECK(finished_event_id == "$ev1");
+            return &next_row;
+        });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    CHECK(fake->play_count == 1);
+
+    // Confirm the clip actually started (playing_ever_active_) before the
+    // backend reports natural end-of-media.
+    fake->playing = true;
+    controller.on_audio_progress();
+
+    // Real backends (e.g. Qt's QMediaPlayer) leave position_ms() at/near the
+    // clip's duration on natural completion rather than resetting it to 0 —
+    // reached_end() is the only reliable signal in that case.
+    fake->playing = false;
+    fake->pos     = 4200;
+    fake->ended   = true;
+    controller.on_audio_progress();
+
+    CHECK(lookup_calls == 1);
+    CHECK(fake->play_count == 2);
+    CHECK(controller.playing_event_id() == "$ev2");
+}
+
+TEST_CASE("Voice: natural finish with no next match plays nothing further",
+          "[media][voice][autoadvance]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2, 3}; });
+    controller.set_next_voice_lookup(
+        [](const std::string&) -> const MessageRowData* { return nullptr; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    fake->playing = true;
+    controller.on_audio_progress();
+
+    fake->playing = false;
+    fake->pos     = 4200;
+    fake->ended   = true;
+    controller.on_audio_progress();
+
+    CHECK(fake->play_count == 1);
+    CHECK(controller.playing_event_id().empty());
+}
+
+TEST_CASE("Voice: a pause near the end (not reached_end) does not auto-advance",
+          "[media][voice][autoadvance]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2, 3}; });
+
+    int lookup_calls = 0;
+    controller.set_next_voice_lookup(
+        [&](const std::string&) -> const MessageRowData*
+        {
+            ++lookup_calls;
+            return nullptr;
+        });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    fake->playing = true;
+    controller.on_audio_progress();
+
+    // User pauses a moment before the clip's actual end: not playing, a
+    // non-zero position, and the backend has NOT signaled reached_end().
+    // This must not be treated as "finished".
+    fake->playing = false;
+    fake->pos     = 4200;
+    controller.on_audio_progress();
+
+    CHECK(lookup_calls == 0);
+    CHECK(fake->play_count == 1);
+    CHECK(controller.playing_event_id() == "$ev1");
+}
+
+TEST_CASE("Voice: manually switching rows does not invoke the next-voice lookup",
+          "[media][voice][autoadvance]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{1, 2, 3}; });
+
+    int lookup_calls = 0;
+    controller.set_next_voice_lookup(
+        [&](const std::string&) -> const MessageRowData*
+        {
+            ++lookup_calls;
+            return nullptr;
+        });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    fake->playing = true;
+    controller.on_audio_progress();
+
+    // User clicks a different row while $ev1 is still active: this calls
+    // stop() internally (fake->playing=false, pos=0) before starting $ev2.
+    // The reentrant on_audio_progress() this can trigger must not treat the
+    // switch as a natural finish.
+    controller.handle_voice_play_click(make_voice_row("$ev2", "mxc://x/2"));
+
+    CHECK(lookup_calls == 0);
+    CHECK(fake->play_count == 2);
+    CHECK(controller.playing_event_id() == "$ev2");
+}
+
+TEST_CASE("Voice: auto-advance cache miss tags the pending play to skip "
+          "the visibility gate",
+          "[media][voice][autoadvance]")
+{
+    TimelineMediaController controller;
+    controller.set_player(std::make_unique<FakeAudioPlayer>());
+
+    std::vector<std::uint8_t> warm;
+    controller.set_bytes_provider([&warm](const std::string&) { return warm; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"),
+                                       /*is_auto_advance=*/true);
+    CHECK(controller.has_pending_play());
+    CHECK(controller.pending_play_skip_visibility_gate());
+
+    controller.reset_pending_play();
+    CHECK_FALSE(controller.pending_play_skip_visibility_gate());
+}
+
+TEST_CASE("Voice: a manual click's cache miss does not skip the visibility gate",
+          "[media][voice][autoadvance]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    controller.set_player(std::move(player));
+
+    std::vector<std::uint8_t> warm;
+    controller.set_bytes_provider([&warm](const std::string&) { return warm; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    CHECK(controller.has_pending_play());
+    CHECK_FALSE(controller.pending_play_skip_visibility_gate());
 }

@@ -1588,13 +1588,9 @@ std::unique_ptr<tk::AudioPlayer> Host::make_audio_player()
     return make_audio_player_macos();
 }
 
-// Defined in audio_capture_macos.mm.
-std::unique_ptr<tk::AudioCapture>
-make_audio_capture_macos(tk::AudioCapturePostFn post);
-
 std::unique_ptr<tk::AudioCapture> Host::make_audio_capture()
 {
-    return make_audio_capture_macos(
+    return tk::make_audio_capture_macos(
         [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
 }
 

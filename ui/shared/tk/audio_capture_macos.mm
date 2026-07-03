@@ -221,8 +221,10 @@ private:
                                                        &uid_cf) == noErr
                             && uid_cf != nullptr)
                         {
-                            NSString* uid_ns = (__bridge_transfer NSString*)uid_cf;
-                            if ([uid_ns isEqualToString:target_uid])
+                            bool match = [(__bridge NSString*)uid_cf
+                                isEqualToString:target_uid];
+                            CFRelease(uid_cf);
+                            if (match)
                             {
                                 dev_id = candidate;
                                 break;
@@ -323,11 +325,11 @@ private:
 
 } // namespace
 
-namespace tk::macos
+namespace tk
 {
 
-std::unique_ptr<tk::AudioCapture>
-make_audio_capture_macos(tk::AudioCapturePostFn post)
+std::unique_ptr<AudioCapture>
+make_audio_capture_macos(AudioCapturePostFn post)
 {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -342,4 +344,4 @@ make_audio_capture_macos(tk::AudioCapturePostFn post)
     return std::make_unique<AudioCaptureMacOS>(std::move(post));
 }
 
-} // namespace tk::macos
+} // namespace tk

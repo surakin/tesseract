@@ -69,6 +69,9 @@ public:
     void set_inactive_period_pref(int days);
     void set_autoscroll_unread_pref(bool enabled);
 
+    // Timeline: show room join/leave events (forwarded from AppearanceSection).
+    void set_show_membership_events_pref(bool enabled);
+
     // ----- Notifications section --------------------------------------------
 
     // Silently initialise the notifications checkbox from persisted settings.
@@ -213,6 +216,9 @@ public:
 
     // Fired when the user toggles auto-scroll-to-unread in the room list.
     std::function<void(bool)> on_autoscroll_unread_changed;
+
+    // Fired when the user toggles "show room join/leave events" in Timeline.
+    std::function<void(bool)> on_show_membership_events_changed;
 
     // Fired when the user toggles notifications.
     std::function<void(bool)> on_notifications_changed;

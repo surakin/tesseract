@@ -294,7 +294,10 @@ pub fn search(
 /// indexable when its body is non-empty (checked separately).
 #[cfg(not(test))]
 fn is_indexable(msg_type: &str) -> bool {
-    !(msg_type.starts_with("virtual.") || msg_type == "m.redacted" || msg_type == "m.utd")
+    !(msg_type.starts_with("virtual.")
+        || msg_type == "m.redacted"
+        || msg_type == "m.utd"
+        || msg_type == "m.room.member")
 }
 
 /// Handle to the per-account index plus the opt-in gate, cloned into the

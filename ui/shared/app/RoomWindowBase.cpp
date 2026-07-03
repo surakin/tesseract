@@ -279,6 +279,48 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         if (!shell_->client_) return;
         shell_->client_->ignore_user_async(std::move(user_id));
     };
+    rv->on_room_settings_opened = [this, rv](std::string room_id) {
+        auto* v = rv->room_settings_view();
+        if (!v) return;
+        if (!shell_->client_)
+        {
+            v->set_field_permissions(false, false, false);
+            return;
+        }
+        v->set_field_permissions(shell_->client_->can_set_room_name(room_id),
+                                 shell_->client_->can_set_room_topic(room_id),
+                                 shell_->client_->can_set_room_avatar(room_id));
+    };
+    rv->on_room_settings_avatar_upload_requested =
+        [this](std::string room_id) {
+        shell_->stage_room_settings_avatar_upload_(room_id);
+    };
+    rv->room_settings_view()->on_accept =
+        [this, rv](std::string room_id, views::RoomSettingsChanges changes) {
+        if (!shell_->client_) return;
+        auto sess = shell_->active_account();
+        run_async_mut_(
+            [this, rv, sess, room_id = std::move(room_id),
+             changes = std::move(changes), alive = alive_]() mutable {
+                ShellBase::RoomSettingsCommitOutcome outcome;
+                if (!sess || !sess->client)
+                {
+                    outcome.error = "not logged in";
+                }
+                else
+                {
+                    outcome = ShellBase::apply_room_settings_(
+                        sess->client.get(), room_id, changes.name,
+                        changes.topic, changes.avatar_mxc);
+                }
+                post_to_ui_(
+                    [rv, alive = std::move(alive), outcome]() mutable {
+                        if (!*alive) return;
+                        if (auto* v = rv->room_settings_view())
+                            v->set_commit_result(outcome.ok, outcome.error);
+                    });
+            });
+    };
 
     // ── Compose callbacks ────────────────────────────────────────────────
     rv->on_send = [this](const std::string& body)

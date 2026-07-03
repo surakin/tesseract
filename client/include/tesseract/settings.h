@@ -50,6 +50,12 @@ public:
     // Set to 0 to disable grouping entirely.
     int message_group_interval_s = 300;
 
+    // ── Timeline ──────────────────────────────────────────────────────
+    // Show room membership-change rows (join/leave/kick/ban/invite/knock/…)
+    // in the message timeline, grouped by consecutive same-action runs.
+    // Default off.
+    bool show_room_join_leave_events = false;
+
     // ── Read state ───────────────────────────────────────────────────
     // Delay (ms) after selecting a room before it is marked as read.
     // Prevents spurious receipts when flipping through rooms quickly.

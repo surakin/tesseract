@@ -60,6 +60,9 @@ public:
     void set_controller(tesseract::SettingsController* ctrl,
                         const std::string& current_display_name);
 
+    /// Silently initialise the "show room join/leave events" checkbox.
+    void set_show_membership_events_pref(bool enabled);
+
 signals:
     void settingsClosed();
     void logoutRequested();
@@ -73,6 +76,10 @@ signals:
     void mediaPreviewsChanged(tesseract::Settings::MediaPreviews mode);
     void inviteAvatarsChanged(bool enabled);
     void roomListGroupingChanged();
+    // Fired after the "show room join/leave events" preference is persisted.
+    // MainWindow applies it to the Rust client and re-subscribes the active
+    // room so the change takes effect immediately.
+    void membershipEventsPrefChanged(bool enabled);
     void clearCachesRequested();
     void resetIdentityRequested();
     // Fired after the user changes their own avatar via Settings. The

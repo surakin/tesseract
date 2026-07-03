@@ -65,3 +65,187 @@ msgstr "[Unpin message]"
 #: ui/shared/views/RoomView.cpp
 msgid "Pin message"
 msgstr "[Pin message]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline"
+msgstr "[Timeline]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Show room join/leave events"
+msgstr "[Show room join/leave events]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} joined the room"
+msgstr "[{0} joined the room]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} left the room"
+msgstr "[{0} left the room]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was banned by {1}"
+msgstr "[{0} was banned by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was banned"
+msgstr "[{0} was banned]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was unbanned by {1}"
+msgstr "[{0} was unbanned by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} is no longer banned"
+msgstr "[{0} is no longer banned]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was removed by {1}"
+msgstr "[{0} was removed by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was removed"
+msgstr "[{0} was removed]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was invited by {1}"
+msgstr "[{0} was invited by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} received an invitation"
+msgstr "[{0} received an invitation]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was removed and banned by {1}"
+msgstr "[{0} was removed and banned by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was kicked and banned"
+msgstr "[{0} was kicked and banned]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} has accepted the invitation"
+msgstr "[{0} has accepted the invitation]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} has rejected the invitation"
+msgstr "[{0} has rejected the invitation]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s invitation was revoked by {1}"
+msgstr "[{0}'s invitation was revoked by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s invitation was revoked"
+msgstr "[{0}'s invitation was revoked]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} requested to join"
+msgstr "[{0} requested to join]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s request to join was approved by {1}"
+msgstr "[{0}'s request to join was approved by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s join request was approved"
+msgstr "[{0}'s join request was approved]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} withdrew their request to join"
+msgstr "[{0} withdrew their request to join]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s request to join was denied by {1}"
+msgstr "[{0}'s request to join was denied by {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s join request was denied"
+msgstr "[{0}'s join request was denied]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} and {1}"
+msgstr "[{0} and {1}]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}, {1} and {2} other"
+msgid_plural "{0}, {1} and {2} others"
+msgstr[0] "[{0}, {1} and {2} other]"
+msgstr[1] "[{0}, {1} and {2} others]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was banned from the room"
+msgid_plural "{0} were banned from the room"
+msgstr[0] "[{0} was banned from the room]"
+msgstr[1] "[{0} were banned from the room]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was unbanned"
+msgid_plural "{0} were unbanned"
+msgstr[0] "[{0} was unbanned]"
+msgstr[1] "[{0} were unbanned]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was removed from the room"
+msgid_plural "{0} were removed from the room"
+msgstr[0] "[{0} was removed from the room]"
+msgstr[1] "[{0} were removed from the room]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was invited"
+msgid_plural "{0} were invited"
+msgstr[0] "[{0} was invited]"
+msgstr[1] "[{0} were invited]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} was removed and banned"
+msgid_plural "{0} were removed and banned"
+msgstr[0] "[{0} was removed and banned]"
+msgstr[1] "[{0} were removed and banned]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} accepted the invitation"
+msgid_plural "{0} accepted their invitations"
+msgstr[0] "[{0} accepted the invitation]"
+msgstr[1] "[{0} accepted their invitations]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} rejected the invitation"
+msgid_plural "{0} rejected their invitations"
+msgstr[0] "[{0} rejected the invitation]"
+msgstr[1] "[{0} rejected their invitations]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} had their invitation revoked"
+msgid_plural "{0} had their invitations revoked"
+msgstr[0] "[{0} had their invitation revoked]"
+msgstr[1] "[{0} had their invitations revoked]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s request to join was approved"
+msgid_plural "{0}'s requests to join were approved"
+msgstr[0] "[{0}'s request to join was approved]"
+msgstr[1] "[{0}'s requests to join were approved]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} cancelled their request to join"
+msgid_plural "{0} cancelled their requests to join"
+msgstr[0] "[{0} cancelled their request to join]"
+msgstr[1] "[{0} cancelled their requests to join]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0}'s request to join was denied"
+msgid_plural "{0}'s requests to join were denied"
+msgstr[0] "[{0}'s request to join was denied]"
+msgstr[1] "[{0}'s requests to join were denied]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Room Settings"
+msgstr "[Room Settings]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Name"
+msgstr "[Name]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Topic"
+msgstr "[Topic]"

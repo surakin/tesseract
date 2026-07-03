@@ -3,6 +3,140 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.12 — Unreleased
+
+- feat(calls): MatrixRTC voice and video calls (MSC4143) via LiveKit, behind
+  `TESSERACT_ENABLE_CALLS`. `RtcSession` handles join/leave and audio/video
+  muting; end-to-end encryption uses HKDF key derivation matching Element
+  Call's wire format so calls interoperate with Element X and Element Call;
+  echo cancellation runs through each platform's native audio device
+  manager. The call overlay UI (`ParticipantTile`, `CallOverlayWidget`) has
+  four modes — Docked (a strip above the messages), DockedExpanded (fills
+  the content area), Floating (draggable, position persisted), and Popout
+  (a dedicated OS window via `CallWindowBase`) — plus mute/video/hang-up
+  controls, a call duration timer, and a pinned-tile 70/30 grid split.
+  `IncomingCallBanner` surfaces MSC4075 ring notifications. Shipped with a
+  string of correctness fixes: floating-overlay drag tracking (was running
+  at half speed due to a stale local-vs-world coordinate mixup), participant
+  tile pin/avatar/mic-badge layout, pin-icon color sync, and the docked
+  panel staying visible when returning to docked mode in the wrong room.
+
+- feat(compose): `/selfie` slash command opens a full-surface camera
+  overlay with a 3-second countdown and mirrored live preview; the
+  captured still is JPEG-encoded via each platform's native API (Qt
+  `QImage`, `GdkPixbuf`, `NSBitmapImageRep`, WIC) and inserted as a
+  compose-bar attachment. Disabled while a call is active. Windows and
+  macOS needed follow-up fixes: hiding native text-field overlays while the
+  camera overlay is open, Media Foundation initialization ordering and an
+  `ARGB32`-capable video processor (Windows), and BGRA/JPEG color-channel
+  swaps plus a click-to-dismiss dangling-pointer crash (macOS).
+
+- feat(settings): audio/video device selection in Settings → Media —
+  microphone, speaker, and camera dropdowns, enumerated at settings-open
+  time and applied at the next session start. Backed by `QMediaDevices` +
+  `GstDeviceMonitor` (Qt6), `GstDeviceMonitor` (GTK4), WASAPI
+  `IMMDeviceEnumerator` + Media Foundation (Win32), and
+  `AVCaptureDeviceDiscoverySession` + CoreAudio (macOS). A new
+  `tk::FormLayout` widget (auto-sizes the label column to the widest label)
+  replaced three separate rows that had been misaligned, and each combo
+  gained a label plus i18n coverage.
+
+- refactor(shell): centralised the user context menu (Settings → Add
+  Account → QR → Log Out → Quit) into `ShellBase::build_user_menu_items_()`
+  for all four platforms, replacing hand-rolled per-shell menu code.
+
+- fix(login): the Add Account cancel button now correctly returns to the
+  main app on Win32/macOS — switching back to the already-active account is
+  a no-op, so the UI refresh that hides the login view was never reached;
+  it's now called explicitly on cancel.
+
+- feat(rooms): bridged-room detection (MSC2346 `uk.half-shot.bridge` state
+  events) suppresses the call button and threads panel for bridged rooms
+  and shows a 🌉 Bridged badge in the room-info panel, alongside a SQLite
+  cache of bridge status for rooms outside the local state store's default
+  sync scope.
+
+- feat(room-list): a phone icon now appears on rooms with an active call,
+  driven by `m.call.member` state (filtered to non-expired memberships via
+  `active_memberships()`).
+
+- feat(calls): the call button and incoming-call banner are hidden
+  entirely when the server doesn't advertise LiveKit/MSC4143 transport
+  support (probed once via `get_server_info`).
+
+- fix(room-list): edited messages now show the real edited content in the
+  last-message preview instead of the spec-mandated `"* "` fallback
+  asterisk, which was previously truncated to just `"*"` by the HTML
+  first-line splitter.
+
+- fix(room-list): image/sticker last-message thumbnails now respect the
+  media privacy setting instead of always fetching and rendering.
+
+- feat(spaces): `SpaceRootView` — a centred summary panel (avatar, name,
+  topic, joined/unjoined child counts) shown when a joined space itself is
+  selected, mirroring `RoomPreviewView`'s layout for unjoined rooms.
+
+- Decoupled the in-flight-request spinner from the GIF animation timer —
+  the spinner no longer keeps a 62.5 Hz timer alive for the whole sync
+  session; it gets its own independent tick that stops when the in-flight
+  count drops or all windows are hidden.
+
+- Unread-room prefetch now includes notifying (Count/Mention) rooms, not
+  just quiet unreads, since those are the most likely to be opened next.
+
+- Refactored `MainAppWidget`'s widget tree: shared traversal/keyboard
+  dispatch primitives, focused internal containers, and a shared native
+  overlay geometry registry. This wrapped the lightbox/dialog overlays and
+  the floating-call layer in two always-visible pass-through containers,
+  which regressed all-app pointer-move (see next entry).
+
+- fix(ui): fixed the pointer-move regression from the widget-routing
+  refactor above — the new overlay/call-layer containers didn't override
+  `dispatch_pointer_move`'s "claim self if no child absorbs the hit"
+  default, so they swallowed every pointer-move before it reached the room
+  view, breaking message-row hover.
+
+- fix(windows): fixed a shutdown hang where a large in-flight JPEG decode
+  could block shutdown for seconds — `decode_image()` now runs each call in
+  its own COM apartment instead of marshaling through the shared STA
+  message queue.
+
+- fix(deps): pinned `webrtc-sys` to `=0.3.35` in `Cargo.toml` — without an
+  explicit pin the resolver could select 0.3.36, which is incompatible with
+  the `libwebrtc` version this project depends on.
+
+- Unjoined-room space-preview fetches are now cancellable: navigating away
+  from a space aborts any still-in-flight `get_space_child_summary_async`
+  calls for the old space instead of letting them complete uselessly.
+
+- fix(pins): a room switch no longer clobbers a pin-state update that was
+  computed just before the switch landed.
+
+- fix(room-view): switching rooms now closes any open overflow menu or call
+  popup instead of leaving it open over the new room.
+
+- fix(gui): restored button hover across the whole app. The overlay/
+  call-layer containers introduced by the widget-routing refactor above
+  also needed a `hit_test` override matching the `dispatch_pointer_move`
+  fix already made for them — `Host`'s button-hover tracking uses
+  `hit_test`, not `dispatch_pointer_move`, so buttons app-wide (composer
+  sticker/emoji/mic, room header) stopped highlighting on hover until this
+  landed.
+
+- fix(quick-switcher): recent-room names in the "Recent" strip are now
+  correctly centred under their avatars — the paint code was manually
+  pre-centring the draw origin on top of the canvas backend's own
+  `halign=Center` centring, double-applying the offset on Qt6.
+
+- fix(list-view): room switch now automatically keeps loading history until
+  the timeline fills the viewport (or the room's real history is
+  exhausted), instead of only loading a single fixed batch and requiring a
+  manual scroll to trigger more.
+
+- feat(message-list): image/file/video captions are now linkified — bare
+  URLs render as clickable links, reusing the same rich-text pipeline as
+  regular message bodies.
+
 ## v0.8.11 — 2026-06-30
 
 - fix(macos): fixed a stack-overflow crash on macOS when a thread's timeline

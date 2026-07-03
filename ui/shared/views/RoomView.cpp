@@ -97,6 +97,9 @@ RoomView::RoomView()
     auto room_info = std::make_unique<RoomInfoPanel>();
     room_info_panel_ = add_child(std::move(room_info));
 
+    auto room_settings = std::make_unique<RoomSettingsView>();
+    room_settings_view_ = add_child(std::move(room_settings));
+
     auto user_profile = std::make_unique<UserProfilePanel>();
     user_profile_panel_ = add_child(std::move(user_profile));
 
@@ -646,6 +649,14 @@ void RoomView::wire_internal_callbacks()
     };
     room_info_panel_->on_save_topic = [this](std::string room_id, std::string t)
     {
+        // Optimistically update the header so it reflects the new topic
+        // immediately, without waiting for the SDK to echo the state event back.
+        if (room_id == current_room_info_.id && header_)
+        {
+            current_room_info_.topic      = t;
+            current_room_info_.topic_html = {};
+            header_->set_room(current_room_info_);
+        }
         if (on_save_topic) on_save_topic(std::move(room_id), std::move(t));
     };
     room_info_panel_->on_leave_room = [this](std::string room_id)
@@ -695,6 +706,30 @@ void RoomView::wire_internal_callbacks()
     {
         if (on_layout_changed) on_layout_changed();
     };
+    room_info_panel_->on_room_settings_requested = [this]()
+    {
+        show_room_settings();
+    };
+
+    // Wire room settings view callbacks.
+    room_settings_view_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+    room_settings_view_->on_cancel = [this]()
+    {
+        room_settings_view_->close();
+        if (repaint_requester_) repaint_requester_();
+    };
+    room_settings_view_->on_avatar_upload_clicked = [this]()
+    {
+        if (on_room_settings_avatar_upload_requested)
+            on_room_settings_avatar_upload_requested(current_room_info_.id);
+    };
+    room_settings_view_->on_avatar_remove_clicked = [this]()
+    {
+        room_settings_view_->set_staged_avatar("");
+    };
 
     // Wire user profile panel callbacks.
     user_profile_panel_->on_close = [this]()
@@ -735,6 +770,19 @@ void RoomView::show_room_info()
     if (user_profile_panel_ && user_profile_panel_->is_open())
         user_profile_panel_->close();
     room_info_panel_->open(current_room_info_);
+    if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::show_room_settings()
+{
+    if (!room_settings_view_ || !has_room_)
+        return;
+    if (room_info_panel_ && room_info_panel_->is_open())
+        room_info_panel_->close();
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+        user_profile_panel_->close();
+    room_settings_view_->open(current_room_info_);
+    if (on_room_settings_opened) on_room_settings_opened(current_room_info_.id);
     if (repaint_requester_) repaint_requester_();
 }
 
@@ -785,6 +833,10 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     if (room_info_panel_)
     {
         room_info_panel_->set_avatar_provider(p);
+    }
+    if (room_settings_view_)
+    {
+        room_settings_view_->set_avatar_provider(p);
     }
     if (user_profile_panel_)
     {
@@ -884,7 +936,8 @@ void RoomView::set_confirm_provider(ConfirmProvider p)
 
 bool RoomView::is_overlay_open() const
 {
-    return (room_info_panel_    && room_info_panel_->is_open()) ||
+    return (room_settings_view_ && room_settings_view_->is_open()) ||
+           (room_info_panel_    && room_info_panel_->is_open()) ||
            (user_profile_panel_ && user_profile_panel_->is_open());
 }
 
@@ -1065,6 +1118,8 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     {
         if (room_info_panel_)
             room_info_panel_->close();
+        if (room_settings_view_)
+            room_settings_view_->close();
         if (user_profile_panel_)
             user_profile_panel_->close();
         close_room_search();
@@ -1458,6 +1513,14 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         return;
     }
 
+    // Room settings replaces the header/timeline/composer entirely while
+    // open — skip laying out the rest of the room content.
+    if (room_settings_view_ && room_settings_view_->is_open())
+    {
+        room_settings_view_->arrange(ctx, bounds);
+        return;
+    }
+
     const float compose_h =
         compose_bar_ ? compose_bar_->natural_height() : ComposeBar::kMinHeight;
 
@@ -1603,6 +1666,12 @@ void RoomView::paint(tk::PaintCtx& ctx)
         return;
     }
 
+    if (room_settings_view_ && room_settings_view_->is_open())
+    {
+        room_settings_view_->paint(ctx);
+        return;
+    }
+
     // Each child paints its own background; the typing indicator now lives
     // inside the message list (synthetic trailing row), so RoomView paints
     // no strip of its own.
@@ -1664,8 +1733,11 @@ void RoomView::paint(tk::PaintCtx& ctx)
 
 tk::Widget* RoomView::active_overlay_panel_() const
 {
-    // Mutually exclusive in practice (show_room_info / show_user_profile close
-    // each other); prefer the one painted last if both are somehow open.
+    // Mutually exclusive in practice (show_room_info / show_room_settings /
+    // show_user_profile all close each other); prefer the one painted last
+    // if more than one is somehow open.
+    if (room_settings_view_ && room_settings_view_->is_open())
+        return room_settings_view_;
     if (user_profile_panel_ && user_profile_panel_->is_open())
         return user_profile_panel_;
     if (room_info_panel_ && room_info_panel_->is_open())

@@ -280,6 +280,29 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.pending_txn_id = std::string(e.pending_txn_id);
 }
 
+/// Map the stable discriminant produced by Rust's `membership_action_str`
+/// (see sdk/src/client/timeline_convert.rs) to `MembershipAction`. The
+/// fallback (unreachable in practice, since Rust only ever emits one of the
+/// 14 known strings) is `Joined` — a safe default rather than a crash.
+inline MembershipAction parse_membership_action(const std::string& s)
+{
+    if (s == "joined") return MembershipAction::Joined;
+    if (s == "left") return MembershipAction::Left;
+    if (s == "banned") return MembershipAction::Banned;
+    if (s == "unbanned") return MembershipAction::Unbanned;
+    if (s == "kicked") return MembershipAction::Kicked;
+    if (s == "invited") return MembershipAction::Invited;
+    if (s == "kicked_and_banned") return MembershipAction::KickedAndBanned;
+    if (s == "invitation_accepted") return MembershipAction::InvitationAccepted;
+    if (s == "invitation_rejected") return MembershipAction::InvitationRejected;
+    if (s == "invitation_revoked") return MembershipAction::InvitationRevoked;
+    if (s == "knocked") return MembershipAction::Knocked;
+    if (s == "knock_accepted") return MembershipAction::KnockAccepted;
+    if (s == "knock_retracted") return MembershipAction::KnockRetracted;
+    if (s == "knock_denied") return MembershipAction::KnockDenied;
+    return MembershipAction::Joined;
+}
+
 inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
 {
     std::string msg_type(e.msg_type);
@@ -449,6 +472,17 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<CallNotificationEvent>();
         assign_base(*ev, e);
+        return ev;
+    }
+
+    if (msg_type == "m.room.member")
+    {
+        auto ev = std::make_unique<MembershipStateEvent>();
+        assign_base(*ev, e);
+        ev->action = parse_membership_action(std::string(e.membership_action));
+        ev->target_user_id = std::string(e.membership_target_user_id);
+        ev->target_display_name = std::string(e.membership_target_name);
+        ev->target_avatar_url = std::string(e.membership_target_avatar_url);
         return ev;
     }
 

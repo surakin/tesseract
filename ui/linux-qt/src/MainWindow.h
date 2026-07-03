@@ -367,6 +367,10 @@ private:
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     std::unique_ptr<tk::NativeTextArea> topicTextArea_;
     bool topicTextAreaVisible_ = false; // mirrors topicTextArea_ visibility for transition detection
+    std::unique_ptr<tk::NativeTextField> roomSettingsNameField_;
+    bool roomSettingsNameFieldVisible_ = false;
+    std::unique_ptr<tk::NativeTextArea> roomSettingsTopicArea_;
+    bool roomSettingsTopicAreaVisible_ = false;
     bool explicitly_quitting_ = false;  // set before quit actions to bypass hide-to-tray in closeEvent
 
     // Sync-progress status text (initial room hydration + key backfill).

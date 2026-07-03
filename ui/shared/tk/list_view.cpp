@@ -414,22 +414,18 @@ void ListView::preserve_top_through(const std::function<void()>& mutate)
         }
         return;
     }
-    // When the user is already at the very top of the content (no rows
-    // hidden above the viewport), don't anchor: the natural behaviour is
-    // for the newly-loaded older rows to appear *in* the viewport, not
-    // above it. Without this special case the visual content is unchanged
-    // — the new rows land off-screen above and the only signal is a
-    // shrinking scrollbar thumb, which reads to users as "nothing
-    // happened". Re-arm the near-top latch directly because arrange()
-    // only does so when it applies an anchor delta.
-    constexpr float kAtTopEpsilon = 1.0f;
-    if (scroll_y_ <= kAtTopEpsilon)
+    // No prior layout to anchor against (e.g. the very first set_messages()
+    // on a freshly-constructed view) — there's nothing visual to preserve,
+    // and capture_anchor_()'s height-delta fallback would otherwise jump
+    // scroll_y_ by the full new content height instead of leaving it at its
+    // already-correct default. Just mutate; the next arrange() measures
+    // normally with no anchor pending.
+    if (row_offsets_.empty())
     {
         if (mutate)
         {
             mutate();
         }
-        was_near_top_ = false;
         return;
     }
     // Capture the row anchor once; if multiple height-changing mutations stack

@@ -3,6 +3,7 @@
 #include "tk/canvas.h"
 #include "tk/combobox.h"
 #include "tk/controls.h"
+#include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -75,6 +76,9 @@ public:
     std::function<void(std::string url)>                    on_link_clicked;
     std::function<void(std::string url)>                    on_link_hovered;
     std::function<void()>                                   on_close;
+    // Fired when the wrench icon is clicked. The shell closes this panel
+    // and opens RoomSettingsView in its place.
+    std::function<void()>                                   on_room_settings_requested;
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -114,7 +118,12 @@ private:
     tk::SwitchButton* favourite_btn_    = nullptr;
     tk::SwitchButton* low_priority_btn_ = nullptr;
     tk::Button* close_btn_      = nullptr;
+    tk::Button* settings_btn_   = nullptr;
     tk::Button* edit_topic_btn_ = nullptr;
+
+    tk::IconCache close_icon_;
+    tk::IconCache settings_icon_;
+    tk::IconCache edit_topic_icon_;
     tk::Button* save_btn_       = nullptr;
     tk::Button* cancel_btn_     = nullptr;
     tk::Button* expand_btn_     = nullptr;

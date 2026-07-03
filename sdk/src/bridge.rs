@@ -397,6 +397,26 @@ pub mod ffi {
         thread_latest_body: String,
         /// Unix-ms timestamp of the latest thread reply. 0 when unavailable.
         thread_latest_ts: u64,
+        /// "m.room.member" only: stable discriminant for the membership
+        /// transition this row represents. One of "joined" | "left" |
+        /// "banned" | "unbanned" | "kicked" | "invited" |
+        /// "kicked_and_banned" | "invitation_accepted" |
+        /// "invitation_rejected" | "invitation_revoked" | "knocked" |
+        /// "knock_accepted" | "knock_retracted" | "knock_denied". Never
+        /// English prose — the C++ layer maps this to a tk::tr()/tk::trf()
+        /// phrase (see CLAUDE.md's i18n rule). Empty for all other msg_types.
+        membership_action: String,
+        /// "m.room.member" only: Matrix user ID whose membership changed —
+        /// the *subject*/target of the change. May differ from `sender`
+        /// (e.g. an admin `sender` banning/kicking/inviting a different
+        /// target).
+        membership_target_user_id: String,
+        /// "m.room.member" only: target's display name as recorded in this
+        /// state event's content. Empty when the target had no display name.
+        membership_target_name: String,
+        /// "m.room.member" only: mxc:// avatar URL of the target as
+        /// recorded in this state event's content. Empty when absent.
+        membership_target_avatar_url: String,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -2188,11 +2208,31 @@ pub mod ffi {
 
         /// Set the current user's display name in a specific room
         /// (m.room.member state event). Blocks — worker thread.
-        fn set_room_display_name(self: &ClientFfi, room_id: &str, name: &str) -> OpResult;
+        fn set_user_room_display_name(self: &ClientFfi, room_id: &str, name: &str) -> OpResult;
 
         /// Set the current user's avatar in a specific room
         /// (m.room.member state event). Blocks — worker thread.
+        fn set_user_room_avatar(self: &ClientFfi, room_id: &str, mxc_uri: &str) -> OpResult;
+
+        /// Send an m.room.name state event to set the room's own display name
+        /// (visible to all members) — distinct from set_user_room_display_name,
+        /// which only sets the current user's per-room member override.
+        /// Blocks — worker thread.
+        fn set_room_display_name(self: &ClientFfi, room_id: &str, name: &str) -> OpResult;
+
+        /// Set or clear the room's m.room.avatar state event (visible to all
+        /// members) — distinct from set_user_room_avatar, which only sets the
+        /// current user's per-room member override. Pass an empty mxc_uri to
+        /// clear the room avatar. Blocks — worker thread.
         fn set_room_avatar(self: &ClientFfi, room_id: &str, mxc_uri: &str) -> OpResult;
+
+        /// True iff the current user's power level meets the requirement for
+        /// sending m.room.name/m.room.topic/m.room.avatar respectively in this
+        /// room. Independent per field; false on any uncertainty. Blocks —
+        /// worker thread (reads cached power levels, no network round-trip).
+        fn can_set_room_name(self: &ClientFfi, room_id: &str) -> bool;
+        fn can_set_room_topic(self: &ClientFfi, room_id: &str) -> bool;
+        fn can_set_room_avatar(self: &ClientFfi, room_id: &str) -> bool;
 
         // ----- Devices / sessions -----
 
@@ -2237,6 +2277,14 @@ pub mod ffi {
         /// presence values are left unchanged. Thread-safe; may be called on
         /// any thread.
         fn set_presence_polling_enabled(self: &ClientFfi, enabled: bool);
+
+        /// Enable or disable rendering of room membership-change rows
+        /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
+        /// variants) in the timeline. Thread-safe; may be called on any
+        /// thread. Takes effect on the next timeline reset for
+        /// currently-subscribed rooms — callers should re-`subscribe_room`
+        /// the active room after toggling to refresh it immediately.
+        fn set_show_membership_events(self: &ClientFfi, enabled: bool);
 
         /// Issue one immediate round of DM presence polls without waiting
         /// for the 60s interval. Used by the UI shell when the window

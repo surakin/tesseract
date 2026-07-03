@@ -55,6 +55,20 @@ public:
                              }
                              fire_progress();
                          });
+        // QMediaPlayer does not reset position() to 0 on natural completion
+        // (it stays at/near duration()), so playbackStateChanged/
+        // positionChanged alone can't tell "reached the end" apart from
+        // "paused near the end". mediaStatusChanged(EndOfMedia) is the
+        // precise, backend-native signal for that — see reached_end().
+        QObject::connect(&player_, &QMediaPlayer::mediaStatusChanged, &player_,
+                         [this](QMediaPlayer::MediaStatus status)
+                         {
+                             if (status == QMediaPlayer::EndOfMedia)
+                             {
+                                 reached_end_ = true;
+                             }
+                             fire_progress();
+                         });
     }
 
     ~QtAudioPlayer() override
@@ -73,6 +87,7 @@ public:
     void play(const std::uint8_t* data, std::size_t size,
               std::string_view /*mime*/) override
     {
+        reached_end_ = false;
         player_.stop();
         // QMediaPlayer::setSourceDevice short-circuits when the device
         // pointer is unchanged — it keeps the previously decoded stream in
@@ -99,6 +114,7 @@ public:
     }
     void resume() override
     {
+        reached_end_ = false;
         player_.play();
         ticker_.start();
     }
@@ -112,6 +128,7 @@ public:
 
     void seek(std::uint64_t ms) override
     {
+        reached_end_ = false;
         const qint64 dur = player_.duration();
         qint64 target = static_cast<qint64>(ms);
         if (dur > 0 && target > dur)
@@ -158,6 +175,10 @@ public:
     {
         return player_.playbackState() == QMediaPlayer::PlayingState;
     }
+    bool reached_end() const override
+    {
+        return reached_end_;
+    }
 
 private:
     void fire_progress()
@@ -175,6 +196,7 @@ private:
     QBuffer buffer_;
     QTimer ticker_;
     float rate_ = 1.0f;
+    bool reached_end_ = false;
     QMediaPlayer player_;
 };
 

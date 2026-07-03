@@ -1,5 +1,6 @@
 #include "RoomInfoPanel.h"
 #include "html_spans.h"
+#include "icons.h"
 #include "media_utils.h"
 
 #include "tk/i18n.h"
@@ -17,6 +18,9 @@ RoomInfoPanel::RoomInfoPanel()
 {
     close_btn_ = add_child(
         std::make_unique<tk::Button>("\xC3\x97", std::function<void()>{},
+                                     tk::Button::Variant::Icon));
+    settings_btn_ = add_child(
+        std::make_unique<tk::Button>("\xF0\x9F\x94\xA7", std::function<void()>{},
                                      tk::Button::Variant::Icon));
     edit_topic_btn_ = add_child(
         std::make_unique<tk::Button>("\xE2\x9C\x8E", std::function<void()>{},
@@ -68,12 +72,24 @@ RoomInfoPanel::RoomInfoPanel()
     close_btn_->set_on_click([this]() {
         if (on_close) on_close();
     });
+    settings_btn_->set_on_click([this]() {
+        if (on_room_settings_requested) on_room_settings_requested();
+    });
     edit_topic_btn_->set_on_click([this]() {
         editing_topic_   = true;
         topic_edit_text_ = topic_;
         if (on_layout_changed) on_layout_changed();
     });
     save_btn_->set_on_click([this]() {
+        // Optimistically reflect the new topic immediately; refresh_info()
+        // will reconcile when the SDK echoes the state event back.
+        if (topic_ != topic_edit_text_)
+        {
+            topic_      = topic_edit_text_;
+            topic_html_ = {};
+            topic_spans_ = autolink_plain_to_spans(topic_);
+            topic_layout_.reset();
+        }
         if (on_save_topic) on_save_topic(room_id_, topic_edit_text_);
         editing_topic_ = false;
         if (on_layout_changed) on_layout_changed();
@@ -284,10 +300,14 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float px = panel_rect_.x;
     const float iw = kPanelW - kPadX * 2.0f;
 
-    // Close button: fixed at the top of the panel, never scrolls.
+    // Settings (wrench) and Close buttons: fixed at the top of the panel,
+    // never scroll. Settings sits top-left, Close top-right.
     constexpr float kCloseSz = 32.0f;
+    if (settings_btn_)
+        settings_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f, kCloseSz, kCloseSz});
     if (close_btn_)
-        close_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f, kCloseSz, kCloseSz});
+        close_btn_->arrange(lc, {px + kPanelW - 8.0f - kCloseSz, panel_rect_.y + 8.0f,
+                                 kCloseSz, kCloseSz});
 
     // Everything below the close button scrolls. Compute the y origin of the
     // scrollable viewport and clamp scroll_offset_ to valid range.
@@ -554,7 +574,13 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     }
 
     // 9. Edit topic button (only when not editing)
-    if (edit_topic_btn_ && !editing_topic_) edit_topic_btn_->paint(ctx);
+    if (edit_topic_btn_ && !editing_topic_)
+    {
+        edit_topic_btn_->paint(ctx);
+        edit_topic_icon_.draw(ctx.canvas, ctx.factory, kEditSvg,
+                              edit_topic_btn_->bounds(), 16.0f,
+                              ctx.theme.palette.text_secondary);
+    }
 
     // 10. Topic text (drawn when not editing)
     if (!editing_topic_)
@@ -788,9 +814,22 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 
     ctx.canvas.pop_clip();
 
-    // 16. Close button — painted outside the clip so it's always visible
-    //     regardless of scroll position.
-    if (close_btn_) close_btn_->paint(ctx);
+    // 16. Settings + Close buttons — painted outside the clip so they're
+    //     always visible regardless of scroll position.
+    if (settings_btn_)
+    {
+        settings_btn_->paint(ctx);
+        settings_icon_.draw(ctx.canvas, ctx.factory, kWrenchSvg,
+                            settings_btn_->bounds(), 16.0f,
+                            ctx.theme.palette.text_secondary);
+    }
+    if (close_btn_)
+    {
+        close_btn_->paint(ctx);
+        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg,
+                         close_btn_->bounds(), 16.0f,
+                         ctx.theme.palette.text_secondary);
+    }
 }
 
 // ── pointer events ────────────────────────────────────────────────────────

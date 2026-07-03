@@ -1216,6 +1216,62 @@ TEST_CASE("ListView::preserve_top_through keeps the user's row under cursor",
     CHECK(list.scroll_y() == 225.0f);
 }
 
+TEST_CASE("ListView::preserve_top_through anchors even when scrolled to the "
+          "very top of existing content",
+          "[tk][listview][prepend]")
+{
+    Stage st;
+    ListView list;
+    FixedHeightAdapter ad;
+    ad.n = 20;
+    ad.row_h = 25.0f;
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+    REQUIRE(list.scroll_y() == 0.0f);
+
+    // Prepend 5 rows while scrolled to the literal top (scroll_y == 0). The
+    // row the user was looking at (the old row 0) must stay pixel-stable —
+    // only the scrollable range grows above it — not "reveal" the new rows
+    // by leaving scroll_y at 0.
+    list.preserve_top_through(
+        [&]
+        {
+            ad.n = 25;
+            list.invalidate_data();
+        });
+    list.arrange(lc, {0, 0, 200, 100});
+
+    CHECK(list.content_height() == 25.0f * 25);
+    CHECK(list.scroll_y() == 5.0f * 25.0f);
+}
+
+TEST_CASE("ListView::preserve_top_through on a never-laid-out view leaves "
+          "scroll_y untouched",
+          "[tk][listview][prepend]")
+{
+    // A freshly constructed view (e.g. the first set_messages() call) has no
+    // prior measured layout — row_offsets_ is empty. There is nothing visual
+    // to preserve, and capturing an anchor against zero measured data must
+    // not corrupt scroll_y_ (regression: it previously jumped to the full
+    // new content height instead of staying at its correct default of 0).
+    Stage st;
+    ListView list;
+    FixedHeightAdapter ad;
+    ad.n = 25;
+    ad.row_h = 25.0f;
+    list.set_adapter(&ad);
+
+    list.preserve_top_through([&] { list.invalidate_data(); });
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, {0, 0, 200, 100});
+
+    CHECK(list.content_height() == 25.0f * 25);
+    CHECK(list.scroll_y() == 0.0f);
+}
+
 TEST_CASE("ListView row anchor keeps the hovered row's screen Y when a row "
           "above it grows",
           "[tk][listview][anchor]")
@@ -1645,6 +1701,42 @@ TEST_CASE("MessageListView::insert_message at head preserves visual top when "
     float delta = view.content_height() - pre_height;
     CHECK(delta > 0.0f);
     CHECK(view.scroll_y() == pre_scroll + delta);
+}
+
+TEST_CASE("MessageListView::append_messages does not follow to the new "
+          "bottom while browsing history",
+          "[tk][view][messagelist][append]")
+{
+    Stage st;
+    MessageListView view;
+
+    std::vector<MessageRowData> seed;
+    for (int i = 0; i < 20; ++i)
+        seed.push_back(make_text_row(("$s" + std::to_string(i)).c_str(), "row"));
+    view.set_messages(std::move(seed), false);
+    st.run(view, {0, 0, 320, 200});
+
+    // Forward-pagination results land while the view is scrolled at/near the
+    // bottom of the currently-loaded (non-live) window — exactly the
+    // condition that requested this page in the first place. A large wheel
+    // delta clamps to the bottom without setting stick_to_bottom_ (that flag
+    // is for live-tail-follow, not historical browsing).
+    view.set_historical_mode(true);
+    view.on_wheel({160, 100}, 0, 100000.0f);
+    st.run(view, {0, 0, 320, 200});
+    const float pre_scroll = view.scroll_y();
+    REQUIRE(pre_scroll > 0.0f);
+
+    std::vector<MessageRowData> more;
+    for (int i = 0; i < 5; ++i)
+        more.push_back(make_text_row(("$more" + std::to_string(i)).c_str(), "row"));
+    view.append_messages(std::move(more));
+    st.run(view, {0, 0, 320, 200});
+
+    // Content grew (scrollbar reflects it), but the visible position did not
+    // move — only content_height() changed, not scroll_y().
+    CHECK(view.content_height() > pre_scroll);
+    CHECK(view.scroll_y() == pre_scroll);
 }
 
 TEST_CASE("MessageListView::insert_message(mid) lands at the requested index",

@@ -1495,6 +1495,12 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         {
             ensure_user_avatar_(rr.avatar_url, media_group);
         }
+        if (ev.type == EventType::Membership)
+        {
+            ensure_user_avatar_(
+                static_cast<const MembershipStateEvent&>(ev).target_avatar_url,
+                media_group);
+        }
     }
 
     // The user's own media is exempt from public-room suppression (Private
@@ -1714,6 +1720,7 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
         ensure_user_avatar_(row.sender_avatar_url, media_group);
         for (const auto& rr : row.read_receipts)
             ensure_user_avatar_(rr.avatar_url, media_group);
+        ensure_user_avatar_(row.membership_target_avatar_url, media_group);
     }
 
     const bool preview =
@@ -4706,6 +4713,7 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
         session->client->start_sync(session->bridge.get());
         session->sync_started = true;
         apply_search_indexing_pref_(*session);
+        apply_membership_events_pref_(*session);
 
         // Per-account notifier (native) and Linux-only UnifiedPush connector.
         install_account_notifier_(*session);
@@ -4834,6 +4842,7 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     session->client->start_sync(session->bridge.get());
     session->sync_started = true;
     apply_search_indexing_pref_(*session);
+    apply_membership_events_pref_(*session);
 
     // Per-account notifier (native) and Linux-only UnifiedPush connector.
     install_account_notifier_(*session);
@@ -6475,6 +6484,20 @@ void ShellBase::handle_index_messages_toggle_(bool enabled)
     }
 }
 
+void ShellBase::handle_show_membership_events_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.show_room_join_leave_events = enabled;
+    s.save_to_disk(tesseract::config_dir());
+
+    if (client_)
+    {
+        client_->set_show_membership_events(enabled);
+        if (!current_room_id_.empty())
+            client_->subscribe_room(current_room_id_);
+    }
+}
+
 #ifdef TESSERACT_GITHUB_REPO
 void ShellBase::handle_check_for_updates_toggle_(bool enabled)
 {
@@ -6492,6 +6515,16 @@ void ShellBase::apply_search_indexing_pref_(tesseract::AccountSession& session)
     // call is non-blocking, so it is safe on the UI thread.
     if (session.client && tesseract::Settings::instance().index_messages_for_search)
         session.client->set_search_indexing_enabled(true);
+}
+
+void ShellBase::apply_membership_events_pref_(tesseract::AccountSession& session)
+{
+    // The Rust-side AtomicBool defaults to false; only push the flag when the
+    // persisted preference is on so the first room subscription for this
+    // account already surfaces membership-change rows instead of waiting for
+    // the user to toggle the checkbox after launch.
+    if (session.client && tesseract::Settings::instance().show_room_join_leave_events)
+        session.client->set_show_membership_events(true);
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text)
@@ -7724,9 +7757,95 @@ void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
                     auto upload = sess->client->upload_media(bytes, mime);
                     if (!upload.ok)
                         return;
-                    sess->client->set_room_avatar(room_id, upload.message);
+                    sess->client->set_user_room_avatar(room_id, upload.message);
                 });
         });
+}
+
+void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id)
+{
+    auto* c = client_;
+    if (!c || !room_view_)
+        return;
+
+    if (auto* v = room_view_->room_settings_view())
+        v->set_avatar_busy(true);
+
+    pick_image_file_(
+        [this, c, room_id](std::vector<uint8_t> bytes, std::string mime) mutable
+        {
+            if (bytes.empty())
+            {
+                // Cancelled — clear the busy indicator.
+                if (room_view_)
+                    if (auto* v = room_view_->room_settings_view())
+                        v->set_avatar_busy(false);
+                return;
+            }
+            if (c != client_)
+                return; // logged out between pick and callback
+            auto sess = active_account_;
+            run_async_mut_(
+                [this, sess, room_id,
+                 bytes = std::move(bytes),
+                 mime  = std::move(mime)]() mutable
+                {
+                    if (!sess || !sess->client)
+                        return;
+                    auto upload = sess->client->upload_media(bytes, mime);
+                    post_to_ui_alive_(
+                        [this, sess, upload = std::move(upload)]() mutable
+                        {
+                            if (sess != active_account_ || !room_view_)
+                                return;
+                            auto* v = room_view_->room_settings_view();
+                            if (!v)
+                                return;
+                            v->set_avatar_busy(false);
+                            if (upload.ok)
+                                v->set_staged_avatar(upload.message);
+                            else
+                                v->set_avatar_error(upload.message);
+                        });
+                });
+        });
+}
+
+ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
+    tesseract::Client* client, const std::string& room_id,
+    const std::optional<std::string>& new_name,
+    const std::optional<std::string>& new_topic,
+    const std::optional<std::string>& new_avatar_mxc)
+{
+    RoomSettingsCommitOutcome out;
+    if (!client)
+    {
+        out.error = "not logged in";
+        return out;
+    }
+    std::vector<std::string> errors;
+    if (new_name)
+    {
+        auto r = client->set_room_display_name(room_id, *new_name);
+        if (!r.ok) errors.push_back("name: " + r.message);
+    }
+    if (new_topic)
+    {
+        auto r = client->set_room_topic(room_id, *new_topic);
+        if (!r.ok) errors.push_back("topic: " + r.message);
+    }
+    if (new_avatar_mxc)
+    {
+        auto r = client->set_room_avatar(room_id, *new_avatar_mxc);
+        if (!r.ok) errors.push_back("avatar: " + r.message);
+    }
+    out.ok = errors.empty();
+    for (std::size_t i = 0; i < errors.size(); ++i)
+    {
+        if (i) out.error += "; ";
+        out.error += errors[i];
+    }
+    return out;
 }
 
 // ── Encryption setup detection ───────────────────────────────────────────────

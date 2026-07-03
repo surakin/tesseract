@@ -317,6 +317,19 @@ AppearanceSection::AppearanceSection()
             if (on_autoscroll_unread_changed) on_autoscroll_unread_changed(v);
         };
     }
+
+    {
+        const auto& s = tesseract::Settings::instance();
+        auto* timeline_group = add_group(tk::tr("Timeline"));
+
+        auto cb_membership = std::make_unique<tk::CheckButton>(
+            tk::tr("Show room join/leave events"), s.show_room_join_leave_events);
+        show_membership_events_cb_ = timeline_group->add_widget(std::move(cb_membership));
+        show_membership_events_cb_->on_change = [this](bool v)
+        {
+            if (on_show_membership_events_changed) on_show_membership_events_changed(v);
+        };
+    }
 }
 
 AppearanceSection::~AppearanceSection() = default;
@@ -344,6 +357,11 @@ void AppearanceSection::set_inactive_period(int days)
 void AppearanceSection::set_autoscroll_unread(bool enabled)
 {
     if (autoscroll_cb_) autoscroll_cb_->set_checked(enabled);
+}
+
+void AppearanceSection::set_show_membership_events(bool enabled)
+{
+    if (show_membership_events_cb_) show_membership_events_cb_->set_checked(enabled);
 }
 
 void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)

@@ -239,12 +239,12 @@ Result dispatch_compose_send(Client& client,
 
     // `/myroomnick <name>` — set room-specific display name.
     if (const char* name = strip_prefix(body, "/myroomnick "))
-        return client.set_room_display_name(room_id, name);
+        return client.set_user_room_display_name(room_id, name);
 
     // `/myroomavatar <mxc_uri>` — set room-specific avatar to an explicit mxc.
     // The no-argument form is intercepted by callers before this function is
     // reached; if it arrives here anyway (e.g. empty suffix from the popup),
-    // return an error rather than calling set_room_avatar with an empty URI.
+    // return an error rather than calling set_user_room_avatar with an empty URI.
     if (const char* sfx = strip_prefix(body, "/myroomavatar"))
     {
         // sfx must start with whitespace or be end-of-string so that
@@ -255,7 +255,7 @@ Result dispatch_compose_send(Client& client,
             if (*sfx == '\0')
                 return Result{false, "no mxc_uri provided; use /myroomavatar "
                                      "alone to open the image picker"};
-            return client.set_room_avatar(room_id, sfx);
+            return client.set_user_room_avatar(room_id, sfx);
         }
     }
 

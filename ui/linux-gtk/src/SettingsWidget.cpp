@@ -115,6 +115,11 @@ SettingsWidget::SettingsWidget()
         if (on_autoscroll_unread_changed)
             on_autoscroll_unread_changed(v);
     };
+    settings_view_->on_show_membership_events_changed = [this](bool v)
+    {
+        if (on_show_membership_events_changed)
+            on_show_membership_events_changed(v);
+    };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
     settings_view_->on_hide_content_changed = [](bool e)
@@ -447,6 +452,11 @@ void SettingsWidget::set_profile_field_error(const std::string& key,
 void SettingsWidget::set_group_inactive_pref(bool enabled)
 {
     settings_view_->set_group_inactive_pref(enabled);
+}
+
+void SettingsWidget::set_show_membership_events_pref(bool enabled)
+{
+    settings_view_->set_show_membership_events_pref(enabled);
 }
 
 void SettingsWidget::set_group_unread_pref(bool enabled)

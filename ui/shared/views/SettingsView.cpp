@@ -61,6 +61,10 @@ SettingsView::SettingsView()
     {
         if (on_autoscroll_unread_changed) on_autoscroll_unread_changed(v);
     };
+    appearance->on_show_membership_events_changed = [this](bool v)
+    {
+        if (on_show_membership_events_changed) on_show_membership_events_changed(v);
+    };
     appearance_ = appearance.get();
 
     // Notifications section.
@@ -289,6 +293,11 @@ void SettingsView::set_inactive_period_pref(int days)
 void SettingsView::set_autoscroll_unread_pref(bool enabled)
 {
     if (appearance_) appearance_->set_autoscroll_unread(enabled);
+}
+
+void SettingsView::set_show_membership_events_pref(bool enabled)
+{
+    if (appearance_) appearance_->set_show_membership_events(enabled);
 }
 
 void SettingsView::set_notifications_enabled(bool enabled)

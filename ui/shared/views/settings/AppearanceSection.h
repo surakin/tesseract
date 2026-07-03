@@ -41,6 +41,13 @@ public:
     std::function<void(int)>  on_inactive_period_changed;
     std::function<void(bool)> on_autoscroll_unread_changed;
 
+    // ----- Timeline group -----
+    // Silently update the control without firing on_show_membership_events_changed.
+    void set_show_membership_events(bool enabled);
+
+    // Fired when the user toggles the "show join/leave events" checkbox.
+    std::function<void(bool)> on_show_membership_events_changed;
+
     // Constrain the period combobox dropdown popup to the page bounds.
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
 
@@ -51,6 +58,7 @@ private:
     tk::CheckButton* group_inactive_cb_  = nullptr;
     tk::ComboBox*    period_combo_       = nullptr;
     tk::CheckButton* autoscroll_cb_      = nullptr;
+    tk::CheckButton* show_membership_events_cb_ = nullptr;
 };
 
 } // namespace tesseract::views

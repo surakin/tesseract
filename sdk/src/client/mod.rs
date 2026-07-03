@@ -582,6 +582,12 @@ pub struct ClientFfi {
     /// so it can be updated from the UI thread while the polling task runs on
     /// a worker thread without requiring a lock or a full stop/restart.
     pub(super) presence_polling_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// When `false` (the default), room membership-change rows
+    /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
+    /// variants) are filtered out at the same point pinned-events/etc.
+    /// visibility is decided (see `filter_membership` in `client::timeline`).
+    /// Controlled by `set_show_membership_events`.
+    pub(super) show_membership_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Last set of room IDs pushed to `RoomListService::subscribe_to_rooms`.
     /// Used by `sync_room_subscriptions` to skip the re-push (and the SQL
     /// fan-out it triggers inside matrix-sdk) when the subscribed set is
@@ -924,6 +930,7 @@ impl ClientFfi {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(not(test))]
             last_sync_room_subscriptions: Arc::new(parking_lot::Mutex::new(
                 std::collections::HashSet::new(),
@@ -980,6 +987,7 @@ impl ClientFfi {
             data_dir: default_data_dir(),
             http_client: reqwest::Client::new(),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             #[cfg(feature = "calls")]
             active_rtc_call: None,
@@ -1086,6 +1094,15 @@ impl ClientFfi {
     /// (which lives in `client::sync` and needs the watcher task to exist).
     #[cfg(test)]
     pub fn poll_presence_now(&mut self) {}
+
+    /// Enable or disable membership-change timeline rows. Thread-safe.
+    /// (Production impl lives alongside `set_presence_polling_enabled` in
+    /// `client::sync`; this test stub mirrors that behaviour.)
+    #[cfg(test)]
+    pub fn set_show_membership_events(&self, enabled: bool) {
+        self.show_membership_events
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1818,6 +1835,8 @@ pub(super) async fn build_room_info(
     // dot; muted rooms are excluded from it. Same client-side read-receipt
     // source as the counts above (reliable for encrypted rooms).
     let unread_count = room.num_unread_messages();
+    let (notification_count, highlight_count) =
+        clamp_notification_counts(notification_count, highlight_count, unread_count);
     let muted = matches!(
         room.cached_user_defined_notification_mode(),
         Some(matrix_sdk::notification_settings::RoomNotificationMode::Mute)
@@ -2029,6 +2048,33 @@ pub(super) async fn build_room_info(
     })
 }
 
+/// matrix-sdk's client-side notification/mention counts aren't gated by the
+/// same "is this a real message" filter as its unread-message count
+/// (`marks_as_unread` in matrix-sdk's read-receipts module excludes state
+/// events; the notification/mention tally does not). A room-wide "All
+/// Messages" notification override installs a Matrix `room`-kind push rule
+/// that matches every event in the room regardless of type, so a state
+/// event (e.g. an avatar/topic/name change by another member) can bump the
+/// notification count even though it never counts as an unread message —
+/// and because such events never advance the read-receipt target
+/// (`Room::latest_event()` skips state events), that stray count doesn't
+/// clear when the room is opened either. A notification is only meaningful
+/// if there's a corresponding real unread message, so cap both counts to
+/// `unread_count`.
+///
+/// Not `#[cfg(not(test))]`: it is pure so it can be unit-tested without a
+/// live client.
+pub(super) fn clamp_notification_counts(
+    notification_count: u64,
+    highlight_count: u64,
+    unread_count: u64,
+) -> (u64, u64) {
+    (
+        notification_count.min(unread_count),
+        highlight_count.min(unread_count),
+    )
+}
+
 /// Sort a room-list snapshot in the order the UI expects: unread rooms first,
 /// then by newest `last_activity_ts`. Per-shell space partitioning runs after
 /// and preserves the order within each (non-space / space) bucket.
@@ -2054,7 +2100,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
 /// be unit-tested without a live client.
 pub(super) fn room_list_fingerprint(
     rooms: &[crate::ffi::RoomInfo],
-) -> Vec<(bool, bool, bool, bool, bool, u64, String, String)> {
+) -> Vec<(bool, bool, bool, bool, bool, u64, String, String, String, String)> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -2074,6 +2120,12 @@ pub(super) fn room_list_fingerprint(
             // Include the favourite / low-priority tags: they change a room's
             // room-list section without affecting recency/unread ordering, so
             // omitting them here suppresses the live update for tag toggles.
+            //
+            // avatar_url / dm_avatar_url: a room (or DM-counterpart) avatar
+            // change doesn't touch unread/name/recency, so without these the
+            // fingerprint is unchanged and the live update is silently
+            // dropped — the room list keeps painting the stale avatar until
+            // some unrelated change happens to perturb the fingerprint.
             (
                 unread,
                 quiet_unread,
@@ -2083,6 +2135,8 @@ pub(super) fn room_list_fingerprint(
                 r.last_activity_ts,
                 r.id.clone(),
                 r.name.clone(),
+                r.avatar_url.clone(),
+                r.dm_avatar_url.clone(),
             )
         })
         .collect()
@@ -2259,12 +2313,60 @@ mod tests {
     }
 
     #[test]
+    fn fingerprint_changes_when_avatar_url_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.avatar_url = "mxc://example.org/new-avatar".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_dm_avatar_url_changes() {
+        // DM-counterpart fallback avatar (room.effective_avatar_url()) is the
+        // same render path as the room's own avatar_url, so it must also
+        // perturb the fingerprint.
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.dm_avatar_url = "mxc://example.org/counterpart-avatar".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
     fn fingerprint_changes_when_active_call_toggles() {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.has_active_call = true;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
+    }
+
+    #[test]
+    fn clamp_notification_counts_zeroes_when_no_real_unread() {
+        // A room-wide "All Messages" push rule matches state events too (e.g.
+        // an avatar change by another member), so matrix-sdk can report a
+        // nonzero notification/highlight count with zero real unread
+        // messages. That's a false positive — clamp it away.
+        assert_eq!(clamp_notification_counts(3, 1, 0), (0, 0));
+    }
+
+    #[test]
+    fn clamp_notification_counts_passes_through_when_below_unread() {
+        assert_eq!(clamp_notification_counts(2, 1, 5), (2, 1));
+    }
+
+    #[test]
+    fn clamp_notification_counts_caps_to_real_unread_in_mixed_case() {
+        // One real unread message plus a couple of state-event false
+        // positives: cap to the true message count instead of dropping to
+        // zero, so a genuine notification still shows.
+        assert_eq!(clamp_notification_counts(3, 3, 1), (1, 1));
+    }
+
+    #[test]
+    fn clamp_notification_counts_clamps_independently() {
+        assert_eq!(clamp_notification_counts(1, 4, 2), (1, 2));
     }
 
     #[test]
@@ -2505,6 +2607,22 @@ mod tests {
         c.set_presence_polling_enabled(true);
         assert!(c
             .presence_polling_enabled
+            .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn set_show_membership_events_roundtrips() {
+        let c = ClientFfi::new();
+        assert!(!c
+            .show_membership_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_show_membership_events(true);
+        assert!(c
+            .show_membership_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_show_membership_events(false);
+        assert!(!c
+            .show_membership_events
             .load(std::sync::atomic::Ordering::Relaxed));
     }
 

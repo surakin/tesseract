@@ -29,6 +29,31 @@ enum class EventType
             // pinned tests stay valid
     PinnedEvent, // m.room.pinned_events state-event timeline row
     CallNotification, // org.matrix.msc4075.rtc.notification
+    Membership, // m.room.member state-event row (join/leave/kick/ban/invite/knock/…)
+};
+
+/// One `m.room.member` membership transition, computed server-side by
+/// matrix-sdk-ui from a state-event diff. Mirrors the discriminant strings
+/// produced by the Rust `membership_action_str` helper (see
+/// sdk/src/client/timeline_convert.rs) — never English prose; C++ owns all
+/// phrase composition via tk::tr()/tk::trn()/tk::trf() per this repo's
+/// i18n rule.
+enum class MembershipAction
+{
+    Joined,
+    Left,
+    Banned,
+    Unbanned,
+    Kicked,
+    Invited,
+    KickedAndBanned,
+    InvitationAccepted,
+    InvitationRejected,
+    InvitationRevoked,
+    Knocked,
+    KnockAccepted,
+    KnockRetracted,
+    KnockDenied,
 };
 
 /// User presence state. Wire encoding (matches sdk/src/bridge.rs on_presence_changed):
@@ -371,6 +396,24 @@ struct CallNotificationEvent : public Event
     {
         type = EventType::CallNotification;
     }
+};
+
+/// m.room.member state event representing a real membership transition
+/// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
+/// counterparts). `sender`/`sender_name`/`sender_avatar_url` (base Event
+/// fields) identify who performed the action; the fields below identify
+/// whose membership changed — the *target*, which may differ from the
+/// sender (e.g. an admin kicking/banning/inviting a different user).
+struct MembershipStateEvent : public Event
+{
+    MembershipStateEvent()
+    {
+        type = EventType::Membership;
+    }
+    MembershipAction action = MembershipAction::Joined;
+    std::string target_user_id;
+    std::string target_display_name; ///< as recorded in this state event; may be empty
+    std::string target_avatar_url;   ///< mxc:// or empty
 };
 
 /// Ordered list of timeline events (oldest-first), as passed to

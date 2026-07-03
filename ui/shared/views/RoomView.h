@@ -27,6 +27,7 @@
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
 #include "RoomSearchBar.h"
+#include "RoomSettingsView.h"
 #include "ThreadListView.h"
 #include "ThreadView.h"
 #include "UserProfilePanel.h"
@@ -157,6 +158,10 @@ public:
     RoomInfoPanel* room_info_panel() const
     {
         return room_info_panel_;
+    }
+    RoomSettingsView* room_settings_view() const
+    {
+        return room_settings_view_;
     }
     UserProfilePanel* user_profile_panel() const
     {
@@ -412,6 +417,14 @@ public:
     std::function<void(std::string room_id)>                on_fetch_room_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
+    // Fired when RoomSettingsView opens, so the shell can push per-field
+    // permissions (can_set_room_name/topic/avatar).
+    std::function<void(std::string room_id)>                on_room_settings_opened;
+    // Fired when the user clicks the room-settings avatar disc to pick a
+    // new image. The shell uploads it (Client::upload_media) and calls
+    // room_settings_view()->set_staged_avatar() — never commits directly.
+    std::function<void(std::string room_id)>
+        on_room_settings_avatar_upload_requested;
     std::function<void(std::string user_id)>                on_open_dm;
     // Predicate: return true when a DM with user_id already exists.
     // Set by the shell (ShellBase wires this to find_existing_dm_).
@@ -485,6 +498,7 @@ private:
     // redact, reactions, media clicks, etc.) work in both contexts.
     void wire_message_list_callbacks_(MessageListView* ml);
     void show_room_info();
+    void show_room_settings();
     void show_user_profile(std::string user_id, std::string display_name,
                            std::string avatar_url);
 
@@ -505,6 +519,7 @@ private:
     MessageListView* message_list_ = nullptr;
     ComposeBar* compose_bar_ = nullptr;
     RoomInfoPanel*    room_info_panel_    = nullptr;
+    RoomSettingsView* room_settings_view_ = nullptr;
     UserProfilePanel* user_profile_panel_ = nullptr;
     PopupMenu*        overflow_menu_      = nullptr;
     PopupMenu*        call_popup_         = nullptr;
