@@ -338,15 +338,11 @@ private:
 
             GVariant* streams = g_variant_lookup_value(
                 res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
-            fprintf(stderr, "[portal] Start res: %s\n",
-                    g_variant_print(res, TRUE));
             if (streams && g_variant_n_children(streams) > 0) {
                 GVariant* first = g_variant_get_child_value(streams, 0);
                 g_variant_get(first, "(u@a{sv})", &node_id, nullptr);
                 g_variant_unref(first);
             }
-            fprintf(stderr, "[portal] streams=%s node_id=%u\n",
-                    streams ? "found" : "null", node_id);
             if (streams) g_variant_unref(streams);
             g_variant_unref(res);
         }
@@ -515,9 +511,6 @@ private:
         // the black-tile/no-frames bug this whole file's history chases.
         pop_thread_default();
 
-        fprintf(stderr, "[portal] dance result: ok=%d pw_fd=%d node_id=%u\n",
-                pr.ok, pr.pw_fd, pr.node_id);
-
         // conn/proxy are kept alive (not yet unreffed) across start_pipeline_,
         // which blocks for the whole sharing duration — they're needed again
         // right after, to explicitly close the portal session below.
@@ -653,7 +646,6 @@ private:
             "appsink name=ssink emit-signals=true max-buffers=2 drop=true",
             pw_fd, node_id);
 
-        fprintf(stderr, "[portal] pipeline desc: %s\n", desc);
         GError*     gst_err  = nullptr;
         GstElement* pipeline = gst_parse_launch(desc, &gst_err);
         g_free(desc);
@@ -679,7 +671,6 @@ private:
 
         GstStateChangeReturn sc =
             gst_element_set_state(pipeline, GST_STATE_PLAYING);
-        fprintf(stderr, "[portal] set_state(PLAYING) = %d\n", (int)sc);
         if (sc == GST_STATE_CHANGE_FAILURE)
         {
             log_bus_error_(pipeline);
@@ -695,9 +686,6 @@ private:
             GstState state = GST_STATE_VOID_PENDING, pending = GST_STATE_VOID_PENDING;
             GstStateChangeReturn wait_ret = gst_element_get_state(
                 pipeline, &state, &pending, 3 * GST_SECOND);
-            fprintf(stderr,
-                    "[portal] get_state() after ASYNC = %d (state=%d pending=%d)\n",
-                    (int)wait_ret, (int)state, (int)pending);
             if (wait_ret == GST_STATE_CHANGE_FAILURE)
             {
                 log_bus_error_(pipeline);
