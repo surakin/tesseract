@@ -2409,7 +2409,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
     std::unique_ptr<tk::NativeTextField> _roomSettingsNameField;
-    bool _roomSettingsNameFieldVisible = false;
+    bool _roomSettingsNameFieldVisible;
     std::unique_ptr<tk::NativeTextArea> _roomSettingsTopicArea;
 
     // Settings name field — positioned via _settingsSurface->set_on_layout().
