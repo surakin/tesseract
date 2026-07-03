@@ -92,7 +92,17 @@ public:
         vp.lat = lat;
         vp.lon = lon;
     }
-    void end_pan() { active_row_ = kNoRow; }
+    // Ends the pan; `local` is the pointer-up position. Returns true if the
+    // pointer never moved past the click threshold, i.e. this was a plain
+    // click rather than a drag (mirrors the same-spot idiom used for
+    // multi-click detection elsewhere in MessageListView).
+    bool end_pan(tk::Point local)
+    {
+        active_row_ = kNoRow;
+        float dx = local.x - drag_start_pt_.x;
+        float dy = local.y - drag_start_pt_.y;
+        return (dx * dx + dy * dy) < 64.0f;
+    }
 
     // --- wheel zoom ---
     // Accumulate wheel delta `dy`; when it crosses the step threshold, adjust

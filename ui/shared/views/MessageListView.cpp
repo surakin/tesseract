@@ -6478,11 +6478,20 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         return;
     }
 
-    // Map pan: end drag.
+    // Map pan: end drag. A release with no meaningful movement is treated
+    // as a click, opening the location on openstreetmap.org.
     if (map_panner_.panning())
     {
-        map_panner_.end_pan();
+        std::size_t ri = map_panner_.active_row();
+        bool was_click = map_panner_.end_pan(local);
         tk::ListView::on_pointer_up(local, inside_self);
+        if (was_click && inside_self && ri < messages_.size() &&
+            on_link_clicked)
+        {
+            const MessageRowData& m = messages_[ri];
+            on_link_clicked(osm_view_url(m.location_lat, m.location_lon,
+                                          m.map_viewport.zoom));
+        }
         return;
     }
 

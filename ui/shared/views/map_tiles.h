@@ -116,4 +116,13 @@ inline std::string tile_url(TileCoord t)
            std::to_string(t.x) + "/" + std::to_string(t.y) + ".png";
 }
 
+/// URL for the openstreetmap.org web viewer, centered on `lat`/`lon` with a
+/// marker dropped at that point.
+inline std::string osm_view_url(double lat, double lon, int zoom)
+{
+    return "https://www.openstreetmap.org/?mlat=" + std::to_string(lat) +
+           "&mlon=" + std::to_string(lon) + "#map=" + std::to_string(zoom) +
+           "/" + std::to_string(lat) + "/" + std::to_string(lon);
+}
+
 } // namespace tesseract::views
