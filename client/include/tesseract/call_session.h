@@ -10,6 +10,7 @@ namespace tesseract
 {
 
 class Client;
+struct Result;
 
 /// Owns the state of one active MatrixRTC call: participant list and the
 /// FFI calls that control it. All public methods must be called on the UI thread
@@ -29,8 +30,11 @@ public:
     void mute_video(bool muted);
     /// Gracefully leave and release resources (calls rtc_end_call on the client).
     void hang_up();
-    /// Start publishing a screen share track.
-    void start_screen_share();
+    /// Start publishing a screen share track. Returns the publish result so
+    /// the caller can avoid arming a capture whose frames would otherwise be
+    /// silently dropped (push_screen_frame_i420 is a no-op until this
+    /// succeeds).
+    Result start_screen_share();
     /// Stop the screen share track.
     void stop_screen_share();
 

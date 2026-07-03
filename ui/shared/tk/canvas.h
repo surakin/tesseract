@@ -466,16 +466,21 @@ public:
     }
 
     // Draw premultiplied BGRA pixels (Cairo ARGB32 / D3D BGRA layout) into dst,
-    // bilinearly scaling to fit.  Layout: pixels[i*4+0]=B, [1]=G, [2]=R, [3]=A,
+    // scaling to fit.  Layout: pixels[i*4+0]=B, [1]=G, [2]=R, [3]=A,
     // all channels premultiplied by A/255.  Allows all backends to skip the
     // per-pixel premult loop at paint time when frames are pre-converted on a
     // worker thread.
+    // `high_quality` selects cubic-family resampling instead of the default
+    // bilinear — worth the extra cost for screen-share content (text/UI edges)
+    // but not for ~30fps camera video. Backends without a cheaper bilinear
+    // fallback (macOS already draws everything at cubic quality) ignore it.
     // Every current backend implements this; the default returns false as a safety
     // net for future backends that may not yet override it.
     virtual bool draw_bgra_premult_pixels(const std::uint8_t* /*pixels*/,
                                           std::uint32_t /*w*/, std::uint32_t /*h*/,
                                           Rect /*dst*/,
-                                          bool /*flip_h*/ = false)
+                                          bool /*flip_h*/ = false,
+                                          bool /*high_quality*/ = false)
     {
         return false;
     }

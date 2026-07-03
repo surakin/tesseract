@@ -5241,6 +5241,17 @@ ShellBase::~ShellBase()
     // shell is gone; they will no-op rather than dereference freed members.
     *alive_ = false;
 
+#ifdef TESSERACT_CALLS_ENABLED
+    // Join the screen-picker thumbnail worker (if any) before this object's
+    // members start tearing down — it captures `this` to call
+    // post_to_ui_alive_(), which would be a use-after-free if it ran after
+    // ~ShellBase() returned. Bounded: it checks *alive_ between sources and
+    // each capture_thumbnail() call is itself short (one PrintWindow/DXGI
+    // acquire), so this is a brief wait, not an indefinite block.
+    if (screen_thumb_worker_.joinable())
+        screen_thumb_worker_.join();
+#endif
+
     // Cancel an in-flight known-user roster build so its worker loop bails
     // between rooms instead of finishing a full member sweep — otherwise the
     // thread-pool join below would block until the sweep completes.
@@ -8355,10 +8366,17 @@ void ShellBase::start_screen_share_()
     auto cap_ptr = std::make_shared<std::unique_ptr<tk::ScreenCapture>>(std::move(cap));
     if (main_app_)
     {
-        main_app_->mount_screen_picker(
+        auto* picker = main_app_->mount_screen_picker(
             sources,
             [this, cap_ptr](std::string source_id)
             {
+                // Join the thumbnail worker before touching *cap_ptr: it may
+                // still be mid-capture on this same ScreenCapture instance
+                // (e.g. DXGI only allows one duplication handle per monitor
+                // at a time), and it also reads/moves-from *cap_ptr without
+                // synchronization otherwise.
+                if (screen_thumb_worker_.joinable())
+                    screen_thumb_worker_.join();
                 if (*cap_ptr)
                     do_start_screen_share_(source_id, std::move(*cap_ptr));
             },
@@ -8368,6 +8386,49 @@ void ShellBase::start_screen_share_()
                 if (auto* ov = active_call_overlay_())
                     ov->set_screen_sharing(false);
             });
+
+        // Populate tile thumbnails off the UI thread: enumeration is cheap,
+        // but a real capture per source (PrintWindow per window, a DXGI
+        // duplication per monitor) is not — doing it inline here would
+        // visibly hitch the UI while the picker is opening. The picker mounts
+        // immediately with plain tiles; thumbnails fill in as they complete.
+        if (picker)
+        {
+            if (screen_thumb_worker_.joinable())
+                screen_thumb_worker_.join(); // stale worker from a previous picker
+            auto shell_alive   = alive_;
+            auto picker_alive  = picker->alive_token();
+            screen_thumb_worker_ = std::thread(
+                [this, shell_alive, picker_alive, picker, cap_ptr, sources]()
+                {
+                    for (std::size_t i = 0; i < sources.size() && *shell_alive; ++i)
+                    {
+                        // Picker was unmounted (selected or cancelled) — stop
+                        // as soon as the in-flight capture below finishes, so
+                        // the join() on the selection path (see above, which
+                        // must complete before the real share can start on
+                        // this same ScreenCapture instance) doesn't wait for
+                        // every remaining source.
+                        if (picker_alive.expired())
+                            break;
+                        if (!*cap_ptr)
+                            return;
+                        std::vector<std::uint8_t> rgba;
+                        std::uint32_t w = 0, h = 0;
+                        if (!(*cap_ptr)->capture_thumbnail(sources[i].id, rgba, w, h))
+                            continue;
+                        post_to_ui_alive_(
+                            [picker_alive, picker, i, rgba = std::move(rgba), w, h, this]() mutable
+                            {
+                                if (picker_alive.lock())
+                                {
+                                    picker->set_thumbnail(i, std::move(rgba), w, h);
+                                    request_repaint_();
+                                }
+                            });
+                    }
+                });
+        }
     }
 }
 
@@ -8378,7 +8439,17 @@ void ShellBase::do_start_screen_share_(const std::string& source_id,
     // so screen_source is set before the capture callback fires. Starting
     // capture before publish_track finishes causes all early frames to be
     // silently dropped inside push_screen_frame_i420 (screen_source == None).
-    call_session_->start_screen_share();
+    // Must check the result: if the publish itself fails, screen_source is
+    // never set, so arming the capture anyway would silently drop every
+    // frame forever with no visible symptom beyond a black preview tile.
+    if (auto res = call_session_->start_screen_share(); !res)
+    {
+        fprintf(stderr, "[screenshare] failed to publish screen-share track: %s\n",
+                res.message.c_str());
+        if (auto* ov = active_call_overlay_())
+            ov->set_screen_sharing(false);
+        return;
+    }
     cap->set_source(source_id);
     cap->set_callback([this](const tk::ScreenCapture::Frame& f) {
         if (client_)
@@ -8394,6 +8465,15 @@ void ShellBase::do_start_screen_share_(const std::string& source_id,
 
 void ShellBase::stop_screen_share_()
 {
+    // The picker is always mounted on main_app_ (it has no overlay stack of
+    // its own when the call is popped out into a CallWindowBase — that window
+    // only hosts the CallOverlayWidget). So if the user re-toggles the share
+    // button off before picking a source — the only way to cancel when the
+    // picker isn't even visible in a popout window — it must be torn down
+    // here too, not just when its own Cancel button fires.
+    if (main_app_ && main_app_->screen_picker_open())
+        main_app_->unmount_screen_picker();
+
     if (screen_capture_)
     {
         screen_capture_->stop();

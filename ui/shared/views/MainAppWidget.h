@@ -185,7 +185,9 @@ public:
     // Show the screen source picker as a full-area modal overlay.
     // on_selected fires with the chosen source_id; on_cancelled fires if the
     // user dismisses without choosing. Both callbacks remove the picker.
-    void mount_screen_picker(
+    // Returns the mounted widget so the caller can push thumbnails into it as
+    // they're captured; the pointer is invalidated once either callback fires.
+    views::ScreenPickerWidget* mount_screen_picker(
         std::vector<tk::ScreenSource> sources,
         std::function<void(std::string)> on_selected,
         std::function<void()>            on_cancelled);

@@ -129,9 +129,12 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
         // pre-converted from RGBA to premultiplied BGRA on the worker thread.
         // is_self=true mirrors the local camera feed — screen share is never mirrored.
         const bool mirror = state_.is_self && !state_.is_screen_share_tile;
+        // Cubic-family resampling for screen share (text/UI edges benefit,
+        // and it updates at ~15fps); camera tiles stay on cheaper bilinear
+        // since they update at up to ~30fps.
         ctx.canvas.draw_bgra_premult_pixels(
             state_.pending_bgra->data(), state_.pending_w,
-            state_.pending_h, draw_rect, mirror);
+            state_.pending_h, draw_rect, mirror, state_.is_screen_share_tile);
         video_rect = draw_rect;
     }
     else if (state_.is_screen_share_tile)

@@ -37,10 +37,11 @@ void CallSession::hang_up()
     client_->rtc_end_call();
 }
 
-void CallSession::start_screen_share()
+Result CallSession::start_screen_share()
 {
-    if (!ended_)
-        client_->rtc_start_screen_share();
+    if (ended_)
+        return Result{false, "call has ended"};
+    return client_->rtc_start_screen_share();
 }
 
 void CallSession::stop_screen_share()

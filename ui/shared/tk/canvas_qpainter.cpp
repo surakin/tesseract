@@ -489,8 +489,12 @@ public:
 
     bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
                                    std::uint32_t w, std::uint32_t h,
-                                   Rect dst, bool flip_h = false) override
+                                   Rect dst, bool flip_h = false,
+                                   bool /*high_quality*/ = false) override
     {
+        // QPainter::SmoothPixmapTransform (set globally, see constructor) is
+        // the only image-scaling quality lever Qt exposes here — already the
+        // backend's best, so high_quality has nothing further to select.
         if (!pixels || w == 0 || h == 0) return false;
         // Wrap the pre-converted buffer without copying.
         // Format_ARGB32_Premultiplied matches CAIRO_FORMAT_ARGB32 memory layout:

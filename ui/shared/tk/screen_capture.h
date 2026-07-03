@@ -59,6 +59,18 @@ public:
     /// After stop() returns, the callback will no longer be invoked.
     virtual void stop() = 0;
 
+    /// One-shot RGBA8888 thumbnail for a single source, independent of the
+    /// continuous set_source/set_callback/start streaming path. Safe to call
+    /// from a background thread — must not touch the streaming loop's state.
+    /// Returns false if unsupported by this backend or capture failed; the
+    /// caller should leave the tile on its placeholder in that case.
+    virtual bool capture_thumbnail(const std::string& /*source_id*/,
+                                   std::vector<std::uint8_t>& /*out_rgba*/,
+                                   std::uint32_t& /*out_w*/, std::uint32_t& /*out_h*/)
+    {
+        return false;
+    }
+
     /// Platform factory. Returns nullptr when screen capture is unavailable
     /// (e.g. missing entitlements or unsupported OS version).
     static std::unique_ptr<ScreenCapture> create();

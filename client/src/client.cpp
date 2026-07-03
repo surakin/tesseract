@@ -2115,10 +2115,10 @@ void Client::rtc_push_video_frame_i420(const std::uint8_t* y,
         width, height, stride_y, stride_u, stride_v);
 }
 
-void Client::rtc_start_screen_share()
+Result Client::rtc_start_screen_share()
 {
     MUT_FFI;
-    (void)impl_->ffi->rtc_start_screen_share();
+    return from_ffi(impl_->ffi->rtc_start_screen_share());
 }
 
 void Client::rtc_stop_screen_share()

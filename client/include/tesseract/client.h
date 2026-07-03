@@ -1487,9 +1487,10 @@ public:
                                    std::uint32_t stride_u,
                                    std::uint32_t stride_v);
 
-    /// Start publishing a screen-share track in the active session.
-    /// No-op when no call is active.
-    void rtc_start_screen_share();
+    /// Start publishing a screen-share track in the active session. Blocks
+    /// until the LiveKit publish round-trip completes. No-op (returns a
+    /// failed Result) when no call is active.
+    Result rtc_start_screen_share();
 
     /// Stop the screen-share track. No-op when no call is active or not sharing.
     void rtc_stop_screen_share();

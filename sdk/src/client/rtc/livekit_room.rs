@@ -30,6 +30,7 @@ use livekit::{
     prelude::*,
     webrtc::{
         audio_stream::native::NativeAudioStream,
+        peer_connection_factory::native::PeerConnectionFactoryExt,
         video_frame::{BoxVideoFrame, I420Buffer, VideoFrame, VideoRotation},
         video_source::{native::NativeVideoSource, RtcVideoSource},
         video_stream::native::NativeVideoStream,
@@ -53,6 +54,8 @@ pub struct LiveKitRoom {
     screen_publication: StdMutex<Option<LocalTrackPublication>>,
     /// Separate in-flight gate for screen frames â€” must not share with camera.
     screen_frame_in_flight: Arc<AtomicBool>,
+    /// Separate gate for the local screen-share self-view loopback.
+    local_screen_in_flight: Arc<AtomicBool>,
     local_identity: String,
     sink: Option<Arc<dyn RtcEventSink>>,
     session_id: u64,
@@ -118,6 +121,24 @@ impl LiveKitRoom {
         platform_audio
             .configure_audio_processing(AudioProcessingOptions::default())
             .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
+        // Disable the platform ADM's PLAYOUT side (recording stays enabled above,
+        // for the mic track). PlatformAudio::new() turns playout on by default,
+        // which on Linux auto-selects a native-PipeWire-backed device (the
+        // shipped libwebrtc was built with rtc_use_pipewire=true) purely to give
+        // AEC3 a speaker-output reference. That native PipeWire client collides
+        // with the separate pipewiresrc-based screen-share pipeline in
+        // screen_capture_portal.cpp, silently stalling screen-share negotiation
+        // whenever a call is active. Disabling it here routes playout through
+        // webrtc-sys's SyntheticAudioDevice instead, which keeps pumping AEC3 a
+        // correct render reference (via periodic NeedMorePlayData calls) without
+        // opening any real playback device. Remote audio is unaffected: it's
+        // already rendered separately by our own NativeAudioStream sink (see
+        // RtcEventSink::on_audio_frame below, -> tk::AudioPlayback), so the
+        // platform ADM's own playout was never used for anything but this AEC3
+        // reference in the first place.
+        livekit::rtc_engine::lk_runtime::LkRuntime::instance()
+            .pc_factory()
+            .set_adm_playout_enabled(false);
         let local_audio = LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
         // dtx=false: always send audio packets even during silence.
         // red=false: send plain Opus instead of RED; some SFUs fail to forward
@@ -183,6 +204,7 @@ impl LiveKitRoom {
         let video_frame_in_flight = Arc::new(AtomicBool::new(false));
         let local_video_in_flight = Arc::new(AtomicBool::new(false));
         let screen_frame_in_flight = Arc::new(AtomicBool::new(false));
+        let local_screen_in_flight = Arc::new(AtomicBool::new(false));
         let pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>> =
             Arc::new(StdMutex::new(HashMap::new()));
         let event_task = spawn_event_task(
@@ -210,6 +232,7 @@ impl LiveKitRoom {
             screen_source: StdMutex::new(None),
             screen_publication: StdMutex::new(None),
             screen_frame_in_flight,
+            local_screen_in_flight,
             local_identity,
             sink,
             session_id,
@@ -310,16 +333,48 @@ impl LiveKitRoom {
             .await?;
         *self.screen_source.lock().unwrap() = Some(screen_source);
         *self.screen_publication.lock().unwrap() = Some(pub_);
+        // LocalTrackPublished only logs (see spawn_event_task below) — emit the
+        // participant update ourselves so the UI creates the local ":screen"
+        // tile. Without this, is_screen_sharing never flips true for the local
+        // participant and the sharer can never see their own capture.
+        if let Some(ref s) = self.sink {
+            s.on_participant_updated(
+                self.session_id,
+                local_participant_info(&self.room.local_participant()),
+            );
+        }
         Ok(())
     }
 
-    /// Mute and drop the screen share track.
+    /// Mute immediately (stops local encoding/sending) and unpublish the
+    /// screen share track. Muting alone leaves the publication registered on
+    /// the server forever with only a "muted" flag flipped, which some
+    /// clients don't treat as equivalent to the share having ended — remote
+    /// viewers could keep showing a stale ":screen" tile. Unpublishing is the
+    /// unambiguous signal (RoomEvent::TrackUnpublished on their side) that the
+    /// track is gone.
     pub fn stop_screen_share(&self) {
-        if let Some(ref pub_) = *self.screen_publication.lock().unwrap() {
-            pub_.mute();
-        }
+        let pub_ = self.screen_publication.lock().unwrap().take();
         *self.screen_source.lock().unwrap() = None;
-        *self.screen_publication.lock().unwrap() = None;
+        if let Some(pub_) = pub_ {
+            pub_.mute();
+            let room = Arc::clone(&self.room);
+            let sid = pub_.sid();
+            tokio::spawn(async move {
+                if let Err(e) = room.local_participant().unpublish_track(&sid).await {
+                    warn!("rtc: failed to unpublish screen share track: {e}");
+                }
+            });
+        }
+        // Explicit symmetric update — don't rely solely on a TrackMuted/
+        // TrackUnpublished event round-trip to clear is_screen_sharing for
+        // the local participant's own tile.
+        if let Some(ref s) = self.sink {
+            s.on_participant_updated(
+                self.session_id,
+                local_participant_info(&self.room.local_participant()),
+            );
+        }
     }
 
     /// Inject a raw I420 screen frame. No-op when no screen share is active.
@@ -361,6 +416,21 @@ impl LiveKitRoom {
         };
         src.capture_frame(&frame);
         self.screen_frame_in_flight.store(false, Ordering::Release);
+
+        // Self-view loopback: LiveKit never echoes a published track back to
+        // its publisher, so the sharer needs a direct local copy to confirm
+        // capture is working (mirrors the camera loopback above).
+        if let Some(ref s) = self.sink {
+            if self
+                .local_screen_in_flight
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                let rgba = i420_planes_to_rgba(y, u, v, width, height, stride_y, stride_u);
+                s.on_screen_frame(self.session_id, &self.local_identity, width, height, rgba);
+                self.local_screen_in_flight.store(false, Ordering::Release);
+            }
+        }
     }
 
     /// The LiveKit participant identity assigned by the JWT service.
@@ -670,6 +740,15 @@ fn spawn_event_task(
                                 local_participant_info(&room.local_participant()),
                             );
                         }
+                    }
+                }
+                RoomEvent::TrackUnpublished { participant, .. } => {
+                    // Authoritative signal that a remote participant's track
+                    // (e.g. their screen share) is gone — refresh their info
+                    // so is_screen_sharing recomputes to false and the ":screen"
+                    // tile is removed, even if a TrackMuted event was missed.
+                    if let Some(ref s) = sink {
+                        s.on_participant_updated(session_id, participant_info(&participant));
                     }
                 }
                 RoomEvent::Reconnecting => {

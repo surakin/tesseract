@@ -365,7 +365,8 @@ public:
 
     bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
                                    std::uint32_t w, std::uint32_t h,
-                                   Rect dst, bool flip_h = false) override
+                                   Rect dst, bool flip_h = false,
+                                   bool high_quality = false) override
     {
         if (!pixels || w == 0 || h == 0 || dst.w <= 0.0f || dst.h <= 0.0f)
             return false;
@@ -413,7 +414,11 @@ public:
             cairo_scale(cr_, dst.w / iw, dst.h / ih);
         }
         cairo_set_source_surface(cr_, surf, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr_), CAIRO_FILTER_GOOD);
+        // BEST → cubic-quality resampling; GOOD → bilinear. Bilinear is
+        // sufficient and substantially faster for ~30fps camera video; screen
+        // share (text/UI edges, lower frame rate) is worth the extra cost.
+        cairo_pattern_set_filter(cairo_get_source(cr_),
+                                 high_quality ? CAIRO_FILTER_BEST : CAIRO_FILTER_GOOD);
         cairo_paint(cr_);
         cairo_restore(cr_);
         cairo_surface_destroy(surf);

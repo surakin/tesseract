@@ -18,6 +18,7 @@
 // ---------------------------------------------------------------------------
 // SCStreamOutput delegate
 // ---------------------------------------------------------------------------
+API_AVAILABLE(macos(12.3))
 @interface TKScreenStreamOutput : NSObject <SCStreamOutput>
 {
     @public tk::ScreenCapture::FrameCallback callback_;
@@ -26,6 +27,7 @@
 - (void)setCallback:(tk::ScreenCapture::FrameCallback)cb;
 @end
 
+API_AVAILABLE(macos(12.3))
 @implementation TKScreenStreamOutput
 
 - (void)setCallback:(tk::ScreenCapture::FrameCallback)cb
@@ -117,8 +119,7 @@
 namespace
 {
 
-API_AVAILABLE(macos(12.3))
-class ScreenCaptureMacOS : public tk::ScreenCapture
+class API_AVAILABLE(macos(12.3)) ScreenCaptureMacOS : public tk::ScreenCapture
 {
 public:
     ~ScreenCaptureMacOS() override { stop(); }
@@ -290,7 +291,136 @@ public:
         output_ = nil;
     }
 
+    bool capture_thumbnail(const std::string& source_id,
+                           std::vector<std::uint8_t>& out_rgba,
+                           std::uint32_t& out_w, std::uint32_t& out_h) override
+    {
+        if (@available(macOS 14.0, *))
+        {
+            return capture_thumbnail_impl_(source_id, out_rgba, out_w, out_h);
+        }
+        return false; // SCScreenshotManager requires macOS 14+; tile stays a placeholder.
+    }
+
 private:
+    // Split out of capture_thumbnail() so the @available-gated body can use
+    // SCScreenshotManager without the whole class needing a 14.0 availability
+    // annotation (the class itself is only marked available(macos(12.3))).
+    //
+    // Two sequential semaphore waits — NOT nested — because ScreenCaptureKit
+    // delivers both getShareableContent and captureImage completions on the
+    // same private serial queue. Blocking inside the first completion handler
+    // while waiting for the second one deadlocks that queue; the inner wait
+    // always times out and result_image stays nil.
+    API_AVAILABLE(macos(14.0))
+    bool capture_thumbnail_impl_(const std::string& sid,
+                                 std::vector<std::uint8_t>& out_rgba,
+                                 std::uint32_t& out_w, std::uint32_t& out_h)
+    {
+        // Step 1: resolve source_id → SCContentFilter (wait is outside the block).
+        __block SCContentFilter* filter = nil;
+        {
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            [SCShareableContent
+                getShareableContentWithCompletionHandler:^(SCShareableContent* content,
+                                                           NSError* err) {
+                    if (content && !err)
+                    {
+                        if (sid.rfind("window:", 0) == 0)
+                        {
+                            uint32_t wid = 0;
+                            try { wid = static_cast<uint32_t>(std::stoul(sid.substr(7))); }
+                            catch (...) {}
+                            for (SCWindow* w in content.windows)
+                            {
+                                if (w.windowID == wid)
+                                {
+                                    filter = [[SCContentFilter alloc]
+                                        initWithDesktopIndependentWindow:w];
+                                    break;
+                                }
+                            }
+                        }
+                        if (!filter && content.displays.count > 0)
+                        {
+                            SCDisplay* target = content.displays.firstObject;
+                            if (sid.rfind("display:", 0) == 0)
+                            {
+                                uint32_t did = 0;
+                                try { did = static_cast<uint32_t>(std::stoul(sid.substr(8))); }
+                                catch (...) {}
+                                for (SCDisplay* d in content.displays)
+                                {
+                                    if (d.displayID == did) { target = d; break; }
+                                }
+                            }
+                            filter = [[SCContentFilter alloc]
+                                initWithDisplay:target excludingWindows:@[]];
+                        }
+                    }
+                    dispatch_semaphore_signal(sem);
+                }];
+            dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
+        }
+
+        if (!filter)
+            return false;
+
+        // Step 2: one-shot screenshot. Semaphore wait is outside the block so
+        // SCScreenshotManager's completion can run freely on the SCKit queue.
+        __block CGImageRef result_image = nil;
+        {
+            SCStreamConfiguration* cfg = [[SCStreamConfiguration alloc] init];
+            cfg.showsCursor = NO;
+
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            [SCScreenshotManager
+                captureImageWithFilter:filter
+                          configuration:cfg
+                      completionHandler:^(CGImageRef image, NSError* shotErr) {
+                          if (image && !shotErr)
+                          {
+                              CGImageRetain(image);
+                              result_image = image;
+                          }
+                          dispatch_semaphore_signal(sem);
+                      }];
+            dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
+        }
+
+        if (!result_image)
+            return false;
+
+        const std::size_t w = CGImageGetWidth(result_image);
+        const std::size_t h = CGImageGetHeight(result_image);
+        if (w == 0 || h == 0)
+        {
+            CGImageRelease(result_image);
+            return false;
+        }
+
+        // Draw into a plain RGBA8888 bitmap context — create_image_rgba wants
+        // straight (non-premultiplied-BGRA) RGBA byte order.
+        out_rgba.assign(w * h * 4, 0);
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef ctx = CGBitmapContextCreate(
+            out_rgba.data(), w, h, 8, w * 4, cs,
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        CGColorSpaceRelease(cs);
+        if (!ctx)
+        {
+            CGImageRelease(result_image);
+            return false;
+        }
+        CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), result_image);
+        CGContextRelease(ctx);
+        CGImageRelease(result_image);
+
+        out_w = static_cast<std::uint32_t>(w);
+        out_h = static_cast<std::uint32_t>(h);
+        return true;
+    }
+
     bool                   running_  = false;
     SCStream*              stream_   = nil;
     TKScreenStreamOutput*  output_   = nil;

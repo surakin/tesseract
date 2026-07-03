@@ -2068,6 +2068,11 @@ protected:
     std::unique_ptr<CallSession>                call_session_;
     std::unique_ptr<tk::VideoCapture>           call_video_capture_;
     std::unique_ptr<tk::ScreenCapture>          screen_capture_;
+    // Background worker that fills in screen-picker tile thumbnails (see
+    // start_screen_share_()). Joined before starting a new one and in
+    // ~ShellBase() — it captures `this` (for post_to_ui_alive_), so it must
+    // not be allowed to outlive the object the way a detached thread could.
+    std::thread                                 screen_thumb_worker_;
     // Guarded by call_audio_mutex_: accessed by worker threads via
     // push_call_audio_bgnd_() and reset on the UI thread at call teardown.
     std::mutex                                  call_audio_mutex_;

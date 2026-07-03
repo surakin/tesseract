@@ -857,8 +857,12 @@ public:
 
     bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
                                    std::uint32_t w, std::uint32_t h,
-                                   Rect dst, bool flip_h = false) override
+                                   Rect dst, bool flip_h = false,
+                                   bool /*high_quality*/ = false) override
     {
+        // ctx_'s interpolation quality is fixed to kCGInterpolationHigh (cubic)
+        // at construction and applies to every CGContextDrawImage call, so
+        // there's no cheaper tier to opt out of here — high_quality is a no-op.
         if (!pixels || w == 0 || h == 0) return false;
         // pixels is premultiplied BGRA (layout: [B,G,R,A] per pixel, matching
         // CAIRO_FORMAT_ARGB32). CoreGraphics bitmap flags:

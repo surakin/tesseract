@@ -1242,7 +1242,8 @@ public:
 
     bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
                                    std::uint32_t w, std::uint32_t h,
-                                   Rect dst, bool flip_h = false) override
+                                   Rect dst, bool flip_h = false,
+                                   bool high_quality = false) override
     {
         if (!pixels || w == 0 || h == 0) return false;
         // pixels is already premultiplied BGRA. Create the D2D bitmap directly
@@ -1260,6 +1261,12 @@ public:
                                    w * 4, props, bitmap.GetAddressOf());
         if (FAILED(hr) || !bitmap) return false;
         const D2D1_RECT_F d = to_d2d(dst);
+        // HIGH_QUALITY_CUBIC is only available via the device-context (dc_)
+        // DrawBitmap overload; the legacy ID2D1RenderTarget (rt_) interpolation
+        // enum only has NEAREST_NEIGHBOR/LINEAR, so rt_ stays LINEAR either way.
+        const D2D1_INTERPOLATION_MODE dc_mode = high_quality
+            ? D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC
+            : D2D1_INTERPOLATION_MODE_LINEAR;
         if (flip_h)
         {
             // Save the current RT transform, apply a horizontal-flip matrix
@@ -1271,8 +1278,7 @@ public:
                 -1.0f, 1.0f, D2D1::Point2F(cx, 0.0f)) * old;
             if (dc_) dc_->SetTransform(flip); else rt_->SetTransform(flip);
             if (dc_)
-                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f,
-                                D2D1_INTERPOLATION_MODE_LINEAR);
+                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f, dc_mode);
             else
                 rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
                                 D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
@@ -1281,8 +1287,7 @@ public:
         else
         {
             if (dc_)
-                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f,
-                                D2D1_INTERPOLATION_MODE_LINEAR);
+                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f, dc_mode);
             else
                 rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
                                 D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);

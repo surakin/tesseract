@@ -296,12 +296,19 @@ void CallOverlayWidget::update_participants(
         }
         if (dname.empty()) dname = p.participant_id;
 
+        // Screen-share tiles carry their own media stream — the parent
+        // participant's camera/mic mute flags are unrelated and must not
+        // suppress rendering of arriving screen frames (ParticipantTile::paint
+        // gates on video_muted before drawing pending_bgra).
+        const bool audio_muted = !is_screen_tile && p.is_audio_muted;
+        const bool video_muted = !is_screen_tile && p.is_video_muted;
+
         ParticipantTile::State s;
         s.participant_id     = tile_id;
         s.user_id            = p.user_id;
         s.display_name       = dname;
-        s.audio_muted        = p.is_audio_muted;
-        s.video_muted        = p.is_video_muted;
+        s.audio_muted        = audio_muted;
+        s.video_muted        = video_muted;
         s.is_self            = (!local_user_id_.empty() && p.user_id == local_user_id_);
         s.pinned             = (pinned_participant_ == tile_id);
         s.is_screen_share_tile = is_screen_tile;
@@ -313,8 +320,8 @@ void CallOverlayWidget::update_participants(
         shadow.participant_id     = tile_id;
         shadow.user_id            = p.user_id;
         shadow.display_name       = dname;
-        shadow.audio_muted        = p.is_audio_muted;
-        shadow.video_muted        = p.is_video_muted;
+        shadow.audio_muted        = audio_muted;
+        shadow.video_muted        = video_muted;
         shadow.is_self            = s.is_self;
         shadow.pinned             = s.pinned;
         shadow.is_screen_share_tile = is_screen_tile;

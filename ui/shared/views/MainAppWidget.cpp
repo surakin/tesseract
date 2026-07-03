@@ -1116,7 +1116,7 @@ void MainAppWidget::unmount_call_overlay()
     notify_layout_changed_();
 }
 
-void MainAppWidget::mount_screen_picker(
+views::ScreenPickerWidget* MainAppWidget::mount_screen_picker(
     std::vector<tk::ScreenSource>    sources,
     std::function<void(std::string)> on_selected,
     std::function<void()>            on_cancelled)
@@ -1138,6 +1138,7 @@ void MainAppWidget::mount_screen_picker(
     };
 
     notify_layout_changed_();
+    return screen_picker_;
 }
 
 void MainAppWidget::unmount_screen_picker()

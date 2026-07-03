@@ -466,6 +466,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
     pkg_check_modules(TK_GST_QT REQUIRED IMPORTED_TARGET
         gstreamer-1.0
         gstreamer-app-1.0
+        gstreamer-video-1.0
         gio-2.0
     )
     target_link_libraries(tesseract_tk PUBLIC
@@ -494,6 +495,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
     pkg_check_modules(TK_GST REQUIRED IMPORTED_TARGET
         gstreamer-1.0
         gstreamer-app-1.0
+        gstreamer-video-1.0
         gio-2.0
     )
     target_link_libraries(tesseract_tk PUBLIC
