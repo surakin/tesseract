@@ -89,17 +89,32 @@ public:
 
     // Create + start an inline player for `info` (the former
     // start_inline_video). No-op when inactive, already playing, or at the cap.
-    // Kicks off the async byte fetch capturing this playlist's own liveness
-    // sentinel, then feeds the bytes to the player (paused when !autoplay).
+    //
+    // Two levels of reuse against the retired pool (see kRetiredPoolCap):
+    //  1. Exact event_id match (e.g. switching back to a room whose video was
+    //     already loaded): the retired player is still paused-not-stopped, so
+    //     it's reclaimed and resumed directly — no fetch, no play(), no
+    //     re-probe. This is the only path that actually avoids the cost:
+    //     profiling showed the hw decode session (e.g. a CUDA context on the
+    //     Qt6/FFmpeg backend) is torn down and rebuilt by play()/
+    //     setSourceDevice() itself, not by constructing/destroying the
+    //     player object — so replaying the same source through a reused
+    //     player pays the same cost as a brand new one.
+    //  2. No match: the oldest retired player (if any) is repurposed instead
+    //     of asking the factory for a fresh one, which at least avoids the
+    //     tk::VideoPlayer construction/destruction overhead. This still goes
+    //     through the normal fetch + play() path below.
     void ensure_playing(const VideoSourceInfo& info);
 
     // Drop the player for a single row (update_message event_id swap / row
-    // de-animation / remove_message).
-    void drop(const std::string& event_id) { players_.erase(event_id); }
+    // de-animation / remove_message). Retires it into the pool rather than
+    // destroying it outright — see retire_().
+    void drop(const std::string& event_id);
 
     // Drop every player (room switch — set_messages clears unconditionally
-    // before re-bootstrapping the tail rows).
-    void clear() { players_.clear(); }
+    // before re-bootstrapping the tail rows). Retires each into the pool
+    // rather than destroying it outright — see retire_().
+    void clear();
 
     // Current decoded frame for `event_id`, or nullptr when there is no live
     // player or it has not yet produced a frame. The Adapter draws the static
@@ -115,6 +130,30 @@ private:
     VideoPlayerFactory player_factory_;
     VideoFetchProvider fetch_provider_;
     std::function<void()> repaint_;
+
+    // At most this many paused players are kept warm across room switches /
+    // row drops instead of being destroyed. Small on purpose: this only
+    // needs to cover the handful of inline videos visible at once, not the
+    // full kMaxInlinePlayers concurrency cap.
+    static constexpr std::size_t kRetiredPoolCap = 4;
+
+    struct RetiredPlayer
+    {
+        std::string event_id;
+        std::unique_ptr<tk::VideoPlayer> player;
+    };
+
+    // Pause (NOT stop — stop() drops the loaded source, which is exactly the
+    // state a same-event_id revisit needs to still be there) `player` and
+    // stash it under `event_id`, evicting the oldest entry first if already
+    // at kRetiredPoolCap. Clears on_frame/on_progress/on_error first so a
+    // stale closure never fires against a player that no longer belongs to
+    // any row.
+    void retire_(const std::string& event_id,
+                 std::unique_ptr<tk::VideoPlayer> player);
+
+    // Oldest-first; see retire_().
+    std::vector<RetiredPlayer> retired_pool_;
 
     // Liveness sentinel. The async fetch result + the player's on_frame
     // callback capture a weak_ptr to this and bail if it has been cleared —
