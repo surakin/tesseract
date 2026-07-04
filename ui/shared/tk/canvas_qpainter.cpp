@@ -595,11 +595,14 @@ public:
         {
             return {0.f, 0.f, 1e9f, 1e9f};
         }
+        // An empty bounding rect here is NOT "no clip" — it means an active
+        // clip (e.g. a widget's own bounds intersected with a small
+        // animated-image damage rect elsewhere on screen) was reduced to
+        // nothing. Returning the full-coverage sentinel in that case used to
+        // make ListView::paint's row culling think every row was dirty,
+        // defeating partial repaints for every pane that doesn't contain the
+        // animated content.
         const QRectF r = p_.clipBoundingRect();
-        if (r.isEmpty())
-        {
-            return {0.f, 0.f, 1e9f, 1e9f};
-        }
         return {float(r.x()), float(r.y()), float(r.width()), float(r.height())};
     }
 

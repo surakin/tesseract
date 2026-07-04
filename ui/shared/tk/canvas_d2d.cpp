@@ -1431,6 +1431,7 @@ public:
     {
         rt_->PushAxisAlignedClip(to_d2d(r), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         clip_stack_.push_back(ClipKind::AxisAligned);
+        push_clip_bounds(r);
     }
 
     void push_clip_rounded_rect(Rect r, float radius) override
@@ -1444,6 +1445,7 @@ public:
             rt_->PushAxisAlignedClip(to_d2d(r),
                                      D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             clip_stack_.push_back(ClipKind::AxisAligned);
+            push_clip_bounds(r);
             return;
         }
         D2D1_LAYER_PARAMETERS lp =
@@ -1451,6 +1453,10 @@ public:
                                   D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         rt_->PushLayer(lp, nullptr);
         clip_stack_.push_back(ClipKind::Layer);
+        // The rounded rect's bounding box is the same axis-aligned `r` passed
+        // in — only the corners differ, not the extent — so the same
+        // running-intersection bookkeeping applies here too.
+        push_clip_bounds(r);
     }
 
     void pop_clip() override
@@ -1461,6 +1467,10 @@ public:
         }
         ClipKind k = clip_stack_.back();
         clip_stack_.pop_back();
+        if (!clip_bounds_stack_.empty())
+        {
+            clip_bounds_stack_.pop_back();
+        }
         if (k == ClipKind::AxisAligned)
         {
             rt_->PopAxisAlignedClip();
@@ -1469,6 +1479,20 @@ public:
         {
             rt_->PopLayer();
         }
+    }
+
+    // Bounding rect of the current accumulated clip, tracked manually since
+    // D2D (unlike Cairo/CoreGraphics) has no "query current clip bounds"
+    // call. An empty result here is a real, meaningful "nothing is visible"
+    // — ListView::paint relies on that to skip repainting rows outside a
+    // small animated-image damage rect.
+    Rect clip_rect() const override
+    {
+        if (clip_bounds_stack_.empty())
+        {
+            return {0.f, 0.f, 1e9f, 1e9f};
+        }
+        return clip_bounds_stack_.back();
     }
 
     float scale_factor() const override
@@ -1525,6 +1549,31 @@ private:
     // old render target.
     CubicEmojiTextRenderer::BitmapCache emoji_bitmap_cache_;
     std::vector<ClipKind> clip_stack_;
+    // Parallel to clip_stack_: the accumulated (intersected-with-parent)
+    // bounds at each nesting level, so clip_rect() can report the true
+    // current clip without D2D exposing a "get current clip bounds" query
+    // (unlike Cairo's cairo_clip_extents / CoreGraphics'
+    // CGContextGetClipBoundingBox).
+    std::vector<Rect> clip_bounds_stack_;
+
+    void push_clip_bounds(const Rect& r)
+    {
+        clip_bounds_stack_.push_back(
+            clip_bounds_stack_.empty()
+                ? r
+                : intersect_rect(clip_bounds_stack_.back(), r));
+    }
+
+    static Rect intersect_rect(const Rect& a, const Rect& b)
+    {
+        float x0 = std::max(a.x, b.x);
+        float y0 = std::max(a.y, b.y);
+        float x1 = std::min(a.x + a.w, b.x + b.w);
+        float y1 = std::min(a.y + a.h, b.y + b.h);
+        if (x1 < x0) x1 = x0;
+        if (y1 < y0) y1 = y0;
+        return {x0, y0, x1 - x0, y1 - y0};
+    }
 };
 
 // ─────────────────────────────────────────────────────────────────────────

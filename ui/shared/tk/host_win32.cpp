@@ -3690,6 +3690,22 @@ public:
         // Transparent surfaces (overlays) clear to fully transparent so DWM
         // composites the per-pixel alpha against the content behind the window.
         canvas.clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
+        // Scope the paint to the actual invalidated rect (e.g. the small
+        // region InvalidateRect'd by invalidate_anim_damage() for an
+        // animated-image tick) instead of always repainting the whole
+        // window. ListView::paint reads this back via canvas.clip_rect() to
+        // skip rows outside it entirely.
+        const bool has_dirty = !IsRectEmpty(&ps.rcPaint);
+        if (has_dirty)
+        {
+            canvas.push_clip_rect(
+                {phys_to_dip(static_cast<float>(ps.rcPaint.left)),
+                 phys_to_dip(static_cast<float>(ps.rcPaint.top)),
+                 phys_to_dip(static_cast<float>(ps.rcPaint.right -
+                                                ps.rcPaint.left)),
+                 phys_to_dip(static_cast<float>(ps.rcPaint.bottom -
+                                                ps.rcPaint.top))});
+        }
         if (root_)
         {
             pending_popup_ = nullptr;
@@ -3698,6 +3714,10 @@ public:
             root_->paint(ctx);
             popup_ = pending_popup_;
             root_->paint_overlay(ctx);
+        }
+        if (has_dirty)
+        {
+            canvas.pop_clip();
         }
         if (drag_active_)
         {

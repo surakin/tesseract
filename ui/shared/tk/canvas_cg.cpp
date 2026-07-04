@@ -1015,7 +1015,14 @@ public:
     Rect clip_rect() const override
     {
         const CGRect r = CGContextGetClipBoundingBox(ctx_);
-        if (CGRectIsEmpty(r) || CGRectIsInfinite(r))
+        // CGRectIsInfinite means no clip is set — the full-coverage sentinel
+        // is correct there. But an empty (zero-area) clip is a real,
+        // meaningful result: it means an active clip (e.g. this widget's own
+        // bounds intersected with a small animated-image damage rect
+        // elsewhere on screen) was reduced to nothing, and callers like
+        // ListView::paint rely on seeing that to skip repainting rows that
+        // aren't actually dirty. Treating it as full coverage defeats that.
+        if (CGRectIsInfinite(r))
         {
             return {0.f, 0.f, 1e9f, 1e9f};
         }
