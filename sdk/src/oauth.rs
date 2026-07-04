@@ -27,6 +27,7 @@ use matrix_sdk::{
         },
         UrlOrQuery,
     },
+    cross_process_lock::CrossProcessLockConfig,
     Client, ThreadingSupport,
 };
 use url::Url;
@@ -142,6 +143,13 @@ pub async fn begin(
         .handle_refresh_tokens()
         .user_agent(build_user_agent())
         .http_client(build_sdk_http_client())
+        // Tesseract enforces a single running instance per profile (see
+        // single-instance guard in the shell startup path), so there is no
+        // second OS process that could ever contend for this SQLite store.
+        // MultiProcess (the default) spawns a lease-renewal task that writes
+        // to the event-cache and crypto SQLite stores every 50ms for the
+        // entire session — pure idle CPU/battery cost with no payoff here.
+        .cross_process_store_config(CrossProcessLockConfig::SingleProcess)
         .with_encryption_settings(EncryptionSettings {
             backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
             // Bootstrap cross-signing automatically on first login so a fresh

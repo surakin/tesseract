@@ -5,6 +5,7 @@
 use anyhow::Context as _;
 use matrix_sdk::{
     authentication::oauth::{ClientId, OAuthSession, UserSession},
+    cross_process_lock::CrossProcessLockConfig,
     encryption::{BackupDownloadStrategy, EncryptionSettings},
     store::RoomLoadSettings,
     Client, ThreadingSupport,
@@ -129,6 +130,11 @@ impl ClientFfi {
                 .handle_refresh_tokens()
                 .user_agent(crate::oauth::build_user_agent())
                 .http_client(crate::oauth::build_sdk_http_client())
+                // See oauth.rs's builder for the rationale: Tesseract enforces
+                // a single running instance per profile, so the default
+                // MultiProcess lease-renewal loop (a SQLite write every 50ms,
+                // forever, per store) is pure idle overhead here.
+                .cross_process_store_config(CrossProcessLockConfig::SingleProcess)
                 .with_encryption_settings(EncryptionSettings {
                     backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
                     // Bootstrap cross-signing automatically (see oauth.rs for
