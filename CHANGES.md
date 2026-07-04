@@ -5,6 +5,142 @@ Tagged releases summarize all changes since the previous tag.
 
 ## v0.8.12 — Unreleased
 
+- perf(idle CPU): fixed the app burning CPU while idle with the window
+  hidden, traced via `perf`. matrix-sdk's default cross-process store lock
+  spawns a lease-renewal task that writes to the event-cache and crypto
+  SQLite stores every 50ms for the entire session, purely to guard against
+  a second OS process touching the same store — since Tesseract already
+  enforces a single running instance per profile, that guard was disabled
+  (`CrossProcessLockConfig::SingleProcess`).
+
+- perf(animated images): fixed a bug where an animated inline sticker/GIF
+  forced a full repaint of the *entire* visible UI (room list, header,
+  compose bar, every message row) on every ~16ms animation tick, instead of
+  just the animated region — confirmed via `perf` to cost roughly 50% of
+  CPU while otherwise idle with a sticker animating. Root cause was a
+  `Canvas::clip_rect()` bug on Qt6/macOS: an empty clip after intersection
+  (meaning "this pane doesn't overlap the current damage rect at all") was
+  being treated the same as "no clip set," so every pane sharing the
+  surface repainted and re-shaped text on every frame. Win32 needed the
+  same fix plus new plumbing (it had scoped `InvalidateRect` calls but
+  never wired the resulting dirty rect into the paint pass). GTK4 has no
+  partial-invalidation API for a single widget at all, so it needed a
+  different mechanism: each currently-animating, currently-visible image
+  now gets its own small overlay `GtkDrawingArea`, since GTK4's per-widget
+  render-node caching means invalidating one small widget doesn't force
+  its siblings to redraw (the same trick `GtkVideo` uses).
+
+- perf(inline video): switching back to a room with an inline/autoplay
+  video was paying to tear down and rebuild a hardware decode session
+  (e.g. a CUDA context on the Qt6/FFmpeg backend) every time, even when
+  it was the exact same video already seen before — the cost is tied to
+  `play()`/`setSourceDevice()` itself, not to constructing a fresh player
+  object. Revisiting the same video now resumes an already-loaded,
+  paused (not stopped) player directly, skipping the fetch/decode entirely.
+
+- fix(call): mute, video-mute, and screen-share state now survive
+  switching the call overlay between Docked, Floating, and Popout modes —
+  they were previously excluded from the state snapshot and silently
+  reset to off on every mode switch.
+
+- feat(location): clicking a location message's map now opens it on
+  openstreetmap.org, centred on the pin (a plain click is distinguished
+  from a pan drag via a no-movement threshold).
+
+- feat(screenshare): the screen-share picker now shows real per-source
+  thumbnails (captured off the UI thread) instead of placeholder tiles,
+  with a new `capture_thumbnail()` platform interface (DXGI Desktop
+  Duplication / one-shot `PrintWindow` on Windows, `SCScreenshotManager`
+  on macOS 14+). Fixed several Linux stability bugs found along the way:
+  a black-tile bug with three independent causes in the xdg-desktop-portal
+  + PipeWire pipeline (wrong node-lookup ID space, premature D-Bus session
+  teardown, a lost frame callback on restart), a UI freeze on stopping a
+  capture if the pipeline stalled mid-negotiation, and unclosed portal
+  sessions leaking past process lifetime. Also fixed Windows window
+  capture rendering solid black for GPU-composited apps (browsers,
+  Electron), a macOS thumbnail deadlock (two nested waits on the same
+  serial queue), and a participant's screen-share tile incorrectly
+  inheriting their camera/mic mute state.
+
+- fix(macos-x86_64): fixed a build error and two warnings specific to the
+  x86_64 release build (an invalid ObjC ivar initializer, a
+  misplaced-namespace function, and a `__bridge_transfer` leak on a
+  non-ARC target).
+
+- fix(room-list): avatar changes for a room or DM counterpart now update
+  the room list live — the fingerprint gating whether a fresh snapshot
+  reaches the UI didn't include the avatar URL fields, so an avatar-only
+  change looked identical to "nothing changed" and was silently dropped
+  until some unrelated change happened to perturb it.
+
+- fix(unread): state events (e.g. another member's avatar change) can no
+  longer produce a stray, permanently-stuck notification badge. matrix-sdk's
+  unread-message count excludes state events but its notification/mention
+  counts don't apply the same filter, so a room-wide "All Messages" push
+  rule matched the state event and bumped the count — and since state
+  events never advance the read-receipt target, that count never cleared.
+  Notification/highlight counts are now clamped to the real unread-message
+  count.
+
+- fix(linux-qt): messages arriving no longer steal window focus on
+  Wayland — `QApplication::alert()` flashes the taskbar on X11 but Qt's
+  Wayland backend can turn it into a real activate request, raising the
+  window even without user interaction. The D-Bus notification already
+  sent alongside it is the correct passive signal, so the `alert()` call
+  was dropped.
+
+- feat(room-settings): a wrench icon in the room-info panel opens a new
+  full-panel view for editing the room's avatar, display name, and topic,
+  with per-field power-level gating; nothing is sent until Accept, and
+  Cancel discards all staged edits.
+
+- fix(room-info): the room topic now updates immediately in both the
+  info panel and the header on save, instead of waiting for the SDK to
+  echo the state event back through sync (sometimes only after a
+  restart).
+
+- fix(ui): the close and edit-topic icon buttons in the room-info and
+  user-profile panels are now actually visible — `Variant::Icon` buttons
+  only paint their own hover/press background and rely on the caller to
+  draw the glyph, which neither panel was doing.
+
+- fix(selfie): `/selfie` is now a strict no-op (no overlay flash) when no
+  camera is present or macOS permission was previously denied, instead of
+  opening an overlay that could never show a frame. The countdown also no
+  longer starts until the first frame actually arrives, so an OS camera
+  permission dialog doesn't eat into it.
+
+- feat(timeline): an opt-in "Show room join/leave events" setting
+  (Settings → Appearance, default off) surfaces join/leave/kick/ban/invite/
+  knock state-event transitions in the timeline. Consecutive same-action
+  events collapse into one summary line with stacked avatars (e.g. "Alice,
+  Bob and 3 others joined the room"); clicking expands each into its own
+  line.
+
+- ci: added a manual per-platform installer build workflow, so a single
+  broken platform can be rebuilt from the Actions tab without re-running
+  the full 5-platform release matrix.
+
+- fix(scroll): fixed two related bugs letting a pagination-triggered
+  content change move what the user was actually looking at, instead of
+  only growing the scrollable range around it. Backward pagination
+  (scrolled to the top) no longer pushes current content out of view in
+  favor of newly-loaded history above it; forward pagination while
+  browsing history no longer yanks the view down to the bottom on every
+  page load (that auto-scroll is now correctly limited to a live message
+  arriving while already pinned to the tail).
+
+- feat(voice): a voice message that finishes playing on its own now
+  automatically starts the next voice message from the same sender in the
+  room, if any. Getting this right end-to-end surfaced three bugs: a
+  same-thread audio backend re-entering the progress callback during a
+  manual row switch (spuriously triggering auto-advance mid-switch); the
+  auto-advance target almost always being off-screen and cold on its first
+  play, which an existing on-screen-only retry guard blocked; and
+  natural-completion detection relying on a playback position reset that
+  Qt/AVAudioPlayer never actually do — each platform's audio backend now
+  reports end-of-media via its own native signal instead.
+
 - feat(calls): MatrixRTC voice and video calls (MSC4143) via LiveKit, behind
   `TESSERACT_ENABLE_CALLS`. `RtcSession` handles join/leave and audio/video
   muting; end-to-end encryption uses HKDF key derivation matching Element

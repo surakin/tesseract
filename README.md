@@ -43,7 +43,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Read receipts (public and private), typing indicators, fully-read markers
 - Day separators and new-message markers
 - Automatic decryption retry as keys arrive — no permanent "unable to decrypt" placeholders
-- MatrixRTC calls! (currently under a compile flag - run cmake with -DTESSERACT_ENABLE_CALLS=ON to enable)
+- MatrixRTC calls, including screen sharing! (currently under a compile flag - run cmake with -DTESSERACT_ENABLE_CALLS=ON to enable)
 
 ### Media
 
@@ -76,6 +76,8 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Room search (filter by name)
 - Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif, /selfie)
 - Room tags (favorite, low priority)
+- Room settings: edit name, topic, and avatar
+- Optional room join/leave event display in the timeline
 
 ### Security & privacy
 

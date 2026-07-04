@@ -1,6 +1,71 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-01** (v0.8.12-unreleased). 913 C++ + 306 Rust tests.
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-04** (v0.8.12-unreleased). 967 C++ + 314 Rust tests.
+
+> **Idle-CPU and animation-repaint performance fixes (2026-07-04, v0.8.12-unreleased).**
+> Found via `perf` while profiling why the app used measurable CPU at rest.
+> Disabled matrix-sdk's default cross-process store-lock lease renewal
+> (writes to the event-cache/crypto SQLite stores every 50ms for the whole
+> session, meant to guard against a second OS process sharing the store —
+> unnecessary since Tesseract already enforces single-instance-per-profile).
+> Fixed a bug where an animated inline sticker/GIF forced a full repaint of
+> the entire visible UI on every ~16ms animation tick instead of just the
+> animated region (confirmed costing ~50% of CPU while otherwise idle with
+> a sticker on screen): a `Canvas::clip_rect()` bug on Qt6/macOS/Win32, and
+> a per-image overlay-widget mechanism built for GTK4, which has no
+> partial-invalidation API for a single widget at all. Also fixed inline
+> video re-establishing a hardware decode session (e.g. a CUDA context)
+> every time a room with an already-seen video was revisited, instead of
+> resuming the existing paused player.
+
+<!-- -->
+
+> **Voice message auto-advance (2026-07-01, v0.8.12-unreleased).**
+> A voice message that finishes playing on its own now automatically
+> starts the next voice message from the same sender in the room, if any.
+
+<!-- -->
+
+> **Scroll-position stability during pagination (2026-07-01, v0.8.12-unreleased).**
+> Loading more history — backward while scrolled to the top, or forward
+> while browsing old messages — no longer shifts what the user is actually
+> looking at; only the scrollable range grows. The auto-scroll-to-bottom
+> behavior is now correctly limited to a live message arriving while
+> already pinned to the tail.
+
+<!-- -->
+
+> **Room join/leave timeline events (2026-07-02, v0.8.12-unreleased).**
+> An opt-in setting (Settings → Appearance, default off) surfaces
+> join/leave/kick/ban/invite/knock membership transitions in the message
+> timeline. Consecutive same-action events collapse into one summary line
+> with stacked avatars (e.g. "Alice, Bob and 3 others joined the room"),
+> expandable into individual lines on click.
+
+<!-- -->
+
+> **Room settings — edit name/topic/avatar (2026-07-02, v0.8.12-unreleased).**
+> A wrench icon in the room-info panel opens a full-panel view for staging
+> edits to the room's avatar, display name, and topic, gated per-field by
+> power level. Nothing is sent until Accept; Cancel discards everything.
+
+<!-- -->
+
+> **Screen-share picker thumbnails + Linux stability (2026-07-03, v0.8.12-unreleased).**
+> The screen-share picker now shows real per-source thumbnails instead of
+> placeholder tiles. Along the way, fixed a black-tile bug on Linux
+> (xdg-desktop-portal + PipeWire), a UI freeze on stopping a stalled
+> capture, unclosed portal sessions leaking past process lifetime, solid-
+> black Windows capture of GPU-composited apps, and a macOS thumbnail
+> deadlock.
+
+<!-- -->
+
+> **Location map click-through (2026-07-04, v0.8.12-unreleased).**
+> Clicking (not panning) a location message's embedded map opens it on
+> openstreetmap.org, centred on the pin.
+
+<!-- -->
 
 > **Media caption linkify (2026-07-01, v0.8.12-unreleased).**
 > Captions on image/file/video messages now go through the same rich-text

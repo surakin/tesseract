@@ -38,6 +38,8 @@ version) are noted where relevant.
 - Slash commands (`/me`, `/shrug`, `/slap`, `/spoiler`, `/myroomnick`, `/myroomavatar`, `/join`, `/leave`, `/invite`, `/gif`; extensible)
 - Media captions (MSC2530); emoji-only captions render at 2× body size; bare URLs in a caption are linkified the same as in a regular message body
 - Inline Unicode emoji in message bodies rendered at ~125% of body font size
+- Location messages render an embedded pannable/zoomable map; clicking (not panning) opens the location on openstreetmap.org
+- An opt-in setting (default off) surfaces room join/leave/kick/ban/invite/knock events in the timeline, with consecutive same-action events collapsed into one expandable summary line
 
 ## Media
 
@@ -47,7 +49,7 @@ version) are noted where relevant.
 - Animated GIF / WebP / APNG in the message timeline
 - Animated stickers, including stickers sent via bridges
 - Zoomable / pannable image viewer
-- Inline audio player; voice messages render waveforms (MSC3245)
+- Inline audio player; voice messages render waveforms (MSC3245); a voice message auto-advances to the next one from the same sender in the room when it finishes playing on its own
 - Thumbnail-first loading in the timeline, with an optional automatic full-media fetch setting
 - Media preview gating (MSC4278): Off / Private / On modes with BlurHash placeholders for suppressed media; click-to-reveal; user's own uploads are always shown
 - Video thumbnails generated via native platform APIs (AVFoundation / Media Foundation / GStreamer)
@@ -75,6 +77,7 @@ version) are noted where relevant.
 - Last-message previews, including image and sticker previews
 - Room search (filters by room display name)
 - Direct messages (create / open; reuses existing DM if present)
+- Room settings: edit the room's avatar, display name, and topic (per-field power-level gated); staged edits aren't sent until confirmed
 
 ## Notifications
 
@@ -91,6 +94,8 @@ version) are noted where relevant.
 - End-to-end encryption (HKDF key derivation matching Element Call's wire format); echo cancellation via each platform's native audio device manager
 - Docked, expanded, floating (draggable, position persisted), and popout (dedicated OS window) call overlay modes
 - Mute/video/hang-up controls, call duration timer, pinned-participant grid layout
+- Screen sharing, with real per-source thumbnails in the picker (native platform capture: DXGI Desktop Duplication / PrintWindow on Windows, ScreenCaptureKit on macOS, xdg-desktop-portal + PipeWire on Linux)
+- Mute, video-mute, and screen-share state persist across Docked/Floating/Popout overlay mode switches
 - MSC4075 ring notifications for incoming calls
 - Call button and incoming-call banner hidden when the server doesn't advertise LiveKit transport support, or for bridged rooms
 
@@ -137,7 +142,7 @@ version) are noted where relevant.
 
 ## Not yet implemented
 
-- **Room administration**: creating rooms, editing room settings (name, topic, avatar, history visibility, join rules), inviting users, and moderation actions (kick / ban / power levels)
+- **Room administration**: creating rooms, editing history visibility / join rules, inviting users, and moderation actions (kick / ban / power levels) — editing name/topic/avatar is implemented
 - **Room directory browsing**
 - **Global default notification level** (per-room settings work; global default planned)
 - **Cross-signing setup for brand-new accounts** {confirm: existing accounts with cross-signing already initialized work fine}
