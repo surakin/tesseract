@@ -8721,7 +8721,7 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
 
     // Snapshot mutable overlay state into the persistent struct before teardown.
     if (auto* ov = active_call_overlay_())
-        call_overlay_state_.elapsed_seconds = ov->elapsed_seconds();
+        call_overlay_state_ = ov->snapshot();
 
     // Tear down whatever is currently active.
     if (call_window_)
@@ -8820,14 +8820,10 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
     // Apply all persistent overlay state to the newly mounted widget.
     if (auto* ov = active_call_overlay_())
     {
-        // Restore timer, video-button visibility, and local-user identity from
-        // the call_overlay_state_ struct — the single source of truth for state
-        // that must survive docked ↔ floating ↔ popout mode switches.
-        ov->start_timer(call_overlay_state_.elapsed_seconds);
-        ov->set_show_video_button(call_overlay_state_.show_video_button);
-        // set_local_user_id must precede update_participants() so is_self is
-        // applied when tiles are created/refreshed.
-        ov->set_local_user_id(call_overlay_state_.local_user_id);
+        // Restore all mutable overlay state from the persistent struct.
+        // restore() sets local_user_id first so is_self is applied when
+        // update_participants() creates/refreshes tiles below.
+        ov->restore(call_overlay_state_);
 
         ov->on_hang_up = [this] { end_call(); };
         ov->on_toggle_audio = [this](bool muted)

@@ -2057,12 +2057,7 @@ protected:
     // Overlay configuration that must survive mode switches (docked ↔ floating ↔
     // popout). Initialised at call start; each remount reads from this struct
     // rather than re-deriving state from scattered sources.
-    struct CallOverlayState
-    {
-        double      elapsed_seconds   = 0.0;    // wall-clock double for sub-second precision
-        bool        show_video_button = true;   // false for audio-only calls
-        std::string local_user_id;
-    };
+    using CallOverlayState = views::CallOverlayWidget::OverlayState;
 
 protected:
     std::unique_ptr<CallSession>                call_session_;

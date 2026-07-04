@@ -48,6 +48,21 @@ public:
         Popout,
     };
 
+    // All mutable UI state that must survive a mode switch. Pass to snapshot()
+    // before teardown and restore() after the new widget is mounted.
+    struct OverlayState
+    {
+        double      elapsed_seconds   = 0.0;
+        bool        show_video_button = true;
+        bool        audio_muted       = false;
+        bool        video_muted       = false;
+        bool        screen_sharing    = false;
+        std::string local_user_id;
+    };
+
+    OverlayState snapshot() const;
+    void         restore(const OverlayState& s);
+
     CallOverlayWidget();
     ~CallOverlayWidget() override;
 

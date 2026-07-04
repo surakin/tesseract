@@ -146,6 +146,22 @@ double CallOverlayWidget::elapsed_seconds() const
     return elapsed_offset_ + dur.count();
 }
 
+CallOverlayWidget::OverlayState CallOverlayWidget::snapshot() const
+{
+    return {elapsed_seconds(), show_video_btn_, audio_muted_,
+            video_muted_, screen_sharing_, local_user_id_};
+}
+
+void CallOverlayWidget::restore(const OverlayState& s)
+{
+    set_local_user_id(s.local_user_id);
+    set_show_video_button(s.show_video_button);
+    set_audio_muted(s.audio_muted);
+    set_video_muted(s.video_muted);
+    set_screen_sharing(s.screen_sharing);
+    start_timer(s.elapsed_seconds);
+}
+
 void CallOverlayWidget::start_timer(double initial_seconds)
 {
     // Cancel any existing chain before starting a new one. Without this,
