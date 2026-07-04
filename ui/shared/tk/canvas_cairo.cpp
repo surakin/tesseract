@@ -595,6 +595,19 @@ public:
         cairo_restore(cr_);
     }
 
+    // Bounding rect of the current accumulated clip. Cairo tracks this
+    // natively (unlike D2D, which needs a hand-rolled stack — see
+    // canvas_d2d.cpp), so this is a direct query. Used by note_image() in
+    // host_gtk.cpp to clip an animated image's reported rect against the
+    // viewport before deciding whether/where to place its overlay widget.
+    Rect clip_rect() const override
+    {
+        double x1, y1, x2, y2;
+        cairo_clip_extents(cr_, &x1, &y1, &x2, &y2);
+        return {static_cast<float>(x1), static_cast<float>(y1),
+                static_cast<float>(x2 - x1), static_cast<float>(y2 - y1)};
+    }
+
     float scale_factor() const override
     {
         cairo_surface_t* target = cairo_get_target(cr_);

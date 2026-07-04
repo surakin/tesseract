@@ -1,7 +1,6 @@
 #include "host_gtk.h"
 #include "anim_image_cache.h"
 #include "canvas_cairo.h"
-#include "controls.h"
 #include "device_listing.h"
 #include "gst_hw_probe.h"
 
@@ -301,6 +300,11 @@ public:
         // "compose-area" triggers the transparent-background rule in
         // theme_css_provider_ so the canvas-painted card fill shows through.
         gtk_widget_add_css_class(view_, "compose-area");
+        // Unique class for set_font_role's per-instance font-size provider —
+        // see font_css_class_.
+        font_css_class_ = "tesseract-native-textarea-" +
+                          std::to_string(reinterpret_cast<std::uintptr_t>(this));
+        gtk_widget_add_css_class(view_, font_css_class_.c_str());
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll_), view_);
         gtk_widget_set_halign(scroll_, GTK_ALIGN_START);
         gtk_widget_set_valign(scroll_, GTK_ALIGN_START);
@@ -368,7 +372,16 @@ public:
             gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_),
                                        placeholder_label_);
         }
-        g_clear_object(&font_css_);
+        if (font_css_)
+        {
+            if (GdkDisplay* dpy = gdk_display_get_default())
+            {
+                gtk_style_context_remove_provider_for_display(
+                    dpy, GTK_STYLE_PROVIDER(font_css_));
+            }
+            g_object_unref(font_css_);
+            font_css_ = nullptr;
+        }
         if (pill_css_)
         {
             if (GdkDisplay* dpy = gdk_display_get_default())
@@ -731,13 +744,24 @@ public:
             }
         }
         const int pt = font_role_pt(role, base_pt);
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "textview { font-size: %dpt; }", pt);
-        if (!font_css_) font_css_ = gtk_css_provider_new();
+        // Scoped by font_css_class_ (unique per instance) rather than a bare
+        // "textview" selector, since gtk_widget_get_style_context() /
+        // gtk_style_context_add_provider() — which used to give this
+        // per-widget scoping for free — are deprecated in GTK4.
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), ".%s { font-size: %dpt; }",
+                      font_css_class_.c_str(), pt);
+        if (!font_css_)
+        {
+            font_css_ = gtk_css_provider_new();
+            if (GdkDisplay* dpy = gdk_display_get_default())
+            {
+                gtk_style_context_add_provider_for_display(
+                    dpy, GTK_STYLE_PROVIDER(font_css_),
+                    GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            }
+        }
         gtk_css_provider_load_from_string(font_css_, buf);
-        gtk_style_context_add_provider(gtk_widget_get_style_context(view_),
-                                       GTK_STYLE_PROVIDER(font_css_),
-                                       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
 private:
@@ -969,6 +993,10 @@ private:
     gulong changed_id_ = 0;
     gulong paste_id_ = 0;
     GtkCssProvider* font_css_ = nullptr;
+    // Unique per-instance CSS class so font_css_'s display-wide provider (see
+    // set_font_role) only ever matches this one text view, not every
+    // textview on the display.
+    std::string font_css_class_;
     GtkCssProvider* pill_css_ = nullptr;
     std::string mention_bg_hex_ = "#2E3B5E";
     std::string mention_fg_hex_ = "#A8C5FF";
@@ -987,6 +1015,21 @@ private:
 // ─────────────────────────────────────────────────────────────────────────
 //  Host — owns the widget tree, paints into the GtkDrawingArea
 // ─────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+// Bounding-box intersection; empty (w/h <= 0) when the rects don't overlap.
+Rect intersect_rect(const Rect& a, const Rect& b)
+{
+    float x0 = std::max(a.x, b.x);
+    float y0 = std::max(a.y, b.y);
+    float x1 = std::min(a.right(), b.right());
+    float y1 = std::min(a.bottom(), b.bottom());
+    if (x1 < x0) x1 = x0;
+    if (y1 < y0) y1 = y0;
+    return {x0, y0, x1 - x0, y1 - y0};
+}
+} // namespace
 
 class Host : public tk::Host, public tk::AnimDamageSink
 {
@@ -1011,19 +1054,69 @@ public:
         anim_cache_ = cache;
     }
 
-    // AnimDamageSink: record animated-image rects drawn during this paint.
-    void note_image(const std::string& key, tk::Rect /*world*/) override
+    // AnimDamageSink: record the on-screen rect of every animated image drawn
+    // this paint, clipped against the current canvas clip (so a row that's
+    // half-scrolled off only reports its visible slice). sync_anim_overlays_()
+    // (called at the end of on_draw()) turns this into overlay widget
+    // creates/updates/destroys — GTK4 has no partial-rect invalidation for a
+    // single widget, but invalidating a *different*, small widget doesn't
+    // touch the rest of the tree's cached render nodes, which is what this is
+    // built on.
+    void note_image(const std::string& key, Rect world) override
     {
-        if (anim_cache_ && anim_cache_->has(key))
-            has_anim_damage_ = true;
+        if (!anim_cache_ || !anim_cache_->has(key) || !current_canvas_)
+        {
+            return;
+        }
+        Rect visible = intersect_rect(world, current_canvas_->clip_rect());
+        if (visible.w <= 0.f || visible.h <= 0.f)
+        {
+            return;
+        }
+        painted_this_pass_[key] = {world, visible};
     }
 
-    // Trigger a repaint if any animated image was drawn during the last frame.
-    // GTK4 has no partial-rect invalidation API, so this queues a full redraw.
+    // Queue a redraw of just the live per-image overlay widgets — never
+    // drawing_area_ itself — for the next animation tick.
     void invalidate_anim_damage()
     {
-        if (has_anim_damage_ && drawing_area_)
-            gtk_widget_queue_draw(drawing_area_);
+        for (auto& [key, ov] : live_overlays_)
+        {
+            if (ov.widget)
+            {
+                gtk_widget_queue_draw(ov.widget);
+            }
+        }
+    }
+
+    // Public so the free-function draw-func trampoline (anim_overlay_draw_cb,
+    // defined after this class) can call it — same reason on_draw() is public.
+    void draw_anim_overlay_(cairo_t* cr, const std::string& key)
+    {
+        auto it = live_overlays_.find(key);
+        if (it == live_overlays_.end() || !anim_cache_)
+        {
+            return;
+        }
+        const tk::Image* frame = anim_cache_->current_frame(key);
+        if (!frame)
+        {
+            return;
+        }
+        auto canvas = tk::cairo_pango::make_canvas(cr);
+        const AnimOverlay& ov = it->second;
+        // Translate so the image's true origin lands correctly within this
+        // small widget's own (0,0,w,h) — if the row is scrolled half off, part
+        // of local_full sits outside the widget bounds and cairo's implicit
+        // surface clip cuts it off with a straight edge, same as the main
+        // canvas's own viewport clip does for a fully-visible row. The rounded
+        // corners only ever land where they're a real image edge.
+        const float ox = ov.visible.x - ov.world.x;
+        const float oy = ov.visible.y - ov.world.y;
+        Rect local_full{-ox, -oy, ov.world.w, ov.world.h};
+        canvas->push_clip_rounded_rect(local_full, 8.0f);
+        canvas->draw_image(*frame, local_full);
+        canvas->pop_clip();
     }
 
     bool pointer_ctrl_held() const override
@@ -1435,11 +1528,14 @@ public:
         auto canvas = tk::cairo_pango::make_canvas(cr);
         canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         pending_popup_ = nullptr;
-        has_anim_damage_ = false;
+        painted_this_pass_.clear();
+        current_canvas_ = canvas.get();
         PaintCtx ctx{*canvas, *factory_, *theme_, this, this};
         root_->paint(ctx);
         popup_ = pending_popup_;
         root_->paint_overlay(ctx);
+        current_canvas_ = nullptr;
+        sync_anim_overlays_();
 
         if (drag_active_ && w > 0 && h > 0)
         {
@@ -1581,6 +1677,16 @@ public:
 
     void detach_widgets()
     {
+        // Tear down every live overlay first — overlay_ is what
+        // gtk_overlay_remove_overlay needs, and it's about to go null.
+        for (auto& [key, ov] : live_overlays_)
+        {
+            if (overlay_ && ov.widget)
+            {
+                gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_), ov.widget);
+            }
+        }
+        live_overlays_.clear();
         overlay_ = nullptr;
         drawing_area_ = nullptr;
     }
@@ -1589,6 +1695,22 @@ protected:
     Widget* input_root_() const override { return root_.get(); }
 
 private:
+    // Diff painted_this_pass_ (freshly rebuilt this on_draw()) against
+    // live_overlays_ and create/reposition/destroy overlay widgets to match.
+    // Defined after the anim_overlay_draw_cb/anim_overlay_draw_ctx_free
+    // trampolines below, which it references.
+    void sync_anim_overlays_();
+
+    // Shared by both the create and reposition paths in sync_anim_overlays_.
+    void position_anim_overlay_(GtkWidget* w, const Rect& visible)
+    {
+        gtk_widget_set_margin_start(w,
+                                    static_cast<int>(std::floor(visible.x)));
+        gtk_widget_set_margin_top(w, static_cast<int>(std::floor(visible.y)));
+        gtk_widget_set_size_request(w, static_cast<int>(std::ceil(visible.w)),
+                                    static_cast<int>(std::ceil(visible.h)));
+    }
+
     GtkWidget* overlay_;
     GtkWidget* drawing_area_;
     const Theme* theme_;
@@ -1603,7 +1725,32 @@ private:
     FileDropErrorHandler on_file_drop_error_;
     bool drag_active_ = false;
     const tk::AnimImageCache* anim_cache_ = nullptr;
-    bool has_anim_damage_ = false;
+
+    // Valid only during on_draw()'s call into root_->paint(ctx); note_image()
+    // reads it to clip an animated image's reported rect against the current
+    // viewport before deciding whether/where to place its overlay.
+    Canvas* current_canvas_ = nullptr;
+
+    struct PaintedAnim
+    {
+        Rect world;   // full image rect as reported by note_image
+        Rect visible; // world clipped against the viewport this pass
+    };
+    // Scratch, rebuilt every on_draw(); consumed and left populated by
+    // sync_anim_overlays_() (overwritten wholesale next on_draw(), so it
+    // doesn't need clearing there).
+    std::unordered_map<std::string, PaintedAnim> painted_this_pass_;
+
+    struct AnimOverlay
+    {
+        GtkWidget* widget = nullptr;
+        Rect world;
+        Rect visible;
+    };
+    // Persists across paints — this is the whole point. One entry per
+    // currently-animating, currently-visible image; bounded in practice by
+    // how many such images can be on screen at once, not by list length.
+    std::unordered_map<std::string, AnimOverlay> live_overlays_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1618,6 +1765,48 @@ namespace
 void draw_cb(GtkDrawingArea*, cairo_t* cr, int w, int h, gpointer p)
 {
     static_cast<Host*>(p)->on_draw(cr, w, h);
+}
+
+// Per-overlay draw-func context. Heap-allocated in
+// Host::sync_anim_overlays_(), freed via anim_overlay_draw_ctx_free when the
+// overlay widget itself is destroyed (gtk_drawing_area_set_draw_func's
+// GDestroyNotify), so its lifetime is tied to the widget's, not the Host's.
+struct AnimOverlayDrawCtx
+{
+    Host* host;
+    std::string key;
+};
+
+void anim_overlay_draw_cb(GtkDrawingArea*, cairo_t* cr, int /*w*/, int /*h*/,
+                          gpointer p)
+{
+    auto* ctx = static_cast<AnimOverlayDrawCtx*>(p);
+    ctx->host->draw_anim_overlay_(cr, ctx->key);
+}
+
+void anim_overlay_draw_ctx_free(gpointer p)
+{
+    delete static_cast<AnimOverlayDrawCtx*>(p);
+}
+
+// Registered once for the whole display, mirroring the compact-entry CSS
+// pattern above (GtkNativeTextField::set_compact) — a plain GtkDrawingArea
+// shouldn't have a themed background painted behind its transparent content.
+void ensure_anim_overlay_css()
+{
+    static bool installed = false;
+    if (installed)
+    {
+        return;
+    }
+    installed = true;
+    GtkCssProvider* css = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(
+        css, ".tesseract-anim-overlay { background: none; }");
+    gtk_style_context_add_provider_for_display(
+        gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css);
 }
 
 void resize_cb(GtkDrawingArea*, int w, int h, gpointer p)
@@ -1805,6 +1994,62 @@ void drop_leave_cb(GtkDropTarget* /*target*/, gpointer p)
 }
 
 } // namespace
+
+void Host::sync_anim_overlays_()
+{
+    // Destroy overlays for keys that weren't (re-)painted this pass — the row
+    // scrolled off, the image stopped animating, or the row was removed.
+    for (auto it = live_overlays_.begin(); it != live_overlays_.end();)
+    {
+        if (painted_this_pass_.count(it->first) == 0)
+        {
+            if (overlay_ && it->second.widget)
+            {
+                gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_),
+                                           it->second.widget);
+            }
+            it = live_overlays_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    if (!overlay_)
+    {
+        return;
+    }
+
+    // Create or reposition/resize an overlay for every key painted this pass.
+    for (auto& [key, painted] : painted_this_pass_)
+    {
+        auto it = live_overlays_.find(key);
+        if (it == live_overlays_.end())
+        {
+            ensure_anim_overlay_css();
+            GtkWidget* w = gtk_drawing_area_new();
+            gtk_widget_set_can_target(w, FALSE); // must not steal clicks/hover
+            gtk_widget_set_can_focus(w, FALSE);  // from the row underneath
+            gtk_widget_set_halign(w, GTK_ALIGN_START);
+            gtk_widget_set_valign(w, GTK_ALIGN_START);
+            gtk_widget_add_css_class(w, "tesseract-anim-overlay");
+            auto* dctx = new AnimOverlayDrawCtx{this, key};
+            gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(w),
+                                           &anim_overlay_draw_cb, dctx,
+                                           &anim_overlay_draw_ctx_free);
+            gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), w);
+            position_anim_overlay_(w, painted.visible);
+            live_overlays_[key] = {w, painted.world, painted.visible};
+        }
+        else
+        {
+            position_anim_overlay_(it->second.widget, painted.visible);
+            it->second.world = painted.world;
+            it->second.visible = painted.visible;
+        }
+    }
+}
 
 Surface::Surface(const Theme& theme, bool transparent)
 {

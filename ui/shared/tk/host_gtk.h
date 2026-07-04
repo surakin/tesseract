@@ -56,8 +56,12 @@ public:
     // Animated-image partial repaints. Point the surface at the shell's
     // animation cache once at setup; then call update_anim_regions() from the
     // animation timer to invalidate only the rects where animated images were
-    // drawn on the last paint. (GTK4 always repaints the whole widget, but the
-    // damage sink still lets GifPopup track which cells are animated.)
+    // drawn on the last paint. GTK4 has no partial-invalidation API for a
+    // single widget, but each currently-animating, currently-visible image
+    // gets its own small overlay GtkDrawingArea (see host_gtk.cpp's
+    // live_overlays_/sync_anim_overlays_), so invalidating just those doesn't
+    // force the rest of the tree to redraw. Every Surface that draws
+    // animated content needs this called once — not just GifPopup.
     void set_anim_cache(const AnimImageCache* cache);
     void update_anim_regions();
 

@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "tk/canvas.h"
@@ -84,6 +85,64 @@ TEST_CASE("Canvas::push_clip_rounded_rect masks corners", "[tk][canvas]")
 
     CHECK(nearly_white(s->read_pixel(0, 0))); // outside rounded corner
     CHECK(nearly_black(s->read_pixel(32, 32)));
+}
+
+TEST_CASE("Canvas::clip_rect reports full coverage with no clip pushed",
+          "[tk][canvas]")
+{
+    auto s = TestSurface::create(64, 64);
+    auto& c = s->canvas();
+    Rect r = c.clip_rect();
+    // The exact sentinel value is backend-specific (some report the true
+    // surface bounds, others a large "unbounded" placeholder), but it must
+    // never be empty/zero-area — that's reserved for "nothing is visible".
+    CHECK(r.w > 0.0f);
+    CHECK(r.h > 0.0f);
+}
+
+TEST_CASE("Canvas::clip_rect reflects a single pushed clip", "[tk][canvas]")
+{
+    auto s = TestSurface::create(64, 64);
+    auto& c = s->canvas();
+    c.push_clip_rect({20, 20, 10, 10});
+    Rect r = c.clip_rect();
+    c.pop_clip();
+
+    CHECK(r.x == Catch::Approx(20.0f).margin(0.5));
+    CHECK(r.y == Catch::Approx(20.0f).margin(0.5));
+    CHECK(r.w == Catch::Approx(10.0f).margin(0.5));
+    CHECK(r.h == Catch::Approx(10.0f).margin(0.5));
+}
+
+TEST_CASE("Canvas::clip_rect intersects nested pushes", "[tk][canvas]")
+{
+    auto s = TestSurface::create(64, 64);
+    auto& c = s->canvas();
+    c.push_clip_rect({10, 10, 30, 30}); // [10,40) x [10,40)
+    c.push_clip_rect({20, 20, 30, 30}); // [20,50) x [20,50)
+    Rect r = c.clip_rect();             // intersection: [20,40) x [20,40)
+    c.pop_clip();
+    c.pop_clip();
+
+    CHECK(r.x == Catch::Approx(20.0f).margin(0.5));
+    CHECK(r.y == Catch::Approx(20.0f).margin(0.5));
+    CHECK(r.w == Catch::Approx(20.0f).margin(0.5));
+    CHECK(r.h == Catch::Approx(20.0f).margin(0.5));
+}
+
+TEST_CASE("Canvas::clip_rect on a disjoint nested push is empty",
+          "[tk][canvas]")
+{
+    auto s = TestSurface::create(64, 64);
+    auto& c = s->canvas();
+    c.push_clip_rect({0, 0, 10, 10});
+    c.push_clip_rect({20, 20, 10, 10}); // no overlap with the outer clip
+    Rect r = c.clip_rect();
+    c.pop_clip();
+    c.pop_clip();
+
+    CHECK(r.w <= 0.5f);
+    CHECK(r.h <= 0.5f);
 }
 
 TEST_CASE("CanvasFactory::build_text returns a measurable layout",

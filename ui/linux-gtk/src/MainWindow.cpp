@@ -28,7 +28,6 @@
 #include <tesseract/settings.h>
 
 #include <algorithm>
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <cstdint>
@@ -2594,6 +2593,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             });
 
         main_app_surface_->set_root(std::move(main_app_owner));
+        // Wire the animation cache so note_image()/current_frame() work for
+        // the main surface's own overlay-based anim repaints (see
+        // repaint_anim_frame_ / host_gtk.cpp's live_overlays_). Previously
+        // only the GIF popup surface needed this, since the main surface's
+        // anim ticks used to go through a blind full request_repaint()
+        // instead of the AnimDamageSink path.
+        main_app_surface_->set_anim_cache(&account_manager_.anim_cache());
     }
 
     // Right-click on the chat area: hit-test sticker rects.
@@ -4016,14 +4022,14 @@ void MainWindow::repaint_inflight_spinner_()
 void MainWindow::repaint_anim_frame_()
 {
     // GTK4 has no partial-widget invalidation (gtk_widget_queue_draw_area was
-    // removed; the render-node model only supports whole-widget queue_draw),
-    // so we can't scope the repaint to the animated rects the way Qt6/macOS
-    // do. We still avoid the per-frame measure + arrange pass: a plain repaint
-    // is enough since frame swaps never change layout. Pickers keep their
-    // existing invalidation.
+    // removed; the render-node model only supports whole-widget queue_draw)
+    // — but that invalidation is scoped to a single widget, and each
+    // currently-animating image now gets its own small overlay GtkDrawingArea
+    // (see host_gtk.cpp's live_overlays_/sync_anim_overlays_). update_anim_regions()
+    // queues a redraw of just those overlays, not the whole surface.
     if (main_app_surface_)
     {
-        main_app_surface_->host().request_repaint();
+        main_app_surface_->update_anim_regions();
     }
     if (emoji_picker_shared_)
     {
@@ -5657,7 +5663,19 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
         }
     }
 
-    if (!self->room_view_ || !self->sticker_ctx_menu_)
+    if (!self->room_view_)
+    {
+        return;
+    }
+    // Lazy-built, like the sibling copy-selection menu (on_show_copy_menu /
+    // build_copy_context_menu_ above) — build_sticker_context_menu() was
+    // never actually being called anywhere, so this had always fallen
+    // through here and no-op'd on every right-click on a sticker.
+    if (!self->sticker_ctx_menu_)
+    {
+        self->build_sticker_context_menu();
+    }
+    if (!self->sticker_ctx_menu_)
     {
         return;
     }
