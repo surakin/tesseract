@@ -574,6 +574,16 @@ void EventHandlerBase::on_room_preview_override_ready(std::uint64_t request_id,
         });
 }
 
+void EventHandlerBase::on_room_security_state_ready(std::uint64_t request_id,
+                                                    const RoomSecurityState& state)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, s = state]() mutable
+        {
+            shell->handle_room_security_state_ready_ui_(request_id, std::move(s));
+        });
+}
+
 void EventHandlerBase::on_notification(const std::string& room_id,
                                        const std::string& room_name,
                                        const std::string& sender,

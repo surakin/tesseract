@@ -285,11 +285,24 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         if (!shell_->client_)
         {
             v->set_field_permissions(false, false, false);
+            v->set_security_field_permissions(false, false, false, false);
+            v->set_permissions_field_permissions(false);
+            shell_->seed_room_media_section_(room_id);
             return;
         }
         v->set_field_permissions(shell_->client_->can_set_room_name(room_id),
                                  shell_->client_->can_set_room_topic(room_id),
                                  shell_->client_->can_set_room_avatar(room_id));
+        v->set_security_field_permissions(
+            shell_->client_->can_set_room_encryption(room_id),
+            shell_->client_->can_set_room_join_rules(room_id),
+            shell_->client_->can_set_room_guest_access(room_id),
+            shell_->client_->can_set_room_history_visibility(room_id));
+        v->set_permissions_field_permissions(
+            shell_->client_->can_set_room_power_levels(room_id));
+        v->set_permissions_state(shell_->client_->room_power_levels(room_id));
+        shell_->seed_room_media_section_(room_id);
+        shell_->fetch_room_security_state_(room_id);
     };
     rv->on_room_settings_avatar_upload_requested =
         [this](std::string room_id) {
@@ -310,14 +323,18 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 else
                 {
                     outcome = ShellBase::apply_room_settings_(
-                        sess->client.get(), room_id, changes.name,
-                        changes.topic, changes.avatar_mxc);
+                        sess->client.get(), room_id, changes);
                 }
                 post_to_ui_(
-                    [rv, alive = std::move(alive), outcome]() mutable {
+                    [this, rv, alive = std::move(alive), outcome, room_id,
+                     media_override = changes.media_override]() mutable {
                         if (!*alive) return;
                         if (auto* v = rv->room_settings_view())
                             v->set_commit_result(outcome.ok, outcome.error);
+                        if (outcome.ok && media_override)
+                            shell_->commit_room_media_preview_override_(
+                                room_id, media_override->has_override,
+                                media_override->mode);
                     });
             });
     };

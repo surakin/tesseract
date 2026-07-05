@@ -10,18 +10,39 @@ namespace tesseract::views
 {
 
 RoomSettingsChanges compute_room_settings_changes(
-    const std::string& original_name, const std::string& staged_name,
-    const std::string& original_topic, const std::string& staged_topic,
-    const std::string& original_avatar_mxc,
-    const std::string& staged_avatar_mxc)
+    const RoomSettingsFieldValues& original,
+    const RoomSettingsFieldValues& staged)
 {
     RoomSettingsChanges changes;
-    if (staged_name != original_name)
-        changes.name = staged_name;
-    if (staged_topic != original_topic)
-        changes.topic = staged_topic;
-    if (staged_avatar_mxc != original_avatar_mxc)
-        changes.avatar_mxc = staged_avatar_mxc;
+    if (staged.name != original.name)
+        changes.name = staged.name;
+    if (staged.topic != original.topic)
+        changes.topic = staged.topic;
+    if (staged.avatar_mxc != original.avatar_mxc)
+        changes.avatar_mxc = staged.avatar_mxc;
+    // Encryption can only be turned ON — no disable API exists anywhere in
+    // matrix-sdk (Room::enable_encryption is the only related method). Only
+    // emit a change when newly true; never emit a "turn off".
+    if (staged.is_encrypted && !original.is_encrypted)
+        changes.is_encrypted = true;
+    if (staged.join_rule != original.join_rule)
+        changes.join_rule = staged.join_rule;
+    if (staged.guest_access != original.guest_access)
+        changes.guest_access = staged.guest_access;
+    if (staged.history_visibility != original.history_visibility)
+        changes.history_visibility = staged.history_visibility;
+    // media_override_mode is meaningless when has_media_override is false,
+    // so don't let an unrelated mode-field difference trigger a spurious
+    // change while has_override is false on both sides.
+    if (staged.has_media_override != original.has_media_override ||
+        (staged.has_media_override &&
+         staged.media_override_mode != original.media_override_mode))
+    {
+        changes.media_override = RoomMediaOverrideChange{
+            staged.has_media_override, staged.media_override_mode};
+    }
+    if (staged.permissions != original.permissions)
+        changes.permissions = staged.permissions;
     return changes;
 }
 
@@ -37,9 +58,22 @@ RoomSettingsView::RoomSettingsView()
     accept_btn_->set_on_click([this]() {
         if (committing_) return;
         RoomSettingsChanges changes = compute_room_settings_changes(
-            original_name_, staged_name_, original_topic_, staged_topic_,
-            original_avatar_mxc_, staged_avatar_mxc_);
+            RoomSettingsFieldValues{
+                original_name_, original_topic_, original_avatar_mxc_,
+                original_is_encrypted_, original_join_rule_,
+                original_guest_access_, original_history_visibility_,
+                original_media_has_override_, original_media_mode_,
+                original_permissions_},
+            RoomSettingsFieldValues{
+                staged_name_, staged_topic_, staged_avatar_mxc_,
+                staged_is_encrypted_, staged_join_rule_,
+                staged_guest_access_, staged_history_visibility_,
+                staged_media_has_override_, staged_media_mode_,
+                staged_permissions_});
         committing_ = true;
+        general_->set_committing(true);
+        security_->set_committing(true);
+        permissions_->set_committing(true);
         commit_error_.clear();
         commit_error_layout_.reset();
         accept_btn_->set_enabled(false);
@@ -51,8 +85,95 @@ RoomSettingsView::RoomSettingsView()
         if (on_cancel) on_cancel();
     });
 
+    auto general = std::make_unique<RoomGeneralSection>();
+    general_ = general.get();
+    general_->on_avatar_upload_clicked = [this]()
+    {
+        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
+    };
+    general_->on_avatar_remove_clicked = [this]()
+    {
+        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
+    };
+    general_->on_room_id_clicked = [this](std::string room_id)
+    {
+        if (on_copy_to_clipboard) on_copy_to_clipboard(room_id);
+        toast_->show(tk::tr("Copied to clipboard"));
+        if (on_layout_changed) on_layout_changed();
+        if (post_delayed_)
+        {
+            post_delayed_(1500, [this]()
+            {
+                toast_->hide();
+                if (on_layout_changed) on_layout_changed();
+            });
+        }
+    };
+
+    auto media = std::make_unique<RoomMediaSection>();
+    media_ = media.get();
+    media_->on_override_changed =
+        [this](std::optional<tesseract::MediaPreviewConfig::Mode> mode)
+    {
+        staged_media_has_override_ = mode.has_value();
+        staged_media_mode_ = mode.value_or(tesseract::MediaPreviewConfig::Mode::On);
+    };
+
+    auto security = std::make_unique<RoomSecuritySection>();
+    security_ = security.get();
+    security_->on_encryption_changed = [this](bool checked)
+    {
+        staged_is_encrypted_ = checked;
+    };
+    security_->on_join_rule_changed = [this](std::string join_rule)
+    {
+        staged_join_rule_ = std::move(join_rule);
+    };
+    security_->on_guest_access_changed = [this](bool allow)
+    {
+        staged_guest_access_ = allow;
+    };
+    security_->on_history_visibility_changed = [this](std::string visibility)
+    {
+        staged_history_visibility_ = std::move(visibility);
+    };
+    security_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+
+    auto permissions = std::make_unique<RoomPermissionsSection>();
+    permissions_ = permissions.get();
+    permissions_->on_permissions_changed = [this](tesseract::RoomPermissions p)
+    {
+        staged_permissions_ = p;
+    };
+
+    auto tabs = std::make_unique<tk::SideTabView>();
+    tabs->add_tab(tk::tr("General"), std::move(general));
+    tabs->add_tab(tk::tr("Media"), std::move(media));
+    tabs->add_tab(tk::tr("Security & Privacy"), std::move(security));
+    tabs->add_tab(tk::tr("Permissions"), std::move(permissions));
+    // Switching tabs must re-poll General's NativeTextField/NativeTextArea
+    // overlay rects (name_field_rect()/topic_edit_rect() already collapse
+    // to {} when General isn't selected) — without this, the shell never
+    // learns to reposition/hide them and the overlay stays floating over
+    // whichever tab the user switched to. Mirrors SettingsView.cpp's
+    // identical on_tab_selected -> on_tab_changed forwarding.
+    tabs->on_tab_selected = [this](int) { if (on_layout_changed) on_layout_changed(); };
+    tabs_ = add_child(std::move(tabs));
+
+    auto toast = std::make_unique<Toast>();
+    toast_ = add_child(std::move(toast));
+
     // Closed-by-default; same idiom as RoomInfoPanel/ConfirmDialog.
     set_visible(false);
+}
+
+void RoomSettingsView::set_post_delayed(
+    std::function<void(int, std::function<void()>)> f)
+{
+    post_delayed_ = std::move(f);
 }
 
 void RoomSettingsView::open(const tesseract::RoomInfo& info)
@@ -67,12 +188,55 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     staged_topic_         = original_topic_;
     staged_avatar_mxc_    = original_avatar_mxc_;
 
-    avatar_.set_avatar_url(staged_avatar_mxc_);
-    avatar_.set_busy(false);
-    avatar_.set_error("");
-    avatar_.set_editable(false);
+    general_->set_name(staged_name_);
+    general_->set_topic(staged_topic_);
+    general_->set_avatar_url(staged_avatar_mxc_);
+    general_->set_room_id(room_id_);
+    general_->set_canonical_alias(info.canonical_alias);
+    general_->set_avatar_busy(false);
+    general_->set_avatar_error("");
+    general_->set_field_permissions(false, false, false);
+    general_->set_committing(false);
+    general_->reset();
 
-    can_name_ = can_topic_ = can_avatar_ = false;
+    original_is_encrypted_       = info.is_encrypted;
+    original_join_rule_          = info.join_rule;
+    original_guest_access_       = info.guest_access;
+    original_history_visibility_ = info.history_visibility;
+    staged_is_encrypted_         = original_is_encrypted_;
+    staged_join_rule_            = original_join_rule_;
+    staged_guest_access_         = original_guest_access_;
+    staged_history_visibility_   = original_history_visibility_;
+
+    security_->set_encryption(staged_is_encrypted_);
+    security_->set_join_rule(staged_join_rule_);
+    security_->set_guest_access(staged_guest_access_);
+    security_->set_history_visibility(staged_history_visibility_);
+    security_->set_field_permissions(false, false, false, false);
+    security_->set_committing(false);
+
+    // Placeholder — ShellBase's on_room_settings_opened handler calls
+    // set_permissions_state() synchronously right after open() (Client::
+    // room_power_levels is a cached local read, unlike the async fetch
+    // Security & Privacy needs), so this placeholder is corrected within
+    // the same call that opens the dialog rather than moments later.
+    original_permissions_ = tesseract::RoomPermissions{};
+    staged_permissions_   = tesseract::RoomPermissions{};
+    permissions_->set_permissions(staged_permissions_);
+    permissions_->set_field_permissions(false);
+    permissions_->set_committing(false);
+
+    // Placeholder — ShellBase::seed_room_media_section_ (called right after
+    // open() by each shell's on_room_settings_opened handler) pushes the
+    // real cached/fetched per-room override immediately after this, via
+    // set_media_override(), which seeds both original_media_*_ and
+    // staged_media_*_ together.
+    media_->set_override(false, tesseract::MediaPreviewConfig::Mode::On);
+    original_media_has_override_ = false;
+    original_media_mode_         = tesseract::MediaPreviewConfig::Mode::On;
+    staged_media_has_override_   = false;
+    staged_media_mode_           = tesseract::MediaPreviewConfig::Mode::On;
+
     committing_ = false;
     commit_error_.clear();
     commit_error_layout_.reset();
@@ -80,11 +244,6 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     cancel_btn_->set_enabled(true);
 
     title_layout_.reset();
-    name_label_layout_.reset();
-    name_static_layout_.reset();
-    topic_label_layout_.reset();
-    topic_static_layout_.reset();
-    topic_natural_h_ = kFieldH;
 
     open_ = true;
     set_visible(true);
@@ -102,36 +261,76 @@ void RoomSettingsView::close()
 
 void RoomSettingsView::set_avatar_provider(ImageProvider p)
 {
-    avatar_.set_image_provider(std::move(p));
+    general_->set_avatar_provider(std::move(p));
 }
 
 void RoomSettingsView::set_field_permissions(bool can_name, bool can_topic,
                                              bool can_avatar)
 {
-    can_name_   = can_name;
-    can_topic_  = can_topic;
-    can_avatar_ = can_avatar;
-    avatar_.set_editable(can_avatar_ && !committing_);
-    name_static_layout_.reset();
-    topic_static_layout_.reset();
+    general_->set_field_permissions(can_name, can_topic, can_avatar);
     if (on_layout_changed) on_layout_changed();
+}
+
+void RoomSettingsView::set_security_field_permissions(
+    bool can_encryption, bool can_join_rule, bool can_guest_access,
+    bool can_history_visibility)
+{
+    security_->set_field_permissions(can_encryption, can_join_rule,
+                                     can_guest_access, can_history_visibility);
+    if (on_layout_changed) on_layout_changed();
+}
+
+void RoomSettingsView::set_security_state(bool is_encrypted, std::string join_rule,
+                                          bool guest_access,
+                                          std::string history_visibility)
+{
+    original_is_encrypted_       = is_encrypted;
+    original_join_rule_          = join_rule;
+    original_guest_access_       = guest_access;
+    original_history_visibility_ = history_visibility;
+    staged_is_encrypted_         = original_is_encrypted_;
+    staged_join_rule_            = original_join_rule_;
+    staged_guest_access_         = original_guest_access_;
+    staged_history_visibility_   = original_history_visibility_;
+
+    security_->set_encryption(staged_is_encrypted_);
+    security_->set_join_rule(staged_join_rule_);
+    security_->set_guest_access(staged_guest_access_);
+    security_->set_history_visibility(staged_history_visibility_);
+}
+
+void RoomSettingsView::set_permissions_field_permissions(bool can_edit)
+{
+    permissions_->set_field_permissions(can_edit);
+    if (on_layout_changed) on_layout_changed();
+}
+
+void RoomSettingsView::set_permissions_state(
+    const tesseract::RoomPermissions& permissions)
+{
+    original_permissions_ = permissions;
+    staged_permissions_   = permissions;
+    permissions_->set_permissions(staged_permissions_);
 }
 
 tk::Rect RoomSettingsView::name_field_rect() const
 {
-    if (!open_ || !can_name_ || committing_) return {};
-    return name_rect_;
+    if (!open_ || !general_ || !tabs_ || tabs_->selected_idx() != 0)
+        return {};
+    return general_->name_field_rect();
 }
 
 void RoomSettingsView::set_name_edit_text(std::string t)
 {
     staged_name_ = std::move(t);
+    general_->set_name(staged_name_);
 }
 
 tk::Rect RoomSettingsView::topic_edit_rect() const
 {
-    if (!open_ || !can_topic_ || committing_) return {};
-    return topic_rect_;
+    if (!open_ || !general_ || !tabs_ || tabs_->selected_idx() != 0)
+        return {};
+    return general_->topic_edit_rect();
 }
 
 void RoomSettingsView::set_topic_edit_text(std::string t)
@@ -141,29 +340,32 @@ void RoomSettingsView::set_topic_edit_text(std::string t)
 
 void RoomSettingsView::set_topic_area_natural_height(float h)
 {
-    topic_natural_h_ = std::clamp(h, kFieldH, kTopicMaxH);
+    general_->set_topic_area_natural_height(h);
     if (on_layout_changed) on_layout_changed();
 }
 
 void RoomSettingsView::set_staged_avatar(std::string mxc)
 {
     staged_avatar_mxc_ = std::move(mxc);
-    avatar_.set_avatar_url(staged_avatar_mxc_);
+    general_->set_avatar_url(staged_avatar_mxc_);
 }
 
 void RoomSettingsView::set_avatar_busy(bool busy)
 {
-    avatar_.set_busy(busy);
+    general_->set_avatar_busy(busy);
 }
 
 void RoomSettingsView::set_avatar_error(std::string error)
 {
-    avatar_.set_error(std::move(error));
+    general_->set_avatar_error(std::move(error));
 }
 
 void RoomSettingsView::set_commit_result(bool ok, std::string error)
 {
     committing_ = false;
+    general_->set_committing(false);
+    security_->set_committing(false);
+    permissions_->set_committing(false);
     if (ok)
     {
         close();
@@ -173,8 +375,20 @@ void RoomSettingsView::set_commit_result(bool ok, std::string error)
     commit_error_layout_.reset();
     accept_btn_->set_enabled(true);
     cancel_btn_->set_enabled(true);
-    avatar_.set_editable(can_avatar_);
     if (on_layout_changed) on_layout_changed();
+}
+
+void RoomSettingsView::set_media_override(bool has_override,
+                                          tesseract::MediaPreviewConfig::Mode mode)
+{
+    // Establishes the baseline for both original and staged together — like
+    // every other tab, nothing is sent to the server until Accept, so
+    // "no change" must mean "matches what was seeded here."
+    original_media_has_override_ = has_override;
+    original_media_mode_         = mode;
+    staged_media_has_override_   = has_override;
+    staged_media_mode_           = mode;
+    media_->set_override(has_override, mode);
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -188,42 +402,18 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
     tk::Widget::arrange(lc, bounds);
 
-    // Uses the full available width (minus side padding) rather than a
-    // fixed, centered column.
-    const float content_x = bounds.x + kPadX;
-    const float content_w = std::max(0.0f, bounds.w - 2.0f * kPadX);
+    // Title bar, tabs, and footer bar are chrome sandwiched top/bottom
+    // around the tab content — same idiom as SettingsView's back-bar, so
+    // the footer reads as part of the same surface rather than a
+    // disconnected strip below the tab widget.
+    const float tabs_y      = bounds.y + kBarHeight + 1.0f;
+    const float footer_y    = bounds.y + bounds.h - kFooterH;
+    const float tabs_h      = std::max(0.0f, footer_y - tabs_y);
+    if (tabs_)
+        tabs_->arrange(lc, {bounds.x, tabs_y, bounds.w, tabs_h});
 
-    float y = bounds.y + kPadY;
-
-    // Title
-    y += 28.0f + kPadY;
-
-    // Avatar on the left; name/topic fields stacked in a column to its
-    // right, both starting level with the top of this row.
-    const tk::Point avatar_centre_local{
-        (content_x - bounds.x) + kAvatarD * 0.5f, y - bounds.y + kAvatarD * 0.5f};
-    avatar_.set_geometry(avatar_centre_local, kAvatarD);
-
-    const float col_x = content_x + kAvatarD + kAvatarGap;
-    const float col_w = std::max(0.0f, content_x + content_w - col_x);
-
-    float cy = y;
-    cy += kLabelH + kLabelGap;
-    name_rect_ = {col_x, cy, col_w, kFieldH};
-    cy += kFieldH + kFieldGap;
-
-    cy += kLabelH + kLabelGap;
-    // One line by default, grows with content up to kTopicMaxH, but never
-    // past the space available above the button row.
-    const float btns_y = bounds.y + bounds.h - kPadY - kBtnH;
-    const float topic_h_cap = std::max(kFieldH, btns_y - kFieldGap - cy);
-    const float topic_h = std::min(topic_natural_h_, topic_h_cap);
-    topic_rect_ = {col_x, cy, col_w, topic_h};
-    cy += topic_h;
-
-    // Accept/Cancel — pinned to the bottom of the replaced content area,
-    // right-aligned within the full content width (mirrors ConfirmDialog's
-    // bottom-right footer).
+    // Accept/Cancel — right-aligned within the footer bar, same right
+    // margin (kPadX) the title bar uses.
     const float btn_w_min = 88.0f;
     tk::Size accept_sz = accept_btn_ ? accept_btn_->measure(lc, {-1.0f, kBtnH})
                                      : tk::Size{btn_w_min, kBtnH};
@@ -231,13 +421,17 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
                                      : tk::Size{btn_w_min, kBtnH};
     const float accept_w = std::max(accept_sz.w, btn_w_min);
     const float cancel_w = std::max(cancel_sz.w, btn_w_min);
-    const float accept_x = content_x + content_w - accept_w;
+    const float btns_y   = footer_y + (kFooterH - kBtnH) * 0.5f;
+    const float accept_x = bounds.x + bounds.w - kPadX - accept_w;
     const float cancel_x = accept_x - kBtnGap - cancel_w;
 
     if (cancel_btn_)
         cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
     if (accept_btn_)
         accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
+
+    if (toast_)
+        toast_->arrange(lc, bounds);
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -254,108 +448,39 @@ void RoomSettingsView::paint(tk::PaintCtx& ctx)
     // underneath to dim.
     cv.fill_rect(bounds_, pal.bg);
 
-    const float content_x = bounds_.x + kPadX;
-    const float content_w = std::max(0.0f, bounds_.w - 2.0f * kPadX);
-    float y = bounds_.y + kPadY;
+    // Title bar — same chrome (sidebar_bg + separator) as SettingsView's
+    // back-bar, so this reads as one continuous surface with the footer.
+    const tk::Rect bar_rect = {bounds_.x, bounds_.y, bounds_.w, kBarHeight};
+    cv.fill_rect(bar_rect, pal.sidebar_bg);
+    cv.fill_rect({bounds_.x, bounds_.y + kBarHeight, bounds_.w, 1.0f}, pal.separator);
 
-    // Title
     if (!title_layout_)
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Title;
+        st.role      = tk::FontRole::UiSemibold;
         st.halign    = tk::TextHAlign::Leading;
-        st.max_width = content_w;
+        st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
         title_layout_ = ctx.factory.build_text(tk::tr("Room Settings"), st);
     }
     if (title_layout_)
-        cv.draw_text(*title_layout_, {content_x, y}, pal.text_primary);
-    y += 28.0f + kPadY;
-
-    // Avatar (left)
     {
-        std::string_view name_source =
-            staged_name_.empty() ? std::string_view("?")
-                                 : std::string_view(staged_name_);
-        avatar_.paint(ctx, {bounds_.x, bounds_.y}, name_source);
+        const float title_y =
+            bounds_.y + (kBarHeight - title_layout_->measure().h) * 0.5f;
+        cv.draw_text(*title_layout_, {bounds_.x + kPadX, title_y}, pal.text_primary);
     }
 
-    // Name/topic fields (right column, level with the top of the avatar).
-    const float col_x = content_x + kAvatarD + kAvatarGap;
-    const float col_w = std::max(0.0f, content_x + content_w - col_x);
-    float cy = y;
+    if (tabs_ && tabs_->visible())
+        tabs_->paint(ctx);
 
-    // Name label
-    if (!name_label_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.halign    = tk::TextHAlign::Leading;
-        st.max_width = col_w;
-        name_label_layout_ = ctx.factory.build_text(tk::tr("Name"), st);
-    }
-    if (name_label_layout_)
-        cv.draw_text(*name_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kLabelGap;
+    // Footer bar — same chrome as the title bar, so Accept/Cancel read as
+    // part of the settings surface rather than a detached bar underneath
+    // the tab widget.
+    const float footer_y = bounds_.y + bounds_.h - kFooterH;
+    const tk::Rect footer_rect = {bounds_.x, footer_y, bounds_.w, kFooterH};
+    cv.fill_rect({bounds_.x, footer_y, bounds_.w, 1.0f}, pal.separator);
+    cv.fill_rect({bounds_.x, footer_y + 1.0f, bounds_.w, kFooterH - 1.0f}, pal.sidebar_bg);
 
-    if (can_name_ && !committing_)
-    {
-        // Native overlay draws the live text; we just draw the underline.
-        const float uly = cy + kFieldH - 1.0f;
-        cv.fill_rect({col_x, uly, col_w, 1.0f}, pal.text_secondary.with_alpha(80));
-    }
-    else
-    {
-        if (!name_static_layout_ && !staged_name_.empty())
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
-            st.trim      = tk::TextTrim::Ellipsis;
-            st.max_width = col_w;
-            name_static_layout_ = ctx.factory.build_text(staged_name_, st);
-        }
-        if (name_static_layout_)
-            cv.draw_text(*name_static_layout_, {col_x, cy}, pal.text_primary);
-    }
-    cy += kFieldH + kFieldGap;
-
-    // Topic label
-    if (!topic_label_layout_)
-    {
-        tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.halign    = tk::TextHAlign::Leading;
-        st.max_width = col_w;
-        topic_label_layout_ = ctx.factory.build_text(tk::tr("Topic"), st);
-    }
-    if (topic_label_layout_)
-        cv.draw_text(*topic_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kLabelGap;
-
-    if (!can_topic_ || committing_)
-    {
-        if (!topic_static_layout_ && !staged_topic_.empty())
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
-            st.wrap      = true;
-            st.max_width = col_w;
-            topic_static_layout_ = ctx.factory.build_text(staged_topic_, st);
-        }
-        cv.push_clip_rect(topic_rect_);
-        if (topic_static_layout_)
-            cv.draw_text(*topic_static_layout_, {topic_rect_.x, topic_rect_.y},
-                         pal.text_primary);
-        cv.pop_clip();
-    }
-    // else: native NativeTextArea overlay covers topic_rect_ and draws the
-    // live text itself — nothing to paint here (mirrors RoomInfoPanel's
-    // editing_topic_ branch).
-
-    // Commit error, shown just above the button row.
+    // Commit error, left-aligned within the footer bar.
     if (!commit_error_.empty())
     {
         if (!commit_error_layout_)
@@ -363,52 +488,22 @@ void RoomSettingsView::paint(tk::PaintCtx& ctx)
             tk::TextStyle st{};
             st.role      = tk::FontRole::Small;
             st.halign    = tk::TextHAlign::Leading;
-            st.max_width = content_w;
+            st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
             commit_error_layout_ = ctx.factory.build_text(commit_error_, st);
         }
         if (commit_error_layout_)
         {
-            const float err_y = bounds_.y + bounds_.h - kPadY - kBtnH - 4.0f -
-                                commit_error_layout_->measure().h;
-            cv.draw_text(*commit_error_layout_, {content_x, err_y},
+            const float err_y = footer_rect.y +
+                                (kFooterH - commit_error_layout_->measure().h) * 0.5f;
+            cv.draw_text(*commit_error_layout_, {bounds_.x + kPadX, err_y},
                          tk::Color::rgb(0xcc3333));
         }
     }
 
     if (cancel_btn_) cancel_btn_->paint(ctx);
     if (accept_btn_) accept_btn_->paint(ctx);
-}
 
-// ── pointer events ────────────────────────────────────────────────────────
-
-bool RoomSettingsView::on_pointer_down(tk::Point local)
-{
-    if (!open_) return false;
-
-    switch (avatar_.hit_test(local))
-    {
-    case AvatarEditControl::HitZone::RemoveChip:
-        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
-        return true;
-    case AvatarEditControl::HitZone::Disc:
-        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
-        return true;
-    case AvatarEditControl::HitZone::None:
-        break;
-    }
-    // Let child dispatch handle the Accept/Cancel buttons.
-    return false;
-}
-
-bool RoomSettingsView::on_pointer_move(tk::Point local)
-{
-    if (!open_) return false;
-    return avatar_.on_pointer_move(local);
-}
-
-void RoomSettingsView::on_pointer_leave()
-{
-    avatar_.on_pointer_leave();
+    if (toast_ && toast_->visible()) toast_->paint(ctx);
 }
 
 } // namespace tesseract::views

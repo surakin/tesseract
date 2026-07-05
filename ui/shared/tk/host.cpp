@@ -107,6 +107,13 @@ void Host::dispatch_pointer_move(Point world)
 
     Widget* hit = root->hit_test(world);
     Button* hovered = dynamic_cast<Button*>(hit);
+    if (hovered && !hovered->enabled())
+    {
+        // hit_test() doesn't consider enabled_ — Button::paint() already
+        // ignores hover for a disabled button, but keep hovered_btn_/
+        // hovered() from ever reporting true for one too.
+        hovered = nullptr;
+    }
     bool btn_changed = (hovered != hovered_btn_);
     if (btn_changed)
     {

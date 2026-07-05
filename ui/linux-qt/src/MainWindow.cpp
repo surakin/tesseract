@@ -1173,11 +1173,24 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             if (!client_)
             {
                 v->set_field_permissions(false, false, false);
+                v->set_security_field_permissions(false, false, false, false);
+                v->set_permissions_field_permissions(false);
+                seed_room_media_section_(room_id);
                 return;
             }
             v->set_field_permissions(client_->can_set_room_name(room_id),
                                      client_->can_set_room_topic(room_id),
                                      client_->can_set_room_avatar(room_id));
+            v->set_security_field_permissions(
+                client_->can_set_room_encryption(room_id),
+                client_->can_set_room_join_rules(room_id),
+                client_->can_set_room_guest_access(room_id),
+                client_->can_set_room_history_visibility(room_id));
+            v->set_permissions_field_permissions(
+                client_->can_set_room_power_levels(room_id));
+            v->set_permissions_state(client_->room_power_levels(room_id));
+            seed_room_media_section_(room_id);
+            fetch_room_security_state_(room_id);
         };
         mainApp_->room_view()->on_room_settings_avatar_upload_requested =
             [this](const std::string& room_id)
@@ -1194,18 +1207,21 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 [this, c, room_id = std::move(room_id),
                  changes = std::move(changes)]()
                 {
-                    auto outcome = ShellBase::apply_room_settings_(
-                        c, room_id, changes.name, changes.topic,
-                        changes.avatar_mxc);
+                    auto outcome = ShellBase::apply_room_settings_(c, room_id, changes);
                     QMetaObject::invokeMethod(
                         this,
-                        [this, outcome]()
+                        [this, outcome, room_id,
+                         media_override = changes.media_override]()
                         {
                             if (!mainApp_)
                                 return;
                             if (auto* v =
                                     mainApp_->room_view()->room_settings_view())
                                 v->set_commit_result(outcome.ok, outcome.error);
+                            if (outcome.ok && media_override)
+                                commit_room_media_preview_override_(
+                                    room_id, media_override->has_override,
+                                    media_override->mode);
                         },
                         Qt::QueuedConnection);
                 });

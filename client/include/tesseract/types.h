@@ -504,6 +504,14 @@ struct RoomInfo
     bool is_bridged = false;
     /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
     std::string history_visibility;
+    /// Room join rule: "public" | "invite" | "knock" | "restricted" |
+    /// "knock_restricted" | "private" | "" (unknown/absent). "restricted"
+    /// and "knock_restricted" are rendered read-only in Security & Privacy
+    /// — that UI never edits an allow-list it doesn't manage.
+    std::string join_rule;
+    /// True when guests may join without a Matrix account
+    /// (GuestAccess::CanJoin); false for GuestAccess::Forbidden.
+    bool guest_access = false;
     /// Snapshot of `m.room.pinned_events` resolved against the local event
     /// cache (sender + body snippet + timestamp), sorted newest-first so the
     /// pinned-events banner can render without a separate fetch.
@@ -612,6 +620,48 @@ struct MediaPreviewOverride
     std::string join_rule;
     /// Deserialise `{"has_media_previews":bool,"media_previews":N,"join_rule":"..."}`.
     static MediaPreviewOverride from_json(const std::string& json);
+};
+
+/// A direct GET /state read of the four Security & Privacy tab fields,
+/// delivered via `IEventHandler::on_room_security_state_ready` (a direct
+/// typed mirror of the FFI's `RoomSecurityStateFfi` — no JSON round-trip).
+/// Bypasses sliding sync entirely: `guest_access` is absent from
+/// matrix-sdk-ui's hardcoded required_state lists (never delivered live at
+/// all), and the other three fields are subject to a separate
+/// room_list_fingerprint staleness issue — see docs/CHANGES.md for both
+/// root causes.
+struct RoomSecurityState
+{
+    bool is_encrypted = false;
+    /// "public", "invite", "knock", "restricted", "knock_restricted", or ""
+    /// when indeterminate.
+    std::string join_rule;
+    bool guest_access = false;
+    /// "world_readable", "shared", "invited", or "joined".
+    std::string history_visibility = "shared";
+};
+
+/// A room's m.room.power_levels event, narrowed to the fields the
+/// Permissions room-settings tab edits — returned by
+/// `Client::room_power_levels` and passed to `Client::set_room_power_levels`.
+/// Field names describe the UI action they gate rather than the raw Matrix
+/// field name (noted in comments). Unlike `RoomSecurityState`, this is read
+/// and written synchronously — `Client::room_power_levels` is a cached
+/// local read with no network round-trip, so there is no JSON/async-fetch
+/// step; it's a direct typed mirror of the FFI's `RoomPowerLevelsFfi`.
+struct RoomPermissions
+{
+    int64_t default_role       = 0;  // users_default
+    int64_t send_messages      = 0;  // events_default
+    int64_t invite_users       = 0;  // invite
+    int64_t change_settings    = 50; // state_default
+    int64_t kick_users         = 50; // kick
+    int64_t ban_users          = 50; // ban
+    int64_t remove_messages    = 50; // redact
+    int64_t notify_everyone    = 50; // notifications.room
+    int64_t change_permissions = 50; // events["m.room.power_levels"], falls back to state_default
+
+    bool operator==(const RoomPermissions&) const = default;
 };
 
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed

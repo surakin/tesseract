@@ -21,6 +21,7 @@ struct VerificationEmoji;
 struct GifResult;
 struct SearchHit;
 struct RtcParticipantInfo;
+struct RoomSecurityStateFfi;
 } // namespace tesseract_ffi
 
 namespace tesseract_ffi
@@ -136,6 +137,9 @@ public:
                                        rust::Str config_json) const;
     void on_room_preview_override_ready(std::uint64_t request_id,
                                         rust::Str override_json) const;
+    void on_room_security_state_ready(
+        std::uint64_t request_id,
+        const RoomSecurityStateFfi& state) const;
     void on_search_results(std::uint64_t request_id,
                            const rust::Vec<SearchHit>& results) const;
     void on_search_failed(std::uint64_t request_id,

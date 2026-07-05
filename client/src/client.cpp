@@ -822,6 +822,15 @@ void Client::save_media_preview_config(MediaPreviewConfig::Mode media_previews,
         static_cast<std::uint8_t>(media_previews), invite_avatars);
 }
 
+void Client::save_room_media_preview_override(const std::string& room_id,
+                                               bool has_override,
+                                               MediaPreviewConfig::Mode media_previews)
+{
+    SH_FFI;
+    impl_->ffi->set_room_media_preview_override(
+        room_id, has_override, static_cast<std::uint8_t>(media_previews));
+}
+
 std::vector<std::string> Client::recent_emoji_top(std::uint32_t n)
 {
     SH_FFI;
@@ -1430,6 +1439,13 @@ void Client::room_media_preview_override_async(std::uint64_t request_id,
     impl_->ffi->room_media_preview_override_async(request_id, room_id);
 }
 
+void Client::fetch_room_security_state_async(std::uint64_t request_id,
+                                              const std::string& room_id)
+{
+    SH_FFI;
+    impl_->ffi->fetch_room_security_state_async(request_id, room_id);
+}
+
 std::optional<tesseract::RoomSummary>
 Client::get_cached_room_summary(const std::string& room_id) const
 {
@@ -1537,6 +1553,32 @@ Result Client::set_room_avatar(const std::string& room_id,
     return from_ffi(impl_->ffi->set_room_avatar(room_id, mxc_uri));
 }
 
+Result Client::set_room_encryption(const std::string& room_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_room_encryption(room_id));
+}
+
+Result Client::set_room_join_rule(const std::string& room_id,
+                                  const std::string& join_rule)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_room_join_rule(room_id, join_rule));
+}
+
+Result Client::set_room_guest_access(const std::string& room_id, bool allow)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_room_guest_access(room_id, allow));
+}
+
+Result Client::set_room_history_visibility(const std::string& room_id,
+                                           const std::string& visibility)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_room_history_visibility(room_id, visibility));
+}
+
 Result Client::pin_event(const std::string& room_id, const std::string& event_id)
 {
     SH_FFI;
@@ -1571,6 +1613,49 @@ bool Client::can_set_room_avatar(const std::string& room_id)
 {
     SH_FFI;
     return impl_->ffi->can_set_room_avatar(room_id);
+}
+
+bool Client::can_set_room_encryption(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_encryption(room_id);
+}
+
+bool Client::can_set_room_join_rules(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_join_rules(room_id);
+}
+
+bool Client::can_set_room_guest_access(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_guest_access(room_id);
+}
+
+bool Client::can_set_room_history_visibility(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_history_visibility(room_id);
+}
+
+bool Client::can_set_room_power_levels(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_power_levels(room_id);
+}
+
+RoomPermissions Client::room_power_levels(const std::string& room_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->room_power_levels(room_id));
+}
+
+Result Client::set_room_power_levels(const std::string& room_id,
+                                     const RoomPermissions& levels)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->set_room_power_levels(room_id, to_ffi(levels)));
 }
 
 std::string Client::get_room_notification_mode(std::string room_id) const

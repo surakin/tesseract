@@ -96,6 +96,8 @@ public:
                                        const std::string& config_json) override;
     void on_room_preview_override_ready(std::uint64_t request_id,
                                         const std::string& override_json) override;
+    void on_room_security_state_ready(std::uint64_t request_id,
+                                      const RoomSecurityState& state) override;
     void on_search_results(std::uint64_t request_id,
                            const std::vector<SearchHit>& results) override;
     void on_search_failed(std::uint64_t request_id,

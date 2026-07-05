@@ -2014,6 +2014,7 @@ void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
 
     room_preview_override_in_flight_.erase(room_id);
     room_preview_overrides_[room_id] = tesseract::MediaPreviewOverride::from_json(override_json);
+    seed_room_media_section_(room_id);
 
     // Now that the join rule + override are known, fetch any media that turned
     // out to be allowed in this room and re-evaluate the placeholders.
@@ -2028,6 +2029,25 @@ void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
             }
         }
     }
+    request_relayout_();
+}
+
+void ShellBase::handle_room_security_state_ready_ui_(std::uint64_t request_id,
+                                                     tesseract::RoomSecurityState state)
+{
+    auto it = pending_security_state_requests_.find(request_id);
+    if (it == pending_security_state_requests_.end())
+        return;
+    std::string room_id = std::move(it->second);
+    pending_security_state_requests_.erase(it);
+
+    if (!room_view_)
+        return;
+    auto* v = room_view_->room_settings_view();
+    if (!v || !v->is_open() || v->room_id() != room_id)
+        return;
+    v->set_security_state(state.is_encrypted, state.join_rule, state.guest_access,
+                          state.history_visibility);
     request_relayout_();
 }
 
@@ -2139,6 +2159,72 @@ void ShellBase::apply_media_preview_config_(
         ensure_invite_avatars_();
     }
     request_relayout_();
+}
+
+void ShellBase::commit_room_media_preview_override_(
+    const std::string& room_id, bool has_override,
+    tesseract::MediaPreviewConfig::Mode mode)
+{
+    if (room_id.empty())
+        return;
+
+    // Called once, on the UI thread, after a successful Accept whose
+    // RoomSettingsChanges.media_override was set — the actual server write
+    // already happened inside apply_room_settings_ (on the worker thread).
+    // This just keeps the local cache + visible timeline in sync, exactly
+    // as the old per-keystroke immediate-apply path used to, but now only
+    // once per commit instead of once per combo pick.
+    //
+    // Optimistic local update: preserve whatever join_rule is already
+    // cached (unaffected by this write; operator[] value-inits a fresh
+    // MediaPreviewOverride{} — has_media_previews=false, join_rule="" — on
+    // a cache miss, which is fine since ensure_room_preview_override_ will
+    // typically have already populated this entry by the time the settings
+    // dialog is reachable).
+    tesseract::MediaPreviewOverride ov = room_preview_overrides_[room_id];
+    ov.has_media_previews = has_override;
+    if (has_override)
+        ov.media_previews = mode;
+    room_preview_overrides_[room_id] = ov;
+
+    // Fetch media that just became allowed in the open room.
+    if (room_id == current_room_id_ && room_view_ &&
+        should_auto_preview_(room_id))
+    {
+        if (auto* ml = room_view_->message_list())
+        {
+            for (const auto& row : ml->messages())
+            {
+                reveal_media_fetch_(row);
+            }
+        }
+    }
+    request_relayout_();
+}
+
+void ShellBase::seed_room_media_section_(const std::string& room_id)
+{
+    if (!room_view_)
+        return;
+    auto* v = room_view_->room_settings_view();
+    if (!v || !v->is_open() || v->room_id() != room_id)
+        return;
+    auto it = room_preview_overrides_.find(room_id);
+    if (it == room_preview_overrides_.end())
+    {
+        v->set_media_override(false, tesseract::MediaPreviewConfig::Mode::On);
+        return;
+    }
+    v->set_media_override(it->second.has_media_previews, it->second.media_previews);
+}
+
+void ShellBase::fetch_room_security_state_(const std::string& room_id)
+{
+    if (!client_ || room_id.empty())
+        return;
+    auto req_id = next_request_id_++;
+    pending_security_state_requests_[req_id] = room_id;
+    client_->fetch_room_security_state_async(req_id, room_id);
 }
 
 void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
@@ -7824,9 +7910,7 @@ void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id)
 
 ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
     tesseract::Client* client, const std::string& room_id,
-    const std::optional<std::string>& new_name,
-    const std::optional<std::string>& new_topic,
-    const std::optional<std::string>& new_avatar_mxc)
+    const views::RoomSettingsChanges& changes)
 {
     RoomSettingsCommitOutcome out;
     if (!client)
@@ -7835,20 +7919,57 @@ ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
         return out;
     }
     std::vector<std::string> errors;
-    if (new_name)
+    if (changes.name)
     {
-        auto r = client->set_room_display_name(room_id, *new_name);
+        auto r = client->set_room_display_name(room_id, *changes.name);
         if (!r.ok) errors.push_back("name: " + r.message);
     }
-    if (new_topic)
+    if (changes.topic)
     {
-        auto r = client->set_room_topic(room_id, *new_topic);
+        auto r = client->set_room_topic(room_id, *changes.topic);
         if (!r.ok) errors.push_back("topic: " + r.message);
     }
-    if (new_avatar_mxc)
+    if (changes.avatar_mxc)
     {
-        auto r = client->set_room_avatar(room_id, *new_avatar_mxc);
+        auto r = client->set_room_avatar(room_id, *changes.avatar_mxc);
         if (!r.ok) errors.push_back("avatar: " + r.message);
+    }
+    // Encryption can only be turned on — compute_room_settings_changes never
+    // populates this with false, but the guard restates that invariant
+    // locally so it holds even if that changes upstream.
+    if (changes.is_encrypted && *changes.is_encrypted)
+    {
+        auto r = client->set_room_encryption(room_id);
+        if (!r.ok) errors.push_back("encryption: " + r.message);
+    }
+    if (changes.join_rule)
+    {
+        auto r = client->set_room_join_rule(room_id, *changes.join_rule);
+        if (!r.ok) errors.push_back("join_rule: " + r.message);
+    }
+    if (changes.guest_access)
+    {
+        auto r = client->set_room_guest_access(room_id, *changes.guest_access);
+        if (!r.ok) errors.push_back("guest_access: " + r.message);
+    }
+    if (changes.history_visibility)
+    {
+        auto r = client->set_room_history_visibility(room_id, *changes.history_visibility);
+        if (!r.ok) errors.push_back("history_visibility: " + r.message);
+    }
+    if (changes.permissions)
+    {
+        auto r = client->set_room_power_levels(room_id, *changes.permissions);
+        if (!r.ok) errors.push_back("permissions: " + r.message);
+    }
+    // Fire-and-forget account-data write — no completion result to check,
+    // so it never contributes to the joined error string. The optimistic
+    // cache update happens separately (commit_room_media_preview_override_),
+    // called by the caller only once this function reports success.
+    if (changes.media_override)
+    {
+        client->save_room_media_preview_override(
+            room_id, changes.media_override->has_override, changes.media_override->mode);
     }
     out.ok = errors.empty();
     for (std::size_t i = 0; i < errors.size(); ++i)

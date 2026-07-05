@@ -770,6 +770,11 @@ protected:
     std::unordered_set<std::string> room_preview_override_in_flight_;
     // request_id → room_id for in-flight room_media_preview_override_async calls.
     std::unordered_map<std::uint64_t, std::string> pending_preview_overrides_;
+    // request_id → room_id for in-flight fetch_room_security_state_async calls
+    // (Security & Privacy tab: encryption/join_rule/guest_access/history_
+    // visibility are either never delivered via sync at all, or subject to
+    // room_list_fingerprint staleness — see handle_room_security_state_ready_ui_).
+    std::unordered_map<std::uint64_t, std::string> pending_security_state_requests_;
     // request_id → UserProfilePanel* for in-flight get_extended_profile_async
     // (user panel case). Absence = own-profile fetch.
     std::unordered_map<std::uint64_t, views::UserProfilePanel*>
@@ -1616,15 +1621,20 @@ protected:
         std::string error; // joined per-field failures, e.g. "name: M_FORBIDDEN"
     };
 
-    // Send up to 3 state events for whichever optionals are populated,
+    // Send a state event for each populated optional field in `changes`,
     // attempting every one even if an earlier call fails so a partial
-    // success (e.g. topic saved, avatar denied) isn't silently lost.
+    // success (e.g. topic saved, avatar denied) isn't silently lost. The
+    // media-override write (personal account data, not a state event) is
+    // fire-and-forget and never contributes to the joined error string —
+    // its optimistic cache update happens separately, in
+    // commit_room_media_preview_override_, called by the caller only after
+    // this function reports success. Takes the whole RoomSettingsChanges
+    // (rather than exploding it into one param per field) since it's
+    // already the exact aggregate RoomSettingsView produces from Accept.
     // Blocks — call from a worker thread (run_async_mut_).
     static RoomSettingsCommitOutcome apply_room_settings_(
         tesseract::Client* client, const std::string& room_id,
-        const std::optional<std::string>& new_name,
-        const std::optional<std::string>& new_topic,
-        const std::optional<std::string>& new_avatar_mxc);
+        const views::RoomSettingsChanges& changes);
 
     // Monotonic clock in ms from the SAME epoch the shell's animation
     // timer / anim_cache_.advance() uses (Qt: QDateTime msecs; GTK:
@@ -1952,6 +1962,11 @@ protected:
     // Callback from room_media_preview_override_async: store override, fetch media.
     void handle_room_preview_override_ready_ui_(std::uint64_t request_id,
                                                 std::string override_json);
+    // Callback from fetch_room_security_state_async: push the already-typed
+    // state into room_view_'s RoomSettingsView via set_security_state, if
+    // that view is still open and showing the room this request was for.
+    void handle_room_security_state_ready_ui_(std::uint64_t request_id,
+                                              tesseract::RoomSecurityState state);
     // Callback from set_or_delete_profile_field_async.
     void handle_profile_field_result_ui_(std::uint64_t request_id,
                                          std::string key, bool ok,
@@ -2801,6 +2816,36 @@ protected:
     // on_invite_avatars_changed to this.
     void apply_media_preview_config_(tesseract::Settings::MediaPreviews mode,
                                      bool invite_avatars);
+    // Called once, on the UI thread, after a successful Accept commit whose
+    // RoomSettingsChanges.media_override was populated (see
+    // apply_room_settings_, which performs the actual server write on the
+    // worker thread). Optimistically updates room_preview_overrides_ (so
+    // effective_preview_mode_ reflects the new value immediately), re-fetches
+    // any media that just became allowed in the open room, and repaints.
+    // Each of the five on_accept completion callbacks calls this — never
+    // called on every combo pick (that would violate the "nothing applies
+    // until Accept" contract every other room-settings field follows).
+    void commit_room_media_preview_override_(
+        const std::string& room_id, bool has_override,
+        tesseract::MediaPreviewConfig::Mode mode);
+    // Push the effective per-room override (from room_preview_overrides_,
+    // defaulting to "no override" on a cache miss) into RoomSettingsView's
+    // Media tab, if that view is currently open and showing `room_id`. Called
+    // right after RoomSettingsView::open() (see each shell's
+    // on_room_settings_opened wiring) and again from
+    // handle_room_preview_override_ready_ui_, so a fetch that resolves after
+    // the dialog is already open still updates the combo instead of leaving
+    // it stuck on open()'s "Use global default" placeholder.
+    void seed_room_media_section_(const std::string& room_id);
+
+    // Kick an async GET /state fetch (Client::fetch_room_security_state_
+    // async) for the four Security & Privacy tab fields and track its
+    // request_id in pending_security_state_requests_. No-op if not logged
+    // in. Called from each on_room_settings_opened handler, right after
+    // set_security_field_permissions/seed_room_media_section_ — the result
+    // lands in handle_room_security_state_ready_ui_, which pushes it into
+    // RoomSettingsView via set_security_state if the dialog is still open.
+    void fetch_room_security_state_(const std::string& room_id);
 
     // Estimate how many trailing rows of a freshly-loaded snapshot could
     // plausibly be on screen, for build_rows_()'s synchronous media-prefetch

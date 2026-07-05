@@ -440,6 +440,13 @@ public:
     {
     }
 
+    /// Fired when an async `Client::fetch_room_security_state_async` GET
+    /// /state fetch completes.
+    virtual void on_room_security_state_ready(std::uint64_t /*request_id*/,
+                                              const RoomSecurityState& /*state*/)
+    {
+    }
+
     /// Fired when an async `Client::get_extended_profile_async` or
     /// `resolve_user_profile_async` fetch completes.
     /// `profile_json` is the full `UserProfile` serialised as JSON.

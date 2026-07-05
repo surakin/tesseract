@@ -77,6 +77,8 @@ pub mod ffi {
         pub is_encrypted: bool,
         pub has_active_call: bool,
         pub history_visibility: String,
+        pub join_rule: String,
+        pub guest_access: bool,
         pub canonical_alias: String,
     }
 
@@ -274,6 +276,27 @@ pub mod ffi {
         pub has_media_previews: bool,
         pub media_previews: u8,
         pub join_rule: String,
+    }
+
+    #[derive(Debug, PartialEq, Default, Clone, Copy)]
+    pub struct RoomPowerLevelsFfi {
+        pub default_role: i64,
+        pub send_messages: i64,
+        pub invite_users: i64,
+        pub change_settings: i64,
+        pub kick_users: i64,
+        pub ban_users: i64,
+        pub remove_messages: i64,
+        pub notify_everyone: i64,
+        pub change_permissions: i64,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct RoomSecurityStateFfi {
+        pub is_encrypted: bool,
+        pub join_rule: String,
+        pub guest_access: bool,
+        pub history_visibility: String,
     }
 
     #[derive(Debug, PartialEq, Default)]

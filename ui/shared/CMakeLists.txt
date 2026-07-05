@@ -186,6 +186,8 @@ set(_tk_sources
     views/AlertDialog.cpp
     views/ConfirmDialog.h
     views/ConfirmDialog.cpp
+    views/Toast.h
+    views/Toast.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
     views/PopoutRoomWidget.h
@@ -214,6 +216,14 @@ set(_tk_sources
     views/settings/AboutSection.cpp
     views/settings/PrivacySection.h
     views/settings/PrivacySection.cpp
+    views/settings/RoomGeneralSection.h
+    views/settings/RoomGeneralSection.cpp
+    views/settings/RoomMediaSection.h
+    views/settings/RoomMediaSection.cpp
+    views/settings/RoomSecuritySection.h
+    views/settings/RoomSecuritySection.cpp
+    views/settings/RoomPermissionsSection.h
+    views/settings/RoomPermissionsSection.cpp
 )
 
 if(TESSERACT_UI STREQUAL "win32")

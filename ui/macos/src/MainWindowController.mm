@@ -416,6 +416,11 @@ public:
                                     const std::string& event_id);
     void apply_media_preview_config(tesseract::Settings::MediaPreviews mode,
                                     bool invite_avatars);
+    void commit_room_media_preview_override(
+        const std::string& room_id, bool has_override,
+        tesseract::MediaPreviewConfig::Mode mode);
+    void seed_room_media_section(const std::string& room_id);
+    void fetch_room_security_state(const std::string& room_id);
     void wire_main_app_widget(tesseract::views::MainAppWidget* app);
     void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
                                tk::Host& host,
@@ -495,12 +500,9 @@ public:
     }
     static ShellBase::RoomSettingsCommitOutcome apply_room_settings(
         tesseract::Client* client, const std::string& room_id,
-        const std::optional<std::string>& new_name,
-        const std::optional<std::string>& new_topic,
-        const std::optional<std::string>& new_avatar_mxc)
+        const tesseract::views::RoomSettingsChanges& changes)
     {
-        return ShellBase::apply_room_settings_(client, room_id, new_name,
-                                               new_topic, new_avatar_mxc);
+        return ShellBase::apply_room_settings_(client, room_id, changes);
     }
 
     std::vector<tk::Rect> get_screen_work_areas_() const override
@@ -2297,6 +2299,14 @@ void MacShell::begin_focused_subscription(const std::string& room_id,
 void MacShell::apply_media_preview_config(tesseract::Settings::MediaPreviews mode,
                                            bool invite_avatars)
     { apply_media_preview_config_(mode, invite_avatars); }
+void MacShell::commit_room_media_preview_override(
+    const std::string& room_id, bool has_override,
+    tesseract::MediaPreviewConfig::Mode mode)
+    { commit_room_media_preview_override_(room_id, has_override, mode); }
+void MacShell::seed_room_media_section(const std::string& room_id)
+    { seed_room_media_section_(room_id); }
+void MacShell::fetch_room_security_state(const std::string& room_id)
+    { fetch_room_security_state_(room_id); }
 void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
     { wire_main_app_widget_(app); }
 void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
@@ -3866,12 +3876,26 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             if (!s->_shell->client_)
             {
                 v->set_field_permissions(false, false, false);
+                v->set_security_field_permissions(false, false, false, false);
+                v->set_permissions_field_permissions(false);
+                s->_shell->seed_room_media_section(room_id);
                 return;
             }
             v->set_field_permissions(
                 s->_shell->client_->can_set_room_name(room_id),
                 s->_shell->client_->can_set_room_topic(room_id),
                 s->_shell->client_->can_set_room_avatar(room_id));
+            v->set_security_field_permissions(
+                s->_shell->client_->can_set_room_encryption(room_id),
+                s->_shell->client_->can_set_room_join_rules(room_id),
+                s->_shell->client_->can_set_room_guest_access(room_id),
+                s->_shell->client_->can_set_room_history_visibility(room_id));
+            v->set_permissions_field_permissions(
+                s->_shell->client_->can_set_room_power_levels(room_id));
+            v->set_permissions_state(
+                s->_shell->client_->room_power_levels(room_id));
+            s->_shell->seed_room_media_section(room_id);
+            s->_shell->fetch_room_security_state(room_id);
         };
         _mainApp->room_view()->on_room_settings_avatar_upload_requested =
             [weakSelf](std::string room_id)
@@ -3893,9 +3917,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 [weakSelf, c, room_id = std::move(room_id),
                  changes = std::move(changes)]() mutable
                 {
-                    auto outcome = MacShell::apply_room_settings(
-                        c, room_id, changes.name, changes.topic,
-                        changes.avatar_mxc);
+                    auto outcome = MacShell::apply_room_settings(c, room_id, changes);
+                    auto media_override = changes.media_override;
                     dispatch_async(dispatch_get_main_queue(), ^{
                         MainWindowController* s2 = weakSelf;
                         if (!s2)
@@ -3903,6 +3926,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         if (auto* v =
                                 s2->_mainApp->room_view()->room_settings_view())
                             v->set_commit_result(outcome.ok, outcome.error);
+                        if (outcome.ok && media_override)
+                            s2->_shell->commit_room_media_preview_override(
+                                room_id, media_override->has_override,
+                                media_override->mode);
                     });
                 });
         };

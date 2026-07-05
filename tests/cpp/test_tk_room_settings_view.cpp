@@ -126,9 +126,10 @@ TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
     int cancel_count = 0;
     v.on_cancel = [&] { ++cancel_count; };
 
-    // Cancel sits at the bottom-right of the view, left of Accept. With an
-    // 800x600 stage: content_x=24, content_w=752, btns_y=540, kBtnH=36,
-    // both buttons floor at the 88px minimum width -> cancel spans x[592,680].
+    // Cancel sits at the bottom-right of the footer bar, left of Accept.
+    // With an 800x600 stage: footer_y=536 (600-kFooterH), btns_y=550
+    // (footer_y + (kFooterH-kBtnH)/2), kBtnH=36, both buttons floor at the
+    // 88px minimum width -> cancel spans x[592,680], y[550,586].
     // tk::Button fires on_click_ on release, so press+release both points.
     const tk::Point pt{630.0f, 558.0f};
     tk::Widget* hit = v.dispatch_pointer_down(pt);
@@ -160,9 +161,9 @@ TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
         accepted_changes = std::move(changes);
     };
 
-    // Accept sits at the bottom-right corner of the view: with an 800x600
-    // stage, accept spans x[688,776], y[540,576] (see cancel's comment above
-    // for the layout math).
+    // Accept sits at the bottom-right corner of the footer bar: with an
+    // 800x600 stage, accept spans x[688,776], y[550,586] (see cancel's
+    // comment above for the layout math).
     const tk::Point pt{730.0f, 558.0f};
     tk::Widget* hit = v.dispatch_pointer_down(pt);
     REQUIRE(hit != nullptr);
@@ -265,5 +266,129 @@ TEST_CASE("RoomSettingsView: paints without crashing across states",
 
     // Commit failure error banner
     v.set_commit_result(false, "M_FORBIDDEN");
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    // Permissions tab granted + a non-default power-levels state.
+    v.set_permissions_field_permissions(true);
+    tesseract::RoomPermissions perms;
+    perms.kick_users = 100;
+    v.set_permissions_state(perms);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+}
+
+TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+
+    Stage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    // Room ID row: with an 800x600 stage, tabs_ occupies {0,49,800,487}
+    // (kBarHeight=48 + 1px separator to kFooterH-from-bottom=64), SideTabView
+    // reserves a 200px sidebar, and RoomGeneralSection::Content lays out
+    // Name -> Topic -> Room Address -> Room ID top to bottom, giving
+    // roomid_rect_ = {344, 267, 432, 26}.
+    std::string copied;
+    int copy_count = 0;
+    v.on_copy_to_clipboard = [&](std::string text)
+    {
+        ++copy_count;
+        copied = std::move(text);
+    };
+
+    const tk::Point pt{400.0f, 275.0f};
+    tk::Widget* hit = v.dispatch_pointer_down(pt);
+    REQUIRE(hit != nullptr);
+
+    CHECK(copy_count == 1);
+    CHECK(copied == "!room:example.org");
+}
+
+TEST_CASE("RoomSettingsView: room_id() reflects the open()'d room",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    CHECK(v.room_id().empty());
+    v.open(make_room_info());
+    CHECK(v.room_id() == "!room:example.org");
+}
+
+TEST_CASE("RoomSettingsView: set_media_override doesn't disturb General's "
+          "staged state",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+    v.set_field_permissions(true, true, true);
+
+    Stage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    const tk::Rect name_before = v.name_field_rect();
+    const tk::Rect topic_before = v.topic_edit_rect();
+    const std::string name_text_before = v.name_edit_initial_text();
+    const std::string topic_text_before = v.topic_edit_initial_text();
+
+    v.set_media_override(true, tesseract::MediaPreviewConfig::Mode::Off);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    CHECK(v.name_field_rect().x == name_before.x);
+    CHECK(v.name_field_rect().y == name_before.y);
+    CHECK(v.topic_edit_rect().x == topic_before.x);
+    CHECK(v.topic_edit_rect().y == topic_before.y);
+    CHECK(v.name_edit_initial_text() == name_text_before);
+    CHECK(v.topic_edit_initial_text() == topic_text_before);
+
+    // Paints without crashing with the Media tab in a non-default state too.
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+}
+
+TEST_CASE("RoomSettingsView: set_permissions_state doesn't disturb General's "
+          "staged state",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+    v.set_field_permissions(true, true, true);
+
+    Stage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    const tk::Rect name_before = v.name_field_rect();
+    const std::string name_text_before = v.name_edit_initial_text();
+
+    tesseract::RoomPermissions perms;
+    perms.kick_users = 100;
+    v.set_permissions_field_permissions(true);
+    v.set_permissions_state(perms);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    CHECK(v.name_field_rect().x == name_before.x);
+    CHECK(v.name_field_rect().y == name_before.y);
+    CHECK(v.name_edit_initial_text() == name_text_before);
+}
+
+TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+    tesseract::RoomPermissions perms;
+    perms.kick_users = 100;
+    v.set_permissions_field_permissions(true);
+    v.set_permissions_state(perms);
+
+    // Switching rooms reseeds the Permissions tab to the spec-default
+    // placeholder — ShellBase's on_room_settings_opened handler is
+    // responsible for calling set_permissions_state() again with the new
+    // room's actual levels right after this.
+    tesseract::RoomInfo other;
+    other.id   = "!other:example.org";
+    other.name = "Other Room";
+    v.open(other);
+
+    Stage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }

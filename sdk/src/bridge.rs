@@ -116,6 +116,11 @@ pub mod ffi {
         is_bridged: bool,
         /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
         history_visibility: String,
+        /// Room join rule: "public" | "invite" | "knock" | "restricted" |
+        /// "knock_restricted" | "private" | "" (unknown/absent).
+        join_rule: String,
+        /// True when GuestAccess::CanJoin (guests may join without an account).
+        guest_access: bool,
         /// Snapshot of `m.room.pinned_events` resolved against the local event
         /// cache (sender + body snippet + timestamp). Sorted newest-first so
         /// the pinned-events banner can render without a separate fetch.
@@ -695,6 +700,38 @@ pub mod ffi {
         join_rule: String,
     }
 
+    /// A room's m.room.power_levels event, narrowed to the fields the
+    /// Permissions room-settings tab edits. Field names describe the UI
+    /// action they gate, not the raw Matrix field name (noted in comments)
+    /// — read/written synchronously (Room::power_levels() is a cached local
+    /// read, no network round-trip), unlike the async GET /state fetch the
+    /// Security & Privacy tab needs for fields sliding sync doesn't reliably
+    /// deliver.
+    struct RoomPowerLevelsFfi {
+        default_role: i64,       // users_default
+        send_messages: i64,      // events_default
+        invite_users: i64,       // invite
+        change_settings: i64,    // state_default
+        kick_users: i64,         // kick
+        ban_users: i64,          // ban
+        remove_messages: i64,    // redact
+        notify_everyone: i64,    // notifications.room
+        change_permissions: i64, // events["m.room.power_levels"], falls back to state_default
+    }
+
+    /// A direct GET /state read of the four Security & Privacy tab fields,
+    /// delivered via `on_room_security_state_ready`. Bypasses sliding sync
+    /// entirely: `guest_access` is absent from matrix-sdk-ui's hardcoded
+    /// required_state lists (never delivered live at all), and the other
+    /// three fields are subject to a separate room_list_fingerprint
+    /// staleness issue.
+    struct RoomSecurityStateFfi {
+        is_encrypted: bool,
+        join_rule: String,
+        guest_access: bool,
+        history_visibility: String,
+    }
+
     /// Result of `parse_matrix_link`.  `kind` values:
     ///   0 = unknown / not a matrix link
     ///   1 = room ID  (`!room:server`)
@@ -1049,6 +1086,14 @@ pub mod ffi {
             self: &EventHandlerBridge,
             request_id: u64,
             override_json: &str,
+        );
+
+        /// Fired when an async `fetch_room_security_state_async` GET /state
+        /// fetch completes.
+        fn on_room_security_state_ready(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            state: &RoomSecurityStateFfi,
         );
 
         /// Fired when an async full-text search started via
@@ -1938,6 +1983,20 @@ pub mod ffi {
         /// the next sync and triggers `on_media_preview_config_updated`.
         fn set_media_preview_config(self: &ClientFfi, media_previews: u8, invite_avatars: bool);
 
+        /// Write (or clear) the per-room MSC4278 `media_previews` override
+        /// for `room_id`, dual-writing stable + unstable room-account-data
+        /// types. Fire-and-forget; unlike `set_media_preview_config` there is
+        /// no echo/sync-watcher callback for room-scoped account data — the
+        /// caller (ShellBase) updates its own cache optimistically.
+        /// `has_override == false` clears the override; `media_previews` is
+        /// ignored in that case.
+        fn set_room_media_preview_override(
+            self: &ClientFfi,
+            room_id: &str,
+            has_override: bool,
+            media_previews: u8,
+        );
+
         // ----- Recent emoji (io.element.recent_emoji global account-data) -----
 
         /// Top-N glyphs from the user's `io.element.recent_emoji`
@@ -2171,6 +2230,28 @@ pub mod ffi {
         /// Send an m.room.topic state event. Blocks — worker thread.
         fn set_room_topic(self: &ClientFfi, room_id: &str, topic: &str) -> OpResult;
 
+        /// Enable encryption for a room (m.room.encryption). No-op if
+        /// already encrypted; there is no operation to disable it. Blocks —
+        /// worker thread.
+        fn set_room_encryption(self: &ClientFfi, room_id: &str) -> OpResult;
+
+        /// Send an m.room.join_rules state event. `join_rule` must be one of
+        /// "public"/"invite"/"knock" — any other value is rejected. Blocks —
+        /// worker thread.
+        fn set_room_join_rule(self: &ClientFfi, room_id: &str, join_rule: &str) -> OpResult;
+
+        /// Send an m.room.guest_access state event. Blocks — worker thread.
+        fn set_room_guest_access(self: &ClientFfi, room_id: &str, allow: bool) -> OpResult;
+
+        /// Send an m.room.history_visibility state event. `visibility` must
+        /// be one of "world_readable"/"shared"/"invited"/"joined". Blocks —
+        /// worker thread.
+        fn set_room_history_visibility(
+            self: &ClientFfi,
+            room_id: &str,
+            visibility: &str,
+        ) -> OpResult;
+
         /// Append `event_id` to this room's `m.room.pinned_events` state
         /// event. No-op (returns ok) if already pinned. Blocks — worker thread.
         fn pin_event(self: &ClientFfi, room_id: &str, event_id: &str) -> OpResult;
@@ -2233,6 +2314,39 @@ pub mod ffi {
         fn can_set_room_name(self: &ClientFfi, room_id: &str) -> bool;
         fn can_set_room_topic(self: &ClientFfi, room_id: &str) -> bool;
         fn can_set_room_avatar(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level meets the requirement for
+        /// sending m.room.encryption/m.room.join_rules/m.room.guest_access/
+        /// m.room.history_visibility respectively in this room. Independent
+        /// per field; false on any uncertainty. Blocks — worker thread
+        /// (reads cached power levels, no network round-trip).
+        fn can_set_room_encryption(self: &ClientFfi, room_id: &str) -> bool;
+        fn can_set_room_join_rules(self: &ClientFfi, room_id: &str) -> bool;
+        fn can_set_room_guest_access(self: &ClientFfi, room_id: &str) -> bool;
+        fn can_set_room_history_visibility(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user's power level meets the requirement for
+        /// sending m.room.power_levels in this room — the single all-or-
+        /// nothing gate for the whole Permissions tab (Matrix has no finer
+        /// granularity than this). False on any uncertainty. Blocks — worker
+        /// thread (reads cached power levels, no network round-trip).
+        fn can_set_room_power_levels(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// Read the room's current power levels, narrowed to the fields the
+        /// Permissions tab edits. Synchronous — Room::power_levels() is a
+        /// cached local read with no network round-trip, unlike the fields
+        /// the Security & Privacy tab needs an async GET /state fetch for.
+        /// Returns Matrix spec defaults on any error (not logged in, room
+        /// not found, etc). Blocks briefly — worker thread.
+        fn room_power_levels(self: &ClientFfi, room_id: &str) -> RoomPowerLevelsFfi;
+
+        /// Send an updated m.room.power_levels state event with the 9 fields
+        /// from `levels`. Blocks — worker thread.
+        fn set_room_power_levels(
+            self: &ClientFfi,
+            room_id: &str,
+            levels: RoomPowerLevelsFfi,
+        ) -> OpResult;
 
         // ----- Devices / sessions -----
 
@@ -2374,6 +2488,13 @@ pub mod ffi {
         /// `on_room_preview_override_ready(request_id, override_json)` on
         /// completion. Does not pin a C++ worker thread.
         fn room_media_preview_override_async(self: &ClientFfi, request_id: u64, room_id: &str);
+
+        /// Fetch the room's current encryption/join_rules/guest_access/
+        /// history_visibility state via a direct GET /state request,
+        /// bypassing the local sync cache. Spawns on the tokio runtime and
+        /// fires `on_room_security_state_ready(request_id, state)` on
+        /// completion. Does not pin a C++ worker thread.
+        fn fetch_room_security_state_async(self: &ClientFfi, request_id: u64, room_id: &str);
 
         // ----- Recovery / key backup (Step 6) -----
 
@@ -2609,6 +2730,8 @@ impl Clone for ffi::RoomInfo {
             has_active_call: self.has_active_call,
             is_bridged: self.is_bridged,
             history_visibility: self.history_visibility.clone(),
+            join_rule: self.join_rule.clone(),
+            guest_access: self.guest_access,
             pinned_events: self.pinned_events.clone(),
             canonical_alias: self.canonical_alias.clone(),
         }

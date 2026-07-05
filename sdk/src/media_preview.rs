@@ -124,6 +124,24 @@ pub fn serialize(cfg: Config) -> Value {
     })
 }
 
+/// Serialize a per-room MSC4278 override. `Some(mode)` yields the single-key
+/// content object `{"media_previews": "<wire>"}`; `None` yields an empty
+/// object, clearing any existing override so the room inherits the global
+/// config again.
+///
+/// Intentionally never emits `invite_avatars` — Tesseract has no per-room
+/// override for that field. Room-account-data PUT is a full-content
+/// replace, not a merge; if a future feature adds a per-room `invite_avatars`
+/// override, this function must switch to read-modify-write (mirroring
+/// `pins.rs`'s `pin_event` pattern for `m.room.pinned_events`) so it doesn't
+/// clobber whichever field it doesn't touch.
+pub fn serialize_room_override(mode: Option<MediaPreviews>) -> Value {
+    match mode {
+        Some(m) => json!({ "media_previews": m.to_wire() }),
+        None => json!({}),
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -216,5 +234,17 @@ mod tests {
         }
         // Out-of-range u8 decodes to On (the permissive default).
         assert_eq!(MediaPreviews::from_u8(7), MediaPreviews::On);
+    }
+
+    #[test]
+    fn serialize_room_override_some_is_single_key() {
+        let v = serialize_room_override(Some(MediaPreviews::Private));
+        assert_eq!(v, json!({"media_previews": "private"}));
+        assert!(v.get("invite_avatars").is_none());
+    }
+
+    #[test]
+    fn serialize_room_override_none_is_empty() {
+        assert_eq!(serialize_room_override(None), json!({}));
     }
 }

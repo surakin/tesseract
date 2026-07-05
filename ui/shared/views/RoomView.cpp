@@ -730,6 +730,10 @@ void RoomView::wire_internal_callbacks()
     {
         room_settings_view_->set_staged_avatar("");
     };
+    room_settings_view_->on_copy_to_clipboard = [this](std::string text)
+    {
+        if (on_set_clipboard) on_set_clipboard(text);
+    };
 
     // Wire user profile panel callbacks.
     user_profile_panel_->on_close = [this]()
@@ -923,6 +927,10 @@ void RoomView::set_post_delayed(
     std::function<void(int, std::function<void()>)> f)
 {
     post_delayed_ = f;
+    if (room_settings_view_)
+    {
+        room_settings_view_->set_post_delayed(f);
+    }
     if (message_list_)
     {
         message_list_->set_post_delayed(std::move(f));

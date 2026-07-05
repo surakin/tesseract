@@ -418,6 +418,72 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn room_media_preview_override_async(&self, _request_id: u64, _room_id: &str) {}
 
+    /// Write (or clear) the per-room MSC4278 `media_previews` override for
+    /// `room_id`, dual-writing stable + unstable room-account-data types.
+    /// Fire-and-forget; no completion callback and no sync watcher for
+    /// room-scoped account data (unlike the global config) — the caller
+    /// (ShellBase) updates its own cache optimistically.
+    /// `has_override == false` clears the override (`media_previews` ignored).
+    #[cfg(not(test))]
+    pub fn set_room_media_preview_override(
+        &self,
+        room_id: &str,
+        has_override: bool,
+        media_previews: u8,
+    ) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
+            return;
+        };
+        let Some(room) = client.get_room(&rid) else {
+            return;
+        };
+        let mode =
+            has_override.then(|| crate::media_preview::MediaPreviews::from_u8(media_previews));
+        let ad_lock = Arc::clone(&self.account_data_lock);
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            use matrix_sdk::ruma::events::RoomAccountDataEventType;
+            use matrix_sdk::ruma::serde::Raw;
+
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "account/set_room_media_preview_override".to_string(),
+            );
+            let _ad_guard = ad_lock.lock().await;
+            let content = crate::media_preview::serialize_room_override(mode);
+            let Ok(raw) = Raw::new(&content) else {
+                return;
+            };
+            let raw = raw.cast_unchecked();
+            for ty in [
+                crate::media_preview::TYPE_STABLE,
+                crate::media_preview::TYPE_UNSTABLE,
+            ] {
+                let ev_type = RoomAccountDataEventType::from(ty);
+                let _ = room.set_account_data_raw(ev_type, raw.clone()).await;
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn set_room_media_preview_override(
+        &self,
+        _room_id: &str,
+        _has_override: bool,
+        _media_previews: u8,
+    ) {
+    }
+
     /// Write the global MSC4278 config, dual-writing the stable and unstable
     /// account-data types so other MSC4278 clients pick it up regardless of
     /// which side has reached stable. Fire-and-forget against the homeserver;

@@ -2,20 +2,28 @@
 
 // RoomSettingsView — a full-bounds widget that replaces the room header,
 // timeline, and compose bar while open (see RoomView::arrange()/paint()'s
-// early-return guard), letting the user edit a room's avatar, display name,
-// and topic. Every field is editable immediately (no separate view/edit
-// toggle like RoomInfoPanel's topic) but nothing is sent to the server
-// until Accept is clicked — Cancel discards all staged edits.
+// early-return guard). Structured like the app-wide SettingsView: a title +
+// tk::SideTabView ("General": name/topic/avatar; "Media": personal MSC4278
+// per-room override; "Security & Privacy": encryption/join rule/guest
+// access/history visibility) + an Accept/Cancel footer. Every field is
+// editable immediately but nothing is sent to the server until Accept is
+// clicked — Cancel discards all staged edits, across every tab.
 //
-// Per-field permission gating (set_field_permissions): a field the current
-// user lacks power level for renders as plain static text instead of an
-// editable control, mirroring AccountSection::Content's !name_editable_
-// branch.
+// Per-field permission gating (set_field_permissions / set_security_field_
+// permissions): a field the current user lacks power level for renders as
+// plain static text/a disabled control instead of an editable one (see
+// RoomGeneralSection, RoomSecuritySection). The Media tab's field is
+// personal account data with no permission gating at all.
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/side_tab_view.h"
 #include "tk/widget.h"
-#include "views/AvatarEditControl.h"
+#include "views/Toast.h"
+#include "views/settings/RoomGeneralSection.h"
+#include "views/settings/RoomMediaSection.h"
+#include "views/settings/RoomPermissionsSection.h"
+#include "views/settings/RoomSecuritySection.h"
 
 #include <tesseract/types.h>
 
@@ -27,22 +35,57 @@
 namespace tesseract::views
 {
 
+// A staged change to the per-room MSC4278 media_previews override.
+// has_override == false means "use global default" (clear the override);
+// mode is only meaningful when has_override is true.
+struct RoomMediaOverrideChange
+{
+    bool has_override;
+    tesseract::MediaPreviewConfig::Mode mode;
+};
+
 // Pure diff logic, deliberately free of any widget/paint dependency so it
 // is trivially unit-testable. Returns only the fields that actually
 // changed; an unset optional means "leave this field alone" (no state
-// event should be sent for it).
+// event / account-data write should be sent for it).
 struct RoomSettingsChanges
 {
     std::optional<std::string> name;
     std::optional<std::string> topic;
     std::optional<std::string> avatar_mxc;
+    // Only ever true (turning encryption on) — there is no disable
+    // operation anywhere in matrix-sdk, so a "turn off" change is never
+    // emitted even if a stale staged=false/original=true state occurs.
+    std::optional<bool>        is_encrypted;
+    std::optional<std::string> join_rule;
+    std::optional<bool>        guest_access;
+    std::optional<std::string> history_visibility;
+    std::optional<RoomMediaOverrideChange> media_override;
+    std::optional<tesseract::RoomPermissions> permissions;
+};
+
+// Bundles a snapshot of every staged field. Passed twice (original, staged)
+// to compute_room_settings_changes so the two immutable snapshots can't be
+// transposed field-by-field the way a flat positional-argument list would
+// allow once there are this many same-typed fields.
+struct RoomSettingsFieldValues
+{
+    std::string name;
+    std::string topic;
+    std::string avatar_mxc;
+    bool        is_encrypted = false;
+    std::string join_rule;
+    bool        guest_access = false;
+    std::string history_visibility;
+    bool        has_media_override = false;
+    tesseract::MediaPreviewConfig::Mode media_override_mode =
+        tesseract::MediaPreviewConfig::Mode::On;
+    tesseract::RoomPermissions permissions;
 };
 
 RoomSettingsChanges compute_room_settings_changes(
-    const std::string& original_name, const std::string& staged_name,
-    const std::string& original_topic, const std::string& staged_topic,
-    const std::string& original_avatar_mxc,
-    const std::string& staged_avatar_mxc);
+    const RoomSettingsFieldValues& original,
+    const RoomSettingsFieldValues& staged);
 
 class RoomSettingsView : public tk::Widget
 {
@@ -57,16 +100,47 @@ public:
     void open(const tesseract::RoomInfo& info);
     void close();
     bool is_open() const { return open_; }
+    const std::string& room_id() const { return room_id_; }
 
     using ImageProvider =
         std::function<const tk::Image*(const std::string& mxc)>;
     void set_avatar_provider(ImageProvider p);
 
-    // Independent per-field permission gating.
+    // Independent per-field permission gating (General tab).
     void set_field_permissions(bool can_name, bool can_topic, bool can_avatar);
 
+    // Independent per-field permission gating (Security & Privacy tab).
+    void set_security_field_permissions(bool can_encryption, bool can_join_rule,
+                                        bool can_guest_access,
+                                        bool can_history_visibility);
+
+    // Re-seeds BOTH original_*_ and staged_*_ for encryption/join_rule/
+    // guest_access/history_visibility together, establishing the baseline
+    // "no change" state against which Accept diffs. Called by
+    // ShellBase once its GET /state fetch (Client::fetch_room_security_
+    // state_async) resolves — the RoomInfo passed to open() can't be
+    // trusted for these fields (guest_access is never delivered via
+    // sliding sync at all, and the other three are subject to a separate
+    // staleness issue), so open() only seeds a placeholder and this
+    // corrects it moments later. Mirrors set_media_override's shape.
+    void set_security_state(bool is_encrypted, std::string join_rule,
+                            bool guest_access, std::string history_visibility);
+
+    // Single all-or-nothing gate for the Permissions tab (Matrix has no
+    // finer granularity than "can this user send m.room.power_levels at
+    // all"), unlike Security & Privacy's four independent per-field gates.
+    void set_permissions_field_permissions(bool can_edit);
+
+    // Re-seeds both original_permissions_ and staged_permissions_ together,
+    // establishing the baseline "no change" state against which Accept
+    // diffs. Called synchronously by ShellBase right after open() —
+    // Client::room_power_levels is a cached local read with no network
+    // round-trip, unlike set_security_state's async GET /state fetch.
+    void set_permissions_state(const tesseract::RoomPermissions& permissions);
+
     // NativeTextField/NativeTextArea overlay rects (empty when that field's
-    // permission is denied, the view is closed, or a commit is in flight).
+    // permission is denied, the view is closed, General isn't the selected
+    // tab, or a commit is in flight).
     tk::Rect    name_field_rect() const;
     void        set_name_edit_text(std::string t);
     std::string name_edit_initial_text() const { return staged_name_; }
@@ -78,7 +152,7 @@ public:
     // the compose bar's text area. The shell wires the NativeTextArea's
     // set_on_height_changed to this (mirrors ComposeBar::set_text_area_
     // natural_height), reporting the control's natural (unclamped) content
-    // height on every change; clamped to [kFieldH, kTopicMaxH] internally.
+    // height on every change; clamped internally by RoomGeneralSection.
     void set_topic_area_natural_height(float h);
 
     // Avatar staging — the shell calls this once Client::upload_media
@@ -95,9 +169,29 @@ public:
     // precedent); ok=true closes the view.
     void set_commit_result(bool ok, std::string error);
 
+    // Push the current effective per-room MSC4278 media_previews override
+    // into the Media tab, seeding BOTH the original and staged baselines
+    // (this establishes what "no change" means for the Media tab — like
+    // every other tab, nothing is sent to the server until Accept). Called
+    // by ShellBase::seed_room_media_section_ once the room-switch prefetch
+    // (or its own fetch) has resolved — this view has no Client/ShellBase
+    // dependency, so it can't fetch on its own.
+    void set_media_override(bool has_override, tesseract::MediaPreviewConfig::Mode mode);
+
+    // Wire the shell's post_delayed provider (mirrors RoomView::set_post_delayed)
+    // so the Room ID copy-toast can auto-dismiss itself.
+    void set_post_delayed(std::function<void(int, std::function<void()>)> f);
+
+    // Fired when the user clicks the Room ID row; the shell performs the
+    // actual clipboard write (this view has no Host access), then the toast
+    // shown by this view is dismissed on its own timer. (Copying an ID to
+    // the clipboard is not a "setting" — it applies immediately regardless
+    // of Accept/Cancel, same as it would for any other read-only value.)
+    std::function<void(std::string)> on_copy_to_clipboard;
+
     // Fired when the view's own layout-affecting state changes (open/close,
-    // permission changes affecting field rects) so the shell can relayout
-    // native overlays.
+    // permission changes affecting field rects, tab switches) so the shell
+    // can relayout native overlays.
     std::function<void()> on_layout_changed;
     std::function<void()> on_avatar_upload_clicked;
     std::function<void()> on_avatar_remove_clicked;
@@ -110,9 +204,6 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    bool     on_pointer_move(tk::Point local) override;
-    void     on_pointer_leave() override;
 
 private:
     bool open_       = false;
@@ -126,43 +217,47 @@ private:
     std::string staged_topic_;
     std::string staged_avatar_mxc_;
 
-    bool can_name_   = false;
-    bool can_topic_  = false;
-    bool can_avatar_ = false;
+    bool        original_is_encrypted_ = false;
+    bool        staged_is_encrypted_   = false;
+    std::string original_join_rule_;
+    std::string staged_join_rule_;
+    bool        original_guest_access_ = false;
+    bool        staged_guest_access_   = false;
+    std::string original_history_visibility_;
+    std::string staged_history_visibility_;
 
-    AvatarEditControl avatar_;
+    bool original_media_has_override_ = false;
+    tesseract::MediaPreviewConfig::Mode original_media_mode_ =
+        tesseract::MediaPreviewConfig::Mode::On;
+    bool staged_media_has_override_ = false;
+    tesseract::MediaPreviewConfig::Mode staged_media_mode_ =
+        tesseract::MediaPreviewConfig::Mode::On;
+
+    tesseract::RoomPermissions original_permissions_;
+    tesseract::RoomPermissions staged_permissions_;
+
+    tk::SideTabView*        tabs_        = nullptr;
+    RoomGeneralSection*     general_     = nullptr;
+    RoomMediaSection*       media_       = nullptr;
+    RoomSecuritySection*    security_    = nullptr;
+    RoomPermissionsSection* permissions_ = nullptr;
+    Toast*                  toast_       = nullptr;
 
     tk::Button* accept_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
 
+    std::function<void(int, std::function<void()>)> post_delayed_;
+
     std::string commit_error_;
 
-    // World-space rects, recomputed each arrange().
-    tk::Rect name_rect_{};
-    tk::Rect topic_rect_{};
-
     std::unique_ptr<tk::TextLayout> title_layout_;
-    std::unique_ptr<tk::TextLayout> name_label_layout_;
-    std::unique_ptr<tk::TextLayout> name_static_layout_;
-    std::unique_ptr<tk::TextLayout> topic_label_layout_;
-    std::unique_ptr<tk::TextLayout> topic_static_layout_;
     std::unique_ptr<tk::TextLayout> commit_error_layout_;
 
-    // Natural (unclamped) content height reported by the topic NativeTextArea;
-    // reset to kFieldH (one line) on open().
-    float topic_natural_h_ = kFieldH;
-
-    static constexpr float kAvatarD      = 96.0f;
-    static constexpr float kAvatarGap    = 24.0f; // avatar -> fields column
-    static constexpr float kPadX         = 24.0f;
-    static constexpr float kPadY         = 24.0f;
-    static constexpr float kFieldGap     = 12.0f; // between one label+field group and the next
-    static constexpr float kLabelGap     = 4.0f;  // label -> its own field
-    static constexpr float kLabelH       = 16.0f;
-    static constexpr float kFieldH       = 26.0f; // single-line row (underline sits at its base)
-    static constexpr float kTopicMaxH    = 200.0f; // cap so topic can't swallow the whole view
-    static constexpr float kBtnH         = 36.0f;
-    static constexpr float kBtnGap       = 8.0f;
+    static constexpr float kPadX      = 24.0f;
+    static constexpr float kBarHeight = 48.0f; // top title bar, matches SettingsView's back-bar
+    static constexpr float kFooterH   = 64.0f; // bottom Accept/Cancel bar
+    static constexpr float kBtnH      = 36.0f;
+    static constexpr float kBtnGap    = 8.0f;
 };
 
 } // namespace tesseract::views

@@ -925,6 +925,399 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Enable encryption for a room by sending m.room.encryption. No-op if
+    /// already encrypted. There is no counterpart to disable encryption —
+    /// no such operation exists anywhere in matrix-sdk. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_encryption(&self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_room_encryption".to_string(),
+        );
+        match self.rt.block_on(room.enable_encryption()) {
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_encryption(&self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Send an m.room.join_rules state event. `join_rule` must be one of
+    /// "public"/"invite"/"knock" — any other value (including
+    /// "restricted"/"knock_restricted", which carry an allow-list this
+    /// client doesn't manage) is rejected as defense-in-depth against a
+    /// stale staged value, since the UI never offers them as editable
+    /// choices. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_join_rule(&self, room_id: &str, join_rule: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        use matrix_sdk::ruma::events::room::join_rules::{JoinRule, RoomJoinRulesEventContent};
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let rule = match join_rule {
+            "public" => JoinRule::Public,
+            "invite" => JoinRule::Invite,
+            "knock" => JoinRule::Knock,
+            other => return err(format!("unsupported join rule: {other}")),
+        };
+        let content = RoomJoinRulesEventContent::new(rule);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_room_join_rule".to_string(),
+        );
+        match self.rt.block_on(room.send_state_event(content)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_join_rule(&self, _room_id: &str, _join_rule: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Send an m.room.guest_access state event. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_guest_access(&self, room_id: &str, allow: bool) -> OpResult {
+        let _enter = self.rt.enter();
+        use matrix_sdk::ruma::events::room::guest_access::{
+            GuestAccess, RoomGuestAccessEventContent,
+        };
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let content = RoomGuestAccessEventContent::new(if allow {
+            GuestAccess::CanJoin
+        } else {
+            GuestAccess::Forbidden
+        });
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_room_guest_access".to_string(),
+        );
+        match self.rt.block_on(room.send_state_event(content)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_guest_access(&self, _room_id: &str, _allow: bool) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Send an m.room.history_visibility state event. `visibility` must be
+    /// one of "world_readable"/"shared"/"invited"/"joined". Blocks — worker
+    /// thread.
+    #[cfg(not(test))]
+    pub fn set_room_history_visibility(&self, room_id: &str, visibility: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        use matrix_sdk::ruma::events::room::history_visibility::{
+            HistoryVisibility, RoomHistoryVisibilityEventContent,
+        };
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let hv = match visibility {
+            "world_readable" => HistoryVisibility::WorldReadable,
+            "shared" => HistoryVisibility::Shared,
+            "invited" => HistoryVisibility::Invited,
+            "joined" => HistoryVisibility::Joined,
+            other => return err(format!("unsupported history visibility: {other}")),
+        };
+        let content = RoomHistoryVisibilityEventContent::new(hv);
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_room_history_visibility".to_string(),
+        );
+        match self.rt.block_on(room.send_state_event(content)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_history_visibility(&self, _room_id: &str, _visibility: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Read the room's current power levels, narrowed to the 9 fields the
+    /// Permissions room-settings tab edits. Synchronous — Room::power_levels()
+    /// is a cached local read with no network round-trip, unlike the fields
+    /// the Security & Privacy tab needs an async GET /state fetch for (see
+    /// fetch_room_security_state_async's doc comment for that distinction).
+    /// Returns Matrix spec defaults on any error. Blocks briefly — worker
+    /// thread.
+    #[cfg(not(test))]
+    pub fn room_power_levels(&self, room_id: &str) -> crate::ffi::RoomPowerLevelsFfi {
+        fn defaults() -> crate::ffi::RoomPowerLevelsFfi {
+            crate::ffi::RoomPowerLevelsFfi {
+                default_role: 0,
+                send_messages: 0,
+                invite_users: 0,
+                change_settings: 50,
+                kick_users: 50,
+                ban_users: 50,
+                remove_messages: 50,
+                notify_everyone: 50,
+                change_permissions: 50,
+            }
+        }
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return defaults();
+        };
+        let Ok((_, room)) = require_room(client, room_id) else {
+            return defaults();
+        };
+        let Ok(pl) = self.rt.block_on(room.power_levels()) else {
+            return defaults();
+        };
+        let change_permissions = pl
+            .events
+            .get(&matrix_sdk::ruma::events::TimelineEventType::from(
+                "m.room.power_levels",
+            ))
+            .map(|v| i64::from(*v))
+            .unwrap_or_else(|| i64::from(pl.state_default));
+        crate::ffi::RoomPowerLevelsFfi {
+            default_role: i64::from(pl.users_default),
+            send_messages: i64::from(pl.events_default),
+            invite_users: i64::from(pl.invite),
+            change_settings: i64::from(pl.state_default),
+            kick_users: i64::from(pl.kick),
+            ban_users: i64::from(pl.ban),
+            remove_messages: i64::from(pl.redact),
+            notify_everyone: i64::from(pl.notifications.room),
+            change_permissions,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn room_power_levels(&self, _room_id: &str) -> crate::ffi::RoomPowerLevelsFfi {
+        crate::ffi::RoomPowerLevelsFfi::default()
+    }
+
+    /// Send an updated m.room.power_levels state event with the 9 fields
+    /// from `levels`. Reads the current power levels first (preserving every
+    /// field this tab doesn't edit, e.g. per-user overrides and other
+    /// per-event-type overrides), mutates only the 9 fields the Permissions
+    /// tab exposes, then sends the result. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_power_levels(
+        &self,
+        room_id: &str,
+        levels: crate::ffi::RoomPowerLevelsFfi,
+    ) -> OpResult {
+        let _enter = self.rt.enter();
+        use matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent;
+        use matrix_sdk::ruma::events::TimelineEventType;
+        use matrix_sdk::ruma::Int;
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let mut pl = match self.rt.block_on(room.power_levels()) {
+            Ok(p) => p,
+            Err(e) => return err(e.to_string()),
+        };
+
+        fn to_int(val: i64) -> Result<Int, OpResult> {
+            Int::new(val).ok_or_else(|| err(format!("power level {val} out of range")))
+        }
+        pl.users_default = try_op!(to_int(levels.default_role));
+        pl.events_default = try_op!(to_int(levels.send_messages));
+        pl.invite = try_op!(to_int(levels.invite_users));
+        pl.state_default = try_op!(to_int(levels.change_settings));
+        pl.kick = try_op!(to_int(levels.kick_users));
+        pl.ban = try_op!(to_int(levels.ban_users));
+        pl.redact = try_op!(to_int(levels.remove_messages));
+        pl.notifications.room = try_op!(to_int(levels.notify_everyone));
+        pl.events.insert(
+            TimelineEventType::from("m.room.power_levels"),
+            try_op!(to_int(levels.change_permissions)),
+        );
+
+        let content = match RoomPowerLevelsEventContent::try_from(pl) {
+            Ok(c) => c,
+            Err(e) => return err(e.to_string()),
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/set_room_power_levels".to_string(),
+        );
+        match self.rt.block_on(room.send_state_event(content)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_power_levels(
+        &self,
+        _room_id: &str,
+        _levels: crate::ffi::RoomPowerLevelsFfi,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Fetch the room's current m.room.encryption/m.room.join_rules/
+    /// m.room.guest_access/m.room.history_visibility state directly from the
+    /// homeserver via GET /rooms/{id}/state, bypassing the local sync cache
+    /// entirely. Needed because guest_access is never delivered via sliding
+    /// sync (absent from matrix-sdk-ui's hardcoded required_state list, with
+    /// no app-level hook to add it — confirmed by inspecting the vendored
+    /// crate source) and because join_rules/encryption/history_visibility
+    /// are subject to a separate update-notification filter that can leave
+    /// the locally cached values stale after a state-event write. Mirrors
+    /// the same on-demand-fetch precedent already used for bridge detection
+    /// (start_bridge_status_check, backfill.rs) for exactly this class of
+    /// problem — state that sync doesn't reliably keep fresh.
+    ///
+    /// Async — does not block. Calls back via on_room_security_state_ready
+    /// with a RoomSecurityStateFfi — fields default to the MSC-safe defaults
+    /// (mirroring build_room_info's own fallback shapes) if the
+    /// corresponding event is missing or the fetch fails outright.
+    #[cfg(not(test))]
+    pub fn fetch_room_security_state_async(&self, request_id: u64, room_id: &str) {
+        fn defaults() -> crate::ffi::RoomSecurityStateFfi {
+            crate::ffi::RoomSecurityStateFfi {
+                is_encrypted: false,
+                join_rule: String::new(),
+                guest_access: false,
+                history_visibility: "shared".to_string(),
+            }
+        }
+        let Some(client) = self.client.clone() else {
+            if let Some(ref h) = self.handler {
+                h.lock().on_room_security_state_ready(request_id, &defaults());
+            }
+            return;
+        };
+        let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) else {
+            if let Some(ref h) = self.handler {
+                h.lock().on_room_security_state_ready(request_id, &defaults());
+            }
+            return;
+        };
+        let handler = self.handler.clone();
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = self.in_flight_urls.clone();
+        self.rt.spawn(async move {
+            use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
+
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/fetch_room_security_state".to_string(),
+            );
+
+            let mut is_encrypted = false;
+            let mut join_rule = String::new();
+            let mut guest_access = false;
+            let mut history_visibility = "shared".to_string();
+
+            if let Ok(resp) = client.send(state_api::Request::new(rid)).await {
+                for raw in &resp.room_state {
+                    let Ok(Some(ty)) = raw.get_field::<String>("type") else {
+                        continue;
+                    };
+                    match ty.as_str() {
+                        // GET /state only lists an event type if it is the
+                        // room's CURRENT state — presence alone means encryption
+                        // is on (there is no valid "off" content for this type).
+                        "m.room.encryption" => is_encrypted = true,
+                        "m.room.join_rules" => {
+                            if let Ok(Some(content)) =
+                                raw.get_field::<serde_json::Value>("content")
+                            {
+                                join_rule = content
+                                    .get("join_rule")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or_default()
+                                    .to_string();
+                            }
+                        }
+                        "m.room.guest_access" => {
+                            if let Ok(Some(content)) =
+                                raw.get_field::<serde_json::Value>("content")
+                            {
+                                guest_access = content.get("guest_access").and_then(|v| v.as_str())
+                                    == Some("can_join");
+                            }
+                        }
+                        "m.room.history_visibility" => {
+                            if let Ok(Some(content)) =
+                                raw.get_field::<serde_json::Value>("content")
+                            {
+                                history_visibility = content
+                                    .get("history_visibility")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("shared")
+                                    .to_string();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            let state = crate::ffi::RoomSecurityStateFfi {
+                is_encrypted,
+                join_rule,
+                guest_access,
+                history_visibility,
+            };
+
+            if let Some(h) = handler {
+                h.lock().on_room_security_state_ready(request_id, &state);
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn fetch_room_security_state_async(&self, _request_id: u64, _room_id: &str) {}
+
     /// Set the current user's display name in a specific room (m.room.member
     /// state event). Preserves all other existing member event fields. Blocks — worker thread.
     #[cfg(not(test))]
@@ -1214,6 +1607,164 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn can_set_room_avatar(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.encryption in this room. Cached read — no network
+    /// round-trip. False on any uncertainty. Mirrors can_set_room_name.
+    #[cfg(not(test))]
+    pub fn can_set_room_encryption(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomEncryption),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_encryption(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.join_rules in this room. Cached read — no network
+    /// round-trip. False on any uncertainty. Mirrors can_set_room_name.
+    #[cfg(not(test))]
+    pub fn can_set_room_join_rules(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomJoinRules),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_join_rules(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.guest_access in this room. Cached read — no network
+    /// round-trip. False on any uncertainty. Mirrors can_set_room_name.
+    #[cfg(not(test))]
+    pub fn can_set_room_guest_access(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomGuestAccess),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_guest_access(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.history_visibility in this room. Cached read — no
+    /// network round-trip. False on any uncertainty. Mirrors can_set_room_name.
+    #[cfg(not(test))]
+    pub fn can_set_room_history_visibility(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomHistoryVisibility),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_history_visibility(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.room.power_levels in this room — the single all-or-nothing
+    /// gate for the whole Permissions tab (Matrix has no finer granularity
+    /// than this; the server itself rejects attempts to grant a level above
+    /// the sender's own). Cached read — no network round-trip. False on any
+    /// uncertainty. Mirrors can_set_room_name.
+    #[cfg(not(test))]
+    pub fn can_set_room_power_levels(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::RoomPowerLevels),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_power_levels(&self, _room_id: &str) -> bool {
         false
     }
 }

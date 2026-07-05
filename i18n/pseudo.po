@@ -242,6 +242,14 @@ msgstr[1] "[{0}'s requests to join were denied]"
 msgid "Room Settings"
 msgstr "[Room Settings]"
 
+#: ui/shared/views/settings/RoomGeneralSection.cpp
+msgid "General"
+msgstr "[General]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Media"
+msgstr "[Media]"
+
 #: ui/shared/views/RoomSettingsView.cpp
 msgid "Name"
 msgstr "[Name]"
@@ -249,3 +257,179 @@ msgstr "[Name]"
 #: ui/shared/views/RoomSettingsView.cpp
 msgid "Topic"
 msgstr "[Topic]"
+
+#: ui/shared/views/settings/RoomGeneralSection.cpp
+msgid "Room Address"
+msgstr "[Room Address]"
+
+#: ui/shared/views/settings/RoomGeneralSection.cpp
+msgid "Room ID"
+msgstr "[Room ID]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Copied to clipboard"
+msgstr "[Copied to clipboard]"
+
+#: ui/shared/views/settings/RoomMediaSection.cpp
+msgid "Media previews"
+msgstr "[Media previews]"
+
+#: ui/shared/views/settings/RoomMediaSection.cpp
+msgid "Use global default"
+msgstr "[Use global default]"
+
+#: ui/shared/views/settings/RoomMediaSection.cpp
+msgid "Always"
+msgstr "[Always]"
+
+#: ui/shared/views/settings/RoomMediaSection.cpp
+msgid "In private rooms only"
+msgstr "[In private rooms only]"
+
+#: ui/shared/views/settings/RoomMediaSection.cpp
+msgid "Never"
+msgstr "[Never]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Security & Privacy"
+msgstr "[Security & Privacy]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Encryption"
+msgstr "[Encryption]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Encrypt this room"
+msgstr "[Encrypt this room]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Once enabled, encryption cannot be turned off."
+msgstr "[Once enabled, encryption cannot be turned off.]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Who can join"
+msgstr "[Who can join]"
+
+#: ui/shared/views/JoinRoomView.cpp ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Public"
+msgstr "[Public]"
+
+#: ui/shared/views/JoinRoomView.cpp ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Invite only"
+msgstr "[Invite only]"
+
+#: ui/shared/views/JoinRoomView.cpp ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Knock"
+msgstr "[Knock]"
+
+#: ui/shared/views/JoinRoomView.cpp ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Restricted"
+msgstr "[Restricted]"
+
+#: ui/shared/views/JoinRoomView.cpp ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Knock+Restricted"
+msgstr "[Knock+Restricted]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Guest Access"
+msgstr "[Guest Access]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Allow guests to join"
+msgstr "[Allow guests to join]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "History Visibility"
+msgstr "[History Visibility]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Anyone"
+msgstr "[Anyone]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Members"
+msgstr "[Members]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Members (since invited)"
+msgstr "[Members (since invited)]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "Members (since joined)"
+msgstr "[Members (since joined)]"
+
+#: ui/shared/views/settings/RoomSecuritySection.cpp
+msgid "{0} (managed elsewhere)"
+msgstr "[{0} (managed elsewhere)]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Permissions"
+msgstr "[Permissions]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Default Role"
+msgstr "[Default Role]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "New members"
+msgstr "[New members]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Messages"
+msgstr "[Messages]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Send messages"
+msgstr "[Send messages]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Remove messages sent by others"
+msgstr "[Remove messages sent by others]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Membership"
+msgstr "[Membership]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Invite users"
+msgstr "[Invite users]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Kick users"
+msgstr "[Kick users]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Ban users"
+msgstr "[Ban users]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Advanced"
+msgstr "[Advanced]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Change settings"
+msgstr "[Change settings]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Change permissions"
+msgstr "[Change permissions]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Notify everyone (@room)"
+msgstr "[Notify everyone (@room)]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Default"
+msgstr "[Default]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Moderator"
+msgstr "[Moderator]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Admin"
+msgstr "[Admin]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "Custom ({0})"
+msgstr "[Custom ({0})]"

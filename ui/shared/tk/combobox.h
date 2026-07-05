@@ -23,6 +23,10 @@ public:
     void set_selected_value(const std::string& value);
     const std::string& selected_value() const { return selected_value_; }
 
+    // Disabled: never expands the dropdown, drawn dimmed. Collapses the
+    // dropdown if it happens to be open when disabled.
+    void set_enabled(bool enabled) override;
+
     bool is_expanded() const { return expanded_; }
     void collapse();
 

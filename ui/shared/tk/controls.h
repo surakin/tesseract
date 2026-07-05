@@ -161,21 +161,12 @@ public:
         variant_ = v;
         return *this;
     }
-    Button& set_enabled(bool e)
-    {
-        enabled_ = e;
-        return *this;
-    }
     Button& set_min_size(Size s)
     {
         min_size_ = s;
         return *this;
     }
 
-    bool enabled() const
-    {
-        return enabled_;
-    }
     bool hovered() const
     {
         return hovered_;
@@ -215,7 +206,6 @@ private:
     std::string label_;
     std::function<void()> on_click_;
     Variant variant_ = Variant::Primary;
-    bool enabled_ = true;
     bool hovered_ = false;
     bool pressed_ = false;
     Size min_size_{0, 32};
@@ -236,7 +226,6 @@ public:
     {
         return checked_;
     }
-    void set_enabled(bool enabled);
     void set_font_role(FontRole role);
 
     std::function<void(bool)> on_change;
@@ -253,7 +242,6 @@ public:
 private:
     std::string label_;
     bool checked_ = false;
-    bool enabled_ = true;
     bool hovered_ = false;
     bool pressed_ = false;
 
@@ -277,8 +265,6 @@ public:
     SwitchButton& set_label(std::string l) { label_ = std::move(l); cached_.reset(); return *this; }
     void set_checked(bool c) { checked_ = c; }
     bool checked() const { return checked_; }
-    void set_enabled(bool e) { enabled_ = e; }
-    bool enabled() const { return enabled_; }
 
     std::function<void(bool)> on_change; // fires with the new state on user click
 
@@ -292,7 +278,6 @@ public:
 private:
     std::string                 label_;
     bool                        checked_ = false;
-    bool                        enabled_ = true;
     bool                        hovered_ = false;
     bool                        pressed_ = false;
     std::unique_ptr<TextLayout> cached_;

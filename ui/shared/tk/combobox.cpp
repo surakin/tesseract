@@ -44,6 +44,12 @@ void ComboBox::collapse()
     button_pressed_ = false;
 }
 
+void ComboBox::set_enabled(bool enabled)
+{
+    Widget::set_enabled(enabled);
+    if (!enabled_) collapse();
+}
+
 // ── measure / arrange ─────────────────────────────────────────────────────────
 
 Size ComboBox::measure(LayoutCtx& /*ctx*/, Size constraints)
@@ -116,11 +122,11 @@ void ComboBox::paint(PaintCtx& ctx)
 
     // ── Button ────────────────────────────────────────────────────────────────
 
-    if (button_pressed_)
+    if (enabled_ && button_pressed_)
     {
         ctx.canvas.fill_rounded_rect(button_rect_, kBtnRadius, pal.subtle_pressed);
     }
-    else if (button_hovered_)
+    else if (enabled_ && button_hovered_)
     {
         ctx.canvas.fill_rounded_rect(button_rect_, kBtnRadius, pal.subtle_hover);
     }
@@ -154,7 +160,7 @@ void ComboBox::paint(PaintCtx& ctx)
         const Size  sz = layouts_[0]->measure();
         const float ty = button_rect_.y + (button_rect_.h - sz.h) * 0.5f;
         ctx.canvas.draw_text(*layouts_[0], {button_rect_.x + kHPad, ty},
-                             pal.text_primary);
+                             enabled_ ? pal.text_primary : pal.text_muted);
     }
 
     // Chevron ▾
@@ -281,6 +287,8 @@ void ComboBox::paint_overlay(PaintCtx& ctx)
 
 bool ComboBox::on_pointer_down(Point local)
 {
+    if (!enabled_) return false;
+
     const Point w{local.x + bounds_.x, local.y + bounds_.y};
 
     if (expanded_)
@@ -349,6 +357,8 @@ void ComboBox::on_pointer_up(Point local, bool inside_self)
 
 bool ComboBox::on_pointer_move(Point local)
 {
+    if (!enabled_) return false;
+
     const Point w{local.x + bounds_.x, local.y + bounds_.y};
     bool changed = false;
 

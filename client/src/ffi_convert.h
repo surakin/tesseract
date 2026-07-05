@@ -152,6 +152,46 @@ inline PinnedEvent from_ffi(const tesseract_ffi::PinnedEvent& p)
     };
 }
 
+inline RoomPermissions from_ffi(const tesseract_ffi::RoomPowerLevelsFfi& p)
+{
+    return RoomPermissions{
+        .default_role       = p.default_role,
+        .send_messages      = p.send_messages,
+        .invite_users       = p.invite_users,
+        .change_settings    = p.change_settings,
+        .kick_users         = p.kick_users,
+        .ban_users          = p.ban_users,
+        .remove_messages    = p.remove_messages,
+        .notify_everyone    = p.notify_everyone,
+        .change_permissions = p.change_permissions,
+    };
+}
+
+inline tesseract_ffi::RoomPowerLevelsFfi to_ffi(const RoomPermissions& p)
+{
+    return tesseract_ffi::RoomPowerLevelsFfi{
+        .default_role       = p.default_role,
+        .send_messages      = p.send_messages,
+        .invite_users       = p.invite_users,
+        .change_settings    = p.change_settings,
+        .kick_users         = p.kick_users,
+        .ban_users          = p.ban_users,
+        .remove_messages    = p.remove_messages,
+        .notify_everyone    = p.notify_everyone,
+        .change_permissions = p.change_permissions,
+    };
+}
+
+inline RoomSecurityState from_ffi(const tesseract_ffi::RoomSecurityStateFfi& s)
+{
+    return RoomSecurityState{
+        .is_encrypted       = s.is_encrypted,
+        .join_rule          = std::string(s.join_rule),
+        .guest_access       = s.guest_access,
+        .history_visibility = std::string(s.history_visibility),
+    };
+}
+
 inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
 {
     RoomInfo out{
@@ -180,6 +220,8 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .has_active_call = r.has_active_call,
         .is_bridged = r.is_bridged,
         .history_visibility = std::string(r.history_visibility),
+        .join_rule = std::string(r.join_rule),
+        .guest_access = r.guest_access,
     };
     out.pinned_events.reserve(r.pinned_events.size());
     for (const auto& p : r.pinned_events)

@@ -309,6 +309,19 @@ public:
     {
         visible_ = v;
     }
+    bool enabled() const
+    {
+        return enabled_;
+    }
+    // Virtual so widgets that need extra bookkeeping on disable (e.g.
+    // ComboBox collapsing an open dropdown) can extend it; the base just
+    // stores the flag. Hover is gated on enabled_ centrally — see
+    // dispatch_pointer_move() and each leaf widget's paint() — so overrides
+    // don't need to handle hover themselves.
+    virtual void set_enabled(bool enabled)
+    {
+        enabled_ = enabled;
+    }
     void set_layout_hints(LayoutHints h)
     {
         hints_ = h;
@@ -361,6 +374,7 @@ protected:
     Rect bounds_{};
     LayoutHints hints_{};
     bool visible_ = true;
+    bool enabled_ = true;
 
 private:
     Widget* parent_ = nullptr;

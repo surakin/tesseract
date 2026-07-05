@@ -300,7 +300,7 @@ void SwitchButton::paint(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
-    if (hovered_)
+    if (enabled_ && hovered_)
         ctx.canvas.fill_rounded_rect(bounds_, kBtnRadius, pal.subtle_hover);
 
     // Label — left-aligned, vertically centred.
@@ -357,6 +357,7 @@ void SwitchButton::on_pointer_up(Point /*local*/, bool inside_self)
 
 bool SwitchButton::on_pointer_move(Point /*local*/)
 {
+    if (!enabled_) return false;
     if (!hovered_) { hovered_ = true; return true; }
     return false;
 }
@@ -391,11 +392,6 @@ CheckButton::CheckButton(std::string label, bool checked)
 void CheckButton::set_checked(bool checked)
 {
     checked_ = checked;
-}
-
-void CheckButton::set_enabled(bool enabled)
-{
-    enabled_ = enabled;
 }
 
 void CheckButton::set_font_role(FontRole role)
@@ -448,7 +444,7 @@ void CheckButton::paint(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
-    if (hovered_ || pressed_)
+    if (enabled_ && (hovered_ || pressed_))
     {
         Color bg = pressed_ ? pal.subtle_pressed : pal.subtle_hover;
         ctx.canvas.fill_rounded_rect(bounds_, kCbHoverRad, bg);
@@ -524,6 +520,8 @@ void CheckButton::on_pointer_up(Point /*local*/, bool inside_self)
 
 bool CheckButton::on_pointer_move(Point /*local*/)
 {
+    if (!enabled_)
+        return false;
     if (!hovered_)
     {
         hovered_ = true;

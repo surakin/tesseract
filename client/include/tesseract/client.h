@@ -682,6 +682,20 @@ public:
     void save_media_preview_config(MediaPreviewConfig::Mode media_previews,
                                    bool invite_avatars);
 
+    /// Write (or clear) the per-room MSC4278 `media_previews` override for
+    /// `room_id`, dual-writing the stable and unstable room-account-data
+    /// types. Fire-and-forget — returns immediately; errors are silently
+    /// swallowed and there is no completion callback (unlike the global
+    /// config there is also no room-scoped sync-driven update callback, so
+    /// the caller must update its own cache optimistically — see
+    /// ShellBase::apply_room_media_preview_override_).
+    /// `has_override == false` clears the override (the room reverts to
+    /// inheriting the global config); `media_previews` is ignored in that
+    /// case.
+    void save_room_media_preview_override(const std::string& room_id,
+                                          bool has_override,
+                                          MediaPreviewConfig::Mode media_previews);
+
     // Recent emoji ("io.element.recent_emoji" global account-data)
     // ------------------------------------------------------------------
 
@@ -1097,6 +1111,17 @@ public:
     void room_media_preview_override_async(std::uint64_t request_id,
                                            const std::string& room_id);
 
+    /// Fetch the room's current m.room.encryption/m.room.join_rules/
+    /// m.room.guest_access/m.room.history_visibility state directly from the
+    /// homeserver via GET /rooms/{id}/state, bypassing the local sync cache
+    /// entirely — needed because guest_access is never delivered via sliding
+    /// sync and the other three fields are subject to a separate
+    /// update-notification filter that can leave locally cached values
+    /// stale after a write. Spawns on the tokio runtime; result delivered
+    /// via IEventHandler::on_room_security_state_ready. Does not pin a thread.
+    void fetch_room_security_state_async(std::uint64_t request_id,
+                                         const std::string& room_id);
+
     /// Join a room by its ID or alias.
     /// Returns the canonical room ID (e.g. `!id:server`) on success, or an
     /// empty string on failure. Blocks the calling thread — invoke only from
@@ -1155,6 +1180,28 @@ public:
     Result set_room_avatar(const std::string& room_id,
                            const std::string& mxc_uri);
 
+    /// Enable encryption for a room (m.room.encryption). No-op if already
+    /// encrypted; there is no operation to disable it — matrix-sdk has none.
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_room_encryption(const std::string& room_id);
+
+    /// Send an m.room.join_rules state event. `join_rule` must be one of
+    /// "public"/"invite"/"knock" — any other value is rejected (the room
+    /// settings UI only ever offers these three as editable choices).
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_room_join_rule(const std::string& room_id,
+                              const std::string& join_rule);
+
+    /// Send an m.room.guest_access state event.
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_room_guest_access(const std::string& room_id, bool allow);
+
+    /// Send an m.room.history_visibility state event. `visibility` must be
+    /// one of "world_readable"/"shared"/"invited"/"joined".
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_room_history_visibility(const std::string& room_id,
+                                       const std::string& visibility);
+
     /// Append event_id to the room's m.room.pinned_events state event.
     /// Idempotent (returns ok when already pinned). Server enforces PL —
     /// failure surfaces as Result{ ok=false, message="<server error>" }.
@@ -1177,6 +1224,33 @@ public:
     bool can_set_room_name(const std::string& room_id);
     bool can_set_room_topic(const std::string& room_id);
     bool can_set_room_avatar(const std::string& room_id);
+
+    /// True iff the current user's PL meets the requirement for sending
+    /// m.room.encryption/m.room.join_rules/m.room.guest_access/
+    /// m.room.history_visibility respectively in this room. Cached reads —
+    /// no network. Independent per field. Returns false on any uncertainty.
+    bool can_set_room_encryption(const std::string& room_id);
+    bool can_set_room_join_rules(const std::string& room_id);
+    bool can_set_room_guest_access(const std::string& room_id);
+    bool can_set_room_history_visibility(const std::string& room_id);
+
+    /// True iff the current user's PL meets the requirement for sending
+    /// m.room.power_levels in this room — the single all-or-nothing gate
+    /// for the whole Permissions tab. Cached read — no network. Returns
+    /// false on any uncertainty.
+    bool can_set_room_power_levels(const std::string& room_id);
+
+    /// Read the room's current power levels, narrowed to the fields the
+    /// Permissions tab edits. Synchronous — cached local read, no network
+    /// round-trip (unlike RoomSecurityState, which needs an async GET
+    /// /state fetch). Returns Matrix spec defaults on any error. Blocks
+    /// briefly — call from a worker thread.
+    RoomPermissions room_power_levels(const std::string& room_id);
+
+    /// Send an updated m.room.power_levels state event with the fields
+    /// from `levels`. Blocks the calling thread — call from a worker thread.
+    Result set_room_power_levels(const std::string& room_id,
+                                 const RoomPermissions& levels);
 
     /// Returns "default" | "all" | "mentions" | "off" from the local push-rule
     /// cache. Blocks the calling thread — call from a worker thread.

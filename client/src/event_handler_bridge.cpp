@@ -608,6 +608,17 @@ void EventHandlerBridge::on_room_preview_override_ready(std::uint64_t request_id
           });
 }
 
+void EventHandlerBridge::on_room_security_state_ready(
+    std::uint64_t request_id, const RoomSecurityStateFfi& state) const
+{
+    with_handler("on_room_security_state_ready", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_room_security_state_ready(request_id,
+                                                     tesseract::from_ffi(state));
+          });
+}
+
 void EventHandlerBridge::on_search_results(std::uint64_t request_id,
                                            const rust::Vec<SearchHit>& results) const
 {

@@ -1955,6 +1955,11 @@ pub(super) async fn build_room_info(
             _ => "shared".to_string(),
         }
     };
+    let join_rule = room.join_rule().map(|r| r.as_str().to_owned()).unwrap_or_default();
+    let guest_access = matches!(
+        room.guest_access(),
+        matrix_sdk::ruma::events::room::guest_access::GuestAccess::CanJoin
+    );
     let is_direct = room.is_direct().await.unwrap_or(false);
     let avatar_url = room.avatar_url().map(|u| u.to_string()).unwrap_or_default();
     // Fallback avatar when the room has no avatar of its own: the other
@@ -2040,6 +2045,8 @@ pub(super) async fn build_room_info(
         has_active_call,
         is_bridged,
         history_visibility,
+        join_rule,
+        guest_access,
         pinned_events,
         canonical_alias: room
             .canonical_alias()
@@ -2090,6 +2097,28 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
     });
 }
 
+/// One room's slice of `room_list_fingerprint`'s change-detection key.
+/// Plain named fields rather than a tuple: a 14-element tuple exceeds Rust's
+/// built-in tuple trait-impl arity (12), so `PartialEq`/`Eq`/`Debug` would
+/// no longer derive automatically past that point.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RoomListFingerprintKey {
+    unread: bool,
+    quiet_unread: bool,
+    is_favorite: bool,
+    is_low_priority: bool,
+    has_active_call: bool,
+    last_activity_ts: u64,
+    id: String,
+    name: String,
+    avatar_url: String,
+    dm_avatar_url: String,
+    is_encrypted: bool,
+    join_rule: String,
+    guest_access: bool,
+    history_visibility: String,
+}
+
 /// Change-detection fingerprint for the room-list snapshot. The sync watcher
 /// re-emits the room list to the UI only when this fingerprint differs from the
 /// previous notable update. It must therefore encode every field the UI orders
@@ -2100,7 +2129,7 @@ pub(super) fn sort_room_infos(rooms: &mut Vec<crate::ffi::RoomInfo>) {
 /// be unit-tested without a live client.
 pub(super) fn room_list_fingerprint(
     rooms: &[crate::ffi::RoomInfo],
-) -> Vec<(bool, bool, bool, bool, bool, u64, String, String, String, String)> {
+) -> Vec<RoomListFingerprintKey> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -2126,18 +2155,31 @@ pub(super) fn room_list_fingerprint(
             // fingerprint is unchanged and the live update is silently
             // dropped — the room list keeps painting the stale avatar until
             // some unrelated change happens to perturb the fingerprint.
-            (
+            //
+            // is_encrypted / join_rule / guest_access / history_visibility:
+            // Security & Privacy tab fields. None of these touch
+            // unread/name/recency/avatar either, so without them here a
+            // guest_access-or-join_rule-only change is silently dropped
+            // from live updates (RoomSettingsView keeps showing the stale
+            // value) until an unrelated field happens to perturb the
+            // fingerprint — same failure mode already fixed once for
+            // avatar_url/dm_avatar_url above.
+            RoomListFingerprintKey {
                 unread,
                 quiet_unread,
-                r.is_favorite,
-                r.is_low_priority,
-                r.has_active_call,
-                r.last_activity_ts,
-                r.id.clone(),
-                r.name.clone(),
-                r.avatar_url.clone(),
-                r.dm_avatar_url.clone(),
-            )
+                is_favorite: r.is_favorite,
+                is_low_priority: r.is_low_priority,
+                has_active_call: r.has_active_call,
+                last_activity_ts: r.last_activity_ts,
+                id: r.id.clone(),
+                name: r.name.clone(),
+                avatar_url: r.avatar_url.clone(),
+                dm_avatar_url: r.dm_avatar_url.clone(),
+                is_encrypted: r.is_encrypted,
+                join_rule: r.join_rule.clone(),
+                guest_access: r.guest_access,
+                history_visibility: r.history_visibility.clone(),
+            }
         })
         .collect()
 }
@@ -2338,6 +2380,42 @@ mod tests {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.has_active_call = true;
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_is_encrypted_toggles() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.is_encrypted = true;
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_join_rule_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.join_rule = "public".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_guest_access_toggles() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.guest_access = true;
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_history_visibility_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.history_visibility = "world_readable".to_owned();
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }

@@ -147,6 +147,14 @@ Widget* Widget::dispatch_pointer_move(Point world, bool* dirty)
             return hit;
         }
     }
+    if (!enabled_)
+    {
+        // Disabled widgets never claim hover — mirrors dispatch_pointer_down's
+        // enabled_ gate at the on_pointer_down call sites. Returning nullptr
+        // here (instead of `this`) also makes sure a previously hovered widget
+        // gets on_pointer_leave when the pointer moves onto a disabled one.
+        return nullptr;
+    }
     Point local{world.x - bounds_.x, world.y - bounds_.y};
     if (on_pointer_move(local) && dirty)
     {
