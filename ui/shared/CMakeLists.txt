@@ -530,6 +530,8 @@ elseif(TESSERACT_UI STREQUAL "macos")
         "-framework UniformTypeIdentifiers"
         # MSC3245 voice playback (audio_macos.mm) uses AVAudioPlayer.
         "-framework AVFoundation"
+        # audio_capture_macos.mm / host_macos.mm use CoreAudio device enumeration.
+        "-framework CoreAudio"
         "-framework AudioToolbox"
         # video_capture_macos.mm uses CoreMedia / CoreVideo pixel buffer APIs.
         "-framework CoreMedia"
