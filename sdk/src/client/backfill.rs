@@ -34,6 +34,8 @@ use matrix_sdk_ui::timeline::{
     MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineItemContent, TimelineItemKind,
 };
 #[cfg(not(test))]
+use futures_util::StreamExt;
+#[cfg(not(test))]
 use parking_lot::Mutex;
 #[cfg(not(test))]
 use std::collections::HashMap;
@@ -1173,15 +1175,21 @@ pub(super) fn load_room_summary_conn(conn: &rusqlite::Connection, room_id: &str)
 // ──────────────────────────────────────────────────────────────────────────
 
 /// Warm the SDK's event-cache for one room without surfacing anything to
-/// the UI. Builds a temporary `Timeline`, drops the live diff stream, and
-/// paginates backwards in 50-event batches until either the room has at
-/// least `target_events` event items locally or matrix-sdk reports that
-/// we've reached the start of the timeline.
+/// the UI. Builds a temporary `Timeline` and paginates backwards in
+/// 50-event batches until either the room has at least `target_events`
+/// event items locally or matrix-sdk reports that we've reached the start
+/// of the timeline.
 ///
 /// The `Timeline` is dropped on return; rows committed to the SDK's sqlite
 /// event cache during pagination persist, so the next foreground
 /// `subscribe_room` for this room paints from cache without a /messages
-/// round-trip.
+/// round-trip. Dropping the last `Timeline` reference aborts matrix-sdk-ui's
+/// internal task that applies diffs from our own pagination calls onto the
+/// timeline; we keep the diff stream alive and drain it to quiescence
+/// first so that task always finishes its current batch before we let it
+/// go — otherwise it can be cut off mid-batch, which trips a benign but
+/// noisy `error!` in matrix-sdk-ui ("a DateDividerAdjuster has not been
+/// consumed with run()").
 ///
 /// Returns a `BackfillPreview` for the room's most recent event if one could
 /// be extracted from the timeline items — needed because `room.latest_event()`
@@ -1199,9 +1207,12 @@ pub(super) async fn backfill_room_silent(
 
     let timeline = room.timeline().await?;
 
-    // We don't propagate items to the UI, so subscribe + drop the stream.
-    // The initial snapshot tells us how much history is already cached.
-    let (initial, _stream) = timeline.subscribe().await;
+    // We don't propagate items to the UI, but we keep the stream (rather
+    // than dropping it immediately) so we can drain it to quiescence below
+    // before `timeline` goes out of scope. The initial snapshot tells us
+    // how much history is already cached.
+    let (initial, stream) = timeline.subscribe().await;
+    tokio::pin!(stream);
     let mut have = initial
         .iter()
         .filter(|i| matches!(i.kind(), TimelineItemKind::Event(_)))
@@ -1220,6 +1231,17 @@ pub(super) async fn backfill_room_silent(
             .filter(|i| matches!(i.kind(), TimelineItemKind::Event(_)))
             .count();
     }
+
+    // Let matrix-sdk-ui's internal diff-processing task (spawned when we
+    // subscribed above) catch up on whatever our own pagination just fed
+    // into the room's event cache. That task mirrors its committed output
+    // onto this stream, so once it's quiet for a short window we know it
+    // isn't mid-batch — safe for `timeline` to drop below without cutting
+    // it off.
+    while tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
+        .await
+        .is_ok_and(|item| item.is_some())
+    {}
 
     // Extract a preview from the most recent event in the timeline.
     // Scope the items borrow so it ends before the get_member_no_sync await.
