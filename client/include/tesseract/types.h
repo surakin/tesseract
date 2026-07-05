@@ -664,6 +664,25 @@ struct RoomPermissions
     bool operator==(const RoomPermissions&) const = default;
 };
 
+/// The current user's own effective power level in a room, via ruma's
+/// `RoomPowerLevels::for_user` on the Rust side — NOT a hand-rolled
+/// `users`/`users_default` lookup, because room versions 12+ give room
+/// creators an "infinite" power level that never appears in the `users`
+/// map at all; reading `users`/`users_default` directly would misreport a
+/// creator as having only `users_default`'s (often 0) power.
+/// `has_explicit_override` is true when this level is fixed regardless of
+/// a staged `default_role` change (an explicit per-user override, or a
+/// privileged creator); `level` is `INT64_MAX` for the "infinite" creator
+/// case, which sorts above any valid Matrix power level. Used to determine
+/// whether a staged `RoomPermissions` change (specifically to
+/// `default_role` or `change_permissions`) would lock the user out of ever
+/// editing permissions again. Returned by `Client::room_own_power_level`.
+struct RoomOwnPowerLevel
+{
+    int64_t level = 0;
+    bool has_explicit_override = false;
+};
+
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed
 /// `state` field carried over the FFI in `BackupProgress` (see
 /// `sdk/src/bridge.rs`).

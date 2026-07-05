@@ -367,6 +367,10 @@ msgid "Permissions"
 msgstr "[Permissions]"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "This change would prevent you from editing permissions again."
+msgstr "[This change would prevent you from editing permissions again.]"
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
 msgid "Default Role"
 msgstr "[Default Role]"
 

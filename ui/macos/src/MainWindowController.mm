@@ -3878,6 +3878,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 v->set_field_permissions(false, false, false);
                 v->set_security_field_permissions(false, false, false, false);
                 v->set_permissions_field_permissions(false);
+                v->set_own_power_level({});
                 s->_shell->seed_room_media_section(room_id);
                 return;
             }
@@ -3894,6 +3895,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_shell->client_->can_set_room_power_levels(room_id));
             v->set_permissions_state(
                 s->_shell->client_->room_power_levels(room_id));
+            v->set_own_power_level(
+                s->_shell->client_->room_own_power_level(room_id));
             s->_shell->seed_room_media_section(room_id);
             s->_shell->fetch_room_security_state(room_id);
         };

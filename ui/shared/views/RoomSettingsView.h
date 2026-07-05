@@ -87,6 +87,17 @@ RoomSettingsChanges compute_room_settings_changes(
     const RoomSettingsFieldValues& original,
     const RoomSettingsFieldValues& staged);
 
+// True iff `staged` would leave the current user unable to ever send
+// m.room.power_levels again. `own` is the user's own power level as of when
+// the Permissions tab was opened: if they hold an explicit per-user
+// override (own.has_explicit_override), that level is untouched by this UI
+// and stays fixed regardless of a staged default_role/users_default change;
+// otherwise their effective level moves with staged.default_role. Locked
+// out iff that effective level is below staged.change_permissions (Matrix
+// grants on >=, so equal is NOT locked out).
+bool would_lock_out_of_permissions(const tesseract::RoomPermissions& staged,
+                                   const tesseract::RoomOwnPowerLevel& own);
+
 class RoomSettingsView : public tk::Widget
 {
 public:
@@ -129,6 +140,11 @@ public:
     // Single all-or-nothing gate for the Permissions tab (Matrix has no
     // finer granularity than "can this user send m.room.power_levels at
     // all"), unlike Security & Privacy's four independent per-field gates.
+    // Also gates would_lock_out_self_: with can_edit false every combo is
+    // already disabled, so there is no "selected permissions" to warn
+    // about — the lockout warning would just be redundant, confusing noise
+    // on top of the already-disabled tab (and would wrongly disable Accept
+    // for unrelated General/Security changes too).
     void set_permissions_field_permissions(bool can_edit);
 
     // Re-seeds both original_permissions_ and staged_permissions_ together,
@@ -137,6 +153,13 @@ public:
     // Client::room_power_levels is a cached local read with no network
     // round-trip, unlike set_security_state's async GET /state fetch.
     void set_permissions_state(const tesseract::RoomPermissions& permissions);
+
+    // Seeds the current user's own power level, used to evaluate
+    // would_lock_out_of_permissions on every subsequent staged Permissions
+    // change. Called synchronously by ShellBase right after open(), same as
+    // set_permissions_state (Client::room_own_power_level is also a cached
+    // local read).
+    void set_own_power_level(const tesseract::RoomOwnPowerLevel& own);
 
     // NativeTextField/NativeTextArea overlay rects (empty when that field's
     // permission is denied, the view is closed, General isn't the selected
@@ -205,7 +228,26 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx&) override;
 
+    // Accessor used by tests to inspect Accept's enabled state (e.g. a
+    // staged Permissions change that would lock the user out disables it).
+    tk::Button* accept_button() const { return accept_btn_; }
+
+    // Accessor used by tests to drive the Permissions tab's combos directly
+    // (mirrors the section's own combo accessors).
+    RoomPermissionsSection* permissions_section() const { return permissions_; }
+
 private:
+    // Recomputes would_lock_out_self_ from staged_permissions_ and
+    // own_power_level_, pushes it to permissions_ for the warning banner,
+    // and calls refresh_accept_enabled_(). Called whenever either input
+    // changes: on_permissions_changed, set_permissions_state,
+    // set_own_power_level.
+    void refresh_permissions_lockout_();
+    // Single source of truth for accept_btn_'s enabled state — committing
+    // always disables it; otherwise a would-lock-out-self staged Permissions
+    // change disables it too, everything else leaves it enabled.
+    void refresh_accept_enabled_();
+
     bool open_       = false;
     bool committing_ = false;
 
@@ -235,6 +277,14 @@ private:
 
     tesseract::RoomPermissions original_permissions_;
     tesseract::RoomPermissions staged_permissions_;
+    tesseract::RoomOwnPowerLevel own_power_level_;
+    // Mirrors permissions_'s own can_edit_ gate — needed here too because
+    // would_lock_out_self_ must never fire when the user can't edit
+    // permissions at all: with every combo disabled there is no "selected
+    // permissions" to warn about, and can_set_room_power_levels() already
+    // being false is the reason, not a staged change.
+    bool can_edit_permissions_ = false;
+    bool would_lock_out_self_ = false;
 
     tk::SideTabView*        tabs_        = nullptr;
     RoomGeneralSection*     general_     = nullptr;

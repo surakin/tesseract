@@ -1252,6 +1252,12 @@ public:
     Result set_room_power_levels(const std::string& room_id,
                                  const RoomPermissions& levels);
 
+    /// The current user's own effective power level in this room — used to
+    /// check whether a staged Permissions-tab change would lock the user
+    /// out of ever editing permissions again. Cached read — no network
+    /// round-trip. Blocks briefly — call from a worker thread.
+    RoomOwnPowerLevel room_own_power_level(const std::string& room_id);
+
     /// Returns "default" | "all" | "mentions" | "off" from the local push-rule
     /// cache. Blocks the calling thread — call from a worker thread.
     std::string get_room_notification_mode(std::string room_id) const;

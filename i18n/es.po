@@ -933,6 +933,10 @@ msgid "Permissions"
 msgstr "Permisos"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp
+msgid "This change would prevent you from editing permissions again."
+msgstr "Este cambio te impediría volver a editar los permisos."
+
+#: ui/shared/views/settings/RoomPermissionsSection.cpp
 msgid "Default Role"
 msgstr "Rol predeterminado"
 

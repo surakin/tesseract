@@ -23,6 +23,7 @@
 #include "SettingsPage.h"
 
 #include "tk/combobox.h"
+#include "tk/controls.h"
 
 #include <tesseract/types.h>
 
@@ -47,12 +48,29 @@ public:
     void set_field_permissions(bool can_edit);
     void set_committing(bool committing);
 
+    // Shows/hides the page-level "would lock you out" warning — driven by
+    // RoomSettingsView, since evaluating it needs the current user's own
+    // power level (RoomOwnPowerLevel), which this widget has no access to.
+    // A page-level banner rather than a per-row one because the condition
+    // can be caused by either the Default Role or Change Permissions row.
+    void set_would_lock_out_self(bool would_lock_out);
+
     // Fired on user interaction with the full updated struct (one callback
     // for all 9 rows, since they're homogeneous same-shaped ints, unlike
     // Security's four semantically-different fields).
     std::function<void(tesseract::RoomPermissions)> on_permissions_changed;
 
+    // Fired whenever the lockout warning's visibility changes at runtime —
+    // FlexBox::arrange() skips invisible children entirely, so a widget
+    // that just became visible has stale bounds_ until the next full
+    // arrange() pass. Mirrors RoomSecuritySection::on_layout_changed.
+    std::function<void()> on_layout_changed;
+
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+
+    // Accessor used by tests to inspect the warning's visibility (mirrors
+    // RoomSecuritySection::encryption_warning()).
+    tk::Widget* lockout_warning() const { return lockout_warning_; }
 
     // Accessors used by tests to simulate user interaction and inspect
     // state (mirrors RoomSecuritySection's accessors).
@@ -69,6 +87,7 @@ public:
 private:
     void refresh_enabled_();
 
+    tk::Label*    lockout_warning_         = nullptr;
     tk::ComboBox* default_role_combo_       = nullptr;
     tk::ComboBox* send_messages_combo_      = nullptr;
     tk::ComboBox* remove_messages_combo_    = nullptr;

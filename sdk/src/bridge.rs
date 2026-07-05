@@ -719,6 +719,23 @@ pub mod ffi {
         change_permissions: i64, // events["m.room.power_levels"], falls back to state_default
     }
 
+    /// The current user's own effective power level in a room, via ruma's
+    /// `RoomPowerLevels::for_user` (NOT a hand-rolled `users`/`users_default`
+    /// lookup — room versions 12+ give creators an "infinite" power level
+    /// that never appears in the `users` map, which `for_user` accounts for
+    /// and a naive map lookup would miss, misreporting a creator as having
+    /// only `users_default`'s power, often 0). `has_explicit_override` is
+    /// true when this level is fixed regardless of a staged `users_default`
+    /// change (an explicit `users` entry, or a privileged creator);
+    /// `level` uses i64::MAX for the "infinite" case, which sorts above any
+    /// valid Matrix power level. Used to check whether a staged
+    /// RoomPowerLevelsFfi change would lock the user out of ever editing
+    /// permissions again.
+    struct RoomOwnPowerLevelFfi {
+        level: i64,
+        has_explicit_override: bool,
+    }
+
     /// A direct GET /state read of the four Security & Privacy tab fields,
     /// delivered via `on_room_security_state_ready`. Bypasses sliding sync
     /// entirely: `guest_access` is absent from matrix-sdk-ui's hardcoded
@@ -2347,6 +2364,15 @@ pub mod ffi {
             room_id: &str,
             levels: RoomPowerLevelsFfi,
         ) -> OpResult;
+
+        /// The current user's own effective power level in this room:
+        /// their explicit per-user override from `m.room.power_levels`'
+        /// `users` map if one exists, else the room's `users_default`
+        /// (`has_explicit_override` says which). Used to determine whether
+        /// a staged Permissions change would lock the user out of ever
+        /// editing permissions again. Cached read — no network round-trip.
+        /// Blocks — worker thread.
+        fn room_own_power_level(self: &ClientFfi, room_id: &str) -> RoomOwnPowerLevelFfi;
 
         // ----- Devices / sessions -----
 

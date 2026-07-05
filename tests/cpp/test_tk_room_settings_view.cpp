@@ -392,3 +392,81 @@ TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",
     Stage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }
+
+TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "
+          "the user out disables Accept and shows the warning",
+          "[room_settings][view][lockout]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+    v.set_permissions_field_permissions(true);
+    v.set_permissions_state(tesseract::RoomPermissions{});
+    // Explicit override at 50 — meets the default change_permissions
+    // requirement (50), so Accept starts out enabled.
+    v.set_own_power_level(
+        tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
+
+    Stage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    REQUIRE(v.accept_button()->enabled());
+
+    // Raise "Change permissions" above the user's own (overridden) level.
+    v.permissions_section()->change_permissions_combo()->on_changed("100");
+    CHECK_FALSE(v.accept_button()->enabled());
+    CHECK(v.permissions_section()->lockout_warning()->visible());
+
+    // Revert — Accept re-enables and the warning hides.
+    v.permissions_section()->change_permissions_combo()->on_changed("50");
+    CHECK(v.accept_button()->enabled());
+    CHECK_FALSE(v.permissions_section()->lockout_warning()->visible());
+}
+
+TEST_CASE("RoomSettingsView: lowering Default Role below the requirement "
+          "locks out a user with no explicit power-level override",
+          "[room_settings][view][lockout]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+    v.set_permissions_field_permissions(true);
+    tesseract::RoomPermissions perms;
+    perms.default_role       = 50;
+    perms.change_permissions = 50;
+    v.set_permissions_state(perms);
+    v.set_own_power_level(
+        tesseract::RoomOwnPowerLevel{.level = 0, .has_explicit_override = false});
+
+    Stage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    REQUIRE(v.accept_button()->enabled());
+
+    v.permissions_section()->default_role_combo()->on_changed("0");
+    CHECK_FALSE(v.accept_button()->enabled());
+}
+
+TEST_CASE("RoomSettingsView: no lockout warning or Accept-disable when the "
+          "user can't edit permissions at all (own level already below the "
+          "requirement, unrelated to any staged change)",
+          "[room_settings][view][lockout]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+    // A moderator (level 50) in a room requiring 100 to edit permissions —
+    // set_permissions_field_permissions(false) mirrors
+    // Client::can_set_room_power_levels() returning false for them.
+    v.set_permissions_field_permissions(false);
+    tesseract::RoomPermissions perms;
+    perms.change_permissions = 100;
+    v.set_permissions_state(perms);
+    v.set_own_power_level(
+        tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
+
+    Stage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    // Nothing was staged, and the user has no ability to edit permissions
+    // in the first place — the warning would be redundant with the
+    // already-disabled combos, and disabling Accept would wrongly block
+    // unrelated General/Security changes too.
+    CHECK_FALSE(v.permissions_section()->lockout_warning()->visible());
+    CHECK(v.accept_button()->enabled());
+}

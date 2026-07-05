@@ -2482,6 +2482,7 @@ void MainWindow::on_create(HWND hwnd)
                 v->set_field_permissions(false, false, false);
                 v->set_security_field_permissions(false, false, false, false);
                 v->set_permissions_field_permissions(false);
+                v->set_own_power_level({});
                 seed_room_media_section_(room_id);
                 return;
             }
@@ -2496,6 +2497,7 @@ void MainWindow::on_create(HWND hwnd)
             v->set_permissions_field_permissions(
                 client_->can_set_room_power_levels(room_id));
             v->set_permissions_state(client_->room_power_levels(room_id));
+            v->set_own_power_level(client_->room_own_power_level(room_id));
             seed_room_media_section_(room_id);
             fetch_room_security_state_(room_id);
         };

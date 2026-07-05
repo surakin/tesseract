@@ -1658,6 +1658,12 @@ Result Client::set_room_power_levels(const std::string& room_id,
     return from_ffi(impl_->ffi->set_room_power_levels(room_id, to_ffi(levels)));
 }
 
+RoomOwnPowerLevel Client::room_own_power_level(const std::string& room_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->room_own_power_level(room_id));
+}
+
 std::string Client::get_room_notification_mode(std::string room_id) const
 {
     SH_FFI;

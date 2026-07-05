@@ -291,6 +291,12 @@ pub mod ffi {
         pub change_permissions: i64,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone, Copy)]
+    pub struct RoomOwnPowerLevelFfi {
+        pub level: i64,
+        pub has_explicit_override: bool,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct RoomSecurityStateFfi {
         pub is_encrypted: bool,

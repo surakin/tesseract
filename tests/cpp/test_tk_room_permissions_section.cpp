@@ -152,3 +152,38 @@ TEST_CASE("RoomPermissionsSection: each combo's on_changed fires "
     CHECK(last.default_role == RoomPermissions{}.default_role);
     CHECK(last.ban_users == RoomPermissions{}.ban_users);
 }
+
+TEST_CASE("RoomPermissionsSection: lockout warning hidden by default",
+          "[room_permissions_section]")
+{
+    RoomPermissionsSection s;
+    CHECK_FALSE(s.lockout_warning()->visible());
+}
+
+TEST_CASE("RoomPermissionsSection: set_would_lock_out_self(true) shows the "
+          "warning, (false) hides it again",
+          "[room_permissions_section]")
+{
+    RoomPermissionsSection s;
+    s.set_would_lock_out_self(true);
+    CHECK(s.lockout_warning()->visible());
+
+    s.set_would_lock_out_self(false);
+    CHECK_FALSE(s.lockout_warning()->visible());
+}
+
+TEST_CASE("RoomPermissionsSection: set_would_lock_out_self fires "
+          "on_layout_changed only when visibility actually flips",
+          "[room_permissions_section]")
+{
+    RoomPermissionsSection s;
+    int count = 0;
+    s.on_layout_changed = [&]() { ++count; };
+
+    s.set_would_lock_out_self(true);
+    CHECK(count == 1);
+    s.set_would_lock_out_self(true);
+    CHECK(count == 1);
+    s.set_would_lock_out_self(false);
+    CHECK(count == 2);
+}

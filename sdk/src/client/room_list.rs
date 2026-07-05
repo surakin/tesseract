@@ -1197,6 +1197,64 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// The current user's own effective power level in this room, via
+    /// ruma's `RoomPowerLevels::for_user` — NOT hand-rolled from the
+    /// `users`/`users_default` fields, because room versions 12+ give room
+    /// creators an "infinite" power level that never appears in the
+    /// `users` map at all (`explicitly_privilege_room_creators`); reading
+    /// `users`/`users_default` directly would misreport a creator as
+    /// having only `users_default`'s (often 0) power. `has_explicit_override`
+    /// is true when the level is fixed regardless of a staged
+    /// `users_default` change — i.e. a privileged creator (Infinite) or an
+    /// explicit `users` entry — false when it simply mirrors the current
+    /// `users_default`. `level` uses i64::MAX for Infinite, which sorts
+    /// above any valid Matrix power level (ruma's `Int` is a JS-safe
+    /// integer, far below i64::MAX). Synchronous — Room::power_levels() is
+    /// a cached local read with no network round-trip. Returns level 0 /
+    /// no override on any error. Blocks briefly — worker thread.
+    #[cfg(not(test))]
+    pub fn room_own_power_level(&self, room_id: &str) -> crate::ffi::RoomOwnPowerLevelFfi {
+        use matrix_sdk::ruma::events::room::power_levels::UserPowerLevel;
+
+        fn defaults() -> crate::ffi::RoomOwnPowerLevelFfi {
+            crate::ffi::RoomOwnPowerLevelFfi {
+                level: 0,
+                has_explicit_override: false,
+            }
+        }
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return defaults();
+        };
+        let Ok((_, room)) = require_room(client, room_id) else {
+            return defaults();
+        };
+        let Some(user_id) = client.user_id() else {
+            return defaults();
+        };
+        let Ok(pl) = self.rt.block_on(room.power_levels()) else {
+            return defaults();
+        };
+        let (level, is_infinite) = match pl.for_user(user_id) {
+            UserPowerLevel::Infinite => (i64::MAX, true),
+            UserPowerLevel::Int(v) => (i64::from(v), false),
+            // #[non_exhaustive] enum — treat any future variant as the
+            // safest fallback: fixed and maximally privileged, same as
+            // Infinite, rather than silently reading as an unprivileged 0.
+            _ => (i64::MAX, true),
+        };
+        let has_explicit_override = is_infinite || pl.users.contains_key(user_id);
+        crate::ffi::RoomOwnPowerLevelFfi {
+            level,
+            has_explicit_override,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn room_own_power_level(&self, _room_id: &str) -> crate::ffi::RoomOwnPowerLevelFfi {
+        crate::ffi::RoomOwnPowerLevelFfi::default()
+    }
+
     /// Fetch the room's current m.room.encryption/m.room.join_rules/
     /// m.room.guest_access/m.room.history_visibility state directly from the
     /// homeserver via GET /rooms/{id}/state, bypassing the local sync cache

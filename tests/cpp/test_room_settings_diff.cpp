@@ -283,3 +283,61 @@ TEST_CASE("compute_room_settings_changes: full no-op case across all 9 fields",
     CHECK_FALSE(changes.media_override.has_value());
     CHECK_FALSE(changes.permissions.has_value());
 }
+
+// ── would_lock_out_of_permissions ───────────────────────────────────────────
+
+using tesseract::views::would_lock_out_of_permissions;
+using tesseract::RoomOwnPowerLevel;
+
+TEST_CASE("would_lock_out_of_permissions: explicit override above the "
+          "requirement is never locked out, regardless of default_role",
+          "[room_settings][lockout]")
+{
+    tesseract::RoomPermissions staged;
+    staged.default_role       = 0;
+    staged.change_permissions = 100;
+    RoomOwnPowerLevel own{.level = 100, .has_explicit_override = true};
+    CHECK_FALSE(would_lock_out_of_permissions(staged, own));
+}
+
+TEST_CASE("would_lock_out_of_permissions: explicit override below the "
+          "requirement is locked out",
+          "[room_settings][lockout]")
+{
+    tesseract::RoomPermissions staged;
+    staged.change_permissions = 50;
+    RoomOwnPowerLevel own{.level = 40, .has_explicit_override = true};
+    CHECK(would_lock_out_of_permissions(staged, own));
+}
+
+TEST_CASE("would_lock_out_of_permissions: no override inherits the staged "
+          "default_role, locked out when it drops below the requirement",
+          "[room_settings][lockout]")
+{
+    tesseract::RoomPermissions staged;
+    staged.default_role       = 0;
+    staged.change_permissions = 50;
+    RoomOwnPowerLevel own{.level = 50, .has_explicit_override = false};
+    CHECK(would_lock_out_of_permissions(staged, own));
+}
+
+TEST_CASE("would_lock_out_of_permissions: no override, staged default_role "
+          "still meets the requirement",
+          "[room_settings][lockout]")
+{
+    tesseract::RoomPermissions staged;
+    staged.default_role       = 50;
+    staged.change_permissions = 50;
+    RoomOwnPowerLevel own{.level = 0, .has_explicit_override = false};
+    CHECK_FALSE(would_lock_out_of_permissions(staged, own));
+}
+
+TEST_CASE("would_lock_out_of_permissions: equal level and requirement is "
+          "NOT locked out (Matrix grants on >=)",
+          "[room_settings][lockout]")
+{
+    tesseract::RoomPermissions staged;
+    staged.change_permissions = 50;
+    RoomOwnPowerLevel own{.level = 50, .has_explicit_override = true};
+    CHECK_FALSE(would_lock_out_of_permissions(staged, own));
+}

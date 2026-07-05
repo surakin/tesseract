@@ -45,6 +45,13 @@ void set_level_combo(tk::ComboBox* combo, int64_t level)
 
 RoomPermissionsSection::RoomPermissionsSection()
 {
+    auto lockout_warning = std::make_unique<tk::Label>(
+        tk::tr("This change would prevent you from editing permissions again."),
+        tk::FontRole::Body);
+    lockout_warning->set_colour(tk::Color::rgb(0xcc3333));
+    lockout_warning_ = add_widget(std::move(lockout_warning));
+    lockout_warning_->set_visible(false);
+
     auto wire = [this](tk::ComboBox* combo, int64_t tesseract::RoomPermissions::* field)
     {
         combo->on_changed = [this, field](std::string value)
@@ -140,6 +147,19 @@ void RoomPermissionsSection::set_committing(bool committing)
 {
     committing_ = committing;
     refresh_enabled_();
+}
+
+void RoomPermissionsSection::set_would_lock_out_self(bool would_lock_out)
+{
+    const bool was_visible = lockout_warning_->visible();
+    lockout_warning_->set_visible(would_lock_out);
+    // FlexBox::arrange() skips invisible children entirely, so a widget
+    // that just became visible has stale bounds_ (paints at {0,0,0,0},
+    // i.e. the app's top-left corner) until the next full arrange() pass —
+    // request one whenever the visibility actually flips. Mirrors
+    // RoomSecuritySection::refresh_encryption_warning_.
+    if (was_visible != would_lock_out && on_layout_changed)
+        on_layout_changed();
 }
 
 void RoomPermissionsSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)

@@ -46,6 +46,14 @@ RoomSettingsChanges compute_room_settings_changes(
     return changes;
 }
 
+bool would_lock_out_of_permissions(const tesseract::RoomPermissions& staged,
+                                   const tesseract::RoomOwnPowerLevel& own)
+{
+    const int64_t effective_own_level =
+        own.has_explicit_override ? own.level : staged.default_role;
+    return effective_own_level < staged.change_permissions;
+}
+
 RoomSettingsView::RoomSettingsView()
 {
     accept_btn_ = add_child(
@@ -76,7 +84,7 @@ RoomSettingsView::RoomSettingsView()
         permissions_->set_committing(true);
         commit_error_.clear();
         commit_error_layout_.reset();
-        accept_btn_->set_enabled(false);
+        refresh_accept_enabled_();
         cancel_btn_->set_enabled(false);
         if (on_accept) on_accept(room_id_, std::move(changes));
     });
@@ -147,6 +155,11 @@ RoomSettingsView::RoomSettingsView()
     permissions_->on_permissions_changed = [this](tesseract::RoomPermissions p)
     {
         staged_permissions_ = p;
+        refresh_permissions_lockout_();
+    };
+    permissions_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
     };
 
     auto tabs = std::make_unique<tk::SideTabView>();
@@ -222,6 +235,8 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     // the same call that opens the dialog rather than moments later.
     original_permissions_ = tesseract::RoomPermissions{};
     staged_permissions_   = tesseract::RoomPermissions{};
+    own_power_level_      = tesseract::RoomOwnPowerLevel{};
+    can_edit_permissions_ = false;
     permissions_->set_permissions(staged_permissions_);
     permissions_->set_field_permissions(false);
     permissions_->set_committing(false);
@@ -240,7 +255,15 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     committing_ = false;
     commit_error_.clear();
     commit_error_layout_.reset();
-    accept_btn_->set_enabled(true);
+    // Not a real computation against placeholder data (would_lock_out_of_
+    // permissions(RoomPermissions{}, RoomOwnPowerLevel{}) actually reads as
+    // locked out: default_role 0 < change_permissions 50) — just a safe
+    // "not locked out" reset, corrected for real once set_permissions_state
+    // and set_own_power_level are called (synchronously, right after open(),
+    // by ShellBase's on_room_settings_opened handler).
+    would_lock_out_self_ = false;
+    permissions_->set_would_lock_out_self(false);
+    refresh_accept_enabled_();
     cancel_btn_->set_enabled(true);
 
     title_layout_.reset();
@@ -301,7 +324,9 @@ void RoomSettingsView::set_security_state(bool is_encrypted, std::string join_ru
 
 void RoomSettingsView::set_permissions_field_permissions(bool can_edit)
 {
+    can_edit_permissions_ = can_edit;
     permissions_->set_field_permissions(can_edit);
+    refresh_permissions_lockout_();
     if (on_layout_changed) on_layout_changed();
 }
 
@@ -311,6 +336,26 @@ void RoomSettingsView::set_permissions_state(
     original_permissions_ = permissions;
     staged_permissions_   = permissions;
     permissions_->set_permissions(staged_permissions_);
+    refresh_permissions_lockout_();
+}
+
+void RoomSettingsView::set_own_power_level(const tesseract::RoomOwnPowerLevel& own)
+{
+    own_power_level_ = own;
+    refresh_permissions_lockout_();
+}
+
+void RoomSettingsView::refresh_permissions_lockout_()
+{
+    would_lock_out_self_ = can_edit_permissions_ &&
+        would_lock_out_of_permissions(staged_permissions_, own_power_level_);
+    permissions_->set_would_lock_out_self(would_lock_out_self_);
+    refresh_accept_enabled_();
+}
+
+void RoomSettingsView::refresh_accept_enabled_()
+{
+    accept_btn_->set_enabled(!committing_ && !would_lock_out_self_);
 }
 
 tk::Rect RoomSettingsView::name_field_rect() const
@@ -373,7 +418,7 @@ void RoomSettingsView::set_commit_result(bool ok, std::string error)
     }
     commit_error_ = std::move(error);
     commit_error_layout_.reset();
-    accept_btn_->set_enabled(true);
+    refresh_accept_enabled_();
     cancel_btn_->set_enabled(true);
     if (on_layout_changed) on_layout_changed();
 }

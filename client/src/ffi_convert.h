@@ -182,6 +182,14 @@ inline tesseract_ffi::RoomPowerLevelsFfi to_ffi(const RoomPermissions& p)
     };
 }
 
+inline RoomOwnPowerLevel from_ffi(const tesseract_ffi::RoomOwnPowerLevelFfi& p)
+{
+    return RoomOwnPowerLevel{
+        .level                  = p.level,
+        .has_explicit_override  = p.has_explicit_override,
+    };
+}
+
 inline RoomSecurityState from_ffi(const tesseract_ffi::RoomSecurityStateFfi& s)
 {
     return RoomSecurityState{
