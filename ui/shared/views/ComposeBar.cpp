@@ -359,24 +359,23 @@ void ComposeBar::set_current_text(std::string text)
 
 void ComposeBar::set_enabled(bool e)
 {
-    if (enabled_ == e)
+    if (e != enabled())
     {
-        return;
+        tk::Widget::set_enabled(e);
+        if (emoji_btn_)
+        {
+            emoji_btn_->set_enabled(e);
+        }
+        if (sticker_btn_)
+        {
+            sticker_btn_->set_enabled(e);
+        }
+        if (remove_btn_)
+        {
+            remove_btn_->set_enabled(e);
+        }
+        refresh_send_enabled();
     }
-    enabled_ = e;
-    if (emoji_btn_)
-    {
-        emoji_btn_->set_enabled(e);
-    }
-    if (sticker_btn_)
-    {
-        sticker_btn_->set_enabled(e);
-    }
-    if (remove_btn_)
-    {
-        remove_btn_->set_enabled(e);
-    }
-    refresh_send_enabled();
 }
 
 void ComposeBar::set_mic_available(bool available)

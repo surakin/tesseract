@@ -86,11 +86,7 @@ public:
         return current_text_;
     }
 
-    void set_enabled(bool e);
-    bool enabled() const
-    {
-        return enabled_;
-    }
+    void set_enabled(bool e) override;
 
     /// Hide or show the mic button. Pass false when no audio input device is
     /// detected at startup (capture_ == nullptr after make_audio_capture()).
@@ -417,7 +413,6 @@ private:
     float text_area_natural_ = 0.0f;
     float natural_height_ = kMinHeight; // total (incl. preview)
     std::string current_text_;
-    bool enabled_ = true;
     bool mic_available_ = true;
 
     std::optional<PendingAttachment> pending_;
