@@ -13,7 +13,7 @@ use crate::ffi::OpResult;
 
 impl ClientFfi {
     /// Start a MatrixRTC call in `room_id` / `slot_id`.
-    pub fn rtc_start_call(&mut self, room_id: &str, slot_id: &str) -> OpResult {
+    pub fn rtc_start_call(&mut self, room_id: &str, slot_id: &str, audio_only: bool) -> OpResult {
         #[cfg(not(feature = "calls"))]
         return err("calls feature not enabled in this build");
 
@@ -42,7 +42,7 @@ impl ClientFfi {
                 .stack_size(16 * 1024 * 1024)
                 .spawn(move || {
                     handle.block_on(crate::client::rtc::session::start_call(
-                        &client, &http, &room_id, &slot_id,
+                        &client, &http, &room_id, &slot_id, audio_only,
                     ))
                 })
                 .expect("failed to spawn call thread")

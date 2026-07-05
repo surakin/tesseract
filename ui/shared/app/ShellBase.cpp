@@ -8622,7 +8622,7 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     if (call_session_ || !client_)
         return;
 
-    auto result = client_->rtc_start_call(room_id, slot_id);
+    auto result = client_->rtc_start_call(room_id, slot_id, audio_only);
     if (!result.ok)
     {
         show_status_message_("Call failed: " + result.message);

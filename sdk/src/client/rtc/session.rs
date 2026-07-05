@@ -156,7 +156,9 @@ pub async fn start_call(
     http: &reqwest::Client,
     room_id: &str,
     slot_id: &str,
+    audio_only: bool,
 ) -> anyhow::Result<RtcSession> {
+    let call_intent = if audio_only { "audio" } else { "video" };
     // "call#default" and "" are Tesseract/C++ labels for the default room call.
     // Element uses "m.call#ROOM" as the canonical slot_id sent to the JWT service.
     // Normalize to match, so both parties get a JWT for the same LiveKit room.
@@ -287,6 +289,7 @@ pub async fn start_call(
             &lk_transport.service_url,
             &lk_alias,
             &user_id,
+            audio_only,
         )
         .await?;
     }
@@ -321,7 +324,7 @@ pub async fn start_call(
 
         if !has_active_members {
             if let Err(e) =
-                signaling::send_rtc_notification(&room, "video", &device_id, &user_id).await
+                signaling::send_rtc_notification(&room, call_intent, &device_id, &user_id).await
             {
                 warn!("rtc: send_rtc_notification failed (non-fatal): {e}");
             }
@@ -383,6 +386,7 @@ pub async fn start_call(
             &lk_transport.service_url,
             &lk_alias,
             &user_id,
+            audio_only,
         )
         .await?;
     }
@@ -467,6 +471,7 @@ pub async fn start_call(
         lk_alias.clone(),
         device_id.clone(),
         user_id.clone(),
+        audio_only,
     );
 
     info!("rtc: session {session_id} started in {room_id}/{slot_id}");
@@ -781,6 +786,7 @@ fn spawn_refresh_task(
     lk_alias: String,
     device_id: String,
     user_id: String,
+    audio_only: bool,
 ) -> AbortHandle {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(25));
@@ -795,6 +801,7 @@ fn spawn_refresh_task(
                 &service_url,
                 &lk_alias,
                 &user_id,
+                audio_only,
             )
             .await;
         }

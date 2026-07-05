@@ -2149,10 +2149,11 @@ Result Client::hint_push_room(const std::string& room_id)
 
 #ifdef TESSERACT_CALLS_ENABLED
 Result Client::rtc_start_call(const std::string& room_id,
-                               const std::string& slot_id)
+                               const std::string& slot_id,
+                               bool audio_only)
 {
     MUT_FFI;
-    return from_ffi(impl_->ffi->rtc_start_call(room_id, slot_id));
+    return from_ffi(impl_->ffi->rtc_start_call(room_id, slot_id, audio_only));
 }
 
 void Client::rtc_end_call()

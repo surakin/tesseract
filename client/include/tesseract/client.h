@@ -1539,8 +1539,10 @@ public:
 
     /// Start a MatrixRTC call in `room_id` / `slot_id` (`"call#default"` by
     /// convention). Returns an error when not logged in or already in a call.
+    /// `audio_only` controls the `m.call.intent` advertised to other clients.
     Result rtc_start_call(const std::string& room_id,
-                          const std::string& slot_id);
+                          const std::string& slot_id,
+                          bool audio_only);
 
     /// Gracefully leave the active call. No-op when no call is active.
     void rtc_end_call();

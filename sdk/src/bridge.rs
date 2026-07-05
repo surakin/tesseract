@@ -2649,7 +2649,7 @@ pub mod ffi {
         /// not logged in or when the `calls` feature is disabled. On success the
         /// session is stored inside `ClientFfi`; subsequent `rtc_*` calls operate
         /// on it. `slot_id` is typically `"call#default"`.
-        fn rtc_start_call(self: &mut ClientFfi, room_id: &str, slot_id: &str) -> OpResult;
+        fn rtc_start_call(self: &mut ClientFfi, room_id: &str, slot_id: &str, audio_only: bool) -> OpResult;
 
         /// Gracefully leave the active call and release its resources. No-op when
         /// no call is active or when the `calls` feature is disabled.

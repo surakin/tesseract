@@ -41,11 +41,11 @@ pub struct RtcApplication {
 }
 
 impl RtcApplication {
-    pub fn call() -> Self {
+    pub fn call(call_intent: &str) -> Self {
         Self {
             kind: "m.call".to_owned(),
             call_id: String::new(),
-            call_intent: "video".to_owned(),
+            call_intent: call_intent.to_owned(),
             scope: "m.room".to_owned(),
         }
     }
@@ -232,6 +232,7 @@ pub async fn send_msc3401_member_join(
     service_url: &str,
     livekit_alias: &str,
     user_id: &str,
+    audio_only: bool,
 ) -> anyhow::Result<()> {
     use matrix_sdk::ruma::{
         api::client::state::send_state_event,
@@ -256,7 +257,11 @@ pub async fn send_msc3401_member_join(
     let state_key = CallMemberStateKey::new(uid, Some(format!("{session_part}_m.call")), true);
 
     let mut app_content = CallApplicationContent::new(call_id.to_owned(), CallScope::Room);
-    app_content.call_intent = Some(CallIntent::Video);
+    app_content.call_intent = Some(if audio_only {
+        CallIntent::Audio
+    } else {
+        CallIntent::Video
+    });
 
     let content = CallMemberEventContent::new(
         Application::Call(app_content),
@@ -320,9 +325,13 @@ pub async fn send_msc3401_member_leave(
 /// Open or refresh the call slot. State key = slot_id.
 /// Per MSC4143 §slot: the presence of this event tells other clients that
 /// the slot is active. Idempotent — safe to re-send.
-pub async fn send_rtc_slot(room: &matrix_sdk::Room, slot_id: &str) -> anyhow::Result<()> {
+pub async fn send_rtc_slot(
+    room: &matrix_sdk::Room,
+    slot_id: &str,
+    call_intent: &str,
+) -> anyhow::Result<()> {
     let content = RtcSlotEventContent {
-        application: RtcApplication::call(),
+        application: RtcApplication::call(call_intent),
     };
     room.send_state_event_for_key(slot_id, content).await?;
     Ok(())
@@ -337,6 +346,7 @@ pub async fn send_rtc_member_join(
     livekit_alias: &str,
     device_id: &str,
     user_id: &str,
+    call_intent: &str,
 ) -> anyhow::Result<()> {
     let focus = RtcFocus {
         kind: "livekit".to_owned(),
@@ -346,7 +356,7 @@ pub async fn send_rtc_member_join(
     let content = RtcMemberEventContent {
         // MSC4195 fields
         slot_id: slot_id.to_owned(),
-        application: RtcApplication::call(),
+        application: RtcApplication::call(call_intent),
         member: RtcMemberDetails {
             id: member_id.to_owned(),
             claimed_device_id: device_id.to_owned(),
