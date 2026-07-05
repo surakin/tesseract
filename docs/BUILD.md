@@ -6,6 +6,11 @@ producing distributable installers (`.exe`/`.dmg`/`.deb`/`PKGBUILD`), see
 
 ## Prerequisites
 
+All targets require a C++20-capable compiler (`CMAKE_CXX_STANDARD` is set to 20
+globally) — MSVC needs `/std:c++20` (the default with recent Visual Studio),
+and GCC/Clang need a version with full C++20 support (defaulted comparison
+operators, etc.).
+
 ### Linux / Qt6
 
 ```bash

@@ -3,7 +3,51 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## v0.8.12 — Unreleased
+## v0.8.12 — 2026-07-05
+
+- fix(rtc): starting an audio-only call was still signaling
+  `m.call.intent="video"` to the room, so it showed up in the timeline (and
+  on the receiving client) as "started a video call". The `audio_only` flag
+  chosen in the UI never made it past `Client::rtc_start_call` — it's now
+  threaded through the cxx bridge into `rtc::session::start_call` and on
+  into the MSC4075 ring notification, every MSC3401 `m.call.member`
+  join/resend/sticky-refresh, and the MSC4195 slot/member helpers.
+
+- build: set the global `CMAKE_CXX_STANDARD` to 20, fixing MSVC C7589
+  ("defaulted comparison operators require /std:c++20") on any target that
+  didn't explicitly request `cxx_std_20` via `target_compile_features`.
+
+- fix(compose): `ComposeBar::set_enabled`/`enabled()` now correctly
+  override `tk::Widget`'s virtual instead of silently hiding it, fixing a
+  missing-virtual-override compiler warning.
+
+- fix(macos): fixed a bitwise operation between mismatched types in the
+  screen-capture code (`screen_capture_macos.mm`).
+
+- feat(room-settings): `RoomSettingsView` is now a tabbed layout
+  (General / Media / Security & Privacy / Permissions) via `tk::SideTabView`,
+  matching the app-wide Settings view instead of the old single-page
+  layout; every field across all four tabs is staged locally and only sent
+  on Accept. General gained a Room ID row that copies to the clipboard with
+  toast feedback (new `Toast` widget). Media adds a per-room MSC4278
+  media-previews override (Always/Never/Use global default). Security &
+  Privacy exposes encryption (locks once enabled — there's no undo),
+  join rule, guest access, and history visibility, each gated by its own
+  `can_set_room_*` permission check and read via an on-demand `GET /state`
+  fetch rather than trusting sliding sync. Permissions (new) mirrors
+  Element's "Roles & Permissions" tab — default role, invite/kick/ban,
+  message/settings/permissions defaults, and @room notifications — via a
+  typed `RoomPowerLevelsFfi` struct. Also fixes a tab-switch relayout bug
+  and hoists `enabled`/`set_enabled` out of `Button`/`CheckButton`/
+  `SwitchButton`/`ComboBox` and into `tk::Widget` itself.
+
+- fix(sdk): `backfill_room_silent()` now drains its Timeline's
+  diff-processing stream to quiescence before dropping it, instead of
+  discarding the stream immediately while the Timeline (the last strong
+  reference) stayed alive until the function returned — could otherwise
+  abort matrix-sdk-ui's internal diff-application task mid-batch, tripping
+  a benign but noisy "a DateDividerAdjuster has not been consumed with
+  run()" error log.
 
 - perf(idle CPU): fixed the app burning CPU while idle with the window
   hidden, traced via `perf`. matrix-sdk's default cross-process store lock
