@@ -1,6 +1,20 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-04** (v0.8.12-unreleased). 967 C++ + 314 Rust tests.
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-06** (v0.8.13). 1028 C++ + 324 Rust tests.
+
+> **Room Permissions self-lockout warning (2026-07-06, v0.8.13).**
+> The Permissions tab now warns and disables Accept if a staged change
+> would lock the current user out of ever editing room permissions again
+> (raising "Change permissions" above their own level, or lowering "New
+> members" out from under an unprivileged account), mirroring the
+> existing encryption "can't undo" warning. Only fires when the user can
+> actually edit permissions at all. Determining the user's own effective
+> power level uses ruma's `RoomPowerLevels::for_user` — room versions 12+
+> give creators an "infinite" power level absent from the `users` map
+> entirely, which a naive `users`/`users_default` lookup would misread as
+> unprivileged. New `Client::room_own_power_level`.
+
+<!-- -->
 
 > **Idle-CPU and animation-repaint performance fixes (2026-07-04, v0.8.12-unreleased).**
 > Found via `perf` while profiling why the app used measurable CPU at rest.

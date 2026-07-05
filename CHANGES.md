@@ -3,6 +3,32 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.13 — 2026-07-06
+
+- feat(room-settings): the Permissions tab now warns and disables Accept
+  if a staged change would lock the current user out of ever editing room
+  permissions again — raising "Change permissions" above their own level,
+  or lowering "New members" out from under an account with no personal
+  power-level override — mirroring the existing encryption "can't undo"
+  warning. The warning only fires when the user can actually edit
+  permissions in the first place; otherwise every combo is already
+  disabled and there's nothing staged to warn about. Determining the
+  user's own effective power level uses ruma's `RoomPowerLevels::for_user`
+  rather than reading the `users`/`users_default` fields directly, since
+  room versions 12+ give creators an "infinite" power level that never
+  appears in the `users` map at all — a naive lookup misreports a creator
+  as unprivileged. New `Client::room_own_power_level`.
+
+- fix(macos): linked `CoreMedia`/`CoreVideo` into `tesseract_tk` — those
+  frameworks were only linked into the `tesseract_macos` executable, but
+  `video_capture_macos.mm` (which uses their pixel-buffer APIs) lives in
+  the shared library, causing undefined-symbol errors at link time.
+
+- fix(macos): linked `CoreAudio` explicitly into `tesseract_tk` —
+  `host_macos.mm`/`audio_capture_macos.mm`'s device-enumeration APIs were
+  only resolving transitively through the calls/WebRTC stack, so linking
+  failed without `TESSERACT_ENABLE_CALLS`.
+
 ## v0.8.12 — 2026-07-05
 
 - fix(rtc): starting an audio-only call was still signaling
