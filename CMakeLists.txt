@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 project(Tesseract VERSION 0.8.12 LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # Generate version.h from the project() version so C++ code can read it
 # without any hardcoding.  The output lands in the build tree so it is
 # never accidentally committed.
