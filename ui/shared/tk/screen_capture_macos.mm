@@ -405,7 +405,7 @@ private:
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
         CGContextRef ctx = CGBitmapContextCreate(
             out_rgba.data(), w, h, 8, w * 4, cs,
-            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+            (uint32_t)kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(cs);
         if (!ctx)
         {
