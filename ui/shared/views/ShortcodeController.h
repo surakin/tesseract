@@ -45,6 +45,12 @@ public:
         // cache so the popup's image_provider can resolve it on a later repaint.
         // Optional: when null, custom emoticons render without a thumbnail.
         std::function<void(const std::string& url)> fetch_image;
+        // Resolve an already-decoded mxc bitmap for embedding into the
+        // composer at accept time — shells should pass the same provider
+        // already given to the ShortcodePopup's set_image_provider. Optional:
+        // when null (or the lookup misses), accepting a custom emoticon falls
+        // back to literal ":shortcode:" text, same as before this existed.
+        std::function<const tk::Image*(const std::string& url)> resolve_image;
     };
 
     ShortcodeController(tk::NativeTextArea* text_area, ShortcodePopup* popup,
@@ -79,6 +85,14 @@ private:
     ShortcodeMatch active_match_{};
     std::vector<ShortcodeSuggestion> suggestions_;
     bool visible_ = false;
+    // Re-entrancy guard: replace_range()/insert_emoticon() on the text area
+    // synchronously fire its on_changed callback, which re-enters
+    // on_text_changed with the post-edit text. On Win32, insert_emoticon can
+    // fall back to literal ":shortcode: " text (no image yet, or the OLE
+    // insert failed) — text that still matches a completed shortcode, so
+    // without this guard the match-and-replace would recurse until the stack
+    // overflows. Set for the duration of any call that mutates the text area.
+    bool applying_ = false;
 
     static constexpr int kMinPrefix = 2; // need ":ab" before the popup opens
 };

@@ -258,6 +258,8 @@ enum MentionProp
     PropMentionUserId = QTextFormat::UserProperty + 1,
     PropMentionDisplay,
     PropMentionIsRoom,
+    PropEmoticonShortcode,
+    PropEmoticonUrl,
 };
 
 class ComposeTextEdit : public QTextEdit
@@ -706,7 +708,7 @@ public:
         cur.insertImage(fmt);
         // Reset to a plain char format so the trailing space and any text the
         // user types next do NOT inherit the image format (which carries the
-        // mention properties — otherwise mention_draft() would report the
+        // mention properties — otherwise composer_draft() would report the
         // mention repeatedly and the message would render it multiple times).
         QTextCharFormat plain;
         cur.insertText(QStringLiteral(" "), plain);
@@ -718,7 +720,54 @@ public:
         }
     }
 
-    std::vector<tesseract::MentionSeg> mention_draft() const override
+    void insert_emoticon(int start, int end, const std::string& shortcode,
+                         const std::string& mxc_url, const tk::Image* image) override
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        if (!image)
+        {
+            replace_range(start, end, ":" + shortcode + ":");
+            return;
+        }
+        const QSignalBlocker block(edit_);
+        QString full = edit_->toPlainText();
+        int qs = utf8_byte_to_qt_cursor(full, start);
+        int qe = utf8_byte_to_qt_cursor(full, end);
+        QTextCursor cur(edit_->document());
+        cur.setPosition(qs);
+        cur.setPosition(qe, QTextCursor::KeepAnchor);
+
+        QFontMetrics fm(edit_->font());
+        const int side = fm.height();
+        QImage scaled = tk::qt6::to_native_image(*image).scaled(
+            side, side, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+        QString res = QStringLiteral("tesseract-emoticon://%1")
+                          .arg(emoticon_counter_++);
+        edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res),
+                                       QVariant(scaled));
+        QTextImageFormat fmt;
+        fmt.setName(res);
+        fmt.setVerticalAlignment(QTextCharFormat::AlignBaseline);
+        fmt.setProperty(PropEmoticonShortcode, QString::fromStdString(shortcode));
+        fmt.setProperty(PropEmoticonUrl, QString::fromStdString(mxc_url));
+        cur.insertImage(fmt);
+        // Same rationale as insert_mention: reset to a plain format so
+        // trailing input doesn't inherit the emoticon properties.
+        QTextCharFormat plain;
+        cur.insertText(QStringLiteral(" "), plain);
+        edit_->setTextCursor(cur);
+        edit_->setCurrentCharFormat(plain);
+        if (on_changed_)
+        {
+            on_changed_(edit_->toPlainText().toStdString());
+        }
+    }
+
+    std::vector<tesseract::MentionSeg> composer_draft() const override
     {
         std::vector<tesseract::MentionSeg> segs;
         if (!edit_)
@@ -764,6 +813,17 @@ public:
                     s.display_name =
                         cf.property(PropMentionDisplay).toString().toStdString();
                     s.is_room = cf.property(PropMentionIsRoom).toBool();
+                    segs.push_back(std::move(s));
+                }
+                else if (cf.hasProperty(PropEmoticonShortcode))
+                {
+                    flush_text();
+                    tesseract::MentionSeg s;
+                    s.kind = tesseract::MentionSeg::Kind::Emoticon;
+                    s.shortcode =
+                        cf.property(PropEmoticonShortcode).toString().toStdString();
+                    s.mxc_url =
+                        cf.property(PropEmoticonUrl).toString().toStdString();
                     segs.push_back(std::move(s));
                 }
                 else
@@ -832,6 +892,7 @@ private:
     QColor mention_bg_{0x2E, 0x3B, 0x5E};
     QColor mention_fg_{0xA8, 0xC5, 0xFF};
     int mention_counter_ = 0;
+    int emoticon_counter_ = 0;
     float last_height_ = 0.f;
     // Tracks the last value passed to set_visible(). Construction-time
     // default mirrors a freshly-created QPlainTextEdit, which is visible

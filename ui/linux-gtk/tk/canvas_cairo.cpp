@@ -1009,9 +1009,26 @@ public:
         std::string markup;
         markup.reserve(256);
         std::vector<PangoRichTextLayout::UrlRange> url_ranges;
+        // Byte ranges (into the plain, markup-tags-stripped text Pango
+        // actually indexes attributes against — same offset space
+        // byte_offset already tracks below) of each is_image span's U+FFFC
+        // carrier code unit. See MessageListView::substitute_image_
+        // placeholders: PangoAttrShape reserves this range's box without
+        // Pango ever laying out/rendering a fallback glyph for it, unlike
+        // the previous placeholder-glyph approach.
+        std::vector<std::pair<int, int>> image_ranges;
         int byte_offset = 0;
         for (const auto& sp : spans)
         {
+            if (sp.is_image)
+            {
+                image_ranges.push_back(
+                    {byte_offset,
+                     byte_offset + static_cast<int>(sp.text.size())});
+                markup += pango_escape(sp.text);
+                byte_offset += static_cast<int>(sp.text.size());
+                continue;
+            }
             std::string t = pango_escape(sp.text);
             if (sp.has_color)
             {
@@ -1073,6 +1090,29 @@ public:
         pango_font_description_free(d);
         pango_layout_set_markup(lay, markup.c_str(),
                                 static_cast<int>(markup.size()));
+        if (!image_ranges.empty())
+        {
+            // Extend (not replace) the attribute list pango_set_markup just
+            // built from the <span> tags above, so bold/italic/colour runs
+            // elsewhere in the same layout are unaffected.
+            PangoAttrList* existing = pango_layout_get_attributes(lay);
+            PangoAttrList* attrs =
+                existing ? pango_attr_list_copy(existing) : pango_attr_list_new();
+            const int box = emoji_pt * PANGO_SCALE;
+            // Ink/logical rects are relative to the baseline; a negative y
+            // of the full box height sits the shape entirely above it, the
+            // same way a typical glyph's ink sits mostly above the baseline.
+            PangoRectangle rect{0, -box, box, box};
+            for (const auto& r : image_ranges)
+            {
+                PangoAttribute* shape = pango_attr_shape_new(&rect, &rect);
+                shape->start_index = static_cast<guint>(r.first);
+                shape->end_index = static_cast<guint>(r.second);
+                pango_attr_list_insert(attrs, shape); // takes ownership
+            }
+            pango_layout_set_attributes(lay, attrs);
+            pango_attr_list_unref(attrs);
+        }
         if (s.max_width > 0)
         {
             pango_layout_set_width(lay,
@@ -1201,6 +1241,11 @@ std::unique_ptr<Image> make_image(cairo_surface_t* surface)
     }
     cairo_surface_reference(surface); // CairoImage releases in its dtor
     return std::make_unique<CairoImage>(surface);
+}
+
+NativeImageHandle to_native_image(const Image& img)
+{
+    return static_cast<const CairoImage&>(img).surface();
 }
 
 } // namespace tk::cairo_pango

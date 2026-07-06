@@ -33,7 +33,7 @@ static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
 {
     std::string out;
     for (const auto& s : spans)
-        out += s.text;
+        out += s.is_image ? s.image_alt : s.text;
     return out;
 }
 
@@ -3292,6 +3292,7 @@ private:
                 sp.url = {};
             }
         }
+        substitute_image_placeholders(spans);
         // Segment each span into emoji/text sub-spans for InlineEmoji sizing.
         std::vector<tk::TextSpan> segmented;
         segmented.reserve(spans.size());
@@ -3311,6 +3312,34 @@ private:
             for (auto& sub : segment_emoji_runs(sp))
                 out.push_back(std::move(sub));
         spans = std::move(out);
+    }
+
+    // html_spans.cpp leaves an is_image span's text empty (it carries no
+    // text content of its own — only image_mxc/image_alt). Give it exactly
+    // one U+FFFC OBJECT REPLACEMENT CHARACTER — the standard Unicode
+    // convention for "one code unit stands in for an embedded object" (this
+    // codebase already uses it the same way for RichEdit's embedded OLE
+    // objects) — as a carrier code unit for each backend's native inline-
+    // object mechanism (IDWriteInlineObject / PangoAttrShape /
+    // QTextObjectInterface / CTRunDelegate) to attach to in build_rich_text.
+    // That mechanism reserves an app-defined box and never considers any
+    // font's fallback glyph for the range, so nothing is ever drawn there
+    // by the normal text pass — paint_span_images draws the resolved bitmap
+    // into the same box afterward. This must run before
+    // apply_emoji_segmentation()/segment_emoji_runs(): U+FFFC isn't
+    // classified as an emoji codepoint, so segment_emoji_runs' early-return
+    // path leaves the span otherwise untouched, which is what we want here
+    // (sizing comes from the inline object's metrics, not FontRole::
+    // InlineEmoji's font-size bump).
+    static void substitute_image_placeholders(std::vector<tk::TextSpan>& spans)
+    {
+        for (auto& sp : spans)
+        {
+            if (sp.is_image && sp.text.empty())
+            {
+                sp.text = "\xEF\xBF\xBC"; // U+FFFC OBJECT REPLACEMENT CHARACTER
+            }
+        }
     }
 
     std::vector<BodyBlock> prepare_blocks(const MessageRowData& m,
@@ -3333,6 +3362,8 @@ private:
                     sp.url           = {};
                 }
         }
+        for (auto& block : blocks)
+            substitute_image_placeholders(block.spans);
         for (auto& block : blocks)
             apply_emoji_segmentation(block.spans);
         return blocks;
@@ -3594,6 +3625,10 @@ private:
 
     // Paint span backgrounds (mention pills, code blocks, inline code) for one
     // rich-text section at world-space origin (ox, oy).
+    // Draws mention-pill / code-block / inline-code backgrounds. Must run
+    // BEFORE the layout's own text draw — these are meant to sit behind the
+    // glyphs. Image spans are handled separately by paint_span_images()
+    // (see its comment for why they can't share this pass).
     void paint_span_backgrounds(const std::vector<tk::TextSpan>& spans,
                                 tk::TextLayout& layout,
                                 tk::PaintCtx& ctx,
@@ -3604,7 +3639,12 @@ private:
         {
             const auto& sp  = spans[si];
             int          len = static_cast<int>(sp.text.size());
-            if (sp.is_mention && sp.has_background && len > 0)
+            if (sp.is_image && len > 0)
+            {
+                boff += len;
+                ++si;
+            }
+            else if (sp.is_mention && sp.has_background && len > 0)
             {
                 for (const tk::Rect& r :
                      layout.selection_rects(boff, boff + len))
@@ -3667,6 +3707,39 @@ private:
                 boff += len;
                 ++si;
             }
+        }
+    }
+
+    // Draws resolved bitmaps for is_image spans (MSC2545 custom emoticons).
+    // Runs after the layout's own text draw, purely by convention matching
+    // paint_span_backgrounds' call sites — the text pass itself never draws
+    // anything at this span's position in the first place (see
+    // substitute_image_placeholders' comment: each backend's native inline-
+    // object mechanism reserves the box without considering any fallback
+    // glyph), so there's nothing to paint over here.
+    void paint_span_images(const std::vector<tk::TextSpan>& spans,
+                           tk::TextLayout& layout, tk::PaintCtx& ctx,
+                           float ox, float oy) const
+    {
+        int boff = 0;
+        for (const auto& sp : spans)
+        {
+            int len = static_cast<int>(sp.text.size());
+            if (sp.is_image && len > 0)
+            {
+                const tk::Image* img = owner_.image_provider_
+                    ? owner_.image_provider_(sp.image_mxc) : nullptr;
+                if (img)
+                {
+                    for (const tk::Rect& r :
+                         layout.selection_rects(boff, boff + len))
+                    {
+                        ctx.canvas.draw_image(
+                            *img, {r.x + ox, r.y + oy, r.w, r.h});
+                    }
+                }
+            }
+            boff += len;
         }
     }
 
@@ -3767,6 +3840,7 @@ private:
                 draw_with_selection(*sec.layout, ox, oy,
                                     static_cast<int>(spans_to_plain(sec.spans).size()));
                 ctx.canvas.draw_text(*sec.layout, {ox, oy}, color);
+                paint_span_images(sec.spans, *sec.layout, ctx, ox, oy);
 
                 // Post-text decoration: horizontal rule below h1/h2.
                 if (sec.kind == BodyBlock::Kind::Heading && sec.level <= 2)
@@ -3792,6 +3866,9 @@ private:
             paint_span_backgrounds(e.spans, layout, ctx, x, y);
 
         draw_with_selection(layout, x, y, static_cast<int>(e.plain.size()));
+
+        if (!e.spans.empty())
+            paint_span_images(e.spans, layout, ctx, x, y);
         return layout.measure().h;
     }
 
@@ -5032,7 +5109,18 @@ void MessageListView::notify_image_ready(const std::string& url)
         const bool preview_match =
             !src_match && !thumb_match && !fsrc_match && !m.first_url.empty() &&
             !url.empty() && row_image_key_(m) == url;
-        if (src_match || thumb_match || fsrc_match || preview_match)
+        // MSC2545 inline custom emoticons (<img data-mx-emoticon src=mxc>)
+        // live inside the message's own HTML body, not as a tracked
+        // attachment/preview field — none of the matches above can see them.
+        // A substring check against the raw HTML is sufficient: html_spans.cpp
+        // only ever treats a src as a renderable emoticon when it's an exact
+        // mxc:// URL, so a match here can't be a false positive from
+        // surrounding markup.
+        const bool emoticon_match =
+            !src_match && !thumb_match && !fsrc_match && !preview_match &&
+            !url.empty() && m.formatted_body.find(url) != std::string::npos;
+        if (src_match || thumb_match || fsrc_match || preview_match ||
+            emoticon_match)
         {
             // Newly decoded → re-pin this row now that the image exists.
             try_acquire_image_(m);

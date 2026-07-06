@@ -31,4 +31,14 @@ std::unique_ptr<CanvasFactory> make_factory();
 // re-decoding.
 std::unique_ptr<Image> make_image(CGImageRef img);
 
+// The reverse of make_image() — extract the underlying native bitmap from
+// a tk::Image so it can be embedded into a platform-native rich-text
+// control (e.g. an NSTextAttachment for an inline composer emoticon
+// pill). Every backend exposes the same name, tk::<backend>::to_native_image,
+// returning its own concretely-typed NativeImageHandle — host_macos.mm is
+// the only caller, and only ever compiles this one backend's header.
+// Borrowed — caller does not own the returned image.
+using NativeImageHandle = CGImageRef;
+NativeImageHandle to_native_image(const Image& img);
+
 } // namespace tk::cg

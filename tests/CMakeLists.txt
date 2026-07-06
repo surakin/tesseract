@@ -121,13 +121,17 @@ add_executable(tesseract_tests
 # one TestSurface::create symbol.
 if(TESSERACT_UI STREQUAL "qt6")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_qt.cpp)
+    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/linux-qt")
 elseif(TESSERACT_UI STREQUAL "gtk")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_gtk.cpp)
+    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/linux-gtk")
 elseif(TESSERACT_UI STREQUAL "win32")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_win32.cpp)
+    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/windows")
 elseif(TESSERACT_UI STREQUAL "macos")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_cg.cpp)
     target_link_libraries(tesseract_tests PRIVATE "-framework CoreGraphics")
+    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/macos")
 endif()
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)

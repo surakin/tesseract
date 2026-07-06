@@ -3221,7 +3221,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             // Build from the composer's mention draft so inline pills become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
-                s->_roomTextArea ? s->_roomTextArea->mention_draft()
+                s->_roomTextArea ? s->_roomTextArea->composer_draft()
                                  : std::vector<tesseract::MentionSeg>{};
             bool has_mention = false;
             for (const auto& seg : draft)
@@ -4694,12 +4694,20 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 {
                     auto hits = c->_shell->shortcode_engine_.lookup(
                         complete->prefix, c->_shell->cached_emoticons(), 1);
-                    std::string r =
-                        (!hits.empty() && !hits.front().glyph.empty())
-                            ? hits.front().glyph
-                            : ":" + complete->prefix + ":";
-                    c->_roomTextArea->replace_range(complete->start,
-                                                    complete->end, r);
+                    if (!hits.empty() && !hits.front().glyph.empty())
+                    {
+                        c->_roomTextArea->replace_range(
+                            complete->start, complete->end, hits.front().glyph);
+                    }
+                    else if (!hits.empty())
+                    {
+                        const tk::Image* image =
+                            c->_shell->account_manager_.image_cache().peek(
+                                hits.front().emoticon.url);
+                        c->_roomTextArea->insert_emoticon(
+                            complete->start, complete->end, hits.front().shortcode,
+                            hits.front().emoticon.url, image);
+                    }
                     [c hideSlashPopup];
                     [c hideShortcodePopup];
                     [c hideMentionPopup];
@@ -6023,10 +6031,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             [weakPanel close];
             return;
         }
-        // Compose mode: insert `:shortcode:` text.
+        // Compose mode: insert an inline emoticon pill.
         if (!s->_roomTextArea)
             return;
-        s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
+        const tk::Image* image =
+            s->_shell->account_manager_.anim_cache().current_frame(img.url);
+        if (!image)
+            image = s->_shell->account_manager_.image_cache().peek(img.url);
+        int pos = s->_roomTextArea->cursor_byte_pos();
+        s->_roomTextArea->insert_emoticon(pos, pos, img.shortcode, img.url, image);
         if (s->_roomView)
             s->_roomView->set_current_text(s->_roomTextArea->text());
         s->_roomTextArea->set_focused(true);
@@ -6100,10 +6113,21 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             {
                 return;
             }
-            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
-            c->_roomTextArea->replace_range(
-                c->_shell->shortcode_active_match_.start,
-                c->_shell->shortcode_active_match_.end, std::move(r));
+            if (!s.glyph.empty())
+            {
+                c->_roomTextArea->replace_range(
+                    c->_shell->shortcode_active_match_.start,
+                    c->_shell->shortcode_active_match_.end, s.glyph);
+            }
+            else
+            {
+                const tk::Image* image =
+                    c->_shell->account_manager_.image_cache().peek(s.emoticon.url);
+                c->_roomTextArea->insert_emoticon(
+                    c->_shell->shortcode_active_match_.start,
+                    c->_shell->shortcode_active_match_.end, s.shortcode,
+                    s.emoticon.url, image);
+            }
             [c hideShortcodePopup];
         };
         _shortcodePopupWidget->on_dismissed = [weakSelf]
@@ -6592,7 +6616,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         }
         if (!s->_roomTextArea)
             return;
-        s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
+        const tk::Image* image =
+            s->_shell->account_manager_.anim_cache().current_frame(img.url);
+        if (!image)
+            image = s->_shell->account_manager_.image_cache().peek(img.url);
+        int pos = s->_roomTextArea->cursor_byte_pos();
+        s->_roomTextArea->insert_emoticon(pos, pos, img.shortcode, img.url, image);
         if (s->_roomView)
             s->_roomView->set_current_text(s->_roomTextArea->text());
         s->_roomTextArea->set_focused(true);

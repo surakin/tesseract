@@ -380,6 +380,22 @@ struct TextSpan
     // True for emoji grapheme clusters within mixed text/emoji spans.
     // Backends render these runs at FontRole::InlineEmoji size (~125% body).
     bool  is_emoji_run = false;
+    // An MSC2545 inline custom emoticon (<img data-mx-emoticon>) parsed by
+    // html_spans.cpp — a leaf run with no text content of its own (`text`
+    // left empty; `image_mxc`/`image_alt` carry the source and fallback
+    // instead). MessageListView is what actually renders these: it
+    // substitutes a fixed placeholder glyph into `text` (sized via
+    // is_emoji_run, so it reserves a proper emoji-sized square box during
+    // wrap/layout) before building the TextLayout, then at paint time draws
+    // `image_mxc`'s decoded bitmap over that box once resolved — the same
+    // "placeholder now, real content once decoded" degradation already used
+    // for other async-loading inline images (e.g. reaction chips), rather
+    // than trying to fit arbitrarily-wide alt text into a small image box.
+    // `image_alt` (":shortcode:") is used for plain-text/clipboard
+    // extraction in place of the placeholder glyph, never for painting.
+    bool        is_image = false;
+    std::string image_mxc;
+    std::string image_alt;
 };
 
 // Per-platform factory for backend-owned resources. The platform host

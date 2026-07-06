@@ -764,7 +764,10 @@ void RoomWindow::on_picker_emoticon_(const tesseract::ImagePackImage& img)
     }
     if (text_area_)
     {
-        text_area_->insert_at_cursor(":" + img.shortcode + ":");
+        // Windows' insert_emoticon ignores the image (plain-text + side-table
+        // fallback — see host_win32.cpp), so there's no bitmap to resolve here.
+        int pos = text_area_->cursor_byte_pos();
+        text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, nullptr);
         if (room_view_)
             room_view_->set_current_text(text_area_->text());
         text_area_->set_focused(true);

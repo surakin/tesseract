@@ -307,6 +307,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         { return shell_emoticons_(); };
         sh.fetch_image = [this](const std::string& url)
         { shell_ensure_media_image_(url, 28, 28); };
+        sh.resolve_image = [this](const std::string& url) -> const tk::Image*
+        { return shell_image_(url); };
         shortcode_controller_ =
             std::make_unique<tesseract::views::ShortcodeController>(
                 roomTextArea_.get(), shortcode_popup_widget_, std::move(sh));
@@ -477,7 +479,9 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         }
         if (!roomTextArea_)
             return;
-        roomTextArea_->insert_at_cursor(":" + img.shortcode + ":");
+        const tk::Image* image = picker_image_provider_(false)(img.url, img.url);
+        int pos = roomTextArea_->cursor_byte_pos();
+        roomTextArea_->insert_emoticon(pos, pos, img.shortcode, img.url, image);
         if (room_view_)
             room_view_->set_current_text(roomTextArea_->text());
         roomTextArea_->set_focused(true);

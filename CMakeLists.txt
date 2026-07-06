@@ -327,6 +327,12 @@ if(MSVC)
         add_link_options("/NODEFAULTLIB:libcmt")
     endif()
 
+    # Debug executables WHOLE_ARCHIVE-link tesseract_client + the Rust bridge
+    # (see ui/windows/CMakeLists.txt), which merges enough debug type info to
+    # blow past the linker's full-PDB size limit (LNK1140). FASTLINK keeps
+    # each object's debug info in place and builds a small index PDB instead.
+    add_link_options("$<$<CONFIG:Debug>:/DEBUG:FASTLINK>")
+
     # --- derive MSVC tools dir from cl.exe path ---
     # cl.exe lives at <VCToolsDir>/bin/Host<arch>/<arch>/cl.exe
     get_filename_component(_cc "${CMAKE_CXX_COMPILER}" DIRECTORY)   # …/bin/Hostx64/x64

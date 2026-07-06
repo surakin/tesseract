@@ -30,7 +30,7 @@ ShortcodeController::~ShortcodeController() = default;
 
 bool ShortcodeController::on_text_changed(const std::string& text, int cursor)
 {
-    if (!text_area_ || !popup_)
+    if (!text_area_ || !popup_ || applying_)
     {
         return false;
     }
@@ -38,16 +38,27 @@ bool ShortcodeController::on_text_changed(const std::string& text, int cursor)
     const std::vector<tesseract::ImagePackImage>& packs =
         hooks_.emoticons ? hooks_.emoticons() : empty_emoticons();
 
-    // Auto-expand: ":smile:" followed by a space / EOT → replace with the glyph.
+    // Auto-expand: ":smile:" followed by a space / EOT → replace with the
+    // glyph (Unicode) or an inline pill (custom emoticon).
     if (auto complete = engine_.find_complete(text, cursor))
     {
         auto hits = engine_.lookup(complete->prefix, packs, 1);
         if (!hits.empty())
         {
-            std::string r = (!hits.front().glyph.empty())
-                            ? hits.front().glyph
-                            : ":" + complete->prefix + ":";
-            text_area_->replace_range(complete->start, complete->end, r);
+            const auto& hit = hits.front();
+            applying_ = true;
+            if (!hit.glyph.empty())
+            {
+                text_area_->replace_range(complete->start, complete->end, hit.glyph);
+            }
+            else
+            {
+                const tk::Image* image = hooks_.resolve_image
+                    ? hooks_.resolve_image(hit.emoticon.url) : nullptr;
+                text_area_->insert_emoticon(complete->start, complete->end,
+                                            hit.shortcode, hit.emoticon.url, image);
+            }
+            applying_ = false;
         }
         hide();
         return true;
@@ -160,8 +171,22 @@ bool ShortcodeController::on_submit()
 
 void ShortcodeController::accept(const ShortcodeSuggestion& s)
 {
-    std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
-    replace_with(r);
+    applying_ = true;
+    if (!s.glyph.empty())
+    {
+        replace_with(s.glyph);
+        applying_ = false;
+        return;
+    }
+    if (text_area_)
+    {
+        const tk::Image* image = hooks_.resolve_image
+            ? hooks_.resolve_image(s.emoticon.url) : nullptr;
+        text_area_->insert_emoticon(active_match_.start, active_match_.end,
+                                    s.shortcode, s.emoticon.url, image);
+    }
+    applying_ = false;
+    hide();
 }
 
 void ShortcodeController::replace_with(const std::string& r)

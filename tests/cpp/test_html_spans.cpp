@@ -892,3 +892,142 @@ TEST_CASE("blocks: indented list-item content has no leading space span",
     REQUIRE(!item->spans.empty());
     CHECK(item->spans.front().text.front() != ' ');
 }
+
+// ── <img data-mx-emoticon> (MSC2545 inline custom emoticon) ─────────────────
+
+TEST_CASE("img: self-closed MSC2545 emoticon becomes an image span",
+          "[html_spans][img]")
+{
+    auto s = html_to_spans(
+        "hi <img data-mx-emoticon src=\"mxc://x.org/abc\" alt=\":wave:\" "
+        "title=\":wave:\" height=\"32\"/> there",
+        false);
+    bool found = false;
+    for (const auto& sp : s)
+    {
+        if (sp.is_image)
+        {
+            found = true;
+            CHECK(sp.image_mxc == "mxc://x.org/abc");
+            CHECK(sp.image_alt == ":wave:");
+            CHECK(sp.text.empty());
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("img: bare (non-self-closed) MSC2545 emoticon is also recognised "
+          "and does not corrupt later tag nesting",
+          "[html_spans][img]")
+{
+    // A bare <img> (no trailing slash) must not be pushed onto the
+    // formatting stack expecting a </img> that never arrives — confirmed by
+    // checking that <b> after it still toggles bold correctly.
+    auto s = html_to_spans(
+        "<img data-mx-emoticon src=\"mxc://x.org/abc\" alt=\":wave:\"> "
+        "<b>bold</b> plain",
+        false);
+    bool found_image = false;
+    bool found_bold = false;
+    bool found_plain = false;
+    for (const auto& sp : s)
+    {
+        if (sp.is_image)
+        {
+            found_image = true;
+            CHECK(sp.image_mxc == "mxc://x.org/abc");
+        }
+        if (sp.bold && sp.text == "bold")
+        {
+            found_bold = true;
+        }
+        if (!sp.bold && sp.text.find("plain") != std::string::npos)
+        {
+            found_plain = true;
+        }
+    }
+    CHECK(found_image);
+    CHECK(found_bold);
+    CHECK(found_plain);
+}
+
+TEST_CASE("img: without data-mx-emoticon falls back to alt text",
+          "[html_spans][img]")
+{
+    auto s = html_to_spans(
+        "<img src=\"mxc://x.org/abc\" alt=\"a plain image\"/>", false);
+    for (const auto& sp : s)
+        CHECK_FALSE(sp.is_image);
+    CHECK(joined_text(s).find("a plain image") != std::string::npos);
+}
+
+TEST_CASE("img: a block-leading emoticon (no preceding text, no <p> "
+          "wrapper) is not silently dropped by commit_block()'s leading-"
+          "whitespace trim",
+          "[html_spans][img][blocks]")
+{
+    // Regression test for a real Element-sent message: commit_block() trims
+    // CSS-collapsible leading whitespace from the first span in a block by
+    // checking find_first_not_of(' ') == npos — which an EMPTY string also
+    // satisfies vacuously, so an image span (legitimately empty text) with
+    // nothing before it was being erased outright before ever reaching
+    // paint.
+    auto blocks = html_to_blocks(
+        "<img data-mx-emoticon "
+        "src=\"mxc://gnomos.org/7237e619d21c4054078c8bf4c915574705d69081\" "
+        "alt=\":cacodemon:\" title=\":cacodemon:\" height=\"32\"/> oh",
+        false);
+    REQUIRE(!blocks.empty());
+    bool found_image = false;
+    for (auto& b : blocks)
+        for (auto& sp : b.spans)
+            if (sp.is_image)
+                found_image = true;
+    CHECK(found_image);
+}
+
+TEST_CASE("img: non-mxc src is rejected even with data-mx-emoticon",
+          "[html_spans][img]")
+{
+    auto s = html_to_spans(
+        "<img data-mx-emoticon src=\"https://evil.example/x.png\" "
+        "alt=\":wave:\"/>",
+        false);
+    for (const auto& sp : s)
+        CHECK_FALSE(sp.is_image);
+    CHECK(joined_text(s).find(":wave:") != std::string::npos);
+}
+
+TEST_CASE("img: alt falls back to title when alt is absent",
+          "[html_spans][img]")
+{
+    auto s = html_to_spans(
+        "<img data-mx-emoticon src=\"mxc://x.org/abc\" title=\":smile:\"/>",
+        false);
+    bool found = false;
+    for (const auto& sp : s)
+    {
+        if (sp.is_image)
+        {
+            found = true;
+            CHECK(sp.image_alt == ":smile:");
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("img: recognised inside html_to_blocks paragraphs too",
+          "[html_spans][img][blocks]")
+{
+    auto blocks = html_to_blocks(
+        "<p>hi <img data-mx-emoticon src=\"mxc://x.org/abc\" "
+        "alt=\":wave:\"/></p>",
+        false);
+    const BodyBlock* p = find_block(blocks, BodyBlock::Kind::Paragraph);
+    REQUIRE(p != nullptr);
+    bool found = false;
+    for (const auto& sp : p->spans)
+        if (sp.is_image)
+            found = true;
+    CHECK(found);
+}

@@ -38,6 +38,15 @@ MentionSeg room_mention()
     m.is_room = true;
     return m;
 }
+
+MentionSeg emoticon(std::string shortcode, std::string mxc_url)
+{
+    MentionSeg m;
+    m.kind = MentionSeg::Kind::Emoticon;
+    m.shortcode = std::move(shortcode);
+    m.mxc_url = std::move(mxc_url);
+    return m;
+}
 } // namespace
 
 TEST_CASE("mentions: no mention segments behaves like markdown_to_html")
@@ -105,4 +114,62 @@ TEST_CASE("mentions: display names are HTML-escaped")
     auto r = build_mention_message(segs);
     CHECK(contains(r.formatted_body, "&lt;b&gt;&amp;you&lt;/b&gt;"));
     CHECK_FALSE(contains(r.formatted_body, "<b>&you"));
+}
+
+TEST_CASE("mentions: a lone emoticon segment round-trips to literal "
+          "shortcode text and an MSC2545 img tag")
+{
+    std::vector<MentionSeg> segs = {text("wave "),
+                                    emoticon("wave", "mxc://x.org/abc")};
+    auto r = build_mention_message(segs);
+    CHECK(r.body == "wave :wave:");
+    CHECK(contains(r.formatted_body, "<img data-mx-emoticon src=\"mxc://x.org/abc\""));
+    CHECK(contains(r.formatted_body, "alt=\":wave:\""));
+    CHECK(contains(r.formatted_body, "title=\":wave:\""));
+    // The placeholder sentinel must not leak into output.
+    CHECK_FALSE(contains(r.formatted_body, "\xEE\x80\x80"));
+}
+
+TEST_CASE("mentions: plain emoticon-only message still forces a non-empty "
+          "formatted_body")
+{
+    std::vector<MentionSeg> segs = {emoticon("smile", "mxc://x.org/def")};
+    auto r = build_mention_message(segs);
+    CHECK(r.body == ":smile:");
+    CHECK_FALSE(r.formatted_body.empty());
+    CHECK(contains(r.formatted_body, "mxc://x.org/def"));
+}
+
+TEST_CASE("mentions: mixed mention + emoticon + text produce correct body "
+          "and formatted_body together")
+{
+    std::vector<MentionSeg> segs = {
+        mention("@a:x.org", "Alice"), text(" say "),
+        emoticon("wave", "mxc://x.org/abc"), text(" back")};
+    auto r = build_mention_message(segs);
+    CHECK(r.body == "Alice say :wave: back");
+    CHECK(contains(r.formatted_body,
+                   "<a href=\"https://matrix.to/#/@a:x.org\">Alice</a>"));
+    CHECK(contains(r.formatted_body, "<img data-mx-emoticon src=\"mxc://x.org/abc\""));
+    CHECK(contains(r.formatted_body, " say "));
+    CHECK(contains(r.formatted_body, " back"));
+}
+
+TEST_CASE("mentions: emoticon mxc url is HTML-escaped")
+{
+    std::vector<MentionSeg> segs = {
+        emoticon("x", "mxc://x.org/\"onload=alert(1)")};
+    auto r = build_mention_message(segs);
+    CHECK_FALSE(contains(r.formatted_body, "\"onload=alert(1)\""));
+}
+
+TEST_CASE("mentions: emoticon shortcode is HTML-escaped in both alt and "
+          "title (a shortcode is an attacker-controlled pack JSON key, not "
+          "a fixed vocabulary)")
+{
+    std::vector<MentionSeg> segs = {
+        emoticon("x\" onerror=\"alert(1)", "mxc://x.org/abc")};
+    auto r = build_mention_message(segs);
+    CHECK_FALSE(contains(r.formatted_body, "onerror=\"alert(1)\""));
+    CHECK(contains(r.formatted_body, "&quot;"));
 }

@@ -1948,7 +1948,7 @@ void MainWindow::on_create(HWND hwnd)
             // Build from the composer's mention draft so mentions become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
-                room_text_area_ ? room_text_area_->mention_draft()
+                room_text_area_ ? room_text_area_->composer_draft()
                                 : std::vector<tesseract::MentionSeg>{};
             bool has_mention = false;
             for (const auto& seg : draft)
@@ -3402,6 +3402,7 @@ void MainWindow::on_create(HWND hwnd)
             { return cached_emoticons_; };
             sch.fetch_image = [this](const std::string& url)
             { ensure_media_image_(url, 28, 28); };
+            sch.resolve_image = make_static_image_provider_();
             shortcode_controller_ =
                 std::make_unique<tesseract::views::ShortcodeController>(
                     room_text_area_.get(), shortcode_popup_widget_,
@@ -7023,13 +7024,15 @@ void MainWindow::pick_emoticon_at_cursor(const tesseract::ImagePackImage& img)
         }
         return;
     }
-    // Compose mode: today's behaviour — insert `:shortcode:` text into
-    // the compose field. MSC2545 rich-emoticon sending is a separate task.
+    // Compose mode. Windows' insert_emoticon ignores the image (plain-text +
+    // side-table fallback — see host_win32.cpp), so there's no bitmap to
+    // resolve here.
     if (!room_text_area_)
     {
         return;
     }
-    room_text_area_->insert_at_cursor(":" + img.shortcode + ":");
+    int pos = room_text_area_->cursor_byte_pos();
+    room_text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, nullptr);
     if (room_view_)
     {
         room_view_->set_current_text(room_text_area_->text());

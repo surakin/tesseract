@@ -697,7 +697,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             // pills become matrix.to links + m.mentions. Falls back to the
             // passed-in body when the native area has no draft.
             std::vector<tesseract::MentionSeg> draft =
-                roomTextArea_ ? roomTextArea_->mention_draft()
+                roomTextArea_ ? roomTextArea_->composer_draft()
                               : std::vector<tesseract::MentionSeg>{};
             bool has_mention = false;
             for (const auto& seg : draft)
@@ -1408,6 +1408,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         { return cached_emoticons_; };
         sh.fetch_image = [this](const std::string& url)
         { ensure_media_image_(url, 28, 28); };
+        sh.resolve_image = make_static_image_provider_();
         shortcode_controller_ =
             std::make_unique<tesseract::views::ShortcodeController>(
                 roomTextArea_.get(), shortcode_popup_widget_, std::move(sh));
@@ -2311,7 +2312,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         {
             return;
         }
-        roomTextArea_->insert_at_cursor(":" + img.shortcode + ":");
+        const tk::Image* image = make_picker_image_provider_(false)(img.url, img.url);
+        int pos = roomTextArea_->cursor_byte_pos();
+        roomTextArea_->insert_emoticon(pos, pos, img.shortcode, img.url, image);
         if (mainApp_)
         {
             mainApp_->room_view()->set_current_text(roomTextArea_->text());

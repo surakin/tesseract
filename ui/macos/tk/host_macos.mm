@@ -863,7 +863,9 @@ public:
     int cursor_byte_pos() const override;
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override;
-    std::vector<tesseract::MentionSeg> mention_draft() const override;
+    void insert_emoticon(int start, int end, const std::string& shortcode,
+                         const std::string& mxc_url, const tk::Image* image) override;
+    std::vector<tesseract::MentionSeg> composer_draft() const override;
     void set_mention_colors(Color bg, Color fg) override;
     void set_font_role(FontRole role) override
     {
@@ -1070,6 +1072,34 @@ private:
                             frame.origin.y +
                                 (frame.size.height - ts.height) * 0.5);
     [(self.label ?: @"") drawAtPoint:o withAttributes:attrs];
+}
+@end
+
+// Inline MSC2545 custom-emoticon pill: an atomic NSTextAttachment carrying
+// the shortcode/mxc source, drawn as a bitmap by its cell. Same atomic-
+// character behaviour as TKMentionAttachment (caret/backspace move over it
+// as one unit).
+@interface TKEmoticonAttachment : NSTextAttachment
+@property(nonatomic, copy) NSString* shortcode;
+@property(nonatomic, copy) NSString* mxcUrl;
+@end
+
+@implementation TKEmoticonAttachment
+@end
+
+@interface TKEmoticonCell : NSTextAttachmentCell
+@property(nonatomic, strong) NSImage* image;
+@end
+
+@implementation TKEmoticonCell
+- (NSSize)cellSize
+{
+    return self.image ? self.image.size : NSMakeSize(20, 20);
+}
+- (void)drawWithFrame:(NSRect)frame inView:(NSView*)controlView
+{
+    (void)controlView;
+    [self.image drawInRect:frame];
 }
 @end
 
@@ -1376,7 +1406,65 @@ void NSTextViewNative::insert_mention(int start, int end,
     notify_changed();
 }
 
-std::vector<tesseract::MentionSeg> NSTextViewNative::mention_draft() const
+void NSTextViewNative::insert_emoticon(int start, int end,
+                                       const std::string& shortcode,
+                                       const std::string& mxc_url,
+                                       const tk::Image* image)
+{
+    if (!view_)
+    {
+        return;
+    }
+    if (!image)
+    {
+        replace_range(start, end, ":" + shortcode + ":");
+        return;
+    }
+    NSString* ns = view_.string;
+    NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
+    int bs = std::min(start, (int)utf8.length);
+    int be = std::min(end, (int)utf8.length);
+    NSString* ps = [[NSString alloc]
+        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bs)]
+            encoding:NSUTF8StringEncoding];
+    NSString* pe = [[NSString alloc]
+        initWithData:[utf8 subdataWithRange:NSMakeRange(0, be)]
+            encoding:NSUTF8StringEncoding];
+    NSRange range = NSMakeRange(ps.length, pe.length - ps.length);
+
+    constexpr CGFloat kSide = 20; // matches the reaction-chip inline image size
+    CGImageRef cg = tk::cg::to_native_image(*image);
+    NSImage* nsImage = [[NSImage alloc] initWithCGImage:cg
+                                                    size:NSMakeSize(kSide, kSide)];
+
+    TKEmoticonAttachment* att = [[TKEmoticonAttachment alloc] init];
+    att.shortcode = [NSString stringWithUTF8String:shortcode.c_str()];
+    att.mxcUrl = [NSString stringWithUTF8String:mxc_url.c_str()];
+    TKEmoticonCell* cell = [[TKEmoticonCell alloc] init];
+    cell.image = nsImage;
+    att.attachmentCell = cell;
+
+    NSMutableAttributedString* a = [[NSMutableAttributedString alloc]
+        initWithAttributedString:[NSAttributedString
+                                     attributedStringWithAttachment:att]];
+    // Trailing space (with the view's font) so typing continues normally.
+    NSDictionary* fontAttrs =
+        view_.font ? @{NSFontAttributeName : view_.font} : @{};
+    [a appendAttributedString:[[NSAttributedString alloc] initWithString:@" "
+                                                              attributes:fontAttrs]];
+
+    if ([view_ shouldChangeTextInRange:range replacementString:a.string])
+    {
+        [view_.textStorage replaceCharactersInRange:range
+                               withAttributedString:a];
+        NSUInteger caret = range.location + a.length;
+        [view_ setSelectedRange:NSMakeRange(caret, 0)];
+        [view_ didChangeText];
+    }
+    notify_changed();
+}
+
+std::vector<tesseract::MentionSeg> NSTextViewNative::composer_draft() const
 {
     std::vector<tesseract::MentionSeg> segs;
     if (!view_)
@@ -1415,6 +1503,16 @@ std::vector<tesseract::MentionSeg> NSTextViewNative::mention_draft() const
             s.display_name =
                 m.displayName.UTF8String ? m.displayName.UTF8String : "";
             s.is_room = m.isRoom;
+            segs.push_back(std::move(s));
+        }
+        else if ([att isKindOfClass:[TKEmoticonAttachment class]])
+        {
+            flush();
+            TKEmoticonAttachment* e = (TKEmoticonAttachment*)att;
+            tesseract::MentionSeg s;
+            s.kind = tesseract::MentionSeg::Kind::Emoticon;
+            s.shortcode = e.shortcode.UTF8String ? e.shortcode.UTF8String : "";
+            s.mxc_url = e.mxcUrl.UTF8String ? e.mxcUrl.UTF8String : "";
             segs.push_back(std::move(s));
         }
         else

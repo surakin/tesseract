@@ -655,7 +655,77 @@ public:
         }
     }
 
-    std::vector<tesseract::MentionSeg> mention_draft() const override
+    void insert_emoticon(int start, int end, const std::string& shortcode,
+                         const std::string& mxc_url, const tk::Image* image) override
+    {
+        if (!buffer_)
+        {
+            return;
+        }
+        if (!image)
+        {
+            replace_range(start, end, ":" + shortcode + ":");
+            return;
+        }
+        g_signal_handler_block(buffer_, changed_id_);
+
+        GtkTextIter b0, b1;
+        gtk_text_buffer_get_bounds(buffer_, &b0, &b1);
+        gchar* slice = gtk_text_buffer_get_slice(buffer_, &b0, &b1, FALSE);
+        int cs = utf8_byte_to_char_offset(slice, start);
+        int ce = utf8_byte_to_char_offset(slice, end);
+        g_free(slice);
+
+        GtkTextIter a, c;
+        gtk_text_buffer_get_iter_at_offset(buffer_, &a, cs);
+        gtk_text_buffer_get_iter_at_offset(buffer_, &c, ce);
+        gtk_text_buffer_delete(buffer_, &a, &c);
+
+        GtkTextChildAnchor* anchor =
+            gtk_text_buffer_create_child_anchor(buffer_, &a);
+        auto* data = new EmoticonData{shortcode, mxc_url};
+        g_object_set_data_full(G_OBJECT(anchor), "tesseract-emoticon", data,
+                               &GtkNativeTextArea::free_emoticon_data);
+
+        cairo_surface_t* surface = tk::cairo_pango::to_native_image(*image);
+        // gdk_pixbuf_get_from_surface/gdk_texture_new_for_pixbuf are
+        // deprecated as of GTK 4.20 but still fully functional and the most
+        // broadly-compatible cairo-surface-to-texture path across the range
+        // of GTK4 versions this project actually targets (no minimum pin
+        // newer than plain "gtk4" in CMakeLists.txt).
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
+            surface, 0, 0, cairo_image_surface_get_width(surface),
+            cairo_image_surface_get_height(surface));
+        GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
+        G_GNUC_END_IGNORE_DEPRECATIONS
+        g_object_unref(pixbuf);
+        GtkWidget* pic = gtk_picture_new_for_paintable(GDK_PAINTABLE(tex));
+        g_object_unref(tex);
+        constexpr int kSide = 20; // matches the reaction-chip inline image size
+        gtk_widget_set_size_request(pic, kSide, kSide);
+        gtk_text_view_add_child_at_anchor(GTK_TEXT_VIEW(view_), pic, anchor);
+
+        // Trailing space after the pill so typing continues as normal text.
+        GtkTextIter after;
+        gtk_text_buffer_get_iter_at_child_anchor(buffer_, &after, anchor);
+        gtk_text_iter_forward_char(&after); // step past the anchor
+        gtk_text_buffer_insert(buffer_, &after, " ", 1);
+        gtk_text_buffer_place_cursor(buffer_, &after);
+
+        g_signal_handler_unblock(buffer_, changed_id_);
+        std::string t = text();
+        if (placeholder_label_)
+        {
+            gtk_widget_set_visible(placeholder_label_, t.empty());
+        }
+        if (on_changed_)
+        {
+            on_changed_(t);
+        }
+    }
+
+    std::vector<tesseract::MentionSeg> composer_draft() const override
     {
         std::vector<tesseract::MentionSeg> segs;
         if (!buffer_)
@@ -683,6 +753,8 @@ public:
             {
                 auto* d = static_cast<MentionData*>(
                     g_object_get_data(G_OBJECT(a), "tesseract-mention"));
+                auto* e = static_cast<EmoticonData*>(
+                    g_object_get_data(G_OBJECT(a), "tesseract-emoticon"));
                 if (d)
                 {
                     flush_text();
@@ -691,6 +763,15 @@ public:
                     s.user_id = d->user_id;
                     s.display_name = d->display_name;
                     s.is_room = d->is_room;
+                    segs.push_back(std::move(s));
+                }
+                else if (e)
+                {
+                    flush_text();
+                    tesseract::MentionSeg s;
+                    s.kind = tesseract::MentionSeg::Kind::Emoticon;
+                    s.shortcode = e->shortcode;
+                    s.mxc_url = e->mxc_url;
                     segs.push_back(std::move(s));
                 }
             }
@@ -774,6 +855,15 @@ private:
     static void free_mention_data(gpointer p)
     {
         delete static_cast<MentionData*>(p);
+    }
+    struct EmoticonData
+    {
+        std::string shortcode;
+        std::string mxc_url;
+    };
+    static void free_emoticon_data(gpointer p)
+    {
+        delete static_cast<EmoticonData*>(p);
     }
     static std::string to_hex(Color c)
     {

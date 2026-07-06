@@ -68,16 +68,31 @@ std::string anchor_for(const MentionSeg& m)
     return out;
 }
 
+// MSC2545 inline custom emoticon. `alt`/`title` both carry the plain-text
+// fallback (":shortcode:") per convention; `height` matches Element's
+// emitted markup.
+std::string img_for(const MentionSeg& m)
+{
+    std::string out = "<img data-mx-emoticon src=\"";
+    html_escape_to(m.mxc_url, out);
+    out += "\" alt=\":";
+    html_escape_to(m.shortcode, out);
+    out += ":\" title=\":";
+    html_escape_to(m.shortcode, out);
+    out += ":\" height=\"32\"/>";
+    return out;
+}
+
 } // namespace
 
 MarkdownResult build_mention_message(const std::vector<MentionSeg>& segments)
 {
-    bool has_mention = false;
+    bool has_sentinel_seg = false;
     for (const auto& s : segments)
     {
-        if (s.kind == MentionSeg::Kind::Mention)
+        if (s.kind != MentionSeg::Kind::Text)
         {
-            has_mention = true;
+            has_sentinel_seg = true;
             break;
         }
     }
@@ -89,13 +104,17 @@ MarkdownResult build_mention_message(const std::vector<MentionSeg>& segments)
         {
             body += s.text;
         }
-        else
+        else if (s.kind == MentionSeg::Kind::Mention)
         {
             body += s.is_room ? "@room" : s.display_name;
         }
+        else
+        {
+            body += ":" + s.shortcode + ":";
+        }
     }
 
-    if (!has_mention)
+    if (!has_sentinel_seg)
     {
         return markdown_to_html(body);
     }
@@ -111,7 +130,9 @@ MarkdownResult build_mention_message(const std::vector<MentionSeg>& segments)
         else
         {
             md += sentinel(anchors.size());
-            anchors.push_back(anchor_for(s));
+            anchors.push_back(s.kind == MentionSeg::Kind::Mention
+                                  ? anchor_for(s)
+                                  : img_for(s));
         }
     }
 

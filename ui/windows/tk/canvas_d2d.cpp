@@ -560,6 +560,15 @@ public:
         return height_;
     }
 
+    // The decoded-pixel "source of truth" bitmap (see class comment) — used
+    // by to_native_image() to hand the raw pixels to Win32-native code that
+    // needs them outside the D2D render pipeline (e.g. building a static OLE
+    // picture object for an inline composer emoticon). Borrowed.
+    IWICBitmap* wic_bitmap() const
+    {
+        return source_.Get();
+    }
+
     std::size_t memory_bytes() const override
     {
         std::size_t bytes = 0;
@@ -1902,6 +1911,88 @@ public:
                                               std::string(utf8));
     }
 
+    // Reserves a fixed square box for an is_image span's carrier U+FFFC code
+    // unit (see MessageListView::substitute_image_placeholders) without
+    // DirectWrite ever considering a fallback glyph for it: SetInlineObject
+    // routes drawing through DrawInlineObject (CubicEmojiTextRenderer just
+    // forwards to Draw() below) instead of the normal glyph-run path
+    // entirely, so no font's rendering of U+FFFC itself is ever consulted.
+    // Draw() is intentionally a no-op — the resolved bitmap is painted
+    // separately, once decoded, by MessageListView::paint_span_images.
+    class BlankInlineObject final : public IDWriteInlineObject
+    {
+    public:
+        explicit BlankInlineObject(float size_dip) : size_(size_dip)
+        {
+        }
+
+        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                                 void** ppv) override
+        {
+            if (!ppv)
+                return E_POINTER;
+            if (riid == __uuidof(IUnknown) ||
+                riid == __uuidof(IDWriteInlineObject))
+            {
+                *ppv = static_cast<IDWriteInlineObject*>(this);
+                AddRef();
+                return S_OK;
+            }
+            *ppv = nullptr;
+            return E_NOINTERFACE;
+        }
+        ULONG STDMETHODCALLTYPE AddRef() override
+        {
+            return ++refs_;
+        }
+        ULONG STDMETHODCALLTYPE Release() override
+        {
+            ULONG n = --refs_;
+            if (n == 0)
+                delete this;
+            return n;
+        }
+
+        HRESULT STDMETHODCALLTYPE Draw(void*, IDWriteTextRenderer*, FLOAT,
+                                       FLOAT, BOOL, BOOL, IUnknown*) override
+        {
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE
+        GetMetrics(DWRITE_INLINE_OBJECT_METRICS* m) override
+        {
+            if (!m)
+                return E_POINTER;
+            m->width = size_;
+            m->height = size_;
+            m->baseline = size_; // sits on the baseline like a glyph would
+            m->supportsSideways = FALSE;
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE
+        GetOverhangMetrics(DWRITE_OVERHANG_METRICS* m) override
+        {
+            if (!m)
+                return E_POINTER;
+            *m = {};
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE
+        GetBreakConditions(DWRITE_BREAK_CONDITION* before,
+                           DWRITE_BREAK_CONDITION* after) override
+        {
+            if (before)
+                *before = DWRITE_BREAK_CONDITION_NEUTRAL;
+            if (after)
+                *after = DWRITE_BREAK_CONDITION_NEUTRAL;
+            return S_OK;
+        }
+
+    private:
+        ULONG refs_ = 1;
+        float size_;
+    };
+
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
     {
@@ -1962,7 +2053,13 @@ public:
         {
             const TextSpan& sp = *wr.sp;
             DWRITE_TEXT_RANGE tr{wr.start, wr.end - wr.start};
-            if (sp.is_emoji_run)
+            if (sp.is_image)
+            {
+                ComPtr<IDWriteInlineObject> obj;
+                obj.Attach(new BlankInlineObject(emoji_size_dip));
+                layout->SetInlineObject(obj.Get(), tr);
+            }
+            else if (sp.is_emoji_run)
             {
                 layout->SetFontSize(emoji_size_dip, tr);
             }
@@ -2084,6 +2181,11 @@ make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h)
     // MFVideoFormat_RGB32 is BGRX: the 4th byte is unused (0x00 from MF).
     // opaque=true tells D2D to ignore it instead of treating it as alpha=0.
     return std::make_unique<D2DImage>(std::move(bmp), w, h, /*opaque=*/true);
+}
+
+IWICBitmap* to_native_image(const Image& img)
+{
+    return static_cast<const D2DImage&>(img).wic_bitmap();
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -1000,6 +1000,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             { return cached_emoticons_; };
             sh.fetch_image = [this](const std::string& url)
             { ensure_media_image_(url, 28, 28); };
+            sh.resolve_image = make_static_image_provider_();
             shortcode_controller_ =
                 std::make_unique<tesseract::views::ShortcodeController>(
                     room_text_area_.get(), shortcode_popup_widget_,
@@ -1413,7 +1414,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             // Build from the composer's mention draft so inline pills become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
-                room_text_area_ ? room_text_area_->mention_draft()
+                room_text_area_ ? room_text_area_->composer_draft()
                                 : std::vector<tesseract::MentionSeg>{};
             bool has_mention = false;
             for (const auto& seg : draft)
@@ -6156,12 +6157,14 @@ void MainWindow::emoticon_selected(const tesseract::ImagePackImage& img)
         }
         return;
     }
-    // Compose mode: insert `:shortcode:` text into the compose field.
+    // Compose mode: insert an inline emoticon pill into the compose field.
     if (!room_text_area_)
     {
         return;
     }
-    room_text_area_->insert_at_cursor(":" + img.shortcode + ":");
+    const tk::Image* image = make_picker_image_provider_(false)(img.url, img.url);
+    int pos = room_text_area_->cursor_byte_pos();
+    room_text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, image);
     if (room_view_)
     {
         room_view_->set_current_text(room_text_area_->text());

@@ -208,7 +208,10 @@ struct Tag
     std::string href;           // non-empty only for <a href="http(s)://...">
     std::string spoiler_reason; // value of data-mx-spoiler (may be empty)
     std::string code_lang; // language token from class="language-X" on pre/code
+    std::string img_src;        // <img src="..."> (MSC2545 inline emoticon)
+    std::string img_alt;        // <img alt="..."> falling back to title="..."
     bool has_spoiler = false;   // true when data-mx-spoiler attribute present
+    bool is_mx_emoticon = false; // <img data-mx-emoticon> attribute present
     bool closing = false;
     bool self_closing = false;
 };
@@ -463,6 +466,28 @@ Tag parse_tag(const char*& p, const char* end)
         }
     }
 
+    // <img data-mx-emoticon src="mxc://..." alt=":shortcode:" title="..."> —
+    // MSC2545 inline custom emoticon. A void element: never has a closing
+    // tag, whether written self-closed ("<img .../>") or bare ("<img ...>").
+    if (t.name == "img" && !t.closing)
+    {
+        t.is_mx_emoticon =
+            extract_attr(attr_start, attr_end, "data-mx-emoticon").has_value();
+        if (auto src = extract_attr(attr_start, attr_end, "src"))
+        {
+            t.img_src = std::move(*src);
+        }
+        auto alt = extract_attr(attr_start, attr_end, "alt");
+        if (!alt || alt->empty())
+        {
+            alt = extract_attr(attr_start, attr_end, "title");
+        }
+        if (alt)
+        {
+            t.img_alt = std::move(*alt);
+        }
+    }
+
     return t;
 }
 
@@ -623,7 +648,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         if (!spans.empty())
         {
             tk::TextSpan& prev = spans.back();
-            if (prev.url == s.url && prev.spoiler == s.spoiler &&
+            // Never append text into an image span — it's a leaf run with
+            // no text content of its own, not a compatible formatting run
+            // to merge with, even when the surrounding formatting matches.
+            if (!prev.is_image && prev.url == s.url && prev.spoiler == s.spoiler &&
                 prev.spoiler_reason == s.spoiler_reason &&
                 prev.bold == s.bold && prev.semibold == s.semibold &&
                 prev.italic == s.italic &&
@@ -736,6 +764,34 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             Tag tag = parse_tag(p, end);
             if (tag.name.empty())
             {
+                continue;
+            }
+
+            // <img> is a void element — never has a closing tag, whether
+            // self-closed or bare — so it must be handled before the
+            // opening/self-closing/closing dispatch below: a bare (non-self-
+            // closed) <img> would otherwise fall into the generic "opening
+            // tag" branch and get pushed onto the formatting stack expecting
+            // a </img> that never arrives, silently corrupting later tag
+            // nesting. Only a recognised MSC2545 emoticon with a valid mxc:
+            // source becomes an image span; anything else (a plain <img>, or
+            // one with an unsafe/missing src) falls back to its alt text so
+            // no untrusted image source is ever rendered.
+            if (!tag.closing && tag.name == "img")
+            {
+                if (tag.is_mx_emoticon && tag.img_src.rfind("mxc://", 0) == 0)
+                {
+                    flush();
+                    tk::TextSpan sp;
+                    sp.is_image = true;
+                    sp.image_mxc = tag.img_src;
+                    sp.image_alt = tag.img_alt;
+                    spans.push_back(std::move(sp));
+                }
+                else if (!tag.img_alt.empty())
+                {
+                    cur_text += tag.img_alt;
+                }
                 continue;
             }
 
@@ -874,8 +930,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
 
     flush();
 
-    // Trim trailing newlines from the last span.
-    if (!spans.empty())
+    // Trim trailing newlines from the last span. An image span legitimately
+    // has empty text (it carries no text content of its own) — never drop
+    // it here, only text spans left empty by trailing-newline trimming.
+    if (!spans.empty() && !spans.back().is_image)
     {
         std::string& t = spans.back().text;
         while (!t.empty() && t.back() == '\n')
@@ -1018,7 +1076,9 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         if (!cur.spans.empty())
         {
             tk::TextSpan& prev = cur.spans.back();
-            if (prev.url == s.url && prev.spoiler == s.spoiler &&
+            // Never append text into an image span — see html_to_spans()'s
+            // identical guard.
+            if (!prev.is_image && prev.url == s.url && prev.spoiler == s.spoiler &&
                 prev.spoiler_reason == s.spoiler_reason &&
                 prev.bold == s.bold && prev.semibold == s.semibold &&
                 prev.italic == s.italic &&
@@ -1059,9 +1119,12 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     auto commit_block = [&]()
     {
         flush();
-        if (!cur.spans.empty())
+        if (!cur.spans.empty() && !cur.spans.back().is_image)
         {
-            // Trim trailing newlines from the last span.
+            // Trim trailing newlines from the last span. An image span
+            // legitimately has empty text (it carries no text content of its
+            // own) — never drop it here, only text spans left empty by
+            // trailing-newline trimming.
             std::string& t = cur.spans.back().text;
             while (!t.empty() && t.back() == '\n')
                 t.pop_back();
@@ -1074,6 +1137,15 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         // block-start spaces; Pango/CoreText/D2D do not — this normalises them.
         while (!cur.spans.empty())
         {
+            // An image span legitimately has empty text (it carries no text
+            // content of its own) — never erase/trim it here. An empty
+            // string vacuously satisfies "all whitespace"
+            // (find_first_not_of returns npos), so without this guard the
+            // very first span in a block being an image (no leading text
+            // before it, e.g. a message that opens with a custom emoji)
+            // gets silently erased entirely.
+            if (cur.spans.front().is_image)
+                break;
             std::string& t   = cur.spans.front().text;
             const auto   nsp = t.find_first_not_of(' ');
             if (nsp == std::string::npos)
@@ -1456,6 +1528,26 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         }
 
         // ── Inline-level tags (same logic as html_to_spans()) ────────────────
+
+        // See html_to_spans()'s identical check for why this must come
+        // before the opening/self-closing/closing dispatch below.
+        if (!tag.closing && tag.name == "img")
+        {
+            if (tag.is_mx_emoticon && tag.img_src.rfind("mxc://", 0) == 0)
+            {
+                flush();
+                tk::TextSpan sp;
+                sp.is_image = true;
+                sp.image_mxc = tag.img_src;
+                sp.image_alt = tag.img_alt;
+                cur.spans.push_back(std::move(sp));
+            }
+            else if (!tag.img_alt.empty())
+            {
+                cur_text += tag.img_alt;
+            }
+            continue;
+        }
 
         if (!tag.closing && !tag.self_closing)
         {
