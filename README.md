@@ -8,6 +8,8 @@
 
 A full featured desktop multiplatform (Linux, Windows, Mac) Matrix client built on the [Matrix Rust SDK](https://github.com/matrix-org/matrix-rust-sdk)
 
+> ⚠️ Tesseract only works with homeservers running **Matrix Authentication Service (MAS)** for login and **Sliding Sync**. Servers without both (e.g. legacy password-login-only or non-sliding-sync Synapse deployments) are not currently supported.
+
 ---
 
 ## Why Tesseract?
@@ -116,6 +118,12 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Right click on the user info (bottom left) to add an account or open settings
 - Left click on the user info to open account picker (only if there is more than one account)
 - Ctrl+click on an account in the account picker to open said account in a separate window.
+
+## Server requirements
+
+- **Matrix Authentication Service (MAS)** — Tesseract logs in via OAuth 2.0 / OIDC only; homeservers still on legacy password login aren't supported. See [Matrix Authentication Service](https://element-hq.github.io/matrix-authentication-service/) for how to add MAS to a Synapse deployment.
+- **Sliding Sync** — the room list and timelines are driven entirely by Sliding Sync (native, e.g. Synapse's built-in support). Servers without it won't sync rooms at all.
+
 ## Minimum OS requirements
 
 | Platform | Minimum OS | Architecture |

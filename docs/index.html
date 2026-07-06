@@ -113,6 +113,18 @@
     vertical-align: super; margin-left: 6px; }
   .tagline { margin: 14px 0 0; font-size: 19px; color: var(--page-muted); max-width: 640px; }
 
+  /* Prominent server-requirement callout (MAS + Sliding Sync) */
+  .req-banner {
+    margin: 18px 0 0; max-width: 720px; display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 16px; border-radius: 10px;
+    background: rgba(217,54,54,.08); border: 1px solid rgba(217,54,54,.35);
+    color: var(--page-text); font-size: 14px; line-height: 1.5;
+  }
+  .req-banner .req-ico { flex: none; font-size: 17px; line-height: 1.4; }
+  .req-banner b { color: var(--destructive); }
+  html[data-theme="dark"] .req-banner { background: rgba(228,86,86,.10); border-color: rgba(228,86,86,.40); }
+  html[data-theme="dark"] .req-banner b { color: var(--destructive-hover); }
+
   /* Top-right icon controls (GitHub + theme), fixed to the viewport corner */
   .topbar { position: fixed; top: 16px; right: 16px; z-index: 50;
     display: flex; gap: 10px; }
@@ -763,8 +775,13 @@
       genuinely native UI — Win32 on Windows, AppKit on macOS, and Qt6 or GTK4 on Linux —
       so it looks and feels right everywhere, no web view in sight.
     </p>
+    <div class="req-banner">
+      <span class="req-ico">⚠️</span>
+      <span>Tesseract requires <b>Matrix Authentication Service (MAS)</b> for login and <b>Sliding Sync</b>. Legacy login and Sync v2 are currently not supported.</span>
+    </div>
 
     <div class="features">
+      <div class="feature"><div class="ico">⚠️</div><h3>Requires MAS &amp; Sliding Sync</h3><p>Tesseract logs in via Matrix Authentication Service and syncs via Sliding Sync — homeservers without both aren't supported.</p></div>
       <div class="feature"><div class="ico">🖥️</div><h3>Truly native, four platforms</h3><p>Win32, macOS AppKit, and Linux Qt6 &amp; GTK4 — one shared C++ toolkit, native everywhere.</p></div>
       <div class="feature"><div class="ico">👥</div><h3>Multi-account</h3><p>Sign in to several Matrix accounts at once and switch between them seamlessly.</p></div>
       <div class="feature"><div class="ico">🔒</div><h3>End-to-end encryption</h3><p>Full E2EE with device verification and cross-signing, powered by the Rust SDK.</p></div>
