@@ -255,6 +255,23 @@ protected:
     void save_source_to_file_(std::string source_json,
                                std::string dest_path);
 
+    // Fetch source_json bytes and place the decoded image on the system
+    // clipboard via put_image_on_clipboard_. Shared body for the image
+    // lightbox's copy button; no-op if bytes are empty.
+    void copy_source_to_clipboard_(std::string source_json);
+
+    // Put a decoded image (from `bytes`, a self-describing encoded blob) on the
+    // clipboard via this window's surface host. Surface-bound, so it can't live
+    // in the base (mirrors encode_for_send_); each shell forwards to
+    // surface_->host().set_clipboard_image(bytes).
+    virtual bool
+    put_image_on_clipboard_(std::span<const std::uint8_t> bytes) = 0;
+
+    // Run `fn` on the UI thread after `ms` milliseconds via this window's
+    // surface host. Surface-bound (like put_image_on_clipboard_); used to
+    // auto-dismiss the image lightbox's copy-confirmation toast.
+    virtual void post_delayed_(int ms, std::function<void()> fn) = 0;
+
     // Trigger fetch of a full-res image into the shared tk_images_ cache.
     // Idempotent: no-op if already cached or in-flight.
     void ensure_viewer_image_(const std::string& url);

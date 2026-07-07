@@ -8,6 +8,7 @@ foreach(_entry
         "laugh|kEmojiSvg" "sticker|kStickerSvg" "mic|kMicSvg" "stop|kVoiceStopSvg"
         "reply|kReplySvg" "thread|kThreadSvg" "edit|kEditSvg" "more|kMoreSvg"
         "redact|kRedactSvg" "pin|kPinSvg" "download|kDownloadSvg" "close|kCloseSvg"
+        "copy|kCopySvg"
         "play|kPlaySvg" "join|kJoinSvg" "jump-to-date|kJumpToDateSvg"
         "threadlist|kThreadListSvg" "search|kSearchSvg" "chevron-up|kChevronUpSvg"
         "chevron-down|kChevronDownSvg" "forward|kForwardSvg"

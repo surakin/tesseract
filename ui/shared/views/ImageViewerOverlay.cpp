@@ -22,6 +22,16 @@ static constexpr float kZoomMax = 8.0f;
 
 // ── public API ───────────────────────────────────────────────────────────
 
+ImageViewerOverlay::ImageViewerOverlay()
+{
+    toast_ = add_child(std::make_unique<Toast>());
+}
+
+ImageViewerOverlay::~ImageViewerOverlay()
+{
+    *alive_ = false;
+}
+
 void ImageViewerOverlay::open(std::string media_url, std::string display_key,
                               std::string body, int natural_w, int natural_h)
 {
@@ -40,6 +50,8 @@ void ImageViewerOverlay::open(std::string media_url, std::string display_key,
     open_at_fit_ = true;
     is_loading_    = true;
     loading_start_ = std::chrono::steady_clock::now();
+    if (toast_)
+        toast_->hide(); // no stale "Copied" pill from a previous session
     // Geometry is recomputed in paint() using current bounds.
 }
 
@@ -67,6 +79,35 @@ void ImageViewerOverlay::set_repaint_requester(std::function<void()> fn)
     request_repaint_ = std::move(fn);
 }
 
+void ImageViewerOverlay::set_post_delayed(
+    std::function<void(int, std::function<void()>)> fn)
+{
+    post_delayed_ = std::move(fn);
+}
+
+void ImageViewerOverlay::show_toast(std::string message)
+{
+    if (!toast_)
+        return;
+    toast_->show(std::move(message));
+    if (request_repaint_)
+        request_repaint_();
+    if (post_delayed_)
+    {
+        std::weak_ptr<bool> alive_weak = alive_;
+        post_delayed_(1500,
+                      [this, alive_weak = std::move(alive_weak)]
+                      {
+                          auto alive = alive_weak.lock();
+                          if (!alive || !*alive)
+                              return;
+                          toast_->hide();
+                          if (request_repaint_)
+                              request_repaint_();
+                      });
+    }
+}
+
 // ── layout ───────────────────────────────────────────────────────────────
 
 tk::Size ImageViewerOverlay::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -80,6 +121,8 @@ void ImageViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b)
     recompute_base_(b);
     recompute_image_rect();
     layout_chrome_(b);
+    if (toast_)
+        toast_->arrange(lc, b); // self-positions bottom-centre within b
 }
 
 // ── private helpers ───────────────────────────────────────────────────────
@@ -257,6 +300,10 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
 
     // Close / download chrome buttons (shared scaffolding).
     paint_chrome_buttons_(ctx);
+
+    // Copy-confirmation toast, on top of everything.
+    if (toast_ && toast_->visible())
+        toast_->paint(ctx);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
@@ -304,6 +351,11 @@ bool ImageViewerOverlay::on_content_pointer_up_(tk::Point /*w*/,
 void ImageViewerOverlay::fire_save_()
 {
     on_save(media_url_, body_);
+}
+
+void ImageViewerOverlay::fire_copy_()
+{
+    on_copy(media_url_, body_);
 }
 
 void ImageViewerOverlay::on_pointer_drag(tk::Point local)

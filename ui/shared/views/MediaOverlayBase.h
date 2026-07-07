@@ -40,6 +40,12 @@ public:
     // + mime type) so the subclass invokes it from fire_save_().
     std::function<void(std::string, std::string)> on_save;
 
+    // Fires when the user clicks the copy button (only shown when
+    // wants_copy_button_() is true — currently the image overlay). Same
+    // overlay-specific payload as on_save; the subclass invokes it from
+    // fire_copy_().
+    std::function<void(std::string, std::string)> on_copy;
+
 protected:
     // The chrome layout (close/save button rects). Subclasses call this from
     // their own layout pass with the current widget bounds.
@@ -65,8 +71,11 @@ protected:
     virtual void dismiss_();
 
     // Chrome button rects (top-right corner). Valid after layout_chrome_.
+    // copy_btn_ is only laid out / painted / hit-tested when
+    // wants_copy_button_() returns true.
     tk::Rect close_btn_{};
     tk::Rect save_btn_{};
+    tk::Rect copy_btn_{};
 
     bool is_open_ = false;
 
@@ -93,6 +102,17 @@ protected:
     // Invoke on_save with the subclass's overlay-specific payload.
     virtual void fire_save_() = 0;
 
+    // Opt-in flag for the copy-to-clipboard chrome button. Defaults to off so
+    // the video overlay is unaffected; the image overlay overrides to true.
+    virtual bool wants_copy_button_() const
+    {
+        return false;
+    }
+
+    // Invoke on_copy with the subclass's overlay-specific payload. Only called
+    // when wants_copy_button_() is true and on_copy is set; default no-op.
+    virtual void fire_copy_() {}
+
     // Called by paint_chrome_buttons_ when the canvas DPI scale changes, so
     // subclasses can invalidate their own cached icons (e.g. play_icon_).
     virtual void on_icon_scale_changed_() {}
@@ -115,9 +135,11 @@ protected:
 private:
     std::unique_ptr<tk::Image> close_icon_;
     std::unique_ptr<tk::Image> save_icon_;
+    std::unique_ptr<tk::Image> copy_icon_;
 
     bool press_close_ = false;
     bool press_save_ = false;
+    bool press_copy_ = false;
     bool press_outside_ = false;
 };
 

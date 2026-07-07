@@ -1347,6 +1347,36 @@ public:
             gdk_clipboard_set_text(cb, std::string(text).c_str());
     }
 
+    bool
+    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
+    {
+        if (encoded_bytes.empty() || !drawing_area_)
+            return false;
+        GdkDisplay* display = gtk_widget_get_display(drawing_area_);
+        if (!display)
+            return false;
+        GdkClipboard* cb = gdk_display_get_clipboard(display);
+        if (!cb)
+            return false;
+
+        // Decode the encoded blob straight into a GdkTexture (GTK 4.6+). Its
+        // built-in loaders cover PNG/JPEG/TIFF; anything it can't decode (e.g.
+        // some GIF/WebP) fails gracefully and we report false.
+        GBytes* gb = g_bytes_new(encoded_bytes.data(), encoded_bytes.size());
+        GError* err = nullptr;
+        GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
+        g_bytes_unref(gb);
+        if (!tex)
+        {
+            if (err)
+                g_error_free(err);
+            return false;
+        }
+        gdk_clipboard_set_texture(cb, tex);
+        g_object_unref(tex);
+        return true;
+    }
+
     // ── Internal ──────────────────────────────────────────────────────
     void set_root(std::unique_ptr<Widget> root)
     {

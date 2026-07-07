@@ -1,6 +1,29 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-06** (v0.8.13). 1028 C++ + 324 Rust tests.
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-07** (v0.8.14-unreleased). 1032 C++ + 324 Rust tests.
+
+> **Copy image to clipboard from the lightbox (2026-07-07, v0.8.14-unreleased).**
+> The full-window image viewer gains a third top-right chrome button (a
+> lucide "copy" icon, left of save) that copies the currently displayed
+> image to the system clipboard. Added `tk::Host::set_clipboard_image`
+> (sibling of `set_clipboard_text`) with native backends for Qt6
+> (`QClipboard::setImage`), GTK4 (`gdk_texture_new_from_bytes` +
+> `gdk_clipboard_set_texture`), Win32 (WIC decode → `CF_DIBV5`), and macOS
+> (`NSPasteboard writeObjects`). The copy button is opt-in in
+> `MediaOverlayBase` (`wants_copy_button_()`) so the video overlay is
+> unaffected. Because copying needs no native file dialog (unlike save), the
+> action is wired in shared code — `ShellBase::wire_main_app_viewers_` for
+> the main window and `RoomWindowBase` for pop-outs — rather than
+> per-shell. On success a self-dismissing "Copied to clipboard" `Toast`
+> pill (owned by the overlay, auto-hidden via injected `post_delayed` with a
+> liveness guard) confirms the copy over the lightbox — a native status-bar
+> message would be hidden behind the full-window scrim. The Qt backend sets
+> the clipboard via `QMimeData` carrying `x-kde-force-image-copy` so copied
+> images land in KDE Klipper's history even with its "Ignore images" setting
+> on (the same flag Spectacle uses), plus `application/x-kde-suggestedfilename`
+> for nicer paste-target naming. 4 new Catch2 tests. Verified on **Qt6**.
+
+<!-- -->
 
 > **Room Permissions self-lockout warning (2026-07-06, v0.8.13).**
 > The Permissions tab now warns and disables Accept if a staged change

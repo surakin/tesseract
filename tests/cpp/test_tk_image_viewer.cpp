@@ -97,6 +97,64 @@ TEST_CASE("ImageViewerOverlay paint is no-op when not open",
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
+// ── Copy-confirmation toast ───────────────────────────────────────────────
+
+TEST_CASE("ImageViewerOverlay show_toast schedules an auto-hide",
+          "[tk][imageviewer]")
+{
+    Stage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
+
+    int scheduled_ms = -1;
+    std::function<void()> hide_fn;
+    overlay.set_post_delayed(
+        [&](int ms, std::function<void()> fn)
+        {
+            scheduled_ms = ms;
+            hide_fn = std::move(fn);
+        });
+
+    overlay.show_toast("Copied to clipboard");
+    CHECK(scheduled_ms == 1500);
+    REQUIRE(hide_fn);
+
+    // Painting with the toast up, then after the deferred hide fires, must
+    // both be crash-free.
+    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
+    REQUIRE_NOTHROW(hide_fn());
+    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
+}
+
+TEST_CASE("ImageViewerOverlay show_toast without a timer does not crash",
+          "[tk][imageviewer]")
+{
+    Stage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
+    // No set_post_delayed wired — the toast simply has no auto-hide.
+    REQUIRE_NOTHROW(overlay.show_toast("Copied to clipboard"));
+    REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
+}
+
+TEST_CASE("ImageViewerOverlay deferred toast hide is safe after destruction",
+          "[tk][imageviewer]")
+{
+    // The overlay may be torn down (e.g. a pop-out window closes) before the
+    // auto-hide timer fires; the liveness guard must make the callback a no-op
+    // rather than touch freed memory.
+    std::function<void()> hide_fn;
+    {
+        ImageViewerOverlay overlay;
+        overlay.open("mxc://example.org/img", "", "", 640, 360);
+        overlay.set_post_delayed(
+            [&](int, std::function<void()> fn) { hide_fn = std::move(fn); });
+        overlay.show_toast("Copied to clipboard");
+    }
+    REQUIRE(hide_fn);
+    REQUIRE_NOTHROW(hide_fn());
+}
+
 // ── Open zoom (zoom-to-fit) ───────────────────────────────────────────────
 //
 // Surface is 600×400; the overlay reserves kMarginX=64 / kMarginY=96, so
@@ -184,6 +242,43 @@ TEST_CASE("ImageViewerOverlay pointer-down on close button fires on_close",
     REQUIRE(overlay.on_pointer_down(close_centre));
     overlay.on_pointer_up(close_centre, true);
     CHECK(closed);
+}
+
+TEST_CASE("ImageViewerOverlay pointer-down on copy button fires on_copy",
+          "[tk][imageviewer]")
+{
+    Stage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/img", "", "caption.png", 640, 360);
+    st.run(overlay, {0, 0, 600, 400});
+
+    bool copied = false;
+    std::string copied_url;
+    overlay.on_copy = [&](std::string url, std::string)
+    {
+        copied = true;
+        copied_url = std::move(url);
+    };
+    bool saved = false;
+    overlay.on_save = [&](std::string, std::string)
+    {
+        saved = true;
+    };
+    bool closed = false;
+    overlay.on_close = [&]
+    {
+        closed = true;
+    };
+
+    // Copy button sits left of save/close: close={556,8,36,36},
+    // save={516,8,36,36}, copy={476,8,36,36}, centre (494, 26).
+    tk::Point copy_centre{494.0f, 26.0f};
+    REQUIRE(overlay.on_pointer_down(copy_centre));
+    overlay.on_pointer_up(copy_centre, true);
+    CHECK(copied);
+    CHECK(copied_url == "mxc://example.org/img");
+    CHECK_FALSE(saved);
+    CHECK_FALSE(closed);
 }
 
 TEST_CASE("ImageViewerOverlay pointer-down on image does not fire on_close",

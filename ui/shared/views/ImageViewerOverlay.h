@@ -1,12 +1,14 @@
 #pragma once
 
 #include "MediaOverlayBase.h"
+#include "Toast.h"
 
 #include "tk/canvas.h"
 #include "tk/widget.h"
 
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace tesseract::views
@@ -30,6 +32,9 @@ namespace tesseract::views
 class ImageViewerOverlay : public MediaOverlayBase
 {
 public:
+    ImageViewerOverlay();
+    ~ImageViewerOverlay() override;
+
     // Show the overlay for the given image or sticker.
     // `display_key` is the thumbnail cache key — shown immediately while the
     // full-res `media_url` is still in flight (may be empty for stickers /
@@ -56,6 +61,16 @@ public:
     //   [this]{ mainAppSurface_->relayout(); }
     void set_repaint_requester(std::function<void()> fn);
 
+    // Timer used to auto-dismiss the copy-confirmation toast. Wire to the
+    // host's post_delayed (see ShellBase / RoomWindowBase). Without it a
+    // shown toast never hides on its own.
+    void set_post_delayed(std::function<void(int, std::function<void()>)> fn);
+
+    // Show a self-dismissing toast pill over the lightbox (e.g. "Copied to
+    // clipboard"). Auto-hides after a short delay via post_delayed_; safe to
+    // call even if the overlay is later destroyed before the timer fires.
+    void show_toast(std::string message);
+
     // on_close / on_save are inherited from MediaOverlayBase. For images the
     // save callback receives (media_url_, body_) — source URL + filename hint.
 
@@ -74,6 +89,11 @@ protected:
     bool on_content_pointer_up_(tk::Point world, tk::Point local,
                                 bool inside_self) override;
     void fire_save_() override;
+    bool wants_copy_button_() const override
+    {
+        return true;
+    }
+    void fire_copy_() override;
     void dismiss_() override;
 
 private:
@@ -92,6 +112,13 @@ private:
 
     std::function<const tk::Image*(const std::string&)> image_provider_;
     std::function<void()> request_repaint_;
+    std::function<void(int, std::function<void()>)> post_delayed_;
+
+    // Copy-confirmation toast pill (owned via the widget tree). Painted last so
+    // it sits above the image + chrome. Liveness token guards the deferred
+    // auto-hide against the overlay being destroyed first (pop-out windows).
+    Toast* toast_ = nullptr;
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 
     // Loading state: set on open(), cleared once image_provider_ returns non-null.
     bool is_loading_ = false;

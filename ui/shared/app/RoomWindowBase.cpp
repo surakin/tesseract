@@ -4,6 +4,7 @@
 #include "views/VideoViewerOverlay.h"
 #include "views/media_drop.h"
 #include "views/text_util.h"
+#include "tk/i18n.h"
 #include <tesseract/client.h>
 #include <tesseract/mentions.h>
 #include <tesseract/settings.h>
@@ -614,6 +615,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             {
                 surface_repaint_();
             });
+        img_viewer_->set_post_delayed(
+            [this](int ms, std::function<void()> fn)
+            {
+                post_delayed_(ms, std::move(fn));
+            });
         // Do NOT call close() here — close() fires on_close(), causing recursion.
         // The overlay has already done its close work before calling on_close.
         img_viewer_->on_close = [this]
@@ -627,6 +633,13 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             {
                 ta->set_focused(true);
             }
+        };
+        // Copy-to-clipboard: fetch the original encoded bytes (shared) and hand
+        // them to the surface's host via the per-shell put_image_on_clipboard_.
+        img_viewer_->on_copy =
+            [this](std::string source_url, std::string /*body*/)
+        {
+            copy_source_to_clipboard_(std::move(source_url));
         };
 
         rv->on_image_clicked =
@@ -1423,6 +1436,24 @@ void RoomWindowBase::save_source_to_file_(std::string source_json,
                 std::ofstream f(dest, std::ios::binary);
                 f.write(reinterpret_cast<const char*>(bytes.data()),
                         static_cast<std::streamsize>(bytes.size()));
+            }
+        });
+    shell_->client_->fetch_source_bytes_async(req_id, source_json);
+}
+
+void RoomWindowBase::copy_source_to_clipboard_(std::string source_json)
+{
+    if (!shell_->client_) return;
+    std::weak_ptr<bool> alive_weak = alive_;
+    auto req_id = shell_->begin_media_req_(0,
+        [this, alive_weak = std::move(alive_weak)](
+            std::vector<std::uint8_t> bytes) mutable
+        {
+            auto alive = alive_weak.lock();
+            if (!alive || !*alive) return;
+            if (!bytes.empty() && put_image_on_clipboard_(bytes) && img_viewer_)
+            {
+                img_viewer_->show_toast(tk::tr("Copied to clipboard"));
             }
         });
     shell_->client_->fetch_source_bytes_async(req_id, source_json);
