@@ -3,6 +3,7 @@
 
 mod client;
 mod highlight;
+mod html_sanitize;
 mod image_packs;
 mod markdown;
 mod matrix_uri;

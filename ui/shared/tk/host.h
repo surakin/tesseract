@@ -175,7 +175,7 @@ public:
     /// Replace the UTF-8 byte range [start, end) with an atomic inline mention
     /// pill rendered as a chip showing `display_name`. The pill behaves as a
     /// single character for caret movement / backspace and is reported by
-    /// mention_draft(). For an @room mention pass `is_room = true` (the
+    /// composer_draft(). For an @room mention pass `is_room = true` (the
     /// `user_id` is ignored). The default inserts plain text — backends
     /// override to draw a real chip.
     virtual void insert_mention(int start, int end, const std::string& user_id,
@@ -185,10 +185,27 @@ public:
         replace_range(start, end, is_room ? "@room" : display_name);
     }
 
-    /// The composer content as ordered segments (typed text + mention pills),
-    /// for building the outgoing message via `tesseract::build_mention_message`.
-    /// The default (no pill support) returns the whole text as one Text segment.
-    virtual std::vector<tesseract::MentionSeg> mention_draft() const
+    /// Replace the UTF-8 byte range [start, end) with an atomic inline
+    /// MSC2545 custom-emoticon pill painted from `image` — the same
+    /// already-decoded bitmap the caller's EmojiPicker/ShortcodePopup used
+    /// to render its own tile/thumbnail. Behaves as a single character for
+    /// caret movement / backspace, same as insert_mention, and is reported
+    /// by composer_draft(). `image` may be null (bitmap not yet decoded) —
+    /// the default, and every platform override, then falls back to
+    /// literal ":shortcode:" text.
+    virtual void insert_emoticon(int start, int end, const std::string& shortcode,
+                                 const std::string& mxc_url, const tk::Image* image)
+    {
+        (void)mxc_url;
+        (void)image;
+        replace_range(start, end, ":" + shortcode + ":");
+    }
+
+    /// The composer content as ordered segments (typed text, mention pills,
+    /// and emoticon pills), for building the outgoing message via
+    /// `tesseract::build_mention_message`. The default (no pill support)
+    /// returns the whole text as one Text segment.
+    virtual std::vector<tesseract::MentionSeg> composer_draft() const
     {
         std::vector<tesseract::MentionSeg> segs;
         tesseract::MentionSeg s;

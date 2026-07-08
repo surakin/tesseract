@@ -26,6 +26,8 @@ struct CountingFactory : tk::CanvasFactory
     tk::CanvasFactory& inner;
     int rich = 0;
     int plain = 0;
+    bool saw_image_span = false;
+    std::string last_image_span_text; // the actual text fed to the backend
     explicit CountingFactory(tk::CanvasFactory& f) : inner(f) {}
 
     std::unique_ptr<tk::Image>
@@ -59,6 +61,14 @@ struct CountingFactory : tk::CanvasFactory
                     const tk::TextStyle& s) override
     {
         ++rich;
+        for (const auto& span : sp)
+        {
+            if (span.is_image)
+            {
+                saw_image_span = true;
+                last_image_span_text = span.text;
+            }
+        }
         return inner.build_rich_text(sp, s);
     }
 };
@@ -128,6 +138,33 @@ TEST_CASE("MessageListView re-shapes the body when its content changes",
 
     // Exactly one rebuild for the new content, then cached again.
     CHECK(st.cf.rich == base + 1);
+}
+
+TEST_CASE("MessageListView paints a real Element-sent MSC2545 emoticon "
+          "message as an image span, not literal shortcode text",
+          "[message_list][layout_cache][img]")
+{
+    // Exact event content reported not to render: an <img data-mx-emoticon>
+    // as the very first thing in formatted_body, no <p> wrapper, no leading
+    // text — the case commit_block()'s leading-whitespace trim used to drop.
+    Stage st;
+    MessageListView v;
+    MessageRowData m;
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$a";
+    m.sender = "@surak:gnomos.org";
+    m.sender_name = "surak";
+    m.body = ":cacodemon: oh";
+    m.formatted_body =
+        "<img data-mx-emoticon "
+        "src=\"mxc://gnomos.org/7237e619d21c4054078c8bf4c915574705d69081\" "
+        "alt=\":cacodemon:\" title=\":cacodemon:\" height=\"32\"/> oh";
+    v.set_messages({m}, false);
+
+    st.run(v, {0, 0, 600, 400});
+
+    REQUIRE(st.cf.rich >= 1);
+    CHECK(st.cf.saw_image_span);
 }
 
 TEST_CASE("inserting a message collapses an existing read marker",

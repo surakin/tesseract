@@ -2726,9 +2726,26 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
         return out;
     }
     out.handled_as_command = false;
-    out.send_result =
-        tesseract::dispatch_compose_send(*client_, room_id, body,
-                                         formatted_body);
+    // Normal send: enqueue on the mutation pool so the UI thread never blocks
+    // in markdown_to_html / the SH_FFI lock / block_on(timeline.send). This is
+    // the one composer mutation that used to run inline (reply/edit/redact/
+    // reaction already hop to mut_pool_), so under SH_FFI contention with a
+    // heavy exclusive op (start_sync/clear_caches/logout) it could freeze the
+    // composer; off-thread it cannot. timeline.send() only enqueues, so a
+    // synchronous failure here is rare; any failure surfaces via the
+    // per-message ◷→⚠/retry indicator rather than a status-bar message. Report
+    // success so the caller clears the composer immediately (matching the
+    // optimistic clear the popout RoomWindow already does).
+    auto sess = active_account_;
+    auto rid = room_id;
+    auto body_copy = body;
+    auto fmt_copy = formatted_body;
+    run_async_mut_([sess, rid, body_copy, fmt_copy]() mutable {
+        if (!sess || !sess->client) return;
+        tesseract::dispatch_compose_send(*sess->client, rid, body_copy,
+                                         fmt_copy);
+    });
+    out.send_result = tesseract::Result{true, ""};
     return out;
 }
 

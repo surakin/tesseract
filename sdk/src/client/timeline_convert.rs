@@ -233,6 +233,44 @@ pub(super) fn split_source_opt(
     }
 }
 
+/// Recover `content.formatted_body` from the raw (pre-sanitization) event
+/// JSON and re-sanitize it with `data-mx-emoticon` preserved, so MSC2545
+/// inline custom emoticons survive matrix-sdk-ui's Timeline sanitization
+/// (`html_sanitize.rs`'s doc comment explains why this bypass exists —
+/// matrix-sdk-ui's own sanitizer has no hook to extend its allow-list, and
+/// its `<img>` model has no field for `data-mx-emoticon` at all).
+///
+/// `fallback` is the Timeline-provided (already-sanitized) formatted_body —
+/// used verbatim when the raw JSON isn't available yet (a local echo not
+/// yet synced back from the server — `latest_json()` returns `None` in
+/// that case) or doesn't parse / lacks a `formatted_body`. `latest_json()`
+/// (not `original_json()`) is used so this also applies to the current
+/// state of an edited message, not just its original content.
+#[cfg(not(test))]
+pub(super) fn resanitized_formatted_body(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+    fallback: String,
+) -> String {
+    let Some(raw) = event_item.latest_json() else {
+        return fallback;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(raw.json().get()) else {
+        return fallback;
+    };
+    let is_html = json.pointer("/content/format").and_then(|f| f.as_str())
+        == Some("org.matrix.custom.html");
+    let Some(raw_html) = json
+        .pointer("/content/formatted_body")
+        .and_then(|f| f.as_str())
+        .filter(|_| is_html)
+    else {
+        return fallback;
+    };
+    let remove_reply_fallback =
+        json.pointer("/content/m.relates_to/m.in_reply_to").is_some();
+    crate::html_sanitize::sanitize_formatted_body(raw_html, remove_reply_fallback)
+}
+
 /// Parse a `geo:lat,lon` or `geo:lat,lon,alt` URI.
 /// Returns `(lat, lon)` or `None` on parse failure.
 pub(crate) fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
@@ -738,7 +776,7 @@ pub(super) async fn timeline_item_to_ffi(
     // NOT set any of those fields.
     let msg_fields: TimelineEvent = match msg_content.msgtype() {
         MessageType::Text(t) => {
-            let fmt = t
+            let fallback = t
                 .formatted
                 .as_ref()
                 .filter(|f| {
@@ -749,6 +787,7 @@ pub(super) async fn timeline_item_to_ffi(
                 })
                 .map(|f| f.body.clone())
                 .unwrap_or_default();
+            let fmt = resanitized_formatted_body(event_item, fallback);
             TimelineEvent {
                 body: t.body.clone(),
                 formatted_body: fmt,
@@ -923,7 +962,7 @@ pub(super) async fn timeline_item_to_ffi(
             }
         }
         MessageType::Emote(e) => {
-            let fmt = e
+            let fallback = e
                 .formatted
                 .as_ref()
                 .filter(|f| {
@@ -934,6 +973,7 @@ pub(super) async fn timeline_item_to_ffi(
                 })
                 .map(|f| f.body.clone())
                 .unwrap_or_default();
+            let fmt = resanitized_formatted_body(event_item, fallback);
             TimelineEvent {
                 body: e.body.clone(),
                 formatted_body: fmt,
@@ -942,7 +982,7 @@ pub(super) async fn timeline_item_to_ffi(
             }
         }
         MessageType::Notice(n) => {
-            let fmt = n
+            let fallback = n
                 .formatted
                 .as_ref()
                 .filter(|f| {
@@ -953,6 +993,7 @@ pub(super) async fn timeline_item_to_ffi(
                 })
                 .map(|f| f.body.clone())
                 .unwrap_or_default();
+            let fmt = resanitized_formatted_body(event_item, fallback);
             TimelineEvent {
                 body: n.body.clone(),
                 formatted_body: fmt,

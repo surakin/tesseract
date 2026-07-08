@@ -327,6 +327,12 @@ if(MSVC)
         add_link_options("/NODEFAULTLIB:libcmt")
     endif()
 
+    # Debug executables WHOLE_ARCHIVE-link tesseract_client + the Rust bridge
+    # (see ui/windows/CMakeLists.txt), which merges enough debug type info to
+    # blow past the linker's full-PDB size limit (LNK1140). FASTLINK keeps
+    # each object's debug info in place and builds a small index PDB instead.
+    add_link_options("$<$<CONFIG:Debug>:/DEBUG:FASTLINK>")
+
     # --- derive MSVC tools dir from cl.exe path ---
     # cl.exe lives at <VCToolsDir>/bin/Host<arch>/<arch>/cl.exe
     get_filename_component(_cc "${CMAKE_CXX_COMPILER}" DIRECTORY)   # …/bin/Hostx64/x64
@@ -481,6 +487,19 @@ if(TESSERACT_ENABLE_CALLS)
         #     link order, so the application main wins and the tool mains are
         #     dead code that never executes.
         add_link_options(-Wl,--allow-multiple-definition)
+    endif()
+
+    # livekit-webrtc (bundled libwebrtc) on macOS: webrtc-sys's build script
+    # emits cargo:rustc-link-lib for these frameworks, but Corrosion does not
+    # propagate transitive build-script link-libs to every CMake consumer.
+    # tesseract_macos already links them directly (PRIVATE) for its own link
+    # step; attach them PUBLIC here too so other consumers of the FFI static
+    # lib — namely tesseract_tests — get them as well.
+    if(APPLE)
+        target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
+            "-framework Foundation"
+            "-framework AppKit"
+            "-framework AudioToolbox")
     endif()
 endif()
 

@@ -58,6 +58,19 @@ qt_add_executable(tesseract_qt
     src/LinuxUpConnectorQt.cpp
     src/LinuxQtTrayIcon.cpp
     src/LinuxQtTrayIcon.h     # MOC input
+    # tk:: backend implementation — Qt6-specific, so it lives here rather
+    # than in ui/shared (which holds only genuinely cross-platform code).
+    # GStreamer support (video_decode_gst.cpp, gst_hw_probe.cpp) is shared
+    # between this and ui/linux-gtk, and stays linked into tesseract_tk —
+    # its PUBLIC link to GStreamer propagates here too.
+    tk/canvas_qpainter.h
+    tk/canvas_qpainter.cpp    # MOC input (see the BlankTextObjectInterface it defines)
+    tk/host_qt.h
+    tk/host_qt.cpp
+    tk/audio_qt.cpp
+    tk/audio_capture_qt.cpp
+    tk/audio_playback_qt.cpp
+    tk/video_qt.cpp
 )
 
 if(TESSERACT_ENABLE_CALLS)
@@ -84,7 +97,16 @@ tesseract_target_pch(tesseract_qt
     <QtMultimedia/QtMultimedia>
 )
 
-target_include_directories(tesseract_qt PRIVATE src)
+target_include_directories(tesseract_qt PRIVATE
+    src
+    # src/*.cpp #include the Qt backend as "tk/host_qt.h" / "tk/canvas_qpainter.h";
+    # those headers live under ui/linux-qt/tk, so this dir is the include base.
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    # tk/host_qt.cpp etc. bare-#include genuinely-shared headers (e.g.
+    # "anim_image_cache.h") that still live in ui/shared/tk — this makes
+    # those resolve without rewriting every #include in the moved files.
+    "${CMAKE_SOURCE_DIR}/ui/shared/tk"
+)
 
 target_link_libraries(tesseract_qt PRIVATE
     # All three static archives are mutually dependent (client ↔ bridge ↔ ffi).

@@ -567,7 +567,9 @@ void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
         }
         if (text_area_)
         {
-            text_area_->insert_at_cursor(":" + img.shortcode + ":");
+            const tk::Image* image = picker_image_provider_(false)(img.url, img.url);
+            int pos = text_area_->cursor_byte_pos();
+            text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, image);
             if (room_view_)
                 room_view_->set_current_text(text_area_->text());
             text_area_->set_focused(true);

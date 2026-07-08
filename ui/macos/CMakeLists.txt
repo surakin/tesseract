@@ -52,12 +52,26 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/RoomWindowController.h
     src/RoomWindowController.mm
     "${_icns}"
+    # tk:: backend implementation — AppKit/CoreGraphics-specific, so it
+    # lives here rather than in ui/shared (which holds only genuinely
+    # cross-platform code).
+    tk/canvas_cg.h
+    tk/canvas_cg.cpp
+    tk/host_macos.h
+    tk/host_macos.mm
+    tk/audio_macos.mm
+    tk/audio_capture_macos.mm
+    tk/audio_playback_macos.mm
+    tk/video_macos.mm
+    tk/video_decode_av.mm
+    tk/video_capture_macos.mm
 )
 
 if(TESSERACT_ENABLE_CALLS)
     target_sources(tesseract_macos PRIVATE
         src/CallWindowController.h
         src/CallWindowController.mm
+        tk/screen_capture_macos.mm
     )
 endif()
 
@@ -68,6 +82,17 @@ set_source_files_properties("${_icns}" PROPERTIES
 
 target_compile_features(tesseract_macos PRIVATE cxx_std_20)
 target_compile_options(tesseract_macos  PRIVATE -fobjc-arc)
+
+# video_macos.mm predates ARC and manually manages refcounts (explicit
+# alloc/retain/release/dealloc) — it compiled fine under MRC back when it
+# lived in tesseract_tk (never ARC-enabled); now that it's a direct source of
+# this -fobjc-arc target, override ARC back off for just this file rather
+# than rewriting its memory management.
+# SKIP_PRECOMPILE_HEADERS: the target's ObjC++ PCH is built with ARC (the
+# target-wide -fobjc-arc above), which conflicts with this file's -fno-objc-arc.
+set_source_files_properties(tk/video_macos.mm PROPERTIES
+    COMPILE_OPTIONS -fno-objc-arc
+    SKIP_PRECOMPILE_HEADERS ON)
 
 # Std-only PCH (compiled as ObjC++ for these .mm sources). AppKit/Foundation
 # are intentionally excluded — ObjC umbrella frameworks in a PCH are brittle
@@ -80,7 +105,17 @@ tesseract_target_pch(tesseract_macos
     <functional>
 )
 
-target_include_directories(tesseract_macos PRIVATE src)
+target_include_directories(tesseract_macos PRIVATE
+    src
+    # src/*.mm #include the AppKit backend as "tk/host_macos.h" /
+    # "tk/canvas_cg.h"; those headers live under ui/macos/tk, so this dir
+    # is the include base.
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    # tk/host_macos.mm etc. bare-#include genuinely-shared headers (e.g.
+    # "anim_image_cache.h") that still live in ui/shared/tk — this makes
+    # those resolve without rewriting every #include in the moved files.
+    "${CMAKE_SOURCE_DIR}/ui/shared/tk"
+)
 
 set_target_properties(tesseract_macos PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
@@ -118,9 +153,14 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework Foundation"
     "-framework QuartzCore"
     "-framework CoreGraphics"
+    "-framework CoreText"                 # tk/canvas_cg.cpp text layout
+    "-framework ImageIO"                  # tk/canvas_cg.cpp image decode
+    "-framework UniformTypeIdentifiers"   # tk/canvas_cg.cpp / host_macos.mm
     "-framework CoreMedia"
     "-framework AVFoundation"
     "-framework CoreVideo"
+    "-framework CoreAudio"                # tk/audio_capture_macos.mm, host_macos.mm
+    "-framework AudioToolbox"             # tk/audio_capture_macos.mm, host_macos.mm
     "-framework UserNotifications"
 )
 

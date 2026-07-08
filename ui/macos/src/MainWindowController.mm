@@ -1112,10 +1112,11 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         }
         account_manager_.image_cache().store(key, tk::cg::make_image(img));
         CGImageRelease(img);
-        if (room_view_)
-        {
-            room_view_->message_list()->invalidate_data();
-        }
+        // A map tile fills a fixed-size map card and isn't a tracked row media
+        // source, so it needs only a repaint, not a re-measure — the chat
+        // surface relayout below re-draws it (LocationMapPanner::paint re-reads
+        // the tile from the cache). The old invalidate_data() forced a full
+        // O(timeline) re-measure just to repaint a fixed card.
         [c _relayoutChatSurface];
         notify_secondary_media_ready_(key, kind);
         return;
@@ -1124,37 +1125,46 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         return;
     }
-    CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                                  static_cast<CFIndex>(bytes.size()));
-    if (!data)
-    {
-        return;
-    }
-    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
-    CFRelease(data);
-    if (!src)
-    {
-        return;
-    }
-    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
-    CFRelease(src);
-    if (!img)
-    {
-        return;
-    }
-    account_manager_.thumbnail_cache().store(key, tk::cg::make_image(img));
-    CGImageRelease(img);
-    if (kind == MediaKind::RoomAvatar)
-    {
-        [c _relayoutRoomSurface];
-    }
-    else if (kind == MediaKind::UserAvatar)
-    {
-        [c _relayoutChatSurface];
-        [c _relayoutAccountPickerIfVisible];
-        [c _relayoutMentionPopupIfVisible];
-    }
-    notify_secondary_media_ready_(key, kind);
+    // Decode off the UI thread (CGImageSource is thread-safe — same basis as
+    // the MediaImage path above). A burst of avatar fetches (e.g. after a room
+    // switch) would otherwise decode synchronously here and stall the UI event
+    // queue that a just-sent message's local echo waits in. Store + relayout
+    // hop back to the UI thread.
+    run_async_(
+        [this, key, kind, bytes = std::move(bytes)]() mutable
+        {
+            auto d = std::make_shared<DecodedImage>(decode_image_(bytes, 0, 0));
+            post_to_ui_(
+                [this, key, kind, d]() mutable
+                {
+                    MainWindowController* c = ctrl_;
+                    if (!c) return;
+                    if (account_manager_.thumbnail_cache().contains(key))
+                        return;
+                    // Avatars render static: use the still, or the first frame
+                    // of an animated source.
+                    std::unique_ptr<tk::Image> img;
+                    if (d->still)
+                        img = std::move(d->still);
+                    else if (!d->frames.empty())
+                        img = std::move(d->frames.front());
+                    if (!img)
+                        return;
+                    account_manager_.thumbnail_cache().store(key,
+                                                             std::move(img));
+                    if (kind == MediaKind::RoomAvatar)
+                    {
+                        [c _relayoutRoomSurface];
+                    }
+                    else if (kind == MediaKind::UserAvatar)
+                    {
+                        [c _relayoutChatSurface];
+                        [c _relayoutAccountPickerIfVisible];
+                        [c _relayoutMentionPopupIfVisible];
+                    }
+                    notify_secondary_media_ready_(key, kind);
+                });
+        });
 }
 
 void MacShell::generate_video_thumbnail_(const std::string& event_id,
@@ -3221,7 +3231,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             // Build from the composer's mention draft so inline pills become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
-                s->_roomTextArea ? s->_roomTextArea->mention_draft()
+                s->_roomTextArea ? s->_roomTextArea->composer_draft()
                                  : std::vector<tesseract::MentionSeg>{};
             bool has_mention = false;
             for (const auto& seg : draft)
@@ -4694,12 +4704,20 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 {
                     auto hits = c->_shell->shortcode_engine_.lookup(
                         complete->prefix, c->_shell->cached_emoticons(), 1);
-                    std::string r =
-                        (!hits.empty() && !hits.front().glyph.empty())
-                            ? hits.front().glyph
-                            : ":" + complete->prefix + ":";
-                    c->_roomTextArea->replace_range(complete->start,
-                                                    complete->end, r);
+                    if (!hits.empty() && !hits.front().glyph.empty())
+                    {
+                        c->_roomTextArea->replace_range(
+                            complete->start, complete->end, hits.front().glyph);
+                    }
+                    else if (!hits.empty())
+                    {
+                        const tk::Image* image =
+                            c->_shell->account_manager_.image_cache().peek(
+                                hits.front().emoticon.url);
+                        c->_roomTextArea->insert_emoticon(
+                            complete->start, complete->end, hits.front().shortcode,
+                            hits.front().emoticon.url, image);
+                    }
                     [c hideSlashPopup];
                     [c hideShortcodePopup];
                     [c hideMentionPopup];
@@ -6023,10 +6041,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             [weakPanel close];
             return;
         }
-        // Compose mode: insert `:shortcode:` text.
+        // Compose mode: insert an inline emoticon pill.
         if (!s->_roomTextArea)
             return;
-        s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
+        const tk::Image* image =
+            s->_shell->account_manager_.anim_cache().current_frame(img.url);
+        if (!image)
+            image = s->_shell->account_manager_.image_cache().peek(img.url);
+        int pos = s->_roomTextArea->cursor_byte_pos();
+        s->_roomTextArea->insert_emoticon(pos, pos, img.shortcode, img.url, image);
         if (s->_roomView)
             s->_roomView->set_current_text(s->_roomTextArea->text());
         s->_roomTextArea->set_focused(true);
@@ -6100,10 +6123,21 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             {
                 return;
             }
-            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
-            c->_roomTextArea->replace_range(
-                c->_shell->shortcode_active_match_.start,
-                c->_shell->shortcode_active_match_.end, std::move(r));
+            if (!s.glyph.empty())
+            {
+                c->_roomTextArea->replace_range(
+                    c->_shell->shortcode_active_match_.start,
+                    c->_shell->shortcode_active_match_.end, s.glyph);
+            }
+            else
+            {
+                const tk::Image* image =
+                    c->_shell->account_manager_.image_cache().peek(s.emoticon.url);
+                c->_roomTextArea->insert_emoticon(
+                    c->_shell->shortcode_active_match_.start,
+                    c->_shell->shortcode_active_match_.end, s.shortcode,
+                    s.emoticon.url, image);
+            }
             [c hideShortcodePopup];
         };
         _shortcodePopupWidget->on_dismissed = [weakSelf]
@@ -6592,7 +6626,12 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         }
         if (!s->_roomTextArea)
             return;
-        s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
+        const tk::Image* image =
+            s->_shell->account_manager_.anim_cache().current_frame(img.url);
+        if (!image)
+            image = s->_shell->account_manager_.image_cache().peek(img.url);
+        int pos = s->_roomTextArea->cursor_byte_pos();
+        s->_roomTextArea->insert_emoticon(pos, pos, img.shortcode, img.url, image);
         if (s->_roomView)
             s->_roomView->set_current_text(s->_roomTextArea->text());
         s->_roomTextArea->set_focused(true);

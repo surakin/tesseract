@@ -14,6 +14,7 @@
 #include <dwrite.h>         // IDWriteTextFormat, DWRITE_FONT_WEIGHT_* enums
 #include <dwrite_2.h>       // IDWriteFactory2::CreateTextFormat
 #include <richedit.h>  // MSFTEDIT_CLASS, RichEdit ES_* flags
+#include <richole.h>   // IRichEditOle, REOBJECT — inline OLE picture objects
 #include <textserv.h>  // ITextHost2, ITextServices2, TXTBIT_*, TXTNS_*
 #include "win32_textserv2_compat.h"  // ITextHost2/ITextServices2 shim for mingw-w64
 #include <imm.h>       // ImmGetContext / ImmReleaseContext
@@ -843,7 +844,7 @@ public:
         std::wstring w = utf8_to_wide(text);
         SetWindowTextW(hwnd_, w.c_str());
         suppress_changed_ = false;
-        mentions_.clear();
+        composer_entries_.clear();
         float h = natural_height();
         if (h != last_height_ && on_height_changed_)
         {
@@ -1124,19 +1125,38 @@ public:
     }
 
     // RichEdit supports per-run character formatting (EM_SETCHARFORMAT), but a
-    // styled inline chip would require significant additional work.  For now a
-    // mention is inserted as plain "@DisplayName" text and tracked in a
-    // registry; mention_draft() reconstructs the outgoing segments by matching
-    // these against the current text.
+    // styled inline chip would require significant additional work. For now a
+    // mention or emoticon is inserted as plain visible text ("@DisplayName" /
+    // ":shortcode:") and tracked in a registry, in real insertion order;
+    // composer_draft() reconstructs the outgoing segments by matching these
+    // against the current text in that same order. A single mixed-kind
+    // registry (not two independent ones) preserves this simple sequential
+    // matching — two independent registries would need a real k-way merge to
+    // figure out which kind's entry comes first in the text at each step.
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override
     {
         std::string visual = is_room ? "@room" : ("@" + display_name);
         replace_range(start, end, visual + " ");
-        mentions_.push_back({visual, user_id, display_name, is_room});
+        composer_entries_.push_back(
+            {ComposerEntry::Kind::Mention, visual, user_id, display_name,
+             is_room, "", ""});
     }
 
-    std::vector<tesseract::MentionSeg> mention_draft() const override
+    // Real inline OLE picture objects (IRichEditOle) are unimplemented here —
+    // ROADMAP.md Step 8b earmarks that for the read-only message list, not
+    // the composer. Mirrors insert_mention's plain-text + registry fallback.
+    void insert_emoticon(int start, int end, const std::string& shortcode,
+                         const std::string& mxc_url, const tk::Image*) override
+    {
+        std::string visual = ":" + shortcode + ":";
+        replace_range(start, end, visual + " ");
+        composer_entries_.push_back(
+            {ComposerEntry::Kind::Emoticon, visual, "", "", false, shortcode,
+             mxc_url});
+    }
+
+    std::vector<tesseract::MentionSeg> composer_draft() const override
     {
         std::vector<tesseract::MentionSeg> segs;
         std::string t = text();
@@ -1151,19 +1171,28 @@ public:
                 segs.push_back(std::move(seg));
             }
         };
-        for (const auto& e : mentions_)
+        for (const auto& e : composer_entries_)
         {
             std::size_t at = t.find(e.visual, pos);
             if (at == std::string::npos)
             {
-                continue; // mention text was edited/removed by the user
+                continue; // entry text was edited/removed by the user
             }
             push_text(t.substr(pos, at - pos));
             tesseract::MentionSeg seg;
-            seg.kind = tesseract::MentionSeg::Kind::Mention;
-            seg.user_id = e.user_id;
-            seg.display_name = e.display_name;
-            seg.is_room = e.is_room;
+            if (e.kind == ComposerEntry::Kind::Mention)
+            {
+                seg.kind = tesseract::MentionSeg::Kind::Mention;
+                seg.user_id = e.user_id;
+                seg.display_name = e.display_name;
+                seg.is_room = e.is_room;
+            }
+            else
+            {
+                seg.kind = tesseract::MentionSeg::Kind::Emoticon;
+                seg.shortcode = e.shortcode;
+                seg.mxc_url = e.mxc_url;
+            }
             segs.push_back(std::move(seg));
             pos = at + e.visual.size();
         }
@@ -1380,17 +1409,22 @@ private:
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
 
-    // Inserted mentions, in document order. `visual` is the plain text shown in
-    // the EDIT control (e.g. "@Alice"); mention_draft() reconstructs the
-    // outgoing segments by matching these against the current text.
-    struct MentionEntry
+    // Inserted mentions and emoticons, in document order. `visual` is the
+    // plain text shown in the EDIT control (e.g. "@Alice" / ":smile:");
+    // composer_draft() reconstructs the outgoing segments by matching these
+    // against the current text.
+    struct ComposerEntry
     {
+        enum class Kind { Mention, Emoticon };
+        Kind kind;
         std::string visual;
         std::string user_id;
         std::string display_name;
         bool is_room;
+        std::string shortcode;
+        std::string mxc_url;
     };
-    std::vector<MentionEntry> mentions_;
+    std::vector<ComposerEntry> composer_entries_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2024,7 +2058,7 @@ public:
         text_svc_->TxSendMessage(WM_SETTEXT, 0,
                                   reinterpret_cast<LPARAM>(w.c_str()), &lr);
         suppress_changed_ = false;
-        mentions_.clear();
+        composer_entries_.clear();
         float h = natural_height();
         if (h != last_height_ && on_height_changed_)
         {
@@ -2217,14 +2251,76 @@ public:
     {
         std::string visual = is_room ? "@room" : ("@" + display_name);
         replace_range(start, end, visual + " ");
-        mentions_.push_back({visual, user_id, display_name, is_room});
+        composer_entries_.push_back(
+            {ComposerEntry::Kind::Mention, visual, user_id, display_name,
+             is_room, "", ""});
     }
 
-    std::vector<tesseract::MentionSeg> mention_draft() const override
+    // Plain-text + side-table fallback only. Real inline pills for custom
+    // emoticons on Windows require RichEdit's classic OLE object-embedding
+    // path (IRichEditOle::InsertObject), which is architecturally
+    // incompatible with this control's D2D-swap-chain-on-HWND rendering:
+    // RichEdit draws embedded OLE objects via a classic GDI TxGetDC() call,
+    // and any GDI painting on an HWND that also has a DXGI swap chain bound
+    // to it detaches the swap chain's presented frames from what's visible —
+    // silently and permanently, not just for the object itself. `image` is
+    // unused here (kept in the signature to match the shared NativeTextArea
+    // interface every other platform's real-pill insertion also implements).
+    void insert_emoticon(int start, int end, const std::string& shortcode,
+                         const std::string& mxc_url,
+                         const tk::Image*) override
     {
-        std::vector<tesseract::MentionSeg> segs;
+        std::string visual = ":" + shortcode + ":";
+        replace_range(start, end, visual + " ");
+        composer_entries_.push_back(
+            {ComposerEntry::Kind::Emoticon, visual, "", "", false, shortcode,
+             mxc_url});
+    }
+
+    std::vector<tesseract::MentionSeg> composer_draft() const override
+    {
         std::string t = text();
+
+        // Position-sorted list of "special" (non-plain-text) segments —
+        // mentions and emoticons — recovered from composer_entries_ by
+        // sequential substring search.
+        struct Special
+        {
+            std::size_t byte_start;
+            std::size_t byte_len;
+            tesseract::MentionSeg seg;
+        };
+        std::vector<Special> specials;
+
         std::size_t pos = 0;
+        for (const auto& e : composer_entries_)
+        {
+            std::size_t at = t.find(e.visual, pos);
+            if (at == std::string::npos)
+                continue;
+            tesseract::MentionSeg seg;
+            if (e.kind == ComposerEntry::Kind::Mention)
+            {
+                seg.kind         = tesseract::MentionSeg::Kind::Mention;
+                seg.user_id      = e.user_id;
+                seg.display_name = e.display_name;
+                seg.is_room      = e.is_room;
+            }
+            else
+            {
+                seg.kind      = tesseract::MentionSeg::Kind::Emoticon;
+                seg.shortcode = e.shortcode;
+                seg.mxc_url   = e.mxc_url;
+            }
+            specials.push_back({at, e.visual.size(), std::move(seg)});
+            pos = at + e.visual.size();
+        }
+
+        std::sort(specials.begin(), specials.end(),
+                  [](const Special& a, const Special& b)
+                  { return a.byte_start < b.byte_start; });
+
+        std::vector<tesseract::MentionSeg> segs;
         auto push_text = [&](const std::string& s)
         {
             if (!s.empty())
@@ -2235,21 +2331,16 @@ public:
                 segs.push_back(std::move(seg));
             }
         };
-        for (const auto& e : mentions_)
+        std::size_t prev_end = 0;
+        for (const auto& sp : specials)
         {
-            std::size_t at = t.find(e.visual, pos);
-            if (at == std::string::npos)
-                continue;
-            push_text(t.substr(pos, at - pos));
-            tesseract::MentionSeg seg;
-            seg.kind         = tesseract::MentionSeg::Kind::Mention;
-            seg.user_id      = e.user_id;
-            seg.display_name = e.display_name;
-            seg.is_room      = e.is_room;
-            segs.push_back(std::move(seg));
-            pos = at + e.visual.size();
+            if (sp.byte_start < prev_end || sp.byte_start > t.size())
+                continue; // overlap/out-of-range — ignore defensively
+            push_text(t.substr(prev_end, sp.byte_start - prev_end));
+            segs.push_back(sp.seg);
+            prev_end = sp.byte_start + sp.byte_len;
         }
-        push_text(t.substr(pos));
+        push_text(t.substr(std::min(prev_end, t.size())));
         return segs;
     }
 
@@ -3169,12 +3260,15 @@ private:
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<bool()>                       on_edit_last_;
 
-    struct MentionEntry
+    struct ComposerEntry
     {
+        enum class Kind { Mention, Emoticon };
+        Kind kind;
         std::string visual, user_id, display_name;
         bool is_room;
+        std::string shortcode, mxc_url;
     };
-    std::vector<MentionEntry> mentions_;
+    std::vector<ComposerEntry> composer_entries_;
 };
 
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can

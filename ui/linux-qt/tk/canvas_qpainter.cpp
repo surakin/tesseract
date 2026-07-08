@@ -70,6 +70,55 @@ QString initials_upper(std::string_view name)
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
+//  BlankTextObjectInterface — reserves a box for an is_image span's carrier
+//  U+FFFC code unit (see MessageListView::substitute_image_placeholders)
+//  without QTextDocument ever considering a fallback glyph for it — Qt's
+//  analog to IDWriteInlineObject / PangoAttrShape. drawObject() is
+//  intentionally a no-op: the resolved bitmap is painted separately, once
+//  decoded, by MessageListView::paint_span_images.
+//
+//  Must be a real QObject (not in an anonymous namespace — moc requires a
+//  named enclosing scope) so QAbstractTextDocumentLayout::registerHandler
+//  can find the QTextObjectInterface via its meta-object; this .cpp is
+//  built with AUTOMOC (see ui/linux-qt/CMakeLists.txt), which generates
+//  and compiles the moc file for it automatically.
+// ─────────────────────────────────────────────────────────────────────────
+
+constexpr int kBlankObjectType = QTextFormat::UserObject + 1;
+constexpr int kBlankObjectSizeProperty = QTextFormat::UserProperty + 1;
+
+class BlankTextObjectInterface final : public QObject,
+                                       public QTextObjectInterface
+{
+    Q_OBJECT
+    Q_INTERFACES(QTextObjectInterface)
+
+public:
+    QSizeF intrinsicSize(QTextDocument*, int,
+                         const QTextFormat& format) override
+    {
+        qreal size = format.property(kBlankObjectSizeProperty).toReal();
+        return {size, size};
+    }
+    void drawObject(QPainter*, const QRectF&, QTextDocument*, int,
+                    const QTextFormat&) override
+    {
+        // Intentional no-op.
+    }
+};
+
+// A single handler instance is safe to share across every QTextDocument
+// this factory builds — it holds no per-document state (the box size comes
+// from the QTextCharFormat property, not the handler itself) — and must
+// outlive all of them, which a function-local static does on this
+// single-threaded UI object's lifetime.
+QObject* blank_object_handler()
+{
+    static BlankTextObjectInterface handler;
+    return &handler;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 //  QtImage — tk::Image
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -1003,8 +1052,21 @@ public:
 
         QString html;
         html.reserve(256);
+        // Number of is_image spans seen so far, in document order — matched
+        // 1:1 against doc->find()'s occurrences of U+FFFC after setHtml()
+        // below, since HTML parsing preserves the relative order of literal
+        // characters. See MessageListView::substitute_image_placeholders
+        // for why the carrier is U+FFFC and why no per-span styling is
+        // applied to it here.
+        int image_span_count = 0;
         for (const auto& sp : spans)
         {
+            if (sp.is_image)
+            {
+                html += QChar(0xFFFC);
+                ++image_span_count;
+                continue;
+            }
             QString t = QString::fromUtf8(sp.text.data(),
                                           static_cast<int>(sp.text.size()))
                             .toHtmlEscaped();
@@ -1077,6 +1139,25 @@ public:
         doc->setDefaultFont(base);
         doc->setDocumentMargin(0.0);
         doc->setHtml(QLatin1String("<body>") + html + QLatin1String("</body>"));
+        if (image_span_count > 0)
+        {
+            doc->documentLayout()->registerHandler(
+                kBlankObjectType, blank_object_handler());
+            QTextCharFormat fmt;
+            fmt.setObjectType(kBlankObjectType);
+            fmt.setProperty(kBlankObjectSizeProperty,
+                            static_cast<qreal>(emoji_pt) * 96.0 / 72.0);
+            int pos = 0;
+            for (int i = 0; i < image_span_count; ++i)
+            {
+                QTextCursor found =
+                    doc->find(QString(QChar(0xFFFC)), pos);
+                if (found.isNull())
+                    break;
+                found.setCharFormat(fmt);
+                pos = found.position();
+            }
+        }
         if (s.max_width > 0)
         {
             doc->setTextWidth(static_cast<qreal>(s.max_width));
@@ -1096,4 +1177,13 @@ std::unique_ptr<Image> make_image(QImage img)
     return std::make_unique<QtImage>(std::move(img));
 }
 
+NativeImageHandle to_native_image(const Image& img)
+{
+    return static_cast<const QtImage&>(img).image();
+}
+
 } // namespace tk::qt6
+
+// AUTOMOC (ui/linux-qt/CMakeLists.txt) needs this for BlankTextObjectInterface,
+// a Q_OBJECT class defined directly in this .cpp rather than a header.
+#include "canvas_qpainter.moc"

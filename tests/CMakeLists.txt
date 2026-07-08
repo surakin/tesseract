@@ -120,14 +120,73 @@ add_executable(tesseract_tests
 # the active TESSERACT_UI is compiled in so the test binary has exactly
 # one TestSurface::create symbol.
 if(TESSERACT_UI STREQUAL "qt6")
-    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_qt.cpp)
+    # The Qt6 backend (canvas_qpainter.cpp) now lives in ui/linux-qt rather
+    # than tesseract_tk, so the test surface must compile and link it itself.
+    # It #includes "canvas.h" from ui/shared/tk, uses QtWidgets, and defines a
+    # Q_OBJECT (BlankTextObjectInterface) that needs AUTOMOC — mirror the
+    # tesseract_qt executable's Qt setup here.
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+    set_target_properties(tesseract_tests PROPERTIES AUTOMOC ON)
+    target_sources(tesseract_tests PRIVATE
+        cpp/tk_test_surface_qt.cpp
+        "${CMAKE_SOURCE_DIR}/ui/linux-qt/tk/canvas_qpainter.cpp")
+    target_include_directories(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/linux-qt"
+        "${CMAKE_SOURCE_DIR}/ui/shared/tk")
+    target_link_libraries(tesseract_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
 elseif(TESSERACT_UI STREQUAL "gtk")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_gtk.cpp)
+    # canvas_cairo.h lives in ui/linux-gtk/tk and bare-#includes "canvas.h"
+    # from ui/shared/tk; add shared/tk so it resolves (mirrors tesseract_gtk).
+    target_include_directories(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/linux-gtk"
+        "${CMAKE_SOURCE_DIR}/ui/shared/tk")
 elseif(TESSERACT_UI STREQUAL "win32")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_win32.cpp)
+    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/windows")
 elseif(TESSERACT_UI STREQUAL "macos")
-    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_cg.cpp)
-    target_link_libraries(tesseract_tests PRIVATE "-framework CoreGraphics")
+    # canvas_cg.cpp (tk::cg::make_factory/make_canvas) now lives in ui/macos
+    # rather than tesseract_tk, so the test surface must compile it itself.
+    # canvas_cg.h bare-#includes "canvas.h" from ui/shared/tk; add that so it
+    # resolves (mirrors tesseract_macos's own include wiring).
+    #
+    # video_capture_macos.mm supplies tk::make_video_capture_macos(), which
+    # tk::VideoCapture::create() (still in tesseract_tk) calls unconditionally
+    # on __APPLE__ — it also moved out of tesseract_tk, so linking tests pulls
+    # in libtesseract_tk.a's reference with no definition unless compiled here.
+    target_sources(tesseract_tests PRIVATE
+        cpp/tk_test_surface_cg.cpp
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg.cpp"
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_capture_macos.mm")
+    # SKIP_PRECOMPILE_HEADERS: the target's ObjC++ PCH is built without ARC
+    # (tesseract_tests has no target-wide -fobjc-arc), which conflicts with
+    # the ARC this one file needs.
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_capture_macos.mm"
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+    target_link_libraries(tesseract_tests PRIVATE
+        "-framework CoreGraphics"
+        "-framework CoreText"
+        "-framework ImageIO"
+        "-framework UniformTypeIdentifiers"
+        "-framework AVFoundation"
+        "-framework CoreVideo")
+    target_include_directories(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/macos"
+        "${CMAKE_SOURCE_DIR}/ui/shared/tk")
+
+    # tk::ScreenCapture::create()'s __APPLE__ branch (and screen_capture.cpp
+    # as a whole) only exists behind TESSERACT_CALLS_ENABLED; same move-out
+    # gap as video capture above, so mirror it only when calls are enabled.
+    if(TESSERACT_ENABLE_CALLS)
+        target_sources(tesseract_tests PRIVATE
+            "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm")
+        set_source_files_properties(
+            "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm"
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+        target_link_libraries(tesseract_tests PRIVATE
+            "-weak_framework ScreenCaptureKit")
+    endif()
 endif()
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)

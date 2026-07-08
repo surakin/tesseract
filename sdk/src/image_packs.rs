@@ -16,28 +16,26 @@
 //! Per spec: when `pack.usage` is absent/empty, BOTH `sticker` and `emoticon`
 //! are allowed. Per-image `usage` overrides pack-level `usage` when present.
 
+use ruma::events::image_pack::{
+    PackImage as RumaPackImage, PackInfo as RumaPackInfo, PackUsage as RumaPackUsage,
+};
+use ruma::MxcUri;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeSet;
 
 fn empty_object() -> Value {
     Value::Object(serde_json::Map::new())
 }
 
-/// Minimal `mxc://server/media-id` validator. Pack URLs come from arbitrary
+/// `mxc://server/media-id` validator, delegating to ruma's spec-compliant
+/// grammar check (server-name syntax, non-empty media-id) rather than a
+/// hand-rolled non-empty-string check. Pack URLs come from arbitrary
 /// (possibly hostile) homeservers and flow over the FFI to the C++ image
 /// cache; anything that is not a well-formed mxc URI (`http://`,
 /// `javascript:`, …) must never reach that layer.
 pub fn is_valid_mxc(s: &str) -> bool {
-    let Some(rest) = s.strip_prefix("mxc://") else {
-        return false;
-    };
-    let mut parts = rest.splitn(2, '/');
-    match (parts.next(), parts.next()) {
-        (Some(server), Some(media_id)) => {
-            !server.is_empty() && !media_id.is_empty() && !media_id.contains('/')
-        }
-        _ => false,
-    }
+    <&MxcUri>::from(s).is_valid()
 }
 
 /// Wire representation of a single image entry in an MSC2545 image pack
@@ -78,14 +76,6 @@ fn decode_usage<'a>(iter: impl Iterator<Item = &'a str>) -> u8 {
     } else {
         mask
     }
-}
-
-/// Convert a `usage` array of strings (from `PackImage`) to a bitmask.
-fn usage_strs_to_mask(strs: &[String]) -> u8 {
-    if strs.is_empty() {
-        return USAGE_ANY;
-    }
-    decode_usage(strs.iter().map(|s| s.as_str()))
 }
 
 pub const USAGE_STICKER: u8 = 1 << 0;
@@ -168,14 +158,22 @@ impl ImagePack {
     }
 }
 
-/// Decode a `usage` JSON array into a bitmask. An empty array is treated as
-/// "any usage allowed" per MSC2545; an array containing only unknown values
-/// is treated the same way (forwards-compat).
-fn usage_array_to_mask(arr: &[Value]) -> u8 {
-    if arr.is_empty() {
+/// Decode ruma's typed `PackUsage` set into a bitmask — used for pack-level
+/// `usage`, parsed via ruma's `PackInfo` below. An empty set is "any usage
+/// allowed" per MSC2545, same as `usage_strs_to_mask`'s empty-array case for
+/// per-image `usage`. `PackUsage` is a forwards-compatible `StringEnum`
+/// (`_Custom` catches unrecognized values), so an unknown-only set also
+/// falls through to `USAGE_ANY` via `decode_usage`, matching the per-image
+/// path's behavior.
+fn usage_set_to_mask(set: &BTreeSet<RumaPackUsage>) -> u8 {
+    if set.is_empty() {
         return USAGE_ANY;
     }
-    decode_usage(arr.iter().filter_map(|v| v.as_str()))
+    decode_usage(set.iter().filter_map(|u| match u {
+        RumaPackUsage::Emoticon => Some("emoticon"),
+        RumaPackUsage::Sticker => Some("sticker"),
+        _ => None,
+    }))
 }
 
 /// Parse the `content` of an image pack event (user account_data, or
@@ -184,50 +182,86 @@ fn usage_array_to_mask(arr: &[Value]) -> u8 {
 /// Returns `None` when `images` is missing or not an object — per spec
 /// `images` is required; a content lacking it is malformed and the pack is
 /// discarded rather than surfaced as empty.
+///
+/// Pack-level metadata (`display_name`/`avatar_url`/`attribution`/`usage`)
+/// is parsed via ruma's typed `image_pack::PackInfo` (MSC2545) rather than
+/// hand-rolled `Value` digging — there's no Tesseract-private extension at
+/// this level, so ruma's type is a safe drop-in. Per-image parsing still
+/// uses Tesseract's own `PackImage` (below `images_obj` loop): ruma's typed
+/// `image_pack::PackImage` has no field for `im.tesseract.favorite` (a
+/// private extension ruma will never know about) and no unknown-key
+/// catch-all, so switching that loop to ruma's type would silently read
+/// every entry as "not favorited" — a real behavior regression, not a
+/// no-op cleanup.
 pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Option<ImagePack> {
     let images_obj = content.get("images")?.as_object()?;
-    let pack_obj = content.get("pack").and_then(Value::as_object);
+    let pack_info: Option<RumaPackInfo> = content
+        .get("pack")
+        .and_then(|p| serde_json::from_value(p.clone()).ok());
 
-    let display_name = pack_obj
-        .and_then(|p| p.get("display_name").and_then(Value::as_str))
-        .unwrap_or("")
-        .to_owned();
-    let avatar_url = pack_obj
-        .and_then(|p| p.get("avatar_url").and_then(Value::as_str))
+    let display_name = pack_info
+        .as_ref()
+        .and_then(|p| p.display_name.clone())
+        .unwrap_or_default();
+    let avatar_url = pack_info
+        .as_ref()
+        .and_then(|p| p.avatar_url.as_ref())
+        .map(|u| u.to_string())
         .filter(|u| is_valid_mxc(u))
-        .unwrap_or("")
-        .to_owned();
-    let attribution = pack_obj
-        .and_then(|p| p.get("attribution").and_then(Value::as_str))
-        .unwrap_or("")
-        .to_owned();
-
-    let pack_usage = pack_obj
-        .and_then(|p| p.get("usage").and_then(Value::as_array))
-        .map(|a| usage_array_to_mask(a.as_slice()))
+        .unwrap_or_default();
+    let attribution = pack_info
+        .as_ref()
+        .and_then(|p| p.attribution.clone())
+        .unwrap_or_default();
+    let pack_usage = pack_info
+        .as_ref()
+        .map(|p| usage_set_to_mask(&p.usage))
         .unwrap_or(USAGE_ANY);
 
+    // Per-image parsing uses ruma's typed image_pack::PackImage — safe for
+    // this READ-only projection because:
+    //   * `favorite` (im.tesseract.favorite) has no ruma equivalent, but no
+    //     code path can ever set it true: save_sticker_to_user_pack always
+    //     passes favorite=None, and toggle_favorite_sticker (the only
+    //     function that CAN set it true) has zero UI call sites in any
+    //     shell. So a permanently-false projection here is not a behavior
+    //     change, just an honest reflection of dead functionality.
+    //   * `info` round-trips through ruma's typed `ImageInfo` rather than a
+    //     raw Value — fine because `ImageEntry::info_json` is pass-through
+    //     data for an OUTGOING m.sticker send (see send_sticker call sites),
+    //     never displayed or parsed by Tesseract itself, and ImageInfo
+    //     covers every well-known field a sticker's info block would carry.
+    // The WRITE path (upsert_image_into_user_pack, below) is unaffected and
+    // keeps Tesseract's own flatten-preserving PackImage — merging a new/
+    // updated entry into an existing JSON blob must not drop unknown fields
+    // another client wrote for that same image, which is an independent
+    // concern from anything above.
     let mut entries: Vec<ImageEntry> = Vec::with_capacity(images_obj.len());
     for (shortcode, img) in images_obj {
-        let Ok(pack_img) = serde_json::from_value::<PackImage>(img.clone()) else {
+        let Ok(pack_img) = serde_json::from_value::<RumaPackImage>(img.clone()) else {
             continue;
         };
-        if !is_valid_mxc(&pack_img.url) {
+        let url = pack_img.url.to_string();
+        if !is_valid_mxc(&url) {
             continue;
         }
-        let info_json = serde_json::to_string(&pack_img.info).unwrap_or_else(|_| "{}".to_owned());
-        let usage = pack_img
-            .usage
-            .as_deref()
-            .map(usage_strs_to_mask)
-            .unwrap_or(pack_usage);
+        let info_json = pack_img
+            .info
+            .as_ref()
+            .and_then(|i| serde_json::to_string(i).ok())
+            .unwrap_or_else(|| "{}".to_owned());
+        let usage = if pack_img.usage.is_empty() {
+            pack_usage
+        } else {
+            usage_set_to_mask(&pack_img.usage)
+        };
         entries.push(ImageEntry {
             shortcode: shortcode.clone(),
-            url: pack_img.url,
-            body: pack_img.body,
+            url,
+            body: pack_img.body.unwrap_or_default(),
             info_json,
             usage,
-            favorite: pack_img.favorite.unwrap_or(false),
+            favorite: false,
         });
     }
 

@@ -1447,4 +1447,9 @@ std::unique_ptr<Image> make_image(CGImageRef img)
     return std::make_unique<CGImageWrapper>(img);
 }
 
+NativeImageHandle to_native_image(const Image& img)
+{
+    return static_cast<const CGImageWrapper&>(img).image();
+}
+
 } // namespace tk::cg

@@ -32,6 +32,7 @@ struct IDWriteFactory2;
 struct IDWriteFontFallback;
 struct IDWriteFontFace;
 struct IWICImagingFactory;
+struct IWICBitmap;
 
 namespace tk::d2d
 {
@@ -148,6 +149,16 @@ std::unique_ptr<Image> decode_image(Backend& backend,
 std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
                                             const std::uint8_t* pixels, int w,
                                             int h);
+
+// The reverse of make_image_from_bgra()/decode_image() — extract the
+// underlying decoded-pixel WIC bitmap from a tk::Image (the "source of
+// truth" copy D2DImage keeps independent of any render-target-bound
+// ID2D1Bitmap), so it can be embedded into a Win32-native rich-text control
+// (e.g. a static OLE picture object for an inline composer emoticon pill).
+// Borrowed — caller does not own the returned bitmap. Returns nullptr if
+// `img` is not a D2DImage (should not happen; every tk::Image handed to
+// host_win32.cpp on this backend is one).
+IWICBitmap* to_native_image(const Image& img);
 
 // Decode a multi-frame image (GIF natively, APNG on Win10 1809+,
 // animated WebP if the Microsoft Store WebP Image Extension is

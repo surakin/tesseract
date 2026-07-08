@@ -353,7 +353,7 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         bool has_mention = false;
         if (auto* ta = compose_text_area_())
         {
-            auto draft = ta->mention_draft();
+            auto draft = ta->composer_draft();
             for (const auto& seg : draft)
             {
                 if (seg.kind == tesseract::MentionSeg::Kind::Mention)

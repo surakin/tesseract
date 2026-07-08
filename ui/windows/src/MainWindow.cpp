@@ -1948,7 +1948,7 @@ void MainWindow::on_create(HWND hwnd)
             // Build from the composer's mention draft so mentions become
             // matrix.to links + m.mentions; fall back to the plain body.
             std::vector<tesseract::MentionSeg> draft =
-                room_text_area_ ? room_text_area_->mention_draft()
+                room_text_area_ ? room_text_area_->composer_draft()
                                 : std::vector<tesseract::MentionSeg>{};
             bool has_mention = false;
             for (const auto& seg : draft)
@@ -3402,6 +3402,7 @@ void MainWindow::on_create(HWND hwnd)
             { return cached_emoticons_; };
             sch.fetch_image = [this](const std::string& url)
             { ensure_media_image_(url, 28, 28); };
+            sch.resolve_image = make_static_image_provider_();
             shortcode_controller_ =
                 std::make_unique<tesseract::views::ShortcodeController>(
                     room_text_area_.get(), shortcode_popup_widget_,
@@ -5369,27 +5370,63 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     switch (kind)
     {
     case MediaKind::RoomAvatar:
-        if (auto img = main_app_surface_->factory().decode_image(bytes))
-        {
-            account_manager_.thumbnail_cache().store(cache_key, std::move(img));
-        }
-        main_app_surface_->relayout();
-        break;
     case MediaKind::UserAvatar:
-        if (auto img = main_app_surface_->factory().decode_image(bytes))
+    {
+        if (account_manager_.thumbnail_cache().contains(cache_key))
         {
-            account_manager_.thumbnail_cache().store(cache_key, std::move(img));
+            return;
         }
-        if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
-            account_picker_surface_)
-        {
-            account_picker_surface_->relayout();
-        }
-        if (mention_popup_visible_() && mention_popup_surface_)
-        {
-            mention_popup_surface_->relayout();
-        }
-        break;
+        // Decode off the UI thread (WIC factory is free-threaded — same basis
+        // as the MediaImage path below). A burst of avatar fetches (e.g. after
+        // a room switch) would otherwise decode synchronously here and stall
+        // the UI event queue that a just-sent message's local echo waits in.
+        // Store + relayout hop back to the UI thread.
+        run_async_(
+            [this, cache_key, kind, invalidate_hwnd,
+             bytes = std::move(bytes)]() mutable
+            {
+                auto d = std::make_shared<DecodedImage>(
+                    decode_image_(bytes, 0, 0));
+                post_to_ui_(
+                    [this, cache_key, kind, invalidate_hwnd, d]() mutable
+                    {
+                        if (account_manager_.thumbnail_cache().contains(
+                                cache_key))
+                            return;
+                        // Avatars render static: use the still, or the first
+                        // frame of an animated source (matches the old
+                        // factory().decode_image, which returned one frame).
+                        std::unique_ptr<tk::Image> img;
+                        if (d->still)
+                            img = std::move(d->still);
+                        else if (!d->frames.empty())
+                            img = std::move(d->frames.front());
+                        if (!img)
+                            return;
+                        account_manager_.thumbnail_cache().store(
+                            cache_key, std::move(img));
+                        if (kind == MediaKind::RoomAvatar)
+                        {
+                            if (main_app_surface_)
+                                main_app_surface_->relayout();
+                        }
+                        else // UserAvatar
+                        {
+                            if (hAccountPicker_ &&
+                                IsWindowVisible(hAccountPicker_) &&
+                                account_picker_surface_)
+                                account_picker_surface_->relayout();
+                            if (mention_popup_visible_() &&
+                                mention_popup_surface_)
+                                mention_popup_surface_->relayout();
+                        }
+                        notify_secondary_media_ready_(cache_key, kind);
+                        if (invalidate_hwnd)
+                            InvalidateRect(invalidate_hwnd, nullptr, FALSE);
+                    });
+            });
+        return;
+    }
     case MediaKind::MediaImage:
     case MediaKind::MediaThumbnail:
     case MediaKind::Sticker:
@@ -5458,11 +5495,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
             account_manager_.image_cache().store(cache_key, std::move(img));
-            if (room_view_)
-            {
-                room_view_->message_list()->invalidate_data();
-            }
-            main_app_surface_->relayout();
+            // A map tile fills a fixed-size map card and isn't a tracked row
+            // media source, so it needs only a repaint — the shared
+            // InvalidateRect below re-draws it (LocationMapPanner::paint re-reads
+            // the tile from the cache). The old invalidate_data() + relayout()
+            // did a full O(timeline) re-measure just to repaint a fixed card.
         }
         break;
     }
@@ -7023,13 +7060,15 @@ void MainWindow::pick_emoticon_at_cursor(const tesseract::ImagePackImage& img)
         }
         return;
     }
-    // Compose mode: today's behaviour — insert `:shortcode:` text into
-    // the compose field. MSC2545 rich-emoticon sending is a separate task.
+    // Compose mode. Windows' insert_emoticon ignores the image (plain-text +
+    // side-table fallback — see host_win32.cpp), so there's no bitmap to
+    // resolve here.
     if (!room_text_area_)
     {
         return;
     }
-    room_text_area_->insert_at_cursor(":" + img.shortcode + ":");
+    int pos = room_text_area_->cursor_byte_pos();
+    room_text_area_->insert_emoticon(pos, pos, img.shortcode, img.url, nullptr);
     if (room_view_)
     {
         room_view_->set_current_text(room_text_area_->text());

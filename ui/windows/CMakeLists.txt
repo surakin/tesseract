@@ -62,12 +62,26 @@ add_executable(tesseract_win32 WIN32
     src/Win32ScreenLock.cpp
     src/Win32TrayIcon.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
+    # tk:: backend implementation — Windows-specific, so it lives here rather
+    # than in ui/shared (which holds only genuinely cross-platform code).
+    tk/canvas_d2d.h
+    tk/canvas_d2d.cpp
+    tk/host_win32.h
+    tk/host_win32.cpp
+    tk/win32_textserv2_compat.h
+    tk/audio_win32.cpp
+    tk/audio_capture_win32.cpp
+    tk/audio_playback_win32.cpp
+    tk/video_win32.cpp
+    tk/video_decode_mf.cpp
+    tk/video_capture_win32.cpp
 )
 
 if(TESSERACT_ENABLE_CALLS)
     target_sources(tesseract_win32 PRIVATE
         src/CallWindow.h
         src/CallWindow.cpp
+        tk/screen_capture_win32.cpp
     )
 endif()
 
@@ -87,6 +101,9 @@ tesseract_target_pch(tesseract_win32
     <utility>
     <cwchar>
     <windows.h>
+    <wrl/client.h>
+    <d2d1.h>
+    <dwrite.h>
 )
 
 # MSVC defaults to interpreting source files as Windows-1252. /utf-8 sets
@@ -117,7 +134,16 @@ if(MSVC)
         PROPERTIES COMPILE_OPTIONS "/Zc:twoPhase-")
 endif()
 
-target_include_directories(tesseract_win32 PRIVATE src)
+target_include_directories(tesseract_win32 PRIVATE
+    src
+    # Lets other platform files reference the moved tk:: backend the same
+    # "tk/x.h" way they already reference genuinely-shared tk:: headers.
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    # tk/host_win32.cpp etc. bare-#include genuinely-shared headers (e.g.
+    # "anim_image_cache.h") that still live in ui/shared/tk — this makes
+    # those resolve without rewriting every #include in the moved files.
+    "${CMAKE_SOURCE_DIR}/ui/shared/tk"
+)
 
 # C++/WinRT headers live in <WinSDK>/include/<ver>/cppwinrt/ (SDK 10.0.17134+).
 # The MSVC toolchain adds <sdk>/winrt/ as an external path for WRL-style
@@ -164,6 +190,8 @@ target_link_libraries(tesseract_win32 PRIVATE
     shlwapi
     windowscodecs
     propsys
+    user32
+    imm32             # ImmGetContext/ImmReleaseContext — Win32RichEditArea IME support
 )
 
 target_compile_definitions(tesseract_win32 PRIVATE

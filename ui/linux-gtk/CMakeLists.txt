@@ -10,6 +10,8 @@ pkg_check_modules(GIO  REQUIRED gio-2.0)
 # loading libgtk-3 into a GTK4 process makes gtk_init() abort.)
 pkg_check_modules(GDKPIXBUF REQUIRED gdk-pixbuf-2.0)
 pkg_check_modules(CAIRO     REQUIRED cairo)
+# PangoCairo: text layout for tk::Canvas's Cairo/Pango backend (tk/canvas_cairo.cpp).
+pkg_check_modules(PANGOCAIRO REQUIRED pangocairo)
 
 add_executable(tesseract_gtk
     src/main.cpp
@@ -21,6 +23,19 @@ add_executable(tesseract_gtk
     src/LinuxScreenLockGtk.cpp
     src/LinuxUpConnectorGtk.cpp
     src/GtkSniTrayIcon.cpp
+    # tk:: backend implementation — GTK4/Cairo-specific, so it lives here
+    # rather than in ui/shared (which holds only genuinely cross-platform
+    # code). GStreamer support (video_decode_gst.cpp, gst_hw_probe.cpp) is
+    # shared between this and ui/linux-qt, and stays linked into
+    # tesseract_tk — its PUBLIC link to GStreamer propagates here too.
+    tk/canvas_cairo.h
+    tk/canvas_cairo.cpp
+    tk/host_gtk.h
+    tk/host_gtk.cpp
+    tk/audio_gtk.cpp
+    tk/audio_capture_gtk.cpp
+    tk/audio_playback_gtk.cpp
+    tk/video_gtk.cpp
 )
 
 if(TESSERACT_ENABLE_CALLS)
@@ -48,10 +63,18 @@ tesseract_target_pch(tesseract_gtk
 
 target_include_directories(tesseract_gtk PRIVATE
     src
+    # src/*.cpp #include the GTK backend as "tk/host_gtk.h" / "tk/canvas_cairo.h";
+    # those headers live under ui/linux-gtk/tk, so this dir is the include base.
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    # tk/host_gtk.cpp etc. bare-#include genuinely-shared headers (e.g.
+    # "anim_image_cache.h") that still live in ui/shared/tk — this makes
+    # those resolve without rewriting every #include in the moved files.
+    "${CMAKE_SOURCE_DIR}/ui/shared/tk"
     ${GTK4_INCLUDE_DIRS}
     ${GIO_INCLUDE_DIRS}
     ${GDKPIXBUF_INCLUDE_DIRS}
     ${CAIRO_INCLUDE_DIRS}
+    ${PANGOCAIRO_INCLUDE_DIRS}
 )
 
 target_link_directories(tesseract_gtk PRIVATE
@@ -59,6 +82,7 @@ target_link_directories(tesseract_gtk PRIVATE
     ${GIO_LIBRARY_DIRS}
     ${GDKPIXBUF_LIBRARY_DIRS}
     ${CAIRO_LIBRARY_DIRS}
+    ${PANGOCAIRO_LIBRARY_DIRS}
 )
 
 target_compile_options(tesseract_gtk PRIVATE
@@ -76,6 +100,7 @@ target_link_libraries(tesseract_gtk PRIVATE
     ${GIO_LIBRARIES}
     ${GDKPIXBUF_LIBRARIES}
     ${CAIRO_LIBRARIES}
+    ${PANGOCAIRO_LIBRARIES}
     opus
 )
 

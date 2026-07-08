@@ -3,9 +3,11 @@ cmake_minimum_required(VERSION 3.25)
 # tesseract_tk — the shared UI toolkit core. Cross-platform widget classes,
 # layout, theme, and the abstract Canvas interface (see tk/canvas.h).
 #
-# Backend translation units (Direct2D on Win32, CoreGraphics on macOS,
-# QPainter on Qt6, Cairo+Pango on GTK4) live in this same target but are
-# compiled conditionally based on TESSERACT_UI.
+# Per-platform backend translation units (Direct2D on Win32, CoreGraphics on
+# macOS, QPainter on Qt6, Cairo+Pango on GTK4) live in each ui/<platform>/tk/
+# instead, compiled directly into that platform's own executable target —
+# see the TESSERACT_UI conditional below for the one exception (GStreamer,
+# shared between the Qt6 and GTK4 backends).
 
 set(_tk_sources
     app/ShellBase.h
@@ -226,55 +228,15 @@ set(_tk_sources
     views/settings/RoomPermissionsSection.cpp
 )
 
-if(TESSERACT_UI STREQUAL "win32")
+# Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,
+# …) live in each ui/<platform>/tk/ and are added directly to that
+# platform's own executable target by its own CMakeLists.txt. The exception
+# is GStreamer-based video decode/capture, genuinely shared between the two
+# Linux backends (qt6, gtk) rather than single-platform, which stays here.
+if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk")
     list(APPEND _tk_sources
-        tk/canvas_d2d.h
-        tk/canvas_d2d.cpp
-        tk/host_win32.h
-        tk/host_win32.cpp
-        tk/audio_win32.cpp
-        tk/audio_capture_win32.cpp
-        tk/audio_playback_win32.cpp
-        tk/video_win32.cpp
-        tk/video_decode_mf.cpp
-    )
-elseif(TESSERACT_UI STREQUAL "qt6")
-    list(APPEND _tk_sources
-        tk/canvas_qpainter.h
-        tk/canvas_qpainter.cpp
-        tk/host_qt.h
-        tk/host_qt.cpp
-        tk/audio_qt.cpp
-        tk/audio_capture_qt.cpp
-        tk/audio_playback_qt.cpp
-        tk/video_qt.cpp
         tk/video_decode_gst.cpp
         tk/gst_hw_probe.cpp
-    )
-elseif(TESSERACT_UI STREQUAL "gtk")
-    list(APPEND _tk_sources
-        tk/canvas_cairo.h
-        tk/canvas_cairo.cpp
-        tk/host_gtk.h
-        tk/host_gtk.cpp
-        tk/audio_gtk.cpp
-        tk/audio_capture_gtk.cpp
-        tk/audio_playback_gtk.cpp
-        tk/video_gtk.cpp
-        tk/video_decode_gst.cpp
-        tk/gst_hw_probe.cpp
-    )
-elseif(TESSERACT_UI STREQUAL "macos")
-    list(APPEND _tk_sources
-        tk/canvas_cg.h
-        tk/canvas_cg.cpp
-        tk/host_macos.h
-        tk/host_macos.mm
-        tk/audio_macos.mm
-        tk/audio_capture_macos.mm
-        tk/audio_playback_macos.mm
-        tk/video_macos.mm
-        tk/video_decode_av.mm
     )
 endif()
 
@@ -284,11 +246,13 @@ list(APPEND _tk_sources
     tk/video_capture_gst.cpp
 )
 if(TESSERACT_UI STREQUAL "macos")
+    # video_capture_macos.mm lives in ui/macos/tk/ and is added by
+    # ui/macos/CMakeLists.txt instead — this target has no macos sources.
     list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
-    list(APPEND _tk_sources tk/video_capture_macos.mm)
 elseif(TESSERACT_UI STREQUAL "win32")
+    # video_capture_win32.cpp lives in ui/windows/tk/ and is added by
+    # ui/windows/CMakeLists.txt instead — this target has no win32 sources.
     list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
-    list(APPEND _tk_sources tk/video_capture_win32.cpp)
 endif()
 
 if(TESSERACT_ENABLE_CALLS)
@@ -307,11 +271,15 @@ if(TESSERACT_ENABLE_CALLS)
         tk/screen_capture_gst.cpp
     )
     if(TESSERACT_UI STREQUAL "macos")
+        # screen_capture_macos.mm lives in ui/macos/tk/ and is added by
+        # ui/macos/CMakeLists.txt instead — this target has no macos
+        # sources.
         list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
-        list(APPEND _tk_sources tk/screen_capture_macos.mm)
     elseif(TESSERACT_UI STREQUAL "win32")
+        # screen_capture_win32.cpp lives in ui/windows/tk/ and is added by
+        # ui/windows/CMakeLists.txt instead — this target has no win32
+        # sources.
         list(REMOVE_ITEM _tk_sources tk/screen_capture_gst.cpp)
-        list(APPEND _tk_sources tk/screen_capture_win32.cpp)
     else()
         list(APPEND _tk_sources tk/screen_capture_portal.cpp)
     endif()
@@ -434,75 +402,17 @@ tesseract_target_pch(tesseract_tk
     <optional>
 )
 
-if(TESSERACT_UI STREQUAL "win32")
-    if(MSVC)
-        target_compile_options(tesseract_tk PRIVATE /utf-8)
-    endif()
-    target_compile_definitions(tesseract_tk PRIVATE
-        UNICODE _UNICODE
-        WIN32_LEAN_AND_MEAN NOMINMAX
-        # GetDpiForWindow requires Windows 10 (1607); D2D/DWrite/WIC are
-        # available from 8.1, so 0x0A00 is the floor for the toolkit.
-        _WIN32_WINNT=0x0A00
-    )
-    target_link_libraries(tesseract_tk PUBLIC
-        d2d1
-        d3d11            # Direct3D device backing the D2D swap-chain surface
-        dxgi             # DXGI swap-chain (flip-model presentation)
-        dwrite
-        windowscodecs    # WIC: PNG/JPEG decode for tk::Image
-        ole32
-        comctl32         # SetWindowSubclass, EM_SETCUEBANNER, etc.
-        user32
-        imm32            # ImmGetContext/ImmReleaseContext — Win32RichEditArea IME support
-        mf               # Media Foundation: IMFMediaEngine (audio_win32.cpp)
-        mfplat
-        mfuuid
-        shlwapi          # SHCreateMemStream (also used in host_win32.cpp)
-    )
-    # WIN32_LEAN_AND_MEAN / NOMINMAX are set as target definitions above, so the
-    # PCH compiles windows.h the same way the TUs do.
-    tesseract_target_pch(tesseract_tk
-        <windows.h>
-        <wrl/client.h>
-        <d2d1.h>
-        <dwrite.h>
-    )
-elseif(TESSERACT_UI STREQUAL "qt6")
-    # Multimedia is used by audio_qt.cpp + video_qt.cpp (QMediaPlayer).
-    # GStreamer is used by video_decode_gst.cpp for off-thread MP4 frame
-    # extraction in the GIF strip (the same libraries as the GTK4 backend).
-    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia)
+# All platform-UI-toolkit (Qt6/GTK4/AppKit) and platform-media (Media
+# Foundation/AVFoundation) dependencies live in each ui/<platform>/
+# CMakeLists.txt now, alongside the tk:: backend sources that need them
+# (see tk/canvas_d2d.* etc.'s move out of this directory). The one exception
+# is GStreamer: video_decode_gst.cpp and gst_hw_probe.cpp are genuinely
+# shared between the two Linux backends (qt6, gtk) rather than
+# single-platform, and stay compiled into tesseract_tk here — its PUBLIC
+# link propagates GStreamer to whichever of ui/linux-qt / ui/linux-gtk
+# links this library.
+if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk")
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(TK_GST_QT REQUIRED IMPORTED_TARGET
-        gstreamer-1.0
-        gstreamer-app-1.0
-        gstreamer-video-1.0
-        gio-2.0
-    )
-    target_link_libraries(tesseract_tk PUBLIC
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Widgets
-        Qt6::Multimedia
-        PkgConfig::TK_GST_QT
-        ${CMAKE_DL_LIBS}
-    )
-    tesseract_target_pch(tesseract_tk
-        <QtCore/QtCore>
-        <QtGui/QtGui>
-        <QtMultimedia/QtMultimedia>
-    )
-elseif(TESSERACT_UI STREQUAL "gtk")
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(TK_GTK4 REQUIRED IMPORTED_TARGET
-        gtk4
-        pangocairo
-        gdk-pixbuf-2.0
-    )
-    # GStreamer + gstreamer-app for MSC3245 voice playback (audio_gtk.cpp).
-    # The opus decoder is provided by gst-plugins-base; package this runtime
-    # dependency in installer manifests.
     pkg_check_modules(TK_GST REQUIRED IMPORTED_TARGET
         gstreamer-1.0
         gstreamer-app-1.0
@@ -510,32 +420,11 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         gio-2.0
     )
     target_link_libraries(tesseract_tk PUBLIC
-        PkgConfig::TK_GTK4
         PkgConfig::TK_GST
         ${CMAKE_DL_LIBS}
     )
     tesseract_target_pch(tesseract_tk
-        <gtk/gtk.h>
         <gst/gst.h>
-        <cairo.h>
         <glib.h>
-    )
-elseif(TESSERACT_UI STREQUAL "macos")
-    target_link_libraries(tesseract_tk PUBLIC
-        "-framework CoreFoundation"
-        "-framework CoreGraphics"
-        "-framework CoreText"
-        "-framework ImageIO"
-        "-framework AppKit"
-        "-framework Foundation"
-        "-framework UniformTypeIdentifiers"
-        # MSC3245 voice playback (audio_macos.mm) uses AVAudioPlayer.
-        "-framework AVFoundation"
-        # audio_capture_macos.mm / host_macos.mm use CoreAudio device enumeration.
-        "-framework CoreAudio"
-        "-framework AudioToolbox"
-        # video_capture_macos.mm uses CoreMedia / CoreVideo pixel buffer APIs.
-        "-framework CoreMedia"
-        "-framework CoreVideo"
     )
 endif()
