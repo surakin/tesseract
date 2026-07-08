@@ -3,9 +3,11 @@ cmake_minimum_required(VERSION 3.25)
 # tesseract_tk — the shared UI toolkit core. Cross-platform widget classes,
 # layout, theme, and the abstract Canvas interface (see tk/canvas.h).
 #
-# Backend translation units (Direct2D on Win32, CoreGraphics on macOS,
-# QPainter on Qt6, Cairo+Pango on GTK4) live in this same target but are
-# compiled conditionally based on TESSERACT_UI.
+# Per-platform backend translation units (Direct2D on Win32, CoreGraphics on
+# macOS, QPainter on Qt6, Cairo+Pango on GTK4) live in each ui/<platform>/tk/
+# instead, compiled directly into that platform's own executable target —
+# see the TESSERACT_UI conditional below for the one exception (GStreamer,
+# shared between the Qt6 and GTK4 backends).
 
 set(_tk_sources
     app/ShellBase.h
