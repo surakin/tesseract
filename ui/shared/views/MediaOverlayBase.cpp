@@ -21,6 +21,10 @@ void MediaOverlayBase::layout_chrome_(tk::Rect b)
                   kCloseBtnS};
     save_btn_ = {close_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f, kCloseBtnS,
                  kCloseBtnS};
+    copy_btn_ = wants_copy_button_()
+                    ? tk::Rect{save_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f,
+                               kCloseBtnS, kCloseBtnS}
+                    : tk::Rect{};
 }
 
 // ── paint ────────────────────────────────────────────────────────────────
@@ -57,6 +61,7 @@ void MediaOverlayBase::sync_icon_scale_(tk::PaintCtx& ctx)
         icon_scale_ = icon_scale;
         close_icon_.reset();
         save_icon_.reset();
+        copy_icon_.reset();
         on_icon_scale_changed_();
     }
 }
@@ -77,6 +82,14 @@ void MediaOverlayBase::paint_chrome_buttons_(tk::PaintCtx& ctx)
     // ⬇ save button
     cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f, tk::Color{0, 0, 0, 160});
     draw_icon_(ctx, save_btn_, kBtnIconPx, save_icon_, kDownloadSvg, icon_tint);
+
+    // ⧉ copy-to-clipboard button (image overlay only)
+    if (wants_copy_button_())
+    {
+        cv.fill_rounded_rect(copy_btn_, kCloseBtnS * 0.5f,
+                             tk::Color{0, 0, 0, 160});
+        draw_icon_(ctx, copy_btn_, kBtnIconPx, copy_icon_, kCopySvg, icon_tint);
+    }
 }
 
 // ── dismiss ──────────────────────────────────────────────────────────────
@@ -112,6 +125,11 @@ bool MediaOverlayBase::handle_pointer_down_(tk::Point local)
         press_save_ = true;
         return true;
     }
+    if (wants_copy_button_() && rect_contains(copy_btn_, w))
+    {
+        press_copy_ = true;
+        return true;
+    }
 
     // Forward to the subclass content; if it declines, treat as outside tap.
     if (on_content_pointer_down_(w, local))
@@ -141,6 +159,16 @@ void MediaOverlayBase::handle_pointer_up_(tk::Point local, bool inside_self)
         if (inside_self && on_save && rect_contains(save_btn_, w))
         {
             fire_save_();
+        }
+        return;
+    }
+    if (press_copy_)
+    {
+        press_copy_ = false;
+        if (inside_self && on_copy && wants_copy_button_() &&
+            rect_contains(copy_btn_, w))
+        {
+            fire_copy_();
         }
         return;
     }

@@ -320,6 +320,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-pin.svg"
     "${_lucide_dir}/lucide-download.svg"
     "${_lucide_dir}/lucide-close.svg"
+    "${_lucide_dir}/lucide-copy.svg"
     "${_lucide_dir}/lucide-play.svg"
     "${_lucide_dir}/lucide-join.svg"
     "${_lucide_dir}/lucide-jump-to-date.svg"

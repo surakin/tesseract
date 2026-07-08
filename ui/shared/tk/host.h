@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -385,6 +386,13 @@ public:
 
     // Write `text` to the system clipboard as plain text.
     virtual void set_clipboard_text(std::string_view text) = 0;
+
+    // Decode `encoded_bytes` (a self-describing PNG/JPEG/GIF/WebP blob) and
+    // place the resulting bitmap on the system clipboard. Returns false if the
+    // bytes could not be decoded or the platform has no image-clipboard
+    // support. Used by the image lightbox's "copy image" button.
+    virtual bool
+    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) = 0;
 
     // ── Popup management ─────────────────────────────────────────────────────
     // A widget that wants to render and receive input above the entire widget

@@ -1115,6 +1115,47 @@ public:
             QString::fromUtf8(text.data(), static_cast<int>(text.size())));
     }
 
+    bool
+    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
+    {
+        if (encoded_bytes.empty())
+            return false;
+        const QByteArray raw(
+            reinterpret_cast<const char*>(encoded_bytes.data()),
+            static_cast<int>(encoded_bytes.size()));
+        QImage img;
+        if (!img.loadFromData(raw))
+            return false;
+
+        // Sniff the container so the suggested filename gets a sensible
+        // extension (png / jpeg / gif / webp).
+        QByteArray fmt;
+        {
+            QBuffer buf;
+            buf.setData(raw);
+            if (buf.open(QIODevice::ReadOnly))
+                fmt = QImageReader(&buf).format();
+        }
+        if (fmt.isEmpty())
+            fmt = "png";
+
+        auto* mime = new QMimeData;
+        mime->setImageData(img);
+        // KDE Klipper drops image-only clipboard entries when the user has
+        // "Ignore images" enabled (a common default), UNLESS the data carries
+        // the x-kde-force-image-copy flag — this is exactly how Spectacle gets
+        // screenshots into the history (see Spectacle ExportManager.cpp and
+        // Klipper historymodel.cpp checkClipData). The flag is an inert extra
+        // format on non-KDE platforms.
+        mime->setData(QStringLiteral("x-kde-force-image-copy"), QByteArray());
+        // Also advertise a suggested filename so pasting into a save dialog /
+        // Dolphin proposes a sensible name rather than "Untitled".
+        mime->setData(QStringLiteral("application/x-kde-suggestedfilename"),
+                      "image." + fmt);
+        QGuiApplication::clipboard()->setMimeData(mime);
+        return true;
+    }
+
     // ── Internal accessors used by Surface ────────────────────────────
     void set_root(std::unique_ptr<Widget> root)
     {

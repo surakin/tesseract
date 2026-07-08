@@ -3686,6 +3686,97 @@ public:
         CloseClipboard();
     }
 
+    bool
+    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
+    {
+        if (encoded_bytes.empty())
+            return false;
+
+        using Microsoft::WRL::ComPtr;
+        IWICImagingFactory* wic = d2d::factories(backend_singleton()).wic;
+        if (!wic)
+            return false;
+
+        // Decode the encoded blob and normalise to 32bpp BGRA.
+        ComPtr<IWICStream> stream;
+        if (FAILED(wic->CreateStream(stream.GetAddressOf())))
+            return false;
+        if (FAILED(stream->InitializeFromMemory(
+                const_cast<BYTE*>(encoded_bytes.data()),
+                static_cast<DWORD>(encoded_bytes.size()))))
+            return false;
+        ComPtr<IWICBitmapDecoder> decoder;
+        if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
+                                                WICDecodeMetadataCacheOnLoad,
+                                                decoder.GetAddressOf())))
+            return false;
+        ComPtr<IWICBitmapFrameDecode> frame;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())))
+            return false;
+        ComPtr<IWICBitmapSource> bgra;
+        if (FAILED(WICConvertBitmapSource(GUID_WICPixelFormat32bppBGRA,
+                                          frame.Get(), bgra.GetAddressOf())))
+            return false;
+
+        UINT w = 0, h = 0;
+        bgra->GetSize(&w, &h);
+        if (w == 0 || h == 0)
+            return false;
+
+        const SIZE_T stride = static_cast<SIZE_T>(w) * 4;
+        const SIZE_T pixel_bytes = stride * h;
+        HGLOBAL hg =
+            GlobalAlloc(GMEM_MOVEABLE, sizeof(BITMAPV5HEADER) + pixel_bytes);
+        if (!hg)
+            return false;
+        auto* base = static_cast<std::uint8_t*>(GlobalLock(hg));
+        if (!base)
+        {
+            GlobalFree(hg);
+            return false;
+        }
+
+        auto* hdr = reinterpret_cast<BITMAPV5HEADER*>(base);
+        std::memset(hdr, 0, sizeof(BITMAPV5HEADER));
+        hdr->bV5Size = sizeof(BITMAPV5HEADER);
+        hdr->bV5Width = static_cast<LONG>(w);
+        hdr->bV5Height = -static_cast<LONG>(h); // top-down
+        hdr->bV5Planes = 1;
+        hdr->bV5BitCount = 32;
+        hdr->bV5Compression = BI_BITFIELDS;
+        hdr->bV5RedMask = 0x00FF0000;
+        hdr->bV5GreenMask = 0x0000FF00;
+        hdr->bV5BlueMask = 0x000000FF;
+        hdr->bV5AlphaMask = 0xFF000000;
+        hdr->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
+
+        std::uint8_t* pixels = base + sizeof(BITMAPV5HEADER);
+        if (FAILED(bgra->CopyPixels(nullptr, static_cast<UINT>(stride),
+                                    static_cast<UINT>(pixel_bytes), pixels)))
+        {
+            GlobalUnlock(hg);
+            GlobalFree(hg);
+            return false;
+        }
+        GlobalUnlock(hg);
+
+        if (!OpenClipboard(hwnd_))
+        {
+            GlobalFree(hg);
+            return false;
+        }
+        EmptyClipboard();
+        if (!SetClipboardData(CF_DIBV5, hg))
+        {
+            // Clipboard did not take ownership; free our copy.
+            GlobalFree(hg);
+            CloseClipboard();
+            return false;
+        }
+        CloseClipboard();
+        return true;
+    }
+
     // Look up the NativeTextField owning a child EDIT control by ID.
     Win32NativeTextField* field_by_id(int id)
     {

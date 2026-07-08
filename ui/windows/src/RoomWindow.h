@@ -72,6 +72,16 @@ protected:
         return surface_ ? surface_->host().encode_for_send(data, size, compress)
                         : tk::EncodedImage{};
     }
+    bool
+    put_image_on_clipboard_(std::span<const std::uint8_t> bytes) override
+    {
+        return surface_ && surface_->host().set_clipboard_image(bytes);
+    }
+    void post_delayed_(int ms, std::function<void()> fn) override
+    {
+        if (surface_)
+            surface_->host().post_delayed(ms, std::move(fn));
+    }
 
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);

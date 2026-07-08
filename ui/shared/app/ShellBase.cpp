@@ -1202,6 +1202,30 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
             on_image_close();
         }
     };
+    // Copy-to-clipboard: platform-independent (fetch the original encoded bytes,
+    // hand them to the host clipboard), so wired here in shared code rather than
+    // per-shell like on_save (which needs a native file dialog). `host` outlives
+    // the viewer, so capturing its address is safe.
+    tk::Host* host_ptr = &host;
+    iv->set_post_delayed([host_ptr](int ms, std::function<void()> fn)
+                         { host_ptr->post_delayed(ms, std::move(fn)); });
+    iv->on_copy =
+        [this, host_ptr, iv](std::string source_url, std::string /*body*/)
+    {
+        if (!client_)
+        {
+            return;
+        }
+        auto req_id = begin_media_req_(
+            0, [host_ptr, iv](std::vector<std::uint8_t>&& bytes)
+            {
+                if (!bytes.empty() && host_ptr->set_clipboard_image(bytes))
+                {
+                    iv->show_toast(tk::tr("Copied to clipboard"));
+                }
+            });
+        client_->fetch_source_bytes_async(req_id, source_url);
+    };
 
     auto* vv = app->video_viewer();
     vv->set_image_provider(image_lookup);

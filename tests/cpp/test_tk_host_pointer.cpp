@@ -108,6 +108,10 @@ public:
         return {};
     }
     void set_clipboard_text(std::string_view) override {}
+    bool set_clipboard_image(std::span<const std::uint8_t>) override
+    {
+        return false;
+    }
 
     // Re-expose the protected shared dispatch + tracked state for the test.
     using Host::dispatch_pointer_down;

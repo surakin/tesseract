@@ -84,6 +84,7 @@ public:
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override;
     void set_clipboard_text(std::string_view text) override;
+    bool set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override;
 
     std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
     std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
@@ -888,6 +889,7 @@ public:
 
     std::function<bool(NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
+    ImagePasteHandler on_image_paste_;
 
 private:
     TKSurfaceView* superview_ = nil;
@@ -903,7 +905,6 @@ private:
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
-    ImagePasteHandler on_image_paste_;
     NSColor* mention_bg_ = nil;
     NSColor* mention_fg_ = nil;
 };
@@ -919,6 +920,22 @@ private:
 @end
 
 @implementation TKComposeTextView
+- (BOOL)validateMenuItem:(NSMenuItem*)item
+{
+    if (item.action == @selector(paste:) || item.action == @selector(pasteAsPlainText:))
+    {
+        if (self.owner && self.owner->on_image_paste_)
+        {
+            NSPasteboard* pb = [NSPasteboard generalPasteboard];
+            if ([pb availableTypeFromArray:@[
+                    NSPasteboardTypePNG, NSPasteboardTypeTIFF,
+                    (NSPasteboardType) @"public.jpeg",
+                    (NSPasteboardType) @"public.webp"]])
+                return YES;
+        }
+    }
+    return [super validateMenuItem:item];
+}
 - (void)paste:(id)sender
 {
     if (self.owner && self.owner->maybe_handle_paste())
@@ -1843,6 +1860,26 @@ void Host::set_clipboard_text(std::string_view text)
     NSPasteboard* pb = [NSPasteboard generalPasteboard];
     [pb clearContents];
     [pb setString:str forType:NSPasteboardTypeString];
+}
+
+bool Host::set_clipboard_image(std::span<const std::uint8_t> encoded_bytes)
+{
+    if (encoded_bytes.empty())
+        return false;
+    NSData* data = [NSData dataWithBytes:encoded_bytes.data()
+                                 length:encoded_bytes.size()];
+    NSImage* img = [[NSImage alloc] initWithData:data];
+    if (!img)
+        return false;
+    // writeObjects: uses NSPasteboardItem promises internally, which some apps
+    // can't paste. Convert to TIFF explicitly and use the classic API instead.
+    NSData* tiff = [img TIFFRepresentation];
+    if (!tiff || tiff.length == 0)
+        return false;
+    NSPasteboard* pb = [NSPasteboard generalPasteboard];
+    [pb clearContents];
+    [pb declareTypes:@[ NSPasteboardTypeTIFF ] owner:nil];
+    return [pb setData:tiff forType:NSPasteboardTypeTIFF];
 }
 
 // ── Device enumeration ────────────────────────────────────────────────────
