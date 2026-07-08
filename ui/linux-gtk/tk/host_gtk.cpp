@@ -2343,12 +2343,9 @@ std::unique_ptr<tk::VideoPlayer> Host::make_video_player()
 }
 
 #ifdef TESSERACT_CALLS_ENABLED
-// Defined in audio_playback_gtk.cpp — stub returns nullptr until implemented.
-std::unique_ptr<::tk::AudioPlayback> make_audio_playback_gtk();
-
 std::unique_ptr<::tk::AudioPlayback> Host::make_audio_playback()
 {
-    return make_audio_playback_gtk();
+    return tk::make_audio_playback_gtk();
 }
 #endif
 
