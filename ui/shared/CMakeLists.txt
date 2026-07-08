@@ -233,7 +233,7 @@ set(_tk_sources
 # platform's own executable target by its own CMakeLists.txt. The exception
 # is GStreamer-based video decode/capture, genuinely shared between the two
 # Linux backends (qt6, gtk) rather than single-platform, which stays here.
-if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk")
+if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI STREQUAL "linux")
     list(APPEND _tk_sources
         tk/video_decode_gst.cpp
         tk/gst_hw_probe.cpp
@@ -411,7 +411,7 @@ tesseract_target_pch(tesseract_tk
 # single-platform, and stay compiled into tesseract_tk here — its PUBLIC
 # link propagates GStreamer to whichever of ui/linux-qt / ui/linux-gtk
 # links this library.
-if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk")
+if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI STREQUAL "linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(TK_GST REQUIRED IMPORTED_TARGET
         gstreamer-1.0

@@ -151,36 +151,45 @@ qt_add_resources(tesseract_qt "tesseract_icons"
     FILES  "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
 )
 
-install(TARGETS tesseract_qt
-        RUNTIME DESTINATION bin)
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
-        DESTINATION share/icons/hicolor/scalable/apps)
-install(FILES "${CMAKE_BINARY_DIR}/packaging/tesseract.desktop"
-        DESTINATION share/applications)
+# Dual-backend dev builds (TESSERACT_UI=linux) build both ui/linux-qt and
+# ui/linux-gtk from one configure; both install to the same bin/tesseract
+# and share/applications/tesseract.desktop destinations, so installing
+# either here would silently clobber the other. Skip install rules in that
+# mode — reconfigure with a single-backend TESSERACT_UI to install/package.
+if(NOT TESSERACT_UI STREQUAL "linux")
+    install(TARGETS tesseract_qt
+            RUNTIME DESTINATION bin)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
+            DESTINATION share/icons/hicolor/scalable/apps)
+    install(FILES "${CMAKE_BINARY_DIR}/packaging/tesseract.desktop"
+            DESTINATION share/applications)
 
-# Rename installed artifacts from `tesseract` to `tesseract-matrix` so this
-# package can coexist with the unrelated Tesseract OCR engine, which owns
-# /usr/bin/tesseract on most distros.
-install(CODE [[
-    set(_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
-    set(_new  "tesseract-matrix")
-    if(EXISTS "${_root}/bin/tesseract")
-        file(RENAME "${_root}/bin/tesseract"
-                    "${_root}/bin/${_new}")
-    endif()
-    if(EXISTS "${_root}/share/applications/tesseract.desktop")
-        file(READ  "${_root}/share/applications/tesseract.desktop" _d)
-        string(REPLACE "Exec=tesseract %U"        "Exec=${_new} %U"          _d "${_d}")
-        string(REPLACE "Icon=tesseract"           "Icon=${_new}"             _d "${_d}")
-        string(REPLACE "StartupWMClass=tesseract" "StartupWMClass=${_new}"   _d "${_d}")
-        file(WRITE  "${_root}/share/applications/${_new}.desktop" "${_d}")
-        file(REMOVE "${_root}/share/applications/tesseract.desktop")
-    endif()
-    if(EXISTS "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg")
-        file(RENAME "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg"
-                    "${_root}/share/icons/hicolor/scalable/apps/${_new}.svg")
-    endif()
-]])
+    # Rename installed artifacts from `tesseract` to `tesseract-matrix` so this
+    # package can coexist with the unrelated Tesseract OCR engine, which owns
+    # /usr/bin/tesseract on most distros.
+    install(CODE [[
+        set(_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+        set(_new  "tesseract-matrix")
+        if(EXISTS "${_root}/bin/tesseract")
+            file(RENAME "${_root}/bin/tesseract"
+                        "${_root}/bin/${_new}")
+        endif()
+        if(EXISTS "${_root}/share/applications/tesseract.desktop")
+            file(READ  "${_root}/share/applications/tesseract.desktop" _d)
+            string(REPLACE "Exec=tesseract %U"        "Exec=${_new} %U"          _d "${_d}")
+            string(REPLACE "Icon=tesseract"           "Icon=${_new}"             _d "${_d}")
+            string(REPLACE "StartupWMClass=tesseract" "StartupWMClass=${_new}"   _d "${_d}")
+            file(WRITE  "${_root}/share/applications/${_new}.desktop" "${_d}")
+            file(REMOVE "${_root}/share/applications/tesseract.desktop")
+        endif()
+        if(EXISTS "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg")
+            file(RENAME "${_root}/share/icons/hicolor/scalable/apps/tesseract.svg"
+                        "${_root}/share/icons/hicolor/scalable/apps/${_new}.svg")
+        endif()
+    ]])
+else()
+    message(STATUS "ui/linux-qt: skipping install rules (dual-backend dev build, TESSERACT_UI=linux); reconfigure with -DTESSERACT_UI=qt6 to install/package.")
+endif()
 
 # i18n: use the root i18n-extract target (cmake/I18n.cmake) which scans all
 # source directories including this one. Run: cmake --build . --target i18n-extract

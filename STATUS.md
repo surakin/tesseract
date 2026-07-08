@@ -1122,7 +1122,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 - **Corrosion** fetched at configure time (no global Rust toolchain install requirement beyond `rustup`).
 - **`WHOLE_ARCHIVE` link** for the 3-way circular dependency between `tesseract_sdk_bridge_cxx`, `tesseract_client`, and `tesseract_sdk_ffi-static`.
-- **Cross-platform CMake presets** — `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-{arm64,x86_64}-{debug,release}`.
+- **Cross-platform CMake presets** — `windows-debug`, `windows-release`, `linux-debug`, `linux-release` (builds GTK4 + Qt6), `macos-appkit-{arm64,x86_64}-{debug,release}`.
 - **CPack installer packaging** — NSIS on Windows, DMG on macOS (see [PACKAGING.md](PACKAGING.md)).
 - **Bundled SQLite** via matrix-sdk's `bundled-sqlite` feature; no system OpenSSL dep (TLS uses rustls).
 

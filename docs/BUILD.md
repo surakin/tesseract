@@ -59,7 +59,7 @@ Native voice and video calls via LiveKit/WebRTC are gated behind a CMake flag th
 defaults to OFF:
 
 ```bash
-cmake --preset linux-qt6-debug -DTESSERACT_ENABLE_CALLS=ON
+cmake --preset linux-debug -DTESSERACT_ENABLE_CALLS=ON
 ```
 
 ### Additional prerequisites when calls are enabled
@@ -90,18 +90,28 @@ Subsequent builds use the cached copy.
 
 All presets live in `CMakePresets.json`:
 
-`windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-gtk-release`,
-`linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-arm64-debug`,
-`macos-appkit-arm64-release`, `macos-appkit-x86_64-debug`,
-`macos-appkit-x86_64-release`, `mingw-debug`, `mingw-release`.
+`windows-debug`, `windows-release`, `linux-debug`, `linux-release`,
+`macos-appkit-arm64-debug`, `macos-appkit-arm64-release`,
+`macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`, `mingw-debug`,
+`mingw-release`.
+
+The `linux-*` presets configure and build both the GTK4 and Qt6 UIs from a
+single configure (`TESSERACT_UI=linux`), producing
+`ui/linux-qt/tesseract` and `ui/linux-gtk/tesseract` side by side in the same
+build tree. This dual-backend mode is dev-only — its `install`/`package`
+targets are disabled since both backends would otherwise fight over the same
+install destinations; reconfigure with a single-backend `-DTESSERACT_UI=`
+override (below) to install or package.
 
 The `mingw-*` presets cross-compile the Win32 UI from a Linux host via
 `cmake/toolchains/mingw-x86_64.cmake` and the `x86_64-pc-windows-gnu` Rust
 target (`rustup target add x86_64-pc-windows-gnu`); they require a MinGW-w64
 toolchain (`sudo apt install g++-mingw-w64-x86-64`).
 
-**Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos` (otherwise
-auto-detected from platform).
+**Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos|linux`
+(`linux` builds both GTK4 and Qt6; otherwise auto-detected from platform).
+Pass this alongside a `linux-*` preset (e.g. `-DTESSERACT_UI=qt6`) to build
+and install/package a single Linux backend instead of both.
 
 ## Build internals
 

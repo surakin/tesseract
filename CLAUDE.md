@@ -11,9 +11,10 @@ Tesseract is a cross-platform desktop Matrix/chat client. The core networking is
 Per-platform prerequisites, the full preset list, the `-DTESSERACT_UI=` override, and build internals (Corrosion, bundled SQLite, rustls, link strategy) live in [docs/BUILD.md](docs/BUILD.md). The day-to-day loop:
 
 ```bash
-cmake --preset linux-qt6-debug          # full preset list in docs/BUILD.md
-cmake --build build/linux-qt6-debug
-./build/linux-qt6-debug/ui/linux-qt/tesseract
+cmake --preset linux-debug              # full preset list in docs/BUILD.md; builds GTK4 + Qt6
+cmake --build build/linux-debug
+./build/linux-debug/ui/linux-qt/tesseract    # Qt6 UI
+./build/linux-debug/ui/linux-gtk/tesseract   # GTK4 UI
 
 # macOS (pick the preset matching your CPU):
 cmake --preset macos-appkit-arm64-debug
@@ -79,9 +80,9 @@ cargo test -p tesseract-sdk-ffi
 ### C++ tests via CMake / ctest
 
 ```bash
-cmake --preset linux-qt6-debug
-cmake --build build/linux-qt6-debug
-ctest --test-dir build/linux-qt6-debug --output-on-failure
+cmake --preset linux-debug
+cmake --build build/linux-debug
+ctest --test-dir build/linux-debug --output-on-failure
 ```
 
 Each Catch2 `TEST_CASE` is registered as a separate ctest test. See [docs/BUILD.md](docs/BUILD.md) for why these need no extra toolchain wiring and how the test executable links the full stack.

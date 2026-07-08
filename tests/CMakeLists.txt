@@ -118,8 +118,14 @@ add_executable(tesseract_tests
 
 # tk_test_surface implementation is per-backend; only the one matching
 # the active TESSERACT_UI is compiled in so the test binary has exactly
-# one TestSurface::create symbol.
-if(TESSERACT_UI STREQUAL "qt6")
+# one TestSurface::create symbol. TESSERACT_UI=linux (dual gtk+qt6 dev
+# build) exercises the qt6 test backend, matching CI's qt6-only testing.
+set(_TESSERACT_TEST_UI "${TESSERACT_UI}")
+if(_TESSERACT_TEST_UI STREQUAL "linux")
+    set(_TESSERACT_TEST_UI "qt6")
+endif()
+
+if(_TESSERACT_TEST_UI STREQUAL "qt6")
     # The Qt6 backend (canvas_qpainter.cpp) now lives in ui/linux-qt rather
     # than tesseract_tk, so the test surface must compile and link it itself.
     # It #includes "canvas.h" from ui/shared/tk, uses QtWidgets, and defines a
@@ -134,17 +140,17 @@ if(TESSERACT_UI STREQUAL "qt6")
         "${CMAKE_SOURCE_DIR}/ui/linux-qt"
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")
     target_link_libraries(tesseract_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
-elseif(TESSERACT_UI STREQUAL "gtk")
+elseif(_TESSERACT_TEST_UI STREQUAL "gtk")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_gtk.cpp)
     # canvas_cairo.h lives in ui/linux-gtk/tk and bare-#includes "canvas.h"
     # from ui/shared/tk; add shared/tk so it resolves (mirrors tesseract_gtk).
     target_include_directories(tesseract_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/ui/linux-gtk"
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")
-elseif(TESSERACT_UI STREQUAL "win32")
+elseif(_TESSERACT_TEST_UI STREQUAL "win32")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_win32.cpp)
     target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/windows")
-elseif(TESSERACT_UI STREQUAL "macos")
+elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     # canvas_cg.cpp (tk::cg::make_factory/make_canvas) now lives in ui/macos
     # rather than tesseract_tk, so the test surface must compile it itself.
     # canvas_cg.h bare-#includes "canvas.h" from ui/shared/tk; add that so it

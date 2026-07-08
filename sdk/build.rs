@@ -4,6 +4,7 @@ fn main() {
         Ok("macos") => "macOS",
         Ok("qt6") => "Qt6",
         Ok("gtk") => "GTK4",
+        Ok("linux") => "Linux",
         _ => "Desktop",
     };
     println!("cargo:rustc-env=TESSERACT_UI_PLATFORM={platform}");

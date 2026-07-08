@@ -59,7 +59,7 @@ endif()
 # Options
 # ---------------------------------------------------------------------------
 set(TESSERACT_UI "auto" CACHE STRING
-    "UI backend to build: auto | win32 | gtk | qt6 | macos")
+    "UI backend to build: auto | win32 | gtk | qt6 | macos | linux (gtk+qt6 both)")
 
 set(TESSERACT_GITHUB_REPO "surakin/tesseract" CACHE STRING
     "GitHub 'owner/repo' slug used for update checking (e.g. acme/tesseract). \
@@ -549,6 +549,10 @@ elseif(TESSERACT_UI STREQUAL "gtk")
     add_subdirectory(ui/linux-gtk)
 
 elseif(TESSERACT_UI STREQUAL "qt6")
+    add_subdirectory(ui/linux-qt)
+
+elseif(TESSERACT_UI STREQUAL "linux")
+    add_subdirectory(ui/linux-gtk)
     add_subdirectory(ui/linux-qt)
 
 else()

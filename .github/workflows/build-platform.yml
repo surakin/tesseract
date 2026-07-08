@@ -264,29 +264,29 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk -> ../build/linux-qt6-release
+          workspaces: sdk -> ../build/linux-release
 
       - name: Configure (Release)
-        run: cmake --preset linux-qt6-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
 
       - name: Build
-        run: cmake --build build/linux-qt6-release
+        run: cmake --build build/linux-release
 
       - name: Package (CPack → DEB + RPM)
-        run: cmake --build build/linux-qt6-release --target package
+        run: cmake --build build/linux-release --target package
 
       - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-linux-deb
-          path: build/linux-qt6-release/*.deb
+          path: build/linux-release/*.deb
           if-no-files-found: error
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-linux-rpm
-          path: build/linux-qt6-release/*.rpm
+          path: build/linux-release/*.rpm
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
@@ -332,16 +332,16 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk -> ../build/linux-qt6-release
+          workspaces: sdk -> ../build/linux-release
 
       - name: Configure (Release)
-        run: cmake --preset linux-qt6-release "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
 
       - name: Build
-        run: cmake --build build/linux-qt6-release
+        run: cmake --build build/linux-release
 
       - name: Install into AppDir
-        run: cmake --install build/linux-qt6-release --prefix AppDir/usr
+        run: cmake --install build/linux-release --prefix AppDir/usr
 
       - name: Copy Wayland platform/shell/graphics/decoration plugins + Qt Wayland library, fix RPATHs
         run: |

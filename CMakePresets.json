@@ -48,35 +48,18 @@
       }
     },
     {
-      "name": "linux-gtk-debug",
-      "displayName": "Linux – GTK4 (Debug)",
+      "name": "linux-debug",
+      "displayName": "Linux – GTK4 + Qt6 (Debug)",
       "inherits": "base",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
       "cacheVariables": {
-        "TESSERACT_UI": "gtk"
+        "TESSERACT_UI": "linux"
       }
     },
     {
-      "name": "linux-gtk-release",
-      "displayName": "Linux – GTK4 (Release)",
-      "inherits": "linux-gtk-debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "linux-qt6-debug",
-      "displayName": "Linux – Qt6 (Debug)",
-      "inherits": "base",
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
-      "cacheVariables": {
-        "TESSERACT_UI": "qt6"
-      }
-    },
-    {
-      "name": "linux-qt6-release",
-      "displayName": "Linux – Qt6 (Release)",
-      "inherits": "linux-qt6-debug",
+      "name": "linux-release",
+      "displayName": "Linux – GTK4 + Qt6 (Release)",
+      "inherits": "linux-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -125,10 +108,8 @@
     { "name": "windows-release",            "configurePreset": "windows-release"            },
     { "name": "mingw-debug",                "configurePreset": "mingw-debug"                },
     { "name": "mingw-release",              "configurePreset": "mingw-release"              },
-    { "name": "linux-gtk-debug",            "configurePreset": "linux-gtk-debug"            },
-    { "name": "linux-gtk-release",          "configurePreset": "linux-gtk-release"          },
-    { "name": "linux-qt6-debug",            "configurePreset": "linux-qt6-debug"            },
-    { "name": "linux-qt6-release",          "configurePreset": "linux-qt6-release"          },
+    { "name": "linux-debug",                "configurePreset": "linux-debug"                },
+    { "name": "linux-release",              "configurePreset": "linux-release"              },
     { "name": "macos-appkit-arm64-debug",   "configurePreset": "macos-appkit-arm64-debug"   },
     { "name": "macos-appkit-arm64-release", "configurePreset": "macos-appkit-arm64-release" },
     { "name": "macos-appkit-x86_64-debug",  "configurePreset": "macos-appkit-x86_64-debug"  },
