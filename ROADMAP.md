@@ -1,79 +1,155 @@
 # ROADMAP.md
 
-Completed work is in [CHANGES.md](CHANGES.md). What follows is only the pending and in-progress work.
+Completed work is in [CHANGES.md](CHANGES.md). This file lists only pending
+and in-progress work, as a single backlog ordered by priority/urgency.
 
-## Code health — god-object decomposition (in progress)
+## Tier 1 — Finish what's in flight (don't start new things until these are done)
 
-The 2026-06-09 pre-launch pass began breaking up the two largest classes; nine
-collaborators have been extracted so far (`TimelineMediaController`,
-`SpoilerRevealer`, `ReadReceiptTracker`, `LocationMapPanner`,
-`TimelineVideoPlaylist`, `RoomSwitchGateKeeper`, `UrlPreviewCardDisplay`,
-`LinkLayoutCache` from `MessageListView`; `ThreadPanelController` from
-`ShellBase`). Remaining, with seam maps + recipe in
-[`docs/TODO-phase5-remaining.md`](docs/TODO-phase5-remaining.md):
+- **Room settings**: confirm the lockout-guard fix is fully tested
+  (self-lockout and last-other-admin-lockout, per the earlier discussion),
+  and finish out any remaining fields flagged as not-yet-done (room alias
+  display, leave-room reachable from settings, etc., if those weren't in
+  the initial version).
+- **Calls**: the real testing tail — more cross-network/cross-platform
+  combinations, lifecycle edge cases (drops, rejoins), now with the TWIM
+  post out there potentially recruiting real testers. This is now partly
+  not solely on us, which is good — but it needs engagement with whatever
+  testers show up in the room.
+- **Screen sharing**: same testing-tail treatment, at whatever level of
+  priority given it's explicitly YMMV/rougher than calls.
+- **GTK4 / Qt6 / macOS builds after the tk:: backend relocation.** Every
+  platform's `canvas_*`/`host_*`/`audio_*`/`video_*`/`screen_capture_*`
+  implementation moved out of `ui/shared/tk/` into its own `ui/<platform>/tk/`,
+  compiled directly into that platform's executable target instead of the
+  shared `tesseract_tk` library. Only Windows has been build-verified since
+  the move. Need someone with GTK4/Qt6/macOS toolchains to confirm all three
+  still configure and build clean.
+- **MSC2545 custom-emoji inline rendering on GTK4/Qt6.** The timeline
+  renders inline custom emoticons via each backend's native "reserve a box,
+  no fallback glyph" mechanism — `IDWriteInlineObject` (Windows, verified),
+  `PangoAttrShape` (GTK4), `QTextObjectInterface` (Qt6). Only the Windows
+  path has actually been run; GTK4/Qt6 need a real custom emoji sent and
+  viewed to confirm the box renders and sizes correctly.
 
-- **`MessageListView` cross-cutting cuts** — `TextSelectionModel`, `ReactionChipUI`,
-  `ActionPillUI` (woven through `paint_row` + the pointer-dispatch switch; smoke-test
-  selection/copy, reactions, and the hover action buttons after each).
-- **`ShellBase MediaController`/`MediaCache`** — the ~1,300-LOC media-fetch pipeline +
-  shared caches; the biggest cut, shell-entangled (flag macOS/Windows for recompile).
-- **`PaginationRegistry` / `SecondaryWindowRegistry` / MSC4278 preview-gating** — smaller
-  ShellBase cuts.
+## Tier 2 — The room-admin cluster, still incomplete
 
-## Step 5 — UI redesign (in progress)
+- Room creation (public/private) — the most-missed capability, not yet built.
+- Invite UI (member list → invite), beyond the `/invite` slash command.
+- Member list with moderation actions (kick/ban) — related to but distinct
+  from the power-levels editor already built.
+- Room directory browsing.
+- **DM-counterpart avatar picks the bridge bot itself** when the bridge
+  doesn't publish `io.element.functional_members` (MSC4171) — heisenbridge
+  currently lacks the state event, so 1:1 control rooms show the bot's own
+  avatar. Workaround: ship a small allow-list of known bridge user-ID
+  prefixes (`@heisenbridge:`, `@_neb_`, etc.) on the Rust side, or
+  contribute the missing state-event publication upstream to heisenbridge.
 
-Done: inline images, stickers, reply-to, message editing, voice messages (receive + send), ComposeBar, read receipts (display + sending, overlay only — never expand rows), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6, GTK4, Win32), Markdown-to-HTML for sent messages, last-message preview in sidebar (regular-weight room name, 1px inter-room separator, compact row sizing), emoji reactions (reaction chips, toggle, `send_reaction` / `redact_reaction` FFI), slash-command popup (`/` autocomplete, `/me` / `/shrug` / `/slap` / `/spoiler`), pinned-message banner + pin/unpin action, hover action pill, tab session restore, threads panel (list + open states, in-panel `ComposeBar`), @mention autocomplete + pills (`m.mentions`), encryption-setup overlay (guided cross-signing wizard), in-room find bar (`RoomSearchBar`, Ctrl+F / ⌘F, timeline highlights, ↑/↓ nav, Paginate, all four shells), block-level Markdown rendering (headings / lists / blockquotes / tables), unjoined space-children section + `RoomPreviewView`, MSC4133 extended profiles (pronouns / timezone / biography), system font scaling (all four backends — `QApplication::font`, `gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`; all roles as additive offsets from base), inline Unicode emoji at ~125% body size (`FontRole::InlineEmoji`), BigEmoji-size emoji-only captions, automatic GitHub release update checker, forward message action (ForwardRoomPicker modal with async per-room error feedback), action-pill tooltips for all five hover buttons. Remaining:
+## Tier 3 — Smaller deferred items, pick opportunistically
 
+- Global default notification level (per-room exists; global doesn't).
+- Window position/size/maximized restore across launches (if never landed).
+- Cmd/Ctrl+K refinements, room mentions as pills (vs. just user mentions),
+  self-mention emphasis, device rename, new-device warnings, edit history
+  viewer, GIF picker.
+- Room upgrades, alias management beyond viewing.
+- **MSC2545 pack management**: list enabled packs UI; toggle subscription
+  via `im.ponies.emote_rooms` (room settings drill-in) — the SDK already
+  supports `emote_rooms` (`bridge.rs`, `client/mod.rs`, `image_packs.rs`);
+  no UI calls it yet. Pack creation/removal flow; sticker delete/rename
+  inside the user pack; manual order/sort.
 - **Message bubbles / cards** — visual polish pass on the message layout.
+- **Sessions tab — inline rename of device display name.** FFI/Client/Controller
+  already plumbed end-to-end (`Client::set_device_display_name`,
+  `SettingsController::rename_device`, `on_device_renamed`). Needs a per-row
+  `NativeTextField` overlay: either (a) extend `DevicesSection` with a
+  `rename_field_rect()` analogous to `AccountSection::name_field_rect()`
+  and route each shell's existing single `NativeTextField` over the active
+  row, or (b) add a `tk::Host::prompt_text(...)` dialog primitive backed by
+  `QInputDialog` / `GtkDialog` / `MessageBoxW` / `NSAlert`.
+- **Sessions tab — out-of-band verification trigger.** Each row could carry
+  a "Verify" button that fires `request_self_verification()` and pops the
+  SAS overlay focused on the chosen device.
+- **`m.location` send** — receive + display is done; composing and sending
+  location messages hasn't been built.
+- **Notification preview image is fetched as a full file, not a
+  thumbnail** — the SDK downloads the full media (≤ 2 MiB cap) on the sync
+  handler regardless of whether the C++ layer will display it (it can't
+  see window-focus / lock state). Fix: use `MediaFormat::Thumbnail` and
+  skip the fetch when the notification won't be shown. The macOS + Linux
+  (Qt6/GTK4) `IScreenLock` impls and notifier-render paths still need
+  on-device smoke tests (built only on Win32 here).
+- **GTK4 message-list CSS not theme-aware** — `apply_theme_ui_()` only
+  rebuilds the `.sidebar` / `.sidebar-separator` CSS rules. `.sender-name` /
+  `.timestamp` / `.room-header` / `.room-header-topic` and the
+  `status_bar_` / `topic_tooltip_label_` `GtkLabel`s keep hardcoded light
+  colours. Fix: rebuild all theme CSS rules from `t.palette` and give the
+  status / tooltip labels palette-driven CSS classes.
+- **Native context menus / dialogs unthemed on Win32 + Qt6** — Win32
+  `TrackPopupMenu` / `MessageBoxW` and Qt6 `QMenu` use the OS / default
+  palette, so right-click menus and message boxes don't follow the in-app
+  dark/light theme. (macOS follows via `NSApp.appearance`; GTK4 via
+  `gtk-application-prefer-dark-theme`.) Fix: owner-draw the Win32 menus and
+  apply the theme palette to the Qt `QMenu`s.
+- **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic
+  ghosting risk when two accounts share an mxc URL that resolves to
+  different bytes.
+- **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D
+  are tested; macOS CGBitmapContext surface is still TODO.
+- **macOS inline custom-emoji rendering still uses the placeholder-glyph
+  approach** — not converted to a `CTRunDelegate`-based native inline
+  object like Windows/GTK4/Qt6; works today, but shares the same class of
+  fragility (a real glyph being drawn and relied on for layout sizing)
+  that caused the original Windows bug.
+- **Code health — god-object decomposition.** Remaining cuts:
+  `MessageListView`'s `TextSelectionModel`, `ReactionChipUI`, `ActionPillUI`
+  (woven through `paint_row` + the pointer-dispatch switch; smoke-test
+  selection/copy, reactions, and the hover action buttons after each);
+  `ShellBase`'s `MediaController`/`MediaCache` (the media-fetch pipeline +
+  shared caches — the biggest remaining cut, shell-entangled, flag
+  macOS/Windows for recompile); `PaginationRegistry` /
+  `SecondaryWindowRegistry` / MSC4278 preview-gating (smaller `ShellBase`
+  cuts).
 
-## Step 8 — MSC2545 phase A: remaining items
+## Tier 4 — Open questions, decide-don't-build-yet
 
-- **Inline emoticons in HTML message bodies** — render `<img data-mx-emoticon ...>` in `formatted_body` instead of alt text. Per-platform: Qt `QTextDocument::addResource`, GTK `GtkTextChildAnchor`, macOS `NSTextAttachment`, Win32 via RichEdit overlay (Step 8b).
-- **Win32 shell wiring** — `StickerPicker` child `WS_POPUP` surface and the underlying RichEdit overlay (Step 8b). Right-click "Add to Saved Stickers" is done (`tk::win32::Surface::set_on_right_click` + `WM_RBUTTONUP`).
-
-## Step 8b — Win32 RichEdit inline media overlay
-
-- New `tk::InlineMediaSurface` abstraction: per-row optional native overlay (no-op default). Win32 impl: per-row `RichEdit 4.1` (`MSFTEDIT.DLL`) HWND pooled by `event_id`.
-- `IRichEditOleCallback` + `OleCreatePictureIndirect` over WIC-decoded `HBITMAP` to insert images/stickers as OLE objects.
-- `MessageListView` publishes inline-media rects via `set_on_inline_media_layout`; overlay `SetWindowPos`es children in the same layout pass as `NativeTextArea`. `Surface::supports_inline_media_overlay()` gates the skip-canvas-paint path (returns false on Qt6 / GTK4 / macOS).
-- LRU pool keyed by `event_id`, hard cap ~32 active children, `SWP_HIDEWINDOW` for offscreen rows. Fail-safe fallback to canvas paint when `MSFTEDIT.DLL` is absent.
-
-## Step 9 — MSC2545 phase B: send (remaining)
-
-- **`send_emoticon_message(room_id, plain_body, html_body)` FFI** + composer integration to emit `<img data-mx-emoticon ...>` HTML body when a custom emoticon is picked (instead of `:shortcode:` plain-text fallback).
-
-## Step 10 — MSC2545 phase C: pack management (remaining)
-
-- List enabled packs UI; toggle subscription via `im.ponies.emote_rooms` (room settings drill-in).
-- Pack creation / removal flow; sticker delete/rename inside the user pack; manual order/sort.
-
-## Step 12 — Notifications, layer 2: server pushers
-
-Linux (Qt6 + GTK4) done — the toggle is now also wired to `IUpConnector::set_enabled` so enabling/disabling notifications in Settings registers/removes the server pusher live. Remaining:
-
-- Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
-- macOS: deferred (APNs).
-
-## Settings — Sessions tab follow-ups
-
-The "Sessions" tab landed with list + verification badges + this-device marker + sign-out via UIAA fallback. Remaining UI work:
-
-- **Inline rename of device display name.** FFI/Client/Controller already plumbed end-to-end (`Client::set_device_display_name`, `SettingsController::rename_device`, `on_device_renamed`). Needs a per-row `NativeTextField` overlay: either (a) extend `DevicesSection` with a `rename_field_rect()` analogous to `AccountSection::name_field_rect()` and route each shell's existing single `NativeTextField` over the active row, or (b) add a `tk::Host::prompt_text(...)` dialog primitive backed by `QInputDialog` / `GtkDialog` / `MessageBoxW` / `NSAlert`.
-- **Out-of-band verification trigger.** Each row could carry a "Verify" button that fires `request_self_verification()` and pops the SAS overlay focused on the chosen device.
-
-## Known gaps
-
-- **`m.location` send not yet implemented** — receive + display is done (see CHANGES.md 2026-05-17); composing and sending location messages is out of scope for this iteration.
-- **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D are tested; macOS CGBitmapContext surface is still TODO.
-- **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
-- **DM-counterpart avatar picks the bridge bot itself when the bridge doesn't publish `io.element.functional_members` (MSC4171)** — heisenbridge currently lacks the state event, so 1:1 control rooms show the bot's own avatar. Workaround: ship a small allow-list of known bridge user-ID prefixes (`@heisenbridge:`, `@_neb_`, etc.) on the Rust side, or contribute the missing state-event publication upstream to heisenbridge.
-- **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.
-- **Notification preview image is fetched as a full file, not a thumbnail** — image/sticker notification previews now work (incl. a lock-screen privacy gate via `IScreenLock`), but the SDK downloads the full media (≤ 2 MiB cap) on the sync handler regardless of whether the C++ layer will display it (it can't see window-focus / lock state). Fix: use `MediaFormat::Thumbnail` and skip the fetch when the notification won't be shown. The macOS + Linux (Qt6/GTK4) `IScreenLock` impls and notifier-render paths still need on-device smoke tests (built only on Win32 here).
-- **GTK4 message-list CSS not theme-aware** — every `tk` surface and pop-out window now follows the theme setting, but `apply_theme_ui_()` only rebuilds the `.sidebar` / `.sidebar-separator` CSS rules. `.sender-name` / `.timestamp` / `.room-header` / `.room-header-topic` and the `status_bar_` / `topic_tooltip_label_` `GtkLabel`s keep hardcoded light colours. Fix: rebuild all theme CSS rules from `t.palette` and give the status / tooltip labels palette-driven CSS classes.
-- **Native context menus / dialogs unthemed on Win32 + Qt6** — Win32 `TrackPopupMenu` / `MessageBoxW` and Qt6 `QMenu` use the OS / default palette, so right-click menus and message boxes don't follow the in-app dark/light theme. (macOS follows via `NSApp.appearance`; GTK4 via `gtk-application-prefer-dark-theme`.) Fix: owner-draw the Win32 menus and apply the theme palette to the Qt `QMenu`s.
-
-## Decisions still open
-
-- **Timeline persistence** — opt in to sqlite-backed `Timeline::with_focus(...)`, or memory-only?
+- Password/legacy login — explicitly parked pending evidence of real demand.
+- Group calls beyond current MatrixRTC support, Multi-SFU tracking as the
+  spec evolves.
+- Flathub distribution (flagged as the likely most-requested Linux
+  packaging addition).
+- matrix.org client-list PR — awaiting review, nothing to do but respond
+  if asked.
+- **Notifications, layer 2 server pushers** — Windows deferred (WNS needs
+  Store registration; UnifiedPush distributors on Windows are an option);
+  macOS deferred (APNs).
+- **Timeline persistence** — opt in to sqlite-backed
+  `Timeline::with_focus(...)`, or memory-only?
 - **Room-list window** — `AllRooms` for desktop (recommended), or windowed?
-- **Pack-entry encrypted badging** — show a lock glyph on encrypted packs in the picker?
+- **Pack-entry encrypted badging** — show a lock glyph on encrypted packs
+  in the picker?
+
+## Tier 5 — The big structural gaps, acknowledge and schedule loosely, don't start soon
+
+- Accessibility (screen reader support) — large, its own project, not a
+  quick add.
+- Localization beyond English/Spanish — content work, opportunistic/
+  contributor-driven.
+- **i18n not fully wired on macOS or Win32** — both shells use `tk::tr()`
+  for the shared views, but a handful of native-menu strings still go
+  through `NSLocalizedString`/raw literals instead of the shared catalog
+  (e.g. the AppKit context-menu "Copy" item); Win32 has no `LoadString`
+  usage at all yet for anything outside the shared views.
+- **Windows composer has no real inline emoji pill** — every other
+  platform's composer inserts a real inline image for a picked custom
+  emoji; Windows falls back to plain `:shortcode:` text (which still sends
+  and displays as a real emoji everywhere, including that same Windows
+  client's own timeline). `IRichEditOle::InsertObject`-based embedding was
+  tried and made to work in isolation, but RichEdit's classic GDI
+  object-drawing pass is fundamentally incompatible with this control's
+  DXGI-swap-chain-backed D2D rendering — the first real `TxGetDC()` call
+  for object drawing detaches the swap chain's presented frames from the
+  window, permanently blanking all subsequently drawn text. Fixing this
+  would require decoupling the composer's D2D rendering from the HWND
+  entirely (e.g. `CreateSwapChainForComposition` + DirectComposition)
+  before any embedded-object approach could work.
