@@ -63,6 +63,9 @@ tesseract_target_pch(tesseract_gtk
 
 target_include_directories(tesseract_gtk PRIVATE
     src
+    # src/*.cpp #include the GTK backend as "tk/host_gtk.h" / "tk/canvas_cairo.h";
+    # those headers live under ui/linux-gtk/tk, so this dir is the include base.
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     # tk/host_gtk.cpp etc. bare-#include genuinely-shared headers (e.g.
     # "anim_image_cache.h") that still live in ui/shared/tk — this makes
     # those resolve without rewriting every #include in the moved files.
