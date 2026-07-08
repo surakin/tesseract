@@ -99,6 +99,9 @@ tesseract_target_pch(tesseract_qt
 
 target_include_directories(tesseract_qt PRIVATE
     src
+    # src/*.cpp #include the Qt backend as "tk/host_qt.h" / "tk/canvas_qpainter.h";
+    # those headers live under ui/linux-qt/tk, so this dir is the include base.
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     # tk/host_qt.cpp etc. bare-#include genuinely-shared headers (e.g.
     # "anim_image_cache.h") that still live in ui/shared/tk — this makes
     # those resolve without rewriting every #include in the moved files.

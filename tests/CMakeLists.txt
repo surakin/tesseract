@@ -120,11 +120,27 @@ add_executable(tesseract_tests
 # the active TESSERACT_UI is compiled in so the test binary has exactly
 # one TestSurface::create symbol.
 if(TESSERACT_UI STREQUAL "qt6")
-    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_qt.cpp)
-    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/linux-qt")
+    # The Qt6 backend (canvas_qpainter.cpp) now lives in ui/linux-qt rather
+    # than tesseract_tk, so the test surface must compile and link it itself.
+    # It #includes "canvas.h" from ui/shared/tk, uses QtWidgets, and defines a
+    # Q_OBJECT (BlankTextObjectInterface) that needs AUTOMOC — mirror the
+    # tesseract_qt executable's Qt setup here.
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+    set_target_properties(tesseract_tests PROPERTIES AUTOMOC ON)
+    target_sources(tesseract_tests PRIVATE
+        cpp/tk_test_surface_qt.cpp
+        "${CMAKE_SOURCE_DIR}/ui/linux-qt/tk/canvas_qpainter.cpp")
+    target_include_directories(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/linux-qt"
+        "${CMAKE_SOURCE_DIR}/ui/shared/tk")
+    target_link_libraries(tesseract_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
 elseif(TESSERACT_UI STREQUAL "gtk")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_gtk.cpp)
-    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/linux-gtk")
+    # canvas_cairo.h lives in ui/linux-gtk/tk and bare-#includes "canvas.h"
+    # from ui/shared/tk; add shared/tk so it resolves (mirrors tesseract_gtk).
+    target_include_directories(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/linux-gtk"
+        "${CMAKE_SOURCE_DIR}/ui/shared/tk")
 elseif(TESSERACT_UI STREQUAL "win32")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_win32.cpp)
     target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/windows")
