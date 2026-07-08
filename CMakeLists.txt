@@ -488,6 +488,19 @@ if(TESSERACT_ENABLE_CALLS)
         #     dead code that never executes.
         add_link_options(-Wl,--allow-multiple-definition)
     endif()
+
+    # livekit-webrtc (bundled libwebrtc) on macOS: webrtc-sys's build script
+    # emits cargo:rustc-link-lib for these frameworks, but Corrosion does not
+    # propagate transitive build-script link-libs to every CMake consumer.
+    # tesseract_macos already links them directly (PRIVATE) for its own link
+    # step; attach them PUBLIC here too so other consumers of the FFI static
+    # lib — namely tesseract_tests — get them as well.
+    if(APPLE)
+        target_link_libraries(tesseract_sdk_bridge_cxx PUBLIC
+            "-framework Foundation"
+            "-framework AppKit"
+            "-framework AudioToolbox")
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

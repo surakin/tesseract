@@ -83,6 +83,17 @@ set_source_files_properties("${_icns}" PROPERTIES
 target_compile_features(tesseract_macos PRIVATE cxx_std_20)
 target_compile_options(tesseract_macos  PRIVATE -fobjc-arc)
 
+# video_macos.mm predates ARC and manually manages refcounts (explicit
+# alloc/retain/release/dealloc) — it compiled fine under MRC back when it
+# lived in tesseract_tk (never ARC-enabled); now that it's a direct source of
+# this -fobjc-arc target, override ARC back off for just this file rather
+# than rewriting its memory management.
+# SKIP_PRECOMPILE_HEADERS: the target's ObjC++ PCH is built with ARC (the
+# target-wide -fobjc-arc above), which conflicts with this file's -fno-objc-arc.
+set_source_files_properties(tk/video_macos.mm PROPERTIES
+    COMPILE_OPTIONS -fno-objc-arc
+    SKIP_PRECOMPILE_HEADERS ON)
+
 # Std-only PCH (compiled as ObjC++ for these .mm sources). AppKit/Foundation
 # are intentionally excluded — ObjC umbrella frameworks in a PCH are brittle
 # and add little, and project headers are excluded for incremental-build speed.
@@ -96,6 +107,10 @@ tesseract_target_pch(tesseract_macos
 
 target_include_directories(tesseract_macos PRIVATE
     src
+    # src/*.mm #include the AppKit backend as "tk/host_macos.h" /
+    # "tk/canvas_cg.h"; those headers live under ui/macos/tk, so this dir
+    # is the include base.
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     # tk/host_macos.mm etc. bare-#include genuinely-shared headers (e.g.
     # "anim_image_cache.h") that still live in ui/shared/tk — this makes
     # those resolve without rewriting every #include in the moved files.
