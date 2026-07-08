@@ -1,6 +1,33 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-07** (v0.8.14-unreleased). 1032 C++ + 324 Rust tests.
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-08** (v0.8.14-unreleased). 1032 C++ + 324 Rust tests.
+
+> **Faster local echo under background load (2026-07-08, v0.8.14-unreleased).**
+> A just-sent message's local echo could take seconds to appear when the app
+> was busy. The echo is a matrix-sdk timeline append delivered on the same
+> single, unprioritized UI-thread queue as media decodes and room-list
+> updates, and several of those tasks were individually heavy — so a burst of
+> them queued ahead of the echo pushed its render out by many frames (the app
+> stayed responsive; the message just didn't show up). Moved Qt avatar and
+> message-tile image decode off the UI thread (they were decoding
+> synchronously; Win32/macOS avatars too — GTK already decoded off-thread),
+> so a burst of fetches after a room switch no longer blocks the queue the
+> echo waits in. Coalesced the media/room relayout finalizers onto the shared
+> `schedule_relayout_` so N burst completions fold into one arrange instead of
+> N full arranges. Corrected map-tile handling: a `tile:z/x/y` fills a
+> fixed-size map card and isn't a tracked row media source, so an arriving
+> tile now triggers a plain repaint rather than a full O(timeline)
+> `invalidate_data()` re-measure (and the targeted `notify_image_ready()`,
+> which matches row sources, would have missed it entirely). Also routed
+> plain-text send through the mutation worker pool like every other composer
+> mutation (reply/edit/reaction) — it was the only send that ran
+> `markdown_to_html` + the FFI send inline on the UI thread, so under
+> store-lock contention it could freeze the composer; failures now surface via
+> the per-message ◷→⚠/retry indicator instead of a status-bar message. No new
+> FFI. Verified on **Qt6** and **GTK4**; Win32/macOS mirror the same pattern
+> (pending on-platform build).
+
+<!-- -->
 
 > **Copy image to clipboard from the lightbox (2026-07-07, v0.8.14-unreleased).**
 > The full-window image viewer gains a third top-right chrome button (a

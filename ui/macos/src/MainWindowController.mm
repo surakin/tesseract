@@ -1112,10 +1112,11 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         }
         account_manager_.image_cache().store(key, tk::cg::make_image(img));
         CGImageRelease(img);
-        if (room_view_)
-        {
-            room_view_->message_list()->invalidate_data();
-        }
+        // A map tile fills a fixed-size map card and isn't a tracked row media
+        // source, so it needs only a repaint, not a re-measure — the chat
+        // surface relayout below re-draws it (LocationMapPanner::paint re-reads
+        // the tile from the cache). The old invalidate_data() forced a full
+        // O(timeline) re-measure just to repaint a fixed card.
         [c _relayoutChatSurface];
         notify_secondary_media_ready_(key, kind);
         return;
@@ -1124,37 +1125,46 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         return;
     }
-    CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                                  static_cast<CFIndex>(bytes.size()));
-    if (!data)
-    {
-        return;
-    }
-    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
-    CFRelease(data);
-    if (!src)
-    {
-        return;
-    }
-    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
-    CFRelease(src);
-    if (!img)
-    {
-        return;
-    }
-    account_manager_.thumbnail_cache().store(key, tk::cg::make_image(img));
-    CGImageRelease(img);
-    if (kind == MediaKind::RoomAvatar)
-    {
-        [c _relayoutRoomSurface];
-    }
-    else if (kind == MediaKind::UserAvatar)
-    {
-        [c _relayoutChatSurface];
-        [c _relayoutAccountPickerIfVisible];
-        [c _relayoutMentionPopupIfVisible];
-    }
-    notify_secondary_media_ready_(key, kind);
+    // Decode off the UI thread (CGImageSource is thread-safe — same basis as
+    // the MediaImage path above). A burst of avatar fetches (e.g. after a room
+    // switch) would otherwise decode synchronously here and stall the UI event
+    // queue that a just-sent message's local echo waits in. Store + relayout
+    // hop back to the UI thread.
+    run_async_(
+        [this, key, kind, bytes = std::move(bytes)]() mutable
+        {
+            auto d = std::make_shared<DecodedImage>(decode_image_(bytes, 0, 0));
+            post_to_ui_(
+                [this, key, kind, d]() mutable
+                {
+                    MainWindowController* c = ctrl_;
+                    if (!c) return;
+                    if (account_manager_.thumbnail_cache().contains(key))
+                        return;
+                    // Avatars render static: use the still, or the first frame
+                    // of an animated source.
+                    std::unique_ptr<tk::Image> img;
+                    if (d->still)
+                        img = std::move(d->still);
+                    else if (!d->frames.empty())
+                        img = std::move(d->frames.front());
+                    if (!img)
+                        return;
+                    account_manager_.thumbnail_cache().store(key,
+                                                             std::move(img));
+                    if (kind == MediaKind::RoomAvatar)
+                    {
+                        [c _relayoutRoomSurface];
+                    }
+                    else if (kind == MediaKind::UserAvatar)
+                    {
+                        [c _relayoutChatSurface];
+                        [c _relayoutAccountPickerIfVisible];
+                        [c _relayoutMentionPopupIfVisible];
+                    }
+                    notify_secondary_media_ready_(key, kind);
+                });
+        });
 }
 
 void MacShell::generate_video_thumbnail_(const std::string& event_id,

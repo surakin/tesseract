@@ -3378,47 +3378,75 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             return;
         }
-        QByteArray qb_av(reinterpret_cast<const char*>(bytes.data()),
-                         static_cast<int>(bytes.size()));
-        QBuffer buf_av(&qb_av);
-        buf_av.open(QIODevice::ReadOnly);
-        QImageReader reader_av(&buf_av);
-        reader_av.setAutoTransform(true);
-        const QSize native_av = reader_av.size();
-        if (native_av.isValid() &&
-            (native_av.width() > kAvatarCacheSize ||
-             native_av.height() > kAvatarCacheSize))
-        {
-            reader_av.setScaledSize(
-                native_av.scaled(kAvatarCacheSize, kAvatarCacheSize,
-                                 Qt::KeepAspectRatio));
-        }
-        QImage img = reader_av.read();
-        if (img.isNull())
-        {
-            media_decode_failed_.insert(cache_key);
-            return;
-        }
-        if (img.width() > kAvatarCacheSize || img.height() > kAvatarCacheSize)
-        {
-            img = img.scaled(kAvatarCacheSize, kAvatarCacheSize,
-                             Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        }
-        account_manager_.thumbnail_cache().store(cache_key, tk::qt6::make_image(std::move(img)));
-        if (mainAppSurface_)
-        {
-            mainAppSurface_->update();
-        }
-        if (mention_popup_visible_() && mention_popup_surface_)
-        {
-            mention_popup_surface_->update();
-        }
-        if (accountPickerPopover_ && accountPickerPopover_->isVisible() &&
-            accountPickerSurface_)
-        {
-            accountPickerSurface_->update();
-        }
-        notify_secondary_media_ready_(cache_key, kind);
+        // Decode + scale off the UI thread — QImage/QImageReader are safe on a
+        // worker and make_image wraps a QImage (not a QPixmap), so only the
+        // cache store + repaint need to hop back. A burst of avatar fetches
+        // (e.g. after a room switch) would otherwise run synchronously here and
+        // block the UI event queue, delaying anything queued behind it — such
+        // as a just-sent message's local echo.
+        run_async_(
+            [this, cache_key, kind, bytes = std::move(bytes)]() mutable
+            {
+                QByteArray qb_av(reinterpret_cast<const char*>(bytes.data()),
+                                 static_cast<int>(bytes.size()));
+                QBuffer buf_av(&qb_av);
+                buf_av.open(QIODevice::ReadOnly);
+                QImageReader reader_av(&buf_av);
+                reader_av.setAutoTransform(true);
+                const QSize native_av = reader_av.size();
+                if (native_av.isValid() &&
+                    (native_av.width() > kAvatarCacheSize ||
+                     native_av.height() > kAvatarCacheSize))
+                {
+                    reader_av.setScaledSize(
+                        native_av.scaled(kAvatarCacheSize, kAvatarCacheSize,
+                                         Qt::KeepAspectRatio));
+                }
+                QImage img = reader_av.read();
+                if (!img.isNull() &&
+                    (img.width() > kAvatarCacheSize ||
+                     img.height() > kAvatarCacheSize))
+                {
+                    img = img.scaled(kAvatarCacheSize, kAvatarCacheSize,
+                                     Qt::KeepAspectRatio,
+                                     Qt::SmoothTransformation);
+                }
+                auto decoded = std::make_shared<QImage>(std::move(img));
+                post_to_ui_(
+                    [this, cache_key, kind, decoded]() mutable
+                    {
+                        if (account_manager_.thumbnail_cache().contains(
+                                cache_key))
+                        {
+                            return;
+                        }
+                        if (decoded->isNull())
+                        {
+                            media_decode_failed_.insert(cache_key);
+                            return;
+                        }
+                        account_manager_.thumbnail_cache().store(
+                            cache_key,
+                            tk::qt6::make_image(std::move(*decoded)));
+                        // Avatars are fixed-size — a repaint suffices, no
+                        // relayout needed.
+                        if (mainAppSurface_)
+                        {
+                            mainAppSurface_->update();
+                        }
+                        if (mention_popup_visible_() && mention_popup_surface_)
+                        {
+                            mention_popup_surface_->update();
+                        }
+                        if (accountPickerPopover_ &&
+                            accountPickerPopover_->isVisible() &&
+                            accountPickerSurface_)
+                        {
+                            accountPickerSurface_->update();
+                        }
+                        notify_secondary_media_ready_(cache_key, kind);
+                    });
+            });
         return;
     }
 
@@ -3428,23 +3456,41 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             return;
         }
-        QImage img;
-        if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                              static_cast<int>(bytes.size())))
-        {
-            return;
-        }
-        account_manager_.image_cache().store(cache_key, tk::qt6::make_image(std::move(img)));
-        if (mainApp_)
-        {
-            mainApp_->room_view()->message_list()->invalidate_data();
-        }
-        if (mainAppSurface_)
-        {
-            mainAppSurface_->relayout();
-            mainAppSurface_->update();
-        }
-        notify_secondary_media_ready_(cache_key, kind);
+        // Decode off the UI thread (as above); store + repaint on the UI
+        // thread. A map tile fills a fixed-size map card and is NOT a tracked
+        // row media source, so it needs only a repaint — not a re-measure. The
+        // old invalidate_data() + relayout() did a full O(timeline) re-measure
+        // just to repaint a fixed card; notify_image_ready() would miss it
+        // entirely (it matches row sources). LocationMapPanner::paint re-reads
+        // the tile from the cache, so update() is sufficient.
+        run_async_(
+            [this, cache_key, kind, bytes = std::move(bytes)]() mutable
+            {
+                QImage img;
+                if (!img.loadFromData(
+                        reinterpret_cast<const uchar*>(bytes.data()),
+                        static_cast<int>(bytes.size())))
+                {
+                    return;
+                }
+                auto decoded = std::make_shared<QImage>(std::move(img));
+                post_to_ui_(
+                    [this, cache_key, kind, decoded]() mutable
+                    {
+                        if (account_manager_.image_cache().contains(cache_key))
+                        {
+                            return;
+                        }
+                        account_manager_.image_cache().store(
+                            cache_key,
+                            tk::qt6::make_image(std::move(*decoded)));
+                        if (mainAppSurface_)
+                        {
+                            mainAppSurface_->update();
+                        }
+                        notify_secondary_media_ready_(cache_key, kind);
+                    });
+            });
         return;
     }
 
@@ -3503,11 +3549,9 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     }
                     if (mainApp_)
                         mainApp_->room_view()->notify_image_ready(cache_key);
-                    if (mainAppSurface_)
-                    {
-                        mainAppSurface_->relayout();
-                        mainAppSurface_->update();
-                    }
+                    // Coalesced: a burst of image completions folds into one
+                    // arrange per drain instead of a full relayout each.
+                    schedule_relayout_();
                     if (shortcode_popup_visible_() && shortcode_popup_surface_)
                         shortcode_popup_surface_->update();
                     notify_secondary_media_ready_(cache_key, kind);

@@ -4242,10 +4242,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                             {
                                 room_view_->notify_image_ready(cache_key);
                             }
-                            if (main_app_surface_)
-                            {
-                                main_app_surface_->relayout();
-                            }
+                            // Coalesced: a burst of media completions folds into
+                            // one arrange per drain instead of one full arrange
+                            // each — keeps the queue short for a pending echo.
+                            schedule_relayout_();
                             notify_secondary_media_ready_(cache_key, kind);
                         });
                     return;
@@ -4283,21 +4283,21 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     else
                     {
                         account_manager_.image_cache().store(cache_key, std::move(img));
-                        if (kind == MediaKind::Tile && room_view_)
-                        {
-                            room_view_->message_list()->invalidate_data();
-                        }
-                        else if ((kind == MediaKind::MediaImage ||
-                                  kind == MediaKind::Sticker ||
-                                  kind == MediaKind::Reaction) && room_view_)
+                        // Real row images re-measure only the rows that show
+                        // them (targeted, vs a blanket invalidate_data()). A map
+                        // Tile fills a fixed-size card and isn't a tracked row
+                        // source, so it needs no re-measure — the coalesced
+                        // relayout below repaints it (the old path did a full
+                        // invalidate_data() re-measure just to repaint it).
+                        if ((kind == MediaKind::MediaImage ||
+                             kind == MediaKind::Sticker ||
+                             kind == MediaKind::Reaction) && room_view_)
                         {
                             room_view_->notify_image_ready(cache_key);
                         }
                     }
-                    if (main_app_surface_)
-                    {
-                        main_app_surface_->relayout();
-                    }
+                    // Coalesced relayout (see anim path above).
+                    schedule_relayout_();
                     if (kind == MediaKind::MediaImage &&
                         shortcode_popup_visible_() && shortcode_popup_surface_)
                     {

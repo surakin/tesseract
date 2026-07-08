@@ -5370,27 +5370,63 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     switch (kind)
     {
     case MediaKind::RoomAvatar:
-        if (auto img = main_app_surface_->factory().decode_image(bytes))
-        {
-            account_manager_.thumbnail_cache().store(cache_key, std::move(img));
-        }
-        main_app_surface_->relayout();
-        break;
     case MediaKind::UserAvatar:
-        if (auto img = main_app_surface_->factory().decode_image(bytes))
+    {
+        if (account_manager_.thumbnail_cache().contains(cache_key))
         {
-            account_manager_.thumbnail_cache().store(cache_key, std::move(img));
+            return;
         }
-        if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
-            account_picker_surface_)
-        {
-            account_picker_surface_->relayout();
-        }
-        if (mention_popup_visible_() && mention_popup_surface_)
-        {
-            mention_popup_surface_->relayout();
-        }
-        break;
+        // Decode off the UI thread (WIC factory is free-threaded — same basis
+        // as the MediaImage path below). A burst of avatar fetches (e.g. after
+        // a room switch) would otherwise decode synchronously here and stall
+        // the UI event queue that a just-sent message's local echo waits in.
+        // Store + relayout hop back to the UI thread.
+        run_async_(
+            [this, cache_key, kind, invalidate_hwnd,
+             bytes = std::move(bytes)]() mutable
+            {
+                auto d = std::make_shared<DecodedImage>(
+                    decode_image_(bytes, 0, 0));
+                post_to_ui_(
+                    [this, cache_key, kind, invalidate_hwnd, d]() mutable
+                    {
+                        if (account_manager_.thumbnail_cache().contains(
+                                cache_key))
+                            return;
+                        // Avatars render static: use the still, or the first
+                        // frame of an animated source (matches the old
+                        // factory().decode_image, which returned one frame).
+                        std::unique_ptr<tk::Image> img;
+                        if (d->still)
+                            img = std::move(d->still);
+                        else if (!d->frames.empty())
+                            img = std::move(d->frames.front());
+                        if (!img)
+                            return;
+                        account_manager_.thumbnail_cache().store(
+                            cache_key, std::move(img));
+                        if (kind == MediaKind::RoomAvatar)
+                        {
+                            if (main_app_surface_)
+                                main_app_surface_->relayout();
+                        }
+                        else // UserAvatar
+                        {
+                            if (hAccountPicker_ &&
+                                IsWindowVisible(hAccountPicker_) &&
+                                account_picker_surface_)
+                                account_picker_surface_->relayout();
+                            if (mention_popup_visible_() &&
+                                mention_popup_surface_)
+                                mention_popup_surface_->relayout();
+                        }
+                        notify_secondary_media_ready_(cache_key, kind);
+                        if (invalidate_hwnd)
+                            InvalidateRect(invalidate_hwnd, nullptr, FALSE);
+                    });
+            });
+        return;
+    }
     case MediaKind::MediaImage:
     case MediaKind::MediaThumbnail:
     case MediaKind::Sticker:
@@ -5459,11 +5495,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (auto img = main_app_surface_->factory().decode_image(bytes))
         {
             account_manager_.image_cache().store(cache_key, std::move(img));
-            if (room_view_)
-            {
-                room_view_->message_list()->invalidate_data();
-            }
-            main_app_surface_->relayout();
+            // A map tile fills a fixed-size map card and isn't a tracked row
+            // media source, so it needs only a repaint — the shared
+            // InvalidateRect below re-draws it (LocationMapPanner::paint re-reads
+            // the tile from the cache). The old invalidate_data() + relayout()
+            // did a full O(timeline) re-measure just to repaint a fixed card.
         }
         break;
     }
