@@ -16,7 +16,11 @@
 #include <unistd.h>
 #include <vector>
 
-namespace
+// Named (not anonymous) so IconVariant has external linkage, matching
+// GtkSniTrayIcon::Impl which stores IconVariant members (avoids
+// -Wsubobject-linkage). Re-exposed via the using-directive below so call
+// sites stay unqualified.
+namespace sni_detail
 {
 
 // ── D-Bus interface definitions ────────────────────────────────────────────
@@ -285,7 +289,9 @@ GVariant* make_menu_item(gint32 id, const char* label)
     return g_variant_new("(ia{sv}av)", id, &props, &children);
 }
 
-} // namespace
+} // namespace sni_detail
+
+using namespace sni_detail;
 
 struct GtkSniTrayIcon::Impl
 {

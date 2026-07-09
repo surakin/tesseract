@@ -19,7 +19,11 @@
 namespace tesseract::views
 {
 
-namespace
+// Named (not anonymous) so the helper cell types have external linkage,
+// matching AboutSection::CacheSizeRow which stores a CacheValueCell* member
+// (avoids -Wsubobject-linkage). Re-exposed via the using-directive below so
+// call sites stay unqualified.
+namespace about_detail
 {
 
 constexpr float kAboutSectionRowH     = 22.0f;
@@ -205,7 +209,9 @@ private:
     bool cell_hovered_ = false;
 };
 
-} // namespace
+} // namespace about_detail
+
+using namespace about_detail;
 
 // ---------------------------------------------------------------------------
 // CacheSizeRow — HBox[ CacheNameCell | CacheValueCell(fill_main) ]
