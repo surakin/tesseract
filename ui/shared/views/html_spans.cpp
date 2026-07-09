@@ -636,6 +636,11 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
 
     std::string cur_text;
     bool first_block = true;
+    // Set right after a forced line break (a <br> or a <p> boundary) is
+    // appended to cur_text; cleared on the next real character. Lets the
+    // whitespace-collapse branch below drop collapsible whitespace at the
+    // start of a new line instead of turning it into a stray leading space.
+    bool just_broke_line = false;
 
     // Flush accumulated text as a span under the current formatting state.
     auto flush = [&]()
@@ -795,6 +800,25 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 continue;
             }
 
+            // <br> is also a void element — same reasoning as <img> above.
+            // Real-world formatted_body has usually been round-tripped
+            // through an HTML5 sanitizer (matrix-sdk-ui's Timeline sanitizer,
+            // or sdk/src/html_sanitize.rs's re-sanitization pass) by the time
+            // it reaches here, which re-serializes self-closed `<br />` as
+            // bare `<br>` — without this check, a bare <br> falls into the
+            // generic "opening tag" branch below (since !closing && !self_
+            // closing is true for it) and never emits the line break at all;
+            // it just pushes a redundant formatting frame that no </br> ever
+            // pops. Handling both forms here, before that dispatch, is what
+            // makes <br>-separated lines actually render as multiple lines.
+            if (!tag.closing && tag.name == "br")
+            {
+                flush();
+                cur_text += '\n';
+                just_broke_line = true;
+                continue;
+            }
+
             if (!tag.closing && !tag.self_closing)
             {
                 // Opening tag — compute new formatting state.
@@ -846,6 +870,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                     {
                         flush();
                         cur_text += '\n';
+                        just_broke_line = true;
                     }
                     first_block = false;
                     if (stack.size() < kMaxTagDepth)
@@ -874,6 +899,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             {
                 flush();
                 cur_text += '\n';
+                just_broke_line = true;
             }
             else
             {
@@ -882,6 +908,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 {
                     flush();
                     cur_text += '\n';
+                    just_broke_line = true;
                     flush();
                 }
                 else
@@ -903,6 +930,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         }
         else if (*p == '&')
         {
+            just_broke_line = false;
             decode_entity(p, end, cur_text);
         }
         else
@@ -911,12 +939,20 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
             {
                 // Collapse HTML whitespace (CSS white-space:normal): any run of
-                // whitespace in a text node becomes at most one space.
-                if (cur_text.empty() || cur_text.back() != ' ')
+                // whitespace in a text node becomes at most one space — unless
+                // we just emitted a forced line break (just_broke_line), in
+                // which case collapsible whitespace at the start of the new
+                // line vanishes entirely instead of becoming a stray leading
+                // space. Browsers do this too — it's why the same
+                // pretty-printed "<br />\n" markdown->HTML output renders
+                // cleanly in Element but was gaining a leading space per line
+                // here.
+                if (!just_broke_line && (cur_text.empty() || cur_text.back() != ' '))
                     cur_text += ' ';
             }
             else
             {
+                just_broke_line = false;
                 cur_text += c;
             }
         }
@@ -1066,6 +1102,10 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     std::size_t dropped_opens = 0;
 
     std::string cur_text;
+    // See the identical flag in html_to_spans() above — suppresses a stray
+    // leading space when collapsible whitespace immediately follows a
+    // forced line break.
+    bool just_broke_line = false;
 
     // flush() — emit accumulated text as a span into cur.spans.
     auto flush = [&]()
@@ -1284,6 +1324,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         {
             if (*p == '&')
             {
+                just_broke_line = false;
                 decode_entity(p, end, cur_text);
             }
             else
@@ -1291,11 +1332,14 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 const char c = *p++;
                 if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
                 {
-                    if (cur_text.empty() || cur_text.back() != ' ')
+                    // See html_to_spans()'s identical branch for why
+                    // just_broke_line also gates this collapse.
+                    if (!just_broke_line && (cur_text.empty() || cur_text.back() != ' '))
                         cur_text += ' ';
                 }
                 else
                 {
+                    just_broke_line = false;
                     cur_text += c;
                 }
             }
@@ -1549,6 +1593,22 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             continue;
         }
 
+        // <br> is also a void element — same reasoning as <img> above, and
+        // as html_to_spans()'s identical check. Real-world formatted_body
+        // has usually been round-tripped through an HTML5 sanitizer
+        // (matrix-sdk-ui's Timeline sanitizer, or sdk/src/html_sanitize.rs's
+        // re-sanitization pass) by the time it reaches here, which
+        // re-serializes self-closed `<br />` as bare `<br>` — without this
+        // check a bare <br> falls into the generic "opening tag" branch
+        // below and never emits the line break at all.
+        if (!tag.closing && tag.name == "br")
+        {
+            flush();
+            cur_text += '\n';
+            just_broke_line = true;
+            continue;
+        }
+
         if (!tag.closing && !tag.self_closing)
         {
             FmtState ns = stack.back();
@@ -1590,6 +1650,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                     {
                         flush();
                         cur_text += '\n';
+                        just_broke_line = true;
                     }
                     first_in_block = false;
                 }
@@ -1617,6 +1678,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         {
             flush();
             cur_text += '\n';
+            just_broke_line = true;
         }
         else
         {
@@ -1628,6 +1690,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                     cur_text += '\n';
                 else
                     cur_text += '\n'; // paragraph end newline
+                just_broke_line = true;
                 flush();
             }
             else

@@ -36,6 +36,16 @@ bool any_link(const std::vector<tk::TextSpan>& spans)
     return false;
 }
 
+// Concatenate the text of every span across every block — the decoded plain
+// text of a whole html_to_blocks() result.
+std::string joined_block_text(const std::vector<BodyBlock>& blocks)
+{
+    std::string out;
+    for (const auto& b : blocks)
+        out += joined_text(b.spans);
+    return out;
+}
+
 // The UTF-8 encoding of U+FFFD REPLACEMENT CHARACTER.
 constexpr const char* kReplacement = "\xEF\xBF\xBD";
 } // namespace
@@ -365,6 +375,44 @@ TEST_CASE("whitespace: raw newlines and spaces in text nodes collapse",
     // existing trailing-newline cleanup only if it is a '\n' — a trailing
     // space that collapsed from raw whitespace is left as-is (harmless).
     CHECK(joined_text(html_to_spans("hello ", false)) == "hello ");
+}
+
+TEST_CASE("br: self-closed and bare forms both produce a line break",
+          "[html_spans][br]")
+{
+    // Real formatted_body is round-tripped through an HTML5 sanitizer
+    // (matrix-sdk-ui's Timeline sanitizer, or sdk/src/html_sanitize.rs) by
+    // the time it reaches here, which re-serializes self-closed <br /> as
+    // bare <br> — both forms must produce an embedded '\n', not just the
+    // self-closed one Tesseract's own composer happens to send.
+    CHECK(joined_text(html_to_spans("A<br />B", false)) == "A\nB");
+    CHECK(joined_text(html_to_spans("A<br>B", false)) == "A\nB");
+    CHECK(joined_block_text(html_to_blocks("A<br />B", false)) == "A\nB");
+    CHECK(joined_block_text(html_to_blocks("A<br>B", false)) == "A\nB");
+
+    // The exact repro: three lines, pretty-printed with a literal '\n' right
+    // after each <br /> (this is what markdown_to_html actually emits). The
+    // collapsible whitespace at the start of each new line must vanish, not
+    // become a stray leading space in front of the next line's text.
+    const char* repro = "A<br />\nA<br />\nA";
+    CHECK(joined_text(html_to_spans(repro, false)) == "A\nA\nA");
+    CHECK(joined_block_text(html_to_blocks(repro, false)) == "A\nA\nA");
+
+    // Same repro, but as it actually arrives after HTML5 sanitization strips
+    // the self-closing slash.
+    const char* repro_bare = "A<br>\nA<br>\nA";
+    CHECK(joined_text(html_to_spans(repro_bare, false)) == "A\nA\nA");
+    CHECK(joined_block_text(html_to_blocks(repro_bare, false)) == "A\nA\nA");
+
+    // A bare <br> must not be mistaken for an opening tag awaiting a </br>
+    // that never arrives — text after it keeps default (unstyled) formatting
+    // rather than picking up some corrupted stack state.
+    auto spans = html_to_spans("A<br>B<br>C", false);
+    for (const auto& s : spans)
+    {
+        CHECK_FALSE(s.bold);
+        CHECK_FALSE(s.italic);
+    }
 }
 
 // --- Gap 2: formatting-stack balance under the depth cap ------------------

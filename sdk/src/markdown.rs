@@ -179,7 +179,13 @@ fn parse_block(text: &str) -> Option<String> {
                 break;
             }
         }
-        has_markdown |= pos != text.len();
+        // A trailing newline (or two, or a stray \r\n) at the very end of the
+        // message never gets its own HardBreak event — pulldown-cmark only
+        // emits breaks *between* lines, not after the last one — so `pos`
+        // legitimately stops short of `text.len()` for otherwise-plain text
+        // like "A\nA\nA\n". That's not markdown; only flag real leftover
+        // content the loop above didn't account for.
+        has_markdown |= !text[pos..].trim_end_matches(['\r', '\n']).is_empty();
     }
 
     if !has_markdown {
@@ -261,6 +267,19 @@ mod tests {
     #[test]
     fn plain_text_produces_no_html() {
         assert_eq!(to_html("hello world"), "");
+    }
+
+    #[test]
+    fn plain_multiline_produces_no_html() {
+        // Regression: a trailing newline used to make has_markdown spuriously
+        // true (pulldown-cmark never emits a break event for it), causing a
+        // plain multiline message to get an unnecessary <br />-based
+        // formatted_body instead of relying on plain `body` — unlike Element,
+        // which sends multiline text as plain body alone.
+        assert_eq!(to_html("A\nA\nA\n"), "");
+        assert_eq!(to_html("A\nA\nA"), "");
+        assert_eq!(to_html("A\r\nA\r\nA\r\n"), "");
+        assert_eq!(to_html("A\nA\nA\n\n"), "");
     }
 
     #[test]
