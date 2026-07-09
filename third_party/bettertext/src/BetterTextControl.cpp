@@ -1444,7 +1444,7 @@ LRESULT HandleKeyDown(ControlState* state, WPARAM key) {
 }
 
 LRESULT HandleChar(ControlState* state, WPARAM ch) {
-    if (state->read_only || CtrlDown()) {
+    if (state->read_only) {
         return 0;
     }
     if (ch == L'\b' || ch == 0x1b) {
@@ -1587,6 +1587,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
         return state ? HandleKeyDown(state, wparam) : 0;
     case WM_CHAR:
         return state ? HandleChar(state, wparam) : 0;
+    case WM_SYSCHAR:
+        if (state && CtrlDown()) {
+            return HandleChar(state, wparam);
+        }
+        return DefWindowProcW(hwnd, message, wparam, lparam);
     case WM_IME_STARTCOMPOSITION:
         if (state) {
             state->ime_composing = true;

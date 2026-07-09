@@ -139,6 +139,21 @@ void SendMessageWithShift(HWND hwnd, UINT message, WPARAM wparam) {
     SetKeyboardState(keyboard_state);
 }
 
+void SendMessageWithCtrl(HWND hwnd, UINT message, WPARAM wparam) {
+    BYTE keyboard_state[256] = {};
+    if (!GetKeyboardState(keyboard_state)) {
+        SendMessageW(hwnd, message, wparam, 0);
+        return;
+    }
+
+    const BYTE previous_ctrl = keyboard_state[VK_CONTROL];
+    keyboard_state[VK_CONTROL] |= 0x80;
+    SetKeyboardState(keyboard_state);
+    SendMessageW(hwnd, message, wparam, 0);
+    keyboard_state[VK_CONTROL] = previous_ctrl;
+    SetKeyboardState(keyboard_state);
+}
+
 void SendKeyWithShift(HWND hwnd, WPARAM key) {
     SendMessageWithShift(hwnd, WM_KEYDOWN, key);
 }
@@ -314,6 +329,23 @@ void SubmitOnEnterAllowsShiftNewline() {
     DestroyWindow(hwnd);
 }
 
+void AltGrTranslatedCharacterInsertsWithCtrlDown() {
+    HWND hwnd = CreateHiddenControl(GetModuleHandleW(nullptr));
+    Expect(hwnd != nullptr, "create hidden control for AltGr character test");
+    if (!hwnd) {
+        return;
+    }
+
+    SendMessageWithCtrl(hwnd, WM_CHAR, L'@');
+    SendMessageWithCtrl(hwnd, WM_SYSCHAR, L'@');
+
+    wchar_t buffer[16] = {};
+    BetterTextGetText(hwnd, buffer, 16);
+    Expect(std::wstring(buffer) == L"@@", "AltGr-translated printable character inserts while Ctrl is down");
+
+    DestroyWindow(hwnd);
+}
+
 void NotifyCallbackFiresOnChange() {
     HWND hwnd = CreateHiddenControl(GetModuleHandleW(nullptr));
     Expect(hwnd != nullptr, "create hidden control for notify test");
@@ -392,6 +424,7 @@ int main() {
     ShiftUpDownExtendsSelection();
     SingleLineSuppressesEnterAndFiresSubmit();
     SubmitOnEnterAllowsShiftNewline();
+    AltGrTranslatedCharacterInsertsWithCtrlDown();
     NotifyCallbackFiresOnChange();
     ContentHeightIsPositiveAndGrowsWithText();
     PasswordModeLeavesUnderlyingTextIntact();
