@@ -1,31 +1,75 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-08** (v0.8.14-unreleased). 1032 C++ + 324 Rust tests.
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-09** (v0.8.14-unreleased). 1032 C++ + 330 Rust tests.
 
-> **Faster local echo under background load (2026-07-08, v0.8.14-unreleased).**
-> A just-sent message's local echo could take seconds to appear when the app
-> was busy. The echo is a matrix-sdk timeline append delivered on the same
-> single, unprioritized UI-thread queue as media decodes and room-list
-> updates, and several of those tasks were individually heavy — so a burst of
-> them queued ahead of the echo pushed its render out by many frames (the app
-> stayed responsive; the message just didn't show up). Moved Qt avatar and
-> message-tile image decode off the UI thread (they were decoding
-> synchronously; Win32/macOS avatars too — GTK already decoded off-thread),
-> so a burst of fetches after a room switch no longer blocks the queue the
-> echo waits in. Coalesced the media/room relayout finalizers onto the shared
-> `schedule_relayout_` so N burst completions fold into one arrange instead of
-> N full arranges. Corrected map-tile handling: a `tile:z/x/y` fills a
-> fixed-size map card and isn't a tracked row media source, so an arriving
-> tile now triggers a plain repaint rather than a full O(timeline)
-> `invalidate_data()` re-measure (and the targeted `notify_image_ready()`,
-> which matches row sources, would have missed it entirely). Also routed
-> plain-text send through the mutation worker pool like every other composer
-> mutation (reply/edit/reaction) — it was the only send that ran
-> `markdown_to_html` + the FFI send inline on the UI thread, so under
-> store-lock contention it could freeze the composer; failures now surface via
-> the per-message ◷→⚠/retry indicator instead of a status-bar message. No new
-> FFI. Verified on **Qt6** and **GTK4**; Win32/macOS mirror the same pattern
-> (pending on-platform build).
+> **Faster local echo under background load (2026-07-09, v0.8.14-unreleased).**
+> A just-sent message's local echo could take seconds to appear in the timeline
+> when the app was busy, even though the same message showed up promptly in the
+> room list as the last-message preview. The root cause was **tokio async-worker
+> starvation in the SDK**, not the C++ UI queue: the room-list update rides a
+> lightweight, debounced `RoomInfoNotableUpdate` broadcast channel, but the
+> timeline echo is produced by matrix-sdk / matrix-sdk-ui background tasks that
+> spawn onto our shared runtime's async workers. Room switching ran the
+> CPU-bound `Timeline::init_focus` build (it collects cached events into an
+> `imbl::Vector`) *on* an async worker via `block_on(spawn(async {…build…}))`,
+> occupying that worker for the whole build and starving the send-queue /
+> diff-generation tasks that emit the echo. Fixed by running both `init_focus`
+> builds (`subscribe_room`, `subscribe_room_at`) on tokio's **blocking pool**
+> via `spawn_blocking` + a runtime `Handle`, leaving every async worker free for
+> the latency-sensitive diff tasks; blocking-pool threads inherit the widened
+> 8 MB stack the macOS deep-recursion guard needs. No FFI changes.
+>
+> An earlier attempt (`95b8ebd5`) misdiagnosed this as the echo waiting behind
+> heavy media/relayout tasks on the shared C++ `post_to_ui_` queue — but that
+> queue also carries the prompt room-list update, so it was never the
+> bottleneck. Those changes still landed as general perf wins and remain in the
+> tree: Qt/Win32/macOS avatar + Qt message-tile decode moved off the UI thread
+> (GTK already did); media/room relayout finalizers coalesced onto the shared
+> `schedule_relayout_`; map-tile arrivals trigger a plain repaint instead of a
+> full O(timeline) `invalidate_data()` re-measure; and plain-text send routed
+> through the mutation worker pool like every other composer mutation
+> (reply/edit/reaction), with failures surfacing via the per-message ◷→⚠/retry
+> indicator. Verified on **Qt6** and **GTK4**; Win32/macOS mirror the same
+> pattern (pending on-platform build).
+
+<!-- -->
+
+> **Custom MSC2545 emoji inline, end to end (2026-07-06, v0.8.14-unreleased).**
+> Picking a custom emoji from the picker or shortcode autocomplete inserts a
+> real inline image pill in the composer (mirroring the @mention pill mechanism
+> per platform — `QTextDocument::addResource`, `GtkTextChildAnchor`, an
+> `NSTextAttachment` subclass), sends proper `<img data-mx-emoticon>` HTML, and
+> renders that tag as an inline image in the read-only timeline. Inline images
+> reserve layout via U+FFFC (OBJECT REPLACEMENT CHARACTER) bound to each
+> backend's native inline-object mechanism (`IDWriteInlineObject` on Windows,
+> `PangoAttrShape` on GTK4, `QTextObjectInterface` on Qt6; macOS keeps the
+> placeholder-glyph approach), with `MessageListView::paint_span_images`
+> painting the resolved bitmap once decoded. The SDK re-sanitizes the raw event
+> JSON with `data-mx-emoticon` allow-listed (`sdk/src/html_sanitize.rs`), since
+> matrix-sdk-ui's Timeline sanitizer strips it, and `image_packs.rs` now uses
+> ruma's typed MSC2545 `PackInfo`/`MxcUri` (behind `unstable-msc2545`). Fixes
+> an XSS: the attacker-controlled shortcode was interpolated into `alt`/`title`
+> unescaped. As part of this work, the per-platform `tk::` backend
+> implementations (canvas/host/audio/video/screen-capture) moved out of the
+> cross-platform `tesseract_tk` library into each platform's own target
+> (genuinely shared GStreamer code stays in `ui/shared/tk/`).
+
+<!-- -->
+
+> **BetterText: D2D/DirectWrite text backend on Windows (2026-07-09, v0.8.14-unreleased).**
+> Vendored BetterText (`third_party/bettertext`), a from-scratch
+> D2D/DirectWrite Win32 text control, as a new backend for
+> `NativeTextField`/`NativeTextArea` (`BetterTextField`/`BetterTextArea` in
+> `host_win32.cpp`). Adds change/submit notifications, content-height query,
+> single-line mode, placeholder + password rendering, inline IME composition
+> with candidate-window positioning, an opt-in scrollbar, per-axis padding, and
+> real inline bitmap rendering — so custom emoji render inline in Windows
+> compose fields (via `ShellBase::ensure_media_image_`) instead of the old
+> plain-text fallback, with emoji glyphs routed through the bundled Noto Color
+> Emoji font (an `IBetterTextFontProvider` adapter over the existing
+> `build_emoji_fallback()` collection) to match the message list. Wired
+> alongside the existing EDIT/RichEdit-backed classes, which are not yet removed
+> pending full manual verification.
 
 <!-- -->
 

@@ -3,7 +3,155 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## v0.8.14 — unreleased
+
+### Summary
+
+- feat(windows): vendored BetterText (`third_party/bettertext`), a from-scratch D2D/DirectWrite Win32 text control
+- feat(image-viewer): copy the displayed image to the clipboard from the full-window lightbox, beside the save button
+- feat(composer): render custom MSC2545 emoji inline, end to end
+- perf(timeline): a just-sent message's local echo could take seconds to appear in the timeline under background load
+- build: enable CMake unity builds (`TESSERACT_UNITY_BUILD`, default ON)
+- perf(compose): first (superseded) attempt at the slow local echo
+- build: merged the four `linux-{gtk,qt6}-{debug,release}` CMake presets into `linux-debug`/`linux-release`
+- build: moved the per-platform `tk::` backend implementations out of the cross-platform `tesseract_tk` library into each platform's own target
+- docs(roadmap): rewrote ROADMAP.md as a single priority-ordered backlog (tiers by urgency)
+- docs: call out the Matrix Authentication Service + Sliding Sync server requirement in the README and landing page
+- fix(windows): route BetterText emoji glyphs through Tesseract's bundled Noto Color Emoji font
+- fix: multiline messages weren't rendering as multiline
+- fix: thread replies dropped `formatted_body`, silently losing MSC2545 custom emoji and @mention `matrix.to` links
+- fix: close the reaction/emoji picker on an outside click, and keep a message row's action buttons visible while the picker is open
+- fix: don't drop the room-switch anti-reflow gate on a same-room timeline reset (e.g. a pagination refill)
+- fix(build): wire up Windows test-target linking (UNICODE, D2D/D3D11/DWrite, `screen_capture_win32.cpp`, video capture)
+- fix(cpack): declare the `qt6-image-formats-plugins` runtime dependency for the .deb/.rpm packages
+- fix(ci): bundle Qt6 image-format plugins (WebP/TIFF/ICO, etc.) in AppImage builds
+
+### Details
+
+#### 2026-07-09
+
+- perf(timeline): a just-sent message's local echo could take seconds to
+  appear in the timeline under background load, even though the same message
+  showed up promptly in the room list. Root cause was tokio async-worker
+  starvation in the SDK: the CPU-bound `Timeline::init_focus` build (run on a
+  room switch, collecting cached events into an `imbl::Vector`) executed on an
+  async worker and starved the matrix-sdk send-queue / diff-generation tasks
+  that emit the echo. Both `init_focus` builds (`subscribe_room`,
+  `subscribe_room_at`) now run on tokio's blocking pool via `spawn_blocking` +
+  a runtime `Handle`, leaving every async worker free; blocking-pool threads
+  inherit the widened 8 MB stack the macOS deep-recursion guard needs. This
+  supersedes the 2026-07-08 attempt below, which misattributed the delay to the
+  C++ UI queue (that queue also carries the prompt room-list update, so it was
+  never the bottleneck) — those changes still land as general perf wins.
+- feat(windows): vendored BetterText (`third_party/bettertext`), a from-scratch
+  D2D/DirectWrite Win32 text control, as a new backend for
+  `NativeTextField`/`NativeTextArea`. Adds change/submit notifications,
+  content-height query, single-line mode, placeholder + password rendering,
+  inline IME composition with candidate-window positioning, opt-in scrollbar,
+  per-axis padding, and real inline bitmap rendering — so custom emoji now
+  render inline in Windows compose fields (via the existing mxc media-fetch
+  pipeline) instead of the old plain-text fallback. Wired alongside the
+  existing EDIT/RichEdit-backed classes (not yet removed, pending manual
+  verification).
+- fix(windows): route BetterText emoji glyphs through Tesseract's bundled Noto
+  Color Emoji font (via a `IBetterTextFontProvider` adapter over the existing
+  `build_emoji_fallback()` collection) so emoji in compose/search/settings
+  fields match the message list instead of the OS "Segoe UI Emoji" fallback.
+- fix: multiline messages weren't rendering as multiline — two independent
+  `<br>`/newline bugs. `markdown.rs`'s "has real formatting" detector counted a
+  trailing newline as formatting (so plain multiline text was needlessly sent
+  with a `formatted_body`, unlike Element); and `html_spans.cpp` only treated a
+  self-closed `<br />` as a line break, so the bare `<br>` the HTML5 sanitizer
+  re-serializes produced no break at all.
+- fix: thread replies dropped `formatted_body`, silently losing MSC2545 custom
+  emoji and @mention `matrix.to` links — `RoomView`'s thread-panel send path
+  forwarded an empty formatted body. All four shells (and the shared popout
+  base) now rebuild `(body, formatted_body)` from the live compose draft the
+  same way the non-thread `on_send` path does.
+- fix: close the reaction/emoji picker on an outside click, and keep a message
+  row's action buttons visible while the picker is open — the picker briefly
+  stealing input focus was clearing the row's hover state (Qt6/GTK4/macOS).
+  Also clears pending-reaction state on outside-click dismissal so the next
+  compose-bar emoji pick doesn't wrongly fire as a reaction. Windows was
+  already unaffected.
+- fix: don't drop the room-switch anti-reflow gate on a same-room timeline
+  reset (e.g. a pagination refill), which was revealing rows with unresolved
+  image/preview heights — the overlapping-messages-on-room-switch symptom.
+  `RoomSwitchGateKeeper::reset_within_switch()` now re-arms an active gate
+  instead of tearing it down.
+- build: enable CMake unity builds (`TESSERACT_UNITY_BUILD`, default ON),
+  cutting a clean full C++ rebuild from ~60s to ~40s. Required renaming ~150
+  colliding file-local constants and ~60 test-fixture symbols now sharing a
+  translation unit; also `fix(macos)` renamed colliding
+  `kPanelWidth`/`kPanelHeight` in EmojiPicker/StickerPicker and silenced
+  `-Wsubobject-linkage` in AboutSection/GtkSniTrayIcon.
+- fix(build): wire up Windows test-target linking (UNICODE, D2D/D3D11/DWrite,
+  `screen_capture_win32.cpp`, video capture).
+
+#### 2026-07-08
+
+- feat(image-viewer): copy the displayed image to the clipboard from the
+  full-window lightbox, beside the save button. New
+  `tk::Host::set_clipboard_image` with native backends for Qt6, GTK4, Win32
+  (WIC → CF_DIBV5) and macOS; a self-dismissing "Copied to clipboard" toast
+  confirms (a status-bar message would sit behind the scrim). The Qt backend
+  sets `x-kde-force-image-copy` so copies land in KDE Klipper even with "Ignore
+  images" enabled. Opt-in per overlay, so the video overlay is unaffected. 5
+  new tests.
+- perf(compose): first (superseded) attempt at the slow local echo — see the
+  2026-07-09 entry for the actual fix. These changes still landed as general
+  perf wins: Qt/Win32/macOS avatar + Qt message-tile image decode moved off the
+  UI thread; media/room relayout finalizers coalesced onto the shared
+  `schedule_relayout_`; an arriving map tile triggers a plain repaint instead
+  of a full O(timeline) `invalidate_data()` re-measure; and plain-text send
+  routed through the mutation worker pool like every other composer mutation,
+  with failures surfacing via the per-message ◷→⚠/retry indicator.
+- build: merged the four `linux-{gtk,qt6}-{debug,release}` CMake presets into
+  `linux-debug`/`linux-release`, which configure and build both the GTK4 and
+  Qt6 UIs in one pass (new `TESSERACT_UI=linux`); CI still passes
+  `-DTESSERACT_UI=qt6` to produce the single-backend .deb/.rpm/AppImage.
+- build: moved the per-platform `tk::` backend implementations (canvas/host/
+  audio/video/screen-capture) out of the cross-platform `tesseract_tk` library
+  into each platform's own target (genuinely shared GStreamer code stays);
+  follow-on include-path/ARC fixes for the Qt6, GTK4 and macOS backends.
+- docs(roadmap): rewrote ROADMAP.md as a single priority-ordered backlog
+  (tiers by urgency), dropping everything already shipped.
+
+#### 2026-07-07
+
+- fix(cpack): declare the `qt6-image-formats-plugins` runtime dependency for
+  the .deb/.rpm packages.
+
+#### 2026-07-06
+
+- feat(composer): render custom MSC2545 emoji inline, end to end. Picking a
+  custom emoji from the picker or shortcode autocomplete inserts a real inline
+  image pill in the composer (mirroring the @mention pill mechanism per
+  platform), sends proper `<img data-mx-emoticon>` HTML, and renders that tag
+  as an inline image in the read-only timeline. Windows keeps a plain-text
+  fallback (RichEdit's GDI object-drawing pass is incompatible with the
+  DXGI/D2D swap-chain rendering — later addressed by the BetterText backend).
+  Inline images use U+FFFC + each backend's native inline-object mechanism
+  (`IDWriteInlineObject`, `PangoAttrShape`, `QTextObjectInterface`). SDK
+  re-sanitizes the raw event JSON with `data-mx-emoticon` allow-listed
+  (matrix-sdk-ui's sanitizer strips it), and `image_packs.rs` now uses ruma's
+  typed MSC2545 `PackInfo`/`MxcUri`. Fixes an XSS: the attacker-controlled
+  shortcode was interpolated into `alt`/`title` unescaped.
+- fix(ci): bundle Qt6 image-format plugins (WebP/TIFF/ICO, etc.) in AppImage
+  builds — they were never installed on the AppImage runners, so those formats
+  silently failed to load despite working in .deb/.rpm.
+- docs: call out the Matrix Authentication Service + Sliding Sync server
+  requirement in the README and landing page.
+
 ## v0.8.13 — 2026-07-06
+
+### Summary
+
+- feat(room-settings): the Permissions tab warns and disables Accept when a staged change would lock the user out of editing permissions
+- fix(macos): linked `CoreMedia`/`CoreVideo` into `tesseract_tk`
+- fix(macos): linked `CoreAudio` explicitly into `tesseract_tk`
+
+### Details
 
 - feat(room-settings): the Permissions tab now warns and disables Accept
   if a staged change would lock the current user out of ever editing room
@@ -30,6 +178,59 @@ Tagged releases summarize all changes since the previous tag.
   failed without `TESSERACT_ENABLE_CALLS`.
 
 ## v0.8.12 — 2026-07-05
+
+### Summary
+
+- feat(room-settings): `RoomSettingsView` is now a tabbed layout (General / Media / Security & Privacy / Permissions) via `tk::SideTabView`
+- feat(location): clicking a location message's map now opens it on openstreetmap.org
+- feat(screenshare): the screen-share picker shows real per-source thumbnails (captured off the UI thread) instead of placeholder tiles
+- feat(room-settings): a wrench icon in the room-info panel opens a new full-panel view for editing the room's avatar
+- feat(timeline): an opt-in "Show room join/leave events" setting surfaces membership transitions in the timeline
+- feat(voice): a voice message that finishes playing on its own now automatically starts the next voice message from the same sender in the room, if any
+- feat(calls): MatrixRTC voice and video calls (MSC4143) via LiveKit, behind `TESSERACT_ENABLE_CALLS`
+- feat(compose): `/selfie` slash command opens a full-surface camera overlay with a countdown and mirrored live preview
+- feat(settings): audio/video device selection in Settings → Media
+- feat(rooms): bridged-room detection (MSC2346) suppresses the call button and threads panel for bridged rooms and shows a Bridged badge
+- feat(room-list): a phone icon now appears on rooms with an active call
+- feat(calls): the call button and incoming-call banner are hidden when the server doesn't advertise LiveKit/MSC4143 transport support
+- feat(spaces): `SpaceRootView`
+- feat(message-list): image/file/video captions are now linkified
+- build: set the global `CMAKE_CXX_STANDARD` to 20
+- perf(idle CPU): fixed the app burning CPU while idle with the window hidden, traced via `perf`
+- perf(animated images): an animated inline sticker/GIF no longer forces a full repaint of the entire visible UI on every frame
+- perf(inline video): revisiting a room with an inline/autoplay video resumes the paused player instead of rebuilding the hardware decode session
+- ci: added a manual per-platform installer build workflow
+- refactor(shell): centralised the user context menu into `ShellBase::build_user_menu_items_()` across all four platforms
+- Decoupled the in-flight-request spinner from the GIF animation timer
+- Unread-room prefetch now includes notifying (Count/Mention) rooms, not just quiet unreads
+- Refactored `MainAppWidget`'s widget tree: shared traversal/keyboard dispatch primitives
+- Unjoined-room space-preview fetches are now cancellable: navigating away from a space aborts still-in-flight summary requests
+- fix(rtc): starting an audio-only call was still signaling `m.call.intent="video"` to the room
+- fix(compose): `ComposeBar::set_enabled`/`enabled()` now correctly override `tk::Widget`'s virtual instead of silently hiding it
+- fix(macos): fixed a bitwise operation between mismatched types in the screen-capture code (`screen_capture_macos.mm`)
+- fix(sdk): `backfill_room_silent()` now drains its Timeline's diff-processing stream to quiescence before dropping it
+- fix(call): mute, video-mute, and screen-share state now survive switching the call overlay between Docked, Floating
+- fix(macos-x86_64): fixed a build error and two warnings specific to the x86_64 release build
+- fix(room-list): avatar changes for a room or DM counterpart now update the room list live
+- fix(unread): state events (e.g. another member's avatar change) can no longer produce a stray
+- fix(linux-qt): messages arriving no longer steal window focus on Wayland
+- fix(room-info): the room topic now updates immediately in both the info panel and the header on save
+- fix(ui): the close and edit-topic icon buttons in the room-info and user-profile panels are now actually visible
+- fix(selfie): `/selfie` is now a strict no-op when no camera is present or macOS permission was denied
+- fix(scroll): fixed two bugs letting pagination move what the user was looking at instead of only growing the scrollable range
+- fix(login): the Add Account cancel button now correctly returns to the main app on Win32/macOS
+- fix(room-list): edited messages show the real edited content in the last-message preview instead of the spec-mandated asterisk
+- fix(room-list): image/sticker last-message thumbnails now respect the media privacy setting instead of always fetching and rendering
+- fix(ui): fixed the pointer-move regression from the widget-routing refactor above
+- fix(windows): fixed a shutdown hang where a large in-flight JPEG decode could block shutdown for seconds
+- fix(deps): pinned `webrtc-sys` to `=0.3.35` in `Cargo.toml`
+- fix(pins): a room switch no longer clobbers a pin-state update that was computed just before the switch landed
+- fix(room-view): switching rooms now closes any open overflow menu or call popup instead of leaving it open over the new room
+- fix(gui): restored button hover across the whole app
+- fix(quick-switcher): recent-room names in the "Recent" strip are now correctly centred under their avatars
+- fix(list-view): a room switch keeps loading history until the timeline fills the viewport or the room's history is exhausted
+
+### Details
 
 - fix(rtc): starting an audio-only call was still signaling
   `m.call.intent="video"` to the room, so it showed up in the timeline (and
@@ -345,6 +546,13 @@ Tagged releases summarize all changes since the previous tag.
 
 ## v0.8.11 — 2026-06-30
 
+### Summary
+
+- fix(macos): fixed a stack-overflow crash on macOS when a thread's timeline reset while the message list was mid-layout
+- fix(media): media requests no longer appear to freeze in rooms that trigger many of them at once
+
+### Details
+
 - fix(macos): fixed a stack-overflow crash on macOS when a thread's timeline
   reset while the message list was mid-layout. `set_repaint_requester` was
   wired to `Surface::relayout()` — a full synchronous layout pass — instead of
@@ -389,6 +597,14 @@ Tagged releases summarize all changes since the previous tag.
 
 ## v0.8.10 — 2026-06-29
 
+### Summary
+
+- fix(verification): device-verification lookups now retry with exponential back-off instead of failing on the first miss
+- fix(message-list): thread chip and action-button hit rectangles are now cleared on every programmatic scroll
+- fix(macos): macOS app packages no longer require Homebrew for voice/video
+
+### Details
+
 - fix(verification): device verification now retries `get_verification_request`
   and `get_verification` lookups with exponential back-off (up to 7 attempts,
   starting at 50 ms, doubling each attempt) instead of failing on the first
@@ -418,6 +634,20 @@ Tagged releases summarize all changes since the previous tag.
   the source-built library in cross-compile jobs.
 
 ## v0.8.9 — 2026-06-24
+
+### Summary
+
+- feat(room-list): "Group unread rooms" toggle in Appearance settings (off by default)
+- feat(timeline): sender display names are tinted using a hash of the sender's Matrix user ID
+- feat(room-list): space rooms now show their **topic** as the one-line preview line in the Spaces section instead of a last-message snippet
+- fix(room-list): when "Group unread rooms" is on
+- fix(presence): the forbidden-presence set
+- fix(macos): fixed a dangling-reference crash on scroll-up in the timeline
+- fix(video): on macOS, byte-swap R and B when AVFoundation delivers RGBA instead of the requested BGRA format
+- fix(account-picker): the Win32 account-picker popup now scales correctly on HiDPI displays
+- fix(audio): fixed a crash on Qt6 during app shutdown
+
+### Details
 
 - feat(room-list): "Group unread rooms" toggle in Appearance settings (off by
   default). When enabled, a new **Unread** section appears above Favorites in
@@ -487,6 +717,30 @@ Tagged releases summarize all changes since the previous tag.
   guard in `fire_progress()` short-circuits the callback.
 
 ## v0.8.8 — 2026-06-22
+
+### Summary
+
+- feat: Forward message action
+- feat(windows): "Show App" entry added at the top of the Win32 system-tray context menu
+- feat(timeline): action pill buttons now show tooltip labels on hover
+- feat: `forward_event` is now fully async
+- perf: convert `fetch_source_bytes`, `fetch_url_bytes`, and `fetch_gif_bytes` to non-blocking async FFI
+- perf(media): user avatars are now fetched lazily for visible rows only
+- perf(media): backed-off retry requests are now scheduled at the lowest priority (`PRIO_BACKOFF = 0`)
+- refactor(gst): GStreamer init consolidated
+- i18n: 11 strings introduced since v0.8.7 are now wrapped in `tk::tr()` / `tk::trf()` and registered in `tesseract.pot` and `es.po`
+- perf(media): reqwest upgraded to 0.13 (was 0.12 for tile / URL-preview fetches, 0.13 via matrix-sdk for media)
+- perf(media): media prefetch is now gated to the last 50 events (`kMediaPrefetchWindow`) on room switch
+- fix(roomlist): spaces now propagate `unread_count` from their children in addition to notification and highlight counts
+- fix: five code-review findings addressed
+- fix(timeline): `m.file` events now display the MSC2530 user caption below the file card
+- fix(timeline): geometry maps (`image_geom_`, `video_geom_`, etc.) were unconditionally cleared at the start of every paint
+- fix(timeline): sender avatars could be evicted by the 30-minute thumbnail LRU TTL while the app sat idle
+- fix(timeline): clear stale hit-test geometry on room switch even mid-animation, so clicks no longer open the wrong room's media
+- fix(compose): typing text between two semicolons with no matching emoji shortcode no longer causes infinite recursion in the shortcode-popup logic
+- fix(rooms): room title changes now trigger a live room-list update
+
+### Details
 
 - feat: Forward message action. A "Forward message" item now appears in the ⋯
   more menu for any non-redacted, non-pending event (including messages from
@@ -631,6 +885,15 @@ Tagged releases summarize all changes since the previous tag.
 
 ## v0.8.7 — 2026-06-18
 
+### Summary
+
+- feat(timeline): quoted/reply blocks now show a pointing-hand cursor on hover
+- fix(macos): notifications for the active room are no longer suppressed when the app window is hidden
+- fix(packaging): Arch PKGBUILD no longer fails with "cannot stat" errors. The manual `mv`/`sed` rename steps were redundant
+- fix(privacy): remove machine hostname from MAS device display name and HTTP User-Agent
+
+### Details
+
 - fix(macos): notifications for the active room are no longer suppressed when
   the app window is hidden. The active-room suppression guard now requires the
   window to be visible (`winVisible && winFocused`); a hidden window could
@@ -656,6 +919,15 @@ Tagged releases summarize all changes since the previous tag.
 ## v0.8.6 — 2026-06-17
 
 Changes since v0.8.5:
+
+### Summary
+
+- feat(macos): the macOS dock icon shows the total notification count as a red badge aggregated across all accounts
+- feat(win32): Win32 body font raised by 1 pt above the OS system font size
+- chore(packaging): Debian changelog, Arch `PKGBUILD`
+- fix(linux): drop `libavutil` / `libavutil-dev` dependency
+
+### Details
 
 - feat(macos): macOS dock icon now shows the total notification count as a red
   badge (aggregated across all signed-in accounts), kept in sync via the existing
@@ -686,7 +958,33 @@ Changes since v0.8.5:
 
 Changes since v0.8.4:
 
-### 2026-06-17
+### Summary
+
+- feat: automatic GitHub release update checker
+- feat(emoji): render Unicode emoji in message bodies at ~125% body font size (`FontRole::InlineEmoji`, `(base+1)×5/4` pt, minimum 6 pt)
+- feat(fonts): inherit the system body font size on all four backends
+- feat(logging): `sdk_log_level` key in `app_settings.json` controls the Rust tracing subscriber level (default `warn`)
+- feat(sdk): upgrade matrix-rust-sdk 0.17 → 0.18
+- perf(spaces): convert `get_space_child_summary` and `get_server_info` from blocking `block_on` to async FFI
+- i18n: QR-code grant flow and upload-limit strings added to the translation table (`tesseract.pot`)
+- refactor(macos): 144 of 159 `using`-block bridge entries replaced with explicit `MacShell` C++ API declarations
+- fix(spaces): unjoined-room summaries are now fetched proactively on space entry rather than waiting for the room list to scroll a row into view
+- fix(spaces): room-list scroll position and selection are restored when returning from a space drill-in
+- fix(spaces): eliminated UI-thread `SH_FFI` lock acquisitions that blocked on worker `block_on` calls and caused visible freezes
+- fix: crash and hide-instead-of-quit when quitting with a pop-out window open
+- fix(win32): fixed slower-than-real-time video playback and a crash-on-paint race in the Win32 video renderer
+- fix(compose): pasting rich text from the clipboard into the composer on Qt6 now inserts plain text only
+- fix(compose): composer input font now matches message body text (`FontRole::Body`, i.e. system base size) instead of a hardcoded pixel size
+- fix: add `FontRole::Caption` for section headers and reply preview text, and correct the `font_role_pt` offsets back to their legacy values
+- fix(gtk4): emoji and sticker pickers now initialise at widget construction so they are ready on the first key-press rather than on first explicit open
+- fix(qt6): font cache index-mapping assertion eliminated
+- fix: hyperlinks inside block-structured messages (headings, lists, blockquotes) are now clickable; the block parser was dropping `href` attributes
+- fix: code-block background left-alignment on Qt6; leading whitespace stripped in `html_to_blocks` so backgrounds start at the correct indent
+- fix: edit-banner height in `ComposeBar` reduced to a single text row
+
+### Details
+
+#### 2026-06-17
 
 - perf(spaces): convert `get_space_child_summary` and `get_server_info` network
   calls from blocking Rust `block_on` (which pins a C++ worker thread for the
@@ -698,7 +996,7 @@ Changes since v0.8.4:
   threads; it now only serves fast synchronous SQLite reads. `RoomSummary::from_json`
   added to deserialise callback payloads. 870 C++ tests.
 
-### 2026-06-16
+#### 2026-06-16
 
 - fix(spaces): unjoined-room summaries are now fetched proactively on space
   entry rather than waiting for the room list to scroll a row into view.
@@ -779,7 +1077,32 @@ Changes since v0.8.4:
 
 Changes since v0.8.3:
 
-### 2026-06-15
+### Summary
+
+- feat(spaces): persist MSC3266 space-child summaries to `app_cache.db` for instant display
+- feat(msc4108): gate the "Sign in with QR code" UI on server capability
+- feat(profile): implement MSC4133 extended user profiles
+- feat(sdk): enable HTTP/2 multiplexing for media downloads
+- feat(spaces): unjoined rooms section + `RoomPreviewView` across all four shells
+- feat(sdk): extend `InFlightGuard` RAII coverage to all non-sync HTTP calls
+- feat(statusbar): animate the in-flight indicator as a spinning ring instead of a static dot
+- feat(debug): label every `InFlightGuard` with a human-readable operation name, shown in the status-bar spinner tooltip
+- feat(login): MSC4108 QR-code login
+- feat(markdown): block-level rendering in sent and received messages
+- feat(timeline): block scroll and show a deferred scrim + spinner during historical event navigation
+- feat(media): persist exponential backoff state for failed media fetches across sessions
+- feat(tk): make `CheckButton` text `FontRole` configurable
+- i18n: wrap all previously untranslated user-facing strings and regenerate the `.pot` template
+- fix(pickers): emoji shortcode tooltip no longer vanishes immediately on hover
+- fix(rooms): lazy-load unjoined space-child avatars from paint instead of eagerly on space navigation
+- fix(rooms): replace the all-at-once MSC3266 batch fetch with lazy per-room summary fetching and per-room exponential backoff
+- fix(preview): `RoomPreviewView` now hides the compose-bar native-text overlay while open
+- fix(timeline): snap to the live bottom when returning from a historical view
+- fix(popout): restore full secondary-window functionality
+
+### Details
+
+#### 2026-06-15
 
 - feat(spaces): persist MSC3266 space-child summaries to `app_cache.db` for
   instant display. Fetched summaries are written to the per-account SQLite
@@ -797,7 +1120,7 @@ Changes since v0.8.3:
   clearing the hovered index before the tooltip timer could fire; replaced
   with a stable tracked index so tooltips appear and persist correctly.
 
-### 2026-06-14
+#### 2026-06-14
 
 - feat(profile): implement MSC4133 extended user profiles. Three new profile
   fields are exposed in the account settings panel and the user-profile info
@@ -881,7 +1204,7 @@ Changes since v0.8.3:
   translatable entries). Affected surfaces include the shared views, all four
   platform shells, and the settings / login / search / compose areas.
 
-### 2026-06-13
+#### 2026-06-13
 
 - feat(markdown): block-level rendering in sent and received messages. Headings
   (`#` through `######`), unordered and ordered lists (including nested),
@@ -923,7 +1246,52 @@ Changes since v0.8.3:
 
 Changes since v0.8.0:
 
-### 2026-06-13
+### Summary
+
+- feat(search): in-room find-in-conversation search bar
+- feat(ui): replace per-platform jump-to-date dialogs with a single shared `DatePickerView`
+- feat(search): show on-disk search index size in Settings
+- feat(search): show live index stats under the Settings toggle
+- feat(search): full-text message search across all rooms, including encrypted
+- feat(switcher): start a DM by mxid from the quick switcher
+- feat(matrix-uri): navigate to the event from a `matrix.to` / `matrix:` permalink
+- feat(media): prioritize visible-row downloads and never freeze on stuck fetches
+- feat(room-list): highlight rooms with unread messages but no notification
+- refactor(search): search index moved to its own `search_index.db`
+- perf(timeline): batch FFI events to eliminate per-message redraws during pagination
+- perf(room-switch): perceived-latency pass on opening a room
+- perf(room-switch): warm timelines + bounded subscriptions
+- perf(room-switch): consolidate the four shells' duplicated subscribe/paginate workers into one shared `ShellBase::start_room_subscription_`
+- refactor/fix(ffi): eliminate the room-switch UI freeze
+- refactor(shell): hoist account restore, login/logout, account-switch, tray aggregation and sync-error handling into shared `ShellBase` methods
+- refactor: extract shared widgets/helpers from the toolkit and views
+- refactor(sdk): collapse the eight near-identical media-send paths and simplify `TimelineEvent` construction
+- refactor(client): fold the 36 event-bridge preambles into a `with_handler` wrapper and parse SDK JSON with `nlohmann`
+- refactor(views,app): begin decomposing the `MessageListView` (7219 → 6120 LOC) and `ShellBase` god-objects
+- chore: remove dead code across every module and clear the auto-fixable clippy backlog
+- fix(html): collapse raw whitespace in `formatted_body` text nodes
+- fix(ui): reaction chip key text changed from `FontRole::Title` to `FontRole::Body` so long text reaction keys aren't bold
+- fix(search): search card no longer shrinks while the user is typing
+- fix(win32): pump the STA message queue while joining worker threads on shutdown
+- fix(search): search results now appear immediately
+- fix(ui): remove `TextHAlign::Center` from unbounded empty-state layouts on Qt
+- fix(search): Settings toggle now correctly relayouts after toggling the search index
+- fix(search): address nine code-review findings
+- fix(macos): build fixed after search additions
+- fix(voice): play voice / audio messages on a single click
+- fix(multi-window): Ctrl+click on the account picker re-ran the primary window's full startup in the spawned window
+- fix(shell): route the Windows and macOS shells through the shared `ShellBase` timeline/message handlers
+- fix(shell): close a multi-window/logout use-after-free
+- fix(win): unsubscribe the previous account's open room on account switch (was leaking the subscription, so the old account kept streaming)
+- fix(client): serialize all `Client` FFI access under `ffi_mu`
+- fix(sdk): switch to `parking_lot` mutexes/rwlocks so a lock panic can't poison the lock and cascade across the cxx FFI boundary
+- fix(client): survive a wrong-typed field in `app_settings.json` instead of crashing at startup
+- fix(views): clamp invalid numeric HTML entities to U+FFFD and fix a formatting-stack underflow under the tag-depth cap
+- fix(win): persist the save-time DPI in `WindowGeometry` and rescale window geometry on restore
+
+### Details
+
+#### 2026-06-13
 
 - feat(search): in-room find-in-conversation search bar. **Ctrl+F** (Win32 /
   Qt6 / GTK4) and **⌘F** (macOS) opens a `RoomSearchBar` anchored below the
@@ -1020,7 +1388,7 @@ Changes since v0.8.0:
   room display names resolved C++-side from the cached room list.
 - fix(macos): build fixed after search additions.
 
-### 2026-06-11
+#### 2026-06-11
 
 - feat(search): full-text message search across all rooms, including encrypted.
   A global search overlay (**Ctrl+Shift+F** / **⌘⇧F**) backed by a local SQLite
@@ -1073,7 +1441,7 @@ Changes since v0.8.0:
   code; wired in all four shells (Qt6, GTK4, Win32, macOS) and verified on each.
   813 C++ + 226 Rust tests.
 
-### 2026-06-10
+#### 2026-06-10
 
 - feat(switcher): start a DM by mxid from the quick switcher. Typing a leading
   `@` flips the Ctrl/⌘+K switcher into a user-search mode that live-filters a
@@ -1144,7 +1512,7 @@ Changes since v0.8.0:
   stuck — to include the quiet-unread state. Adds 2 Rust + 5 C++ tests
   (220 → 222 Rust, 751 → 756 C++).
 
-### 2026-06-09
+#### 2026-06-09
 
 Pre-launch hardening, cross-platform deduplication, and the start of a
 god-object decomposition — driven by a full-tree code review
@@ -1224,7 +1592,17 @@ ctest) and 204 → 208 Rust. Remaining decomposition work is tracked in
 
 Changes since v0.1.10:
 
-### 2026-06-07
+### Summary
+
+- feat(ui): replace Unicode glyphs and hand-drawn shapes with a unified Lucide SVG icon set throughout the shared UI layer
+- feat(links): clicking a `matrix.to` or `matrix:` URI in a message body now navigates within the app instead of opening the browser (MSC2312)
+- build: `icons.h` is regenerated automatically at build time whenever a source SVG changes
+- fix(windows): premultiply alpha in `create_image_rgba` before uploading to Direct2D
+- fix(macos): correct the macOS URI-scheme handler broken on the x86_64 build by the matrix.to commit
+
+### Details
+
+#### 2026-06-07
 
 - feat(ui): replace Unicode glyphs and hand-drawn shapes with a unified
   Lucide SVG icon set throughout the shared UI layer. 16 monochrome Lucide
@@ -1280,7 +1658,15 @@ Changes since v0.1.10:
 
 Changes since v0.1.9:
 
-### 2026-06-07
+### Summary
+
+- fix(ui): when `restore_session()` fails at startup (e.g. no network)
+- fix(ui): when sync loses connectivity at runtime (`sync_offline` / `sync_error` callback context)
+- fix(build/macos): the macOS DMG no longer ships a broken code signature
+
+### Details
+
+#### 2026-06-07
 
 - fix(ui): when `restore_session()` fails at startup (e.g. no network), the login
   view now shows a modal `AlertDialog` overlay with title "Connection Error" and
@@ -1314,7 +1700,45 @@ Changes since v0.1.9:
 
 Changes since v0.1.8:
 
-### 2026-06-06
+### Summary
+
+- feat(ui): the room list auto-scrolls the most-recent unread room into view when new messages arrive
+- feat(ui): code blocks and inline code in message bodies now render on a tinted background
+- feat(ui): message rows show the event timestamp (HH:MM) tucked under the sender avatar
+- feat(ui): room list
+- feat(ui): room list
+- feat(shell): room navigation history
+- feat(gif): the GIF preview strip animates via WebP/GIF frames decoded off-thread
+- feat(gif): when sending a GIF from search results
+- feat(ux): the status bar briefly shows an error when a file drop is refused as unreadable or over the upload limit
+- feat(gif): `/gif <query>` slash command opens an inline GIF search strip (Klipy SDK) above the composer
+- feat(gif): the GIF picker strip animates previews in two stages — a static JPEG thumbnail, then the animated WebP/GIF
+- feat(media): MSC4278 `Private` mode now exempts the local user's own uploads from public-room media suppression (`Off` still blocks everything)
+- change(ui): the hover-action pill no longer has an inline delete/redact button. A new `⋯` overflow button opens a `PopupMenu`
+- perf(ui): incoming messages no longer re-measure or re-shape the whole room
+- perf(ui): `ListView` gained targeted (incremental) height invalidation
+- perf(ui): per-message relayout is coalesced
+- change(ui): default message-grouping window raised from 60s to 300s (`Settings::message_group_interval_s`)
+- perf(media): inline images (MediaImage / MediaThumbnail) are now decoded off the UI thread on Qt6, Win32, and macOS
+- refactor(async): text sends, reactions, pagination, room join/leave/invite- accept
+- fix(ui): enlarge the section-header expand/contract chevron from `FontRole::Small` to `FontRole::UiSemibold` for legibility
+- fix(shell): clicking a space in the room list now drills into it instead of also selecting it as the active room
+- fix(gtk): room-list Ctrl+click now opens the room in a new tab
+- fix(shell): rooms visited during rapid back/forward navigation could get permanently stuck showing no content
+- fix(video/qt6): reset the `QMediaPlayer` source device between clips so Qt's FFmpeg backend rebuilds the demuxer
+- fix(video/win32): fix diagonal shearing on hardware-decoded videos
+- fix(gif): room-list last-message preview now shows "sent a GIF" for `fi.mau.gif` vendor-hint events from bridges
+- fix(macos): accounts that never triggered a token refresh kept the old per-user Keychain item indefinitely
+- fix(media): fetch the room avatar when `set_room()` is called directly, not only on room-list paints
+- fix(views): drag-and-drop into pop-out room windows now works on all four platforms
+- fix(views): pressing Ctrl/⌘+K from a focused pop-out brings the main window forward before opening the quick switcher
+- fix(shell): pop-out windows are now torn down before their `ShellBase` registry entries on shutdown
+- fix(media): animated GIFs and stickers evicted from `anim_cache_` are re-fetched when they scroll back into view
+- fix(win32): the compose bar no longer loses keyboard focus on window re-activation
+
+### Details
+
+#### 2026-06-06
 
 - feat(ui): the room list auto-scrolls the most-recent unread room into view
   when new messages arrive, so an unread room is never hidden below the fold.
@@ -1340,7 +1764,7 @@ Changes since v0.1.8:
   inside the 28 pt header row. No HiDPI scaling bug — both the CoreText and
   DirectWrite backends handle DPI correctly at draw time.
 
-### 2026-06-05
+#### 2026-06-05
 
 - perf(ui): incoming messages no longer re-measure or re-shape the whole room.
   `MessageListView` body text layouts are cached and shared across measure,
@@ -1451,7 +1875,7 @@ Changes since v0.1.8:
   triggered by room-list paints; a cache miss at `set_room` time now fires the
   fetch.
 
-### 2026-06-04
+#### 2026-06-04
 
 - fix(views): drag-and-drop into pop-out room windows now works on all four
   platforms; a new shared `dispatch_file_drop()` in `views/media_drop` owns the
@@ -1505,7 +1929,46 @@ Changes since v0.1.8:
 
 Changes since v0.1.7:
 
-### 2026-06-03
+### Summary
+
+- feat(views): pop-out room windows are now reachable and work end-to-end on all four platforms
+- feat(views): targeting a room already open in a pop-out raises that pop-out instead of re-opening it in the main window
+- feat(views): Ctrl/⌘+K quick switcher
+- feat(ui): the room-info panel topic sizes to its wrapped line count (up to 5 lines) instead of a fixed slot
+- feat(ui): room tags
+- feat(ui): show worker-pool queue depth in the in-flight indicator tooltip ("fetch: N queued · send: M queued") across all four shells
+- feat(ui): clicking the system-tray icon navigates to the first unread room
+- feat(ui): use adjacent zoom-level tiles as placeholders during map zoom
+- perf(media): media downloads are now non-blocking
+- refactor(sdk): use the high-level `NotificationSettings` API for per-room notification mode instead of hand-rolled push-rule requests
+- perf(ui): fetch room-list avatars lazily on first paint
+- build: add Arch-style security hardening as C++ defaults, gated behind `TESSERACT_ENABLE_HARDENING`
+- refactor: deduplicate the tray badge constants and the Linux portal notification-ID sanitizer across the four shells
+- i18n: add an autogenerated Spanish translation placeholder
+- fix(views): pop-out room info panels now load their member list (and the topic-edit / leave-room / ignore-user actions work)
+- fix(views): animated inline media and pop-out emoji/sticker pickers now advance frames without requiring mouse motion
+- fix(mentions): wire @mention avatars and a live client across all shells, including pop-out windows
+- fix(timeline): preserve the scroll position by the row under the cursor instead of by total content-height delta
+- fix(video): honor the `fi.mau.loop` / `fi.mau.gif` / `fi.mau.no_audio` hints on Windows and macOS
+- fix(video): repack row-padded Media Foundation frames on Windows
+- fix(views): keep the emoji shortcode popup's Up/Down navigation alive across keystrokes
+- fix(sdk): detect stalled media downloads faster via HTTP-layer timeouts
+- fix(ui): count pending media downloads in the in-flight status-bar tooltip
+- fix(ui): order the thread list newest-at-bottom to match the message timeline
+- fix(media): back off re-requesting media that fails to fetch
+- fix(build): drop the `u8` prefix on the in-flight-dot label literals
+- fix(build): silence release-build `-Wformat-truncation` / `-Wstringop-overflow` warnings exposed by the hardening flags
+- fix(ui): left-align the space nav-bar title and elide it with an ellipsis
+- fix(media): bound every media fetch with a per-request timeout so a stalled request can't pin the in-flight indicator or a worker thread
+- fix(threads): backfill the full thread list on every panel open
+- fix(ui): center emojis vertically in emoji-picker cells on Qt6
+- fix(win32): make all tooltips visible on Windows 11
+- fix(ui): video frames were invisible on Windows during playback
+- fix(ui): compose-bar auto-height on Windows
+
+### Details
+
+#### 2026-06-03
 
 - feat(views): pop-out room windows are now reachable and work end-to-end on
   all four platforms. Ctrl/⌘+click a room tab to pop it out into its own native
@@ -1602,7 +2065,7 @@ Changes since v0.1.7:
   "media: N loading · fetch: N queued · send: N queued", refreshed on every
   `pending_media_` change across all four shells.
 
-### 2026-06-02
+#### 2026-06-02
 
 - perf(media): media downloads are now non-blocking. Previously every fetch
   (avatars, thumbnails, full images, stickers/emoji, map tiles, URL previews,
@@ -1692,7 +2155,7 @@ Changes since v0.1.7:
   constrained to the sidebar width right of the avatar, so a long space name is
   clipped instead of overflowing under the avatar and back button.
 
-### 2026-06-01
+#### 2026-06-01
 
 - fix(media): bound every media fetch with a per-request timeout so a stalled
   or endlessly-retrying request can't pin the in-flight indicator (or a worker
@@ -1721,6 +2184,42 @@ Changes since v0.1.7:
 ## v0.1.7 — 2026-06-01
 
 Changes since v0.1.6:
+
+### Summary
+
+- feat(pins): cross-platform Matrix pinned events
+- feat(messagelist): hover action pill
+- feat(win32): windowless RichEdit compose bar
+- feat(win32): route emoji to Noto Color Emoji via `IProvideFontInfo`
+- feat(session): restore all open room tabs across restarts
+- feat(compose): add `/spoiler [(reason)] <text>` slash command (MSC2010)
+- feat(compose): add `/slap <target>` slash command
+- feat(compose): `/` in the composer opens a filtered slash-command popup
+- feat(threads): cross-platform Matrix threads UI on top of the MSC3440 SDK/FFI infrastructure landed in `9d99d2e`
+- feat(encryption): guided encryption-setup overlay
+- feat(settings): cache-stats tooltips in About settings
+- feat(compose): wheel-event navigation in autocomplete popups
+- feat(status): in-flight HTTP request dot indicator
+- feat(i18n): extract user-visible strings for translation
+- perf(sdk): suspend the DM presence polling loop while the window is hidden
+- fix(win32): full HiDPI fix
+- fix(win32): honour dark mode in emoji/sticker pickers and Win32RichEditArea
+- fix(win32): scale status bar height with screen DPI
+- fix(win32): drop `needs_repaint_` flag
+- fix(win32): intercept Ctrl+V image paste before `TxSendMessage`
+- fix: per-account recovery/verification banner state
+- fix: account picker positioned at top of window on macOS + verification state access
+- fix: clicking the compose bar card focuses the text input
+- fix(account-picker): prefetch all account avatars on open and repaint on arrival
+- fix(oauth): drop UI platform suffix from device display name
+- fix(timeline): serialize receipt-refresh into the streaming task
+- fix(roomview): clear pinned banner state in `clear_room()`
+- fix(settings): refresh sidebar strip after self-avatar change
+- fix: place caret at end of compose field after accepting a slash command from the popup
+- fix(message-cache): invalidate a room's cached row snapshot when a timeline event arrives for it while it's not selected
+- fix(ui): composer Home / End and scroll-to-caret on Windows
+
+### Details
 
 - feat(pins): cross-platform Matrix pinned events — a `PinnedBanner` widget sits above
   the message list and cycles through `m.room.pinned_events`; clicking the banner body
@@ -1834,6 +2333,33 @@ Changes since v0.1.6:
 
 Changes since v0.1.5:
 
+### Summary
+
+- feat(invites): room invitations section with accept/decline/block
+- feat(settings): Privacy tab with presence toggle and room key export/import
+- feat(settings): storage size display and cache-clear in About tab
+- feat(room-list): room-list previews populated from background backfill
+- feat(compose): SVG icons and tooltips in ComposeBar
+- perf(tk/qt6): pre-shaped `QStaticText` for single-line draws
+- perf(room-list): `TextLayout` objects cached in the room-list adapter
+- perf(message-list): trigger back-pagination 1 viewport before reaching the top
+- perf(list-view): skip `paint_row()` for rows outside the repaint clip
+- perf(settings): suppress repaints when hover stays on the same tab
+- fix(login): homeserver discovery was not triggered for the pre-populated default URL
+- fix(sdk): enter tokio runtime context in blocking FFI methods
+- fix(settings): preserve state store in `clear_caches` to keep room list
+- fix(room-list): `on_scroll` incorrectly fired on every backfill `set_rooms` call
+- fix(room-list): rooms with unknown last-activity timestamp were misclassified as inactive
+- fix(receipts): read-receipt chips (avatar + name) were missing after member list fetch
+- fix(backfill): `on_rooms_updated` called O(n) times instead of O(1)
+- fix(image-packs): HTTP fallback results were not cached
+- fix(message-list): scrollbar thumb drag blocked by text-selection hit-test
+- fix(tk): single-line text spilled across hard line breaks on all backends
+- fix(macos): animated room-list previews stopped advancing without mouse movement
+- fix(mingw): cross-compile Win32 from Linux via MinGW-w64
+
+### Details
+
 - feat(invites): room invitations section with accept/decline/block — a new "Invitations" section appears at the top of the room list for pending Matrix room invites (DM and group). Clicking an invite opens an `InviteCard` overlay in the chat panel showing the inviter's avatar, room name, and details, with Accept and Decline buttons; DM invites also offer a Block action (decline + ignore the sender). Accepting a DM invite automatically persists `m.direct` so the room lands in the DM section rather than the general room list. The full stack: `InviteInfo` + `accept/decline/block_invite` FFI (Rust), `on_invites_updated` callback marshalled through `EventHandlerBase`, per-account invite storage and avatar prefetch in `ShellBase`, `InviteCard` widget and `kSecInvites` section (index 0) in `RoomListView`, slot in `MainAppWidget`; wired across all four shells. 478 C++ tests, 150 Rust tests.
 - feat(settings): Privacy tab with presence toggle and room key export/import — a new "Privacy" settings tab with two groups. "Presence" has a single checkbox "Send and receive presence status" that controls both outgoing publishing (`PresenceTracker`) and the Rust-side 30 s polling loop (via an `Arc<AtomicBool>` flag on `ClientFfi`); the setting survives app restarts via a new `send_presence` field in `app_settings.json`. "Encryption" has two buttons: "Export room keys…" and "Import room keys…" which orchestrate a passphrase-prompt → file-picker → async SDK call chain; the high-level `Encryption::export_room_keys` / `import_room_keys` APIs from `matrix-sdk` handle the Megolm key file format and encryption. All four shells provide native dialogs: `QInputDialog`/`QFileDialog` (Qt6), `GtkFileChooserNative`/`gtk_dialog_new_with_buttons` (GTK4), in-memory `DLGTEMPLATE`/`OPENFILENAMEW` (Win32), `NSAlert+NSSecureTextField`/`NSSavePanel` (macOS). 476 C++ tests, 150 Rust tests.
 - feat(settings): storage size display and cache-clear in About tab — the About settings page now shows a "Storage" section at the bottom-left (natural width, not page-spanning) with "Local cache" and "SDK store" size rows computed asynchronously when settings opens, and a destructive "Clear all caches" button (with confirm dialog) that wipes the media disk cache, `waveforms.db`, and the matrix-sdk event store then refreshes the displayed sizes; in-process state is unaffected — credentials and active sessions survive. Wired on all four shells (Qt6, GTK4, Win32, macOS). 476 C++ tests, 150 Rust tests.
@@ -1861,6 +2387,31 @@ Changes since v0.1.5:
 
 Changes since v0.1.4:
 
+### Summary
+
+- feat(mentions): `@mention` autocomplete, pills, and `m.mentions`
+- feat(timeline): syntax highlighting for fenced code blocks
+- feat(dm): open an existing DM from the user profile panel instantly
+- feat(login): account registration via OIDC `prompt=create`
+- feat(roomlist): group inactive rooms into a fifth section
+- feat(notifications): per-room notification settings in `RoomInfoPanel`
+- feat(threads): expose Matrix threads (MSC3440) to the C++ level
+- refactor(shells): hoist shared shell logic into `ShellBase`
+- perf(roomlist): cache space children asynchronously
+- perf(anim): stop full-window repaints for animated images
+- build(ci): GitHub Actions release packaging
+- fix(gtk4): make the GTK4 shell usable at all
+- fix(gtk4): decode media off the UI thread to stop a multi-second startup freeze
+- fix(session): persist rotated OAuth refresh tokens to the secret store
+- fix(qt6): hide native search/composer overlays when the image or video viewer is open
+- fix(session): store SDK account data under `data_dir()` instead of `config_dir()`
+- fix(macos): unblock the x86_64 build broken by the stale CommandLineTools libc++
+- fix(room): hide the compose input overlay after the active room closes
+- fix(windows): emoji/sticker pickers follow the main window when it moves
+- fix(ui): room-list row centering, macOS picker popups, larger emoji cells
+
+### Details
+
 - fix(gtk4): make the GTK4 shell usable at all — three fixes to a shell that aborted on startup so none of its paths had ever run. (1) System tray: replaced the `libayatana-appindicator3` tray with a pure `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu` implementation over GDBus (`GtkSniTrayIcon`, icon rendered via gdk-pixbuf + cairo); linking appindicator pulled libgtk-3 into the GTK4 process and made `gtk_init()` abort with "GTK 2/3 symbols detected", so the appindicator dependency is dropped entirely. (2) User-strip right-click menu: GTK routes right-clicks through the tk widget tree but only sticker rects were hit-tested, so the Settings / Add-Account / Log-Out / Quit menu never fired — now hit-tests the lower-left user strip like the other shells. (3) Image send: `encode_for_send`'s JPEG compress path failed on any pixbuf with an alpha channel (every PNG), silently resetting the composer; images are now flattened onto opaque white before JPEG encoding.
 - fix(gtk4): decode media off the UI thread to stop a multi-second startup freeze — gdk-pixbuf now routes image loading through glycin, which decodes in a sandboxed subprocess and blocks the calling thread; `on_media_bytes_ready_` ran that decode on the UI thread, freezing the window while room avatars loaded at startup. Decode now runs on a worker (`run_async_`) and only the `make_image` + cache store is posted back to the UI thread, with a pre/post cache check to avoid a double-store when concurrent fetches race on the same key.
 - refactor(shells): hoist shared shell logic into `ShellBase` — moved the four native shells' duplicated view pointers, Tier-1 event hooks, timeline/message handlers, and provider-lambda factories into `ShellBase` (Qt6 / GTK4 / Win32, with macOS following via the `MacShell` composition). Behaviour-preserving; the shells now differ only in genuinely platform-specific wiring. 475 C++ tests pass.
@@ -1886,6 +2437,28 @@ Changes since v0.1.4:
 
 Changes since v0.1.3:
 
+### Summary
+
+- feat(notifications): wire the Notifications toggle to the SDK pusher
+- feat(settings): "Hide message content in notifications" privacy toggle
+- feat(ui): click avatar in `UserProfilePanel` or `RoomInfoPanel` to open full-resolution image in lightbox
+- feat(settings): bottom-pinned "About" tab with brand splash
+- feat(header): show padlock icon next to room name for encrypted rooms
+- feat(ui): hide reaction chip counter when only one person has reacted
+- feat(settings): Log Out button at the bottom of the Account settings page
+- feat(presence): publish outgoing Matrix presence
+- feat(settings): device list in Settings
+- feat(ui): DM-counterpart avatar fallback
+- feat(client): server capabilities on login
+- feat(auth): per-platform secure token storage
+- fix(shutdown): drain the `LoginView` homeserver-discovery and `UpConnector` endpoint-scan threads before destruction
+- fix(qt6): reset `QMediaPlayer` source between voice/audio clips
+- fix(settings): drain `SettingsController` worker threads and the GTK4 `on_logout` callback to prevent a shutdown use-after-free
+- fix(timeline): surface undecryptable messages as a single muted line instead of dropping them
+- fix(sdk): stop polling presence for users that return 403 Forbidden
+
+### Details
+
 - fix(shutdown): route `LoginView` homeserver-discovery thread and `UpConnector` endpoint-scan through `ShellBase::run_async_` so they are drained before destruction. Two detached `std::thread`s were still live at teardown — `hs_changed_` (300 ms debounce for `discover_homeserver`) and the UP scan thread — causing malloc corruption in `~MessageListView` after `accounts_.clear()` had already freed the client.
 - fix(qt6): reset `QMediaPlayer` source between voice/audio clips — `setSourceDevice` short-circuits on an unchanged pointer and replayed the first clip's FFmpeg stream for every subsequent play. Fixed by clearing the source and resetting the `QBuffer`/`QByteArray` before each `play()` call.
 - feat(notifications): wire the Notifications toggle to the SDK pusher — `IUpConnector::set_enabled` added so Linux UnifiedPush connectors can remove or re-register their homeserver pusher when the toggle changes; routed through `SettingsController` instead of inline per-shell persistence so all four platforms share the same path. Local OS-notification suppression via `Settings::notifications_enabled` is unchanged.
@@ -1908,6 +2481,19 @@ Changes since v0.1.3:
 
 Changes since v0.1.2:
 
+### Summary
+
+- feat(download): save file attachments, images, and videos to disk
+- feat(voice): MSC3245 voice message send
+- feat(pickers): unified async image cache
+- feat(ui): the room-list last-message preview shows the first plain line for text and a media summary for image/video/file/voice
+- style: standardise formatting across the whole codebase
+- refactor(shell): de-duplicated the four native shells into ui/shared/
+- fix(tests): update two `ComposeBar` attachment tests to match current floating-preview design
+- fix(ui/win32): image/video viewer now closes on Esc immediately
+
+### Details
+
 - feat(download): save file attachments, images, and videos to disk — clicking a file card in the timeline opens a native save dialog and fetches the file from the Matrix media server; a ⬇ button added to `ImageViewerOverlay` and `VideoViewerOverlay` does the same for displayed images and videos; all four platforms (Qt6 `QFileDialog`, GTK4 `GtkFileChooserNative`, Win32 `GetSaveFileNameW`, macOS `NSSavePanel`); bytes fetched off the UI thread via `fetch_media_bytes` / `fetch_source_bytes` and written with `std::ofstream`; 328/328 ctest, 96/96 cargo
 - feat(voice): MSC3245 voice message send — mic button in `ComposeBar` starts/stops recording; OGG/Opus encoding in Rust (`audiopus` + `ogg` crates) at 48 kHz mono 32 kbps with MSC1767 waveform sampling (up to 256 samples, normalised [0, 1000]); live waveform strip animates during recording; cancel button; per-platform `tk::AudioCapture` backend (Qt6 `QAudioSource`, GTK4 GStreamer `pulsesrc`, Win32 WASAPI, macOS `AVAudioEngine`); `send_voice` FFI + `Client::send_voice` C++ API; mic button hidden automatically when no capture device is available; voice send wired in all four main shells via new `ShellBase::wire_voice_capture_()` helper; pop-out secondary windows hide the mic button (recording is a singleton interaction owned by the main window); 3 new Rust unit tests + 5 new C++ tests (328/328 ctest, 95/95 cargo)
 - fix(tests): update two `ComposeBar` attachment tests to match current floating-preview design — image previews now float above the bar without changing `natural_height()`; only file chips grow it
@@ -1920,6 +2506,54 @@ Changes since v0.1.2:
 ## v0.1.2 — 2026-05-18
 
 Changes since v0.1.1:
+
+### Summary
+
+- feat(messaging): `m.location` / MSC3488 receive
+- feat(messaging): optimistic send via SDK local echo
+- feat(compose): emoji shortcode expansion
+- feat(app): secondary room windows
+- feat: light/dark/system theme preference
+- feat(notify): image & sticker notification previews with a lock-screen privacy gate
+- feat(pickers): emoji + sticker picker shortcode tooltips
+- feat(ui): room list redesign
+- feat(matrix): `m.notice` renders with muted colour; `m.emote` renders as "* SenderName body" with italic spans
+- feat: MSC3030 jump-to-date
+- feat: MSC3266 room summary lookup + join-room dialog
+- feat: MSC3765 rich room topics in the room header
+- feat: MSC4230 animated image flag with GIF badge
+- feat: MSC2010 spoiler rendering and reveal interaction; message deletion via hover trash button
+- feat: homeserver discovery with `.well-known` + inline status on the login screen
+- feat: attention requests when notifications arrive with window visible
+- feat(image-viewer): oversized images open zoomed to fit rather than 1:1
+- feat(ui): BrandView shows the application icon (embedded PNG from `tesseract.svg`)
+- feat(app): single-instance enforcement on all four shells
+- feat(sdk): `latest_event_body` helper with 9 unit tests; `last_message_body` populated via `LatestEventValue`
+- feat: overlay scrollbar on GridView (EmojiPicker + StickerPicker)
+- feat: MSC4027 custom images in reactions; MSC2448 BlurHash placeholders for media
+- feat: clickable inline hyperlinks across all backends
+- feat: markdown-to-HTML formatting for sent messages
+- Relicense under GPL v3
+- fix(linux): Wayland foreground activation via XDG portal
+- fix(qt6): dark theme detection on GNOME
+- fix(compose): markdown→HTML on send centralised in `Client::send_message/send_reply/send_edit` for all shells + secondary windows
+- fix(msc2545): prefer merged stable image-pack event types with unstable fallback
+- fix(auth): reject duplicate account sign-in on all four shells
+- fix(notify/qt6): use a fresh popup per notification and correctly populate the `image-path` hint
+- fix(win32): swallow stale `WM_CHAR('\r')` after Enter submits the compose bar to prevent phantom newline in next reply/edit session
+- fix(win32): `NativeTextArea::natural_height()` measures soft-wrapped lines via `DrawTextW(DT_CALCRECT | DT_WORDBREAK …)`
+- fix(viewer): image/video overlay backdrop black-on-first-move fixed on all four platforms via transparent Surface/Host propagation
+- fix(gtk4): `NativeTextArea` placeholder text via `dim-label` `GtkLabel` overlay
+- fix(gtk4): async image fetch for `EmojiPicker` custom emoticon tabs
+- fix(map): wire `on_tile_needed` in all four main-window shells and cap the zoom rate at one step per wheel notch
+- fix(settings): settings surface receives the current theme immediately on creation
+- fix(ui): emoji glyphs centred within their picker grid cells
+- fix(message-list): bare URLs in plain-text bodies are now clickable
+- fix(reply): pass `event_id` (not `in_reply_to_id`) to reply detail resolver
+- fix(sdk): build room timeline on a worker thread to avoid stack-overflow crash on macOS
+- fix(win32): compile cleanly under `/std:c++20` on SDK 19041
+
+### Details
 
 - feat(messaging): `m.location` / MSC3488 receive — location messages render as interactive 240 px inline maps; OSM tiles fetched from `tile.openstreetmap.org` with disk cache; pan by drag, zoom by scroll wheel; attribution overlay; red-circle pin at event coordinates; all four platforms (Qt6, GTK4, Win32, macOS)
 - feat(messaging): optimistic send via SDK local echo — `send_message` switches to `timeline.send()` so sent messages appear immediately with a ◷ (sending) indicator; transitions to ✓ for 2 s once the server confirms delivery; recoverable failure shows ⚠ + "Retry" (re-enables the SDK send queue); unrecoverable failure shows ⚠ + ✕ (aborts via `timeline.redact`); `retry_send` / `abort_send` FFI + C++ client API added
@@ -1969,6 +2603,21 @@ Changes since v0.1.1:
 
 Changes since v0.1:
 
+### Summary
+
+- URL previews + inline hyperlink rendering (OpenGraph card; row-height invalidation on arrival)
+- UnifiedPush server pusher for Linux (Qt6 + GTK4): D-Bus connector and endpoint rewrite to `/_matrix/push/v1/notify`
+- Typing indicators: send `m.typing` and display incoming
+- Read receipts: public `m.read` send; mark rooms read on open (`m.read` + `m.read.private`)
+- Inline markdown rendered from `formatted_body`; day separators + virtual timeline items
+- Emoticon image loading, picker tab scrolling, compose-bar height fix
+- Sticker fixes: saved-pack visibility, aspect ratio, right-click viewer, dedupe-by-URL on save
+- Qt6: transparent native text overlays
+- Fix use-after-free crash when selecting a room; fix two pre-existing test failures
+- Three UI fixes: compose icons inside input, search clear button, play triangle
+
+### Details
+
 - URL previews + inline hyperlink rendering (OpenGraph card; row-height invalidation on arrival)
 - UnifiedPush server pusher for Linux / Step 12 (Qt6 + GTK4): D-Bus connector, endpoint rewrite to `/_matrix/push/v1/notify`, Register/Unregister signature + deadlock fixes, stop/logout split
 - Typing indicators: send `m.typing` and display incoming
@@ -1984,7 +2633,35 @@ Changes since v0.1:
 
 First tagged release. All work up to v0.1, by area:
 
-### Core / SDK
+### Summary
+
+- Initial C++/Rust scaffold; renamed to Tesseract; OAuth/MAS loopback login; CLAUDE.md + Catch2 test framework
+- matrix-sdk 0.16.1 → 0.17.0; refresh-token handling; tokio Drop context for client swap
+- Step 2 — sliding sync (SyncService + RoomListService) replacing `sync_once`; per-room Timeline map; subscribe/unsubscribe/paginate FFI
+- SQLite-backed timeline persistence via EventCache
+- Session: restore-or-login, full PersistedSession on token refresh, and UnknownToken / soft_logout handling
+- Multi-account support (infrastructure + all four shells); per-account notifier; restore last room on switch
+- Prefs stored as Matrix account-data (`im.gnomos.tesseract`)
+- `ShellBase` + `EventHandlerBase` refactor extracted from all four shells
+- Background backfill (all rooms, limited to visible), cancellable media fetches, and shutdown-stability hardening
+- i18n for Qt6 + GTK4; device rename to hostname after OAuth (`device_display_name`)
+- Shared `tk::Canvas` / `tk::Widget` / `tk::Host` toolkit across all four platforms (Direct2D / QPainter / Cairo / CoreGraphics)
+- Native text overlays; ListView scrollbar drag; `tesseract::Settings`; CoreGraphics + D2D test surfaces
+- macOS port: AppKit → Mac Catalyst → native AppKit
+- DirectWrite colour-emoji text on Windows; Twemoji fallback
+- Message rows: sender identity + avatars, grouping, day separators, redactions, editing, reply-to, reactions, and read receipts
+- Media: inline images/stickers, MSC2545 image packs, MSC3245 voice messages, and `m.video` receive + playback
+- Text: Markdown→HTML on send; inline markdown render from `formatted_body`; URL previews + inline hyperlinks
+- Navigation: spaces drill-in; room search + 500 ms debounce + activity sort; collapsible room-list sections; favorites
+- Encryption: device verification (SAS) + key-backup recovery (Step 6); recovery + verification banners
+- Notifications: Linux (D-Bus), macOS (UNUserNotificationCenter), Win32 (WinRT toast), system tray, and UnifiedPush
+- App icons (Win32 `.ico` / macOS `.icns` / GTK4 / Qt6) generated from a shared SVG
+- CPack installers
+- MinGW cross-compile support; `WHOLE_ARCHIVE` link for the 3-way FFI cycle; bundled SQLite (rustls, no system OpenSSL)
+
+### Details
+
+#### Core / SDK
 
 - Initial C++/Rust scaffold; renamed to Tesseract; OAuth/MAS loopback login; CLAUDE.md + Catch2 test framework
 - matrix-sdk 0.16.1 → 0.17.0; refresh-token handling; tokio Drop context for client swap
@@ -1997,14 +2674,14 @@ First tagged release. All work up to v0.1, by area:
 - Background backfill (all rooms, limited to visible); cancellable media fetches; shutdown-stability hardening (worker drain, double-callback fix, `panic_in_cleanup` fixes)
 - i18n for Qt6 + GTK4; device rename to hostname after OAuth (`device_display_name`)
 
-### UI toolkit (`tesseract_tk`)
+#### UI toolkit (`tesseract_tk`)
 
 - Shared `tk::Canvas` / `tk::Widget` / `tk::Host` toolkit across all four platforms (Direct2D / QPainter / Cairo / CoreGraphics)
 - Native text overlays; ListView scrollbar drag; `tesseract::Settings`; CoreGraphics + D2D test surfaces
 - macOS port: AppKit → Mac Catalyst → native AppKit
 - DirectWrite colour-emoji text on Windows; Twemoji fallback
 
-### Features
+#### Features
 
 - Message rows: sender identity + avatars, grouping, day separators, redactions, editing, reply-to + scroll-to-original, reactions + MSC4027 custom-image reactions, read receipts + hover timestamps, typing indicators
 - Media: inline images/stickers, MSC2545 image packs (sticker/emoji pickers, encrypted, animated GIF/WebP/APNG), MSC3245 voice messages, `m.video` receive + playback, `m.file` drag-and-drop, clipboard image paste + MSC2530 captions
@@ -2013,7 +2690,7 @@ First tagged release. All work up to v0.1, by area:
 - Encryption: device verification (SAS) + key-backup recovery (Step 6); recovery + verification banners
 - Notifications: Linux (Qt6/GTK4 D-Bus), macOS (UNUserNotificationCenter), Win32 (WinRT toast); system tray + minimize-to-tray on all four; UnifiedPush server pusher (Linux)
 
-### Build & packaging
+#### Build & packaging
 
 - App icons (Win32 `.ico` / macOS `.icns` / GTK4 / Qt6) generated from a shared SVG
 - CPack installers — NSIS (Windows) + DMG (macOS); Debian + Arch packaging helpers

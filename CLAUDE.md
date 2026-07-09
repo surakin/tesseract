@@ -29,7 +29,10 @@ sdk/         ← Rust crate: matrix-sdk wrapper + cxx FFI bridge
 client/      ← C++ static library: high-level C++ API over the Rust FFI
 ui/
   shared/    ← tesseract_tk: cross-platform widget toolkit + shared views
-    tk/        ← Canvas / Widget / Layout / Host abstractions + per-backend impls
+    tk/        ← Canvas / Widget / Layout / Host abstractions (+ genuinely shared
+                  GStreamer video/capture); per-platform backend impls
+                  (canvas_*/host_*/audio_*/video_*/screen_capture_*) live in each
+                  ui/<platform>/tk/, compiled into that platform's own target
     views/     ← MainAppWidget (root widget tree); LoginView, BrandView;
                   RoomListView, RoomView, MessageListView, ComposeBar;
                   ThreadView, ThreadListView (right-side panel inside RoomView);
@@ -44,10 +47,10 @@ ui/
                   split): TimelineMediaController, TimelineVideoPlaylist,
                   LocationMapPanner, RoomSwitchGateKeeper, UrlPreviewCardDisplay,
                   LinkLayoutCache, SpoilerRevealer, ReadReceiptTracker
-  windows/   ← Win32 executable (thin shell)
-  macos/     ← AppKit executable (.app bundle, thin shell)
-  linux-qt/  ← Qt6 Widgets executable (thin shell)
-  linux-gtk/ ← GTK4 executable (thin shell)
+  windows/   ← Win32 executable (thin shell) + its tk/ backend (+ third_party/bettertext text control)
+  macos/     ← AppKit executable (.app bundle, thin shell) + its tk/ backend
+  linux-qt/  ← Qt6 Widgets executable (thin shell) + its tk/ backend
+  linux-gtk/ ← GTK4 executable (thin shell) + its tk/ backend
 ```
 
 ### Layer responsibilities
@@ -118,6 +121,10 @@ See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across
 ## Workflow
 
 Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected.
+
+Never submit anything — commit, push, PR, or any outward-facing action — unless the user explicitly requests it. A request to *make* or *update* something (code, docs, config) is never authorization to submit it. When in doubt, present the changes and wait.
+
+When presenting options or asking a question, there is no timeout. If the user does not answer, wait forever — do not pick an option, assume an answer, or proceed on a default. A question or choice is only resolved by the user's actual response.
 
 When investigating a bug or unexpected behavior, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
 

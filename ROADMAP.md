@@ -140,16 +140,3 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   through `NSLocalizedString`/raw literals instead of the shared catalog
   (e.g. the AppKit context-menu "Copy" item); Win32 has no `LoadString`
   usage at all yet for anything outside the shared views.
-- **Windows composer has no real inline emoji pill** — every other
-  platform's composer inserts a real inline image for a picked custom
-  emoji; Windows falls back to plain `:shortcode:` text (which still sends
-  and displays as a real emoji everywhere, including that same Windows
-  client's own timeline). `IRichEditOle::InsertObject`-based embedding was
-  tried and made to work in isolation, but RichEdit's classic GDI
-  object-drawing pass is fundamentally incompatible with this control's
-  DXGI-swap-chain-backed D2D rendering — the first real `TxGetDC()` call
-  for object drawing detaches the swap chain's presented frames from the
-  window, permanently blanking all subsequently drawn text. Fixing this
-  would require decoupling the composer's D2D rendering from the HWND
-  entirely (e.g. `CreateSwapChainForComposition` + DirectComposition)
-  before any embedded-object approach could work.
