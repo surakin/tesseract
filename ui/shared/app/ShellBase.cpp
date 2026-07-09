@@ -7750,7 +7750,7 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                                 return;
                             }
                             auto pr = sess->client->paginate_back_with_status(
-                                room_id, kPaginationBatch);
+                                room_id, kInitialFillBatch);
                             const bool reached = pr.ok && pr.reached_start;
                             sess->client->start_background_backfill(visible_ids);
                             post_to_ui_(
