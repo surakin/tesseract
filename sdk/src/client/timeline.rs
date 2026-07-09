@@ -922,21 +922,30 @@ impl ClientFfi {
             }
         }
 
-        // Build the timeline on a runtime worker thread, not the calling FFI
-        // thread. `Timeline::init_focus` collects the cached events into an
-        // `imbl::Vector`; chunk promotion for large `TimelineEvent`s recurses
-        // deep enough to overflow the small stack of the macOS libdispatch
-        // worker that drives this FFI call (EXC_BAD_ACCESS). Worker threads
-        // have the widened 8 MB stack configured on the runtime above.
+        // Build the timeline on the blocking pool, not an async worker. Two
+        // reasons: (1) `Timeline::init_focus` is CPU-bound — it collects the
+        // cached events into an `imbl::Vector` — so running it on an async
+        // worker occupies that worker for the whole build and starves
+        // matrix-sdk's send-queue / timeline-diff tasks (which share this
+        // runtime), delaying a just-sent message's local echo while the user
+        // switches rooms. The blocking pool leaves every async worker free.
+        // (2) chunk promotion for large `TimelineEvent`s recurses deep enough
+        // to overflow the small macOS libdispatch stack of the calling FFI
+        // thread (EXC_BAD_ACCESS); blocking-pool threads inherit the widened
+        // 8 MB `thread_stack_size` set on the runtime above, so the deep build
+        // still gets a large stack.
         let room_for_build = room.clone();
-        let timeline = match self.rt.block_on(self.rt.spawn(async move {
-            room_for_build
-                .timeline_builder()
-                .with_focus(TimelineFocus::Live {
-                    hide_threaded_events: true,
-                })
-                .build()
-                .await
+        let handle = self.rt.handle().clone();
+        let timeline = match self.rt.block_on(self.rt.spawn_blocking(move || {
+            handle.block_on(async move {
+                room_for_build
+                    .timeline_builder()
+                    .with_focus(TimelineFocus::Live {
+                        hide_threaded_events: true,
+                    })
+                    .build()
+                    .await
+            })
         })) {
             Ok(Ok(t)) => Arc::new(t),
             Ok(Err(e)) => return err(format!("build timeline: {e}")),
@@ -1376,15 +1385,20 @@ impl ClientFfi {
             },
         };
 
-        // Build off the calling FFI thread — see the note in `subscribe_room`;
-        // the focused build runs the same imbl `collect()` over cached events.
+        // Build on the blocking pool — see the note in `subscribe_room`: the
+        // focused build runs the same CPU-bound imbl `collect()` over cached
+        // events, so keep it off the async workers to avoid starving the
+        // diff/send-queue tasks, and inherit the widened 8 MB stack.
         let room_for_build = room.clone();
-        let timeline = match self.rt.block_on(self.rt.spawn(async move {
-            room_for_build
-                .timeline_builder()
-                .with_focus(focus)
-                .build()
-                .await
+        let handle = self.rt.handle().clone();
+        let timeline = match self.rt.block_on(self.rt.spawn_blocking(move || {
+            handle.block_on(async move {
+                room_for_build
+                    .timeline_builder()
+                    .with_focus(focus)
+                    .build()
+                    .await
+            })
         })) {
             Ok(Ok(t)) => Arc::new(t),
             Ok(Err(e)) => return err(format!("build focused timeline: {e}")),
