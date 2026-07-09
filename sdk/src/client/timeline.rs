@@ -1377,6 +1377,35 @@ impl ClientFfi {
             return err("room not found");
         };
 
+        // Pre-fetch the room's backed-up Megolm sessions before building the
+        // focused timeline. Jump-to-date builds a `TimelineFocus::Event`
+        // timeline whose `/context` events live only in an in-memory
+        // `EventFocusedCache` that is never persisted to the store. matrix-sdk's
+        // redecryptor ("R2D2") only re-decrypts UTDs it finds in the store or
+        // the live room cache, so it never retries the focused cache's historic
+        // events when a key arrives later — the passive
+        // `AfterDecryptionFailure` path that makes scroll-pagination decrypt
+        // does not reach this timeline. Downloading the keys up front (a single
+        // bounded `GET /room_keys/keys/{roomId}`, a no-op when backup is not
+        // set up) lets the `/context` events decrypt inline during the build.
+        // Best-effort: a failure here must not block the jump.
+        {
+            let room_for_keys = room.clone();
+            self.rt.block_on(async move {
+                if let Err(e) = room_for_keys
+                    .client()
+                    .encryption()
+                    .backups()
+                    .download_room_keys_for_room(room_for_keys.room_id())
+                    .await
+                {
+                    tracing::warn!(
+                        "jump-to-date: failed to download backup room keys: {e}"
+                    );
+                }
+            });
+        }
+
         let focus = TimelineFocus::Event {
             target,
             num_context_events: 50,
