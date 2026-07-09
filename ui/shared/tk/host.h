@@ -242,6 +242,18 @@ public:
     using ImagePasteHandler =
         std::function<void(std::vector<std::uint8_t> bytes, std::string mime)>;
     virtual void set_on_image_paste(ImagePasteHandler) = 0;
+
+    // Backends that render custom-emoticon/inline-image runs (currently only
+    // the Windows BetterText backend) call this synchronously to resolve a
+    // uri (an mxc:// URL) to an already-decoded image. Return the cached
+    // image if the shell already has it; otherwise kick off a fetch as a
+    // side effect (matching every other `ensure_media_image_`-style caller
+    // in the codebase — fire-and-forget, no completion callback) and return
+    // nullptr — the backend is expected to retry the same uri later once the
+    // shell's cache has it. Default no-op for backends that don't need it.
+    virtual void set_image_resolver(std::function<const tk::Image*(const std::string& uri)>)
+    {
+    }
 };
 
 // Drag-and-drop handler installed on a per-platform Surface. Fired once

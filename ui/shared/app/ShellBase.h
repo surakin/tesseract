@@ -2671,6 +2671,26 @@ protected:
         { return account_manager_.image_cache().peek(url); };
     }
 
+    // Static-image lookup + fetch-on-miss: like make_static_image_provider_
+    // above, but also kicks off ensure_media_image_ as a side effect when
+    // the cache misses. Used by NativeTextArea::set_image_resolver (the
+    // Windows BetterText compose box's inline custom-emoji rendering), which
+    // — unlike the shortcode popup — has no separate "prefetch the visible
+    // suggestions" step to rely on before the image is actually needed.
+    std::function<const tk::Image*(const std::string&)>
+    make_static_image_provider_with_fetch_(int max_w, int max_h)
+    {
+        return [this, max_w, max_h](const std::string& url) -> const tk::Image*
+        {
+            if (const auto* img = account_manager_.image_cache().peek(url))
+            {
+                return img;
+            }
+            ensure_media_image_(url, max_w, max_h);
+            return nullptr;
+        };
+    }
+
     // Emoji / sticker picker lookup: animated frame → static → kick an async
     // fetch on miss. The (cache_key, source_token) signature matches the
     // shared EmojiPicker/StickerPicker ImageProvider alias.

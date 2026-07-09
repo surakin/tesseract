@@ -2873,6 +2873,7 @@ void MainWindow::on_create(HWND hwnd)
 
         room_text_area_ = main_app_surface_->host().make_text_area();
         room_text_area_->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
+        room_text_area_->set_image_resolver(make_static_image_provider_with_fetch_(28, 28));
         // All four composer popups (gif > slash > shortcode > mention) are
         // driven through the shared ComposePopups dispatch; the controllers are
         // created just below (mention, then slash/shortcode) and in the GIF
@@ -7078,9 +7079,9 @@ void MainWindow::pick_emoticon_at_cursor(const tesseract::ImagePackImage& img)
         }
         return;
     }
-    // Compose mode. Windows' insert_emoticon ignores the image (plain-text +
-    // side-table fallback — see host_win32.cpp), so there's no bitmap to
-    // resolve here.
+    // Compose mode. Windows' insert_emoticon renders a real inline image,
+    // resolved asynchronously by uri via set_image_resolver — no bitmap to
+    // pass here.
     if (!room_text_area_)
     {
         return;

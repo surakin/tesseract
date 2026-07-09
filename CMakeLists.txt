@@ -550,6 +550,15 @@ if(TESSERACT_UI STREQUAL "win32")
     if(NOT WIN32)
         message(FATAL_ERROR "win32 UI only available on Windows")
     endif()
+
+    # BetterText — vendored Win32 DirectWrite/Direct2D text control backing
+    # tk::NativeTextField / tk::NativeTextArea on Windows (see
+    # ui/windows/tk/host_win32_bettertext.cpp). Windows-only; its own
+    # CMakeLists.txt already guards non-WIN32 with a FATAL_ERROR.
+    set(BETTERTEXT_BUILD_DEMO OFF CACHE BOOL "" FORCE)
+    set(BETTERTEXT_BUILD_TESTS ON CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/bettertext)
+
     add_subdirectory(ui/windows)
 
 elseif(TESSERACT_UI STREQUAL "macos")

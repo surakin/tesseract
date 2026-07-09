@@ -3,6 +3,8 @@
 #include "canvas_d2d.h"
 #include "controls.h"
 
+#include <BetterText/BetterText.h>
+
 #include <tesseract/settings.h>
 
 #include <commctrl.h>
@@ -51,6 +53,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -3271,6 +3274,910 @@ private:
     std::vector<ComposerEntry> composer_entries_;
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+//  BetterTextField / BetterTextArea — BetterText-backed NativeTextField /
+//  NativeTextArea (see third_party/bettertext)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Both wrap a BETTERTEXT_CLASS_NAME child HWND. Unlike the EDIT/RichEdit
+// classes above, BetterText owns its own D3D11 device + DXGI swap chain per
+// HWND and renders itself entirely through BetterTextXxx() calls — no
+// ITextHost/ITextServices2 hosting is needed. The control posts nothing to
+// its parent on its own (no WM_COMMAND/WM_NOTIFY); text-changed and Enter
+// notifications arrive through a per-control BetterTextSetNotifyCallback.
+
+namespace
+{
+
+std::uint32_t bt_rgba(tk::Color c)
+{
+    return (static_cast<std::uint32_t>(c.r) << 24) |
+           (static_cast<std::uint32_t>(c.g) << 16) |
+           (static_cast<std::uint32_t>(c.b) << 8) |
+           static_cast<std::uint32_t>(c.a);
+}
+
+BetterTextTheme bt_theme_from_palette(const tk::Palette& p, tk::Color background)
+{
+    BetterTextTheme theme{};
+    theme.background_rgba  = bt_rgba(background);
+    theme.foreground_rgba  = bt_rgba(p.text_primary);
+    theme.selection_rgba   = bt_rgba(p.selection);
+    theme.caret_rgba       = bt_rgba(p.text_primary);
+    theme.placeholder_rgba = bt_rgba(p.text_muted);
+    return theme;
+}
+
+void bt_apply_default_font(HWND hwnd)
+{
+    BetterTextTextStyle style{};
+    style.font_family = L"Segoe UI Variable Text";
+    style.font_size = static_cast<float>(
+        tk::font_role_pt(tk::FontRole::Body, tk::d2d::win32_system_base_pt())) *
+        (96.f / 72.f);
+    style.font_weight = FW_REGULAR;
+    style.italic = FALSE;
+    style.underline = FALSE;
+    BetterTextSetDefaultTextStyle(hwnd, &style);
+}
+
+void bt_register_control_once()
+{
+    static bool registered = BetterTextRegisterControl(
+        reinterpret_cast<HINSTANCE>(GetModuleHandleW(nullptr))) != FALSE;
+    (void)registered;
+}
+
+// Inline size for a custom-emoji image run in the compose box — roughly one
+// line height, matching how a Unicode emoji glyph sits inline with body text.
+constexpr float kInlineEmoticonSizeDip = 20.0f;
+
+} // namespace
+
+class BetterTextField : public NativeTextField, public Win32TextAreaBase
+{
+public:
+    BetterTextField(HWND parent, int ctrl_id, const Theme* theme)
+        : parent_(parent), id_(ctrl_id), theme_(theme)
+    {
+        bt_register_control_once();
+        hwnd_ = CreateWindowExW(
+            0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE,
+            0, 0, 100, 24, parent_,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
+            nullptr);
+        if (!hwnd_)
+        {
+            return;
+        }
+        BetterTextSetSingleLine(hwnd_, TRUE);
+        bt_apply_default_font(hwnd_);
+        if (theme)
+        {
+            // Every NativeTextField call site draws its own card behind the
+            // field using compose_card_bg ("Search field card — same style
+            // as the compose input", RoomListView.cpp) — match it so the
+            // field doesn't paint a mismatched flat rectangle over the card.
+            BetterTextTheme bt =
+                bt_theme_from_palette(theme->palette, theme->palette.compose_card_bg);
+            BetterTextSetTheme(hwnd_, &bt);
+        }
+        SetWindowSubclass(hwnd_, &BetterTextField::subclass_proc, 1,
+                          reinterpret_cast<DWORD_PTR>(this));
+        BetterTextSetNotifyCallback(hwnd_, &BetterTextField::on_notify, this);
+        // Fields sit in fixed-height compact rows (e.g. the 28-DIP room
+        // search card) — BetterText's 8-DIP default vertical padding alone
+        // (16 DIP top+bottom) doesn't fit. Keep the 8-DIP horizontal inset
+        // (matches the old EDIT's EM_SETMARGINS left/right margin) but shrink
+        // vertical to 2 DIP, mirroring the old EDIT's tm.tmHeight + 4 budget.
+        // Must happen before measuring line_h_dip_ below, which bakes it in.
+        BetterTextSetPadding(hwnd_, 8.0f, 2.0f);
+        // Single-line + no-wrap: the natural height never changes with
+        // content, so measure it once up front for set_rect's centering math.
+        line_h_dip_ = BetterTextGetContentHeight(hwnd_);
+    }
+
+    ~BetterTextField() override
+    {
+        if (hwnd_)
+        {
+            BetterTextSetNotifyCallback(hwnd_, nullptr, nullptr);
+            RemoveWindowSubclass(hwnd_, &BetterTextField::subclass_proc, 1);
+            DestroyWindow(hwnd_);
+            hwnd_ = nullptr;
+        }
+    }
+
+    void set_rect(Rect r) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        if (r.x == last_rect_.x && r.y == last_rect_.y && r.w == last_rect_.w &&
+            r.h == last_rect_.h)
+        {
+            return;
+        }
+        last_rect_ = r;
+        const float s = dip_scale();
+        int x  = static_cast<int>(std::floor(r.x * s));
+        int w  = static_cast<int>(std::round(r.w * s));
+        int rh = static_cast<int>(std::round(r.h * s));
+        int h = line_h_dip_ > 0.f ? static_cast<int>(std::round(line_h_dip_ * s)) : rh;
+        // Never exceed the row the caller actually gave us — mirrors
+        // BetterTextArea::set_rect's max_h fallback, so an unexpectedly
+        // short row clips gracefully instead of painting over its border.
+        h = std::min(h, rh);
+        int y = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
+        SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    void set_text(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        suppress_changed_ = true;
+        std::wstring w = utf8_to_wide(text);
+        BetterTextSetText(hwnd_, w.c_str());
+        suppress_changed_ = false;
+    }
+    std::string text() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
+        int len = BetterTextGetTextLength(hwnd_);
+        if (len <= 0)
+        {
+            return {};
+        }
+        std::wstring w(static_cast<std::size_t>(len), L'\0');
+        BetterTextGetText(hwnd_, w.data(), len + 1);
+        return wide_to_utf8(w);
+    }
+    void set_placeholder(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        BetterTextSetPlaceholder(hwnd_, utf8_to_wide(text).c_str());
+    }
+    void set_focused(bool focused) override
+    {
+        if (hwnd_ && focused)
+        {
+            SetFocus(hwnd_);
+        }
+    }
+    void set_visible(bool visible) override
+    {
+        if (hwnd_)
+        {
+            ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
+        }
+    }
+    void set_enabled(bool enabled) override
+    {
+        if (hwnd_)
+        {
+            EnableWindow(hwnd_, enabled ? TRUE : FALSE);
+        }
+    }
+    void set_password(bool password) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        BetterTextSetPasswordMode(hwnd_, password ? TRUE : FALSE);
+    }
+    void set_on_changed(std::function<void(const std::string&)> cb) override
+    {
+        on_changed_ = std::move(cb);
+    }
+    void set_on_submit(std::function<void()> cb) override
+    {
+        on_submit_ = std::move(cb);
+    }
+    void set_on_popup_nav(std::function<bool(NavKey)> cb) override
+    {
+        popup_nav_ = std::move(cb);
+    }
+
+    // ── Win32TextAreaBase — reused purely so this field re-themes on a
+    // live light/dark toggle the same way BetterTextArea already does.
+    void notify_changed() override
+    {
+        if (!suppress_changed_ && on_changed_)
+        {
+            on_changed_(text());
+        }
+    }
+    int ctrl_id() const override { return id_; }
+    HWND hwnd() const override { return hwnd_; }
+    void on_theme_changed(const Theme& t) override
+    {
+        theme_ = &t;
+        if (hwnd_)
+        {
+            BetterTextTheme bt =
+                bt_theme_from_palette(t.palette, t.palette.compose_card_bg);
+            BetterTextSetTheme(hwnd_, &bt);
+        }
+    }
+
+private:
+    static void on_notify(HWND, int event, void* user_data)
+    {
+        auto* self = static_cast<BetterTextField*>(user_data);
+        if (event == BetterTextEvent_Changed)
+        {
+            if (!self->suppress_changed_ && self->on_changed_)
+            {
+                self->on_changed_(self->text());
+            }
+        }
+        else if (event == BetterTextEvent_Submit)
+        {
+            if (self->on_submit_)
+            {
+                self->on_submit_();
+            }
+        }
+    }
+
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
+                                          LPARAM lParam, UINT_PTR /*id*/,
+                                          DWORD_PTR ref)
+    {
+        auto* self = reinterpret_cast<BetterTextField*>(ref);
+        // Up / Down / Escape navigation forwarded to a popup the field drives
+        // (the Ctrl+K quick switcher), mirroring the multi-line variant.
+        if (msg == WM_KEYDOWN && self->popup_nav_)
+        {
+            NavKey nk{};
+            bool is_nav = true;
+            if (wParam == VK_UP)
+            {
+                nk = NavKey::Up;
+            }
+            else if (wParam == VK_DOWN)
+            {
+                nk = NavKey::Down;
+            }
+            else if (wParam == VK_ESCAPE)
+            {
+                nk = NavKey::Escape;
+            }
+            else
+            {
+                is_nav = false;
+            }
+            // Copy to keep the closure alive across re-entrant mutation.
+            auto nav = self->popup_nav_;
+            if (is_nav && nav && nav(nk))
+            {
+                return 0;
+            }
+        }
+        if (msg == WM_GETDLGCODE)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            return r | DLGC_WANTALLKEYS;
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+
+    float dip_scale() const
+    {
+        const float dpi = static_cast<float>(GetDpiForWindow(parent_));
+        return dpi > 0.f ? dpi / 96.f : 1.f;
+    }
+
+    HWND parent_ = nullptr;
+    HWND hwnd_ = nullptr;
+    int id_ = 0;
+    const Theme* theme_ = nullptr;
+    float line_h_dip_ = 0.f;
+    bool suppress_changed_ = false;
+    Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
+    std::function<void(const std::string&)> on_changed_;
+    std::function<void()> on_submit_;
+    std::function<bool(NavKey)> popup_nav_;
+};
+
+class BetterTextArea : public NativeTextArea, public Win32TextAreaBase
+{
+public:
+    BetterTextArea(HWND parent, int ctrl_id, IWICImagingFactory* wic, const Theme* theme)
+        : parent_(parent), id_(ctrl_id), wic_(wic), theme_(theme)
+    {
+        bt_register_control_once();
+        hwnd_ = CreateWindowExW(
+            0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE,
+            0, 0, 200, 40, parent_,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
+            nullptr);
+        if (!hwnd_)
+        {
+            return;
+        }
+        BetterTextSetSubmitOnEnter(hwnd_, TRUE);
+        bt_apply_default_font(hwnd_);
+        if (theme_)
+        {
+            BetterTextTheme bt =
+                bt_theme_from_palette(theme_->palette, theme_->palette.compose_card_bg);
+            BetterTextSetTheme(hwnd_, &bt);
+        }
+        SetWindowSubclass(hwnd_, &BetterTextArea::subclass_proc, 1,
+                          reinterpret_cast<DWORD_PTR>(this));
+        BetterTextSetNotifyCallback(hwnd_, &BetterTextArea::on_notify, this);
+        BetterTextSetImageProvider(hwnd_, &image_provider_);
+    }
+
+    ~BetterTextArea() override
+    {
+        if (hwnd_)
+        {
+            BetterTextSetNotifyCallback(hwnd_, nullptr, nullptr);
+            RemoveWindowSubclass(hwnd_, &BetterTextArea::subclass_proc, 1);
+            DestroyWindow(hwnd_);
+            hwnd_ = nullptr;
+        }
+    }
+
+    // ── NativeTextArea ────────────────────────────────────────────────────
+
+    void set_rect(Rect r) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        if (r.x == last_rect_.x && r.y == last_rect_.y &&
+            r.w == last_rect_.w && r.h == last_rect_.h)
+        {
+            return;
+        }
+        last_rect_ = r;
+        const float s  = dip_scale();
+        const int rh   = static_cast<int>(std::round(r.h * s));
+        const int nh   = static_cast<int>(std::round(natural_height() * s));
+        const int border_px = std::max(2, static_cast<int>(std::ceil(s)));
+        const int max_h = std::max(1, rh - 2 * border_px);
+        const int h    = (nh > 0 && nh <= max_h) ? nh : max_h;
+        const int y    = static_cast<int>(std::floor(r.y * s)) + (rh - h) / 2;
+        SetWindowPos(hwnd_, nullptr,
+                     static_cast<int>(std::floor(r.x * s)), y,
+                     static_cast<int>(std::round(r.w * s)), h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    void set_text(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        suppress_changed_ = true;
+        std::wstring w = utf8_to_wide(text);
+        BetterTextSetText(hwnd_, w.c_str());
+        suppress_changed_ = false;
+        composer_entries_.clear();
+        refresh_height();
+    }
+
+    std::string text() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
+        int len = BetterTextGetTextLength(hwnd_);
+        if (len <= 0)
+        {
+            return {};
+        }
+        std::wstring w(static_cast<std::size_t>(len), L'\0');
+        BetterTextGetText(hwnd_, w.data(), len + 1);
+        return wide_to_utf8(w);
+    }
+
+    void set_placeholder(std::string text) override
+    {
+        if (hwnd_)
+        {
+            BetterTextSetPlaceholder(hwnd_, utf8_to_wide(text).c_str());
+        }
+    }
+
+    void set_focused(bool focused) override
+    {
+        if (hwnd_ && focused)
+        {
+            SetFocus(hwnd_);
+        }
+    }
+
+    void set_visible(bool visible) override
+    {
+        visible_ = visible;
+        if (hwnd_)
+        {
+            ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
+        }
+    }
+    bool visible() const override { return visible_; }
+
+    void set_enabled(bool enabled) override
+    {
+        if (hwnd_)
+        {
+            EnableWindow(hwnd_, enabled ? TRUE : FALSE);
+        }
+    }
+
+    float natural_height() const override
+    {
+        return hwnd_ ? BetterTextGetContentHeight(hwnd_) : 0.f;
+    }
+
+    void set_on_changed(std::function<void(const std::string&)> cb) override
+    {
+        on_changed_ = std::move(cb);
+    }
+    void set_on_submit(std::function<void()> cb) override
+    {
+        on_submit_ = std::move(cb);
+    }
+    void set_on_height_changed(std::function<void(float)> cb) override
+    {
+        on_height_changed_ = std::move(cb);
+    }
+    void set_on_image_paste(ImagePasteHandler cb) override
+    {
+        on_image_paste_ = std::move(cb);
+    }
+    void set_image_resolver(std::function<const tk::Image*(const std::string&)> fn) override
+    {
+        image_resolver_ = std::move(fn);
+    }
+
+    void insert_at_cursor(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        std::wstring w = utf8_to_wide(text);
+        BetterTextInsertText(hwnd_, w.c_str());
+    }
+
+    tk::Rect cursor_rect() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
+        RECT r{};
+        if (!BetterTextGetCaretRect(hwnd_, &r))
+        {
+            return {};
+        }
+        POINT tl{r.left, r.top};
+        POINT br{r.right, r.bottom};
+        MapWindowPoints(hwnd_, GetParent(hwnd_), &tl, 1);
+        MapWindowPoints(hwnd_, GetParent(hwnd_), &br, 1);
+        return {static_cast<float>(tl.x), static_cast<float>(tl.y),
+                static_cast<float>(br.x - tl.x), static_cast<float>(br.y - tl.y)};
+    }
+
+    void replace_range(int start, int end, std::string utf8_text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        std::string cur = text();
+        int ws = utf8_byte_to_utf16_len(cur, start);
+        int we = utf8_byte_to_utf16_len(cur, end);
+        suppress_changed_ = true;
+        BetterTextSetSelection(hwnd_, ws, we);
+        std::wstring wide = utf8_to_wide(utf8_text);
+        BetterTextInsertText(hwnd_, wide.c_str());
+        suppress_changed_ = false;
+        if (on_changed_)
+        {
+            on_changed_(text());
+        }
+        refresh_height();
+    }
+
+    void set_on_popup_nav(std::function<bool(NavKey)> fn) override
+    {
+        popup_nav_ = std::move(fn);
+    }
+    void set_on_edit_last(std::function<bool()> fn) override
+    {
+        on_edit_last_ = std::move(fn);
+    }
+
+    int cursor_byte_pos() const override
+    {
+        if (!hwnd_)
+        {
+            return 0;
+        }
+        BetterTextSelection sel{};
+        BetterTextGetSelection(hwnd_, &sel);
+        std::string t = text();
+        std::wstring w = utf8_to_wide(t);
+        int caret = static_cast<int>(
+            std::min<int64_t>(static_cast<int64_t>(w.size()), sel.caret));
+        return WideCharToMultiByte(CP_UTF8, 0, w.c_str(), caret,
+                                   nullptr, 0, nullptr, nullptr);
+    }
+
+    void insert_mention(int start, int end, const std::string& user_id,
+                        const std::string& display_name, bool is_room) override
+    {
+        std::string visual = is_room ? "@room" : ("@" + display_name);
+        replace_range(start, end, visual + " ");
+        composer_entries_.push_back({visual, user_id, display_name, is_room});
+    }
+
+    // Real inline image run (unlike Win32RichEditArea's plain-text fallback —
+    // BetterText has no OLE-embedding conflict with the D2D swap chain, so
+    // this renders an actual bitmap once set_image_resolver's callback
+    // resolves `mxc_url`; see BetterTextInsertImageUri / resolve_image_uri).
+    // `image` unused — resolution happens by uri, not by a caller-supplied
+    // bitmap (kept in the signature to match the shared NativeTextArea
+    // interface every platform's insertion implements).
+    void insert_emoticon(int start, int end, const std::string& shortcode,
+                         const std::string& mxc_url,
+                         const tk::Image*) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        std::string cur = text();
+        int ws = utf8_byte_to_utf16_len(cur, start);
+        int we = utf8_byte_to_utf16_len(cur, end);
+        suppress_changed_ = true;
+        BetterTextSetSelection(hwnd_, ws, we);
+        BetterTextInsertImageUri(hwnd_, utf8_to_wide(mxc_url).c_str(), utf8_to_wide(shortcode).c_str(),
+                                 kInlineEmoticonSizeDip, kInlineEmoticonSizeDip);
+        suppress_changed_ = false;
+        if (on_changed_)
+        {
+            on_changed_(text());
+        }
+        refresh_height();
+    }
+
+    std::vector<tesseract::MentionSeg> composer_draft() const override
+    {
+        std::string t = text();
+
+        struct Special
+        {
+            std::size_t byte_start;
+            std::size_t byte_len;
+            tesseract::MentionSeg seg;
+        };
+        std::vector<Special> specials;
+
+        std::size_t pos = 0;
+        for (const auto& e : composer_entries_)
+        {
+            std::size_t at = t.find(e.visual, pos);
+            if (at == std::string::npos)
+            {
+                continue;
+            }
+            tesseract::MentionSeg seg;
+            seg.kind         = tesseract::MentionSeg::Kind::Mention;
+            seg.user_id      = e.user_id;
+            seg.display_name = e.display_name;
+            seg.is_room      = e.is_room;
+            specials.push_back({at, e.visual.size(), std::move(seg)});
+            pos = at + e.visual.size();
+        }
+
+        // Custom-emoji image runs are real BetterText Image atoms now, each
+        // rendered as one U+FFFC (EF BF BC in UTF-8) placeholder in text().
+        // BetterTextGetImageRunCount/Uri/AltText enumerate them in document
+        // order, which matches the order their placeholders appear in `t` —
+        // so the i-th run is always the i-th remaining FFFC occurrence.
+        constexpr char kObjectReplacementUtf8[] = "\xEF\xBF\xBC";
+        std::size_t image_pos = 0;
+        const int image_count = BetterTextGetImageRunCount(hwnd_);
+        for (int i = 0; i < image_count; ++i)
+        {
+            std::size_t at = t.find(kObjectReplacementUtf8, image_pos);
+            if (at == std::string::npos)
+            {
+                break; // shouldn't happen — defensive, matches the mention loop above
+            }
+            const int uri_len = BetterTextGetImageRunUriLength(hwnd_, i);
+            std::wstring wuri(static_cast<std::size_t>(uri_len), L'\0');
+            BetterTextGetImageRunUri(hwnd_, i, wuri.data(), uri_len + 1);
+            const int alt_len = BetterTextGetImageRunAltTextLength(hwnd_, i);
+            std::wstring walt(static_cast<std::size_t>(alt_len), L'\0');
+            BetterTextGetImageRunAltText(hwnd_, i, walt.data(), alt_len + 1);
+
+            tesseract::MentionSeg seg;
+            seg.kind = tesseract::MentionSeg::Kind::Emoticon;
+            seg.shortcode = wide_to_utf8(walt);
+            seg.mxc_url = wide_to_utf8(wuri);
+            specials.push_back({at, sizeof(kObjectReplacementUtf8) - 1, std::move(seg)});
+            image_pos = at + (sizeof(kObjectReplacementUtf8) - 1);
+        }
+
+        std::sort(specials.begin(), specials.end(),
+                  [](const Special& a, const Special& b)
+                  { return a.byte_start < b.byte_start; });
+
+        std::vector<tesseract::MentionSeg> segs;
+        auto push_text = [&](const std::string& s)
+        {
+            if (!s.empty())
+            {
+                tesseract::MentionSeg seg;
+                seg.kind = tesseract::MentionSeg::Kind::Text;
+                seg.text = s;
+                segs.push_back(std::move(seg));
+            }
+        };
+        std::size_t prev_end = 0;
+        for (const auto& sp : specials)
+        {
+            if (sp.byte_start < prev_end || sp.byte_start > t.size())
+            {
+                continue; // overlap/out-of-range — ignore defensively
+            }
+            push_text(t.substr(prev_end, sp.byte_start - prev_end));
+            segs.push_back(sp.seg);
+            prev_end = sp.byte_start + sp.byte_len;
+        }
+        push_text(t.substr(std::min(prev_end, t.size())));
+        return segs;
+    }
+
+    void set_mention_colors(Color, Color) override {}
+
+    // ── Win32TextAreaBase ─────────────────────────────────────────────────
+
+    void notify_changed() override
+    {
+        if (!suppress_changed_ && on_changed_)
+        {
+            on_changed_(text());
+        }
+    }
+    int ctrl_id() const override { return id_; }
+    HWND hwnd() const override { return hwnd_; }
+    void on_theme_changed(const Theme& t) override
+    {
+        theme_ = &t;
+        if (hwnd_)
+        {
+            BetterTextTheme bt =
+                bt_theme_from_palette(t.palette, t.palette.compose_card_bg);
+            BetterTextSetTheme(hwnd_, &bt);
+        }
+    }
+
+private:
+    void refresh_height()
+    {
+        float h = natural_height();
+        if (h != last_height_ && on_height_changed_)
+        {
+            last_height_ = h;
+            on_height_changed_(h);
+        }
+    }
+
+    static void on_notify(HWND, int event, void* user_data)
+    {
+        auto* self = static_cast<BetterTextArea*>(user_data);
+        if (event == BetterTextEvent_Changed)
+        {
+            if (!self->suppress_changed_)
+            {
+                if (self->on_changed_)
+                {
+                    self->on_changed_(self->text());
+                }
+                self->refresh_height();
+            }
+        }
+        else if (event == BetterTextEvent_Submit)
+        {
+            if (self->on_submit_)
+            {
+                self->on_submit_();
+            }
+        }
+    }
+
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
+                                          LPARAM lParam, UINT_PTR /*id*/,
+                                          DWORD_PTR ref)
+    {
+        auto* self = reinterpret_cast<BetterTextArea*>(ref);
+        if (msg == WM_KEYDOWN && self->popup_nav_)
+        {
+            NativeTextArea::NavKey nk{};
+            bool is_nav = true;
+            if (wParam == VK_UP)
+            {
+                nk = NativeTextArea::NavKey::Up;
+            }
+            else if (wParam == VK_DOWN)
+            {
+                nk = NativeTextArea::NavKey::Down;
+            }
+            else if (wParam == VK_ESCAPE)
+            {
+                nk = NativeTextArea::NavKey::Escape;
+            }
+            else if (wParam == VK_TAB)
+            {
+                nk = (GetKeyState(VK_SHIFT) & 0x8000)
+                         ? NativeTextArea::NavKey::ShiftTab
+                         : NativeTextArea::NavKey::Tab;
+            }
+            else
+            {
+                is_nav = false;
+            }
+            auto nav = self->popup_nav_;
+            if (is_nav && nav && nav(nk))
+            {
+                return 0;
+            }
+        }
+        if (msg == WM_KEYDOWN && wParam == VK_UP && self->on_edit_last_ &&
+            BetterTextGetTextLength(self->hwnd_) == 0)
+        {
+            if (self->on_edit_last_())
+            {
+                return 0;
+            }
+        }
+        // TranslateMessage queues the WM_CHAR for VK_TAB *before* the
+        // WM_KEYDOWN above is dispatched, so consuming the keydown alone
+        // doesn't stop BetterText from inserting a literal tab character —
+        // which would mutate the compose text and dismiss the popup. While
+        // the popup nav hook is live (popup open), swallow the tab WM_CHAR.
+        if (msg == WM_CHAR && self->popup_nav_ && wParam == VK_TAB)
+        {
+            return 0;
+        }
+        // Intercept Ctrl+V / Shift+Insert / right-click "Paste" before
+        // BetterText inserts text. If clipboard holds a DIB and we have an
+        // image-paste handler, route to it and skip the default.
+        if (msg == WM_PASTE && self->on_image_paste_ && self->wic_)
+        {
+            if (IsClipboardFormatAvailable(CF_DIBV5) ||
+                IsClipboardFormatAvailable(CF_DIB))
+            {
+                std::vector<std::uint8_t> bytes;
+                if (clipboard_image_to_png(self->wic_, hwnd, bytes))
+                {
+                    self->on_image_paste_(std::move(bytes), "image/png");
+                    return 0;
+                }
+            }
+        }
+        // Custom-emoji images resolve asynchronously (the shell kicks off a
+        // fetch as a side effect of set_image_resolver's callback and has no
+        // completion hook — same fire-and-forget contract every other
+        // ensure_media_image_ caller relies on) — retry any still-pending
+        // uris each repaint until the shell's cache has them.
+        if (msg == WM_PAINT && !self->pending_image_uris_.empty())
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            std::vector<std::wstring> pending(self->pending_image_uris_.begin(),
+                                              self->pending_image_uris_.end());
+            for (const auto& uri : pending)
+            {
+                self->resolve_image_uri(hwnd, uri.c_str());
+            }
+            return r;
+        }
+        if (msg == WM_GETDLGCODE)
+        {
+            LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
+            return r | DLGC_WANTALLKEYS;
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+
+    float dip_scale() const
+    {
+        const float dpi = static_cast<float>(GetDpiForWindow(parent_));
+        return dpi > 0.f ? dpi / 96.f : 1.f;
+    }
+
+    // Adapts BetterText's C-style IBetterTextImageProvider to the shell's
+    // set_image_resolver callback. Nested so it can reach the outer
+    // instance's private resolve_image_uri without a forward declaration.
+    class ImageProviderAdapter final : public IBetterTextImageProvider
+    {
+    public:
+        explicit ImageProviderAdapter(BetterTextArea* owner) : owner_(owner) {}
+        void ResolveImageUri(HWND control, uint64_t /*request_id*/, const wchar_t* uri,
+                             float /*display_width*/, float /*display_height*/) override
+        {
+            owner_->resolve_image_uri(control, uri);
+        }
+
+    private:
+        BetterTextArea* owner_;
+    };
+
+    void resolve_image_uri(HWND control, const wchar_t* uri)
+    {
+        if (!uri)
+        {
+            return;
+        }
+        if (image_resolver_)
+        {
+            if (const tk::Image* image = image_resolver_(wide_to_utf8(uri)))
+            {
+                if (IWICBitmap* bitmap = tk::d2d::to_native_image(*image))
+                {
+                    BetterTextNotifyImageResolved(control, 0, uri, bitmap, S_OK);
+                    pending_image_uris_.erase(uri);
+                    return;
+                }
+            }
+        }
+        pending_image_uris_.insert(uri);
+    }
+
+    HWND parent_ = nullptr;
+    HWND hwnd_ = nullptr;
+    int id_ = 0;
+    IWICImagingFactory* wic_ = nullptr;
+    const Theme* theme_ = nullptr;
+    bool suppress_changed_ = false;
+    bool visible_ = true;
+    float last_height_ = 0.f;
+    Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
+    std::function<void(const std::string&)>     on_changed_;
+    std::function<void()>                       on_submit_;
+    std::function<void(float)>                  on_height_changed_;
+    ImagePasteHandler                           on_image_paste_;
+    std::function<bool(NativeTextArea::NavKey)> popup_nav_;
+    std::function<bool()>                       on_edit_last_;
+    std::function<const tk::Image*(const std::string&)> image_resolver_;
+    ImageProviderAdapter                        image_provider_{ this };
+    std::unordered_set<std::wstring>            pending_image_uris_;
+
+    // Mentions only now — custom emoticons moved to real Image atoms (see
+    // insert_emoticon/composer_draft above), so there's no literal text to
+    // side-table-match for them anymore.
+    struct ComposerEntry
+    {
+        std::string visual, user_id, display_name;
+        bool is_room;
+    };
+    std::vector<ComposerEntry> composer_entries_;
+};
+
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can
 // call it without a separate header (mirrors the qt6 / gtk / macos pattern).
 std::unique_ptr<tk::AudioPlayer>
@@ -3381,8 +4288,8 @@ public:
     std::unique_ptr<NativeTextField> make_text_field() override
     {
         int id = next_ctrl_id_++;
-        auto field = std::make_unique<Win32NativeTextField>(hwnd_, id);
-        fields_by_id_.emplace(id, field.get());
+        auto field = std::make_unique<BetterTextField>(hwnd_, id, theme_);
+        areas_by_id_.emplace(id, field.get());
         return field;
     }
 
@@ -3390,9 +4297,7 @@ public:
     {
         int id = next_ctrl_id_++;
         auto fac = d2d::factories(backend_singleton());
-        auto area = std::make_unique<Win32RichEditArea>(
-            hwnd_, id, fac.wic, fac.d2d_device, fac.d3d_device,
-            fac.dwrite, theme_, fac.noto_emoji_face);
+        auto area = std::make_unique<BetterTextArea>(hwnd_, id, fac.wic, theme_);
         areas_by_id_.emplace(id, area.get());
         return area;
     }
