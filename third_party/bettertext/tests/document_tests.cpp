@@ -200,6 +200,60 @@ HWND CreateHiddenControl(HINSTANCE instance) {
         nullptr);
 }
 
+void ClusterAwareCaretMovement() {
+    HWND hwnd = CreateHiddenControl(GetModuleHandleW(nullptr));
+    Expect(hwnd != nullptr, "create hidden control for cluster-aware caret test");
+    if (!hwnd) {
+        return;
+    }
+
+    // "A" + U+1F600 (a surrogate pair, 2 UTF-16 code units) + "B" = 4 code
+    // units total. A caret/arrow-key/delete operation that only advances by
+    // one code unit at a time would stop in the middle of the emoji.
+    BetterTextSetText(hwnd, L"A\U0001F600B");
+    Expect(BetterTextGetTextLength(hwnd) == 4, "surrogate-pair emoji occupies 2 UTF-16 code units");
+
+    BetterTextSelection sel{};
+
+    BetterTextSetSelection(hwnd, 1, 1);
+    SendMessageW(hwnd, WM_KEYDOWN, VK_RIGHT, 0);
+    BetterTextGetSelection(hwnd, &sel);
+    Expect(sel.caret == 3, "right arrow skips the whole surrogate-pair emoji in one press");
+
+    BetterTextSetSelection(hwnd, 3, 3);
+    SendMessageW(hwnd, WM_KEYDOWN, VK_LEFT, 0);
+    BetterTextGetSelection(hwnd, &sel);
+    Expect(sel.caret == 1, "left arrow skips the whole surrogate-pair emoji in one press");
+
+    // Shift+Right should extend the selection by the whole cluster too.
+    BetterTextSetSelection(hwnd, 1, 1);
+    SendKeyWithShift(hwnd, VK_RIGHT);
+    BetterTextGetSelection(hwnd, &sel);
+    Expect(sel.anchor == 1 && sel.caret == 3, "shift+right extends selection past the whole emoji");
+
+    // Backspace from just after the emoji removes the whole thing, not just
+    // the low surrogate.
+    BetterTextSetText(hwnd, L"A\U0001F600B");
+    BetterTextSetSelection(hwnd, 3, 3);
+    SendMessageW(hwnd, WM_KEYDOWN, VK_BACK, 0);
+    Expect(BetterTextGetTextLength(hwnd) == 2, "backspace deletes the whole emoji, not half of it");
+    wchar_t after_backspace[16] = {};
+    BetterTextGetText(hwnd, after_backspace, 16);
+    Expect(std::wstring(after_backspace) == L"AB", "backspace over the emoji leaves the surrounding text intact");
+
+    // Delete from just before the emoji removes the whole thing, not just
+    // the high surrogate.
+    BetterTextSetText(hwnd, L"A\U0001F600B");
+    BetterTextSetSelection(hwnd, 1, 1);
+    SendMessageW(hwnd, WM_KEYDOWN, VK_DELETE, 0);
+    Expect(BetterTextGetTextLength(hwnd) == 2, "delete removes the whole emoji, not half of it");
+    wchar_t after_delete[16] = {};
+    BetterTextGetText(hwnd, after_delete, 16);
+    Expect(std::wstring(after_delete) == L"AB", "delete over the emoji leaves the surrounding text intact");
+
+    DestroyWindow(hwnd);
+}
+
 struct NotifyRecord {
     int changed_count = 0;
     int submit_count = 0;
@@ -342,6 +396,7 @@ int main() {
     ContentHeightIsPositiveAndGrowsWithText();
     PasswordModeLeavesUnderlyingTextIntact();
     PlaceholderApiDoesNotCrashWhenEmptyOrPopulated();
+    ClusterAwareCaretMovement();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " BetterText test(s) failed.\n";

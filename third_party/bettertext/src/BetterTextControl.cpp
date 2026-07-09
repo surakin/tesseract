@@ -1081,6 +1081,55 @@ void Paint(ControlState* state) {
     EndPaint(state->hwnd, &ps);
 }
 
+// Many emoji are not one UTF-16 code unit: a codepoint outside the BMP (e.g.
+// U+1F600) is a surrogate pair, and complex emoji (ZWJ family/profession
+// sequences, flags, skin-tone modifiers) are multiple codepoints shaped by
+// the font into a single glyph. Document indexes by code unit (one atom per
+// wchar_t), which is fine as a storage/selection representation, but caret
+// movement must snap to the glyph *cluster* boundaries DirectWrite already
+// computes during shaping — otherwise the caret can land mid-emoji, and
+// moving past one requires several key presses instead of one.
+
+// Caret position one glyph cluster to the right of `pos` (skips a whole
+// multi-unit emoji in one step instead of stopping mid-cluster).
+int64_t NextClusterBoundary(ControlState* state, int64_t pos) {
+    const int64_t length = static_cast<int64_t>(state->document.Length());
+    if (pos >= length) {
+        return pos;
+    }
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+    if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
+        return pos + 1;
+    }
+    FLOAT x = 0.0f;
+    FLOAT y = 0.0f;
+    DWRITE_HIT_TEST_METRICS m{};
+    if (FAILED(layout->HitTestTextPosition(static_cast<UINT32>(pos), FALSE, &x, &y, &m))) {
+        return pos + 1;
+    }
+    const int64_t next = static_cast<int64_t>(m.textPosition) + static_cast<int64_t>(m.length);
+    return next > pos ? next : pos + 1;  // defensive: never stall
+}
+
+// Caret position one glyph cluster to the left of `pos`.
+int64_t PrevClusterBoundary(ControlState* state, int64_t pos) {
+    if (pos <= 0) {
+        return pos;
+    }
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+    if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
+        return pos - 1;
+    }
+    FLOAT x = 0.0f;
+    FLOAT y = 0.0f;
+    DWRITE_HIT_TEST_METRICS m{};
+    if (FAILED(layout->HitTestTextPosition(static_cast<UINT32>(pos - 1), FALSE, &x, &y, &m))) {
+        return pos - 1;
+    }
+    const int64_t prev_start = static_cast<int64_t>(m.textPosition);
+    return prev_start < pos ? prev_start : pos - 1;  // defensive
+}
+
 int64_t HitTest(ControlState* state, float x, float y) {
     Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
     if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
@@ -1098,7 +1147,11 @@ int64_t HitTest(ControlState* state, float x, float y) {
     if (FAILED(hr)) {
         return state->selection.caret;
     }
-    int64_t position = static_cast<int64_t>(metrics.textPosition) + (trailing ? 1 : 0);
+    // metrics.length is the whole cluster's code-unit length (>1 for a
+    // multi-unit emoji) — a trailing hit must land past the whole cluster,
+    // not one code unit into it.
+    int64_t position = static_cast<int64_t>(metrics.textPosition) +
+                       (trailing ? static_cast<int64_t>(metrics.length) : 0);
     return std::clamp<int64_t>(position, 0, static_cast<int64_t>(state->document.Length()));
 }
 
@@ -1191,12 +1244,12 @@ void DeleteSelectionOrRange(ControlState* state, bool backward) {
             if (start == 0) {
                 return;
             }
-            --start;
+            start = PrevClusterBoundary(state, start);
         } else {
             if (end >= static_cast<int64_t>(state->document.Length())) {
                 return;
             }
-            ++end;
+            end = NextClusterBoundary(state, end);
         }
     }
     state->PushUndo();
@@ -1315,7 +1368,9 @@ void MoveCaretVertically(ControlState* state, int direction, bool extend) {
         return;
     }
 
-    const int64_t target = static_cast<int64_t>(target_metrics.textPosition) + (trailing ? 1 : 0);
+    // See HitTest()'s identical fix — use the whole cluster length, not 1.
+    const int64_t target = static_cast<int64_t>(target_metrics.textPosition) +
+                           (trailing ? static_cast<int64_t>(target_metrics.length) : 0);
     MoveCaret(state, target, extend, true);
 }
 
@@ -1360,10 +1415,10 @@ LRESULT HandleKeyDown(ControlState* state, WPARAM key) {
 
     switch (key) {
     case VK_LEFT:
-        MoveCaret(state, state->selection.caret - 1, shift);
+        MoveCaret(state, PrevClusterBoundary(state, state->selection.caret), shift);
         return 0;
     case VK_RIGHT:
-        MoveCaret(state, state->selection.caret + 1, shift);
+        MoveCaret(state, NextClusterBoundary(state, state->selection.caret), shift);
         return 0;
     case VK_UP:
         MoveCaretVertically(state, -1, shift);
