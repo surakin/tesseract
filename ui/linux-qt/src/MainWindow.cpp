@@ -628,9 +628,20 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             on_thread_close_requested();
         };
         mainApp_->room_view()->on_thread_send =
-            [this](const std::string& body, const std::string& formatted)
+            [this](const std::string& body, const std::string& /*formatted*/)
         {
-            on_thread_send_requested(body, formatted);
+            // RoomView has no access to the native text area's mention/
+            // emoticon draft, so it always passes an empty `formatted` here —
+            // rebuild it the same way on_send does so thread sends keep
+            // mentions and MSC2545 custom emoji instead of plain shortcode
+            // text.
+            std::vector<tesseract::MentionSeg> draft =
+                roomTextArea_ ? roomTextArea_->composer_draft()
+                              : std::vector<tesseract::MentionSeg>{};
+            tesseract::MarkdownResult msg =
+                draft.empty() ? tesseract::MarkdownResult{body, ""}
+                              : tesseract::build_mention_message(draft);
+            on_thread_send_requested(msg.body, msg.formatted_body);
             if (roomTextArea_)
                 roomTextArea_->set_text("");
             mainApp_->room_view()->clear_compose_text();
@@ -638,9 +649,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mainApp_->room_view()->on_thread_send_reply =
             [this](const std::string& reply_id,
                    const std::string& body,
-                   const std::string& formatted)
+                   const std::string& /*formatted*/)
         {
-            on_thread_send_reply_requested(reply_id, body, formatted);
+            std::vector<tesseract::MentionSeg> draft =
+                roomTextArea_ ? roomTextArea_->composer_draft()
+                              : std::vector<tesseract::MentionSeg>{};
+            tesseract::MarkdownResult msg =
+                draft.empty() ? tesseract::MarkdownResult{body, ""}
+                              : tesseract::build_mention_message(draft);
+            on_thread_send_reply_requested(reply_id, msg.body,
+                                           msg.formatted_body);
             if (roomTextArea_)
                 roomTextArea_->set_text("");
             mainApp_->room_view()->clear_compose_text();

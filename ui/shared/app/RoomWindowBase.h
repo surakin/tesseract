@@ -6,6 +6,7 @@
 #include "tk/host.h"
 #include "tk/theme.h"
 #include <tesseract/image_pack.h>
+#include <tesseract/mentions.h>
 #include <tesseract/settings.h>
 #include <tesseract/types.h>
 
@@ -146,6 +147,17 @@ protected:
     {
         return nullptr;
     }
+
+    // Build the outgoing (body, formatted_body) pair from the live compose
+    // text area's mention/emoticon draft (matrix.to links + m.mentions for
+    // pills, <img data-mx-emoticon> for custom emoji) via
+    // tesseract::build_mention_message. Falls back to {fallback_body, ""}
+    // when there is no text area or its draft is empty (plain text, no
+    // pills). Shared by on_send / on_thread_send / on_thread_send_reply so
+    // thread sends carry the same rich formatting as room sends instead of
+    // silently dropping it.
+    tesseract::MarkdownResult draft_outgoing_message_(
+        const std::string& fallback_body);
 
     // Encode raw image bytes for sending via the subclass's surface host
     // (tk::Host::encode_for_send). Surface-bound, so it can't live in the base;

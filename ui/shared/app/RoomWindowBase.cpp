@@ -789,16 +789,21 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         apply_popout_thread_transition_(t);
     };
     rv->on_thread_send = [this, rv](const std::string& body,
-                                    const std::string& formatted)
+                                    const std::string& /*formatted*/)
     {
         if (!shell_->client_ || room_id_.empty() || popout_thread_root_.empty())
             return;
+        // RoomView passes an always-empty `formatted` (it has no access to the
+        // native text area's draft) — rebuild it here the same way on_send
+        // does, so thread sends keep mentions and MSC2545 custom emoji.
+        auto msg = draft_outgoing_message_(body);
         auto sess = shell_->active_account_;
         auto rid  = room_id_;
         auto root = popout_thread_root_;
-        run_async_mut_([sess, rid, root, body, formatted]() mutable {
+        run_async_mut_([sess, rid, root, msg]() mutable {
             if (!sess || !sess->client) return;
-            sess->client->send_thread_message(rid, root, body, formatted);
+            sess->client->send_thread_message(rid, root, msg.body,
+                                              msg.formatted_body);
         });
         if (auto* ta = compose_text_area_())
             ta->set_text("");
@@ -806,17 +811,19 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     };
     rv->on_thread_send_reply = [this, rv](const std::string& reply_id,
                                           const std::string& body,
-                                          const std::string& formatted)
+                                          const std::string& /*formatted*/)
     {
         if (!shell_->client_ || room_id_.empty() || popout_thread_root_.empty() ||
             reply_id.empty())
             return;
+        auto msg = draft_outgoing_message_(body);
         auto sess = shell_->active_account_;
         auto rid  = room_id_;
         auto root = popout_thread_root_;
-        run_async_mut_([sess, rid, root, reply_id, body, formatted]() mutable {
+        run_async_mut_([sess, rid, root, reply_id, msg]() mutable {
             if (!sess || !sess->client) return;
-            sess->client->send_thread_reply(rid, root, reply_id, body, formatted);
+            sess->client->send_thread_reply(rid, root, reply_id, msg.body,
+                                            msg.formatted_body);
         });
         if (auto* ta = compose_text_area_())
             ta->set_text("");
@@ -1169,6 +1176,20 @@ void RoomWindowBase::send_message_(const std::string& body)
     if (body.empty())
         return;
     send_message_(body, "");
+}
+
+tesseract::MarkdownResult
+RoomWindowBase::draft_outgoing_message_(const std::string& fallback_body)
+{
+    if (auto* ta = compose_text_area_())
+    {
+        auto draft = ta->composer_draft();
+        if (!draft.empty())
+        {
+            return tesseract::build_mention_message(draft);
+        }
+    }
+    return {fallback_body, ""};
 }
 
 tesseract::Client* RoomWindowBase::shell_client_() const
