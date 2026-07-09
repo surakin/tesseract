@@ -4307,6 +4307,12 @@ MessageListView::~MessageListView()
 MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
 {
     set_adapter(adapter_.get());
+    // A room switch shows the cached tail immediately and back-paginates only on
+    // scroll (Element X behaviour) — never auto-fill a partly-filled viewport
+    // with a /messages gap resolution. And when the cached tail is shorter than
+    // the viewport, pin it to the bottom (empty space above) as chat expects.
+    set_autofill_only_when_empty(true);
+    set_anchor_content_bottom(true);
     on_row_clicked = [this](int idx)
     {
         if (idx < 0 || static_cast<std::size_t>(idx) >= messages_.size())

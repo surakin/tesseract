@@ -270,6 +270,14 @@ float ListView::content_height() const
     return row_offsets_.empty() ? 0.0f : row_offsets_.back();
 }
 
+float ListView::content_top_pad_() const
+{
+    if (!anchor_content_bottom_)
+        return 0.0f;
+    const float ch = content_height();
+    return ch < bounds_.h ? (bounds_.h - ch) : 0.0f;
+}
+
 std::size_t ListView::first_visible_row_() const
 {
     auto it = std::upper_bound(row_offsets_.begin(), row_offsets_.end(), scroll_y_);
@@ -307,7 +315,10 @@ int ListView::index_at(Point local) const
     {
         return kInvalidIndex;
     }
-    float content_y = local.y + scroll_y_;
+    // Subtract the bottom-anchor pad so screen→content mapping matches paint,
+    // which adds it. A click in the empty band above short content maps to a
+    // negative content_y and is correctly rejected below.
+    float content_y = local.y - content_top_pad_() + scroll_y_;
     if (content_y < 0 || content_y >= row_offsets_.back())
     {
         return kInvalidIndex;
@@ -391,14 +402,26 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         anchored_relayout_pending_ = false;
         on_anchored_relayout_();
     }
-    if (on_near_top && adapter_->count() > 0 && content_height() < bounds_.h)
+    if (on_near_top)
     {
-        // Loaded content doesn't fill the viewport — request the next page
-        // immediately rather than waiting for a scroll gesture. Safe to call
-        // on every arrange: the consumer's own in-flight/reached-start gate
-        // (see ShellBase::pagination_) makes redundant calls harmless no-ops,
-        // and it naturally stops once the room's real history is exhausted.
-        on_near_top();
+        // Auto-fire on_near_top to pull more history when the loaded content
+        // doesn't fill the viewport. Message lists set autofill_only_when_empty_
+        // (Element X behaviour): a room switch shows the cached tail and
+        // back-paginates only on scroll, so here we fire only for a genuinely
+        // empty list (bootstrap of an empty/focused timeline). Other lists keep
+        // the fill-on-open behaviour.
+        const std::size_t n = adapter_ ? adapter_->count() : 0;
+        const bool needs_fill = autofill_only_when_empty_
+                                    ? (n == 0)
+                                    : (n > 0 && content_height() < bounds_.h);
+        if (needs_fill)
+        {
+            // Safe to call on every arrange: the consumer's own
+            // in-flight/reached-start gate (see ShellBase::pagination_) makes
+            // redundant calls harmless no-ops, and it naturally stops once the
+            // room's real history is exhausted.
+            on_near_top();
+        }
     }
 }
 
@@ -631,8 +654,9 @@ void ListView::paint(PaintCtx& ctx)
         {
             break;
         }
-        Rect row_bounds{bounds_.x, bounds_.y + (row_top - scroll_y_), bounds_.w,
-                        row_bottom - row_top};
+        Rect row_bounds{bounds_.x,
+                        bounds_.y + content_top_pad_() + (row_top - scroll_y_),
+                        bounds_.w, row_bottom - row_top};
         if (row_bounds.bottom() <= clip.y || row_bounds.y >= clip.bottom())
         {
             continue;

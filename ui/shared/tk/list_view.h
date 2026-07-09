@@ -219,6 +219,21 @@ public:
     {
         was_near_top_ = false;
     }
+    // When true, the arrange-time "content shorter than viewport" auto-fire of
+    // on_near_top only triggers if the list is empty (0 rows) — never merely to
+    // fill a partly-filled viewport. Mirrors Element X: a room switch shows the
+    // cached tail immediately and back-paginates only on scroll. Enabled on the
+    // message list; off elsewhere (thread lists keep fill-on-open).
+    void set_autofill_only_when_empty(bool v)
+    {
+        autofill_only_when_empty_ = v;
+    }
+    // When true, content shorter than the viewport is anchored to the bottom
+    // (empty space above), as a chat timeline expects, rather than the top.
+    void set_anchor_content_bottom(bool v)
+    {
+        anchor_content_bottom_ = v;
+    }
 
     // Fired exactly once each time the viewport's bottom edge first enters the
     // near_bottom_threshold_px zone (default 200px). Re-arms when content is
@@ -359,6 +374,11 @@ private:
     bool locate_anchor_(std::size_t& out_index) const;
     void maybe_fire_near_top();
     void maybe_fire_near_bottom();
+    // Vertical offset (px) pushing rows down so short content sits at the bottom
+    // of the viewport. Zero unless anchor_content_bottom_ is set and content is
+    // shorter than the viewport. Must be applied consistently to every
+    // screen<->content y mapping (paint, hit-test, visible range).
+    float content_top_pad_() const;
     void fire_latch_(bool now_near, bool& was_near,
                      const std::function<void()>& callback);
     std::size_t first_visible_row_() const;
@@ -391,6 +411,9 @@ private:
     // `on_near_top` machinery — see public docs.
     float near_top_threshold_px_ = 200.0f;
     bool was_near_top_ = false;
+    // See set_autofill_only_when_empty / set_anchor_content_bottom.
+    bool autofill_only_when_empty_ = false;
+    bool anchor_content_bottom_ = false;
 
     // `on_near_bottom` machinery — see public docs.
     float near_bottom_threshold_px_ = 200.0f;

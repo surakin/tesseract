@@ -7845,6 +7845,13 @@ void ShellBase::prune_warm_subscriptions_()
     for (const auto& kv : room_subscription_refs_)
         if (kv.second > 0)
             keep.insert(kv.first); // pinned by a pop-out window
+    // Favorite rooms, once opened, stay warm for the rest of the session so
+    // switching back is always instant (no timeline rebuild / gap-resolving
+    // /messages). They bypass the kWarmRoomsMax cap; un-favouriting drops a room
+    // back to normal warm-LRU eviction on the next prune.
+    for (const auto& r : rooms_)
+        if (r.is_favorite)
+            keep.insert(r.id);
     for (const auto& room : select_warm_evictions_(keep, kWarmRoomsMax))
     {
         // Drop the room's per-room pagination state: unsubscribe_room tears the
