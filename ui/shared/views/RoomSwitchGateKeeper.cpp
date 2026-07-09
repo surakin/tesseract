@@ -55,6 +55,22 @@ std::uint64_t RoomSwitchGateKeeper::begin_room_switch()
     return epoch_;
 }
 
+void RoomSwitchGateKeeper::reset_within_switch()
+{
+    if (!gate_)
+    {
+        return; // ordinary backfill on an already-revealed room: stay inactive
+    }
+    const bool        focused = gate_->focused;
+    const std::string fid     = gate_->focus_event_id;
+    begin_room_switch(); // bumps epoch, fresh Gate, re-arms the 400ms timeout
+    if (focused)
+    {
+        gate_->focused        = true;
+        gate_->focus_event_id = fid;
+    }
+}
+
 void RoomSwitchGateKeeper::set_focus_event(const std::string& focus_event_id)
 {
     if (!gate_ || gate_->evaluated)

@@ -1980,6 +1980,40 @@ TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
     CHECK(any_image_painted(view)); // revealed
 }
 
+TEST_CASE("a same-room reset during initial load must not clear a still-pending "
+          "room-switch gate",
+          "[tk][view][messagelist][gate]")
+{
+    // Regression test: subscribe_room's initial timeline snapshot and the
+    // follow-up paginate_back_with_status refill can both land as resets for
+    // the SAME room while the switch gate from the original room_switch=true
+    // reset is still pending. The second reset is misclassified upstream as
+    // room_switch=false; it must re-arm the still-pending gate rather than
+    // clearing it, or the row would reveal before its image dependency
+    // resolves.
+    TkListsStage st;
+    MessageListView view;
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
+
+    view.set_messages({gate_unsized_image_row()}, /*room_switch=*/true);
+    st.run(view, {0, 0, 400, 600});
+    CHECK_FALSE(any_image_painted(view)); // gated by the genuine switch
+
+    // Same-room reset races the still-pending gate (room_switch=false).
+    view.set_messages({gate_unsized_image_row()}, /*room_switch=*/false);
+    st.run(view, {0, 0, 400, 600});
+    CHECK_FALSE(any_image_painted(view)); // must stay gated, not reveal early
+
+    // The media eventually arrives; the re-armed gate still releases normally.
+    view.notify_image_ready("mxc://example.org/pic");
+    st.run(view, {0, 0, 400, 600});
+    CHECK(any_image_painted(view));
+}
+
 TEST_CASE("MessageListView begin_switch_loading clears the old room's rows at once",
           "[tk][view][messagelist][switch_loading]")
 {

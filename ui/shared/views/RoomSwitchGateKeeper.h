@@ -83,6 +83,15 @@ public:
     std::uint64_t begin_room_switch();
     // Tear down any gate without revealing (room-switch=false or empty list).
     void clear() { gate_.reset(); }
+    // Re-arm for a same-room timeline reset landing while the gate from the
+    // ORIGINAL switch is still pending (e.g. subscribe_room's initial
+    // snapshot followed by paginate_back_with_status's refill). No-op if no
+    // gate is currently active — an ordinary backfill on an already-revealed
+    // room must not start gating (that would freeze scroll-up pagination
+    // behind an invisible list). Preserves focused/focus_event_id across the
+    // re-arm, since the caller only calls set_focus_event() on a genuine
+    // room_switch==true reset.
+    void reset_within_switch();
     // Switch a not-yet-evaluated gate into jump-to-event mode.
     void set_focus_event(const std::string& focus_event_id);
 

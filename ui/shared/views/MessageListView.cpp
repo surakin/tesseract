@@ -4562,16 +4562,25 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         }
     }
 
-    // Supersede any prior gate (rapid re-switch / same-room reset). The
-    // keeper bumps its epoch (neutralising any outstanding timeout closure)
-    // and clears for the non-gated case.
-    if (!room_switch || messages_.empty())
+    if (messages_.empty())
     {
         room_switch_gate_.clear();
-        return; // nothing to gate
+        return; // nothing to show, nothing to gate
     }
-    // Arms a fresh gate + its 400ms timeout fallback. Dependencies are
-    // collected on the first paint (the visible band needs a measure pass).
+    if (!room_switch)
+    {
+        // A same-room reset (subscribe_room's initial snapshot followed by
+        // paginate_back_with_status's refill) can land while the gate armed
+        // by the original switch is still pending — re-arm rather than
+        // tearing it down, so an unresolved dependency still holds the list.
+        // No-op if no gate is active (ordinary backfill on an
+        // already-revealed room).
+        room_switch_gate_.reset_within_switch();
+        return;
+    }
+    // Supersede any prior gate (rapid re-switch) and arm a fresh gate + its
+    // 400ms timeout fallback. Dependencies are collected on the first paint
+    // (the visible band needs a measure pass).
     room_switch_gate_.begin_room_switch();
 }
 
