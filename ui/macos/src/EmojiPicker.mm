@@ -14,8 +14,8 @@
 namespace
 {
 
-constexpr CGFloat kPanelWidth = 320;
-constexpr CGFloat kPanelHeight = 360;
+constexpr CGFloat kEmojiPanelWidth = 320;
+constexpr CGFloat kEmojiPanelHeight = 360;
 
 } // namespace
 
@@ -68,7 +68,7 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     dispatch_once(&once, ^{
         NSWindowStyleMask mask =
             NSWindowStyleMaskNonactivatingPanel;
-        NSRect frame = NSMakeRect(0, 0, kPanelWidth, kPanelHeight);
+        NSRect frame = NSMakeRect(0, 0, kEmojiPanelWidth, kEmojiPanelHeight);
         g_emojiPanel =
             [[EmojiPickerPanel alloc] initWithContentRect:frame
                                                 styleMask:mask

@@ -13,8 +13,8 @@
 namespace
 {
 
-constexpr CGFloat kPanelWidth = 360;
-constexpr CGFloat kPanelHeight = 420;
+constexpr CGFloat kStickerPanelWidth = 360;
+constexpr CGFloat kStickerPanelHeight = 420;
 
 } // namespace
 
@@ -53,7 +53,7 @@ static StickerPickerPanel* g_stickerPanel = nil;
     dispatch_once(&once, ^{
         NSWindowStyleMask mask =
             NSWindowStyleMaskNonactivatingPanel;
-        NSRect frame = NSMakeRect(0, 0, kPanelWidth, kPanelHeight);
+        NSRect frame = NSMakeRect(0, 0, kStickerPanelWidth, kStickerPanelHeight);
         g_stickerPanel = [[StickerPickerPanel alloc]
             initWithContentRect:frame
                       styleMask:mask
