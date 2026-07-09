@@ -15,9 +15,9 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kRowH   = 22.0f;
-constexpr float kLabelW = 160.0f;
-constexpr float kLabelGap = 8.0f;
+constexpr float kServerSectionRowH   = 22.0f;
+constexpr float kServerSectionLabelW = 160.0f;
+constexpr float kServerSectionLabelGap = 8.0f;
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ public:
         {
             return {constraints.w, 0.0f};
         }
-        return {constraints.w, kRowH};
+        return {constraints.w, kServerSectionRowH};
     }
 
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override
@@ -71,7 +71,7 @@ public:
             ls.halign    = tk::TextHAlign::Leading;
             ls.valign    = tk::TextVAlign::Top;
             ls.trim      = tk::TextTrim::Ellipsis;
-            ls.max_width = kLabelW;
+            ls.max_width = kServerSectionLabelW;
             label_layout_ = ctx.factory.build_text("Homeserver", ls);
 
             tk::TextStyle vs;
@@ -79,14 +79,14 @@ public:
             vs.halign    = tk::TextHAlign::Leading;
             vs.valign    = tk::TextVAlign::Top;
             vs.trim      = tk::TextTrim::Ellipsis;
-            vs.max_width = std::max(0.0f, bounds_.w - kLabelW - kLabelGap);
+            vs.max_width = std::max(0.0f, bounds_.w - kServerSectionLabelW - kServerSectionLabelGap);
             value_layout_ = ctx.factory.build_text(homeserver_url_, vs);
         }
 
         ctx.canvas.draw_text(*label_layout_, {bounds_.x, bounds_.y},
                              pal.text_secondary);
         ctx.canvas.draw_text(*value_layout_,
-                             {bounds_.x + kLabelW + kLabelGap, bounds_.y},
+                             {bounds_.x + kServerSectionLabelW + kServerSectionLabelGap, bounds_.y},
                              pal.text_primary);
     }
 

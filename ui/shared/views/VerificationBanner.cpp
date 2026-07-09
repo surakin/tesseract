@@ -14,7 +14,7 @@ namespace
 
 constexpr float kHeightNormal    = 48.0f;
 constexpr float kHeightShowEmoji = 124.0f;
-constexpr float kBtnH            = 28.0f;
+constexpr float kVerificationBannerBtnH            = 28.0f;
 constexpr float kEmojiTileH      = 64.0f;
 constexpr float kEmojiGlyphH     = 40.0f;
 constexpr float kEmojiLabelH     = 24.0f;
@@ -62,7 +62,7 @@ VerificationBanner::VerificationBanner()
                 break;
             }
         });
-    primary->set_min_size({90.0f, kBtnH});
+    primary->set_min_size({90.0f, kVerificationBannerBtnH});
     primary_ = add_child(std::move(primary));
 
     // Secondary action button (Decline / Cancel / No Match)
@@ -95,7 +95,7 @@ VerificationBanner::VerificationBanner()
                 break;
             }
         });
-    secondary->set_min_size({90.0f, kBtnH});
+    secondary->set_min_size({90.0f, kVerificationBannerBtnH});
     secondary_ = add_child(std::move(secondary));
 
     // Dismiss "✕" — visible in Prompt and Cancelled states only
@@ -124,7 +124,7 @@ VerificationBanner::VerificationBanner()
                 on_use_recovery_key();
             }
         });
-    link->set_min_size({0.0f, kBtnH});
+    link->set_min_size({0.0f, kVerificationBannerBtnH});
     link_ = add_child(std::move(link));
 
     apply_state();
@@ -287,19 +287,19 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
         // Buttons not shown in ShowEmojis — arrange They Match / No Match
         // in the normal strip area so pointer dispatch works.
-        float btn_y = bounds.y + (kHeightNormal - kBtnH) * 0.5f;
+        float btn_y = bounds.y + (kHeightNormal - kVerificationBannerBtnH) * 0.5f;
         float right = bounds.x + bounds.w - kBannerPadX;
         if (secondary_ && secondary_->visible())
         {
-            auto sz = secondary_->measure(ctx, {100.0f, kBtnH});
-            secondary_rect_ = {right - sz.w, btn_y, sz.w, kBtnH};
+            auto sz = secondary_->measure(ctx, {100.0f, kVerificationBannerBtnH});
+            secondary_rect_ = {right - sz.w, btn_y, sz.w, kVerificationBannerBtnH};
             secondary_->arrange(ctx, secondary_rect_);
             right = secondary_rect_.x - kBannerGap;
         }
         if (primary_ && primary_->visible())
         {
-            auto sz = primary_->measure(ctx, {100.0f, kBtnH});
-            primary_rect_ = {right - sz.w, btn_y, sz.w, kBtnH};
+            auto sz = primary_->measure(ctx, {100.0f, kVerificationBannerBtnH});
+            primary_rect_ = {right - sz.w, btn_y, sz.w, kVerificationBannerBtnH};
             primary_->arrange(ctx, primary_rect_);
         }
         dismiss_rect_ = {};
@@ -322,9 +322,9 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     secondary_rect_ = {};
     if (secondary_ && secondary_->visible())
     {
-        auto sz = secondary_->measure(ctx, {100.0f, kBtnH});
-        secondary_rect_ = {right - sz.w, bounds.y + (bounds.h - kBtnH) * 0.5f,
-                           sz.w, kBtnH};
+        auto sz = secondary_->measure(ctx, {100.0f, kVerificationBannerBtnH});
+        secondary_rect_ = {right - sz.w, bounds.y + (bounds.h - kVerificationBannerBtnH) * 0.5f,
+                           sz.w, kVerificationBannerBtnH};
         secondary_->arrange(ctx, secondary_rect_);
         right = secondary_rect_.x - kBannerGap;
     }
@@ -332,9 +332,9 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     primary_rect_ = {};
     if (primary_ && primary_->visible())
     {
-        auto sz = primary_->measure(ctx, {100.0f, kBtnH});
-        primary_rect_ = {right - sz.w, bounds.y + (bounds.h - kBtnH) * 0.5f,
-                         sz.w, kBtnH};
+        auto sz = primary_->measure(ctx, {100.0f, kVerificationBannerBtnH});
+        primary_rect_ = {right - sz.w, bounds.y + (bounds.h - kVerificationBannerBtnH) * 0.5f,
+                         sz.w, kVerificationBannerBtnH};
         primary_->arrange(ctx, primary_rect_);
         right = primary_rect_.x - kBannerGap;
     }
@@ -342,9 +342,9 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     link_rect_ = {};
     if (link_ && link_->visible())
     {
-        auto sz = link_->measure(ctx, {200.0f, kBtnH});
-        link_rect_ = {right - sz.w, bounds.y + (bounds.h - kBtnH) * 0.5f, sz.w,
-                      kBtnH};
+        auto sz = link_->measure(ctx, {200.0f, kVerificationBannerBtnH});
+        link_rect_ = {right - sz.w, bounds.y + (bounds.h - kVerificationBannerBtnH) * 0.5f, sz.w,
+                      kVerificationBannerBtnH};
         link_->arrange(ctx, link_rect_);
         right = link_rect_.x - kBannerGap;
     }

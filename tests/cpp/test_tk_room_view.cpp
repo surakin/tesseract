@@ -15,7 +15,7 @@ using tesseract::views::RoomView;
 namespace
 {
 
-struct Stage
+struct TkRoomViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     LayoutCtx layout_ctx()
@@ -41,7 +41,7 @@ struct Stage
 TEST_CASE("RoomView exposes a compose text-area rect while a room is active",
           "[tk][view][room]")
 {
-    Stage st;
+    TkRoomViewStage st;
     RoomView view;
 
     tesseract::RoomInfo info;
@@ -56,7 +56,7 @@ TEST_CASE("RoomView exposes a compose text-area rect while a room is active",
 TEST_CASE("RoomView clears the compose text-area rect after the room closes",
           "[tk][view][room]")
 {
-    Stage st;
+    TkRoomViewStage st;
     RoomView view;
 
     tesseract::RoomInfo info;
@@ -77,7 +77,7 @@ TEST_CASE("RoomView clears the compose text-area rect after the room closes",
 TEST_CASE("RoomView closes the action-pill overflow menu on room switch",
           "[tk][view][room]")
 {
-    Stage st;
+    TkRoomViewStage st;
     RoomView view;
 
     tesseract::RoomInfo room_a;

@@ -14,24 +14,24 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kPadX = 20.0f;
-constexpr float kPadY = 16.0f;
-constexpr float kGap = 10.0f;
+constexpr float kJoinRoomPadX = 20.0f;
+constexpr float kJoinRoomPadY = 16.0f;
+constexpr float kJoinRoomGap = 10.0f;
 constexpr float kSmallGap = 6.0f;
 constexpr float kTitleH = 28.0f;
 constexpr float kInputH = 32.0f;
 constexpr float kLookupBtnW = 88.0f;
-constexpr float kBtnH = 32.0f;
-constexpr float kBtnW = 96.0f;
+constexpr float kJoinRoomBtnH = 32.0f;
+constexpr float kJoinRoomBtnW = 96.0f;
 constexpr float kStatusH = 20.0f;
-constexpr float kAvatarSize = 56.0f;
+constexpr float kJoinRoomAvatarSize = 56.0f;
 constexpr float kCardPadX = 14.0f;
 constexpr float kCardPadY = 12.0f;
-constexpr float kTopicMaxH = 66.0f;
+constexpr float kJoinRoomTopicMaxH = 66.0f;
 constexpr float kPillPadX = 8.0f;
 constexpr float kPillH = 18.0f;
-constexpr float kRadius = 6.0f;
-constexpr float kBorderW = 1.0f;
+constexpr float kJoinRoomRadius = 6.0f;
+constexpr float kJoinRoomBorderW = 1.0f;
 
 // Pill colours for join rules
 tk::Color join_rule_bg(const std::string& rule)
@@ -223,21 +223,21 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
 
-    float x = bounds.x + kPadX;
-    float y = bounds.y + kPadY;
-    float inner_w = bounds.w - kPadX * 2.0f;
+    float x = bounds.x + kJoinRoomPadX;
+    float y = bounds.y + kJoinRoomPadY;
+    float inner_w = bounds.w - kJoinRoomPadX * 2.0f;
 
     // Title row (painted directly — no Label child to keep it simple).
-    y += kTitleH + kGap;
+    y += kTitleH + kJoinRoomGap;
 
     // Input row: [alias field] [kSmallGap] [Look up button].
     float lookup_x = x + inner_w - kLookupBtnW;
     alias_field_rect_ = {x, y, inner_w - kLookupBtnW - kSmallGap, kInputH};
     if (lookup_btn_)
     {
-        lookup_btn_->arrange(ctx, {lookup_x, y, kLookupBtnW, kBtnH});
+        lookup_btn_->arrange(ctx, {lookup_x, y, kLookupBtnW, kJoinRoomBtnH});
     }
-    y += kInputH + kGap;
+    y += kInputH + kJoinRoomGap;
 
     // Status / error label.
     if (status_lbl_ && status_lbl_->visible())
@@ -253,39 +253,39 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         // Card occupies inner_w, auto height.
         float card_x = x;
         float card_y = y;
-        float info_x = card_x + kCardPadX + kAvatarSize + kGap;
-        float info_w = inner_w - kCardPadX * 2.0f - kAvatarSize - kGap;
-        float info_h = kAvatarSize; // clamp avatar + info side by side
+        float info_x = card_x + kCardPadX + kJoinRoomAvatarSize + kJoinRoomGap;
+        float info_w = inner_w - kCardPadX * 2.0f - kJoinRoomAvatarSize - kJoinRoomGap;
+        float info_h = kJoinRoomAvatarSize; // clamp avatar + info side by side
 
         // Estimate topic height.
         float topic_h = 0.0f;
         if (!preview_.topic.empty())
         {
-            topic_h = std::min(kTopicMaxH, 18.0f * 3.0f); // up to 3 lines
+            topic_h = std::min(kJoinRoomTopicMaxH, 18.0f * 3.0f); // up to 3 lines
         }
 
         float card_h = kCardPadY * 2.0f + info_h +
                        (topic_h > 0 ? kSmallGap + topic_h : 0.0f);
         preview_card_rect_ = {card_x, card_y, inner_w, card_h};
-        y += card_h + kGap;
+        y += card_h + kJoinRoomGap;
     }
 
     // Button row anchored to the bottom or below the card.
     // Cancel always visible; Join only in Preview state.
-    float btn_row_y = std::max(y, bounds.y + bounds.h - kPadY - kBtnH);
+    float btn_row_y = std::max(y, bounds.y + bounds.h - kJoinRoomPadY - kJoinRoomBtnH);
     float btn_x = x + inner_w; // right-align
 
     if (join_btn_ && join_btn_->visible())
     {
-        btn_x -= kBtnW;
-        join_btn_->arrange(ctx, {btn_x, btn_row_y, kBtnW, kBtnH});
+        btn_x -= kJoinRoomBtnW;
+        join_btn_->arrange(ctx, {btn_x, btn_row_y, kJoinRoomBtnW, kJoinRoomBtnH});
         btn_x -= kSmallGap;
     }
 
     if (cancel_btn_)
     {
-        btn_x -= kBtnW;
-        cancel_btn_->arrange(ctx, {btn_x, btn_row_y, kBtnW, kBtnH});
+        btn_x -= kJoinRoomBtnW;
+        cancel_btn_->arrange(ctx, {btn_x, btn_row_y, kJoinRoomBtnW, kJoinRoomBtnH});
     }
 }
 
@@ -297,8 +297,8 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, pal.bg);
 
     // Title.
-    float x = bounds_.x + kPadX;
-    float y = bounds_.y + kPadY;
+    float x = bounds_.x + kJoinRoomPadX;
+    float y = bounds_.y + kJoinRoomPadY;
     {
         tk::TextStyle ts;
         ts.role = tk::FontRole::Title;
@@ -310,16 +310,16 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             ctx.canvas.draw_text(*lo, {x, y}, pal.text_primary);
         }
     }
-    y += kTitleH + kGap;
+    y += kTitleH + kJoinRoomGap;
 
     // Alias field background (the NativeTextField overlays this).
     if (alias_field_visible() && !alias_field_rect_.empty())
     {
-        ctx.canvas.fill_rounded_rect(alias_field_rect_, kRadius, pal.bg);
-        ctx.canvas.stroke_rounded_rect(alias_field_rect_, kRadius, pal.border,
-                                       kBorderW);
+        ctx.canvas.fill_rounded_rect(alias_field_rect_, kJoinRoomRadius, pal.bg);
+        ctx.canvas.stroke_rounded_rect(alias_field_rect_, kJoinRoomRadius, pal.border,
+                                       kJoinRoomBorderW);
     }
-    y += kInputH + kGap;
+    y += kInputH + kJoinRoomGap;
 
     // Status label.
     if (status_lbl_ && status_lbl_->visible())
@@ -332,16 +332,16 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
     if (state_ == State::Preview && !preview_card_rect_.empty())
     {
         // Card border.
-        ctx.canvas.fill_rounded_rect(preview_card_rect_, kRadius, pal.bg);
-        ctx.canvas.stroke_rounded_rect(preview_card_rect_, kRadius, pal.border,
-                                       kBorderW);
+        ctx.canvas.fill_rounded_rect(preview_card_rect_, kJoinRoomRadius, pal.bg);
+        ctx.canvas.stroke_rounded_rect(preview_card_rect_, kJoinRoomRadius, pal.border,
+                                       kJoinRoomBorderW);
 
         float cx = preview_card_rect_.x + kCardPadX;
         float cy = preview_card_rect_.y + kCardPadY;
         float iw = preview_card_rect_.w - kCardPadX * 2.0f;
 
         // Avatar.
-        tk::Point av_centre{cx + kAvatarSize * 0.5f, cy + kAvatarSize * 0.5f};
+        tk::Point av_centre{cx + kJoinRoomAvatarSize * 0.5f, cy + kJoinRoomAvatarSize * 0.5f};
         const tk::Image* av_img = nullptr;
         if (avatar_provider_ && !preview_.avatar_url.empty())
         {
@@ -352,14 +352,14 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             std::string_view disp = preview_.name.empty()
                                         ? std::string_view("#")
                                         : std::string_view(preview_.name);
-            draw_avatar(ctx.canvas, av_img, av_centre, kAvatarSize, disp,
+            draw_avatar(ctx.canvas, av_img, av_centre, kJoinRoomAvatarSize, disp,
                         pal.accent, tk::Color{255, 255, 255, 255});
         }
 
         // Info column to the right of the avatar.
-        float info_x = cx + kAvatarSize + kGap;
+        float info_x = cx + kJoinRoomAvatarSize + kJoinRoomGap;
         float info_y = cy;
-        float info_w = iw - kAvatarSize - kGap;
+        float info_w = iw - kJoinRoomAvatarSize - kJoinRoomGap;
 
         // Room name.
         {
@@ -426,7 +426,7 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
         if (!preview_.topic.empty())
         {
             float topic_y =
-                preview_card_rect_.y + kCardPadY + kAvatarSize + kSmallGap;
+                preview_card_rect_.y + kCardPadY + kJoinRoomAvatarSize + kSmallGap;
             float topic_w = preview_card_rect_.w - kCardPadX * 2.0f;
             if (!topic_layout_)
             {
@@ -435,7 +435,7 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
                 ts.halign = tk::TextHAlign::Leading;
                 ts.wrap = true;
                 ts.max_width = topic_w;
-                ts.max_height = kTopicMaxH;
+                ts.max_height = kJoinRoomTopicMaxH;
                 ts.trim = tk::TextTrim::Ellipsis;
                 if (!topic_spans_.empty())
                     topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);

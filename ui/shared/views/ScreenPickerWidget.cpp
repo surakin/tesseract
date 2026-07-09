@@ -14,9 +14,9 @@ constexpr float kPad    = 24.0f;
 constexpr float kHdrH   = 48.0f;
 constexpr float kTileW  = 220.0f;
 constexpr float kTileH  = 140.0f;
-constexpr float kGap    = 16.0f;
-constexpr float kBtnW   = 100.0f;
-constexpr float kBtnH   = 36.0f;
+constexpr float kScreenPickerGap    = 16.0f;
+constexpr float kScreenPickerBtnW   = 100.0f;
+constexpr float kScreenPickerBtnH   = 36.0f;
 
 constexpr tk::Color kBackdrop  {  0,   0,   0, 180};
 constexpr tk::Color kCardBg    { 30,  30,  30, 245};
@@ -71,7 +71,7 @@ void ScreenPickerWidget::set_thumbnail(std::size_t index, std::vector<std::uint8
 tk::Size ScreenPickerWidget::measure(tk::LayoutCtx& ctx, tk::Size constraints)
 {
     if (cancel_btn_)
-        cancel_btn_->measure(ctx, {kBtnW, kBtnH});
+        cancel_btn_->measure(ctx, {kScreenPickerBtnW, kScreenPickerBtnH});
     return constraints;
 }
 
@@ -83,18 +83,18 @@ void ScreenPickerWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                              bounds.w - kPad * 2.0f, kHdrH};
 
     const int icols = std::max(1, static_cast<int>(
-        std::floor((bounds.w - kPad * 2.0f + kGap) / (kTileW + kGap))));
+        std::floor((bounds.w - kPad * 2.0f + kScreenPickerGap) / (kTileW + kScreenPickerGap))));
     const float fcols = static_cast<float>(icols);
-    const float grid_w = fcols * (kTileW + kGap) - kGap;
+    const float grid_w = fcols * (kTileW + kScreenPickerGap) - kScreenPickerGap;
     const float grid_x = bounds.x + (bounds.w - grid_w) / 2.0f;
-    const float grid_y = header_rect_.y + kHdrH + kGap;
+    const float grid_y = header_rect_.y + kHdrH + kScreenPickerGap;
 
     grid_rect_ = tk::Rect{grid_x, grid_y, grid_w,
-                           bounds.h - (grid_y - bounds.y) - kBtnH - kPad * 2.0f};
+                           bounds.h - (grid_y - bounds.y) - kScreenPickerBtnH - kPad * 2.0f};
 
     const int nrows = sources_.empty() ? 0
         : (static_cast<int>(sources_.size()) + icols - 1) / icols;
-    content_h_ = nrows > 0 ? static_cast<float>(nrows) * (kTileH + kGap) - kGap : 0.0f;
+    content_h_ = nrows > 0 ? static_cast<float>(nrows) * (kTileH + kScreenPickerGap) - kScreenPickerGap : 0.0f;
     clamp_scroll();
 
     for (std::size_t i = 0; i < sources_.size(); ++i)
@@ -102,16 +102,16 @@ void ScreenPickerWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         const float col = static_cast<float>(static_cast<int>(i) % icols);
         const float row = static_cast<float>(static_cast<int>(i) / icols);
         tile_rects_[i] = tk::Rect{
-            grid_x + col * (kTileW + kGap),
-            grid_y + row * (kTileH + kGap),
+            grid_x + col * (kTileW + kScreenPickerGap),
+            grid_y + row * (kTileH + kScreenPickerGap),
             kTileW, kTileH};
     }
 
     if (cancel_btn_)
         cancel_btn_->arrange(ctx, tk::Rect{
-            bounds.x + bounds.w - kPad - kBtnW,
-            bounds.y + bounds.h - kPad - kBtnH,
-            kBtnW, kBtnH});
+            bounds.x + bounds.w - kPad - kScreenPickerBtnW,
+            bounds.y + bounds.h - kPad - kScreenPickerBtnH,
+            kScreenPickerBtnW, kScreenPickerBtnH});
 }
 
 void ScreenPickerWidget::paint(tk::PaintCtx& ctx)

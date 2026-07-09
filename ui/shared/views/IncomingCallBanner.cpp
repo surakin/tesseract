@@ -12,12 +12,12 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kPadX   = 12.0f;
+constexpr float kIncomingCallBannerPadX   = 12.0f;
 constexpr float kIconSz = 20.0f;
-constexpr float kGap    = 10.0f;
-constexpr float kBtnW   = 76.0f;
-constexpr float kBtnH   = 28.0f;
-constexpr float kBtnGap =  8.0f;
+constexpr float kIncomingCallBannerGap    = 10.0f;
+constexpr float kIncomingCallBannerBtnW   = 76.0f;
+constexpr float kIncomingCallBannerBtnH   = 28.0f;
+constexpr float kIncomingCallBannerBtnGap =  8.0f;
 } // namespace
 
 IncomingCallBanner::IncomingCallBanner()
@@ -67,22 +67,22 @@ void IncomingCallBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     const float mid_y = bounds_.y + bounds_.h * 0.5f;
 
-    icon_rect_ = {bounds_.x + kPadX,
+    icon_rect_ = {bounds_.x + kIncomingCallBannerPadX,
                   mid_y - kIconSz * 0.5f,
                   kIconSz, kIconSz};
 
-    // Right side: [Decline] [Answer] with kPadX outer margin.
-    const float btn_y = mid_y - kBtnH * 0.5f;
-    const float right = bounds_.x + bounds_.w - kPadX;
-    const tk::Rect ans_r = {right - kBtnW, btn_y, kBtnW, kBtnH};
-    const tk::Rect dec_r = {ans_r.x - kBtnGap - kBtnW, btn_y, kBtnW, kBtnH};
+    // Right side: [Decline] [Answer] with kIncomingCallBannerPadX outer margin.
+    const float btn_y = mid_y - kIncomingCallBannerBtnH * 0.5f;
+    const float right = bounds_.x + bounds_.w - kIncomingCallBannerPadX;
+    const tk::Rect ans_r = {right - kIncomingCallBannerBtnW, btn_y, kIncomingCallBannerBtnW, kIncomingCallBannerBtnH};
+    const tk::Rect dec_r = {ans_r.x - kIncomingCallBannerBtnGap - kIncomingCallBannerBtnW, btn_y, kIncomingCallBannerBtnW, kIncomingCallBannerBtnH};
 
     if (answer_btn_)  answer_btn_->arrange(ctx, ans_r);
     if (decline_btn_) decline_btn_->arrange(ctx, dec_r);
 
     // Text area between icon and decline button.
-    const float text_x = icon_rect_.x + kIconSz + kGap;
-    const float text_w = std::max(0.0f, dec_r.x - kGap - text_x);
+    const float text_x = icon_rect_.x + kIconSz + kIncomingCallBannerGap;
+    const float text_w = std::max(0.0f, dec_r.x - kIncomingCallBannerGap - text_x);
     text_rect_ = {text_x, bounds_.y, text_w, bounds_.h};
 }
 

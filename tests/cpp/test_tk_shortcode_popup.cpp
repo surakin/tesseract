@@ -17,7 +17,7 @@ using tesseract::views::ShortcodeSuggestion;
 namespace
 {
 
-struct Stage
+struct TkShortcodePopupStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(300, 400);
     LayoutCtx lc()
@@ -50,7 +50,7 @@ ShortcodeSuggestion make_unicode(const char* sc, const char* glyph)
 
 TEST_CASE("ShortcodePopup:empty suggestions measures zero height")
 {
-    Stage st;
+    TkShortcodePopupStage st;
     ShortcodePopup popup;
     auto lc = st.lc();
     auto sz = popup.measure(lc, {280.0f, 400.0f});
@@ -59,7 +59,7 @@ TEST_CASE("ShortcodePopup:empty suggestions measures zero height")
 
 TEST_CASE("ShortcodePopup:3 suggestions measures 3 row heights")
 {
-    Stage st;
+    TkShortcodePopupStage st;
     ShortcodePopup popup;
     popup.set_suggestions({
         make_unicode("smile", "😄"),
@@ -74,7 +74,7 @@ TEST_CASE("ShortcodePopup:3 suggestions measures 3 row heights")
 
 TEST_CASE("ShortcodePopup:capped at 8 rows even with 10 suggestions")
 {
-    Stage st;
+    TkShortcodePopupStage st;
     ShortcodePopup popup;
     std::vector<ShortcodeSuggestion> many;
     for (int i = 0; i < 10; ++i)
@@ -92,7 +92,7 @@ TEST_CASE("ShortcodePopup:capped at 8 rows even with 10 suggestions")
 
 TEST_CASE("ShortcodePopup:on_accepted fires with correct suggestion")
 {
-    Stage st;
+    TkShortcodePopupStage st;
     ShortcodePopup popup;
     popup.set_suggestions({
         make_unicode("smile", "😄"),
@@ -136,7 +136,7 @@ TEST_CASE("ShortcodePopup:set_suggestions stays -1 when list is empty")
 
 TEST_CASE("ShortcodePopup:set_selected_index highlights selected row")
 {
-    Stage st;
+    TkShortcodePopupStage st;
     ShortcodePopup popup;
     popup.set_suggestions({
         make_unicode("smile", "😄"),

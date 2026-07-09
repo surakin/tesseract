@@ -11,11 +11,11 @@ using tesseract::ShellBase;
 namespace
 {
 
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct ShellThreadPanelWithAccountManager { tesseract::AccountManager am_; };
 
-struct TestShell : WithAccountManager, ShellBase
+struct ShellThreadPanelTestShell : ShellThreadPanelWithAccountManager, ShellBase
 {
-    TestShell() : ShellBase(am_) {}
+    ShellThreadPanelTestShell() : ShellBase(am_) {}
 
     void post_to_ui_(std::function<void()> fn) override { fn(); }
     void post_to_ui_after_(int, std::function<void()> fn) override { fn(); }
@@ -112,7 +112,7 @@ std::unique_ptr<tesseract::Event> text_event(const std::string& id)
 TEST_CASE("handle_thread_reset_ui_ dispatches when room+root match",
           "[shell][thread_panel]")
 {
-    TestShell s;
+    ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
     s.current_thread_root_ = "$root";
     tesseract::EventList snap;
@@ -128,7 +128,7 @@ TEST_CASE("handle_thread_reset_ui_ dispatches when room+root match",
 TEST_CASE("handle_thread_reset_ui_ drops mismatched room",
           "[shell][thread_panel]")
 {
-    TestShell s;
+    ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
     s.current_thread_root_ = "$root";
     s.handle_thread_reset_ui_("!other:x", "$root", {});
@@ -138,7 +138,7 @@ TEST_CASE("handle_thread_reset_ui_ drops mismatched room",
 TEST_CASE("handle_thread_reset_ui_ drops mismatched root",
           "[shell][thread_panel]")
 {
-    TestShell s;
+    ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
     s.current_thread_root_ = "$root";
     s.handle_thread_reset_ui_("!r:x", "$other_root", {});
@@ -148,7 +148,7 @@ TEST_CASE("handle_thread_reset_ui_ drops mismatched root",
 TEST_CASE("handle_thread_inserted_ui_ skips Unhandled events",
           "[shell][thread_panel]")
 {
-    TestShell s;
+    ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
     s.current_thread_root_ = "$root";
     auto ev = std::make_unique<tesseract::Event>();
@@ -160,7 +160,7 @@ TEST_CASE("handle_thread_inserted_ui_ skips Unhandled events",
 TEST_CASE("handle_thread_inserted_ui_ dispatches when room+root match",
           "[shell][thread_panel]")
 {
-    TestShell s;
+    ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
     s.current_thread_root_ = "$root";
     s.handle_thread_inserted_ui_("!r:x", "$root", 3, text_event("$r"));
@@ -172,7 +172,7 @@ TEST_CASE("handle_thread_inserted_ui_ dispatches when room+root match",
 TEST_CASE("handle_thread_removed_ui_ dispatches when room+root match",
           "[shell][thread_panel]")
 {
-    TestShell s;
+    ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
     s.current_thread_root_ = "$root";
     s.handle_thread_removed_ui_("!r:x", "$root", 2);
@@ -183,7 +183,7 @@ TEST_CASE("handle_thread_removed_ui_ dispatches when room+root match",
 TEST_CASE("on_threads_button_clicked is callable with null client",
           "[shell][thread_panel]")
 {
-    TestShell s;
+    ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
     // No client_ wired → applier short-circuits the SDK calls but still
     // updates local thread_panel_ state. Smoke-validates the public API.

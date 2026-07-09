@@ -19,14 +19,14 @@ namespace
 {
 
 constexpr float kAvatarD   = 96.0f;
-constexpr float kAvatarGap = 24.0f; // avatar -> fields column
-constexpr float kPadX      = 24.0f;
-constexpr float kPadY      = 24.0f;
-constexpr float kFieldGap  = 12.0f; // between one label+field group and the next
-constexpr float kLabelGap  = 4.0f;  // label -> its own field
+constexpr float kRoomGeneralAvatarGap = 24.0f; // avatar -> fields column
+constexpr float kRoomGeneralPadX      = 24.0f;
+constexpr float kRoomGeneralPadY      = 24.0f;
+constexpr float kRoomGeneralFieldGap  = 12.0f; // between one label+field group and the next
+constexpr float kRoomGeneralLabelGap  = 4.0f;  // label -> its own field
 constexpr float kLabelH    = 16.0f;
-constexpr float kFieldH    = 26.0f; // single-line row (underline sits at its base)
-constexpr float kTopicMaxH = 200.0f; // cap so topic can't swallow the whole tab
+constexpr float kRoomGeneralFieldH    = 26.0f; // single-line row (underline sits at its base)
+constexpr float kRoomGeneralTopicMaxH = 200.0f; // cap so topic can't swallow the whole tab
 
 } // namespace
 
@@ -104,8 +104,8 @@ private:
     std::unique_ptr<tk::TextLayout> roomid_value_layout_;
 
     // Natural (unclamped) content height reported by the topic NativeTextArea;
-    // reset to kFieldH (one line) on reset().
-    float topic_natural_h_ = kFieldH;
+    // reset to kRoomGeneralFieldH (one line) on reset().
+    float topic_natural_h_ = kRoomGeneralFieldH;
 };
 
 void RoomGeneralSection::Content::set_avatar_provider(ImageProvider p)
@@ -176,7 +176,7 @@ void RoomGeneralSection::Content::set_avatar_error(std::string error)
 
 void RoomGeneralSection::Content::set_topic_area_natural_height(float h)
 {
-    topic_natural_h_ = std::clamp(h, kFieldH, kTopicMaxH);
+    topic_natural_h_ = std::clamp(h, kRoomGeneralFieldH, kRoomGeneralTopicMaxH);
 }
 
 tk::Rect RoomGeneralSection::Content::name_field_rect() const
@@ -201,7 +201,7 @@ void RoomGeneralSection::Content::reset()
     address_value_layout_.reset();
     roomid_label_layout_.reset();
     roomid_value_layout_.reset();
-    topic_natural_h_ = kFieldH;
+    topic_natural_h_ = kRoomGeneralFieldH;
 }
 
 tk::Size RoomGeneralSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -209,11 +209,11 @@ tk::Size RoomGeneralSection::Content::measure(tk::LayoutCtx&, tk::Size constrain
     const float w = constraints.w > 0 ? constraints.w : 0.0f;
     // Four label+field rows (name, topic-min, address, room ID) plus the
     // gaps between them, or the avatar's own height — whichever is taller.
-    constexpr float kRowH = kLabelH + kLabelGap + kFieldH;
-    const float rows_h = 4.0f * kRowH + 3.0f * kFieldGap;
+    constexpr float kRowH = kLabelH + kRoomGeneralLabelGap + kRoomGeneralFieldH;
+    const float rows_h = 4.0f * kRowH + 3.0f * kRoomGeneralFieldGap;
     const float h = constraints.h > 0
         ? constraints.h
-        : (2.0f * kPadY + std::max(kAvatarD, rows_h));
+        : (2.0f * kRoomGeneralPadY + std::max(kAvatarD, rows_h));
     return {w, h};
 }
 
@@ -221,37 +221,37 @@ void RoomGeneralSection::Content::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
     bounds_ = bounds;
 
-    const tk::Point avatar_centre_local{kPadX + kAvatarD * 0.5f,
-                                        kPadY + kAvatarD * 0.5f};
+    const tk::Point avatar_centre_local{kRoomGeneralPadX + kAvatarD * 0.5f,
+                                        kRoomGeneralPadY + kAvatarD * 0.5f};
     avatar_.set_geometry(avatar_centre_local, kAvatarD);
 
-    const float col_x = bounds_.x + kPadX + kAvatarD + kAvatarGap;
-    const float col_w = std::max(0.0f, bounds_.x + bounds_.w - kPadX - col_x);
+    const float col_x = bounds_.x + kRoomGeneralPadX + kAvatarD + kRoomGeneralAvatarGap;
+    const float col_w = std::max(0.0f, bounds_.x + bounds_.w - kRoomGeneralPadX - col_x);
 
-    float cy = bounds_.y + kPadY;
-    cy += kLabelH + kLabelGap;
-    name_rect_ = {col_x, cy, col_w, kFieldH};
-    cy += kFieldH + kFieldGap;
+    float cy = bounds_.y + kRoomGeneralPadY;
+    cy += kLabelH + kRoomGeneralLabelGap;
+    name_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
+    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
 
-    cy += kLabelH + kLabelGap;
-    // One line by default, grows with content up to kTopicMaxH, but never
+    cy += kLabelH + kRoomGeneralLabelGap;
+    // One line by default, grows with content up to kRoomGeneralTopicMaxH, but never
     // past the space reserved for the read-only address/ID rows below.
-    constexpr float kIdRowH = kLabelH + kLabelGap + kFieldH;
-    const float reserved_below = kFieldGap + kIdRowH + kFieldGap + kIdRowH;
+    constexpr float kIdRowH = kLabelH + kRoomGeneralLabelGap + kRoomGeneralFieldH;
+    const float reserved_below = kRoomGeneralFieldGap + kIdRowH + kRoomGeneralFieldGap + kIdRowH;
     const float topic_h_cap = std::max(
-        kFieldH, (bounds_.y + bounds_.h) - reserved_below - cy);
+        kRoomGeneralFieldH, (bounds_.y + bounds_.h) - reserved_below - cy);
     const float topic_h = std::min(topic_natural_h_, topic_h_cap);
     topic_rect_ = {col_x, cy, col_w, topic_h};
-    cy += topic_h + kFieldGap;
+    cy += topic_h + kRoomGeneralFieldGap;
 
     // Room address (canonical alias) — read-only, no permission gating.
-    cy += kLabelH + kLabelGap;
-    address_rect_ = {col_x, cy, col_w, kFieldH};
-    cy += kFieldH + kFieldGap;
+    cy += kLabelH + kRoomGeneralLabelGap;
+    address_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
+    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
 
     // Room ID — read-only, always present.
-    cy += kLabelH + kLabelGap;
-    roomid_rect_ = {col_x, cy, col_w, kFieldH};
+    cy += kLabelH + kRoomGeneralLabelGap;
+    roomid_rect_ = {col_x, cy, col_w, kRoomGeneralFieldH};
 
     (void)lc;
 }
@@ -312,9 +312,9 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
         avatar_.paint(ctx, {bounds_.x, bounds_.y}, name_source);
     }
 
-    const float col_x = bounds_.x + kPadX + kAvatarD + kAvatarGap;
-    const float col_w = std::max(0.0f, bounds_.x + bounds_.w - kPadX - col_x);
-    float cy = bounds_.y + kPadY;
+    const float col_x = bounds_.x + kRoomGeneralPadX + kAvatarD + kRoomGeneralAvatarGap;
+    const float col_w = std::max(0.0f, bounds_.x + bounds_.w - kRoomGeneralPadX - col_x);
+    float cy = bounds_.y + kRoomGeneralPadY;
 
     // Name label
     if (!name_label_layout_)
@@ -327,12 +327,12 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
     }
     if (name_label_layout_)
         cv.draw_text(*name_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kLabelGap;
+    cy += kLabelH + kRoomGeneralLabelGap;
 
     if (can_name_ && !committing_)
     {
         // Native overlay draws the live text; we just draw the underline.
-        const float uly = cy + kFieldH - 1.0f;
+        const float uly = cy + kRoomGeneralFieldH - 1.0f;
         cv.fill_rect({col_x, uly, col_w, 1.0f}, pal.text_secondary.with_alpha(80));
     }
     else
@@ -350,7 +350,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
         if (name_static_layout_)
             cv.draw_text(*name_static_layout_, {col_x, cy}, pal.text_primary);
     }
-    cy += kFieldH + kFieldGap;
+    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
 
     // Topic label
     if (!topic_label_layout_)
@@ -363,7 +363,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
     }
     if (topic_label_layout_)
         cv.draw_text(*topic_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kLabelGap;
+    cy += kLabelH + kRoomGeneralLabelGap;
 
     if (!can_topic_ || committing_)
     {
@@ -385,7 +385,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
     }
     // else: native NativeTextArea overlay covers topic_rect_ and draws the
     // live text itself — nothing to paint here.
-    cy = topic_rect_.y + topic_rect_.h + kFieldGap;
+    cy = topic_rect_.y + topic_rect_.h + kRoomGeneralFieldGap;
 
     // Room address (canonical alias) — read-only, no permission gating.
     if (!address_label_layout_)
@@ -398,7 +398,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
     }
     if (address_label_layout_)
         cv.draw_text(*address_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kLabelGap;
+    cy += kLabelH + kRoomGeneralLabelGap;
 
     if (!address_value_layout_)
     {
@@ -414,7 +414,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
     if (address_value_layout_)
         cv.draw_text(*address_value_layout_, {col_x, cy},
                      canonical_alias_.empty() ? pal.text_muted : pal.text_primary);
-    cy += kFieldH + kFieldGap;
+    cy += kRoomGeneralFieldH + kRoomGeneralFieldGap;
 
     // Room ID — read-only, always present.
     if (!roomid_label_layout_)
@@ -427,7 +427,7 @@ void RoomGeneralSection::Content::paint(tk::PaintCtx& ctx)
     }
     if (roomid_label_layout_)
         cv.draw_text(*roomid_label_layout_, {col_x, cy}, pal.text_muted);
-    cy += kLabelH + kLabelGap;
+    cy += kLabelH + kRoomGeneralLabelGap;
 
     if (roomid_hovered_ && !room_id_.empty())
         cv.fill_rounded_rect(roomid_rect_, 4.0f, pal.sidebar_hover);

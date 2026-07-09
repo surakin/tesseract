@@ -14,7 +14,7 @@ using tesseract::ShellBase;
 namespace
 {
 
-struct WithAccountManager
+struct ShellForwardAsyncWithAccountManager
 {
     tesseract::AccountManager am_;
 };
@@ -22,7 +22,7 @@ struct WithAccountManager
 // Minimal ShellBase test double for the forward-async callback handlers.
 // main_app_ stays null so picker calls are skipped; we exercise the
 // pending_forwards_ state mutations directly.
-struct ForwardShell : WithAccountManager, ShellBase
+struct ForwardShell : ShellForwardAsyncWithAccountManager, ShellBase
 {
     ForwardShell() : ShellBase(am_) {}
 

@@ -9,9 +9,9 @@
 #include <tesseract/image_pack.h>
 #include <tesseract/settings.h>
 
-#include <libintl.h>
 #include <string_view>
-#define _(s) gettext(s)
+
+#include "gettext_shorthand.h"
 
 namespace gtk4
 {

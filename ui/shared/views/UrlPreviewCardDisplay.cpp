@@ -13,9 +13,9 @@ namespace tesseract::views
 namespace
 {
 // URL preview card dimensions. Mirror of the constants the Adapter uses for
-// height accounting in MessageListView.cpp (kept in sync — see kPreviewCardH /
+// height accounting in MessageListView.cpp (kept in sync — see kUrlPreviewCardH /
 // kPreviewCardGapTop there).
-constexpr float kPreviewCardH    = 72.0f;
+constexpr float kUrlPreviewCardH    = 72.0f;
 constexpr float kPreviewCardW    = 280.0f;
 constexpr float kPreviewThumbSide = 56.0f;
 constexpr float kPreviewCardPad  = 10.0f;
@@ -37,7 +37,7 @@ void UrlPreviewCardDisplay::paint_card(const MessageRowData& m,
                                        float col_w)
 {
     float card_w = std::min(col_w, kPreviewCardW);
-    tk::Rect card{x, y, card_w, kPreviewCardH};
+    tk::Rect card{x, y, card_w, kUrlPreviewCardH};
 
     ctx.canvas.fill_rounded_rect(card, 8.0f, ctx.theme.palette.chrome_bg);
     ctx.canvas.stroke_rounded_rect(card, 8.0f, ctx.theme.palette.border, 1.0f);
@@ -50,7 +50,7 @@ void UrlPreviewCardDisplay::paint_card(const MessageRowData& m,
     {
         const tk::Image* img = image_provider_(p.image_mxc);
         float tx = x + kPreviewCardPad;
-        float ty = y + (kPreviewCardH - kPreviewThumbSide) * 0.5f;
+        float ty = y + (kUrlPreviewCardH - kPreviewThumbSide) * 0.5f;
         tk::Rect thumb{tx, ty, kPreviewThumbSide, kPreviewThumbSide};
         if (img)
         {

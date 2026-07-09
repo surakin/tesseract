@@ -16,12 +16,12 @@ namespace
 // A ShellBase test double exposing push_rooms_ + the known-users roster cache
 // flags, so the room-set-change invalidation can be exercised without a window
 // or client. Pure-virtual surface stubbed to no-ops.
-struct WithAccountManager
+struct ShellRosterInvalidationWithAccountManager
 {
     tesseract::AccountManager am_;
 };
 
-struct RosterShell : WithAccountManager, ShellBase
+struct RosterShell : ShellRosterInvalidationWithAccountManager, ShellBase
 {
     RosterShell() : ShellBase(am_) {}
 

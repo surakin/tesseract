@@ -17,9 +17,9 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kCardWidth    = 360.0f;
-constexpr float kCardPadding  = 24.0f;
-constexpr float kCardSpacing  = 12.0f;
+constexpr float kLoginCardWidth    = 360.0f;
+constexpr float kLoginCardPadding  = 24.0f;
+constexpr float kLoginCardSpacing  = 12.0f;
 constexpr float kHSFieldHeight = 36.0f;
 constexpr float kButtonHeight  = 36.0f;
 
@@ -33,8 +33,8 @@ LoginView::LoginView()
 void LoginView::rebuild_tree()
 {
     auto card = std::make_unique<tk::VBox>();
-    card->set_padding(tk::Edges::all(kCardPadding))
-        .set_spacing(kCardSpacing)
+    card->set_padding(tk::Edges::all(kLoginCardPadding))
+        .set_spacing(kLoginCardSpacing)
         .set_cross(tk::Cross::Stretch)
         .set_main(tk::Main::Start);
 
@@ -530,8 +530,8 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (!card_)
         return;
 
-    tk::Size card_size = card_->measure(ctx, {kCardWidth, bounds.h});
-    float    card_w    = std::min(kCardWidth, bounds.w);
+    tk::Size card_size = card_->measure(ctx, {kLoginCardWidth, bounds.h});
+    float    card_w    = std::min(kLoginCardWidth, bounds.w);
     float    card_h    = std::min(card_size.h, bounds.h);
     float    card_x    = bounds.x + (bounds.w - card_w) * 0.5f;
     float    card_y    = bounds.y + (bounds.h - card_h) * 0.5f;

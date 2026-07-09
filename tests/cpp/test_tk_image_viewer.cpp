@@ -13,7 +13,7 @@ using tesseract::views::ImageViewerOverlay;
 namespace
 {
 
-struct Stage
+struct TkImageViewerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(600, 400);
     LayoutCtx layout_ctx()
@@ -73,7 +73,7 @@ TEST_CASE(
     "ImageViewerOverlay paint does not crash when open without image provider",
     "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "test", 640, 360);
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
@@ -82,7 +82,7 @@ TEST_CASE(
 TEST_CASE("ImageViewerOverlay paint does not crash with no dimensions",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 0, 0);
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
@@ -91,7 +91,7 @@ TEST_CASE("ImageViewerOverlay paint does not crash with no dimensions",
 TEST_CASE("ImageViewerOverlay paint is no-op when not open",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     // overlay is closed — should not crash and should paint nothing
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
@@ -102,7 +102,7 @@ TEST_CASE("ImageViewerOverlay paint is no-op when not open",
 TEST_CASE("ImageViewerOverlay show_toast schedules an auto-hide",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 640, 360);
 
@@ -129,7 +129,7 @@ TEST_CASE("ImageViewerOverlay show_toast schedules an auto-hide",
 TEST_CASE("ImageViewerOverlay show_toast without a timer does not crash",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 640, 360);
     // No set_post_delayed wired — the toast simply has no auto-hide.
@@ -163,7 +163,7 @@ TEST_CASE("ImageViewerOverlay deferred toast hide is safe after destruction",
 TEST_CASE("ImageViewerOverlay opens an oversized image zoomed to fit",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/big", "", "", 3200,
                  1800); // far larger than 536×304
@@ -188,7 +188,7 @@ TEST_CASE("ImageViewerOverlay opens an oversized image zoomed to fit",
 TEST_CASE("ImageViewerOverlay opens a small image at 1:1 (no upscaling)",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/small", "", "", 200, 150); // fits at 1:1
     st.run(overlay, {0, 0, 600, 400});
@@ -206,7 +206,7 @@ TEST_CASE(
     "ImageViewerOverlay pointer-down outside fires on_close via pointer-up",
     "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -226,7 +226,7 @@ TEST_CASE(
 TEST_CASE("ImageViewerOverlay pointer-down on close button fires on_close",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -247,7 +247,7 @@ TEST_CASE("ImageViewerOverlay pointer-down on close button fires on_close",
 TEST_CASE("ImageViewerOverlay pointer-down on copy button fires on_copy",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "caption.png", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -284,7 +284,7 @@ TEST_CASE("ImageViewerOverlay pointer-down on copy button fires on_copy",
 TEST_CASE("ImageViewerOverlay pointer-down on image does not fire on_close",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -314,7 +314,7 @@ TEST_CASE("ImageViewerOverlay on_pointer_down returns false when closed",
 TEST_CASE("ImageViewerOverlay on_wheel returns true when open",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -332,7 +332,7 @@ TEST_CASE("ImageViewerOverlay on_wheel returns false when closed",
 TEST_CASE("ImageViewerOverlay zoom-in then drag moves image rect",
           "[tk][imageviewer]")
 {
-    Stage st;
+    TkImageViewerStage st;
     ImageViewerOverlay overlay;
     overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});

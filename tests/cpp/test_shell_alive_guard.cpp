@@ -19,9 +19,9 @@ namespace
 // drained *after* the shell is destroyed. This exercises the liveness guard:
 // a continuation enqueued via post_to_ui_alive_ must no-op once ~ShellBase has
 // run, rather than dereferencing the freed shell.
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct ShellAliveGuardWithAccountManager { tesseract::AccountManager am_; };
 
-struct AliveShell : WithAccountManager, ShellBase
+struct AliveShell : ShellAliveGuardWithAccountManager, ShellBase
 {
     explicit AliveShell(std::vector<std::function<void()>>* queue)
         : ShellBase(am_), queue_(queue)

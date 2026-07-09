@@ -12,7 +12,7 @@ using tesseract::views::UserProfilePanel;
 
 namespace
 {
-struct Stage
+struct TkUserProfilePanelStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(300, 400);
     LayoutCtx layout_ctx()
@@ -37,7 +37,7 @@ struct Stage
 TEST_CASE("UserProfilePanel: Normal state shows Message label",
           "[tk][view][user_profile_panel]")
 {
-    Stage st;
+    TkUserProfilePanelStage st;
     UserProfilePanel panel;
     panel.open("@alice:example.org", "Alice", "");
     st.run(panel, {0, 0, 300, 400});
@@ -48,7 +48,7 @@ TEST_CASE("UserProfilePanel: Normal state shows Message label",
 TEST_CASE("UserProfilePanel: HasDM state shows Open DM label",
           "[tk][view][user_profile_panel]")
 {
-    Stage st;
+    TkUserProfilePanelStage st;
     UserProfilePanel panel;
     panel.open("@alice:example.org", "Alice", "");
     panel.set_dm_button_state(UserProfilePanel::DmButtonState::HasDM);
@@ -60,7 +60,7 @@ TEST_CASE("UserProfilePanel: HasDM state shows Open DM label",
 TEST_CASE("UserProfilePanel: Sending state disables button",
           "[tk][view][user_profile_panel]")
 {
-    Stage st;
+    TkUserProfilePanelStage st;
     UserProfilePanel panel;
     panel.open("@alice:example.org", "Alice", "");
     panel.set_dm_button_state(UserProfilePanel::DmButtonState::Sending);
@@ -72,7 +72,7 @@ TEST_CASE("UserProfilePanel: Sending state disables button",
 TEST_CASE("UserProfilePanel: set_dm_button_state can cycle back to Normal",
           "[tk][view][user_profile_panel]")
 {
-    Stage st;
+    TkUserProfilePanelStage st;
     UserProfilePanel panel;
     panel.open("@alice:example.org", "Alice", "");
     panel.set_dm_button_state(UserProfilePanel::DmButtonState::Sending);
@@ -85,7 +85,7 @@ TEST_CASE("UserProfilePanel: set_dm_button_state can cycle back to Normal",
 TEST_CASE("UserProfilePanel: on_check_has_dm returning true sets HasDM on open",
           "[tk][view][user_profile_panel]")
 {
-    Stage st;
+    TkUserProfilePanelStage st;
     UserProfilePanel panel;
     panel.on_check_has_dm = [](const std::string&) { return true; };
     panel.open("@alice:example.org", "Alice", "");
@@ -97,7 +97,7 @@ TEST_CASE("UserProfilePanel: on_check_has_dm returning true sets HasDM on open",
 TEST_CASE("UserProfilePanel: on_check_has_dm returning false sets Normal on open",
           "[tk][view][user_profile_panel]")
 {
-    Stage st;
+    TkUserProfilePanelStage st;
     UserProfilePanel panel;
     panel.on_check_has_dm = [](const std::string&) { return false; };
     panel.open("@alice:example.org", "Alice", "");
@@ -111,7 +111,7 @@ TEST_CASE("UserProfilePanel: open resets Sending state from a prior open",
 {
     // If panel was left in Sending state (async still in flight for another
     // user), opening it for a new user must reset to Normal/HasDM.
-    Stage st;
+    TkUserProfilePanelStage st;
     UserProfilePanel panel;
     panel.open("@alice:example.org", "Alice", "");
     panel.set_dm_button_state(UserProfilePanel::DmButtonState::Sending);
@@ -129,7 +129,7 @@ TEST_CASE("UserProfilePanel: paints without crash in each DmButtonState",
                        UserProfilePanel::DmButtonState::HasDM,
                        UserProfilePanel::DmButtonState::Sending})
     {
-        Stage st;
+        TkUserProfilePanelStage st;
         UserProfilePanel panel;
         panel.open("@alice:example.org", "Alice", "");
         panel.set_dm_button_state(state);

@@ -9,11 +9,11 @@ using tesseract::views::EncryptionSetupOverlay;
 namespace
 {
 
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct ShellEncryptionSetupWithAccountManager { tesseract::AccountManager am_; };
 
-struct TestShell : WithAccountManager, ShellBase
+struct ShellEncryptionSetupTestShell : ShellEncryptionSetupWithAccountManager, ShellBase
 {
-    TestShell() : ShellBase(am_) {}
+    ShellEncryptionSetupTestShell() : ShellBase(am_) {}
 
     // ── ShellBase pure virtuals ───────────────────────────────────────────
     void post_to_ui_(std::function<void()> fn) override { fn(); }
@@ -81,7 +81,7 @@ struct TestShell : WithAccountManager, ShellBase
 
 TEST_CASE("Disabled state → Fresh overlay shown", "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_ = 1; // Disabled
     shell.check_encryption_setup_();
     REQUIRE(shell.overlay_shown_);
@@ -92,7 +92,7 @@ TEST_CASE("Disabled state → Fresh overlay shown", "[shell][encryption]")
 TEST_CASE("Disabled + foreign identity (exists, no local keys) → Recover",
           "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_  = 1;     // Disabled
     shell.identity_exists_stub_ = true;  // cross-signing set up elsewhere
     shell.have_keys_stub_       = false; // we don't hold the private keys
@@ -104,7 +104,7 @@ TEST_CASE("Disabled + foreign identity (exists, no local keys) → Recover",
 TEST_CASE("Disabled + own identity with local keys → Fresh (add recovery key)",
           "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_  = 1;    // Disabled
     shell.identity_exists_stub_ = true; // our own, just bootstrapped
     shell.have_keys_stub_       = true; // private keys present locally
@@ -120,7 +120,7 @@ TEST_CASE("Disabled + own identity with local keys → Fresh (add recovery key)"
 TEST_CASE("Disabled + own keys but not-yet-verified → Fresh",
           "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_  = 1;     // Disabled
     shell.identity_exists_stub_ = true;  // bootstrapped at login
     shell.have_keys_stub_       = true;  // private keys stored locally
@@ -132,7 +132,7 @@ TEST_CASE("Disabled + own keys but not-yet-verified → Fresh",
 
 TEST_CASE("Incomplete state → Recover overlay shown", "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_ = 3; // Incomplete
     shell.check_encryption_setup_();
     REQUIRE(shell.overlay_shown_);
@@ -141,7 +141,7 @@ TEST_CASE("Incomplete state → Recover overlay shown", "[shell][encryption]")
 
 TEST_CASE("Enabled state → overlay NOT shown", "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_ = 2; // Enabled
     shell.check_encryption_setup_();
     CHECK_FALSE(shell.overlay_shown_);
@@ -149,7 +149,7 @@ TEST_CASE("Enabled state → overlay NOT shown", "[shell][encryption]")
 
 TEST_CASE("Unknown state → overlay NOT shown", "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_ = 0; // Unknown
     shell.check_encryption_setup_();
     CHECK_FALSE(shell.overlay_shown_);
@@ -158,7 +158,7 @@ TEST_CASE("Unknown state → overlay NOT shown", "[shell][encryption]")
 TEST_CASE("encryption_setup_shown_ guards against double-raise",
           "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_ = 1;
     shell.check_encryption_setup_();
     REQUIRE(shell.overlay_shown_);
@@ -172,7 +172,7 @@ TEST_CASE("encryption_setup_shown_ guards against double-raise",
 TEST_CASE("encryption_setup_dismissed_ prevents overlay from showing",
           "[shell][encryption]")
 {
-    TestShell shell;
+    ShellEncryptionSetupTestShell shell;
     shell.recovery_state_stub_ = 1;
     shell.encryption_setup_dismissed_ = true;
     shell.check_encryption_setup_();

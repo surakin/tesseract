@@ -14,9 +14,9 @@ namespace
 // A ShellBase test double that queues UI-thread callbacks (rather than running
 // them inline) and counts synchronous relayout passes, so a test can observe
 // that schedule_relayout_ coalesces a burst of requests into a single pass.
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct ShellRelayoutCoalesceWithAccountManager { tesseract::AccountManager am_; };
 
-struct CoalesceShell : WithAccountManager, ShellBase
+struct CoalesceShell : ShellRelayoutCoalesceWithAccountManager, ShellBase
 {
     CoalesceShell() : ShellBase(am_) {}
 

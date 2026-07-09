@@ -13,10 +13,10 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kAvatarSize = 28.0f;
-constexpr float kPadX = 12.0f;
-constexpr float kAvatarGap = 12.0f;
-constexpr float kFieldH = 34.0f;
+constexpr float kQuickSwitcherAvatarSize = 28.0f;
+constexpr float kQuickSwitcherPadX = 12.0f;
+constexpr float kQuickSwitcherAvatarGap = 12.0f;
+constexpr float kQuickSwitcherFieldH = 34.0f;
 
 // Case-insensitive substring match (byte-level ASCII approximation). Mirrors
 using tesseract::text::name_matches;
@@ -67,7 +67,7 @@ public:
         }
 
         // Avatar circle (left-aligned, vertically centred).
-        const float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        const float avatar_cx = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize * 0.5f;
         const float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const tk::Image* avatar = nullptr;
@@ -81,13 +81,13 @@ public:
             }
         }
 
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize,
                     room.name, ctx.theme.palette.avatar_initials_bg,
                     ctx.theme.palette.avatar_initials_text);
 
         // Room name — single line, ellipsised to the row width.
-        const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        const float text_w = std::max(0.0f, bounds.x + bounds.w - kPadX - text_x);
+        const float text_x = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
+        const float text_w = std::max(0.0f, bounds.x + bounds.w - kQuickSwitcherPadX - text_x);
 
         // Single-line, ellipsised. Note: do NOT set max_height/valign here — a
         // bounded box makes measure().h fill the row, collapsing the manual
@@ -126,7 +126,7 @@ public:
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
         }
 
-        const float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        const float avatar_cx = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize * 0.5f;
         const float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const tk::Image* avatar = nullptr;
@@ -141,12 +141,12 @@ public:
 
         const std::string& disc_name =
             user.display_name.empty() ? user.user_id : user.display_name;
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize,
                     disc_name, ctx.theme.palette.avatar_initials_bg,
                     ctx.theme.palette.avatar_initials_text);
 
-        const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        const float text_w = std::max(0.0f, bounds.x + bounds.w - kPadX - text_x);
+        const float text_x = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
+        const float text_w = std::max(0.0f, bounds.x + bounds.w - kQuickSwitcherPadX - text_x);
 
         // Display name (primary, upper line).
         tk::TextStyle ns{};
@@ -405,8 +405,8 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     cy = std::max(cy, bounds.y + margin);
 
     card_rect_ = {cx, cy, cw, ch};
-    search_field_rect_ = {cx + kPadX, cy + (kHeaderH - kFieldH) * 0.5f,
-                          std::max(0.0f, cw - 2 * kPadX), kFieldH};
+    search_field_rect_ = {cx + kQuickSwitcherPadX, cy + (kHeaderH - kQuickSwitcherFieldH) * 0.5f,
+                          std::max(0.0f, cw - 2 * kQuickSwitcherPadX), kQuickSwitcherFieldH};
     recent_strip_rect_ =
         strip_h > 0.0f ? tk::Rect{cx, cy + kHeaderH, cw, strip_h} : tk::Rect{};
 
@@ -502,14 +502,14 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
         auto cap = ctx.factory.build_text(std::string("Recent"), cs);
         if (cap)
         {
-            ctx.canvas.draw_text(*cap, {strip.x + kPadX, strip.y + kTopPad},
+            ctx.canvas.draw_text(*cap, {strip.x + kQuickSwitcherPadX, strip.y + kTopPad},
                                  pal.text_muted);
         }
     }
 
     const float chip_y = strip.y + kTopPad + kCaptionH;
     const float chip_h = kRecentAvatar + kLabelGap + kLabelH;
-    const float avail = strip.w - 2 * kPadX;
+    const float avail = strip.w - 2 * kQuickSwitcherPadX;
     const int max_fit = avail > 0.0f
                             ? static_cast<int>((avail + kRecentChipGap) /
                                                (kRecentChipW + kRecentChipGap))
@@ -517,7 +517,7 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
     const int count =
         std::min(static_cast<int>(recent_.size()), std::max(0, max_fit));
 
-    float x = strip.x + kPadX;
+    float x = strip.x + kQuickSwitcherPadX;
     for (int i = 0; i < count; ++i)
     {
         const auto& room = recent_[static_cast<std::size_t>(i)];

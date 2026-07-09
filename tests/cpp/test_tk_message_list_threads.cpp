@@ -47,7 +47,7 @@ MessageRowData make_in_thread_reply(const std::string& id,
     return r;
 }
 
-struct Stage
+struct TkMessageListThreadsStage
 {
     std::unique_ptr<TestSurface> surface =
         TestSurface::create(600, 400);
@@ -147,7 +147,7 @@ TEST_CASE(
     "MessageListView records a thread chip hit rect for thread-root rows",
     "[message_list][threads]")
 {
-    Stage st;
+    TkMessageListThreadsStage st;
     MessageListView v;
     v.set_messages({make_thread_root("$root", 3)}, false);
     st.run(v, {0, 0, 600, 400});
@@ -163,7 +163,7 @@ TEST_CASE(
     "MessageListView::on_thread_preview_clicked fires for a chip hit",
     "[message_list][threads]")
 {
-    Stage st;
+    TkMessageListThreadsStage st;
     MessageListView v;
     v.set_messages({make_thread_root("$root", 2)}, false);
     st.run(v, {0, 0, 600, 400});
@@ -186,7 +186,7 @@ TEST_CASE(
     "MessageListView clears thread chip hit rects when scrolling to an event",
     "[message_list][threads]")
 {
-    Stage st;
+    TkMessageListThreadsStage st;
     MessageListView v;
 
     std::vector<MessageRowData> msgs;
@@ -216,7 +216,7 @@ TEST_CASE(
     "MessageListView clears thread chip hit rects when wheel scrolling",
     "[message_list][threads]")
 {
-    Stage st;
+    TkMessageListThreadsStage st;
     MessageListView v;
 
     std::vector<MessageRowData> msgs;
@@ -245,7 +245,7 @@ TEST_CASE(
     "MessageListView clears thread chip hit rects when deferred event scroll resolves",
     "[message_list][threads]")
 {
-    Stage st;
+    TkMessageListThreadsStage st;
     MessageListView v;
 
     v.set_messages({make_thread_root("$root", 2)}, false);
@@ -282,7 +282,7 @@ TEST_CASE(
     "MessageListView does NOT emit a chip for thread roots with no replies",
     "[message_list][threads]")
 {
-    Stage st;
+    TkMessageListThreadsStage st;
     MessageListView v;
     v.set_messages({make_thread_root("$root", 0)}, false);
     st.run(v, {0, 0, 600, 400});

@@ -11,11 +11,11 @@ using tesseract::ShellBase;
 namespace
 {
 
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct ShellWarmSubscriptionsWithAccountManager { tesseract::AccountManager am_; };
 
-struct TestShell : WithAccountManager, ShellBase
+struct ShellWarmSubscriptionsTestShell : ShellWarmSubscriptionsWithAccountManager, ShellBase
 {
-    TestShell() : ShellBase(am_) {}
+    ShellWarmSubscriptionsTestShell() : ShellBase(am_) {}
 
     void post_to_ui_(std::function<void()> fn) override { fn(); }
     void post_to_ui_after_(int, std::function<void()> fn) override { fn(); }
@@ -95,7 +95,7 @@ tesseract::RoomInfo room(const std::string& id)
 TEST_CASE("status messages are not linkified unless explicitly opted in",
           "[shell][status_links]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     const std::string msg = "failed: see [click here](https://evil.example)";
 
     // Default (server/error text): no linkification — a single plain segment.
@@ -113,7 +113,7 @@ TEST_CASE("status messages are not linkified unless explicitly opted in",
 TEST_CASE("room_by_id_ returns the matching room or nullptr",
           "[shell][room_index]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     s.set_rooms_for_test({room("!a:x"), room("!b:x"), room("!c:x")});
 
     const auto* b = s.room_by_id_("!b:x");
@@ -125,7 +125,7 @@ TEST_CASE("room_by_id_ returns the matching room or nullptr",
 TEST_CASE("room_by_id_ reflects a wholesale room-list replacement",
           "[shell][room_index]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     s.set_rooms_for_test({room("!a:x"), room("!b:x")});
     REQUIRE(s.room_by_id_("!a:x") != nullptr);
 
@@ -140,14 +140,14 @@ TEST_CASE("room_by_id_ reflects a wholesale room-list replacement",
 
 TEST_CASE("room_by_id_ is empty before any rooms are set", "[shell][room_index]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     CHECK(s.room_by_id_("!anything:x") == nullptr);
 }
 
 TEST_CASE("touch_visited_room_ moves a room to the MRU front without duplicates",
           "[shell][warm_subscriptions]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     s.touch_visited_room_("!a:x");
     s.touch_visited_room_("!b:x");
     s.touch_visited_room_("!a:x"); // re-visit A: moves to front, no dup
@@ -160,7 +160,7 @@ TEST_CASE("touch_visited_room_ moves a room to the MRU front without duplicates"
 TEST_CASE("select_warm_evictions_ keeps newest warm rooms up to the cap",
           "[shell][warm_subscriptions]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     // Front = most recent. Active room E is protected; cap 2 warm.
     s.visited_lru_ = {"!e", "!d", "!c", "!b", "!a"};
     auto evicted = s.select_warm_evictions_({"!e"}, /*warm_cap=*/2);
@@ -179,7 +179,7 @@ TEST_CASE("select_warm_evictions_ keeps newest warm rooms up to the cap",
 TEST_CASE("select_warm_evictions_ never evicts protected rooms even when old",
           "[shell][warm_subscriptions]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     // A is the oldest but is an open tab (protected); cap 1 warm.
     s.visited_lru_ = {"!e", "!d", "!c", "!b", "!a"};
     auto evicted = s.select_warm_evictions_({"!e", "!a"}, /*warm_cap=*/1);
@@ -197,7 +197,7 @@ TEST_CASE("select_warm_evictions_ never evicts protected rooms even when old",
 TEST_CASE("select_warm_evictions_ evicts nothing when within the cap",
           "[shell][warm_subscriptions]")
 {
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     s.visited_lru_ = {"!c", "!b", "!a"};
     auto evicted = s.select_warm_evictions_({"!c"}, /*warm_cap=*/4);
     CHECK(evicted.empty());
@@ -211,7 +211,7 @@ TEST_CASE("prune_warm_subscriptions_ drops pagination_ state for evicted rooms",
     // stale pagination_ state (e.g. reached_start=true) must not survive — else
     // a rebuilt timeline on return would skip back-pagination and show truncated
     // history.
-    TestShell s;
+    ShellWarmSubscriptionsTestShell s;
     s.current_room_id_ = "!f"; // active room (protected)
     // 6 visited rooms, cap 4 → with !f active, !a is the oldest warm and evicts.
     s.visited_lru_ = {"!f", "!e", "!d", "!c", "!b", "!a"};

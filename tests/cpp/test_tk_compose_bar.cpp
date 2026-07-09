@@ -15,7 +15,7 @@ using tesseract::views::ComposeBar;
 namespace
 {
 
-struct Stage
+struct TkComposeBarStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 200);
     LayoutCtx layout_ctx()
@@ -36,7 +36,7 @@ struct Stage
     }
 };
 
-Button* find_button(Widget& w, const std::string& label)
+Button* find_button_compose_bar(Widget& w, const std::string& label)
 {
     for (auto& ch : w.children())
     {
@@ -57,7 +57,7 @@ TEST_CASE(
     "ComposeBar reserves a text-area rect between the emoji and send buttons",
     "[tk][view][compose]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
     Rect r = bar.text_area_rect();
@@ -73,11 +73,11 @@ TEST_CASE(
 TEST_CASE("ComposeBar starts with the send button disabled until text appears",
           "[tk][view][compose]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     CHECK_FALSE(send->enabled());
 
@@ -92,7 +92,7 @@ TEST_CASE("ComposeBar starts with the send button disabled until text appears",
 TEST_CASE("ComposeBar send-button click fires on_send with the current text",
           "[tk][view][compose]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
     std::string got;
     bar.on_send = [&](const std::string& t)
@@ -102,7 +102,7 @@ TEST_CASE("ComposeBar send-button click fires on_send with the current text",
     bar.set_current_text("hi there");
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     REQUIRE(send->enabled());
     send->click();
@@ -111,7 +111,7 @@ TEST_CASE("ComposeBar send-button click fires on_send with the current text",
 
 TEST_CASE("ComposeBar emoji-button click fires on_emoji", "[tk][view][compose]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
     int hits = 0;
     bar.on_emoji = [&](tk::Rect)
@@ -125,7 +125,7 @@ TEST_CASE("ComposeBar emoji-button click fires on_emoji", "[tk][view][compose]")
     {
         if (auto* b = dynamic_cast<Button*>(ch.get()))
         {
-            if (b != find_button(bar, "Send"))
+            if (b != find_button_compose_bar(bar, "Send"))
             {
                 emoji = b;
                 break;
@@ -184,7 +184,7 @@ TEST_CASE("ComposeBar pending image floats above bar and enables send "
     CHECK(size_changes == 1);
 
     // Send button enables even when the text field is empty.
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     CHECK(send->enabled());
 
@@ -199,7 +199,7 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
           "the attachment",
           "[tk][view][compose]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
 
     bool image_fired = false;
@@ -235,7 +235,7 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
 
     st.run(bar, {0, 0, 640, bar.natural_height()});
 
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     REQUIRE(send->enabled());
     send->click();
@@ -251,7 +251,7 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
 TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
           "[tk][view][compose]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
 
     std::string got_filename;
@@ -270,7 +270,7 @@ TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
                           "image/png", "my-cat.png");
 
     st.run(bar, {0, 0, 640, bar.natural_height()});
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     send->click();
 
@@ -301,7 +301,7 @@ TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send "
           "without text",
           "[tk][view][compose][file]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
     const float baseline = bar.natural_height();
     CHECK_FALSE(bar.has_pending());
@@ -320,7 +320,7 @@ TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send "
     CHECK(bar.natural_height() < baseline + ComposeBar::kPreviewBandH);
     CHECK(size_changes == 1);
 
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     CHECK(send->enabled());
 
@@ -332,7 +332,7 @@ TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send "
 TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
           "[tk][view][compose][file]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
 
     bool fired = false;
@@ -367,7 +367,7 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
     bar.set_current_text("here you go");
     st.run(bar, {0, 0, 640, bar.natural_height()});
 
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     REQUIRE(send->enabled());
     send->click();
@@ -418,13 +418,13 @@ TEST_CASE(
     "ComposeBar set_enabled(false) gates the send button regardless of text",
     "[tk][view][compose]")
 {
-    Stage st;
+    TkComposeBarStage st;
     ComposeBar bar;
     bar.set_current_text("ready");
     bar.set_enabled(false);
     st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
-    Button* send = find_button(bar, "Send");
+    Button* send = find_button_compose_bar(bar, "Send");
     REQUIRE(send);
     CHECK_FALSE(send->enabled());
 
@@ -435,7 +435,7 @@ TEST_CASE(
 TEST_CASE("ComposeBar mic unavailable: natural_height unchanged, mic_btn hidden",
           "[tk][view][compose][voice]")
 {
-    Stage st;
+    TkComposeBarStage st;
     auto cb = std::make_unique<ComposeBar>();
     float baseline = cb->natural_height();
     cb->set_mic_available(false);
@@ -448,7 +448,7 @@ TEST_CASE("ComposeBar mic unavailable: natural_height unchanged, mic_btn hidden"
 TEST_CASE("ComposeBar recording: natural_height unchanged on set_recording",
           "[tk][view][compose][voice]")
 {
-    Stage st;
+    TkComposeBarStage st;
     auto cb = std::make_unique<ComposeBar>();
     float idle_height = cb->natural_height();
     cb->set_recording(true);
@@ -459,7 +459,7 @@ TEST_CASE("ComposeBar recording: natural_height unchanged on set_recording",
 TEST_CASE("ComposeBar recording: push_amplitude no-op before set_recording",
           "[tk][view][compose][voice]")
 {
-    Stage st;
+    TkComposeBarStage st;
     auto cb = std::make_unique<ComposeBar>();
     for (int i = 0; i < 10; ++i)
         cb->push_amplitude(512);
@@ -469,7 +469,7 @@ TEST_CASE("ComposeBar recording: push_amplitude no-op before set_recording",
 TEST_CASE("ComposeBar recording: push_amplitude accepted during recording",
           "[tk][view][compose][voice]")
 {
-    Stage st;
+    TkComposeBarStage st;
     auto cb = std::make_unique<ComposeBar>();
     cb->set_recording(true);
     for (int i = 0; i < 10; ++i)
@@ -480,7 +480,7 @@ TEST_CASE("ComposeBar recording: push_amplitude accepted during recording",
 TEST_CASE("ComposeBar recording: set_recording false resets state",
           "[tk][view][compose][voice]")
 {
-    Stage st;
+    TkComposeBarStage st;
     auto cb = std::make_unique<ComposeBar>();
     cb->set_recording(true);
     for (int i = 0; i < 5; ++i)

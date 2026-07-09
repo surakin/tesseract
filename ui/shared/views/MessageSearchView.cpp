@@ -11,8 +11,8 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kPadX = 16.0f;
-constexpr float kFieldH = 32.0f;
+constexpr float kMessageSearchPadX = 16.0f;
+constexpr float kMessageSearchFieldH = 32.0f;
 
 // Compact relative-time label for a result row ("now", "5m", "3h", "2d",
 // "10w", else a y-count). Best-effort; uses wall-clock now().
@@ -104,8 +104,8 @@ public:
         else if (hovered)
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
 
-        const float text_x = bounds.x + kPadX;
-        const float full_w = std::max(0.0f, bounds.w - 2 * kPadX);
+        const float text_x = bounds.x + kMessageSearchPadX;
+        const float full_w = std::max(0.0f, bounds.w - 2 * kMessageSearchPadX);
 
         // ── Top line: room name (primary, left) + relative time (muted, right).
         const std::string time_str = relative_time(hit.timestamp_ms);
@@ -139,7 +139,7 @@ public:
         {
             const tk::Size tsz = time_lo->measure();
             ctx.canvas.draw_text(*time_lo,
-                                 {bounds.x + bounds.w - kPadX - tsz.w, top_y},
+                                 {bounds.x + bounds.w - kMessageSearchPadX - tsz.w, top_y},
                                  pal.text_muted);
         }
 
@@ -309,8 +309,8 @@ void MessageSearchView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     cy = std::max(cy, bounds.y + margin);
 
     card_rect_ = {cx, cy, cw, ch};
-    search_field_rect_ = {cx + kPadX, cy + (kHeaderH - kFieldH) * 0.5f,
-                          std::max(0.0f, cw - 2 * kPadX), kFieldH};
+    search_field_rect_ = {cx + kMessageSearchPadX, cy + (kHeaderH - kMessageSearchFieldH) * 0.5f,
+                          std::max(0.0f, cw - 2 * kMessageSearchPadX), kMessageSearchFieldH};
 
     const tk::Rect list_bounds{cx, cy + chrome_h, cw,
                                std::max(0.0f, ch - chrome_h)};

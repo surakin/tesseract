@@ -10,9 +10,9 @@ namespace
 
 // Header label visuals — match the "Theme" header AppearanceSection used to
 // render manually before this base class existed.
-constexpr float kHeaderH = 14.0f;
+constexpr float kSettingsGroupHeaderH = 14.0f;
 constexpr float kHeaderGap = 10.0f;
-constexpr float kRowSpacing = 6.0f;
+constexpr float kSettingsGroupRowSpacing = 6.0f;
 
 } // namespace
 
@@ -21,8 +21,8 @@ SettingsGroup::SettingsGroup(std::string header)
 {
     // Reserve room for the header inside the top padding; below the header,
     // child widgets stack with a small inter-row gap.
-    set_padding(tk::Edges{kHeaderH + kHeaderGap, 0.0f, 0.0f, 0.0f});
-    set_spacing(kRowSpacing);
+    set_padding(tk::Edges{kSettingsGroupHeaderH + kHeaderGap, 0.0f, 0.0f, 0.0f});
+    set_spacing(kSettingsGroupRowSpacing);
 }
 
 void SettingsGroup::paint(tk::PaintCtx& ctx)

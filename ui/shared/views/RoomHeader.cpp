@@ -17,9 +17,9 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kPadX = 16.0f;
-constexpr float kAvatarSize = 40.0f;
-constexpr float kAvatarGap = 12.0f;
+constexpr float kRoomHeaderPadX = 16.0f;
+constexpr float kRoomHeaderAvatarSize = 40.0f;
+constexpr float kRoomHeaderAvatarGap = 12.0f;
 
 constexpr float kCalBtnSize = 28.0f;
 constexpr float kCalBtnMargin = 8.0f;
@@ -32,7 +32,7 @@ constexpr float kLockGap =  4.0f;
 // Two-line layout (with topic): name at 12 px, topic at 34 px.
 // One-line layout (name only):  name centred → 21 px.
 constexpr float kNameY_Single = 21.0f;
-constexpr float kNameH = 18.0f;
+constexpr float kRoomHeaderNameH = 18.0f;
 constexpr float kNameY_Pair = 12.0f;
 constexpr float kTopicY = 34.0f;
 constexpr float kTopicH = 14.0f;
@@ -258,8 +258,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         hide_action_buttons();
 
         const float topic_y = bounds.y + (bounds.h - kTopicH) * 0.5f;
-        topic_rect_ = {bounds.x + kPadX, topic_y,
-                       std::max(0.0f, bounds.w - 2.0f * kPadX), kTopicH};
+        topic_rect_ = {bounds.x + kRoomHeaderPadX, topic_y,
+                       std::max(0.0f, bounds.w - 2.0f * kRoomHeaderPadX), kTopicH};
 
         const bool has_topic = !topic_.empty() || !topic_html_.empty();
         const bool show_label = has_topic && topic_html_.empty();
@@ -328,7 +328,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         return;
     }
 
-    const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
+    const float text_x = bounds.x + kRoomHeaderPadX + kRoomHeaderAvatarSize + kRoomHeaderAvatarGap;
     // Right-side reserve: each visible action button takes 28 px with 8 px
     // gaps between them. When no buttons are shown the reserve is just the
     // outer margin so the topic can use the freed width.
@@ -344,8 +344,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             ? kCalBtnMargin
             : kCalBtnMargin + visible_btns * kCalBtnSize +
                   (visible_btns - 1) * 8.0f + kCalBtnMargin;
-    const float text_w = std::max(0.0f, bounds.w - kPadX - kAvatarSize -
-                                            kAvatarGap - right_reserve);
+    const float text_w = std::max(0.0f, bounds.w - kRoomHeaderPadX - kRoomHeaderAvatarSize -
+                                            kRoomHeaderAvatarGap - right_reserve);
 
     const bool has_topic = !topic_.empty() || !topic_html_.empty();
     const bool show_label = has_topic && topic_html_.empty();
@@ -356,7 +356,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float lock_reserve = encrypted_ ? (kLockW + kLockGap) : 0.0f;
     lock_icon_rect_ = encrypted_
                           ? tk::Rect{text_x,
-                                     name_y + (kNameH - kLockH) * 0.5f,
+                                     name_y + (kRoomHeaderNameH - kLockH) * 0.5f,
                                      kLockW, kLockH}
                           : tk::Rect{};
 
@@ -365,7 +365,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         name_label_->arrange(
             ctx,
             {text_x + lock_reserve, name_y,
-             std::max(0.0f, text_w - lock_reserve), kNameH});
+             std::max(0.0f, text_w - lock_reserve), kRoomHeaderNameH});
     }
 
     topic_rect_ = {text_x, bounds.y + kTopicY, text_w, kTopicH};
@@ -534,12 +534,12 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     }
 
     // Avatar — circle-cropped image or initials disc.
-    const tk::Point avatar_centre{bounds_.x + kPadX + kAvatarSize * 0.5f,
+    const tk::Point avatar_centre{bounds_.x + kRoomHeaderPadX + kRoomHeaderAvatarSize * 0.5f,
                                   bounds_.y + kHeight * 0.5f};
     const tk::Image* avatar_img =
         (avatar_provider_ && !avatar_url_.empty()) ? avatar_provider_(avatar_url_)
                                                    : nullptr;
-    draw_avatar(ctx.canvas, avatar_img, avatar_centre, kAvatarSize,
+    draw_avatar(ctx.canvas, avatar_img, avatar_centre, kRoomHeaderAvatarSize,
                 display_name_, ctx.theme.palette.avatar_initials_bg,
                 ctx.theme.palette.avatar_initials_text);
 

@@ -10,7 +10,7 @@ using tesseract::views::MessageRowData;
 namespace
 {
 
-MessageRowData make_row(const std::string& id, const std::string& body = "x")
+MessageRowData make_row_search_highlight(const std::string& id, const std::string& body = "x")
 {
     MessageRowData r;
     r.kind = MessageRowData::Kind::Text;
@@ -49,13 +49,13 @@ TEST_CASE("set_messages does NOT clear search_match_ids", "[message_list][search
     v.set_search_matches({"$a", "$b"});
 
     // Pagination / context rebuild (room_switch=false) must not clear matches.
-    v.set_messages({make_row("$a"), make_row("$x")}, /*room_switch=*/false);
+    v.set_messages({make_row_search_highlight("$a"), make_row_search_highlight("$x")}, /*room_switch=*/false);
     CHECK(v.has_search_matches());
     CHECK(v.search_match_ids().count("$a") == 1);
     CHECK(v.search_match_ids().count("$b") == 1);
 
     // Even a full room switch must not clear matches — the shell owns clearing.
-    v.set_messages({make_row("$y")}, /*room_switch=*/true);
+    v.set_messages({make_row_search_highlight("$y")}, /*room_switch=*/true);
     CHECK(v.has_search_matches());
     CHECK(v.search_match_ids().count("$a") == 1);
     CHECK(v.search_match_ids().count("$b") == 1);

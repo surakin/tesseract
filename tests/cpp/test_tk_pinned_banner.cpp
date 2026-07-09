@@ -25,7 +25,7 @@ PinnedEvent make_pin(const std::string& id, std::uint64_t ts)
     return p;
 }
 
-struct Stage
+struct TkPinnedBannerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 200);
     tk::LayoutCtx layout_ctx()
@@ -66,7 +66,7 @@ TEST_CASE("PinnedBanner::set_pins clamps current_index_ when list shrinks to emp
 TEST_CASE("PinnedBanner::on_jump_to fires for the currently-displayed pin",
           "[pinned_banner]")
 {
-    Stage st;
+    TkPinnedBannerStage st;
     PinnedBanner b;
     b.set_pins({make_pin("$pinned", 100)});
     st.arrange(b, {0, 0, 400, PinnedBanner::kBannerH});

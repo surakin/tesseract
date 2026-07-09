@@ -136,6 +136,11 @@ if(_TESSERACT_TEST_UI STREQUAL "qt6")
     target_sources(tesseract_tests PRIVATE
         cpp/tk_test_surface_qt.cpp
         "${CMAKE_SOURCE_DIR}/ui/linux-qt/tk/canvas_qpainter.cpp")
+    # Self-includes its own AUTOMOC .moc file; excluded from unity batching
+    # defensively here too (see the same exclusion in ui/linux-qt/CMakeLists.txt).
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/ui/linux-qt/tk/canvas_qpainter.cpp"
+        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
     target_include_directories(tesseract_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/ui/linux-qt"
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")

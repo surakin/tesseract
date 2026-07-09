@@ -10,9 +10,9 @@ using tk::PixmapCache;
 namespace
 {
 
-struct FakeImage : tk::Image
+struct PixmapCacheFakeImage : tk::Image
 {
-    explicit FakeImage(std::size_t bytes) : bytes_(bytes) {}
+    explicit PixmapCacheFakeImage(std::size_t bytes) : bytes_(bytes) {}
     int width() const override { return 1; }
     int height() const override { return 1; }
     std::size_t memory_bytes() const override { return bytes_; }
@@ -21,7 +21,7 @@ struct FakeImage : tk::Image
 
 std::unique_ptr<tk::Image> img(std::size_t bytes)
 {
-    return std::make_unique<FakeImage>(bytes);
+    return std::make_unique<PixmapCacheFakeImage>(bytes);
 }
 
 } // namespace

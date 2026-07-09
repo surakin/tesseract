@@ -40,8 +40,8 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
-#include <libintl.h>
-#define _(s) gettext(s)
+
+#include "gettext_shorthand.h"
 
 namespace gtk4
 {

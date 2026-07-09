@@ -19,11 +19,11 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kPadX = 8.0f;
-constexpr float kPadY = 8.0f;
+constexpr float kComposeBarPadX = 8.0f;
+constexpr float kComposeBarPadY = 8.0f;
 constexpr float kButtonSide = 40.0f;
 constexpr float kSendWidth = 64.0f;
-constexpr float kGap = 6.0f;
+constexpr float kComposeBarGap = 6.0f;
 constexpr float kRemoveBtnSide = 24.0f;
 constexpr float kRemoveBtnInset = 4.0f;
 
@@ -264,7 +264,7 @@ void ComposeBar::set_text_area_natural_height(float h)
 void ComposeBar::recompute_height()
 {
     float text_h =
-        std::clamp(text_area_natural_ + kPadY * 2, kMinHeight, kMaxHeight);
+        std::clamp(text_area_natural_ + kComposeBarPadY * 2, kMinHeight, kMaxHeight);
     float top_h = 0.0f;
     if (has_editing())
     {
@@ -288,12 +288,12 @@ void ComposeBar::recompute_height()
             band_h = kFileBandH + kPreviewBandGap;
         }
     }
-    // arrange() insets the first band kPadY from the bar's top edge; add
+    // arrange() insets the first band kComposeBarPadY from the bar's top edge; add
     // that offset once when any band is present so natural_height_ matches
     // the full space that arrange() actually consumes.
     float total_bands = top_h + band_h;
     natural_height_ =
-        text_h + total_bands + (total_bands > 0.0f ? kPadY : 0.0f);
+        text_h + total_bands + (total_bands > 0.0f ? kComposeBarPadY : 0.0f);
 }
 
 void ComposeBar::set_reply_to(std::string event_id, std::string sender_name,
@@ -745,8 +745,8 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float text_top = bounds.y;
     if (has_editing())
     {
-        edit_band_rect_ = {bounds.x + kPadX, bounds.y + kPadY,
-                           std::max(0.0f, bounds.w - kPadX * 2), kEditBandH};
+        edit_band_rect_ = {bounds.x + kComposeBarPadX, bounds.y + kComposeBarPadY,
+                           std::max(0.0f, bounds.w - kComposeBarPadX * 2), kEditBandH};
         constexpr float kCancelSide = 20.0f;
         constexpr float kCancelInsetX = 8.0f;
         edit_cancel_rect_ = {
@@ -759,8 +759,8 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     else if (has_reply())
     {
-        reply_band_rect_ = {bounds.x + kPadX, bounds.y + kPadY,
-                            std::max(0.0f, bounds.w - kPadX * 2), kReplyBandH};
+        reply_band_rect_ = {bounds.x + kComposeBarPadX, bounds.y + kComposeBarPadY,
+                            std::max(0.0f, bounds.w - kComposeBarPadX * 2), kReplyBandH};
         constexpr float kCancelSide = 20.0f;
         constexpr float kCancelInsetX = 8.0f;
         reply_cancel_rect_ = {reply_band_rect_.x + reply_band_rect_.w -
@@ -800,7 +800,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 pending_->kind == PendingAttachment::Kind::Video
                     ? pending_->thumb_height
                     : pending_->height);
-            float max_w = std::max(0.0f, bounds.w - kPadX * 2);
+            float max_w = std::max(0.0f, bounds.w - kComposeBarPadX * 2);
             float dw, dh;
             if (img_w <= 0 || img_h <= 0)
             {
@@ -813,7 +813,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 dw = img_w * s;
                 dh = img_h * s;
             }
-            preview_band_rect_ = {bounds.x + kPadX,
+            preview_band_rect_ = {bounds.x + kComposeBarPadX,
                                   bounds.y - dh - kPreviewBandGap, dw, dh};
             preview_image_rect_ = preview_band_rect_;
             remove_btn_rect_ = {
@@ -827,9 +827,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         {
             // File / video-loading / audio chip stays inside the bar.
             float band_y = (has_reply() || has_editing()) ? text_top
-                                                          : bounds.y + kPadY;
-            preview_band_rect_ = {bounds.x + kPadX, band_y,
-                                  std::max(0.0f, bounds.w - kPadX * 2),
+                                                          : bounds.y + kComposeBarPadY;
+            preview_band_rect_ = {bounds.x + kComposeBarPadX, band_y,
+                                  std::max(0.0f, bounds.w - kComposeBarPadX * 2),
                                   kFileBandH};
             preview_image_rect_ = {};
             remove_btn_rect_ = {
@@ -852,16 +852,16 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float text_strip_h = bounds.y + bounds.h - text_top;
 
     // Send button sits to the right, outside the input card.
-    send_rect_ = {bounds.x + bounds.w - kPadX - kSendWidth,
+    send_rect_ = {bounds.x + bounds.w - kComposeBarPadX - kSendWidth,
                   text_top + (text_strip_h - kButtonSide) * 0.5f, kSendWidth,
                   kButtonSide};
 
     // Compose card always spans from the left edge to just before send.
-    const float card_left = bounds.x + kPadX;
-    const float card_right = send_rect_.x - kGap;
-    compose_card_rect_ = {card_left, text_top + kPadY,
+    const float card_left = bounds.x + kComposeBarPadX;
+    const float card_right = send_rect_.x - kComposeBarGap;
+    compose_card_rect_ = {card_left, text_top + kComposeBarPadY,
                           std::max(0.0f, card_right - card_left),
-                          std::max(0.0f, text_strip_h - kPadY * 2)};
+                          std::max(0.0f, text_strip_h - kComposeBarPadY * 2)};
 
     // Icon buttons live inside the card, stacked right-to-left.
     const float btn_y = text_top + (text_strip_h - kButtonSide) * 0.5f;
@@ -870,22 +870,22 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         mic_btn_rect_ = {inner_right - kButtonSide, btn_y, kButtonSide,
                          kButtonSide};
-        inner_right = mic_btn_rect_.x - kGap;
+        inner_right = mic_btn_rect_.x - kComposeBarGap;
     }
     else
     {
         mic_btn_rect_ = {};
     }
     sticker_rect_ = {inner_right - kButtonSide, btn_y, kButtonSide, kButtonSide};
-    emoji_rect_ = {sticker_rect_.x - kGap - kButtonSide, btn_y, kButtonSide,
+    emoji_rect_ = {sticker_rect_.x - kComposeBarGap - kButtonSide, btn_y, kButtonSide,
                    kButtonSide};
 
     // Text area occupies the left portion of the card, leaving room for
     // the emoji/sticker buttons on the right with a small gap.
     text_area_rect_ = {
-        card_left + kPadX, text_top + kPadY,
-        std::max(0.0f, emoji_rect_.x - kGap - (card_left + kPadX)),
-        std::max(0.0f, text_strip_h - kPadY * 2)};
+        card_left + kComposeBarPadX, text_top + kComposeBarPadY,
+        std::max(0.0f, emoji_rect_.x - kComposeBarGap - (card_left + kComposeBarPadX)),
+        std::max(0.0f, text_strip_h - kComposeBarPadY * 2)};
 
     // Waveform strip occupies the card between the × cancel button (left) and
     // the ⏹ stop button (right). Emoji/sticker buttons are hidden while recording.
@@ -894,12 +894,12 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                           text_top + (text_strip_h - kVoiceCancelSide) * 0.5f,
                           kVoiceCancelSide, kVoiceCancelSide};
     const float wave_right = (mic_available_ && !mic_btn_rect_.empty())
-                                 ? mic_btn_rect_.x - kGap
+                                 ? mic_btn_rect_.x - kComposeBarGap
                                  : card_right;
     waveform_strip_rect_ = {
-        card_left + kVoiceCancelSide + kGap, text_top + kPadY,
-        std::max(0.0f, wave_right - card_left - kVoiceCancelSide - kGap),
-        std::max(0.0f, text_strip_h - kPadY * 2)};
+        card_left + kVoiceCancelSide + kComposeBarGap, text_top + kComposeBarPadY,
+        std::max(0.0f, wave_right - card_left - kVoiceCancelSide - kComposeBarGap),
+        std::max(0.0f, text_strip_h - kComposeBarPadY * 2)};
 
     if (emoji_btn_)
     {

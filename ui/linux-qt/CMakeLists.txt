@@ -82,6 +82,16 @@ endif()
 
 target_compile_features(tesseract_qt PRIVATE cxx_std_20)
 
+# These two files #include their own AUTOMOC-generated .moc file inline
+# rather than relying solely on the generated mocs_compilation.cpp. That
+# interaction with CMAKE_UNITY_BUILD is untested; exclude them from unity
+# batching defensively (cheap given tesseract_qt is only ~20 files total).
+set_source_files_properties(
+    tk/canvas_qpainter.cpp
+    src/LinuxUpConnectorQt.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
+)
+
 # Qt module umbrella headers dominate per-file parse cost in the shell. Applied
 # only to tesseract_qt; the separate C `tesseract_xdg_protocol` target gets no
 # PCH. (Qt's AUTOMOC mocs_compilation.cpp shares this PCH fine.)

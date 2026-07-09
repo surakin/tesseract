@@ -22,12 +22,12 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kRowH     = 22.0f;
-constexpr float kLabelW   = 160.0f;
-constexpr float kLabelGap =   8.0f;
+constexpr float kAboutSectionRowH     = 22.0f;
+constexpr float kAboutSectionLabelW   = 160.0f;
+constexpr float kAboutSectionLabelGap =   8.0f;
 // Natural width of a CacheSizeRow: label + gap + value column.
 // Caps the Storage group so it doesn't stretch to fill the page.
-constexpr float kNaturalW = kLabelW + kLabelGap + 140.0f;
+constexpr float kNaturalW = kAboutSectionLabelW + kAboutSectionLabelGap + 140.0f;
 
 std::string format_bytes(uint64_t n)
 {
@@ -65,7 +65,7 @@ std::string format_hit_miss(uint64_t hits, uint64_t misses)
 }
 
 // ---------------------------------------------------------------------------
-// CacheNameCell — fixed-width left cell (kLabelW), text_secondary
+// CacheNameCell — fixed-width left cell (kAboutSectionLabelW), text_secondary
 // ---------------------------------------------------------------------------
 
 class CacheNameCell : public tk::Widget
@@ -78,7 +78,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
-        return {std::min(constraints.w, kLabelW), kRowH};
+        return {std::min(constraints.w, kAboutSectionLabelW), kAboutSectionRowH};
     }
 
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override
@@ -101,7 +101,7 @@ public:
             label_layout_ = ctx.factory.build_text(label_text_, ls);
         }
         const float cy =
-            bounds_.y + (kRowH - label_layout_->measure().h) * 0.5f;
+            bounds_.y + (kAboutSectionRowH - label_layout_->measure().h) * 0.5f;
         ctx.canvas.draw_text(*label_layout_, {bounds_.x, cy},
                              ctx.theme.palette.text_secondary);
     }
@@ -152,7 +152,7 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size) override
     {
         // Zero natural width; fill_main=true gives this cell the leftover space.
-        return {0.0f, kRowH};
+        return {0.0f, kAboutSectionRowH};
     }
 
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override
@@ -175,7 +175,7 @@ public:
             value_layout_ = ctx.factory.build_text(value_text_, vs);
         }
         const auto sz  = value_layout_->measure();
-        const float cy = bounds_.y + (kRowH - sz.h) * 0.5f;
+        const float cy = bounds_.y + (kAboutSectionRowH - sz.h) * 0.5f;
         ctx.canvas.draw_text(*value_layout_, {bounds_.x, cy},
                              ctx.theme.palette.text_muted);
     }
@@ -216,7 +216,7 @@ class AboutSection::CacheSizeRow : public tk::HBox
 public:
     explicit CacheSizeRow(std::string label)
     {
-        set_spacing(kLabelGap);
+        set_spacing(kAboutSectionLabelGap);
 
         auto name = std::make_unique<CacheNameCell>(std::move(label));
         auto val  = std::make_unique<CacheValueCell>();
@@ -252,12 +252,12 @@ public:
 
     // Override measure so the SettingsGroup reports kNaturalW as its natural
     // cross-axis width. Without this, the HBox would measure to only
-    // kLabelW + kLabelGap (the value cell has zero natural width since
+    // kAboutSectionLabelW + kAboutSectionLabelGap (the value cell has zero natural width since
     // fill_main children are excluded from FlexBox::measure's used_main),
     // making the value column 0 px wide after arrange.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
-        return {std::min(constraints.w, kNaturalW), kRowH};
+        return {std::min(constraints.w, kNaturalW), kAboutSectionRowH};
     }
 
 private:

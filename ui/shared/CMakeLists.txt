@@ -287,6 +287,11 @@ endif()
 
 add_library(tesseract_tk STATIC ${_tk_sources})
 
+# svg.cpp is a single-header-library implementation TU (NANOSVG_IMPLEMENTATION /
+# NANOSVGRAST_IMPLEMENTATION) — it gains nothing from unity-batch merging and
+# excluding it removes any risk from those un-#undef'd implementation macros.
+set_source_files_properties(tk/svg.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
 # Embed the application icon PNG as a C byte array so BrandView can decode it
 # cross-platform without per-shell resource loading. Runs at configure time.
 set(_icon_png "${CMAKE_SOURCE_DIR}/ui/icons/tesseract_160.png")

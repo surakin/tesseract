@@ -10,12 +10,12 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kCardWidth   = 360.0f;
-constexpr float kCardPadding = 24.0f;
-constexpr float kCardSpacing = 12.0f;
+constexpr float kQRGrantCardWidth   = 360.0f;
+constexpr float kQRGrantCardPadding = 24.0f;
+constexpr float kQRGrantCardSpacing = 12.0f;
 constexpr float kQrSize      = 240.0f;
 constexpr float kButtonH     = 36.0f;
-constexpr float kFieldH      = 36.0f;
+constexpr float kQRGrantFieldH      = 36.0f;
 
 } // namespace
 
@@ -27,8 +27,8 @@ QRGrantView::QRGrantView()
 void QRGrantView::rebuild_tree_()
 {
     auto card = std::make_unique<tk::VBox>();
-    card->set_padding(tk::Edges::all(kCardPadding))
-        .set_spacing(kCardSpacing)
+    card->set_padding(tk::Edges::all(kQRGrantCardPadding))
+        .set_spacing(kQRGrantCardSpacing)
         .set_cross(tk::Cross::Stretch)
         .set_main(tk::Main::Start);
 
@@ -42,7 +42,7 @@ void QRGrantView::rebuild_tree_()
 
     // Layout spacer for the NativeTextField overlay — drives check_code_rect_.
     auto check_input = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    check_input->set_min_size({0.0f, kFieldH});
+    check_input->set_min_size({0.0f, kQRGrantFieldH});
     check_input->set_visible(false);
 
     auto confirm = std::make_unique<tk::Button>(
@@ -324,8 +324,8 @@ void QRGrantView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     bounds_ = bounds;
     if (!card_) return;
 
-    tk::Size card_size = card_->measure(ctx, {kCardWidth, bounds.h});
-    float    card_w    = std::min(kCardWidth, bounds.w);
+    tk::Size card_size = card_->measure(ctx, {kQRGrantCardWidth, bounds.h});
+    float    card_w    = std::min(kQRGrantCardWidth, bounds.w);
     float    card_h    = std::min(card_size.h, bounds.h);
     float    card_x    = bounds.x + (bounds.w - card_w) * 0.5f;
     float    card_y    = bounds.y + (bounds.h - card_h) * 0.5f;

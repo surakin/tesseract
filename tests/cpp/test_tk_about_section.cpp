@@ -10,7 +10,7 @@ using tesseract::views::AboutSection;
 namespace
 {
 
-struct Stage
+struct TkAboutSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
 
@@ -52,7 +52,7 @@ bool scan_for_tooltip(tk::Widget& w, float x, float height,
 TEST_CASE("memory cache row shows tooltip on hover when stats are set",
           "[about-section][tooltip]")
 {
-    Stage st;
+    TkAboutSectionStage st;
     AboutSection section;
     st.run(section, {0, 0, 400, 600});
 
@@ -72,7 +72,7 @@ TEST_CASE("memory cache row shows tooltip on hover when stats are set",
 TEST_CASE("cache size row value cells are at the same x after layout",
           "[about-section][layout]")
 {
-    Stage st;
+    TkAboutSectionStage st;
     AboutSection section;
     st.run(section, {0, 0, 400, 600});
 
@@ -106,7 +106,7 @@ TEST_CASE("cache size row value cells are at the same x after layout",
 TEST_CASE("tooltip fires immediately when stats arrive while already hovering",
           "[about-section][tooltip]")
 {
-    Stage st;
+    TkAboutSectionStage st;
     AboutSection section;
     st.run(section, {0, 0, 400, 600});
     // No stats set yet — hover the row so hover_count_ > 0 but has_stats_ == false.
@@ -131,7 +131,7 @@ TEST_CASE("tooltip fires immediately when stats arrive while already hovering",
 TEST_CASE("sdk store row never triggers a tooltip",
           "[about-section][tooltip]")
 {
-    Stage st;
+    TkAboutSectionStage st;
     AboutSection section;
     // Set stats only for memory and local; sdk row gets none.
     section.set_memory_cache_stats(100, 5);

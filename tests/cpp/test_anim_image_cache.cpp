@@ -11,7 +11,7 @@ using tk::AnimImageCache;
 namespace
 {
 
-struct FakeImage : tk::Image
+struct AnimImageCacheFakeImage : tk::Image
 {
     int width() const override { return 1; }
     int height() const override { return 1; }
@@ -22,7 +22,7 @@ std::vector<std::unique_ptr<tk::Image>> frames(int n)
 {
     std::vector<std::unique_ptr<tk::Image>> v;
     for (int i = 0; i < n; ++i)
-        v.push_back(std::make_unique<FakeImage>());
+        v.push_back(std::make_unique<AnimImageCacheFakeImage>());
     return v;
 }
 

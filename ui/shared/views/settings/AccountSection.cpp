@@ -25,19 +25,19 @@ constexpr float kAvatarDiameter   = 64.0f;
 // ExtendedFields layout constants
 constexpr float kFieldPadX  = 24.0f;
 constexpr float kFieldPadY  = 12.0f;
-constexpr float kLabelW     = 80.0f;
-constexpr float kFieldGap   = 8.0f;
-constexpr float kRowH       = 28.0f;
+constexpr float kAccountSectionLabelW     = 80.0f;
+constexpr float kAccountSectionFieldGap   = 8.0f;
+constexpr float kAccountSectionRowH       = 28.0f;
 constexpr float kBioH       = 44.0f;
-constexpr float kRowSpacing = 8.0f;
+constexpr float kAccountSectionRowSpacing = 8.0f;
 constexpr float kAvatarRadius     = kAvatarDiameter * 0.5f;
-constexpr float kPadX             = 24.0f;
-constexpr float kPadY             = 24.0f;
-constexpr float kAvatarTextGap    = 16.0f;
-constexpr float kLineGap          = 4.0f;
-constexpr float kNameH            = 20.0f;
+constexpr float kAccountSectionPadX             = 24.0f;
+constexpr float kAccountSectionPadY             = 24.0f;
+constexpr float kAccountSectionAvatarTextGap    = 16.0f;
+constexpr float kAccountSectionLineGap          = 4.0f;
+constexpr float kAccountSectionNameH            = 20.0f;
 constexpr float kIdH              = 17.0f;
-constexpr float kErrorGap         = 4.0f;
+constexpr float kAccountSectionErrorGap         = 4.0f;
 constexpr float kErrorH           = 14.0f;
 
 } // namespace
@@ -167,31 +167,31 @@ void AccountSection::Content::invalidate_text()
 
 tk::Point AccountSection::Content::disc_centre_local() const
 {
-    return {kPadX + kAvatarRadius, kPadY + kAvatarRadius};
+    return {kAccountSectionPadX + kAvatarRadius, kAccountSectionPadY + kAvatarRadius};
 }
 
 tk::Rect AccountSection::Content::name_field_rect() const
 {
     if (!name_editable_ || name_busy_)
         return {};
-    const float text_x = bounds_.x + kPadX + kAvatarDiameter + kAvatarTextGap;
+    const float text_x = bounds_.x + kAccountSectionPadX + kAvatarDiameter + kAccountSectionAvatarTextGap;
     const float text_w =
-        std::max(0.0f, bounds_.x + bounds_.w - kPadX - text_x);
-    const float col_h   = kNameH + kLineGap + kIdH;
+        std::max(0.0f, bounds_.x + bounds_.w - kAccountSectionPadX - text_x);
+    const float col_h   = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
     const float col_top =
-        bounds_.y + kPadY + (kAvatarDiameter - col_h) * 0.5f;
-    return {text_x, col_top - 2.0f, text_w, kNameH + 4.0f};
+        bounds_.y + kAccountSectionPadY + (kAvatarDiameter - col_h) * 0.5f;
+    return {text_x, col_top - 2.0f, text_w, kAccountSectionNameH + 4.0f};
 }
 
 tk::Size AccountSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
-    const float text_col_h = kNameH + kLineGap + kIdH;
+    const float text_col_h = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
     const float extra_h =
-        (!name_error_.empty() ? kErrorGap + kErrorH : 0.0f) +
-        (avatar_.has_error() ? kErrorGap + kErrorH : 0.0f);
+        (!name_error_.empty() ? kAccountSectionErrorGap + kErrorH : 0.0f) +
+        (avatar_.has_error() ? kAccountSectionErrorGap + kErrorH : 0.0f);
     const float h =
-        std::max(kAvatarDiameter, text_col_h) + 2.0f * kPadY + extra_h;
+        std::max(kAvatarDiameter, text_col_h) + 2.0f * kAccountSectionPadY + extra_h;
     return {w, h};
 }
 
@@ -240,12 +240,12 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
         avatar_.paint(ctx, {bounds_.x, bounds_.y}, name_source);
     }
 
-    const float text_x = bounds_.x + kPadX + kAvatarDiameter + kAvatarTextGap;
-    const float text_w = std::max(0.0f, bounds_.x + bounds_.w - kPadX - text_x);
+    const float text_x = bounds_.x + kAccountSectionPadX + kAvatarDiameter + kAccountSectionAvatarTextGap;
+    const float text_w = std::max(0.0f, bounds_.x + bounds_.w - kAccountSectionPadX - text_x);
 
-    const float col_h   = kNameH + kLineGap + kIdH;
+    const float col_h   = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
     const float col_top =
-        bounds_.y + kPadY + (kAvatarDiameter - col_h) * 0.5f;
+        bounds_.y + kAccountSectionPadY + (kAvatarDiameter - col_h) * 0.5f;
 
     if (!name_editable_)
     {
@@ -279,7 +279,7 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
     }
     else
     {
-        const float uly = col_top + kNameH + 2.0f;
+        const float uly = col_top + kAccountSectionNameH + 2.0f;
         ctx.canvas.fill_rect({text_x, uly, text_w, 1.0f},
                              pal.text_secondary.with_alpha(80));
 
@@ -323,7 +323,7 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
             name_error_layout_ = ctx.factory.build_text(name_error_, st);
         }
         ctx.canvas.draw_text(*name_error_layout_,
-                             {text_x, col_top + kNameH + kLineGap + kIdH + kErrorGap},
+                             {text_x, col_top + kAccountSectionNameH + kAccountSectionLineGap + kIdH + kAccountSectionErrorGap},
                              tk::Color::rgb(0xcc3333));
     }
 
@@ -340,7 +340,7 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
     if (uid_layout_)
     {
         ctx.canvas.draw_text(*uid_layout_,
-                             {text_x, col_top + kNameH + kLineGap},
+                             {text_x, col_top + kAccountSectionNameH + kAccountSectionLineGap},
                              pal.text_secondary);
     }
 }
@@ -399,22 +399,22 @@ private:
 float AccountSection::ExtendedFields::error_extra(int idx) const
 {
     if (error_[idx].empty()) return 0.0f;
-    return kErrorGap + kErrorH;
+    return kAccountSectionErrorGap + kErrorH;
 }
 
 float AccountSection::ExtendedFields::row_y(int idx) const
 {
     float y = bounds_.y + kFieldPadY;
-    if (idx >= 1) y += kRowH + kRowSpacing + error_extra(0);
-    if (idx >= 2) y += kRowH + kRowSpacing + error_extra(1);
+    if (idx >= 1) y += kAccountSectionRowH + kAccountSectionRowSpacing + error_extra(0);
+    if (idx >= 2) y += kAccountSectionRowH + kAccountSectionRowSpacing + error_extra(1);
     return y;
 }
 
 tk::Rect AccountSection::ExtendedFields::field_rect_for(int idx) const
 {
     if (!fields_editable_ || busy_[idx]) return {};
-    const float row_h = (idx == 2) ? kBioH : kRowH;
-    const float x = bounds_.x + kFieldPadX + kLabelW + kFieldGap;
+    const float row_h = (idx == 2) ? kBioH : kAccountSectionRowH;
+    const float x = bounds_.x + kFieldPadX + kAccountSectionLabelW + kAccountSectionFieldGap;
     const float w = std::max(0.0f, bounds_.x + bounds_.w - kFieldPadX - x);
     const float y = row_y(idx);
     return {x, y, w, row_h};
@@ -488,10 +488,10 @@ tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx&,
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
     const float h = kFieldPadY
-                    + kRowH + error_extra(0)
-                    + kRowSpacing
-                    + kRowH + error_extra(1)
-                    + kRowSpacing
+                    + kAccountSectionRowH + error_extra(0)
+                    + kAccountSectionRowSpacing
+                    + kAccountSectionRowH + error_extra(1)
+                    + kAccountSectionRowSpacing
                     + kBioH + error_extra(2)
                     + kFieldPadY;
     return {w, h};
@@ -519,10 +519,10 @@ void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
 
     for (int i = 0; i < 3; ++i)
     {
-        const float row_h  = (i == 2) ? kBioH : kRowH;
+        const float row_h  = (i == 2) ? kBioH : kAccountSectionRowH;
         const float ry     = row_y(i);
         const float label_x = bounds_.x + kFieldPadX;
-        const float field_x = label_x + kLabelW + kFieldGap;
+        const float field_x = label_x + kAccountSectionLabelW + kAccountSectionFieldGap;
         const float field_w = std::max(0.0f,
             bounds_.x + bounds_.w - kFieldPadX - field_x);
 
@@ -533,7 +533,7 @@ void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
             st.role      = tk::FontRole::Body;
             st.halign    = tk::TextHAlign::Leading;
             st.valign    = tk::TextVAlign::Top;
-            st.max_width = kLabelW;
+            st.max_width = kAccountSectionLabelW;
             label_layout_[i] = ctx.factory.build_text(kLabels[i], st);
         }
         if (label_layout_[i])
@@ -604,7 +604,7 @@ void AccountSection::ExtendedFields::paint(tk::PaintCtx& ctx)
             if (error_layout_[i])
             {
                 ctx.canvas.draw_text(*error_layout_[i],
-                                     {field_x, ry + row_h + kErrorGap},
+                                     {field_x, ry + row_h + kAccountSectionErrorGap},
                                      tk::Color::rgb(0xcc3333));
             }
         }
@@ -642,7 +642,7 @@ AccountSection::AccountSection()
 
     auto row = std::make_unique<tk::HBox>();
     row->set_main(tk::Main::End);
-    row->set_padding(tk::Edges{0.0f, kPadX, kPadY, kPadX});
+    row->set_padding(tk::Edges{0.0f, kAccountSectionPadX, kAccountSectionPadY, kAccountSectionPadX});
     row->add_child(std::make_unique<tk::Button>(
         "Log Out",
         [this] { if (on_logout) on_logout(); },

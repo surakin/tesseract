@@ -18,7 +18,7 @@ using tesseract::views::VideoViewerOverlay;
 namespace
 {
 
-struct Stage
+struct TkVideoViewerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(600, 400);
     LayoutCtx layout_ctx()
@@ -96,7 +96,7 @@ TEST_CASE("VideoViewerOverlay load_bytes transitions out of loading state",
 TEST_CASE("VideoViewerOverlay paint does not crash when is_loading",
           "[tk][videoviewer]")
 {
-    Stage st;
+    TkVideoViewerStage st;
     VideoViewerOverlay overlay;
     overlay.open("mxc://example.org/v", "", "video/mp4", 10000u, 1280, 720);
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
@@ -108,7 +108,7 @@ TEST_CASE(
     "VideoViewerOverlay pointer-down outside fires on_close via pointer-up",
     "[tk][videoviewer]")
 {
-    Stage st;
+    TkVideoViewerStage st;
     VideoViewerOverlay overlay;
     overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -129,7 +129,7 @@ TEST_CASE(
     "VideoViewerOverlay pointer-down on play button does not fire on_close",
     "[tk][videoviewer]")
 {
-    Stage st;
+    TkVideoViewerStage st;
     VideoViewerOverlay overlay;
     overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -153,7 +153,7 @@ TEST_CASE(
 TEST_CASE("VideoViewerOverlay pointer-down on close button fires on_close",
           "[tk][videoviewer]")
 {
-    Stage st;
+    TkVideoViewerStage st;
     VideoViewerOverlay overlay;
     overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
@@ -178,7 +178,7 @@ TEST_CASE(
     "MessageListView Kind::Video rows paint with area taller than text rows",
     "[tk][videoviewer][messagelist]")
 {
-    Stage st;
+    TkVideoViewerStage st;
     MessageListView view;
 
     // A plain text row for comparison.
@@ -212,7 +212,7 @@ TEST_CASE(
 TEST_CASE("MessageListView video_hit_at returns hit for rendered video row",
           "[tk][videoviewer][messagelist]")
 {
-    Stage st;
+    TkVideoViewerStage st;
     MessageListView view;
 
     MessageRowData vid{};
@@ -237,7 +237,7 @@ TEST_CASE("MessageListView video_hit_at returns hit for rendered video row",
 TEST_CASE("MessageListView on_video_clicked fires when video row is clicked",
           "[tk][videoviewer][messagelist]")
 {
-    Stage st;
+    TkVideoViewerStage st;
     MessageListView view;
 
     MessageRowData vid{};

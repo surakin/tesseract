@@ -12,7 +12,7 @@ namespace tesseract::views
 namespace
 {
 constexpr float kCellPad    = 8.0f;
-constexpr float kNameH      = 20.0f;
+constexpr float kParticipantTileNameH      = 20.0f;
 constexpr float kBadgeSz    = 18.0f;  // mic-off / video-off badge circle diameter
 constexpr float kBadgeIcon  = 12.0f;  // icon drawn inside each badge
 constexpr float kPinBtnSz   = 24.0f;
@@ -20,10 +20,10 @@ constexpr float kPinInset   = 4.0f;   // inset from the video-rect corner
 constexpr float kAvatarFrac = 0.55f;  // avatar diameter as fraction of media short side
 
 // Badge colours.
-constexpr tk::Color kMutedRed    {220,  60,  60, 255};
+constexpr tk::Color kParticipantTileMutedRed    {220,  60,  60, 255};
 constexpr tk::Color kBadgeBg     {  0,   0,   0, 180};
-constexpr tk::Color kWhite       {255, 255, 255, 255};
-constexpr tk::Color kWhiteSoft   {255, 255, 255, 200};
+constexpr tk::Color kParticipantTileWhite       {255, 255, 255, 255};
+constexpr tk::Color kParticipantTileWhiteSoft   {255, 255, 255, 200};
 constexpr tk::Color kAvatarBg    { 60,  60,  60, 255};
 constexpr tk::Color kAvatarFg    {200, 200, 200, 255};
 constexpr tk::Color kTileBg      {  0,   0,   0, 200};
@@ -97,7 +97,7 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, kTileBg);
 
     // The media area is the tile height minus the name row and its padding.
-    const float media_h = bounds_.h - kNameH - kCellPad * 2.0f;
+    const float media_h = bounds_.h - kParticipantTileNameH - kCellPad * 2.0f;
     const float vw      = bounds_.w - kCellPad * 2.0f;
     const float vh      = std::max(0.0f, media_h);
 
@@ -163,9 +163,9 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
 
     // ── Name label (bottom row) ───────────────────────────────────────────────
     {
-        const float name_y = bounds_.y + bounds_.h - kNameH;
+        const float name_y = bounds_.y + bounds_.h - kParticipantTileNameH;
         const tk::Rect name_r{bounds_.x + kCellPad, name_y,
-                               bounds_.w - kCellPad * 2.0f, kNameH};
+                               bounds_.w - kCellPad * 2.0f, kParticipantTileNameH};
         if (name_r.w > 0.0f && !state_.display_name.empty())
         {
             tk::TextStyle ts{};
@@ -178,7 +178,7 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
                 const tk::Size sz = layout->measure();
                 const float tx = name_r.x + (name_r.w - sz.w) * 0.5f;
                 const float ty = name_r.y + (name_r.h - sz.h) * 0.5f;
-                ctx.canvas.draw_text(*layout, {tx, ty}, kWhite);
+                ctx.canvas.draw_text(*layout, {tx, ty}, kParticipantTileWhite);
             }
         }
     }
@@ -191,7 +191,7 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
         const tk::Rect badge{bx, by, kBadgeSz, kBadgeSz};
         ctx.canvas.fill_rounded_rect(badge, kBadgeSz * 0.5f, kBadgeBg);
         mic_off_icon_.draw(ctx.canvas, ctx.factory, kMicOffSvg,
-                           badge, kBadgeIcon, kMutedRed);
+                           badge, kBadgeIcon, kParticipantTileMutedRed);
     }
 
     // ── Video-off badge (top-right of tile) ──────────────────────────────────
@@ -202,7 +202,7 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
         const tk::Rect badge{bx, by, kBadgeSz, kBadgeSz};
         ctx.canvas.fill_rounded_rect(badge, kBadgeSz * 0.5f, kBadgeBg);
         video_off_icon_.draw(ctx.canvas, ctx.factory, kVideoOffSvg,
-                             badge, kBadgeIcon, kMutedRed);
+                             badge, kBadgeIcon, kParticipantTileMutedRed);
     }
 
     // ── Pin button — top-left corner of video image (or avatar rect) ─────────
@@ -223,7 +223,7 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
     else if (video_hover_)
     {
         ctx.canvas.fill_rounded_rect(pin_rect_, kPinBtnSz * 0.5f, kPinBg);
-        const tk::Color icon_col = state_.pinned ? kPinAccent : kWhiteSoft;
+        const tk::Color icon_col = state_.pinned ? kPinAccent : kParticipantTileWhiteSoft;
         pin_icon_.draw(ctx.canvas, ctx.factory, kPinSvg,
                        pin_rect_, kPinBtnSz * 0.7f, icon_col);
     }

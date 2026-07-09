@@ -11,7 +11,7 @@ using tesseract::views::AccountSection;
 namespace
 {
 
-struct Stage
+struct TkAccountSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 200);
     tk::LayoutCtx layout_ctx()
@@ -42,7 +42,7 @@ TEST_CASE("AccountSection: name_field_rect empty when not editable",
     sec.set_display_name("Alice");
     sec.set_user_id("@alice:example.org");
 
-    Stage st;
+    TkAccountSectionStage st;
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     // Not editable by default -> empty rect
@@ -57,7 +57,7 @@ TEST_CASE("AccountSection: name_field_rect non-empty when editable",
     sec.set_user_id("@alice:example.org");
     sec.set_editable(true);
 
-    Stage st;
+    TkAccountSectionStage st;
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     CHECK(!sec.name_field_rect().empty());
@@ -71,7 +71,7 @@ TEST_CASE("AccountSection: name_field_rect empty when busy",
     sec.set_editable(true);
     sec.set_name_busy(true);
 
-    Stage st;
+    TkAccountSectionStage st;
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     CHECK(sec.name_field_rect().empty());
@@ -80,7 +80,7 @@ TEST_CASE("AccountSection: name_field_rect empty when busy",
 TEST_CASE("AccountSection: paints without crash in all edit states",
           "[account][section]")
 {
-    Stage st;
+    TkAccountSectionStage st;
     AccountSection sec;
     sec.set_display_name("Alice");
     sec.set_user_id("@alice:example.org");
@@ -119,7 +119,7 @@ TEST_CASE("AccountSection: avatar upload callback fires on disc click",
     sec.set_display_name("Alice");
     sec.set_avatar_editable(true);
 
-    Stage st;
+    TkAccountSectionStage st;
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int upload_count = 0;
@@ -140,7 +140,7 @@ TEST_CASE("AccountSection: remove callback fires on X chip click",
     sec.set_avatar_url("mxc://example.org/avatar");
     sec.set_avatar_editable(true);
 
-    Stage st;
+    TkAccountSectionStage st;
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int remove_count = 0;
@@ -159,7 +159,7 @@ TEST_CASE("AccountSection: avatar click ignored when not editable",
     sec.set_display_name("Alice");
     // avatar_editable_ defaults to false
 
-    Stage st;
+    TkAccountSectionStage st;
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int upload_count = 0;
@@ -176,7 +176,7 @@ TEST_CASE("AccountSection: avatar click ignored when busy",
     sec.set_avatar_editable(true);
     sec.set_avatar_busy(true);
 
-    Stage st;
+    TkAccountSectionStage st;
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int upload_count = 0;

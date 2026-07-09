@@ -12,10 +12,10 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kPadX   = 12.0f; // outer horizontal margin
+constexpr float kRoomSearchBarPadX   = 12.0f; // outer horizontal margin
 constexpr float kBtnSize = 28.0f; // icon button size
-constexpr float kBtnGap  =  4.0f; // gap between buttons
-constexpr float kFieldH  = 28.0f; // native text field height within strip
+constexpr float kRoomSearchBarBtnGap  =  4.0f; // gap between buttons
+constexpr float kRoomSearchBarFieldH  = 28.0f; // native text field height within strip
 constexpr float kIconPx  = 16.0f; // glyph render size
 
 } // namespace
@@ -147,10 +147,10 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float mid_y = bounds.y + (kStripH - kBtnSize) * 0.5f;
 
     // Layout right-to-left:
-    // [field] [kCountW label] [kBtnGap] [up] [kBtnGap] [down] [kBtnGap] [paginate_cb] [kBtnGap] [close]
+    // [field] [kCountW label] [kRoomSearchBarBtnGap] [up] [kRoomSearchBarBtnGap] [down] [kRoomSearchBarBtnGap] [paginate_cb] [kRoomSearchBarBtnGap] [close]
 
     // Close button: far right
-    const tk::Rect close_r{bounds.x + bounds.w - kPadX - kBtnSize,
+    const tk::Rect close_r{bounds.x + bounds.w - kRoomSearchBarPadX - kBtnSize,
                            mid_y, kBtnSize, kBtnSize};
     if (close_btn_)
         close_btn_->arrange(ctx, close_r);
@@ -165,7 +165,7 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         const tk::Size m = paginate_cb_->measure(ctx, {0.0f, kStripH});
         paginate_w = std::ceil(m.w) + 4.0f;
     }
-    const float paginate_right = close_r.x - kBtnGap;
+    const float paginate_right = close_r.x - kRoomSearchBarBtnGap;
     const tk::Rect paginate_r{paginate_right - paginate_w,
                               bounds.y + (kStripH - kBtnSize) * 0.5f,
                               paginate_w, kBtnSize};
@@ -173,20 +173,20 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         paginate_cb_->arrange(ctx, paginate_r);
 
     // DOWN button: left of paginate
-    const tk::Rect down_r{paginate_r.x - kBtnGap - kBtnSize,
+    const tk::Rect down_r{paginate_r.x - kRoomSearchBarBtnGap - kBtnSize,
                           mid_y, kBtnSize, kBtnSize};
     if (down_btn_)
         down_btn_->arrange(ctx, down_r);
 
     // UP button: left of down
-    const tk::Rect up_r{down_r.x - kBtnGap - kBtnSize,
+    const tk::Rect up_r{down_r.x - kRoomSearchBarBtnGap - kBtnSize,
                         mid_y, kBtnSize, kBtnSize};
     if (up_btn_)
         up_btn_->arrange(ctx, up_r);
 
     // Count label: measure natural width but only ever grow the reserved slot
     // so the text field doesn't jitter as the match count changes during pagination.
-    const float count_right = up_r.x - kBtnGap;
+    const float count_right = up_r.x - kRoomSearchBarBtnGap;
     float count_w = 0.0f;
     if (count_label_)
     {
@@ -202,11 +202,11 @@ void RoomSearchBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Native text field rect: from left margin to just left of count label.
     // field_w must account for bounds.x so the field does not overlap the
     // right-hand controls when the room panel has a non-zero x offset.
-    const float field_left = bounds.x + kPadX;
-    const float field_w    = std::max(0.0f, count_right - count_w - field_left - kBtnGap);
+    const float field_left = bounds.x + kRoomSearchBarPadX;
+    const float field_w    = std::max(0.0f, count_right - count_w - field_left - kRoomSearchBarBtnGap);
     field_rect_ = {field_left,
-                   bounds.y + (kStripH - kFieldH) * 0.5f,
-                   field_w, kFieldH};
+                   bounds.y + (kStripH - kRoomSearchBarFieldH) * 0.5f,
+                   field_w, kRoomSearchBarFieldH};
 }
 
 void RoomSearchBar::paint(tk::PaintCtx& ctx)

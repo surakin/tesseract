@@ -21,7 +21,7 @@ namespace
 {
 
 // One-shot helper to run measure → arrange → paint against a TestSurface.
-struct Stage
+struct TkWidgetsStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
 
@@ -105,7 +105,7 @@ private:
 
 TEST_CASE("VBox stacks children with spacing", "[tk][widget][layout]")
 {
-    Stage st;
+    TkWidgetsStage st;
     VBox box;
     box.set_spacing(8).set_padding(Edges::all(10)).set_cross(Cross::Stretch);
 
@@ -139,7 +139,7 @@ TEST_CASE("VBox stacks children with spacing", "[tk][widget][layout]")
 TEST_CASE("VBox Main::Center centres children with leftover space",
           "[tk][widget][layout]")
 {
-    Stage st;
+    TkWidgetsStage st;
     VBox box;
     box.set_main(Main::Center).set_cross(Cross::Stretch);
 
@@ -156,7 +156,7 @@ TEST_CASE("VBox Main::Center centres children with leftover space",
 
 TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]")
 {
-    Stage st;
+    TkWidgetsStage st;
     HBox row;
     row.set_spacing(4).set_cross(Cross::Stretch);
     auto* a = row.add_child(
@@ -181,7 +181,7 @@ TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]")
 TEST_CASE("Widget default paint traverses visible children",
           "[tk][widget][layout]")
 {
-    Stage st;
+    TkWidgetsStage st;
     FixedBox root({100, 100});
     int painted_a = 0;
     int painted_b = 0;
@@ -199,7 +199,7 @@ TEST_CASE("Widget default paint traverses visible children",
 TEST_CASE("Stack arranges visible children to the same bounds",
           "[tk][widget][layout]")
 {
-    Stage st;
+    TkWidgetsStage st;
     Stack stack;
     auto* a = stack.add_child(std::make_unique<FixedBox>(Size{20, 30}));
     auto* b = stack.add_child(std::make_unique<FixedBox>(Size{40, 10}));
@@ -407,7 +407,7 @@ TEST_CASE("MainAppWidget space nav routes header and back clicks",
     app.on_space_header = [&] { ++header; };
     app.set_space_nav(true, "Space", "");
 
-    Stage st;
+    TkWidgetsStage st;
     auto lc = st.layout_ctx();
     app.arrange(lc, {0, 0, 400, 600});
 
@@ -447,7 +447,7 @@ TEST_CASE("MainAppWidget offline banner shifts chat content",
     MainAppWidget app;
     app.room_view()->set_room({.id = "!room:example.org", .name = "Room"});
 
-    Stage st;
+    TkWidgetsStage st;
     auto lc = st.layout_ctx();
     app.arrange(lc, {0, 0, 400, 600});
     const auto online_bounds = app.room_view()->bounds();
@@ -465,7 +465,7 @@ TEST_CASE("MainAppWidget publishes native overlay registry entries",
           "[tk][widget][layout]")
 {
     MainAppWidget app;
-    Stage st;
+    TkWidgetsStage st;
     auto lc = st.layout_ctx();
     app.arrange(lc, {0, 0, 400, 600});
 
@@ -494,7 +494,7 @@ TEST_CASE("MainAppWidget publishes native overlay registry entries",
 TEST_CASE("Label::measure returns a non-zero size for non-empty text",
           "[tk][widget][label]")
 {
-    Stage st;
+    TkWidgetsStage st;
     Label lbl("Hello, world", FontRole::Body);
     auto lc = st.layout_ctx();
     Size s = lbl.measure(lc, {-1, -1});
@@ -520,7 +520,7 @@ TEST_CASE("Button::click invokes the on-click callback", "[tk][widget][button]")
 
 TEST_CASE("Button paints a coloured rect at its bounds", "[tk][widget][button]")
 {
-    Stage st;
+    TkWidgetsStage st;
     auto btn = std::make_unique<Button>("Sign in");
 
     st.run(*btn, {10, 10, 120, 36});
@@ -571,7 +571,7 @@ TEST_CASE("SwitchButton toggles checked state and fires on_change",
 
 TEST_CASE("SwitchButton paints an accent track when on", "[tk][widget][switch]")
 {
-    Stage st;
+    TkWidgetsStage st;
     auto sw = std::make_unique<SwitchButton>("Favourite", /*checked=*/true);
     st.run(*sw, {10, 10, 200, 32});
     auto accent = Theme::light().palette.accent;
@@ -583,7 +583,7 @@ TEST_CASE("SwitchButton paints an accent track when on", "[tk][widget][switch]")
 
 TEST_CASE("Separator paints a 1 px line by default", "[tk][widget][separator]")
 {
-    Stage st;
+    TkWidgetsStage st;
     Separator sep;
     sep.set_thickness(1);
     st.surface->canvas().clear(Color::rgb(0xffffff));
@@ -596,7 +596,7 @@ TEST_CASE("Separator paints a 1 px line by default", "[tk][widget][separator]")
 TEST_CASE("Avatar paints initials disc when no image is set",
           "[tk][widget][avatar]")
 {
-    Stage st;
+    TkWidgetsStage st;
     Avatar a("Alice Anders");
     a.set_diameter(48);
     st.surface->canvas().clear(Color::rgb(0xffffff));
@@ -610,7 +610,7 @@ TEST_CASE("Avatar paints initials disc when no image is set",
 
 TEST_CASE("Widget::hit_test descends into children", "[tk][widget][hittest]")
 {
-    Stage st;
+    TkWidgetsStage st;
     VBox box;
     box.set_cross(Cross::Stretch);
     auto* a = box.add_child(std::make_unique<Separator>());
@@ -645,7 +645,7 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
     // is what LoginView does when it centres its card. Build that exact
     // shape (VBox padded inside a non-zero-origin frame, button inside)
     // and assert the dispatch reaches the button and fires on_click.
-    Stage st;
+    TkWidgetsStage st;
 
     VBox card;
     card.set_padding(Edges::all(24)).set_cross(Cross::Stretch);
@@ -705,7 +705,7 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
 TEST_CASE("LoginView lays out + paints onto the offscreen surface",
           "[tk][view][login]")
 {
-    Stage st;
+    TkWidgetsStage st;
     LoginView view;
 
     st.run(view, {0, 0, 400, 600});

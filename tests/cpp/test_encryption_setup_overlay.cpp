@@ -14,7 +14,7 @@ using tesseract::views::EncryptionSetupOverlay;
 namespace
 {
 
-struct Stage
+struct EncryptionSetupOverlayStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     LayoutCtx layout_ctx() { return {surface->factory(), Theme::light()}; }
@@ -35,7 +35,7 @@ struct Stage
 
 TEST_CASE("Fresh: starts in Intro step", "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     CHECK(ov.step() == EncryptionSetupOverlay::Step::Intro);
@@ -43,7 +43,7 @@ TEST_CASE("Fresh: starts in Intro step", "[encryption][overlay]")
 
 TEST_CASE("Fresh: Intro → ChooseMethod on primary action", "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
@@ -52,7 +52,7 @@ TEST_CASE("Fresh: Intro → ChooseMethod on primary action", "[encryption][overl
 
 TEST_CASE("Fresh: Intro Skip fires on_close", "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     bool closed = false;
     ov.on_close = [&]() { closed = true; };
@@ -64,7 +64,7 @@ TEST_CASE("Fresh: Intro Skip fires on_close", "[encryption][overlay]")
 TEST_CASE("Fresh: ChooseMethod Continue fires on_enable_recovery (key mode)",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action(); // → ChooseMethod
@@ -78,7 +78,7 @@ TEST_CASE("Fresh: ChooseMethod Continue fires on_enable_recovery (key mode)",
 TEST_CASE("Fresh: ChooseMethod Continue fires on_enable_recovery (passphrase mode)",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action(); // → ChooseMethod
@@ -94,7 +94,7 @@ TEST_CASE("Fresh: ChooseMethod Continue fires on_enable_recovery (passphrase mod
 TEST_CASE("Fresh: advance_progress Done → ShowKey with key string",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action(); // → ChooseMethod
@@ -107,7 +107,7 @@ TEST_CASE("Fresh: advance_progress Done → ShowKey with key string",
 TEST_CASE("Fresh: ShowKey Continue disabled until checkbox checked",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
@@ -126,7 +126,7 @@ TEST_CASE("Fresh: ShowKey Continue disabled until checkbox checked",
 TEST_CASE("Fresh: passphrase mode skips ShowKey → Done directly",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
@@ -140,7 +140,7 @@ TEST_CASE("Fresh: passphrase mode skips ShowKey → Done directly",
 TEST_CASE("Fresh: Progress step==5 (error) returns to ChooseMethod with message",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
@@ -154,7 +154,7 @@ TEST_CASE("Fresh: Progress step==5 (error) returns to ChooseMethod with message"
 
 TEST_CASE("Recover: starts in Intro step", "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     CHECK(ov.step() == EncryptionSetupOverlay::Step::Intro);
@@ -162,7 +162,7 @@ TEST_CASE("Recover: starts in Intro step", "[encryption][overlay]")
 
 TEST_CASE("Recover: Intro → EnterKey on primary action", "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
@@ -172,7 +172,7 @@ TEST_CASE("Recover: Intro → EnterKey on primary action", "[encryption][overlay
 TEST_CASE("Recover: EnterKey Verify fires on_recover with key",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action(); // → EnterKey
@@ -187,7 +187,7 @@ TEST_CASE("Recover: EnterKey Verify fires on_recover with key",
 TEST_CASE("Recover: 'use another device' fires on_request_sas",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action(); // → EnterKey
@@ -199,7 +199,7 @@ TEST_CASE("Recover: 'use another device' fires on_request_sas",
 
 TEST_CASE("Recover: Progress Done → Done step", "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
@@ -212,7 +212,7 @@ TEST_CASE("Recover: Progress Done → Done step", "[encryption][overlay]")
 TEST_CASE("Recover: Progress error returns to EnterKey with message",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Recover);
     st.run(ov, {0, 0, 800, 600});
     ov.simulate_primary_action();
@@ -262,7 +262,7 @@ TEST_CASE("Done: close button fires on_close", "[encryption][overlay]")
 
 TEST_CASE("Reset: begin_reset_wait enters ResetApproving", "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.begin_reset_wait();
@@ -272,7 +272,7 @@ TEST_CASE("Reset: begin_reset_wait enters ResetApproving", "[encryption][overlay
 TEST_CASE("Reset: approval hands off to the Fresh recovery-key flow",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.begin_reset_wait();
@@ -283,7 +283,7 @@ TEST_CASE("Reset: approval hands off to the Fresh recovery-key flow",
 TEST_CASE("Reset: Cancel on ResetApproving fires on_cancel_reset",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     bool cancelled = false;
     ov.on_cancel_reset = [&]() { cancelled = true; };
@@ -296,7 +296,7 @@ TEST_CASE("Reset: Cancel on ResetApproving fires on_cancel_reset",
 TEST_CASE("Reset: report_reset_error stays on ResetApproving with a message",
           "[encryption][overlay]")
 {
-    Stage st;
+    EncryptionSetupOverlayStage st;
     EncryptionSetupOverlay ov(EncryptionSetupOverlay::Mode::Fresh);
     st.run(ov, {0, 0, 800, 600});
     ov.begin_reset_wait();

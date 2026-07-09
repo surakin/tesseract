@@ -33,7 +33,7 @@ struct StubTextField : public tk::NativeTextField
     std::function<void(const std::string&)> on_changed;
 };
 
-struct Stage
+struct TkLoginViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 480);
     LayoutCtx layout_ctx()
@@ -83,7 +83,7 @@ TEST_CASE("LoginView re-triggers discovery after reset",
 TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",
           "[tk][view][login][multi_account]")
 {
-    Stage st;
+    TkLoginViewStage st;
     LoginView lv; // default: Mode::Initial, State::Form
     st.run(lv, {0, 0, 640, 480});
 
@@ -95,7 +95,7 @@ TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",
 TEST_CASE("LoginView Mode::Initial keeps Cancel hidden in Waiting state",
           "[tk][view][login][multi_account]")
 {
-    Stage st;
+    TkLoginViewStage st;
     LoginView lv;
     lv.set_state(LoginView::State::Waiting);
     st.run(lv, {0, 0, 640, 480});
@@ -106,7 +106,7 @@ TEST_CASE("LoginView Mode::Initial keeps Cancel hidden in Waiting state",
 TEST_CASE("LoginView Mode::AddAccount shows Cancel in Form state",
           "[tk][view][login][multi_account]")
 {
-    Stage st;
+    TkLoginViewStage st;
     LoginView lv;
     lv.set_mode(LoginView::Mode::AddAccount);
     st.run(lv, {0, 0, 640, 480});
@@ -119,7 +119,7 @@ TEST_CASE("LoginView Mode::AddAccount shows Cancel in Form state",
 TEST_CASE("LoginView Mode::AddAccount keeps Cancel visible in Waiting state",
           "[tk][view][login][multi_account]")
 {
-    Stage st;
+    TkLoginViewStage st;
     LoginView lv;
     lv.set_mode(LoginView::Mode::AddAccount);
     lv.set_state(LoginView::State::Waiting);
@@ -131,7 +131,7 @@ TEST_CASE("LoginView Mode::AddAccount keeps Cancel visible in Waiting state",
 TEST_CASE("LoginView toggling Mode flips Cancel visibility on its own",
           "[tk][view][login][multi_account]")
 {
-    Stage st;
+    TkLoginViewStage st;
     LoginView lv;
     st.run(lv, {0, 0, 640, 480});
     REQUIRE_FALSE(lv.cancel_visible());

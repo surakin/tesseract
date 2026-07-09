@@ -10,11 +10,11 @@ using tesseract::ShellBase;
 namespace
 {
 
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct ShellNavHistoryWithAccountManager { tesseract::AccountManager am_; };
 
-struct TestShell : WithAccountManager, ShellBase
+struct ShellNavHistoryTestShell : ShellNavHistoryWithAccountManager, ShellBase
 {
-    TestShell() : ShellBase(am_) {}
+    ShellNavHistoryTestShell() : ShellBase(am_) {}
 
     void post_to_ui_(std::function<void()> fn) override { fn(); }
     void post_to_ui_after_(int, std::function<void()> fn) override { fn(); }
@@ -73,7 +73,7 @@ struct TestShell : WithAccountManager, ShellBase
 
 // Helper: simulate visiting room_id by setting current_room_id_ then
 // calling after_active_room_changed_ (same sequence tab functions use).
-void visit(TestShell& s, const std::string& room_id)
+void visit(ShellNavHistoryTestShell& s, const std::string& room_id)
 {
     s.current_room_id_ = room_id;
     s.after_active_room_changed_();
@@ -83,7 +83,7 @@ void visit(TestShell& s, const std::string& room_id)
 
 TEST_CASE("back/forward are no-ops on empty history", "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     s.navigate_history_back();
     CHECK(s.last_navigate_to.empty());
     s.navigate_history_forward();
@@ -93,7 +93,7 @@ TEST_CASE("back/forward are no-ops on empty history", "[shell][nav_history]")
 TEST_CASE("after_active_room_changed_ appends to nav history",
           "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     REQUIRE(s.room_nav_history_.size() == 1);
     CHECK(s.room_nav_history_[0] == "!a:x");
@@ -108,7 +108,7 @@ TEST_CASE("after_active_room_changed_ appends to nav history",
 TEST_CASE("navigate_history_back goes to previous room",
           "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     visit(s, "!b:x");
 
@@ -121,7 +121,7 @@ TEST_CASE("navigate_history_back goes to previous room",
 TEST_CASE("navigate_history_back is a no-op at the oldest entry",
           "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
 
     s.navigate_history_back(); // already at oldest
@@ -132,7 +132,7 @@ TEST_CASE("navigate_history_back is a no-op at the oldest entry",
 TEST_CASE("navigate_history_forward goes to next room after back",
           "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     visit(s, "!b:x");
 
@@ -146,7 +146,7 @@ TEST_CASE("navigate_history_forward goes to next room after back",
 TEST_CASE("navigate_history_forward is a no-op at the newest entry",
           "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     visit(s, "!b:x");
 
@@ -157,7 +157,7 @@ TEST_CASE("navigate_history_forward is a no-op at the newest entry",
 
 TEST_CASE("new visit truncates forward history", "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     visit(s, "!b:x");
     visit(s, "!c:x");
@@ -182,7 +182,7 @@ TEST_CASE("new visit truncates forward history", "[shell][nav_history]")
 TEST_CASE("history caps at kNavHistoryMax entries, cursor stays at end",
           "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     for (int i = 0; i < 105; ++i)
         visit(s, "!r" + std::to_string(i) + ":x");
 
@@ -195,7 +195,7 @@ TEST_CASE("history caps at kNavHistoryMax entries, cursor stays at end",
 TEST_CASE("consecutive visits to same room append to history",
           "[shell][nav_history]")
 {
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     visit(s, "!a:x");
     REQUIRE(s.room_nav_history_.size() == 2);
@@ -211,7 +211,7 @@ TEST_CASE("room_nav_in_progress_ guard suppresses history append",
     // happens inside the platform navigate_to_room_ chain). The guard
     // must prevent the back-target room from being appended as a new
     // forward entry.
-    TestShell s;
+    ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     visit(s, "!b:x");
     REQUIRE(s.room_nav_history_.size() == 2);

@@ -20,11 +20,11 @@ namespace
 // Visual constants — the picker no longer paints the "Theme" header itself
 // (the enclosing SettingsGroup provides it), so kPadY / kHeaderH / kHeaderGap
 // drop out compared with the pre-refactor section.
-constexpr float kBtnHPad = 20.0f;      // text → button-edge horizontal inset
+constexpr float kAppearanceBtnHPad = 20.0f;      // text → button-edge horizontal inset
 constexpr float kBtnVPad = 8.0f;       // text → button-edge vertical inset
 constexpr float kBtnSpacing = 8.0f;    // gap between adjacent buttons
 constexpr float kBtnMinHeight = 36.0f; // minimum button height
-constexpr float kBtnRadius = 6.0f;     // corner radius
+constexpr float kAppearanceBtnRadius = 6.0f;     // corner radius
 constexpr float kGlyphH = 16.0f;       // approximate UiSemibold glyph height
 
 } // namespace
@@ -102,7 +102,7 @@ void AppearanceSection::ThemePicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
             max_text_w = std::max(max_text_w, lay->measure().w);
         }
     }
-    const float btn_w = max_text_w + kBtnHPad * 2.0f;
+    const float btn_w = max_text_w + kAppearanceBtnHPad * 2.0f;
     const float btn_h = std::max(kGlyphH + kBtnVPad * 2.0f, kBtnMinHeight);
 
     for (int i = 0; i < kButtonCount; ++i)
@@ -160,11 +160,11 @@ void AppearanceSection::ThemePicker::paint(tk::PaintCtx& ctx)
             }
         }
 
-        ctx.canvas.fill_rounded_rect(btn.bounds, kBtnRadius, fill);
+        ctx.canvas.fill_rounded_rect(btn.bounds, kAppearanceBtnRadius, fill);
 
         if (!is_selected)
         {
-            ctx.canvas.stroke_rounded_rect(btn.bounds, kBtnRadius, pal.border);
+            ctx.canvas.stroke_rounded_rect(btn.bounds, kAppearanceBtnRadius, pal.border);
         }
 
         if (!buttons_[i].layout)

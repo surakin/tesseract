@@ -12,16 +12,19 @@
 namespace tesseract::views
 {
 
-static constexpr float kMarginX = 64.0f;
-static constexpr float kMarginY = 72.0f;  // room for controls bar
-static constexpr float kCtrlBarH = 56.0f; // controls bar height
-static constexpr float kCtrlPadX = 10.0f;
-static constexpr float kPlayBtnD = 36.0f;
-static constexpr float kSpeedPillW = 32.0f;
-static constexpr float kSpeedPillH = 20.0f;
-static constexpr float kDurW = 48.0f; // reserved for "0:00 / 0:00"
-static constexpr float kScrubH = 6.0f;
-static constexpr float kScrubR = 3.0f;
+namespace
+{
+constexpr float kVideoViewerMarginX = 64.0f;
+constexpr float kVideoViewerMarginY = 72.0f;  // room for controls bar
+constexpr float kCtrlBarH = 56.0f; // controls bar height
+constexpr float kCtrlPadX = 10.0f;
+constexpr float kPlayBtnD = 36.0f;
+constexpr float kSpeedPillW = 32.0f;
+constexpr float kSpeedPillH = 20.0f;
+constexpr float kDurW = 48.0f; // reserved for "0:00 / 0:00"
+constexpr float kScrubH = 6.0f;
+constexpr float kScrubR = 3.0f;
+} // namespace
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -167,8 +170,8 @@ void VideoViewerOverlay::recompute_layout()
     }
 
     const float ctrl_h = hide_controls_ ? 0.0f : kCtrlBarH;
-    const float avail_h = b.h - kMarginY - ctrl_h - 8.0f;
-    const float avail_w = b.w - kMarginX;
+    const float avail_h = b.h - kVideoViewerMarginY - ctrl_h - 8.0f;
+    const float avail_w = b.w - kVideoViewerMarginX;
 
     // Prefer explicit metadata dimensions; when absent, fall back to the
     // decoded frame dimensions so the display rect always has the right

@@ -25,7 +25,7 @@ namespace
 {
 
 // Target hardware buffer duration in 100ns units (200ms for jitter tolerance).
-constexpr REFERENCE_TIME kBufferDuration = 2'000'000;
+constexpr REFERENCE_TIME kPlaybackBufferDuration = 2'000'000;
 
 class AudioPlaybackWin32 : public tk::AudioPlayback
 {
@@ -172,7 +172,7 @@ std::unique_ptr<tk::AudioPlayback> make_audio_playback_win32()
     hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
                             AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
                                 AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
-                            kBufferDuration, 0, &wfx, nullptr);
+                            kPlaybackBufferDuration, 0, &wfx, nullptr);
     if (FAILED(hr))
     {
         client->Release();

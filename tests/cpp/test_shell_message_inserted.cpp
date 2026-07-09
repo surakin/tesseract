@@ -20,12 +20,12 @@ namespace
 // guard logic against an inspectable message list. prep_row_media_ is stubbed to
 // a no-op so the test isolates the in-thread guard from media-prefetch side
 // effects (disk caches, avatar fetches).
-struct WithAccountManager
+struct ShellMessageInsertedWithAccountManager
 {
     tesseract::AccountManager am_;
 };
 
-struct InsertShell : WithAccountManager, ShellBase
+struct InsertShell : ShellMessageInsertedWithAccountManager, ShellBase
 {
     InsertShell() : ShellBase(am_) {}
 

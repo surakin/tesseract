@@ -13,10 +13,10 @@ namespace
 
 // Visual constants. Matches the existing 48 px sidebar user-strip slot when
 // the avatar is the default 32 px and both name + ID lines are present.
-constexpr float kPadX = 12.0f;
-constexpr float kPadY = 8.0f;
-constexpr float kAvatarTextGap = 10.0f;
-constexpr float kLineGap = 2.0f;
+constexpr float kUserInfoPadX = 12.0f;
+constexpr float kUserInfoPadY = 8.0f;
+constexpr float kUserInfoAvatarTextGap = 10.0f;
+constexpr float kUserInfoLineGap = 2.0f;
 constexpr float kIndicatorSize = 8.0f;
 constexpr float kIndicatorPadR = 10.0f;
 constexpr float kHoverRadius = 6.0f;
@@ -95,8 +95,8 @@ tk::Size UserInfo::measure(tk::LayoutCtx&, tk::Size constraints)
     constexpr float kNameH = 18.0f;
     constexpr float kIdH = 14.0f;
 
-    const float text_col_h = kNameH + kLineGap + kIdH;
-    const float h = std::max(avatar_size_, text_col_h) + 2 * kPadY;
+    const float text_col_h = kNameH + kUserInfoLineGap + kIdH;
+    const float h = std::max(avatar_size_, text_col_h) + 2 * kUserInfoPadY;
     return {w, h};
 }
 
@@ -129,7 +129,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
 
     // -------- Avatar (left column) --------
     const tk::Point avatar_centre{
-        bounds_.x + kPadX + avatar_size_ * 0.5f,
+        bounds_.x + kUserInfoPadX + avatar_size_ * 0.5f,
         bounds_.y + bounds_.h * 0.5f,
     };
 
@@ -161,8 +161,8 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     // Reserve space on the right for the active indicator so the text
     // layout's max_width clamps before it collides with the dot.
     const float right_reserved =
-        active_indicator_ ? kIndicatorSize + kIndicatorPadR + kPadX : kPadX;
-    const float text_x = bounds_.x + kPadX + avatar_size_ + kAvatarTextGap;
+        active_indicator_ ? kIndicatorSize + kIndicatorPadR + kUserInfoPadX : kUserInfoPadX;
+    const float text_x = bounds_.x + kUserInfoPadX + avatar_size_ + kUserInfoAvatarTextGap;
     const float text_w =
         std::max(0.0f, bounds_.x + bounds_.w - right_reserved - text_x);
 
@@ -195,7 +195,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         name_layout_ ? name_layout_->measure() : tk::Size{};
     const tk::Size uid_sz = uid_layout_ ? uid_layout_->measure() : tk::Size{};
     const float col_h =
-        name_sz.h + (uid_sz.h > 0 ? kLineGap + uid_sz.h : 0);
+        name_sz.h + (uid_sz.h > 0 ? kUserInfoLineGap + uid_sz.h : 0);
     const float col_top = bounds_.y + (bounds_.h - col_h) * 0.5f;
 
     if (name_layout_)
@@ -224,7 +224,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     if (uid_layout_)
     {
         ctx.canvas.draw_text(*uid_layout_,
-                             {text_x, col_top + name_sz.h + kLineGap},
+                             {text_x, col_top + name_sz.h + kUserInfoLineGap},
                              id_colour(theme));
     }
 

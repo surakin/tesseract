@@ -27,7 +27,7 @@ using PostFn = tk::AudioCapturePostFn;
 // 48kHz / 16-bit / mono frame size in bytes.
 constexpr std::size_t kBytesPerFrame = 2;
 // Target engine period in 100ns units (10ms).
-constexpr REFERENCE_TIME kBufferDuration = 100'000;
+constexpr REFERENCE_TIME kCaptureBufferDuration = 100'000;
 
 class AudioCaptureWin32 : public tk::AudioCapture
 {
@@ -98,7 +98,7 @@ public:
         hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
                                 AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
                                     AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
-                                kBufferDuration, 0, &wfx, nullptr);
+                                kCaptureBufferDuration, 0, &wfx, nullptr);
         if (FAILED(hr))
         {
             client->Release();

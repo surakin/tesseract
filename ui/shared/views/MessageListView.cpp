@@ -400,13 +400,13 @@ std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
 namespace
 {
 
-constexpr float kPadX = tesseract::visual::kSpaceMD;                  // 12
-constexpr float kPadY = tesseract::visual::kMsgRowVerticalPad;        // 6
-constexpr float kAvatarSize = tesseract::visual::kMsgAvatarSize;      // 32
-constexpr float kAvatarGap = tesseract::visual::kMsgAvatarGap;        // 8
+constexpr float kMsgListPadX = tesseract::visual::kSpaceMD;                  // 12
+constexpr float kMsgListPadY = tesseract::visual::kMsgRowVerticalPad;        // 6
+constexpr float kMsgListAvatarSize = tesseract::visual::kMsgAvatarSize;      // 32
+constexpr float kMsgListAvatarGap = tesseract::visual::kMsgAvatarGap;        // 8
 constexpr float kSenderH = tesseract::visual::kMsgSenderNameHeight;   // 16
 constexpr float kTimestampH = tesseract::visual::kMsgTimestampHeight; // 14
-constexpr float kChipPadX = 10.0f;
+constexpr float kMsgListChipPadX = 10.0f;
 
 // Block-level rendering constants.
 constexpr float kSectionGap       =  4.0f; // vertical gap between body sections
@@ -449,7 +449,7 @@ constexpr float kFileCardW = 280.0f;
 // URL preview card height accounting. The card's internal layout dimensions
 // (width / thumb / padding) live with the paint in UrlPreviewCardDisplay;
 // these two drive the Adapter's row-height math only.
-constexpr float kPreviewCardH = 72.0f;
+constexpr float kMsgListPreviewCardH = 72.0f;
 constexpr float kPreviewCardGapTop = 6.0f;
 constexpr float kFileIconSize = 36.0f;
 constexpr float kFileIconPadL = 10.0f;
@@ -468,17 +468,17 @@ constexpr float kVoiceCardW = 280.0f;
 // Row 2: filename · file size.
 constexpr float kAudioCardH = 64.0f;
 constexpr float kAudioCardW = 280.0f;
-constexpr float kAudioPlayBtnSize = 32.0f;
-constexpr float kAudioCardPadX = 8.0f;
-constexpr float kAudioTrackH = 4.0f; // progress track height
-constexpr float kVoicePlayBtnSize = 32.0f;
-constexpr float kVoiceCardPadX = 8.0f;
-constexpr float kVoiceBarW = 3.0f;
-constexpr float kVoiceBarGap = 2.0f;
-constexpr float kVoiceBarMinH = 3.0f;     // placeholder bar height
-constexpr float kVoiceDurationW = 40.0f;  // reserved for "0:00" label
-constexpr float kVoiceSpeedPillW = 30.0f; // "1×" / "1.5×" / "2×"
-constexpr float kVoiceSpeedPillH = 20.0f;
+constexpr float kMsgListAudioPlayBtnSize = 32.0f;
+constexpr float kMsgListAudioCardPadX = 8.0f;
+constexpr float kMsgListAudioTrackH = 4.0f; // progress track height
+constexpr float kMsgListVoicePlayBtnSize = 32.0f;
+constexpr float kMsgListVoiceCardPadX = 8.0f;
+constexpr float kMsgListVoiceBarW = 3.0f;
+constexpr float kMsgListVoiceBarGap = 2.0f;
+constexpr float kMsgListVoiceBarMinH = 3.0f;     // placeholder bar height
+constexpr float kMsgListVoiceDurationW = 40.0f;  // reserved for "0:00" label
+constexpr float kMsgListVoiceSpeedPillW = 30.0f; // "1×" / "1.5×" / "2×"
+constexpr float kMsgListVoiceSpeedPillH = 20.0f;
 
 // Reply quote block — painted above the body block when m.has_reply().
 constexpr float kQuoteBlockH = 44.0f;          // total height of the quote band
@@ -669,7 +669,7 @@ static FileIconInfo file_icon_info(std::string_view filename)
 
 float body_text_max_width(float row_width)
 {
-    return std::max(0.0f, row_width - kPadX - kAvatarSize - kAvatarGap - kPadX);
+    return std::max(0.0f, row_width - kMsgListPadX - kMsgListAvatarSize - kMsgListAvatarGap - kMsgListPadX);
 }
 
 // Width to reserve on the right of the body column for a read-receipt cluster.
@@ -1156,9 +1156,9 @@ public:
         float body_h = measure_body_block_height(m, ctx, body_w);
         float eff_chip_h = chip_h();
         float chips_h = !m.reactions.empty() ? eff_chip_h : 0.0f;
-        float top_pad = cont ? kContPadY : kPadY;
-        float header_h = cont ? 0.0f : kAvatarSize;
-        float raw_h = top_pad + header_h + body_h + chips_h + kPadY;
+        float top_pad = cont ? kContPadY : kMsgListPadY;
+        float header_h = cont ? 0.0f : kMsgListAvatarSize;
+        float raw_h = top_pad + header_h + body_h + chips_h + kMsgListPadY;
         // Continuation rows without reactions must be at least chip_h() tall so
         // the hover action buttons (same height as chip_h) fit without overflow.
         if (cont && chips_h == 0.0f)
@@ -1299,13 +1299,13 @@ public:
 
         // Avatar column centre — used both for painting and for the
         // hover timestamp (continuation rows skip the avatar itself).
-        float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
-        float avatar_cy = bounds.y + kPadY + kAvatarSize * 0.5f;
+        float avatar_cx = bounds.x + kMsgListPadX + kMsgListAvatarSize * 0.5f;
+        float avatar_cy = bounds.y + kMsgListPadY + kMsgListAvatarSize * 0.5f;
 
         // Right-of-avatar column (same indent for cont + non-cont so
         // body text aligns with the row above in a continuation group).
-        float col_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX -
+        float col_x = bounds.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
+        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX -
                                          receipt_reserve_width(m));
 
         if (!cont)
@@ -1316,13 +1316,13 @@ public:
             {
                 avatar = owner_.avatar_provider_(m.sender_avatar_url);
             }
-            draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+            draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kMsgListAvatarSize,
                         m.sender_name.empty() ? m.sender : m.sender_name,
                         ctx.theme.palette.avatar_initials_bg,
                         ctx.theme.palette.avatar_initials_text);
 
             // Sender name — vertically centered against the avatar disc.
-            float sender_y = bounds.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
+            float sender_y = bounds.y + kMsgListPadY + (kMsgListAvatarSize - kSenderH) * 0.5f;
             auto& rc = cache_for(index);
             const std::string skey =
                 m.sender_name.empty() ? m.sender : m.sender_name;
@@ -1345,7 +1345,7 @@ public:
 
         // Body block: below avatar for full rows, tight to top for continuations.
         float body_top =
-            cont ? (bounds.y + kContPadY) : (bounds.y + kPadY + kAvatarSize);
+            cont ? (bounds.y + kContPadY) : (bounds.y + kMsgListPadY + kMsgListAvatarSize);
         float cursor = body_top;
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
         float eff_chip_h = chip_h();
@@ -1424,9 +1424,9 @@ public:
 
                 const float pill_y =
                     cont ? (bounds.y + (bounds.h - pill_h) * 0.5f)
-                         : (bounds.y + kPadY +
-                            (kAvatarSize - pill_h) * 0.5f);
-                float right_edge = bounds.x + bounds.w - kPadX;
+                         : (bounds.y + kMsgListPadY +
+                            (kMsgListAvatarSize - pill_h) * 0.5f);
+                float right_edge = bounds.x + bounds.w - kMsgListPadX;
                 if (!m.read_receipts.empty())
                 {
                     const std::size_t n =
@@ -1495,7 +1495,7 @@ public:
         }
 
         // Disc centre Y for receipts. Receipts always overlay the row — they
-        // never expand it. Default: centre in the bottom kPadY strip (cursor
+        // never expand it. Default: centre in the bottom kMsgListPadY strip (cursor
         // is its top edge). When reactions are present the block below
         // overrides this to align with the chip strip centre.
         float receipt_disc_cy = cursor - kReceiptSize * 0.5f;
@@ -1576,7 +1576,7 @@ public:
                                 (show_count ? kChipInnerGap + csz.w : 0.0f);
                 }
                 float w =
-                    std::max(content_w + kChipPadX * 2, eff_chip_h + 8.0f);
+                    std::max(content_w + kMsgListChipPadX * 2, eff_chip_h + 8.0f);
                 tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
                 bool chip_hovered =
                     hovered && owner_.hover_target_ == HoverTarget::Chip &&
@@ -1597,7 +1597,7 @@ public:
                 ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border,
                                                chip_hovered ? 1.5f : 1.0f);
 
-                float left_x = pill.x + kChipPadX;
+                float left_x = pill.x + kMsgListChipPadX;
                 float count_y = pill.y + (pill.h - csz.h) * 0.5f;
                 if (is_img)
                 {
@@ -1662,7 +1662,7 @@ public:
                 if (const auto* layout = static_cache_.plus.get())
                 {
                     tk::Size sz = layout->measure();
-                    float w = std::max(sz.w + kChipPadX * 2, eff_chip_h + 8.0f);
+                    float w = std::max(sz.w + kMsgListChipPadX * 2, eff_chip_h + 8.0f);
                     tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
                     bool add_hovered =
                         owner_.hover_target_ == HoverTarget::AddButton;
@@ -1676,7 +1676,7 @@ public:
                                                    add_hovered ? 1.5f : 1.0f);
                     ctx.canvas.draw_text(
                         *layout,
-                        {pill.x + kChipPadX, pill.y + (pill.h - sz.h) * 0.5f},
+                        {pill.x + kMsgListChipPadX, pill.y + (pill.h - sz.h) * 0.5f},
                         ctx.theme.palette.text_secondary);
                     owner_.hovered_row_geom_.add_button = pill;
                     owner_.hovered_row_geom_.add_visible = true;
@@ -1695,7 +1695,7 @@ public:
             const std::size_t overflow = total - visible;
             const float disc_cy = receipt_disc_cy;
 
-            float right_edge = bounds.x + bounds.w - kPadX;
+            float right_edge = bounds.x + bounds.w - kMsgListPadX;
             for (std::size_t i = 0; i < visible; ++i)
             {
                 // m.read_receipts is oldest-first; paint the last
@@ -1735,7 +1735,7 @@ public:
                 if (layout)
                 {
                     tk::Size sz = layout->measure();
-                    float pill_w = sz.w + kChipPadX;
+                    float pill_w = sz.w + kMsgListChipPadX;
                     float pill_h = kReceiptSize;
                     float cluster_left =
                         right_edge -
@@ -1777,7 +1777,7 @@ public:
                 constexpr float kPendingInsetX = 4.0f;
                 constexpr float kPendingGap = 4.0f; // gap between ⚠ and button
 
-                float right_edge = bounds.x + bounds.w - kPadX;
+                float right_edge = bounds.x + bounds.w - kMsgListPadX;
                 // Reserve space for receipts if they are present (same
                 // logic as the hover-button path above).
                 if (!m.read_receipts.empty())
@@ -1909,7 +1909,7 @@ public:
                     }
                     else
                     {
-                        ty = bounds.y + kPadY + kAvatarSize + 2.0f;
+                        ty = bounds.y + kMsgListPadY + kMsgListAvatarSize + 2.0f;
                     }
                     ctx.canvas.draw_text(*layout, {tx, ty},
                                          ctx.theme.palette.text_muted);
@@ -1936,7 +1936,7 @@ public:
                            tk::Rect bounds, float col_x, float col_w)
     {
         tk::Rect chip{col_x,
-                      bounds.y + bounds.h - kPadY - kThreadChipH,
+                      bounds.y + bounds.h - kMsgListPadY - kThreadChipH,
                       std::min(col_w, 360.0f),
                       kThreadChipH};
         if (chip.w <= 0.0f)
@@ -2086,16 +2086,16 @@ private:
         float label_l = cx - sz.w * 0.5f - kLabelPadX;
         float label_r = cx + sz.w * 0.5f + kLabelPadX;
         float line_y = std::round(cy);
-        if (label_l > bounds.x + kPadX)
+        if (label_l > bounds.x + kMsgListPadX)
         {
             ctx.canvas.fill_rect(
-                {bounds.x + kPadX, line_y, label_l - bounds.x - kPadX, 1.0f},
+                {bounds.x + kMsgListPadX, line_y, label_l - bounds.x - kMsgListPadX, 1.0f},
                 ctx.theme.palette.border);
         }
-        if (label_r < bounds.x + bounds.w - kPadX)
+        if (label_r < bounds.x + bounds.w - kMsgListPadX)
         {
             ctx.canvas.fill_rect(
-                {label_r, line_y, bounds.x + bounds.w - kPadX - label_r, 1.0f},
+                {label_r, line_y, bounds.x + bounds.w - kMsgListPadX - label_r, 1.0f},
                 ctx.theme.palette.border);
         }
         ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
@@ -2119,16 +2119,16 @@ private:
         float lx = cx - sz.w * 0.5f - kLabelPadX;
         float rx = cx + sz.w * 0.5f + kLabelPadX;
         float ly = std::round(cy);
-        if (lx > bounds.x + kPadX)
+        if (lx > bounds.x + kMsgListPadX)
         {
             ctx.canvas.fill_rect(
-                {bounds.x + kPadX, ly, lx - bounds.x - kPadX, 1.0f},
+                {bounds.x + kMsgListPadX, ly, lx - bounds.x - kMsgListPadX, 1.0f},
                 ctx.theme.palette.accent);
         }
-        if (rx < bounds.x + bounds.w - kPadX)
+        if (rx < bounds.x + bounds.w - kMsgListPadX)
         {
             ctx.canvas.fill_rect(
-                {rx, ly, bounds.x + bounds.w - kPadX - rx, 1.0f},
+                {rx, ly, bounds.x + bounds.w - kMsgListPadX - rx, 1.0f},
                 ctx.theme.palette.accent);
         }
         ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
@@ -2167,7 +2167,7 @@ private:
         st.role = tk::FontRole::Small;
         st.wrap = false;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = std::max(0.0f, bounds.w - kPadX * 2);
+        st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2);
         auto lo = ctx.factory.build_text(label, st);
         if (!lo)
         {
@@ -2180,16 +2180,16 @@ private:
         float label_l = cx - sz.w * 0.5f - kLabelPadX;
         float label_r = cx + sz.w * 0.5f + kLabelPadX;
         float line_y = std::round(cy);
-        if (label_l > bounds.x + kPadX)
+        if (label_l > bounds.x + kMsgListPadX)
         {
             ctx.canvas.fill_rect(
-                {bounds.x + kPadX, line_y, label_l - bounds.x - kPadX, 1.0f},
+                {bounds.x + kMsgListPadX, line_y, label_l - bounds.x - kMsgListPadX, 1.0f},
                 ctx.theme.palette.border);
         }
-        if (label_r < bounds.x + bounds.w - kPadX)
+        if (label_r < bounds.x + bounds.w - kMsgListPadX)
         {
             ctx.canvas.fill_rect(
-                {label_r, line_y, bounds.x + bounds.w - kPadX - label_r, 1.0f},
+                {label_r, line_y, bounds.x + bounds.w - kMsgListPadX - label_r, 1.0f},
                 ctx.theme.palette.border);
         }
         ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
@@ -2220,7 +2220,7 @@ private:
         st.role = tk::FontRole::Small;
         st.wrap = false;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = std::max(0.0f, bounds.w - kPadX * 2 - kIconSz - kIconGap);
+        st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2 - kIconSz - kIconGap);
         auto lo = ctx.factory.build_text(label, st);
         if (!lo)
             return;
@@ -2235,13 +2235,13 @@ private:
         const float label_r    = cx + content_w * 0.5f + kLabelPadX;
         const float line_y     = std::round(cy);
 
-        if (label_l > bounds.x + kPadX)
+        if (label_l > bounds.x + kMsgListPadX)
             ctx.canvas.fill_rect(
-                {bounds.x + kPadX, line_y, label_l - bounds.x - kPadX, 1.0f},
+                {bounds.x + kMsgListPadX, line_y, label_l - bounds.x - kMsgListPadX, 1.0f},
                 ctx.theme.palette.border);
-        if (label_r < bounds.x + bounds.w - kPadX)
+        if (label_r < bounds.x + bounds.w - kMsgListPadX)
             ctx.canvas.fill_rect(
-                {label_r, line_y, bounds.x + bounds.w - kPadX - label_r, 1.0f},
+                {label_r, line_y, bounds.x + bounds.w - kMsgListPadX - label_r, 1.0f},
                 ctx.theme.palette.border);
 
         const tk::Rect icon_rect{icon_x, cy - kIconSz * 0.5f, kIconSz, kIconSz};
@@ -2272,7 +2272,7 @@ private:
         {
             img = owner_.avatar_provider_(m.membership_target_avatar_url);
         }
-        draw_avatar(ctx.canvas, img, {bounds.x + kPadX + kAvatarD * 0.5f, cy},
+        draw_avatar(ctx.canvas, img, {bounds.x + kMsgListPadX + kAvatarD * 0.5f, cy},
                     kAvatarD,
                     m.membership_target_name.empty()
                         ? m.membership_target_user_id
@@ -2280,21 +2280,21 @@ private:
                     ctx.theme.palette.avatar_initials_bg,
                     ctx.theme.palette.avatar_initials_text);
 
-        const float text_x = bounds.x + kPadX + kAvatarD + kGap;
+        const float text_x = bounds.x + kMsgListPadX + kAvatarD + kGap;
 
         const std::string ts = format_hhmm(m.timestamp_ms);
         tk::TextStyle ts_st{};
         ts_st.role = tk::FontRole::Timestamp;
         auto ts_layout = ts.empty() ? nullptr : ctx.factory.build_text(ts, ts_st);
         const float ts_w =
-            ts_layout ? ts_layout->measure().w + kPadX : 0.0f;
+            ts_layout ? ts_layout->measure().w + kMsgListPadX : 0.0f;
 
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
         st.trim = tk::TextTrim::Ellipsis;
         st.max_width =
-            std::max(0.0f, bounds.x + bounds.w - kPadX - ts_w - text_x);
+            std::max(0.0f, bounds.x + bounds.w - kMsgListPadX - ts_w - text_x);
         auto lo = ctx.factory.build_text(membership_expanded_phrase(m), st);
         if (lo)
         {
@@ -2307,7 +2307,7 @@ private:
             tk::Size tsz = ts_layout->measure();
             ctx.canvas.draw_text(
                 *ts_layout,
-                {bounds.x + bounds.w - kPadX - tsz.w, cy - tsz.h * 0.5f},
+                {bounds.x + bounds.w - kMsgListPadX - tsz.w, cy - tsz.h * 0.5f},
                 ctx.theme.palette.text_muted);
         }
     }
@@ -2337,7 +2337,7 @@ private:
                                  : mm.membership_target_name);
         }
 
-        float cx = bounds.x + kPadX + kAvatarD * 0.5f;
+        float cx = bounds.x + kMsgListPadX + kAvatarD * 0.5f;
         for (std::size_t i = 0; i < visible; ++i)
         {
             const auto& mm = msgs[start + i];
@@ -2354,7 +2354,7 @@ private:
         }
 
         const float text_x =
-            bounds.x + kPadX + kAvatarD +
+            bounds.x + kMsgListPadX + kAvatarD +
             (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) +
             6.0f;
 
@@ -2362,7 +2362,7 @@ private:
         st.role = tk::FontRole::Small;
         st.wrap = false;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = std::max(0.0f, bounds.x + bounds.w - kPadX - text_x);
+        st.max_width = std::max(0.0f, bounds.x + bounds.w - kMsgListPadX - text_x);
         auto lo = ctx.factory.build_text(
             membership_summary_phrase(msgs[start].membership_action, names), st);
         if (lo)
@@ -2380,7 +2380,7 @@ private:
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = std::max(0.0f, bounds.w - kPadX * 2);
+        st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2);
         auto lo = ctx.factory.build_text(owner_.typing_text_, st);
         if (!lo)
         {
@@ -2388,7 +2388,7 @@ private:
         }
         tk::Size sz = lo->measure();
         ctx.canvas.draw_text(
-            *lo, {bounds.x + kPadX, bounds.y + (kTypingRowH - sz.h) * 0.5f},
+            *lo, {bounds.x + kMsgListPadX, bounds.y + (kTypingRowH - sz.h) * 0.5f},
             ctx.theme.palette.text_muted);
     }
 
@@ -2415,7 +2415,7 @@ private:
             float preview_h = 0.0f;
             if (owner_.previews_.has_preview(m))
             {
-                preview_h = kPreviewCardGapTop + kPreviewCardH;
+                preview_h = kPreviewCardGapTop + kMsgListPreviewCardH;
             }
             return quote_h + th + badge_h + preview_h;
         }
@@ -2522,7 +2522,7 @@ private:
             float preview_h = 0.0f;
             if (owner_.previews_.has_preview(m))
             {
-                preview_h = kPreviewCardGapTop + kPreviewCardH;
+                preview_h = kPreviewCardGapTop + kMsgListPreviewCardH;
             }
             return quote_h + th + badge_h + preview_h;
         }
@@ -2534,7 +2534,7 @@ private:
             {
                 desc_h =
                     measure_text_height(m.location_description, ctx, col_w) +
-                    kPadY;
+                    kMsgListPadY;
             }
             return quote_h + kMapRowH + desc_h;
         }
@@ -2588,7 +2588,7 @@ private:
                 {
                     end_y += kPreviewCardGapTop;
                     owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
-                    end_y += kPreviewCardH;
+                    end_y += kMsgListPreviewCardH;
                 }
             }
             return end_y;
@@ -2619,7 +2619,7 @@ private:
                 {
                     end_y += kPreviewCardGapTop;
                     owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
-                    end_y += kPreviewCardH;
+                    end_y += kMsgListPreviewCardH;
                 }
             }
             return end_y;
@@ -2675,7 +2675,7 @@ private:
                 {
                     end_y += kPreviewCardGapTop;
                     owner_.previews_.paint_card(m, *p, ctx, x, end_y, col_w);
-                    end_y += kPreviewCardH;
+                    end_y += kMsgListPreviewCardH;
                 }
             }
             return end_y;
@@ -3912,9 +3912,9 @@ private:
             return;
         }
         tk::Size lsz = lo->measure();
-        constexpr float kPadX = 12.0f, kPadY = 7.0f;
-        float pw = lsz.w + kPadX * 2.0f;
-        float ph = lsz.h + kPadY * 2.0f;
+        constexpr float kMsgListPadX = 12.0f, kMsgListPadY = 7.0f;
+        float pw = lsz.w + kMsgListPadX * 2.0f;
+        float ph = lsz.h + kMsgListPadY * 2.0f;
         // Keep the pill inside the tile.
         pw = std::min(pw, dst.w);
         tk::Rect pill{dst.x + (dst.w - pw) * 0.5f, dst.y + (dst.h - ph) * 0.5f,
@@ -6404,16 +6404,16 @@ bool MessageListView::on_pointer_down(tk::Point local)
                     const tk::Rect rb = row_world_rect(ri_int);
                     if (rb.w > 0)
                     {
-                        const tk::Rect avatar_rect{rb.x + kPadX, rb.y + kPadY,
-                                                   kAvatarSize, kAvatarSize};
-                        const float col_x = rb.x + kPadX + kAvatarSize + kAvatarGap;
+                        const tk::Rect avatar_rect{rb.x + kMsgListPadX, rb.y + kMsgListPadY,
+                                                   kMsgListAvatarSize, kMsgListAvatarSize};
+                        const float col_x = rb.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
                         const float sender_y =
-                            rb.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
+                            rb.y + kMsgListPadY + (kMsgListAvatarSize - kSenderH) * 0.5f;
                         // Cap at 200px so clicking message body doesn't trigger.
                         const float name_max_w =
-                            std::min(200.0f, std::max(0.0f, rb.w - kPadX -
-                                                                 kAvatarSize -
-                                                                 kAvatarGap - kPadX));
+                            std::min(200.0f, std::max(0.0f, rb.w - kMsgListPadX -
+                                                                 kMsgListAvatarSize -
+                                                                 kMsgListAvatarGap - kMsgListPadX));
                         const tk::Rect sender_name_rect{col_x, sender_y,
                                                         name_max_w, kSenderH};
                         if (rect_contains(avatar_rect, world) ||

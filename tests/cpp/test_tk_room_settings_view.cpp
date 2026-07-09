@@ -10,7 +10,7 @@ using tesseract::views::RoomSettingsView;
 namespace
 {
 
-struct Stage
+struct TkRoomSettingsViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     tk::LayoutCtx layout_ctx()
@@ -75,7 +75,7 @@ TEST_CASE("RoomSettingsView: field rects empty until permissions granted",
     RoomSettingsView v;
     v.open(make_room_info());
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     // No set_field_permissions call yet -> every field denied by default.
@@ -91,7 +91,7 @@ TEST_CASE("RoomSettingsView: per-field permission gating",
     v.set_field_permissions(/*can_name=*/true, /*can_topic=*/false,
                             /*can_avatar=*/false);
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     CHECK_FALSE(v.name_field_rect().empty());
@@ -105,7 +105,7 @@ TEST_CASE("RoomSettingsView: both fields editable when both permitted",
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     CHECK_FALSE(v.name_field_rect().empty());
@@ -120,7 +120,7 @@ TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
     RoomSettingsView v;
     v.open(make_room_info());
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     int cancel_count = 0;
@@ -145,7 +145,7 @@ TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     v.set_name_edit_text("New Name");
@@ -198,7 +198,7 @@ TEST_CASE("RoomSettingsView: set_commit_result(false) keeps the view open",
     CHECK(v.is_open());
 
     // Should still be paintable/interactable after a failed commit.
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 
@@ -219,7 +219,7 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
     other.avatar_url = "mxc://example.org/other";
     v.open(other);
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
     v.set_field_permissions(true, true, true);
 
@@ -243,7 +243,7 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
 TEST_CASE("RoomSettingsView: paints without crashing across states",
           "[room_settings][view]")
 {
-    Stage st;
+    TkRoomSettingsViewStage st;
     RoomSettingsView v;
 
     // Closed
@@ -282,7 +282,7 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
     RoomSettingsView v;
     v.open(make_room_info());
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     // Room ID row: with an 800x600 stage, tabs_ occupies {0,49,800,487}
@@ -323,7 +323,7 @@ TEST_CASE("RoomSettingsView: set_media_override doesn't disturb General's "
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const tk::Rect name_before = v.name_field_rect();
@@ -353,7 +353,7 @@ TEST_CASE("RoomSettingsView: set_permissions_state doesn't disturb General's "
     v.open(make_room_info());
     v.set_field_permissions(true, true, true);
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const tk::Rect name_before = v.name_field_rect();
@@ -389,7 +389,7 @@ TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",
     other.name = "Other Room";
     v.open(other);
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 
@@ -406,7 +406,7 @@ TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "
     v.set_own_power_level(
         tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
     REQUIRE(v.accept_button()->enabled());
 
@@ -435,7 +435,7 @@ TEST_CASE("RoomSettingsView: lowering Default Role below the requirement "
     v.set_own_power_level(
         tesseract::RoomOwnPowerLevel{.level = 0, .has_explicit_override = false});
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
     REQUIRE(v.accept_button()->enabled());
 
@@ -460,7 +460,7 @@ TEST_CASE("RoomSettingsView: no lockout warning or Accept-disable when the "
     v.set_own_power_level(
         tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
 
-    Stage st;
+    TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     // Nothing was staged, and the user has no ability to edit permissions

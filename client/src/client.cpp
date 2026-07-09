@@ -2241,4 +2241,7 @@ void Client::rtc_push_screen_frame_i420(const std::uint8_t* y,
 }
 #endif // TESSERACT_CALLS_ENABLED
 
+#undef MUT_FFI
+#undef SH_FFI
+
 } // namespace tesseract

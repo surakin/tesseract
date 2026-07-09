@@ -10,7 +10,7 @@ namespace
 {
 constexpr float kRemoveChipR    = 9.0f;
 constexpr float kXChipTolerance = kRemoveChipR + 4.0f;
-constexpr float kErrorGap       = 4.0f;
+constexpr float kAvatarEditErrorGap       = 4.0f;
 } // namespace
 
 void AvatarEditControl::set_geometry(tk::Point centre, float diameter)
@@ -175,7 +175,7 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
         if (error_layout_)
         {
             ctx.canvas.draw_text(*error_layout_,
-                                 {disc_rect.x, disc_rect.y + diameter_ + kErrorGap},
+                                 {disc_rect.x, disc_rect.y + diameter_ + kAvatarEditErrorGap},
                                  tk::Color::rgb(0xcc3333));
         }
     }

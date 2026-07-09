@@ -9,7 +9,7 @@ using tesseract::MentionSeg;
 
 namespace
 {
-bool contains(const std::string& hay, const char* needle)
+bool contains_mentions(const std::string& hay, const char* needle)
 {
     return hay.find(needle) != std::string::npos;
 }
@@ -54,7 +54,7 @@ TEST_CASE("mentions: no mention segments behaves like markdown_to_html")
     std::vector<MentionSeg> segs = {text("just **bold** text")};
     auto r = build_mention_message(segs);
     CHECK(r.body == "just **bold** text");
-    CHECK(contains(r.formatted_body, "<strong>bold</strong>"));
+    CHECK(contains_mentions(r.formatted_body, "<strong>bold</strong>"));
 }
 
 TEST_CASE("mentions: plain text with no markdown yields empty formatted_body")
@@ -72,9 +72,9 @@ TEST_CASE("mentions: single user mention without markdown still formats")
     auto r = build_mention_message(segs);
     CHECK(r.body == "hi Alice!");
     // formatted_body is forced (mentions need anchors for m.mentions derivation)
-    CHECK(contains(r.formatted_body,
+    CHECK(contains_mentions(r.formatted_body,
                    "<a href=\"https://matrix.to/#/@alice:example.org\">Alice</a>"));
-    CHECK(contains(r.formatted_body, "hi "));
+    CHECK(contains_mentions(r.formatted_body, "hi "));
 }
 
 TEST_CASE("mentions: markdown around a mention is preserved")
@@ -82,11 +82,11 @@ TEST_CASE("mentions: markdown around a mention is preserved")
     std::vector<MentionSeg> segs = {
         text("**hey** "), mention("@bob:example.org", "Bob")};
     auto r = build_mention_message(segs);
-    CHECK(contains(r.formatted_body, "<strong>hey</strong>"));
-    CHECK(contains(r.formatted_body,
+    CHECK(contains_mentions(r.formatted_body, "<strong>hey</strong>"));
+    CHECK(contains_mentions(r.formatted_body,
                    "<a href=\"https://matrix.to/#/@bob:example.org\">Bob</a>"));
     // The placeholder sentinel must not leak into output.
-    CHECK_FALSE(contains(r.formatted_body, "\xEE\x80\x80"));
+    CHECK_FALSE(contains_mentions(r.formatted_body, "\xEE\x80\x80"));
 }
 
 TEST_CASE("mentions: @room emits the sentinel anchor and plain body")
@@ -94,7 +94,7 @@ TEST_CASE("mentions: @room emits the sentinel anchor and plain body")
     std::vector<MentionSeg> segs = {room_mention(), text(" ship it")};
     auto r = build_mention_message(segs);
     CHECK(r.body == "@room ship it");
-    CHECK(contains(r.formatted_body,
+    CHECK(contains_mentions(r.formatted_body,
                    "<a href=\"https://matrix.to/#/@room\">@room</a>"));
 }
 
@@ -104,16 +104,16 @@ TEST_CASE("mentions: multiple mentions get distinct anchors")
                                     mention("@b:x.org", "B")};
     auto r = build_mention_message(segs);
     CHECK(r.body == "A B");
-    CHECK(contains(r.formatted_body, "https://matrix.to/#/@a:x.org"));
-    CHECK(contains(r.formatted_body, "https://matrix.to/#/@b:x.org"));
+    CHECK(contains_mentions(r.formatted_body, "https://matrix.to/#/@a:x.org"));
+    CHECK(contains_mentions(r.formatted_body, "https://matrix.to/#/@b:x.org"));
 }
 
 TEST_CASE("mentions: display names are HTML-escaped")
 {
     std::vector<MentionSeg> segs = {mention("@a:x.org", "<b>&you</b>")};
     auto r = build_mention_message(segs);
-    CHECK(contains(r.formatted_body, "&lt;b&gt;&amp;you&lt;/b&gt;"));
-    CHECK_FALSE(contains(r.formatted_body, "<b>&you"));
+    CHECK(contains_mentions(r.formatted_body, "&lt;b&gt;&amp;you&lt;/b&gt;"));
+    CHECK_FALSE(contains_mentions(r.formatted_body, "<b>&you"));
 }
 
 TEST_CASE("mentions: a lone emoticon segment round-trips to literal "
@@ -123,11 +123,11 @@ TEST_CASE("mentions: a lone emoticon segment round-trips to literal "
                                     emoticon("wave", "mxc://x.org/abc")};
     auto r = build_mention_message(segs);
     CHECK(r.body == "wave :wave:");
-    CHECK(contains(r.formatted_body, "<img data-mx-emoticon src=\"mxc://x.org/abc\""));
-    CHECK(contains(r.formatted_body, "alt=\":wave:\""));
-    CHECK(contains(r.formatted_body, "title=\":wave:\""));
+    CHECK(contains_mentions(r.formatted_body, "<img data-mx-emoticon src=\"mxc://x.org/abc\""));
+    CHECK(contains_mentions(r.formatted_body, "alt=\":wave:\""));
+    CHECK(contains_mentions(r.formatted_body, "title=\":wave:\""));
     // The placeholder sentinel must not leak into output.
-    CHECK_FALSE(contains(r.formatted_body, "\xEE\x80\x80"));
+    CHECK_FALSE(contains_mentions(r.formatted_body, "\xEE\x80\x80"));
 }
 
 TEST_CASE("mentions: plain emoticon-only message still forces a non-empty "
@@ -137,7 +137,7 @@ TEST_CASE("mentions: plain emoticon-only message still forces a non-empty "
     auto r = build_mention_message(segs);
     CHECK(r.body == ":smile:");
     CHECK_FALSE(r.formatted_body.empty());
-    CHECK(contains(r.formatted_body, "mxc://x.org/def"));
+    CHECK(contains_mentions(r.formatted_body, "mxc://x.org/def"));
 }
 
 TEST_CASE("mentions: mixed mention + emoticon + text produce correct body "
@@ -148,11 +148,11 @@ TEST_CASE("mentions: mixed mention + emoticon + text produce correct body "
         emoticon("wave", "mxc://x.org/abc"), text(" back")};
     auto r = build_mention_message(segs);
     CHECK(r.body == "Alice say :wave: back");
-    CHECK(contains(r.formatted_body,
+    CHECK(contains_mentions(r.formatted_body,
                    "<a href=\"https://matrix.to/#/@a:x.org\">Alice</a>"));
-    CHECK(contains(r.formatted_body, "<img data-mx-emoticon src=\"mxc://x.org/abc\""));
-    CHECK(contains(r.formatted_body, " say "));
-    CHECK(contains(r.formatted_body, " back"));
+    CHECK(contains_mentions(r.formatted_body, "<img data-mx-emoticon src=\"mxc://x.org/abc\""));
+    CHECK(contains_mentions(r.formatted_body, " say "));
+    CHECK(contains_mentions(r.formatted_body, " back"));
 }
 
 TEST_CASE("mentions: emoticon mxc url is HTML-escaped")
@@ -160,7 +160,7 @@ TEST_CASE("mentions: emoticon mxc url is HTML-escaped")
     std::vector<MentionSeg> segs = {
         emoticon("x", "mxc://x.org/\"onload=alert(1)")};
     auto r = build_mention_message(segs);
-    CHECK_FALSE(contains(r.formatted_body, "\"onload=alert(1)\""));
+    CHECK_FALSE(contains_mentions(r.formatted_body, "\"onload=alert(1)\""));
 }
 
 TEST_CASE("mentions: emoticon shortcode is HTML-escaped in both alt and "
@@ -170,6 +170,6 @@ TEST_CASE("mentions: emoticon shortcode is HTML-escaped in both alt and "
     std::vector<MentionSeg> segs = {
         emoticon("x\" onerror=\"alert(1)", "mxc://x.org/abc")};
     auto r = build_mention_message(segs);
-    CHECK_FALSE(contains(r.formatted_body, "onerror=\"alert(1)\""));
-    CHECK(contains(r.formatted_body, "&quot;"));
+    CHECK_FALSE(contains_mentions(r.formatted_body, "onerror=\"alert(1)\""));
+    CHECK(contains_mentions(r.formatted_body, "&quot;"));
 }

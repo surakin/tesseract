@@ -11,7 +11,7 @@ namespace tesseract::views
 {
 
 static constexpr float kCloseBtnS = 36.0f; // close / save button square size
-static constexpr float kBtnIconPx = 20.0f; // logical icon size inside a button
+static constexpr float kMediaOverlayBtnIconPx = 20.0f; // logical icon size inside a button
 
 // ── layout ───────────────────────────────────────────────────────────────
 
@@ -77,18 +77,18 @@ void MediaOverlayBase::paint_chrome_buttons_(tk::PaintCtx& ctx)
     // × close button
     cv.fill_rounded_rect(close_btn_, kCloseBtnS * 0.5f,
                          tk::Color::rgba(255, 255, 255, 30));
-    draw_icon_(ctx, close_btn_, kBtnIconPx, close_icon_, kCloseSvg, icon_tint);
+    draw_icon_(ctx, close_btn_, kMediaOverlayBtnIconPx, close_icon_, kCloseSvg, icon_tint);
 
     // ⬇ save button
     cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f, tk::Color{0, 0, 0, 160});
-    draw_icon_(ctx, save_btn_, kBtnIconPx, save_icon_, kDownloadSvg, icon_tint);
+    draw_icon_(ctx, save_btn_, kMediaOverlayBtnIconPx, save_icon_, kDownloadSvg, icon_tint);
 
     // ⧉ copy-to-clipboard button (image overlay only)
     if (wants_copy_button_())
     {
         cv.fill_rounded_rect(copy_btn_, kCloseBtnS * 0.5f,
                              tk::Color{0, 0, 0, 160});
-        draw_icon_(ctx, copy_btn_, kBtnIconPx, copy_icon_, kCopySvg, icon_tint);
+        draw_icon_(ctx, copy_btn_, kMediaOverlayBtnIconPx, copy_icon_, kCopySvg, icon_tint);
     }
 }
 

@@ -76,6 +76,16 @@ option(TESSERACT_ENABLE_CALLS
     "Enable MatrixRTC native voice/video calls via LiveKit (adds livekit/libwebrtc dependency)"
     OFF)
 
+# Batches multiple .cpp files per translation unit (CMake's CMAKE_UNITY_BUILD)
+# to cut redundant header parsing/instantiation across a full build. Must be
+# set before the first add_subdirectory() below, since CMAKE_UNITY_BUILD is
+# read at target-creation time. Toggle off to debug a build issue that might
+# be caused by unity-batching (e.g. a newly introduced file-scope collision).
+option(TESSERACT_UNITY_BUILD "Batch multiple .cpp files per translation unit to speed up full builds" ON)
+if(TESSERACT_UNITY_BUILD)
+    set(CMAKE_UNITY_BUILD ON)
+endif()
+
 # Apply a precompiled-header set to `target`, honoring TESSERACT_ENABLE_PCH.
 # Defined at root scope so every subdirectory's CMakeLists can call it. No
 # language guards are needed: no target mixes C with C++/ObjC++ (the Wayland

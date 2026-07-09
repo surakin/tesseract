@@ -18,7 +18,7 @@ using tesseract::views::EmojiPicker;
 namespace
 {
 
-struct Stage
+struct TkEmojiPickerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 360);
     LayoutCtx layout_ctx()
@@ -67,7 +67,7 @@ struct CountingGridAdapter : GridAdapter
 
 TEST_CASE("GridView wraps cells across the viewport's width", "[tk][gridview]")
 {
-    Stage st;
+    TkEmojiPickerStage st;
     GridView grid;
     grid.set_cell_size(20, 20);
     grid.set_spacing(0, 0);
@@ -85,7 +85,7 @@ TEST_CASE("GridView wraps cells across the viewport's width", "[tk][gridview]")
 
 TEST_CASE("GridView::index_at recognises cell coordinates", "[tk][gridview]")
 {
-    Stage st;
+    TkEmojiPickerStage st;
     GridView grid;
     grid.set_cell_size(20, 20);
     grid.set_spacing(0, 0);
@@ -104,7 +104,7 @@ TEST_CASE("GridView::index_at recognises cell coordinates", "[tk][gridview]")
 
 TEST_CASE("GridView click fires on_cell_clicked", "[tk][gridview]")
 {
-    Stage st;
+    TkEmojiPickerStage st;
     GridView grid;
     grid.set_cell_size(20, 20);
     CountingGridAdapter ad;
@@ -132,7 +132,7 @@ TEST_CASE("GridView click fires on_cell_clicked", "[tk][gridview]")
 TEST_CASE("EmojiPicker initial state shows the default category",
           "[tk][view][emoji]")
 {
-    Stage st;
+    TkEmojiPickerStage st;
     EmojiPicker picker;
     st.run(picker, {0, 0, 320, 360});
 
@@ -146,7 +146,7 @@ TEST_CASE("EmojiPicker initial state shows the default category",
 
 TEST_CASE("EmojiPicker tab click switches category", "[tk][view][emoji]")
 {
-    Stage st;
+    TkEmojiPickerStage st;
     EmojiPicker picker;
     st.run(picker, {0, 0, 320, 360});
 
@@ -175,7 +175,7 @@ TEST_CASE("EmojiPicker tab click switches category", "[tk][view][emoji]")
 TEST_CASE("EmojiPicker search filters + clears back to category",
           "[tk][view][emoji]")
 {
-    Stage st;
+    TkEmojiPickerStage st;
     EmojiPicker picker;
     st.run(picker, {0, 0, 320, 360});
 
@@ -192,7 +192,7 @@ TEST_CASE("EmojiPicker search filters + clears back to category",
 
 TEST_CASE("EmojiPicker grid click emits the glyph", "[tk][view][emoji]")
 {
-    Stage st;
+    TkEmojiPickerStage st;
     EmojiPicker picker;
     st.run(picker, {0, 0, 320, 360});
 

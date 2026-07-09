@@ -15,10 +15,13 @@ namespace tesseract::views
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
-static constexpr float kMarginX = 64.0f; // horizontal clearance from edge
-static constexpr float kMarginY = 96.0f; // vertical clearance (caption space)
-static constexpr float kZoomStep = 1.15f;
-static constexpr float kZoomMax = 8.0f;
+namespace
+{
+constexpr float kImageViewerMarginX = 64.0f; // horizontal clearance from edge
+constexpr float kImageViewerMarginY = 96.0f; // vertical clearance (caption space)
+constexpr float kZoomStep = 1.15f;
+constexpr float kZoomMax = 8.0f;
+} // namespace
 
 // ── public API ───────────────────────────────────────────────────────────
 
@@ -129,8 +132,8 @@ void ImageViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b)
 
 void ImageViewerOverlay::recompute_base_(tk::Rect b)
 {
-    const float avail_w = std::max(1.0f, b.w - kMarginX);
-    const float avail_h = std::max(1.0f, b.h - kMarginY);
+    const float avail_w = std::max(1.0f, b.w - kImageViewerMarginX);
+    const float avail_h = std::max(1.0f, b.h - kImageViewerMarginY);
     // When natural_w/h was unknown at open() (e.g. avatar clicks — Matrix
     // m.room.member events don't carry width/height info), probe the
     // image_provider for an already-decoded tk::Image and use its real
@@ -287,7 +290,7 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
         tk::TextStyle st{};
         st.role = tk::FontRole::Body;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = b.w - kMarginX;
+        st.max_width = b.w - kImageViewerMarginX;
         auto lo = ctx.factory.build_text(body_, st);
         if (lo)
         {

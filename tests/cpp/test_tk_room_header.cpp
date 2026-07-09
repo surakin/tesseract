@@ -13,7 +13,7 @@ using tesseract::views::RoomHeader;
 namespace
 {
 
-struct Stage
+struct TkRoomHeaderStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 60);
 
@@ -47,7 +47,7 @@ struct Stage
 TEST_CASE("threads button fires on_threads_requested",
           "[room_header][threads]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     h.set_show_threads_btn(true);
     st.arrange(h, {0, 0, 800, 60});
@@ -72,7 +72,7 @@ TEST_CASE("threads button fires on_threads_requested",
 TEST_CASE("threads button does NOT fire if release leaves the button rect",
           "[room_header][threads]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     h.set_show_threads_btn(true);
     st.arrange(h, {0, 0, 800, 60});
@@ -95,7 +95,7 @@ TEST_CASE("threads button does NOT fire if release leaves the button rect",
 TEST_CASE("threads button sits 8 px left of the calendar button when shown",
           "[room_header][threads]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     h.set_jump_to_date_enabled(true);
     h.set_show_threads_btn(true);
@@ -112,7 +112,7 @@ TEST_CASE("threads button sits 8 px left of the calendar button when shown",
 TEST_CASE("threads button is hidden by default",
           "[room_header][threads]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     st.arrange(h, {0, 0, 800, 60});
     st.paint(h);
@@ -136,7 +136,7 @@ TEST_CASE("threads button is hidden by default",
 TEST_CASE("toggling threads visibility off after a click in progress is safe",
           "[room_header][threads]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     h.set_show_threads_btn(true);
     st.arrange(h, {0, 0, 800, 60});
@@ -163,7 +163,7 @@ TEST_CASE("toggling threads visibility off after a click in progress is safe",
 TEST_CASE("threads button alone takes the right-most slot when calendar is off",
           "[room_header][threads]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     h.set_show_threads_btn(true);
     st.arrange(h, {0, 0, 800, 60});
@@ -178,7 +178,7 @@ TEST_CASE("threads button alone takes the right-most slot when calendar is off",
 TEST_CASE("search button fires on_search_requested",
           "[room_header][search]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     h.set_show_search_btn(true);
     st.arrange(h, {0, 0, 800, 60});
@@ -200,7 +200,7 @@ TEST_CASE("search button fires on_search_requested",
 TEST_CASE("search button does NOT fire if release leaves the button rect",
           "[room_header][search]")
 {
-    Stage st;
+    TkRoomHeaderStage st;
     RoomHeader h;
     h.set_show_search_btn(true);
     st.arrange(h, {0, 0, 800, 60});

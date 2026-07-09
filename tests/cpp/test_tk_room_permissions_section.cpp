@@ -9,7 +9,7 @@ using tesseract::RoomPermissions;
 namespace
 {
 
-struct Stage
+struct TkRoomPermissionsSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     tk::LayoutCtx layout_ctx()
@@ -36,7 +36,7 @@ struct Stage
 TEST_CASE("RoomPermissionsSection: paints without crashing", "[room_permissions_section]")
 {
     RoomPermissionsSection s;
-    Stage st;
+    TkRoomPermissionsSectionStage st;
     st.run(s, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 

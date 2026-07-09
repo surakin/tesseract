@@ -8,7 +8,7 @@ using tesseract::views::RoomSecuritySection;
 namespace
 {
 
-struct Stage
+struct TkRoomSecuritySectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     tk::LayoutCtx layout_ctx()
@@ -35,7 +35,7 @@ struct Stage
 TEST_CASE("RoomSecuritySection: paints without crashing", "[room_security_section]")
 {
     RoomSecuritySection s;
-    Stage st;
+    TkRoomSecuritySectionStage st;
     st.run(s, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 

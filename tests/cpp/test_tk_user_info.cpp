@@ -14,7 +14,7 @@ using tesseract::views::UserInfo;
 namespace
 {
 
-struct Stage
+struct TkUserInfoStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 80);
     LayoutCtx layout_ctx()
@@ -40,7 +40,7 @@ struct Stage
 TEST_CASE("UserInfo natural height shows the Matrix ID line by default",
           "[tk][view][user_info]")
 {
-    Stage st;
+    TkUserInfoStage st;
     UserInfo info;
     info.set_display_name("Alice");
     info.set_user_id("@alice:example.org");
@@ -60,7 +60,7 @@ TEST_CASE("UserInfo paints without crashing when no image_provider is wired",
     // The canvas has built-in initials-disc rendering, so a UserInfo with
     // no provider and an avatar URL must still paint cleanly via the
     // fallback path.
-    Stage st;
+    TkUserInfoStage st;
     UserInfo info;
     info.set_display_name("Bob");
     info.set_user_id("@bob:matrix.org");
@@ -73,7 +73,7 @@ TEST_CASE("UserInfo paints without crashing when no image_provider is wired",
 TEST_CASE("UserInfo image_provider receives the avatar URL on paint",
           "[tk][view][user_info]")
 {
-    Stage st;
+    TkUserInfoStage st;
     UserInfo info;
     info.set_display_name("Carol");
     info.set_user_id("@carol:example.org");
@@ -94,7 +94,7 @@ TEST_CASE(
     "UserInfo primary callback fires on a click that lands inside the row",
     "[tk][view][user_info]")
 {
-    Stage st;
+    TkUserInfoStage st;
     UserInfo info;
     info.set_display_name("Dave");
     info.set_user_id("@dave:matrix.org");
@@ -124,7 +124,7 @@ TEST_CASE(
     "UserInfo primary callback does NOT fire on a release outside the row",
     "[tk][view][user_info]")
 {
-    Stage st;
+    TkUserInfoStage st;
     UserInfo info;
     info.set_display_name("Eve");
 
@@ -143,7 +143,7 @@ TEST_CASE(
 TEST_CASE("UserInfo::on_secondary is settable and survives paint cycles",
           "[tk][view][user_info]")
 {
-    Stage st;
+    TkUserInfoStage st;
     UserInfo info;
     info.set_display_name("Frank");
 
@@ -165,7 +165,7 @@ TEST_CASE("UserInfo::on_secondary is settable and survives paint cycles",
 TEST_CASE("UserInfo active_indicator toggles independently of content",
           "[tk][view][user_info]")
 {
-    Stage st;
+    TkUserInfoStage st;
     UserInfo info;
     info.set_display_name("Grace");
     CHECK_FALSE(info.active_indicator());

@@ -17,12 +17,12 @@ namespace
 // reverse-map (media key → request_id) lifecycle and the visible-row resolution
 // can be exercised without a window, canvas, or live session. The pure-virtual
 // surface is stubbed to no-ops.
-struct WithAccountManager
+struct ShellMediaPriorityWithAccountManager
 {
     tesseract::AccountManager am_;
 };
 
-struct PriorityShell : WithAccountManager, ShellBase
+struct PriorityShell : ShellMediaPriorityWithAccountManager, ShellBase
 {
     PriorityShell() : ShellBase(am_) {}
 

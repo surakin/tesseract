@@ -14,12 +14,12 @@ using tesseract::ShellBase;
 namespace
 {
 
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct ShellDispatchRoomSendWithAccountManager { tesseract::AccountManager am_; };
 
 // ShellBase test double that records whether the native avatar picker was
 // opened, so we can assert that the /myroomavatar branch of the unified
 // dispatch_room_send_ ladder routed there.
-struct SendShell : WithAccountManager, ShellBase
+struct SendShell : ShellDispatchRoomSendWithAccountManager, ShellBase
 {
     SendShell() : ShellBase(am_) {}
 

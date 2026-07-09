@@ -24,7 +24,7 @@ std::string group_thousands(std::uint64_t n)
 }
 
 // "~1.2 MB" / "~456 KB" from a byte count; empty when 0.
-std::string format_bytes(std::uint64_t bytes)
+std::string privacy_format_bytes(std::uint64_t bytes)
 {
     if (bytes == 0)
         return {};
@@ -177,7 +177,7 @@ void PrivacySection::set_search_index_stats(
         std::string line =
             group_thousands(stats.message_count) + " messages across " +
             group_thousands(stats.room_count) + " rooms · " + status;
-        const std::string sz = format_bytes(stats.index_bytes);
+        const std::string sz = privacy_format_bytes(stats.index_bytes);
         if (!sz.empty())
             line += " · " + sz;
         search_stats_label_->set_text(line);

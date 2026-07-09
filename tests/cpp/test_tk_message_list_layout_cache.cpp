@@ -87,7 +87,7 @@ MessageRowData make_rich(const std::string& id, const std::string& body)
     return r;
 }
 
-struct Stage
+struct TkMessageListLayoutCacheStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(600, 400);
     CountingFactory cf{surface->factory()};
@@ -107,7 +107,7 @@ struct Stage
 TEST_CASE("MessageListView reuses the body layout across repeated renders",
           "[message_list][layout_cache]")
 {
-    Stage st;
+    TkMessageListLayoutCacheStage st;
     MessageListView v;
     v.set_messages({make_rich("$a", "hello world")}, false);
 
@@ -125,7 +125,7 @@ TEST_CASE("MessageListView reuses the body layout across repeated renders",
 TEST_CASE("MessageListView re-shapes the body when its content changes",
           "[message_list][layout_cache]")
 {
-    Stage st;
+    TkMessageListLayoutCacheStage st;
     MessageListView v;
     v.set_messages({make_rich("$a", "hello world")}, false);
 
@@ -147,7 +147,7 @@ TEST_CASE("MessageListView paints a real Element-sent MSC2545 emoticon "
     // Exact event content reported not to render: an <img data-mx-emoticon>
     // as the very first thing in formatted_body, no <p> wrapper, no leading
     // text — the case commit_block()'s leading-whitespace trim used to drop.
-    Stage st;
+    TkMessageListLayoutCacheStage st;
     MessageListView v;
     MessageRowData m;
     m.kind = MessageRowData::Kind::Text;
@@ -174,7 +174,7 @@ TEST_CASE("inserting a message collapses an existing read marker",
     // which collapses any visible read marker to zero height. A targeted insert
     // alone would leave the marker (elsewhere in the list) at its stale height,
     // so this guards that the flag flip forces a full re-measure.
-    Stage st;
+    TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::vector<MessageRowData> msgs;
     msgs.push_back(make_rich("$a", "hello"));
@@ -201,7 +201,7 @@ TEST_CASE("MessageListView retains the body layout across a room switch and back
     // Switching rooms (room_switch=true) must not discard the content-addressed
     // body layout cache: returning to a previously-viewed room should reuse the
     // already-shaped bodies instead of re-shaping every visible line.
-    Stage st;
+    TkMessageListLayoutCacheStage st;
     MessageListView v;
 
     // Switch INTO room A and render — shapes "hello world" at least once.
@@ -225,7 +225,7 @@ TEST_CASE("MessageListView retains the body layout across a room switch and back
 TEST_CASE("MessageListView body layout cache is memory-bounded",
           "[message_list][layout_cache]")
 {
-    Stage st;
+    TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::vector<MessageRowData> many;
     for (int i = 0; i < 400; ++i)

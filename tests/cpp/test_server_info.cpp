@@ -10,7 +10,7 @@ using tesseract::ServerInfo;
 namespace
 {
 
-struct Stage
+struct ServerInfoStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 480);
     tk::LayoutCtx layout_ctx()
@@ -127,7 +127,7 @@ TEST_CASE("ServerInfo::from_json: profile_fields_enabled false when set", "[serv
 
 TEST_CASE("ServerSection: empty before set_server_info", "[server][ui]")
 {
-    Stage st;
+    ServerInfoStage st;
     tesseract::views::ServerSection sec;
     auto lc = st.layout_ctx();
     auto sz = sec.measure(lc, {640.0f, 480.0f});
@@ -139,7 +139,7 @@ TEST_CASE("ServerSection: empty before set_server_info", "[server][ui]")
 
 TEST_CASE("ServerSection: non-zero height and paints after set_server_info", "[server][ui]")
 {
-    Stage st;
+    ServerInfoStage st;
     tesseract::views::ServerSection sec;
 
     tesseract::ServerInfo info;

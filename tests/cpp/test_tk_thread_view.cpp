@@ -25,7 +25,7 @@ MessageRowData make_reply(const std::string& id)
     return r;
 }
 
-struct Stage
+struct TkThreadViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
     tk::LayoutCtx layout_ctx()
@@ -68,7 +68,7 @@ TEST_CASE("ThreadView keeps reply rows even though they have thread_root_id",
 TEST_CASE("ThreadView::on_close fires when floating close button clicked",
           "[thread_view]")
 {
-    Stage st;
+    TkThreadViewStage st;
     ThreadView v;
     st.arrange(v, {0, 0, 400, 600});
 

@@ -7,7 +7,7 @@
 namespace
 {
 
-struct Stage
+struct TkFormLayoutStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 800);
 
@@ -38,7 +38,7 @@ TEST_CASE("FormLayout: add_row returns the control pointer", "[form_layout]")
 
 TEST_CASE("FormLayout: empty form measures to zero height", "[form_layout]")
 {
-    Stage          st;
+    TkFormLayoutStage          st;
     auto           lc = st.lc();
     tk::FormLayout form;
     tk::Size       s = form.measure(lc, {640.0f, 800.0f});
@@ -47,7 +47,7 @@ TEST_CASE("FormLayout: empty form measures to zero height", "[form_layout]")
 
 TEST_CASE("FormLayout: measure returns positive height with rows", "[form_layout]")
 {
-    Stage          st;
+    TkFormLayoutStage          st;
     auto           lc = st.lc();
     tk::FormLayout form;
     form.add_row("Key", std::make_unique<tk::Label>("Value"));
@@ -58,7 +58,7 @@ TEST_CASE("FormLayout: measure returns positive height with rows", "[form_layout
 TEST_CASE("FormLayout: all controls align to the same x after arrange",
           "[form_layout]")
 {
-    Stage          st;
+    TkFormLayoutStage          st;
     tk::FormLayout form;
     form.set_label_gap(8.0f).set_spacing(4.0f);
     tk::Label* c1 = form.add_row("Short",        std::make_unique<tk::Label>("A"));
@@ -71,7 +71,7 @@ TEST_CASE("FormLayout: all controls align to the same x after arrange",
 
 TEST_CASE("FormLayout: controls x is beyond label x", "[form_layout]")
 {
-    Stage          st;
+    TkFormLayoutStage          st;
     tk::FormLayout form;
     form.set_label_gap(8.0f);
     // For label alignment test we need the labels too; access them via children().
@@ -84,7 +84,7 @@ TEST_CASE("FormLayout: controls x is beyond label x", "[form_layout]")
 
 TEST_CASE("FormLayout: paints without crash with multiple rows", "[form_layout]")
 {
-    Stage          st;
+    TkFormLayoutStage          st;
     tk::FormLayout form;
     form.add_row("Alpha", std::make_unique<tk::Label>("1"));
     form.add_row("Beta",  std::make_unique<tk::Label>("2"));

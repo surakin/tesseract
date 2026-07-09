@@ -14,7 +14,7 @@ using tesseract::views::RoomSearchBar;
 namespace
 {
 
-struct Stage
+struct TkRoomSearchBarStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 44);
 
@@ -66,7 +66,7 @@ TEST_CASE("open/close toggles is_open and search_field_visible",
 TEST_CASE("set_match_status produces correct count text and does not crash",
           "[room_search_bar]")
 {
-    Stage st;
+    TkRoomSearchBarStage st;
     RoomSearchBar bar;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
@@ -92,7 +92,7 @@ TEST_CASE("set_match_status produces correct count text and does not crash",
 TEST_CASE("paginate_enabled reflects CheckButton state",
           "[room_search_bar]")
 {
-    Stage st;
+    TkRoomSearchBarStage st;
     RoomSearchBar bar;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
@@ -104,7 +104,7 @@ TEST_CASE("paginate_enabled reflects CheckButton state",
 TEST_CASE("on_navigate fires with delta -1 for UP button",
           "[room_search_bar]")
 {
-    Stage st;
+    TkRoomSearchBarStage st;
     RoomSearchBar bar;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
@@ -129,7 +129,7 @@ TEST_CASE("on_navigate fires with delta -1 for UP button",
 TEST_CASE("on_navigate fires with delta +1 for DOWN button",
           "[room_search_bar]")
 {
-    Stage st;
+    TkRoomSearchBarStage st;
     RoomSearchBar bar;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
@@ -154,7 +154,7 @@ TEST_CASE("on_navigate fires with delta +1 for DOWN button",
 TEST_CASE("on_close fires when close button is clicked",
           "[room_search_bar]")
 {
-    Stage st;
+    TkRoomSearchBarStage st;
     RoomSearchBar bar;
     bar.open();
     st.arrange(bar, {0, 0, 800, 44});
@@ -177,7 +177,7 @@ TEST_CASE("on_close fires when close button is clicked",
 TEST_CASE("arrange reserves kStripH and field_rect is inside strip",
           "[room_search_bar]")
 {
-    Stage st;
+    TkRoomSearchBarStage st;
     RoomSearchBar bar;
     bar.open();
 
@@ -221,7 +221,7 @@ TEST_CASE("set_query fires on_query_changed",
 TEST_CASE("buttons not hittable when bar is closed",
           "[room_search_bar]")
 {
-    Stage st;
+    TkRoomSearchBarStage st;
     RoomSearchBar bar;
     // Do NOT open — bar is closed.
     st.arrange(bar, {0, 0, 800, 44});

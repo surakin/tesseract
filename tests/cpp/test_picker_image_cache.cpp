@@ -11,7 +11,7 @@ using tesseract::ShellBase;
 namespace
 {
 
-struct FakeImage : tk::Image
+struct PickerImageCacheFakeImage : tk::Image
 {
     int width() const override
     {
@@ -29,11 +29,11 @@ struct FakeImage : tk::Image
 
 // Minimal concrete ShellBase. Implements every pure virtual; re-exposes
 // the protected members the tests assert on.
-struct WithAccountManager { tesseract::AccountManager am_; };
+struct PickerImageCacheWithAccountManager { tesseract::AccountManager am_; };
 
-struct TestShell : WithAccountManager, ShellBase
+struct PickerImageCacheTestShell : PickerImageCacheWithAccountManager, ShellBase
 {
-    TestShell() : ShellBase(am_) {}
+    PickerImageCacheTestShell() : ShellBase(am_) {}
 
     void post_to_ui_(std::function<void()> fn) override
     {
@@ -114,19 +114,19 @@ struct TestShell : WithAccountManager, ShellBase
     using ShellBase::sticker_fetches_in_flight_;
 };
 
-TestShell::DecodedImage make_still()
+PickerImageCacheTestShell::DecodedImage make_still()
 {
-    TestShell::DecodedImage d;
-    d.still = std::make_unique<FakeImage>();
+    PickerImageCacheTestShell::DecodedImage d;
+    d.still = std::make_unique<PickerImageCacheFakeImage>();
     return d;
 }
 
-TestShell::DecodedImage make_anim(int n)
+PickerImageCacheTestShell::DecodedImage make_anim(int n)
 {
-    TestShell::DecodedImage d;
+    PickerImageCacheTestShell::DecodedImage d;
     for (int i = 0; i < n; ++i)
     {
-        d.frames.push_back(std::make_unique<FakeImage>());
+        d.frames.push_back(std::make_unique<PickerImageCacheFakeImage>());
         d.delays_ms.push_back(50);
     }
     return d;
@@ -136,7 +136,7 @@ TestShell::DecodedImage make_anim(int n)
 
 TEST_CASE("finalize routes a still image into image_cache_", "[picker-cache]")
 {
-    TestShell s;
+    PickerImageCacheTestShell s;
     s.emoji_fetches_in_flight_.insert("mxc://e/1");
     s.finalize_picker_image_("mxc://e/1", /*is_sticker=*/false, make_still());
 
@@ -149,7 +149,7 @@ TEST_CASE("finalize routes a still image into image_cache_", "[picker-cache]")
 
 TEST_CASE("finalize routes animated frames into anim_cache_", "[picker-cache]")
 {
-    TestShell s;
+    PickerImageCacheTestShell s;
     s.sticker_fetches_in_flight_.insert("mxc://s/1");
     s.finalize_picker_image_("mxc://s/1", /*is_sticker=*/true, make_anim(3));
 
@@ -163,8 +163,8 @@ TEST_CASE("finalize routes animated frames into anim_cache_", "[picker-cache]")
 TEST_CASE("finalize does not overwrite an existing cache entry",
           "[picker-cache]")
 {
-    TestShell s;
-    s.image_cache().store("mxc://e/2", std::make_unique<FakeImage>());
+    PickerImageCacheTestShell s;
+    s.image_cache().store("mxc://e/2", std::make_unique<PickerImageCacheFakeImage>());
     const tk::Image* original = s.image_cache().peek("mxc://e/2");
     s.emoji_fetches_in_flight_.insert("mxc://e/2");
 
@@ -178,10 +178,10 @@ TEST_CASE("finalize does not overwrite an existing cache entry",
 TEST_CASE("finalize with an empty decode result caches nothing",
           "[picker-cache]")
 {
-    TestShell s;
+    PickerImageCacheTestShell s;
     s.emoji_fetches_in_flight_.insert("mxc://e/3");
 
-    s.finalize_picker_image_("mxc://e/3", false, TestShell::DecodedImage{});
+    s.finalize_picker_image_("mxc://e/3", false, PickerImageCacheTestShell::DecodedImage{});
 
     CHECK_FALSE(s.image_cache().contains("mxc://e/3"));
     CHECK(s.anim_cache().has("mxc://e/3") == false);

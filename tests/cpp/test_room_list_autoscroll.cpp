@@ -22,7 +22,7 @@ namespace
 // Lay out (measure + arrange) without painting. arrange() rebuilds row heights
 // — clearing heights_dirty_ so visible_range()/visible_room_ids() are valid —
 // and consumes any deferred scroll request set during set_rooms().
-struct Stage
+struct RoomListAutoscrollStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 240);
 
@@ -75,7 +75,7 @@ TEST_CASE("autoscroll: all-read list does not scroll on first load",
           "[roomlist][autoscroll]")
 {
     reset_settings(true);
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
     view.set_rooms(read_rooms());
     st.layout(view, kBounds);
@@ -88,7 +88,7 @@ TEST_CASE("autoscroll: most-recent unread room is scrolled into view",
           "[roomlist][autoscroll]")
 {
     reset_settings(true);
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
 
     view.set_rooms(read_rooms());
@@ -109,7 +109,7 @@ TEST_CASE("autoscroll: first load with an unread room scrolls to it",
           "[roomlist][autoscroll]")
 {
     reset_settings(true);
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
 
     auto rooms = read_rooms();
@@ -125,7 +125,7 @@ TEST_CASE("autoscroll: among several unread, the most recent wins",
           "[roomlist][autoscroll]")
 {
     reset_settings(true);
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
 
     auto rooms = read_rooms();
@@ -143,7 +143,7 @@ TEST_CASE("autoscroll: a space with unread children is considered",
           "[roomlist][autoscroll]")
 {
     reset_settings(true);
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
 
     // 20 read rooms, then a space row (Spaces section, bottom of the list).
@@ -166,7 +166,7 @@ TEST_CASE("autoscroll: low-priority unread does not grab the scroll",
           "[roomlist][autoscroll]")
 {
     reset_settings(true);
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
 
     auto rooms = read_rooms();
@@ -183,7 +183,7 @@ TEST_CASE("autoscroll: disabled setting suppresses scrolling",
           "[roomlist][autoscroll]")
 {
     reset_settings(false); // feature off
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
 
     auto rooms = read_rooms();
@@ -199,7 +199,7 @@ TEST_CASE("autoscroll: already-visible unread does not move the list",
           "[roomlist][autoscroll]")
 {
     reset_settings(true);
-    Stage st;
+    RoomListAutoscrollStage st;
     RoomListView view;
 
     auto rooms = read_rooms();

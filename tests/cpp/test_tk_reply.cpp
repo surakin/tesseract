@@ -18,7 +18,7 @@ using tesseract::views::MessageRowData;
 namespace
 {
 
-struct Stage
+struct TkReplyStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 300);
     void run(Widget& root, Rect bounds)
@@ -121,7 +121,7 @@ TEST_CASE("ComposeBar on_send_reply fires with reply_event_id and body when "
           "reply is pending",
           "[reply][compose]")
 {
-    Stage st;
+    TkReplyStage st;
     ComposeBar bar;
     bar.set_reply_to("$reply_target", "Dave", "Original message");
     bar.set_current_text("My reply");
@@ -153,7 +153,7 @@ TEST_CASE("ComposeBar on_send_reply fires with reply_event_id and body when "
 TEST_CASE("ComposeBar on_send fires normally when no reply is pending",
           "[reply][compose]")
 {
-    Stage st;
+    TkReplyStage st;
     ComposeBar bar;
     bar.set_current_text("plain text");
 
@@ -180,7 +180,7 @@ TEST_CASE("ComposeBar on_send fires normally when no reply is pending",
 
 TEST_CASE("ComposeBar send clears reply state afterward", "[reply][compose]")
 {
-    Stage st;
+    TkReplyStage st;
     ComposeBar bar;
     bar.set_reply_to("$evt3", "Eve", "Snippet");
     bar.set_current_text("reply text");
@@ -269,7 +269,7 @@ TEST_CASE(
     "ComposeBar on_send_edit fires with event_id and new body when editing",
     "[edit][compose]")
 {
-    Stage st;
+    TkReplyStage st;
     ComposeBar bar;
     bar.set_editing("$edit_target");
     bar.set_current_text("edited content");
@@ -300,7 +300,7 @@ TEST_CASE(
 
 TEST_CASE("ComposeBar send clears edit state afterward", "[edit][compose]")
 {
-    Stage st;
+    TkReplyStage st;
     ComposeBar bar;
     bar.set_editing("$edit_evt");
     bar.set_current_text("fixed text");

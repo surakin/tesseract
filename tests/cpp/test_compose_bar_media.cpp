@@ -12,7 +12,7 @@ using tesseract::views::MediaInfo;
 namespace
 {
 
-struct Stage
+struct ComposeBarMediaStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 200);
     tk::LayoutCtx layout_ctx()
@@ -51,7 +51,7 @@ static constexpr std::uint8_t kMinAnimGif[] = {
 TEST_CASE("ComposeBar set_pending_video sets Video kind and loading flag",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
     bar.set_pending_video({0x00, 0x01}, "video/mp4", "clip.mp4");
 
@@ -68,7 +68,7 @@ TEST_CASE("ComposeBar set_pending_video sets Video kind and loading flag",
 TEST_CASE("ComposeBar update_pending_attachment fills video metadata",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
     bar.set_pending_video({0x00}, "video/mp4", "clip.mp4");
 
@@ -96,7 +96,7 @@ TEST_CASE("ComposeBar update_pending_attachment fills video metadata",
 TEST_CASE("ComposeBar set_pending_audio sets Audio kind and loading flag",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
     bar.set_pending_audio({0x49, 0x44, 0x33}, "audio/mpeg", "track.mp3");
 
@@ -111,7 +111,7 @@ TEST_CASE("ComposeBar set_pending_audio sets Audio kind and loading flag",
 TEST_CASE("ComposeBar update_pending_attachment fills audio duration",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
     bar.set_pending_audio({0x49}, "audio/mpeg", "track.mp3");
 
@@ -129,7 +129,7 @@ TEST_CASE("ComposeBar update_pending_attachment fills audio duration",
 TEST_CASE("ComposeBar set_pending_image with is_animated=true stores flag",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
     bar.set_pending_image({0x47, 0x49, 0x46}, "image/gif", "anim.gif", true);
 
@@ -143,7 +143,7 @@ TEST_CASE("ComposeBar set_pending_image with is_animated=true stores flag",
 TEST_CASE("ComposeBar on_send_video fires with correct metadata",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
 
     std::string sent_mime;
@@ -185,7 +185,7 @@ TEST_CASE("ComposeBar on_send_video fires with correct metadata",
 TEST_CASE("ComposeBar update_pending_attachment discards stale gen",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
 
     bar.set_pending_video({0x00}, "video/mp4", "clip.mp4");
@@ -209,7 +209,7 @@ TEST_CASE("ComposeBar update_pending_attachment discards stale gen",
 TEST_CASE("ComposeBar on_send_audio fires with duration",
           "[tk][view][compose][media]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
 
     std::uint64_t sent_dur = 0;
@@ -238,7 +238,7 @@ TEST_CASE("ComposeBar on_send_audio fires with duration",
 TEST_CASE("AnimatedImage reports correct frame_count and dimensions",
           "[tk][anim]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     const std::uint8_t px[4] = {255, 0, 0, 255};
     auto f0 = st.surface->factory().create_image_rgba(px, 3, 5);
     auto f1 = st.surface->factory().create_image_rgba(px, 3, 5);
@@ -262,7 +262,7 @@ TEST_CASE("AnimatedImage reports correct frame_count and dimensions",
 TEST_CASE("CanvasFactory::decode_animated_image default returns nullptr",
           "[tk][anim]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     auto anim = st.surface->factory().decode_animated_image(
         std::span<const std::uint8_t>{}, 384);
     CHECK(anim == nullptr);
@@ -271,7 +271,7 @@ TEST_CASE("CanvasFactory::decode_animated_image default returns nullptr",
 TEST_CASE("decode_animated_image returns 2-frame AnimatedImage for minimal GIF",
           "[tk][anim][decode]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     const std::span<const std::uint8_t> gif_span{kMinAnimGif};
     auto anim = st.surface->factory().decode_animated_image(gif_span, 384);
     if (!anim)
@@ -286,7 +286,7 @@ TEST_CASE("decode_animated_image returns 2-frame AnimatedImage for minimal GIF",
 TEST_CASE("decode_animated_image returns nullptr for empty bytes",
           "[tk][anim][decode]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     auto anim = st.surface->factory().decode_animated_image({}, 384);
     CHECK(anim == nullptr);
 }
@@ -294,7 +294,7 @@ TEST_CASE("decode_animated_image returns nullptr for empty bytes",
 TEST_CASE("ComposeBar animated pending image sets anim_preview and fires repaint callback",
           "[tk][view][compose][anim]")
 {
-    Stage st;
+    ComposeBarMediaStage st;
     ComposeBar bar;
 
     int repaint_delay = -1;

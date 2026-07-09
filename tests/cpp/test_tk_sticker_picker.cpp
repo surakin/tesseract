@@ -22,7 +22,7 @@ using tesseract::views::StickerPicker;
 namespace
 {
 
-struct Stage
+struct TkStickerPickerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(360, 420);
     LayoutCtx layout_ctx()
@@ -48,7 +48,7 @@ struct Stage
 TEST_CASE("StickerPicker without a client renders zero tabs beyond Favorites",
           "[tk][stickerpicker]")
 {
-    Stage st;
+    TkStickerPickerStage st;
     StickerPicker p;
     st.run(p, {0, 0, 360, 420});
     REQUIRE(p.packs().empty());

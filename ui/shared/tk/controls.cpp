@@ -81,7 +81,7 @@ void Separator::paint(PaintCtx& ctx)
 namespace
 {
 
-constexpr float kBtnRadius = 6.0f;
+constexpr float kControlsBtnRadius = 6.0f;
 constexpr float kBtnHPad = 16.0f;
 constexpr float kBtnVPad = 6.0f;
 constexpr float kBtnMinHeight = 32.0f;
@@ -207,7 +207,7 @@ Size Button::measure(LayoutCtx& ctx, Size constraints)
 void Button::paint(PaintCtx& ctx)
 {
     Color fill = button_fill(variant_, ctx.theme, enabled_, hovered_, pressed_);
-    ctx.canvas.fill_rounded_rect(bounds_, kBtnRadius, fill);
+    ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius, fill);
 
     if (variant_ == Variant::Icon)
     {
@@ -301,7 +301,7 @@ void SwitchButton::paint(PaintCtx& ctx)
     const auto& pal = ctx.theme.palette;
 
     if (enabled_ && hovered_)
-        ctx.canvas.fill_rounded_rect(bounds_, kBtnRadius, pal.subtle_hover);
+        ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius, pal.subtle_hover);
 
     // Label — left-aligned, vertically centred.
     if (!cached_)

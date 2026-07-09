@@ -24,7 +24,7 @@ using tesseract::views::RoomListView;
 namespace
 {
 
-struct Stage
+struct TkListsStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
     LayoutCtx layout_ctx()
@@ -157,7 +157,7 @@ struct FixedGridAdapter : tk::GridAdapter
 TEST_CASE("ListView lays out variable + fixed rows + reports content height",
           "[tk][listview]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 10;
@@ -178,7 +178,7 @@ TEST_CASE("ListView lays out variable + fixed rows + reports content height",
 
 TEST_CASE("ListView clamps scroll to [0, content - viewport]", "[tk][listview]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 4;
@@ -199,7 +199,7 @@ TEST_CASE("ListView clamps scroll to [0, content - viewport]", "[tk][listview]")
 
 TEST_CASE("ListView::on_pointer_down/up fires on_row_clicked", "[tk][listview]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 5;
@@ -224,7 +224,7 @@ TEST_CASE("ListView::on_pointer_down/up fires on_row_clicked", "[tk][listview]")
 TEST_CASE("ListView pointer_up outside the row doesn't fire click",
           "[tk][listview]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 5;
@@ -247,7 +247,7 @@ TEST_CASE("ListView pointer_up outside the row doesn't fire click",
 
 TEST_CASE("ListView::scroll_to_bottom snaps to the end", "[tk][listview]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 50;
@@ -268,7 +268,7 @@ TEST_CASE("ListView::scroll_to_bottom snaps to the end", "[tk][listview]")
 TEST_CASE("RoomListView paints rows + tracks selection by room ID",
           "[tk][view][roomlist]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
 
     std::vector<RoomInfo> rooms;
@@ -307,7 +307,7 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
 TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent rooms",
           "[tk][view][roomlist]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
 
     // "mention" has highlight_count but no notification_count.
@@ -346,7 +346,7 @@ TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent room
 TEST_CASE("RoomListView preserves selection after rooms swap",
           "[tk][view][roomlist]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "A"},
@@ -372,7 +372,7 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
 TEST_CASE("RoomListView search field always visible",
           "[tk][view][roomlist][search]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     // Two rooms — content fits easily in a 600 px viewport, but the
     // search bar is unconditionally shown.
@@ -392,7 +392,7 @@ TEST_CASE("RoomListView search field always visible",
 TEST_CASE("RoomListView search field visible when content overflows viewport",
           "[tk][view][roomlist][search]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     // Six rooms × 62 = 372 px > 200 px viewport → overflow.
     std::vector<RoomInfo> rooms;
@@ -416,7 +416,7 @@ TEST_CASE(
     "RoomListView set_search_text filters rows by name case-insensitively",
     "[tk][view][roomlist][search]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "Alpha room"},
@@ -461,7 +461,7 @@ TEST_CASE(
 TEST_CASE("RoomListView preserves selection by id across search filter",
           "[tk][view][roomlist][search]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "Alpha"},
@@ -521,7 +521,7 @@ TEST_CASE("RoomListView sections classify Favorites / DMs / Rooms / Spaces",
 TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
           "[tk][view][roomlist][sections]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "A"},
@@ -574,7 +574,7 @@ TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
 TEST_CASE("RoomListView search shows rooms in collapsed sections",
           "[tk][view][roomlist][sections]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
         RoomInfo{.id = "!a:x", .name = "Alpha"},
@@ -607,7 +607,7 @@ TEST_CASE("RoomListView search shows rooms in collapsed sections",
 TEST_CASE("RoomListView empty sections produce no header row",
           "[tk][view][roomlist][sections]")
 {
-    Stage st;
+    TkListsStage st;
     RoomListView view;
     // One regular room → only "Rooms" section has content; others absent.
     std::vector<RoomInfo> rooms = {
@@ -641,7 +641,7 @@ TEST_CASE("RoomListView empty sections produce no header row",
 TEST_CASE("MessageListView lays out text rows with avatar + body + timestamp",
           "[tk][view][messagelist]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     MessageRowData m1{};
@@ -745,7 +745,7 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable text",
 TEST_CASE("MessageListView measures Image rows taller than text rows",
           "[tk][view][messagelist]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     MessageRowData txt{};
@@ -773,7 +773,7 @@ TEST_CASE("MessageListView measures Image rows taller than text rows",
 TEST_CASE("MessageListView click fires on_message_clicked with event_id",
           "[tk][view][messagelist]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     MessageRowData m{};
     m.kind = MessageRowData::Kind::Text;
@@ -825,7 +825,7 @@ MessageRowData make_row_with_reactions()
 // First paint the view as hovered so the chip geometry is captured,
 // then a second paint to make hover state stick. Pointer-move on the
 // hovered row records the chip rects we'll then hit-test against.
-void paint_with_hover(Stage& st, MessageListView& view, Rect bounds,
+void paint_with_hover(TkListsStage& st, MessageListView& view, Rect bounds,
                       tk::Point local_in_row)
 {
     st.run(view, bounds);
@@ -845,7 +845,7 @@ void paint_with_hover(Stage& st, MessageListView& view, Rect bounds,
 TEST_CASE("MessageListView paints + pseudo-chip only on hover",
           "[tk][view][messagelist][reactions]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_messages({make_row_with_reactions()});
     st.run(view, {0, 0, 320, 200});
@@ -865,7 +865,7 @@ TEST_CASE("MessageListView paints + pseudo-chip only on hover",
 TEST_CASE("MessageListView resolves chip hover target",
           "[tk][view][messagelist][reactions]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_messages({make_row_with_reactions()});
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
@@ -903,7 +903,7 @@ TEST_CASE("MessageListView resolves chip hover target",
 TEST_CASE("MessageListView reaction-chip click fires on_reaction_toggled",
           "[tk][view][messagelist][reactions]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_messages({make_row_with_reactions()});
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
@@ -935,7 +935,7 @@ TEST_CASE("MessageListView reaction-chip click fires on_reaction_toggled",
 TEST_CASE("MessageListView MSC4027 chip click forwards source mxc",
           "[tk][view][messagelist][reactions]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     MessageRowData m{};
     m.kind = MessageRowData::Kind::Text;
@@ -1013,7 +1013,7 @@ tesseract::ReadReceipt make_receipt(const char* user, const char* name)
 TEST_CASE("MessageListView read receipts paint inside existing row bounds",
           "[tk][view][messagelist][receipts]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     MessageRowData plain = make_text_row("$plain", "hi");
@@ -1041,7 +1041,7 @@ TEST_CASE(
     "MessageListView paints read-receipt cluster + overflow at bottom-right",
     "[tk][view][messagelist][receipts]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     MessageRowData m = make_text_row("$evt", "hi");
     // Seven receipts — five render as discs, with a "+2" pill to the left.
@@ -1078,7 +1078,7 @@ TEST_CASE(
 TEST_CASE("MessageListView paints hover timestamp under the avatar",
           "[tk][view][messagelist][hover]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     MessageRowData m = make_text_row("$evt", "hi");
     view.set_messages({m});
@@ -1106,7 +1106,7 @@ TEST_CASE("MessageListView paints hover timestamp under the avatar",
 TEST_CASE("MessageListView + button click fires on_add_reaction_requested",
           "[tk][view][messagelist][reactions]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_messages({make_row_with_reactions()});
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
@@ -1135,7 +1135,7 @@ TEST_CASE("MessageListView action-pill react button fires "
           "on_add_reaction_requested",
           "[tk][view][messagelist][reactions]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     // A plain text row with no reactions: the react affordance must still
     // be present, on the top-right action pill.
@@ -1167,7 +1167,7 @@ TEST_CASE("MessageListView action-pill react button fires "
 TEST_CASE("MessageListView action-pill omits react button on redacted rows",
           "[tk][view][messagelist][reactions]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     MessageRowData m{};
     m.kind = MessageRowData::Kind::Redacted;
@@ -1187,7 +1187,7 @@ TEST_CASE("MessageListView action-pill omits react button on redacted rows",
 TEST_CASE("ListView::preserve_top_through keeps the user's row under cursor",
           "[tk][listview][prepend]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 20;
@@ -1220,7 +1220,7 @@ TEST_CASE("ListView::preserve_top_through anchors even when scrolled to the "
           "very top of existing content",
           "[tk][listview][prepend]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 20;
@@ -1256,7 +1256,7 @@ TEST_CASE("ListView::preserve_top_through on a never-laid-out view leaves "
     // to preserve, and capturing an anchor against zero measured data must
     // not corrupt scroll_y_ (regression: it previously jumped to the full
     // new content height instead of staying at its correct default of 0).
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 25;
@@ -1276,7 +1276,7 @@ TEST_CASE("ListView row anchor keeps the hovered row's screen Y when a row "
           "above it grows",
           "[tk][listview][anchor]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
@@ -1311,7 +1311,7 @@ TEST_CASE("ListView row anchor keeps the hovered row's screen Y when a row "
 TEST_CASE("ListView row anchor ignores growth strictly below the anchor",
           "[tk][listview][anchor]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
@@ -1341,7 +1341,7 @@ TEST_CASE("ListView row anchor ignores growth strictly below the anchor",
 TEST_CASE("ListView row anchor keeps the keyed row stable across a prepend",
           "[tk][listview][anchor][prepend]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
@@ -1373,7 +1373,7 @@ TEST_CASE("ListView row anchor keeps the keyed row stable across a prepend",
 TEST_CASE("ListView::preserve_top_through is a no-op when stuck to bottom",
           "[tk][listview][prepend]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 10;
@@ -1402,7 +1402,7 @@ TEST_CASE("ListView::preserve_top_through is a no-op when stuck to bottom",
 TEST_CASE("ListView::on_near_top fires on threshold crossing and re-arms",
           "[tk][listview][nearTop]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 60;
@@ -1449,7 +1449,7 @@ TEST_CASE("ListView::on_near_top fires on threshold crossing and re-arms",
 TEST_CASE("ListView::on_near_bottom fires on threshold crossing and re-arms",
           "[tk][listview][nearBottom]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 60;
@@ -1495,7 +1495,7 @@ TEST_CASE("ListView::on_near_bottom fires on threshold crossing and re-arms",
 TEST_CASE("ListView::on_near_bottom: latch does not re-arm on pure resize",
           "[tk][listview][nearBottom]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 60;
@@ -1539,7 +1539,7 @@ TEST_CASE("ListView::on_near_bottom: latch does not re-arm on pure resize",
 TEST_CASE("ListView::on_near_bottom re-arms when content is appended",
           "[tk][listview][nearBottom]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 60;
@@ -1579,7 +1579,7 @@ TEST_CASE(
     "ListView::on_near_bottom not fired when content fits within viewport",
     "[tk][listview][nearBottom]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     FixedHeightAdapter ad;
     ad.n = 3;
@@ -1605,7 +1605,7 @@ TEST_CASE(
     "MessageListView::insert_message(0) inserts at front and preserves scroll",
     "[tk][view][messagelist][insert]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     // Seed with 5 messages.
@@ -1642,7 +1642,7 @@ TEST_CASE("MessageListView::insert_message at head preserves visual top when "
           "scrolled",
           "[tk][view][messagelist][insert]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     // Seed with enough rows to overflow and let us scroll mid-list.
@@ -1707,7 +1707,7 @@ TEST_CASE("MessageListView::append_messages does not follow to the new "
           "bottom while browsing history",
           "[tk][view][messagelist][append]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     std::vector<MessageRowData> seed;
@@ -1742,7 +1742,7 @@ TEST_CASE("MessageListView::append_messages does not follow to the new "
 TEST_CASE("MessageListView::insert_message(mid) lands at the requested index",
           "[tk][view][messagelist][insert]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     std::vector<MessageRowData> seed;
@@ -1779,7 +1779,7 @@ TEST_CASE("MessageListView::insert_message(mid) lands at the requested index",
 TEST_CASE("MessageListView::update_message replaces the row in place",
           "[tk][view][messagelist][update]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     std::vector<MessageRowData> seed;
@@ -1814,7 +1814,7 @@ TEST_CASE("MessageListView::update_message replaces the row in place",
 TEST_CASE("MessageListView::remove_message drops the row at the index",
           "[tk][view][messagelist][remove]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     std::vector<MessageRowData> seed;
@@ -1842,7 +1842,7 @@ TEST_CASE("MessageListView::remove_message drops the row at the index",
 TEST_CASE("MessageListView::remove_message out-of-range is a no-op",
           "[tk][view][messagelist][remove]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     MessageRowData m{};
@@ -1863,7 +1863,7 @@ TEST_CASE("MessageListView scroll-to-bottom pill: hidden at bottom, "
           "click snaps back",
           "[tk][view][messagelist][pill]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
 
     std::vector<MessageRowData> msgs;
@@ -1961,7 +1961,7 @@ bool any_image_painted(MessageListView& view)
 TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
           "[tk][view][messagelist][gate]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     // Image never decodes in this test — only the explicit notify releases.
     view.set_image_provider(
@@ -1983,7 +1983,7 @@ TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
 TEST_CASE("MessageListView begin_switch_loading clears the old room's rows at once",
           "[tk][view][messagelist][switch_loading]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     MessageRowData t{};
     t.kind = MessageRowData::Kind::Text;
@@ -2087,7 +2087,7 @@ TEST_CASE("MessageListView second begin_switch_loading supersedes the first time
 TEST_CASE("MessageListView room-switch gate does not hold a known-dimension image",
           "[tk][view][messagelist][gate]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     // Image never decodes (null provider), but gate_image_row carries
     // media_w/media_h so its box is reserved up front — the gate must reveal
@@ -2104,7 +2104,7 @@ TEST_CASE("MessageListView keeps the hovered message put when a preview card "
           "above it finishes loading",
           "[tk][view][messagelist][anchor]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     // A text-only URL preview grows the row without an image to paint (a fake
     // tk::Image would crash the real Qt draw path).
@@ -2168,7 +2168,7 @@ TEST_CASE("MessageListView keeps the hovered message put when a preview card "
 TEST_CASE("MessageListView non-switch set_messages is never gated",
           "[tk][view][messagelist][gate]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_image_provider(
         [](const std::string&) -> const tk::Image*
@@ -2184,7 +2184,7 @@ TEST_CASE("MessageListView non-switch set_messages is never gated",
 TEST_CASE("MessageListView room-switch gate reveals on timeout",
           "[tk][view][messagelist][gate]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_image_provider(
         [](const std::string&) -> const tk::Image*
@@ -2213,7 +2213,7 @@ TEST_CASE(
     "MessageListView room-switch gate timeout wins even before first paint",
     "[tk][view][messagelist][gate]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_image_provider(
         [](const std::string&) -> const tk::Image*
@@ -2242,7 +2242,7 @@ TEST_CASE(
 TEST_CASE("MessageListView room-switch gate supersedes on rapid re-switch",
           "[tk][view][messagelist][gate]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_image_provider(
         [](const std::string&) -> const tk::Image*
@@ -2271,7 +2271,7 @@ TEST_CASE("MessageListView room-switch gate supersedes on rapid re-switch",
 TEST_CASE("MessageListView room-switch gate swallows pointer input",
           "[tk][view][messagelist][gate]")
 {
-    Stage st;
+    TkListsStage st;
     MessageListView view;
     view.set_image_provider(
         [](const std::string&) -> const tk::Image*
@@ -2318,7 +2318,7 @@ TEST_CASE("MessageListView room-switch gate swallows pointer input",
 
 TEST_CASE("GridView::on_pointer_move updates hovered_index", "[tk][gridview]")
 {
-    Stage st;
+    TkListsStage st;
     GridView grid;
     FixedGridAdapter ad;
     ad.n = 20;
@@ -2343,7 +2343,7 @@ TEST_CASE("GridView::on_pointer_move updates hovered_index", "[tk][gridview]")
 TEST_CASE("GridView::on_pointer_leave clears hovered_index to -1",
           "[tk][gridview]")
 {
-    Stage st;
+    TkListsStage st;
     GridView grid;
     FixedGridAdapter ad;
     ad.n = 20;
@@ -2364,7 +2364,7 @@ TEST_CASE("GridView::on_pointer_leave clears hovered_index to -1",
 TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1",
           "[tk][gridview]")
 {
-    Stage st;
+    TkListsStage st;
     GridView grid;
     FixedGridAdapter ad;
     ad.n = 20;
@@ -2383,7 +2383,7 @@ TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1",
 TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
           "[tk][gridview]")
 {
-    Stage st;
+    TkListsStage st;
     GridView grid;
     FixedGridAdapter ad;
     ad.n = 4;
@@ -2410,7 +2410,7 @@ TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
 TEST_CASE("ListView::invalidate_row re-measures only the dependency span",
           "[tk][listview][incremental]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     CountingAdapter ad;
     ad.heights.assign(10, 20.0f);
@@ -2442,7 +2442,7 @@ TEST_CASE("ListView::invalidate_row re-measures only the dependency span",
 TEST_CASE("ListView::insert_row shifts offsets and measures only the gap",
           "[tk][listview][incremental]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     CountingAdapter ad;
     ad.heights.assign(10, 20.0f);
@@ -2474,7 +2474,7 @@ TEST_CASE("ListView::insert_row shifts offsets and measures only the gap",
 TEST_CASE("ListView::erase_row shifts offsets and measures only the gap",
           "[tk][listview][incremental]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     CountingAdapter ad;
     ad.heights.assign(10, 20.0f);
@@ -2503,7 +2503,7 @@ TEST_CASE("ListView::erase_row shifts offsets and measures only the gap",
 TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable",
           "[tk][listview][incremental]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     CountingAdapter ad;
     ad.heights.assign(20, 20.0f);
@@ -2536,7 +2536,7 @@ TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable",
 TEST_CASE("ListView::invalidate_data still re-measures every row",
           "[tk][listview][incremental]")
 {
-    Stage st;
+    TkListsStage st;
     ListView list;
     CountingAdapter ad;
     ad.heights.assign(8, 20.0f);

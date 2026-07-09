@@ -9,7 +9,7 @@ using Mode = tesseract::MediaPreviewConfig::Mode;
 namespace
 {
 
-struct Stage
+struct TkRoomMediaSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     tk::LayoutCtx layout_ctx()
@@ -36,7 +36,7 @@ struct Stage
 TEST_CASE("RoomMediaSection: paints without crashing", "[room_media_section]")
 {
     RoomMediaSection s;
-    Stage st;
+    TkRoomMediaSectionStage st;
     st.run(s, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 

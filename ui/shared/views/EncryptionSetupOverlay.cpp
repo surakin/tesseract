@@ -17,8 +17,8 @@ namespace
 constexpr float kCardW    = 480.0f;
 constexpr float kCardPad  = 32.0f;
 constexpr float kCardRad  = 10.0f;
-constexpr float kBtnH     = 38.0f;
-constexpr float kBtnHPad  = 18.0f;
+constexpr float kEncryptionSetupBtnH     = 38.0f;
+constexpr float kEncryptionSetupBtnHPad  = 18.0f;
 constexpr float kBtnRad   = 6.0f;
 constexpr float kRowGap   = 12.0f;
 
@@ -30,7 +30,7 @@ float button_width(tk::PaintCtx& ctx, const std::string& label)
     tk::TextStyle st;
     st.role = tk::FontRole::UiSemibold;
     auto lo = ctx.factory.build_text(label, st);
-    return (lo ? lo->measure().w : 0.0f) + 2.0f * kBtnHPad;
+    return (lo ? lo->measure().w : 0.0f) + 2.0f * kEncryptionSetupBtnHPad;
 }
 
 // Fill (or, for links, don't) `r` and centre `label` inside it.
@@ -306,7 +306,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
 
     const float cx = card.x + kCardPad;
     const float cw = card.w - 2.0f * kCardPad;
-    const float by = card.y + card.h - kCardPad - kBtnH; // bottom button row
+    const float by = card.y + card.h - kCardPad - kEncryptionSetupBtnH; // bottom button row
 
     // ── Title (steps that have one) ──────────────────────────────────────────
     float content_y = card.y + kCardPad;
@@ -341,12 +341,12 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             const std::string prim =
                 mode_ == Mode::Fresh ? "Set up encryption" : "Verify";
             float pw = button_width(ctx, prim);
-            place_primary({card.x + card.w - kCardPad - pw, by, pw, kBtnH}, prim,
+            place_primary({card.x + card.w - kCardPad - pw, by, pw, kEncryptionSetupBtnH}, prim,
                           true);
 
             const std::string skip = "Skip for now";
             float             sw   = button_width(ctx, skip);
-            secondary_link_        = {cx, by, sw, kBtnH};
+            secondary_link_        = {cx, by, sw, kEncryptionSetupBtnH};
             paint_link(ctx, secondary_link_, skip);
             break;
         }
@@ -407,11 +407,11 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
 
             const std::string cont = "Continue";
             float cwid = button_width(ctx, cont);
-            place_primary({card.x + card.w - kCardPad - cwid, by, cwid, kBtnH},
+            place_primary({card.x + card.w - kCardPad - cwid, by, cwid, kEncryptionSetupBtnH},
                           cont, true);
 
             float bw   = button_width(ctx, "Back");
-            back_link_ = {cx, by, bw, kBtnH};
+            back_link_ = {cx, by, bw, kEncryptionSetupBtnH};
             paint_link(ctx, back_link_, "Back");
             break;
         }
@@ -438,13 +438,13 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             // "Verify with another device instead" link.
             const std::string sas = "Verify with another device instead";
             float             sw  = button_width(ctx, sas);
-            sas_link_             = {cx, by, sw, kBtnH};
+            sas_link_             = {cx, by, sw, kEncryptionSetupBtnH};
             paint_link(ctx, sas_link_, sas);
 
             const std::string key = get_key_input();
             primary_enabled_ = !key.empty();
             float vw = button_width(ctx, "Verify");
-            place_primary({card.x + card.w - kCardPad - vw, by, vw, kBtnH},
+            place_primary({card.x + card.w - kCardPad - vw, by, vw, kEncryptionSetupBtnH},
                           "Verify", primary_enabled_);
             break;
         }
@@ -509,7 +509,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             // Copy button below the box, right-aligned.
             float copyw = button_width(ctx, "Copy");
             place_copy({card.x + card.w - kCardPad - copyw,
-                        box.y + box.h + 10.0f, copyw, kBtnH});
+                        box.y + box.h + 10.0f, copyw, kEncryptionSetupBtnH});
 
             // "I've saved this key" checkbox.
             const float cb_box = 18.0f;
@@ -550,7 +550,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
 
             primary_enabled_ = key_saved_checked_;
             float cont = button_width(ctx, "Continue");
-            place_primary({card.x + card.w - kCardPad - cont, by, cont, kBtnH},
+            place_primary({card.x + card.w - kCardPad - cont, by, cont, kEncryptionSetupBtnH},
                           "Continue", primary_enabled_);
             break;
         }
@@ -596,7 +596,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
                 }
             }
             float clw = button_width(ctx, "Close");
-            place_primary({card.x + (card.w - clw) * 0.5f, by, clw, kBtnH},
+            place_primary({card.x + (card.w - clw) * 0.5f, by, clw, kEncryptionSetupBtnH},
                           "Close", true);
             break;
         }
@@ -635,7 +635,7 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
             // Cancel (or Close once an error is shown), bottom-right.
             const std::string lbl = failed ? "Close" : "Cancel";
             float lw = button_width(ctx, lbl);
-            place_primary({card.x + card.w - kCardPad - lw, by, lw, kBtnH}, lbl,
+            place_primary({card.x + card.w - kCardPad - lw, by, lw, kEncryptionSetupBtnH}, lbl,
                           true);
             break;
         }

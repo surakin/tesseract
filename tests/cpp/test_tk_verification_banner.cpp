@@ -19,7 +19,7 @@ using tesseract::views::VerificationBanner;
 namespace
 {
 
-struct Stage
+struct TkVerificationBannerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 130);
     LayoutCtx layout_ctx()
@@ -68,7 +68,7 @@ Button* find_button(Widget& root, const std::string& lbl)
 TEST_CASE("VerificationBanner starts in Prompt state",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     st.run(banner, {0, 0, 640, 48});
     CHECK(banner.state() == VerificationBanner::State::Prompt);
@@ -77,7 +77,7 @@ TEST_CASE("VerificationBanner starts in Prompt state",
 TEST_CASE("VerificationBanner Prompt measures 48 px tall",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     auto lc = st.layout_ctx();
     auto sz = banner.measure(lc, {640, 48});
@@ -87,7 +87,7 @@ TEST_CASE("VerificationBanner Prompt measures 48 px tall",
 TEST_CASE("VerificationBanner ShowEmojis measures 124 px tall",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     banner.set_emojis(make_emojis());
     CHECK(banner.state() == VerificationBanner::State::ShowEmojis);
@@ -99,7 +99,7 @@ TEST_CASE("VerificationBanner ShowEmojis measures 124 px tall",
 TEST_CASE("VerificationBanner set_emojis switches to ShowEmojis",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     banner.set_emojis(make_emojis());
     CHECK(banner.state() == VerificationBanner::State::ShowEmojis);
@@ -110,7 +110,7 @@ TEST_CASE("VerificationBanner set_emojis switches to ShowEmojis",
 TEST_CASE("VerificationBanner on_verify fires on Prompt primary click",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     bool fired = false;
     banner.on_verify = [&]
@@ -128,7 +128,7 @@ TEST_CASE("VerificationBanner on_verify fires on Prompt primary click",
 TEST_CASE("VerificationBanner on_dismiss fires on Prompt dismiss click",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     bool fired = false;
     banner.on_dismiss = [&]
@@ -146,7 +146,7 @@ TEST_CASE("VerificationBanner on_dismiss fires on Prompt dismiss click",
 TEST_CASE("VerificationBanner Cancelled state measures 48 px tall",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     banner.set_state(VerificationBanner::State::Cancelled);
     banner.set_cancel_reason("mismatched SAS");
@@ -169,7 +169,7 @@ TEST_CASE("VerificationBanner set_state clears cancel reason on non-Cancelled",
 TEST_CASE("VerificationBanner Done state paints without crash",
           "[tk][view][verification]")
 {
-    Stage st;
+    TkVerificationBannerStage st;
     VerificationBanner banner;
     banner.set_state(VerificationBanner::State::Done);
     st.run(banner, {0, 0, 640, 48});

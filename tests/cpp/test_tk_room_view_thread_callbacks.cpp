@@ -16,7 +16,7 @@ using tesseract::views::RoomView;
 namespace
 {
 
-struct Stage
+struct TkRoomViewThreadCallbacksStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
     LayoutCtx layout_ctx()
@@ -45,7 +45,7 @@ void open_room_and_thread(RoomView& view)
 TEST_CASE("Opening the thread panel wires reply/edit/delete on its message list",
           "[tk][view][room][thread]")
 {
-    Stage st;
+    TkRoomViewThreadCallbacksStage st;
     RoomView view;
     open_room_and_thread(view);
     st.run(view, {0, 0, 800, 600});
@@ -71,7 +71,7 @@ TEST_CASE("Opening the thread panel wires reply/edit/delete on its message list"
 TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
           "[tk][view][room][thread]")
 {
-    Stage st;
+    TkRoomViewThreadCallbacksStage st;
     RoomView view;
     std::string captured;
     view.on_delete_requested = [&](std::string id) { captured = std::move(id); };
@@ -108,7 +108,7 @@ TEST_CASE("Compose-bar reply send routes through on_thread_send_reply while the 
           "thread panel is open",
           "[tk][view][room][thread]")
 {
-    Stage st;
+    TkRoomViewThreadCallbacksStage st;
     RoomView view;
 
     std::string room_reply_id, room_reply_body;
@@ -145,7 +145,7 @@ TEST_CASE("Compose-bar reply send still routes to on_send_reply with the "
           "thread panel closed",
           "[tk][view][room][thread]")
 {
-    Stage st;
+    TkRoomViewThreadCallbacksStage st;
     RoomView view;
 
     std::string room_reply_id, room_reply_body;

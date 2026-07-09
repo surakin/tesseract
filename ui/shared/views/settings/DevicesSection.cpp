@@ -23,11 +23,11 @@ namespace
 constexpr float kRowPadX     = 12.0f;
 constexpr float kRowPadY     = 10.0f;
 constexpr float kRowMinH     = 64.0f;
-constexpr float kChipPadX    = 8.0f;
+constexpr float kDevicesSectionChipPadX    = 8.0f;
 constexpr float kChipH       = 18.0f;
 constexpr float kChipGap     = 6.0f;
-constexpr float kLineGap     = 4.0f;
-constexpr float kErrorGap    = 4.0f;
+constexpr float kDevicesSectionLineGap     = 4.0f;
+constexpr float kDevicesSectionErrorGap    = 4.0f;
 constexpr float kButtonGap   = 8.0f;
 constexpr float kRowRadius   = 6.0f;
 
@@ -380,11 +380,11 @@ void DevicesSection::DeviceRow::paint(tk::PaintCtx& ctx)
         if (this_dev_layout_)
         {
             tk::Size cs = this_dev_layout_->measure();
-            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kChipPadX,
+            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kDevicesSectionChipPadX,
                                    kChipH};
             ctx.canvas.fill_rounded_rect(chip, kChipH * 0.5f, pal.accent);
             ctx.canvas.draw_text(*this_dev_layout_,
-                                 {chip_x + kChipPadX,
+                                 {chip_x + kDevicesSectionChipPadX,
                                   chip_y + (kChipH - cs.h) * 0.5f},
                                  pal.text_on_accent);
             chip_x += chip.w + kChipGap;
@@ -394,7 +394,7 @@ void DevicesSection::DeviceRow::paint(tk::PaintCtx& ctx)
         if (verif_layout_)
         {
             tk::Size cs = verif_layout_->measure();
-            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kChipPadX,
+            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kDevicesSectionChipPadX,
                                    kChipH};
             tk::Color bg = pal.chip_bg;
             tk::Color fg = pal.chip_text;
@@ -411,25 +411,25 @@ void DevicesSection::DeviceRow::paint(tk::PaintCtx& ctx)
                 fg = pal.text_on_accent;
             }
             // Clip to avoid overlapping with action buttons on narrow rows.
-            const float max_right = right - 2.0f * kChipPadX;
+            const float max_right = right - 2.0f * kDevicesSectionChipPadX;
             if (chip.x + chip.w <= max_right)
             {
                 ctx.canvas.fill_rounded_rect(chip, kChipH * 0.5f, bg);
                 ctx.canvas.draw_text(*verif_layout_,
-                                     {chip_x + kChipPadX,
+                                     {chip_x + kDevicesSectionChipPadX,
                                       chip_y + (kChipH - cs.h) * 0.5f},
                                      fg);
             }
         }
 
-        y += sz.h + kLineGap;
+        y += sz.h + kDevicesSectionLineGap;
     }
 
     // Second line: device id • last seen.
     if (sub_layout_)
     {
         ctx.canvas.draw_text(*sub_layout_, {left, y}, pal.text_muted);
-        y += sub_layout_->measure().h + kLineGap;
+        y += sub_layout_->measure().h + kDevicesSectionLineGap;
     }
 
     // UIA hint or error or busy text.

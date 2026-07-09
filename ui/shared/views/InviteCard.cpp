@@ -14,11 +14,11 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kRadius  = 8.0f;
-constexpr float kBorderW = 1.0f;
+constexpr float kInviteCardRadius  = 8.0f;
+constexpr float kInviteCardBorderW = 1.0f;
 
 // Estimate text-row heights (used in arrange before we have a real layout).
-constexpr float kNameH       = 24.0f; // 18 pt bold — Title role
+constexpr float kInviteCardNameH       = 24.0f; // 18 pt bold — Title role
 constexpr float kSecondaryH  = 18.0f; // 13 pt — Body role
 constexpr float kInvitedByH  = 18.0f; // 12 pt — Small role
 
@@ -116,7 +116,7 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float btn_row_h = kBtnH;
     float content_h = av_d
                     + kGap
-                    + kNameH
+                    + kInviteCardNameH
                     + kGap * 0.5f
                     + kSecondaryH
                     + kGap;
@@ -131,7 +131,7 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     float       cy = bounds.y + std::max(0.0f, (bounds.h - content_h) * 0.5f);
 
     // Skip past avatar + text rows to reach buttons.
-    cy += av_d + kGap + kNameH + kGap * 0.5f + kSecondaryH + kGap;
+    cy += av_d + kGap + kInviteCardNameH + kGap * 0.5f + kSecondaryH + kGap;
     if (!is_dm)
     {
         cy += kInvitedByH + kGap * 0.5f;
@@ -175,7 +175,7 @@ void InviteCard::paint(tk::PaintCtx& ctx)
     // ── Content block ──────────────────────────────────────────────────────
 
     // Estimate content height (same as arrange) for vertical centering.
-    float content_h = av_d + kGap + kNameH + kGap * 0.5f + kSecondaryH + kGap;
+    float content_h = av_d + kGap + kInviteCardNameH + kGap * 0.5f + kSecondaryH + kGap;
     if (!is_dm)
     {
         content_h += kInvitedByH + kGap * 0.5f;
@@ -239,7 +239,7 @@ void InviteCard::paint(tk::PaintCtx& ctx)
     }
     else
     {
-        cy += kNameH + kGap * 0.5f;
+        cy += kInviteCardNameH + kGap * 0.5f;
     }
 
     // ── Secondary line: @user_id (DM) or topic (group) ─────────────────────

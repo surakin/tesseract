@@ -18,7 +18,7 @@ using tesseract::views::QuickSwitcher;
 namespace
 {
 
-struct Stage
+struct TkQuickSwitcherStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 600);
     LayoutCtx lc()
@@ -48,7 +48,7 @@ RoomInfo make_room(const char* id, const char* name)
 struct Harness
 {
     QuickSwitcher qs;
-    Stage stage;
+    TkQuickSwitcherStage stage;
 
     std::optional<std::string> last_user_query;
     std::optional<std::string> selected_room;

@@ -12,7 +12,7 @@ using tesseract::views::DevicesSection;
 namespace
 {
 
-struct Stage
+struct TkDevicesSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 480);
     tk::LayoutCtx layout_ctx()
@@ -54,7 +54,7 @@ tesseract::Client::Device make_device(
 TEST_CASE("DevicesSection: loading state paints without crash",
           "[devices][section]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_loading(true);
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
@@ -63,7 +63,7 @@ TEST_CASE("DevicesSection: loading state paints without crash",
 TEST_CASE("DevicesSection: empty list paints without crash",
           "[devices][section]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_devices({});
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
@@ -72,7 +72,7 @@ TEST_CASE("DevicesSection: empty list paints without crash",
 TEST_CASE("DevicesSection: populated list with mixed states paints without crash",
           "[devices][section]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_current_device_id("DEVCURR");
     sec.set_devices({
@@ -88,7 +88,7 @@ TEST_CASE("DevicesSection: populated list with mixed states paints without crash
 TEST_CASE("DevicesSection: set_current_device_id flips is_current on cached rows",
           "[devices][section]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_devices({
         make_device("DEVA", "A", false),
@@ -102,7 +102,7 @@ TEST_CASE("DevicesSection: set_current_device_id flips is_current on cached rows
 TEST_CASE("DevicesSection: enter and clear UIA state transitions paint",
           "[devices][section]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_devices({
         make_device("DEVA", "Other", false),
@@ -120,7 +120,7 @@ TEST_CASE("DevicesSection: enter and clear UIA state transitions paint",
 TEST_CASE("DevicesSection: per-device busy + error state paint without crash",
           "[devices][section]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_devices({
         make_device("DEVA", "Phone", false),
@@ -136,7 +136,7 @@ TEST_CASE("DevicesSection: per-device busy + error state paint without crash",
 TEST_CASE("DevicesSection: state setters on unknown device id are no-ops",
           "[devices][section]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_devices({});
     // None of these should crash even though no row matches the id.
@@ -150,7 +150,7 @@ TEST_CASE("DevicesSection: state setters on unknown device id are no-ops",
 TEST_CASE("DevicesSection: wheel scrolls when content exceeds viewport",
           "[devices][section][scroll]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     // Stuff in enough rows to overflow a deliberately-short viewport. Each
     // row is ~64 px + spacing; 20 rows comfortably exceed 240.
@@ -187,7 +187,7 @@ TEST_CASE("DevicesSection: wheel scrolls when content exceeds viewport",
 TEST_CASE("DevicesSection: wheel is a no-op when content fits the viewport",
           "[devices][section][scroll]")
 {
-    Stage st;
+    TkDevicesSectionStage st;
     DevicesSection sec;
     sec.set_devices({
         make_device("DEVA", "One", false),

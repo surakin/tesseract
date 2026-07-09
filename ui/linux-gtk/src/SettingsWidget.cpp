@@ -4,8 +4,7 @@
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
-#include <libintl.h>
-#define _(s) gettext(s)
+#include "gettext_shorthand.h"
 
 namespace
 {

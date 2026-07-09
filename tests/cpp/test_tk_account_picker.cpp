@@ -16,7 +16,7 @@ using tesseract::views::AccountPicker;
 namespace
 {
 
-struct Stage
+struct TkAccountPickerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
     LayoutCtx layout_ctx()
@@ -50,7 +50,7 @@ std::vector<AccountEntry> two_entries()
 TEST_CASE("AccountPicker stacks rows vertically with summed natural height",
           "[tk][view][account_picker]")
 {
-    Stage st;
+    TkAccountPickerStage st;
     AccountPicker picker;
     picker.set_entries(two_entries());
 
@@ -66,7 +66,7 @@ TEST_CASE("AccountPicker stacks rows vertically with summed natural height",
 TEST_CASE("AccountPicker fires on_select with the clicked row's user_id",
           "[tk][view][account_picker]")
 {
-    Stage st;
+    TkAccountPickerStage st;
     AccountPicker picker;
     picker.set_entries(two_entries());
 
@@ -99,7 +99,7 @@ TEST_CASE("AccountPicker fires on_select with the clicked row's user_id",
 TEST_CASE("AccountPicker active indicator paints on only the active row",
           "[tk][view][account_picker]")
 {
-    Stage st;
+    TkAccountPickerStage st;
     AccountPicker picker;
     picker.set_entries(two_entries());
 
@@ -118,7 +118,7 @@ TEST_CASE("AccountPicker active indicator paints on only the active row",
 TEST_CASE("AccountPicker image_provider propagates to every row",
           "[tk][view][account_picker]")
 {
-    Stage st;
+    TkAccountPickerStage st;
     AccountPicker picker;
     picker.set_entries(two_entries());
 

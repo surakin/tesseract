@@ -127,6 +127,21 @@ The three archives (`tesseract_sdk_bridge_cxx`, `tesseract_client`,
 linked with `WHOLE_ARCHIVE` to guarantee all symbols are present regardless of
 link order.
 
+### Unity builds and precompiled headers
+
+`-DTESSERACT_UNITY_BUILD=OFF` (default `ON`) disables CMake's unity build
+(`CMAKE_UNITY_BUILD`), which batches several `.cpp` files per translation unit
+to cut redundant header parsing across a full build. Combined with the
+existing `-DTESSERACT_ENABLE_PCH=OFF` toggle (default `ON`, see the option's
+comment in the root `CMakeLists.txt`), both can be turned off independently to
+debug a build issue that might stem from batching (a leaked macro, an
+unexpectedly reordered `#include`) rather than being a real code error. A
+few source files are excluded from unity batching via
+`SKIP_UNITY_BUILD_INCLUSION` where merging them provides no benefit or is
+untested (e.g. `ui/shared/tk/svg.cpp`'s single-header-library implementation
+block, and the two Qt6 files that `#include` their own AUTOMOC-generated
+`.moc`).
+
 ## Tests
 
 - The cxx bridge is excluded from the Rust test build via `#[cfg(not(test))]`, so

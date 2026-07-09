@@ -14,16 +14,16 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kAvatarSize = 28.0f;
-constexpr float kPadX       = 12.0f;
-constexpr float kAvatarGap  = 12.0f;
-constexpr float kFieldH     = 34.0f;
+constexpr float kForwardRoomPickerAvatarSize = 28.0f;
+constexpr float kForwardRoomPickerPadX       = 12.0f;
+constexpr float kForwardRoomPickerAvatarGap  = 12.0f;
+constexpr float kForwardRoomPickerFieldH     = 34.0f;
 constexpr float kCheckSize  = 18.0f;
 constexpr float kCheckPadR  = 12.0f;
-constexpr float kBtnH       = 32.0f;
+constexpr float kForwardRoomPickerBtnH       = 32.0f;
 constexpr float kBtnMinW    = 80.0f;
-constexpr float kBtnRadius  = 6.0f;
-constexpr float kBtnGap     = 8.0f;
+constexpr float kForwardRoomPickerBtnRadius  = 6.0f;
+constexpr float kForwardRoomPickerBtnGap     = 8.0f;
 
 using tesseract::text::name_matches;
 
@@ -63,7 +63,7 @@ public:
         else if (hovered)
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
 
-        const float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        const float avatar_cx = bounds.x + kForwardRoomPickerPadX + kForwardRoomPickerAvatarSize * 0.5f;
         const float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const tk::Image* avatar = nullptr;
@@ -74,12 +74,12 @@ public:
             if (!avatar && owner_.on_room_avatar_needed)
                 owner_.on_room_avatar_needed(*room);
         }
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kForwardRoomPickerAvatarSize,
                     room->name, ctx.theme.palette.avatar_initials_bg,
                     ctx.theme.palette.avatar_initials_text);
 
         const float check_total = kCheckPadR + kCheckSize + kCheckPadR;
-        const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
+        const float text_x = bounds.x + kForwardRoomPickerPadX + kForwardRoomPickerAvatarSize + kForwardRoomPickerAvatarGap;
         const float text_w =
             std::max(0.0f, bounds.x + bounds.w - text_x - check_total);
         tk::TextStyle ns{};
@@ -346,18 +346,18 @@ void ForwardRoomPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     cy = std::max(cy, bounds.y + margin);
 
     card_rect_         = {cx, cy, cw, ch};
-    search_field_rect_ = {cx + kPadX,
-                          cy + (kHeaderH - kFieldH) * 0.5f,
-                          std::max(0.0f, cw - 2.0f * kPadX),
-                          kFieldH};
+    search_field_rect_ = {cx + kForwardRoomPickerPadX,
+                          cy + (kHeaderH - kForwardRoomPickerFieldH) * 0.5f,
+                          std::max(0.0f, cw - 2.0f * kForwardRoomPickerPadX),
+                          kForwardRoomPickerFieldH};
 
     // Footer button rects — right-aligned, vertically centred in the footer.
     const float footer_y    = cy + ch - kFooterH;
-    const float btn_cy      = footer_y + (kFooterH - kBtnH) * 0.5f;
+    const float btn_cy      = footer_y + (kFooterH - kForwardRoomPickerBtnH) * 0.5f;
     const float confirm_w   = 112.0f; // room for "Forward (99)"
-    confirm_btn_rect_ = {cx + cw - kPadX - confirm_w, btn_cy, confirm_w, kBtnH};
-    cancel_btn_rect_  = {confirm_btn_rect_.x - kBtnGap - kBtnMinW,
-                         btn_cy, kBtnMinW, kBtnH};
+    confirm_btn_rect_ = {cx + cw - kForwardRoomPickerPadX - confirm_w, btn_cy, confirm_w, kForwardRoomPickerBtnH};
+    cancel_btn_rect_  = {confirm_btn_rect_.x - kForwardRoomPickerBtnGap - kBtnMinW,
+                         btn_cy, kBtnMinW, kForwardRoomPickerBtnH};
     // Dismiss button uses same geometry as confirm; shown in error state.
     dismiss_btn_rect_ = confirm_btn_rect_;
 
@@ -420,10 +420,10 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
             }
 
             ctx.canvas.fill_rounded_rect(
-                dismiss_btn_rect_, kBtnRadius,
+                dismiss_btn_rect_, kForwardRoomPickerBtnRadius,
                 press_dismiss_ ? ctx.theme.palette.sidebar_hover
                                : ctx.theme.palette.compose_card_bg);
-            ctx.canvas.stroke_rounded_rect(dismiss_btn_rect_, kBtnRadius,
+            ctx.canvas.stroke_rounded_rect(dismiss_btn_rect_, kForwardRoomPickerBtnRadius,
                                            ctx.theme.palette.border, 1.0f);
             {
                 tk::TextStyle bs{};
@@ -466,10 +466,10 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
         ctx.theme.palette.separator);
 
     ctx.canvas.fill_rounded_rect(
-        cancel_btn_rect_, kBtnRadius,
+        cancel_btn_rect_, kForwardRoomPickerBtnRadius,
         press_cancel_ ? ctx.theme.palette.sidebar_hover
                       : ctx.theme.palette.compose_card_bg);
-    ctx.canvas.stroke_rounded_rect(cancel_btn_rect_, kBtnRadius,
+    ctx.canvas.stroke_rounded_rect(cancel_btn_rect_, kForwardRoomPickerBtnRadius,
                                    ctx.theme.palette.border, 1.0f);
     {
         tk::TextStyle cs{};
@@ -492,7 +492,7 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
             ? (press_confirm_ ? ctx.theme.palette.accent_pressed
                               : ctx.theme.palette.accent)
             : ctx.theme.palette.sidebar_hover;
-    ctx.canvas.fill_rounded_rect(confirm_btn_rect_, kBtnRadius, confirm_bg);
+    ctx.canvas.fill_rounded_rect(confirm_btn_rect_, kForwardRoomPickerBtnRadius, confirm_bg);
     {
         const std::string label =
             can_forward

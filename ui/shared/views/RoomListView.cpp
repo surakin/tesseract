@@ -24,11 +24,11 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kRowH = tesseract::visual::kRoomRowHeight;        // 48
-constexpr float kAvatarSize = tesseract::visual::kRoomAvatarSize; // 36
-constexpr float kPadX = 6.0f; // halved from kSpaceMD (12)
-constexpr float kPadY = 4.0f; // halved from kSpaceSM (8)
-constexpr float kAvatarGap = tesseract::visual::kSpaceMD;             // 12
+constexpr float kRoomListRowH = tesseract::visual::kRoomRowHeight;        // 48
+constexpr float kRoomListAvatarSize = tesseract::visual::kRoomAvatarSize; // 36
+constexpr float kRoomListPadX = 6.0f; // halved from kSpaceMD (12)
+constexpr float kRoomListPadY = 4.0f; // halved from kSpaceSM (8)
+constexpr float kRoomListAvatarGap = tesseract::visual::kSpaceMD;             // 12
 constexpr float kBadgeMinW = tesseract::visual::kUnreadBadgeMinWidth; // 20
 constexpr float kBadgeH = tesseract::visual::kUnreadBadgeHeight;      // 18
 constexpr float kBadgePadX = 6.0f;
@@ -37,11 +37,11 @@ constexpr float kBadgeRadius = kBadgeH * 0.5f;
 constexpr float kDotSize = 8.0f;
 
 // Thumbnail chip painted on the right side of image/sticker rows.
-constexpr float kThumb = kRowH - kPadY * 2.0f; // 40 px — full usable row height
+constexpr float kThumb = kRoomListRowH - kRoomListPadY * 2.0f; // 40 px — full usable row height
 constexpr float kThumbGap = 4.0f;
 
 // Section header row dimensions.
-constexpr float kHeaderH = 28.0f;
+constexpr float kRoomListHeaderH = 28.0f;
 constexpr float kHeaderPadX = 10.0f;
 
 // Search header dimensions. Matches LoginView's homeserver-field height.
@@ -166,10 +166,10 @@ public:
     {
         if (index >= owner_.items_.size())
         {
-            return kRowH;
+            return kRoomListRowH;
         }
-        return owner_.items_[index].kind == Item::Kind::Header ? kHeaderH
-                                                               : kRowH;
+        return owner_.items_[index].kind == Item::Kind::Header ? kRoomListHeaderH
+                                                               : kRoomListRowH;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -433,7 +433,7 @@ private:
         }
 
         // Avatar circle (left-aligned, vertically centred).
-        float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const tk::Image* avatar = nullptr;
@@ -448,7 +448,7 @@ private:
                 owner_.on_room_avatar_needed(room);
         }
 
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kRoomListAvatarSize,
                     room.name, ctx.theme.palette.avatar_initials_bg,
                     ctx.theme.palette.avatar_initials_text);
 
@@ -475,8 +475,8 @@ private:
                 constexpr float kDotD = 8.0f;
                 constexpr float kRing = 2.0f;
                 const float outer_d   = kDotD + kRing * 2.0f;
-                const float dot_cx    = avatar_cx + kAvatarSize * 0.5f;
-                const float dot_cy    = avatar_cy + kAvatarSize * 0.5f;
+                const float dot_cx    = avatar_cx + kRoomListAvatarSize * 0.5f;
+                const float dot_cy    = avatar_cy + kRoomListAvatarSize * 0.5f;
                 const tk::Color ring_col = selected ? ctx.theme.palette.sidebar_selected
                                          : hovered  ? ctx.theme.palette.sidebar_hover
                                                     : ctx.theme.palette.sidebar_bg;
@@ -491,8 +491,8 @@ private:
         }
 
         // Text column geometry.
-        float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        float text_w = bounds.w - (text_x - bounds.x) - kPadX;
+        float text_x = bounds.x + kRoomListPadX + kRoomListAvatarSize + kRoomListAvatarGap;
+        float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
 
         // Reserve space for the badge (heuristic width keeps text_w stable
         // across frames so the name/preview layouts aren't rebuilt every time
@@ -512,12 +512,12 @@ private:
             badge_width = std::max(
                 kBadgeMinW,
                 kBadgePadX * 2 + 7.0f * static_cast<float>(badge_text.size()));
-            text_w -= (badge_width + kPadX);
+            text_w -= (badge_width + kRoomListPadX);
         }
         else if (show_dot)
         {
             badge_width = kDotSize; // reserve the right-aligned dot slot
-            text_w -= (badge_width + kPadX);
+            text_w -= (badge_width + kRoomListPadX);
         }
         // Reserve space for the active-call indicator (phone icon, right-aligned
         // to the right of the badge/dot slot).
@@ -669,8 +669,8 @@ private:
 
             if (thumb)
             {
-                float thumb_right = bounds.x + bounds.w - kPadX - call_icon_w -
-                                    (badge_width > 0 ? badge_width + kPadX : 0.0f);
+                float thumb_right = bounds.x + bounds.w - kRoomListPadX - call_icon_w -
+                                    (badge_width > 0 ? badge_width + kRoomListPadX : 0.0f);
                 float iw = thumb->width()  > 0 ? static_cast<float>(thumb->width())  : kThumb;
                 float ih = thumb->height() > 0 ? static_cast<float>(thumb->height()) : kThumb;
                 float s  = std::min(kThumb / iw, kThumb / ih);
@@ -689,7 +689,7 @@ private:
         {
             tk::Size badge_sz = cache.badge_layout->measure();
             float    pill_w   = std::max(kBadgeMinW, badge_sz.w + kBadgePadX * 2);
-            tk::Rect pill{bounds.x + bounds.w - kPadX - call_icon_w - pill_w,
+            tk::Rect pill{bounds.x + bounds.w - kRoomListPadX - call_icon_w - pill_w,
                           bounds.y + (bounds.h - kBadgeH) * 0.5f,
                           pill_w, kBadgeH};
             const bool      is_mention = room.highlight_count > 0;
@@ -708,7 +708,7 @@ private:
         {
             // Quiet unread (messages but no notification): a small neutral dot
             // where the count pill would sit.
-            tk::Rect dot{bounds.x + bounds.w - kPadX - call_icon_w - kDotSize,
+            tk::Rect dot{bounds.x + bounds.w - kRoomListPadX - call_icon_w - kDotSize,
                          bounds.y + (bounds.h - kDotSize) * 0.5f,
                          kDotSize, kDotSize};
             ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f,
@@ -717,7 +717,7 @@ private:
 
         if (room.has_active_call)
         {
-            tk::Rect icon_box{bounds.x + bounds.w - kPadX - kCallIconPx,
+            tk::Rect icon_box{bounds.x + bounds.w - kRoomListPadX - kCallIconPx,
                               bounds.y + (bounds.h - kCallIconPx) * 0.5f,
                               kCallIconPx, kCallIconPx};
             owner_.call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg,
@@ -740,7 +740,7 @@ private:
         }
 
         // Avatar circle (left-aligned, vertically centred).
-        float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         // DM invite: show inviter avatar. Group invite: show room avatar.
@@ -761,13 +761,13 @@ private:
             avatar = owner_.avatar_provider_(av_mxc);
         }
 
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kRoomListAvatarSize,
                     initials_name, ctx.theme.palette.avatar_initials_bg,
                     ctx.theme.palette.avatar_initials_text);
 
         // Text column geometry (no badge reserved).
-        float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        float text_w = bounds.w - (text_x - bounds.x) - kPadX;
+        float text_x = bounds.x + kRoomListPadX + kRoomListAvatarSize + kRoomListAvatarGap;
+        float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
         if (text_w < 0)
         {
             text_w = 0;
@@ -843,7 +843,7 @@ private:
         else if (hovered)
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
 
-        float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        float avatar_cx = bounds.x + kRoomListPadX + kRoomListAvatarSize * 0.5f;
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const bool loading = s.name.empty();
@@ -862,11 +862,11 @@ private:
         // Use room_id for the initials disc even while loading so each row has a
         // distinct placeholder colour.
         const std::string& initials_src = loading ? s.room_id : s.name;
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kAvatarSize,
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kRoomListAvatarSize,
                     initials_src, pal.avatar_initials_bg, pal.avatar_initials_text);
 
-        float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        float text_w = bounds.w - (text_x - bounds.x) - kPadX;
+        float text_x = bounds.x + kRoomListPadX + kRoomListAvatarSize + kRoomListAvatarGap;
+        float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
         if (text_w < 0) text_w = 0;
 
         // Name + members/join-rule on two lines, muted to signal unjoined.
@@ -1601,9 +1601,9 @@ RoomListView::StickyHeader RoomListView::sticky_header_() const
         if (items_[static_cast<std::size_t>(i)].kind == Item::Kind::Header)
         {
             const float next_y = list_->row_world_rect(i).y;
-            if (next_y < list_top + kHeaderH)
+            if (next_y < list_top + kRoomListHeaderH)
             {
-                world_y = next_y - kHeaderH;
+                world_y = next_y - kRoomListHeaderH;
             }
             break;
         }
@@ -1625,7 +1625,7 @@ bool RoomListView::sticky_band_contains_(const StickyHeader& s,
     }
     const float list_top = bounds_.y + search_header_h();
     return world.x >= bounds_.x && world.x < bounds_.x + bounds_.w &&
-           world.y >= list_top && world.y < s.world_y + kHeaderH;
+           world.y >= list_top && world.y < s.world_y + kRoomListHeaderH;
 }
 
 tk::Widget* RoomListView::dispatch_pointer_down(tk::Point world)
@@ -1751,7 +1751,7 @@ void RoomListView::paint(tk::PaintCtx& ctx)
             tk::Rect    area{bounds_.x, list_top, bounds_.w,
                           std::max(0.0f, bounds_.h - search_header_h())};
             ctx.canvas.push_clip_rect(area);
-            tk::Rect sb{bounds_.x, s.world_y, bounds_.w, kHeaderH};
+            tk::Rect sb{bounds_.x, s.world_y, bounds_.w, kRoomListHeaderH};
             adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb,
                                 false, sticky_hovered_);
             ctx.canvas.pop_clip();

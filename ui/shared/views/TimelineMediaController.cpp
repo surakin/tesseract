@@ -23,23 +23,23 @@ namespace
 // MessageListView.cpp) because only the card paint below consumes them; the
 // row-height constants (kVoiceCardH/W, kAudioCardH/W) stay in the view, where
 // measure() uses them.
-constexpr float kAudioPlayBtnSize = 32.0f;
-constexpr float kAudioCardPadX    = 8.0f;
-constexpr float kAudioTrackH      = 4.0f; // progress track height
-constexpr float kVoicePlayBtnSize = 32.0f;
-constexpr float kVoiceCardPadX    = 8.0f;
-constexpr float kVoiceBarW        = 3.0f;
-constexpr float kVoiceBarGap      = 2.0f;
-constexpr float kVoiceBarMinH     = 3.0f;  // placeholder bar height
-constexpr float kVoiceDurationW   = 40.0f; // reserved for "0:00" label
-constexpr float kVoiceSpeedPillW  = 30.0f; // "1x" / "1.5x" / "2x"
-constexpr float kVoiceSpeedPillH  = 20.0f;
+constexpr float kTimelineAudioPlayBtnSize = 32.0f;
+constexpr float kTimelineAudioCardPadX    = 8.0f;
+constexpr float kTimelineAudioTrackH      = 4.0f; // progress track height
+constexpr float kTimelineVoicePlayBtnSize = 32.0f;
+constexpr float kTimelineVoiceCardPadX    = 8.0f;
+constexpr float kTimelineVoiceBarW        = 3.0f;
+constexpr float kTimelineVoiceBarGap      = 2.0f;
+constexpr float kTimelineVoiceBarMinH     = 3.0f;  // placeholder bar height
+constexpr float kTimelineVoiceDurationW   = 40.0f; // reserved for "0:00" label
+constexpr float kTimelineVoiceSpeedPillW  = 30.0f; // "1x" / "1.5x" / "2x"
+constexpr float kTimelineVoiceSpeedPillH  = 20.0f;
 
 // Local copies of the small time/size formatters. The originals are
 // file-local statics in MessageListView.cpp (still used there by other
 // cards), so duplicating these two trivial helpers keeps both translation
 // units self-contained without a shared header.
-std::string format_mmss(std::uint64_t ms)
+std::string tmc_format_mmss(std::uint64_t ms)
 {
     if (ms == 0)
     {
@@ -55,7 +55,7 @@ std::string format_mmss(std::uint64_t ms)
     return std::string(buf);
 }
 
-std::string format_size(std::uint64_t bytes)
+std::string tmc_format_size(std::uint64_t bytes)
 {
     if (bytes < 1024)
     {
@@ -506,8 +506,8 @@ void TimelineMediaController::paint_voice_card(const MessageRowData& m,
     ctx.canvas.stroke_rounded_rect(dst, 10.0f, ctx.theme.palette.border, 1.0f);
 
     // Play / pause button (circle on the left).
-    const float btn_d = kVoicePlayBtnSize;
-    const float btn_x = dst.x + kVoiceCardPadX;
+    const float btn_d = kTimelineVoicePlayBtnSize;
+    const float btn_x = dst.x + kTimelineVoiceCardPadX;
     const float btn_y = dst.y + (dst.h - btn_d) * 0.5f;
     tk::Rect    btn_rect{btn_x, btn_y, btn_d, btn_d};
     ctx.canvas.fill_rounded_rect(btn_rect, btn_d * 0.5f, ctx.theme.palette.accent);
@@ -551,14 +551,14 @@ void TimelineMediaController::paint_voice_card(const MessageRowData& m,
     }
     tk::TextStyle ds{};
     ds.role           = tk::FontRole::Timestamp;
-    auto     dur_lo   = ctx.factory.build_text(format_mmss(label_ms), ds);
+    auto     dur_lo   = ctx.factory.build_text(tmc_format_mmss(label_ms), ds);
     tk::Size dur_sz   = dur_lo ? dur_lo->measure() : tk::Size{};
     float    dur_w    = dur_sz.w;
     float    dur_h    = dur_sz.h;
     if (dur_lo)
     {
         ctx.canvas.draw_text(*dur_lo,
-                             {dst.x + dst.w - kVoiceCardPadX - dur_w,
+                             {dst.x + dst.w - kTimelineVoiceCardPadX - dur_w,
                               dst.y + (dst.h - dur_h) * 0.5f},
                              ctx.theme.palette.text_secondary);
     }
@@ -570,10 +570,10 @@ void TimelineMediaController::paint_voice_card(const MessageRowData& m,
     if (audio_player_ && is_active_row)
     {
         const float pill_x =
-            dst.x + dst.w - kVoiceCardPadX - dur_w - 6.0f - kVoiceSpeedPillW;
-        const float pill_y = dst.y + (dst.h - kVoiceSpeedPillH) * 0.5f;
-        pill_rect          = {pill_x, pill_y, kVoiceSpeedPillW, kVoiceSpeedPillH};
-        ctx.canvas.fill_rounded_rect(pill_rect, kVoiceSpeedPillH * 0.5f,
+            dst.x + dst.w - kTimelineVoiceCardPadX - dur_w - 6.0f - kTimelineVoiceSpeedPillW;
+        const float pill_y = dst.y + (dst.h - kTimelineVoiceSpeedPillH) * 0.5f;
+        pill_rect          = {pill_x, pill_y, kTimelineVoiceSpeedPillW, kTimelineVoiceSpeedPillH};
+        ctx.canvas.fill_rounded_rect(pill_rect, kTimelineVoiceSpeedPillH * 0.5f,
                                      ctx.theme.palette.subtle_hover);
 
         char        rate_buf[8];
@@ -609,20 +609,20 @@ void TimelineMediaController::paint_voice_card(const MessageRowData& m,
     // the right stay muted. When the sender omitted the MSC1767
     // waveform, we paint a flat row of minimum-height bars so the
     // card still has visual rhythm.
-    const float strip_x = btn_x + btn_d + kVoiceCardPadX;
+    const float strip_x = btn_x + btn_d + kTimelineVoiceCardPadX;
     const float right_anchor =
         (pill_rect.w > 0.0f)
             ? pill_rect.x - 6.0f
-            : dst.x + dst.w - kVoiceCardPadX - kVoiceDurationW;
+            : dst.x + dst.w - kTimelineVoiceCardPadX - kTimelineVoiceDurationW;
     const float strip_w_avail = right_anchor - strip_x;
-    if (strip_w_avail < kVoiceBarW)
+    if (strip_w_avail < kTimelineVoiceBarW)
     {
         return;
     }
     const float strip_y = dst.y + dst.h * 0.5f;
     const float strip_h = dst.h - 16.0f;
 
-    const float step = kVoiceBarW + kVoiceBarGap;
+    const float step = kTimelineVoiceBarW + kTimelineVoiceBarGap;
     const int   bars = std::max(1, static_cast<int>(strip_w_avail / step));
 
     // Resample sender waveform -> `bars` buckets. When empty, the loop
@@ -665,14 +665,14 @@ void TimelineMediaController::paint_voice_card(const MessageRowData& m,
     {
         float a     = amp_at(i);
         float bar_h = m.waveform.empty()
-                          ? kVoiceBarMinH
-                          : std::max(kVoiceBarMinH, a * strip_h);
+                          ? kTimelineVoiceBarMinH
+                          : std::max(kTimelineVoiceBarMinH, a * strip_h);
         float bx    = strip_x + i * step;
         float by    = strip_y - bar_h * 0.5f;
         tk::Color c = (i < cursor_bar) ? ctx.theme.palette.accent
                                        : ctx.theme.palette.text_muted;
-        ctx.canvas.fill_rounded_rect({bx, by, kVoiceBarW, bar_h},
-                                     kVoiceBarW * 0.5f, c);
+        ctx.canvas.fill_rounded_rect({bx, by, kTimelineVoiceBarW, bar_h},
+                                     kTimelineVoiceBarW * 0.5f, c);
     }
 
     // Record world-coord geometry so on_pointer_down can hit-test
@@ -706,8 +706,8 @@ void TimelineMediaController::paint_audio_card(const MessageRowData& m,
     const float row1_cy = dst.y + row1_h * 0.5f;
 
     // Play / pause button — identical to voice card.
-    const float btn_d = kAudioPlayBtnSize;
-    const float btn_x = dst.x + kAudioCardPadX;
+    const float btn_d = kTimelineAudioPlayBtnSize;
+    const float btn_x = dst.x + kTimelineAudioCardPadX;
     const float btn_y = row1_cy - btn_d * 0.5f;
     tk::Rect    btn_rect{btn_x, btn_y, btn_d, btn_d};
     ctx.canvas.fill_rounded_rect(btn_rect, btn_d * 0.5f, ctx.theme.palette.accent);
@@ -746,9 +746,9 @@ void TimelineMediaController::paint_audio_card(const MessageRowData& m,
                               playing_position_ms_ <= total)
                                  ? (total - playing_position_ms_)
                                  : total;
-    auto        dur_lo     = ctx.factory.build_text(format_mmss(label_ms), ds);
+    auto        dur_lo     = ctx.factory.build_text(tmc_format_mmss(label_ms), ds);
     tk::Size    dur_sz     = dur_lo ? dur_lo->measure() : tk::Size{};
-    const float time_x     = dst.x + dst.w - kAudioCardPadX - dur_sz.w;
+    const float time_x     = dst.x + dst.w - kTimelineAudioCardPadX - dur_sz.w;
     if (dur_lo)
     {
         ctx.canvas.draw_text(*dur_lo, {time_x, row1_cy - dur_sz.h * 0.5f},
@@ -756,14 +756,14 @@ void TimelineMediaController::paint_audio_card(const MessageRowData& m,
     }
 
     // Linear progress track — between play button and time label.
-    const float track_x     = btn_x + btn_d + kAudioCardPadX;
-    const float track_right = time_x - kAudioCardPadX;
+    const float track_x     = btn_x + btn_d + kTimelineAudioCardPadX;
+    const float track_right = time_x - kTimelineAudioCardPadX;
     const float track_w     = track_right - track_x;
-    const float track_y     = row1_cy - kAudioTrackH * 0.5f;
-    tk::Rect    track_bg{track_x, track_y, track_w, kAudioTrackH};
+    const float track_y     = row1_cy - kTimelineAudioTrackH * 0.5f;
+    tk::Rect    track_bg{track_x, track_y, track_w, kTimelineAudioTrackH};
     if (track_w > 0.0f)
     {
-        ctx.canvas.fill_rounded_rect(track_bg, kAudioTrackH * 0.5f,
+        ctx.canvas.fill_rounded_rect(track_bg, kTimelineAudioTrackH * 0.5f,
                                      ctx.theme.palette.text_muted);
 
         float fill_frac = 0.0f;
@@ -776,19 +776,19 @@ void TimelineMediaController::paint_audio_card(const MessageRowData& m,
         if (fill_frac > 0.0f)
         {
             ctx.canvas.fill_rounded_rect(
-                {track_x, track_y, track_w * fill_frac, kAudioTrackH},
-                kAudioTrackH * 0.5f, ctx.theme.palette.accent);
+                {track_x, track_y, track_w * fill_frac, kTimelineAudioTrackH},
+                kTimelineAudioTrackH * 0.5f, ctx.theme.palette.accent);
         }
     }
 
     // Row 2: filename · size.
     const float       row2_y = dst.y + row1_h + 4.0f;
-    const float       name_x = btn_x + btn_d + kAudioCardPadX;
-    const float       name_w = dst.x + dst.w - kAudioCardPadX - name_x;
+    const float       name_x = btn_x + btn_d + kTimelineAudioCardPadX;
+    const float       name_w = dst.x + dst.w - kTimelineAudioCardPadX - name_x;
     const std::string display_name = m.file_name.empty() ? m.body : m.file_name;
     const std::string meta =
         m.file_size > 0
-            ? display_name + " \xc2\xb7 " + format_size(m.file_size)
+            ? display_name + " \xc2\xb7 " + tmc_format_size(m.file_size)
             : display_name;
     tk::TextStyle ns{};
     ns.role      = tk::FontRole::Timestamp;

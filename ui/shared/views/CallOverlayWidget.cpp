@@ -17,8 +17,8 @@ constexpr float kFloatingH    = 240.0f;
 constexpr float kControlsH    = 48.0f;
 constexpr float kDurationH    = 22.0f;
 constexpr float kBtnSz        = 40.0f;
-constexpr float kBtnIconPx    = 20.0f;
-constexpr float kBtnGap       = 16.0f;
+constexpr float kCallOverlayBtnIconPx    = 20.0f;
+constexpr float kCallOverlayBtnGap       = 16.0f;
 constexpr float kExpandSz     = 28.0f;
 constexpr float kExpandMargin = 4.0f;
 constexpr float kDragHeaderH  = 32.0f;
@@ -27,9 +27,9 @@ constexpr float kPinnedFrac   = 0.70f; // width fraction for the pinned tile
 constexpr tk::Color kOverlayBg{  0,   0,   0, 220};
 constexpr tk::Color kCtrlBg   {  0,   0,   0, 180};
 constexpr tk::Color kHeaderBg {  0,   0,   0, 160};
-constexpr tk::Color kWhite    {255, 255, 255, 255};
-constexpr tk::Color kWhiteSoft{255, 255, 255, 200};
-constexpr tk::Color kMutedRed {220,  60,  60, 255};
+constexpr tk::Color kCallOverlayWhite    {255, 255, 255, 255};
+constexpr tk::Color kCallOverlayWhiteSoft{255, 255, 255, 200};
+constexpr tk::Color kCallOverlayMutedRed {220,  60,  60, 255};
 } // namespace
 
 // ── Constructor / destructor ───────────────────────────────────────────────
@@ -546,7 +546,7 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     int   btn_count = 2; // mic + hang-up always present
     if (show_video_btn_) ++btn_count; // video
     ++btn_count;                      // screen-share always shown
-    const float total_w = btn_count * kBtnSz + (btn_count - 1) * kBtnGap;
+    const float total_w = btn_count * kBtnSz + (btn_count - 1) * kCallOverlayBtnGap;
     const float start_x = controls_rect_.x + (controls_rect_.w - total_w) * 0.5f;
     const float btn_y   = controls_rect_.y + (kControlsH - kBtnSz) * 0.5f;
 
@@ -554,17 +554,17 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (mute_btn_)
     {
         mute_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
-        bx += kBtnSz + kBtnGap;
+        bx += kBtnSz + kCallOverlayBtnGap;
     }
     if (video_btn_ && show_video_btn_)
     {
         video_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
-        bx += kBtnSz + kBtnGap;
+        bx += kBtnSz + kCallOverlayBtnGap;
     }
     if (screen_btn_)
     {
         screen_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
-        bx += kBtnSz + kBtnGap;
+        bx += kBtnSz + kCallOverlayBtnGap;
     }
     if (hangup_btn_)
         hangup_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
@@ -643,7 +643,7 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
             const tk::Size sz = cached_duration_layout_->measure();
             const float tx = duration_rect_.x + (duration_rect_.w - sz.w) * 0.5f;
             const float ty = duration_rect_.y + (duration_rect_.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*cached_duration_layout_, {tx, ty}, kWhiteSoft);
+            ctx.canvas.draw_text(*cached_duration_layout_, {tx, ty}, kCallOverlayWhiteSoft);
         }
     }
 
@@ -655,10 +655,10 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         mute_btn_->paint(ctx);
         if (audio_muted_)
             mic_off_icon_.draw(ctx.canvas, ctx.factory, kMicOffSvg,
-                               mute_btn_->bounds(), kBtnIconPx, kMutedRed);
+                               mute_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayMutedRed);
         else
             mic_icon_.draw(ctx.canvas, ctx.factory, kMicSvg,
-                           mute_btn_->bounds(), kBtnIconPx, kWhite);
+                           mute_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayWhite);
     }
 
     if (video_btn_ && show_video_btn_)
@@ -666,25 +666,25 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         video_btn_->paint(ctx);
         if (video_muted_)
             video_off_icon_.draw(ctx.canvas, ctx.factory, kVideoOffSvg,
-                                 video_btn_->bounds(), kBtnIconPx, kMutedRed);
+                                 video_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayMutedRed);
         else
             video_icon_.draw(ctx.canvas, ctx.factory, kVideoSvg,
-                             video_btn_->bounds(), kBtnIconPx, kWhite);
+                             video_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayWhite);
     }
 
     if (screen_btn_)
     {
         screen_btn_->paint(ctx);
-        const tk::Color scr_color = screen_sharing_ ? kMutedRed : kWhite;
+        const tk::Color scr_color = screen_sharing_ ? kCallOverlayMutedRed : kCallOverlayWhite;
         screen_icon_.draw(ctx.canvas, ctx.factory, kMonitorSvg,
-                          screen_btn_->bounds(), kBtnIconPx, scr_color);
+                          screen_btn_->bounds(), kCallOverlayBtnIconPx, scr_color);
     }
 
     if (hangup_btn_)
     {
         hangup_btn_->paint(ctx);
         phone_off_icon_.draw(ctx.canvas, ctx.factory, kPhoneOffSvg,
-                             hangup_btn_->bounds(), kBtnIconPx, kMutedRed);
+                             hangup_btn_->bounds(), kCallOverlayBtnIconPx, kCallOverlayMutedRed);
     }
 
     // ── Expand / minimize button ───────────────────────────────────────────
@@ -693,10 +693,10 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         expand_btn_->paint(ctx);
         if (mode_ == Mode::Docked)
             expand_icon_.draw(ctx.canvas, ctx.factory, kExpandSvg,
-                              expand_btn_->bounds(), kExpandSz - 8.0f, kWhite);
+                              expand_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
         else
             minimize_icon_.draw(ctx.canvas, ctx.factory, kMinimizeSvg,
-                                expand_btn_->bounds(), kExpandSz - 8.0f, kWhite);
+                                expand_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
     }
 
     // ── Pip / dock button ─────────────────────────────────────────────────────
@@ -707,10 +707,10 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         pip_btn_->paint(ctx);
         if (mode_ == Mode::Popout)
             minimize_icon_.draw(ctx.canvas, ctx.factory, kMinimizeSvg,
-                                pip_btn_->bounds(), kExpandSz - 8.0f, kWhite);
+                                pip_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
         else
             pip_icon_.draw(ctx.canvas, ctx.factory, kPipSvg,
-                           pip_btn_->bounds(), kExpandSz - 8.0f, kWhite);
+                           pip_btn_->bounds(), kExpandSz - 8.0f, kCallOverlayWhite);
     }
 }
 

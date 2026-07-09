@@ -11,7 +11,7 @@ using tesseract::views::MediaSection;
 namespace
 {
 
-struct Stage
+struct TkMediaSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 800);
     void run(tk::Widget& root)
@@ -30,7 +30,7 @@ struct Stage
 TEST_CASE("MediaSection: paints without crash with no devices set",
           "[media_section]")
 {
-    Stage st;
+    TkMediaSectionStage st;
     MediaSection sec;
     st.run(sec);
 }

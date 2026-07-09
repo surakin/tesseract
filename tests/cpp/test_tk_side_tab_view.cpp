@@ -25,7 +25,7 @@ struct NullWidget : Widget
     }
 };
 
-struct Stage
+struct TkSideTabViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(600, 400);
 
@@ -122,7 +122,7 @@ TEST_CASE("SideTabView select out-of-range is a no-op", "[tk][side_tab_view]")
 TEST_CASE("SideTabView measure and paint do not crash with two tabs",
           "[tk][side_tab_view]")
 {
-    Stage st;
+    TkSideTabViewStage st;
     SideTabView tabs;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_tab("Privacy", std::make_unique<NullWidget>());

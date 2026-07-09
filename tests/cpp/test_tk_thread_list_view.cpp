@@ -31,7 +31,7 @@ ThreadInfo make_thread(const std::string& root, std::uint64_t replies,
     return t;
 }
 
-struct Stage
+struct TkThreadListViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(300, 400);
     tk::LayoutCtx layout_ctx()
@@ -74,7 +74,7 @@ TEST_CASE("ThreadListView::set_threads sorts newest activity last",
 TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
           "[thread_list]")
 {
-    Stage st;
+    TkThreadListViewStage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
     bool closed = false;
@@ -97,7 +97,7 @@ TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
 TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
           "[thread_list]")
 {
-    Stage st;
+    TkThreadListViewStage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
     // Ascending order: $b (lower timestamp) is the first row after the header
@@ -134,7 +134,7 @@ TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
 TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside row",
           "[thread_list]")
 {
-    Stage st;
+    TkThreadListViewStage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
     v.set_threads({make_thread("$a", 1, /*root_ts=*/2000)});
