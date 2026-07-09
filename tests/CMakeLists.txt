@@ -175,6 +175,14 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
         mfplat
         mfreadwrite
         mfuuid)
+    # tk::ScreenCapture::create()'s _WIN32 branch (and screen_capture.cpp as a
+    # whole) only exists behind TESSERACT_ENABLE_CALLS; same move-out gap as
+    # video capture above, so mirror it only when calls are enabled (mirrors
+    # the macOS branch below).
+    if(TESSERACT_ENABLE_CALLS)
+        target_sources(tesseract_tests PRIVATE
+            "${CMAKE_SOURCE_DIR}/ui/windows/tk/screen_capture_win32.cpp")
+    endif()
 elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     # canvas_cg.cpp (tk::cg::make_factory/make_canvas) now lives in ui/macos
     # rather than tesseract_tk, so the test surface must compile it itself.
