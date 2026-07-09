@@ -148,8 +148,33 @@ elseif(_TESSERACT_TEST_UI STREQUAL "gtk")
         "${CMAKE_SOURCE_DIR}/ui/linux-gtk"
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")
 elseif(_TESSERACT_TEST_UI STREQUAL "win32")
-    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_win32.cpp)
-    target_include_directories(tesseract_tests PRIVATE "${CMAKE_SOURCE_DIR}/ui/windows")
+    if(MSVC)
+        target_compile_options(tesseract_tests PRIVATE /utf-8)
+    endif()
+    # video_capture_win32.cpp supplies tk::make_video_capture_win32(), which
+    # tk::VideoCapture::create() (still in tesseract_tk) calls unconditionally
+    # on _WIN32 — it moved out of tesseract_tk like canvas_d2d.cpp, so linking
+    # tests pulls in libtesseract_tk's reference with no definition unless
+    # compiled here (mirrors the macOS branch below).
+    target_sources(tesseract_tests PRIVATE
+        cpp/tk_test_surface_win32.cpp
+        "${CMAKE_SOURCE_DIR}/ui/windows/tk/canvas_d2d.cpp"
+        "${CMAKE_SOURCE_DIR}/ui/windows/tk/video_capture_win32.cpp")
+    target_include_directories(tesseract_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/ui/windows"
+        "${CMAKE_SOURCE_DIR}/ui/shared/tk")
+    target_compile_definitions(tesseract_tests PRIVATE
+        UNICODE _UNICODE
+        WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(tesseract_tests PRIVATE
+        d2d1
+        d3d11
+        dxgi
+        dwrite
+        mf
+        mfplat
+        mfreadwrite
+        mfuuid)
 elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     # canvas_cg.cpp (tk::cg::make_factory/make_canvas) now lives in ui/macos
     # rather than tesseract_tk, so the test surface must compile it itself.
