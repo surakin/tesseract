@@ -29,6 +29,7 @@ struct ID2D1Factory1;
 struct ID2D1RenderTarget;
 struct ID3D11Device;
 struct IDWriteFactory2;
+struct IDWriteFontCollection;
 struct IDWriteFontFallback;
 struct IDWriteFontFace;
 struct IWICImagingFactory;
@@ -120,6 +121,10 @@ struct Factories
     // Noto Color Emoji IDWriteFontFace for IProvideFontInfo injection.
     // Null when the embedded font resource is absent or loading failed.
     IDWriteFontFace*  noto_emoji_face;
+    // The IDWriteFontCollection backing noto_emoji_face — for callers (e.g.
+    // BetterText's IBetterTextFontProvider) that need a collection rather
+    // than a single face. Same null contract as noto_emoji_face.
+    IDWriteFontCollection* noto_emoji_collection;
     // D2D/D3D devices for creating ID2D1DeviceContext-backed surfaces.
     // Null until the first window is created (device is lazy-initialised).
     ID2D1Device*      d2d_device;

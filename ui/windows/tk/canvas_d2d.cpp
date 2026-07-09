@@ -162,6 +162,7 @@ struct Backend::Impl
     ComPtr<IDWriteFontFallback> font_fallback;
     ComPtr<IDWriteFontFileLoader> mem_font_loader; // keeps Twemoji alive
     ComPtr<IDWriteFontFace> noto_emoji_face;        // Noto Color Emoji IDWriteFontFace
+    ComPtr<IDWriteFontCollection> noto_emoji_collection; // same font, as a collection
     bool com_initialised_here = false;
 
     ComPtr<ID3D11Device> d3d;
@@ -226,7 +227,8 @@ static ComPtr<IDWriteFontFallback>
 build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
                      ComPtr<IDWriteFontFallback> system_fallback,
                      ComPtr<IDWriteFontFileLoader>& mem_loader_out,
-                     ComPtr<IDWriteFontFace>& face_out)
+                     ComPtr<IDWriteFontFace>& face_out,
+                     ComPtr<IDWriteFontCollection>& collection_out)
 {
     // 1. Read font bytes from the embedded RCDATA resource.
     HMODULE hmod = GetModuleHandleW(nullptr);
@@ -320,6 +322,11 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     {
         return nullptr;
     }
+    // Expose the collection itself for callers that need one directly (e.g.
+    // BetterText's IBetterTextFontProvider) rather than a single face/the
+    // merged fallback built below — set as early as possible, same
+    // non-fatal-from-here-on reasoning as face_out just below.
+    collection_out = emoji_coll.Get();
 
     // Extract an IDWriteFontFace so the windowless RichEdit host can supply it
     // via IProvideFontInfo::GetFontFace to route emoji text runs to Noto Color
@@ -504,7 +511,7 @@ Backend::Backend() : impl_(std::make_unique<Impl>())
     impl_->dwrite->GetSystemFontFallback(impl_->font_fallback.GetAddressOf());
     if (auto emoji = build_emoji_fallback(
             impl_->dwrite, impl_->font_fallback, impl_->mem_font_loader,
-            impl_->noto_emoji_face))
+            impl_->noto_emoji_face, impl_->noto_emoji_collection))
     {
         impl_->font_fallback = std::move(emoji);
     }
@@ -2142,6 +2149,7 @@ Factories factories(Backend& b)
     Backend::Impl& impl = b.impl();
     return Factories{impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get(),
                      impl.font_fallback.Get(), impl.noto_emoji_face.Get(),
+                     impl.noto_emoji_collection.Get(),
                      impl.d2d_dev.Get(), impl.d3d.Get()};
 }
 

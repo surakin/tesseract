@@ -3332,6 +3332,45 @@ void bt_register_control_once()
 // line height, matching how a Unicode emoji glyph sits inline with body text.
 constexpr float kInlineEmoticonSizeDip = 20.0f;
 
+// Routes BetterText's emoji glyph fallback to the same bundled Noto Color
+// Emoji font (and collection) the rest of the app already uses via
+// d2d::Backend::build_emoji_fallback — instead of BetterText's own default
+// (whatever the OS resolves for "Segoe UI Emoji"), which would otherwise
+// look visually inconsistent with emoji everywhere else in the app. Both
+// Tesseract's D2D backend and BetterText's own EnsureFactories() request
+// DWRITE_FACTORY_TYPE_SHARED, so a collection built against one factory
+// reference is valid to hand to layouts built against the other — no
+// cross-factory copy needed. Stateless; one process-wide instance suffices.
+class BetterTextNotoFontProvider final : public IBetterTextFontProvider
+{
+public:
+    HRESULT CreateFontCollection(IDWriteFactory*, IDWriteFontCollection** collection) override
+    {
+        auto fac = d2d::factories(backend_singleton());
+        if (!fac.noto_emoji_collection)
+        {
+            *collection = nullptr;
+            return E_FAIL;
+        }
+        // EnsureEmojiFontCollection (BetterTextControl.cpp) Attach()es the
+        // returned pointer, taking ownership of exactly one reference.
+        fac.noto_emoji_collection->AddRef();
+        *collection = fac.noto_emoji_collection;
+        return S_OK;
+    }
+
+    const wchar_t* EmojiFallbackFamily() const override
+    {
+        return L"Noto Color Emoji";
+    }
+};
+
+BetterTextNotoFontProvider& bt_noto_font_provider()
+{
+    static BetterTextNotoFontProvider instance;
+    return instance;
+}
+
 } // namespace
 
 class BetterTextField : public NativeTextField, public Win32TextAreaBase
@@ -3353,6 +3392,7 @@ public:
         }
         BetterTextSetSingleLine(hwnd_, TRUE);
         bt_apply_default_font(hwnd_);
+        BetterTextSetFontProvider(hwnd_, &bt_noto_font_provider());
         if (theme)
         {
             // Every NativeTextField call site draws its own card behind the
@@ -3610,6 +3650,7 @@ public:
         }
         BetterTextSetSubmitOnEnter(hwnd_, TRUE);
         bt_apply_default_font(hwnd_);
+        BetterTextSetFontProvider(hwnd_, &bt_noto_font_provider());
         if (theme_)
         {
             BetterTextTheme bt =
