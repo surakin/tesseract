@@ -555,6 +555,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         if (!emoji_popover_ || room_id_.empty())
             return;
         pending_reaction_event_id_ = event_id;
+        // Keep the message row's action buttons visible while the reaction
+        // picker is open (released on the popover's "closed" signal).
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_hover_locked(true);
         popup_emoji_at_rect_(anchor);
     };
     room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
@@ -642,6 +646,21 @@ void RoomWindow::build_emoji_popover_()
     gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
     gtk_popover_set_has_arrow(GTK_POPOVER(emoji_popover_), TRUE);
     gtk_popover_set_autohide(GTK_POPOVER(emoji_popover_), TRUE);
+
+    // Fires on every popdown (selection or autohide outside click). Clear the
+    // pending reaction target and release the hover lock taken in
+    // on_add_reaction_requested so the message row's action buttons hide again.
+    g_signal_connect(
+        emoji_popover_, "closed",
+        G_CALLBACK(+[](GtkPopover*, gpointer u)
+                   {
+                       auto* self = static_cast<RoomWindow*>(u);
+                       self->pending_reaction_event_id_.clear();
+                       if (self->room_view_ && self->room_view_->message_list())
+                           self->room_view_->message_list()->set_hover_locked(
+                               false);
+                   }),
+        this);
 
     emoji_picker_surface_ =
         std::make_unique<tk::gtk4::Surface>(surface_->theme());

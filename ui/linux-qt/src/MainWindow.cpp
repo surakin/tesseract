@@ -685,6 +685,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 return;
             }
             pendingReactionEventId_ = event_id;
+            // Keep the message row's action buttons visible while the reaction
+            // picker is open; the popup briefly steals focus, which would
+            // otherwise clear the row's hover state. Released in onDismiss.
+            if (mainApp_ && mainApp_->room_view())
+            {
+                if (auto* ml = mainApp_->room_view()->message_list())
+                    ml->set_hover_locked(true);
+            }
             emojiPicker_->popupAtRect(mainAppSurface_, anchor);
         };
         mainApp_->room_view()->on_send = [this](const std::string& body)
@@ -2320,6 +2328,19 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             mainApp_->room_view()->set_current_text(roomTextArea_->text());
         }
         roomTextArea_->set_focused(true);
+    };
+
+    emojiPicker_->onDismiss = [this]()
+    {
+        // Fires on every close (selection or outside click). Clear any
+        // pending reaction target and release the hover lock taken in
+        // on_add_reaction_requested so the row's action buttons hide again.
+        pendingReactionEventId_.clear();
+        if (mainApp_ && mainApp_->room_view())
+        {
+            if (auto* ml = mainApp_->room_view()->message_list())
+                ml->set_hover_locked(false);
+        }
     };
 
     // Sticker picker: floating panel anchored at the compose-bar sticker

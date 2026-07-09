@@ -3386,6 +3386,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 return;
             }
             s->_pendingReactionEventId = event_id;
+            if (auto* ml = s->_mainApp->room_view()->message_list())
+                ml->set_hover_locked(true);
             [s showEmojiPickerAtRect:anchor];
         };
         _mainApp->room_view()->on_receipt_needed =
@@ -6017,6 +6019,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
             s->_shell->send_reaction(ev, std::string(glyph.UTF8String ?: ""), {});
+            if (auto* ml = s->_mainApp->room_view()->message_list())
+                ml->set_hover_locked(false);
             [weakPanel close];
             return;
         }
@@ -6038,6 +6042,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
             s->_shell->send_reaction(ev, {}, img.url);
+            if (auto* ml = s->_mainApp->room_view()->message_list())
+                ml->set_hover_locked(false);
             [weakPanel close];
             return;
         }
@@ -6053,6 +6059,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         if (s->_roomView)
             s->_roomView->set_current_text(s->_roomTextArea->text());
         s->_roomTextArea->set_focused(true);
+    };
+    panel.onDismiss = ^{
+        MainWindowController* s = weakSelf;
+        if (!s)
+            return;
+        s->_pendingReactionEventId.clear();
+        if (auto* ml = s->_mainApp->room_view()->message_list())
+            ml->set_hover_locked(false);
     };
     NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
     [panel popupAboveView:anchor];
@@ -6635,6 +6649,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         if (s->_roomView)
             s->_roomView->set_current_text(s->_roomTextArea->text());
         s->_roomTextArea->set_focused(true);
+    };
+    panel.onDismiss = ^{
+        MainWindowController* s = weakSelf;
+        if (!s)
+            return;
+        s->_pendingReactionEventId.clear();
+        if (auto* ml = s->_mainApp->room_view()->message_list())
+            ml->set_hover_locked(false);
     };
     NSView* anchorView = (__bridge NSView*)_mainAppSurface->view_handle();
     [panel popupAtRect:anchor inView:anchorView];

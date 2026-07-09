@@ -435,6 +435,8 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         [this](const std::string& event_id, tk::Rect anchor)
     {
         pending_reaction_event_id_ = event_id;
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_hover_locked(true);
         show_emoji_panel_(anchor);
     };
     room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
@@ -540,6 +542,8 @@ void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
             std::string ev = pending_reaction_event_id_;
             pending_reaction_event_id_.clear();
             toggle_reaction_(ev, g, std::string{});
+            if (room_view_ && room_view_->message_list())
+                room_view_->message_list()->set_hover_locked(false);
             [weakPanel close];
             return;
         }
@@ -562,6 +566,8 @@ void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
             std::string ev = pending_reaction_event_id_;
             pending_reaction_event_id_.clear();
             toggle_reaction_(ev, std::string{}, img.url);
+            if (room_view_ && room_view_->message_list())
+                room_view_->message_list()->set_hover_locked(false);
             [weakPanel close];
             return;
         }
@@ -574,6 +580,14 @@ void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
                 room_view_->set_current_text(text_area_->text());
             text_area_->set_focused(true);
         }
+    };
+    panel.onDismiss = ^{
+        auto a = alive_weak.lock();
+        if (!a || !*a)
+            return;
+        pending_reaction_event_id_.clear();
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_hover_locked(false);
     };
     NSView* anchorView = (__bridge NSView*)surface_->view_handle();
     [panel popupAtRect:anchor inView:anchorView];

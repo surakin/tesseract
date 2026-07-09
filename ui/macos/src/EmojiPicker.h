@@ -31,6 +31,11 @@ struct ImagePackImage;
 @property(nonatomic, copy) void (^onEmoticonSelect)(
     const tesseract::ImagePackImage& img);
 
+/// Fired when the panel is dismissed without a selection (e.g. the user
+/// clicked outside it). Not fired when dismissed via onSelect/onEmoticonSelect
+/// (those already close the panel themselves after handling the pick).
+@property(nonatomic, copy) void (^onDismiss)(void);
+
 /// Borrowed SDK client; must outlive the panel's lifetime. The shared
 /// picker reads recent_emoji_top + writes recent_emoji_bump.
 @property(nonatomic, assign) tesseract::Client* client;

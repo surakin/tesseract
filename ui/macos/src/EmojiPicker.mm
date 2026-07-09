@@ -40,6 +40,20 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     return YES;
 }
 
+- (void)resignKeyWindow
+{
+    BOOL wasVisible = self.isVisible;
+    [super resignKeyWindow];
+    if (wasVisible)
+    {
+        [self orderOut:nil];
+        if (self.onDismiss)
+        {
+            self.onDismiss();
+        }
+    }
+}
+
 - (void)setTheme:(const tk::Theme&)t
 {
     if (_surface)

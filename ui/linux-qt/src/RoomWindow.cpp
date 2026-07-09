@@ -486,6 +486,15 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             room_view_->set_current_text(roomTextArea_->text());
         roomTextArea_->set_focused(true);
     };
+    emojiPicker_->onDismiss = [this]()
+    {
+        // Fires on every close (selection or outside click). Clear any
+        // pending reaction target and release the hover lock taken in
+        // on_add_reaction_requested so the row's action buttons hide again.
+        pendingReactionEventId_.clear();
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_hover_locked(false);
+    };
     stickerPicker_ = new ::StickerPicker(this);
     stickerPicker_->setClient(shell_client_());
     stickerPicker_->setImageProvider(picker_image_provider_(true));
@@ -522,6 +531,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         if (!emojiPicker_ || room_id_.empty())
             return;
         pendingReactionEventId_ = event_id;
+        // Keep the message row's action buttons visible while the reaction
+        // picker is open (released in onDismiss).
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_hover_locked(true);
         emojiPicker_->popupAtRect(surface_, anchor);
     };
     room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)

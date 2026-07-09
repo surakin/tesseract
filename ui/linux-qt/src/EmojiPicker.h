@@ -62,9 +62,15 @@ public:
     /// Fired when the user picks a custom MSC2545 emoticon.
     std::function<void(const tesseract::ImagePackImage&)> onEmoticonSelected;
 
+    /// Fired whenever the picker is dismissed (outside click or programmatic
+    /// hide), regardless of whether a selection was made. Callers use this to
+    /// clear pending-reaction state and release the message-row hover lock.
+    std::function<void()> onDismiss;
+
 protected:
     void showEvent(QShowEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
+    void hideEvent(QHideEvent* e) override;
 
 private:
     void layout_overlay();

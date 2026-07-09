@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QShowEvent>
@@ -239,6 +240,18 @@ void EmojiPicker::resizeEvent(QResizeEvent* e)
 {
     QFrame::resizeEvent(e);
     layout_overlay();
+}
+
+void EmojiPicker::hideEvent(QHideEvent* e)
+{
+    QFrame::hideEvent(e);
+    // A Qt::Popup closes on any outside click as well as via our own hide()
+    // after a selection; both funnel through here. Notify the caller so it can
+    // clear pending-reaction state and release the message-row hover lock.
+    if (onDismiss)
+    {
+        onDismiss();
+    }
 }
 
 void EmojiPicker::layout_overlay()
