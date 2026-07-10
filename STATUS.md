@@ -2,6 +2,31 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-07-10** (v0.8.14-unreleased). 1050 C++ + 336 Rust tests.
 
+> **Fixed a runaway pagination loop in the room media gallery
+> (2026-07-10, v0.8.14-unreleased).** Closing the "Media (N)" gallery
+> (`RoomMediaView`) didn't actually stop its backward-pagination retries: the
+> grid's `tk::ListView` runs an arrange-time "autofill" that fires
+> `on_near_top` whenever the loaded content doesn't fill the viewport, with no
+> visibility gate, and `MainAppWidget::arrange()` kept re-arranging the
+> gallery on every unrelated app-wide relayout even while hidden. Combined
+> with `RoomMediaView::room_id_` never being cleared on close, and
+> `ShellBase`'s `on_load_older_media` handler unconditionally re-arming
+> `media_view_retries_left_` on every call, this produced a real, unbounded
+> `paginate_back_async` loop for whatever room the gallery was last open on —
+> visible as a `timeline/paginate` entry that never cleared from the inflight
+> dot and cycled indefinitely. Since every pagination round's write shares
+> matrix-sdk-sqlite's single write-connection lock with the send queue's
+> durability write (the one that gates a local echo's ◷ appearing), this also
+> explained a residual local-echo delay and, in the worst case, an app
+> shutdown that wouldn't finish until an in-flight round happened to complete
+> naturally. Fixed at the root: `on_load_older_media` now no-ops unless
+> `room_id == media_view_room_id_`, plus defense-in-depth (`RoomMediaView`
+> clears `room_id_` on close; `ListView`'s autofill and `MainAppWidget`'s
+> gallery re-arrange both gate on `visible()`). Verified on Qt6; shared code
+> so GTK4/Win32/macOS get the fix too.
+
+<!-- -->
+
 > **Pop-out window feature-parity audit (2026-07-10, v0.8.14-unreleased).**
 > An audit of every `RoomView` callback found 13 places where a feature was
 > wired for the main window's embedded room but never wired for pop-out room

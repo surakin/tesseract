@@ -1388,8 +1388,14 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // The room media gallery is the one overlay that should NOT cover the
     // sidebar (room list stays visible/usable behind it) — re-arrange it
     // to just the chat-panel portion, overriding the full-bleed rect the
-    // default pass above just gave it as an OverlayStackWidget child.
-    if (room_media_view_)
+    // default pass above just gave it as an OverlayStackWidget child. Gated
+    // on visible(): a closed gallery has no reason to keep being arranged on
+    // every unrelated app-wide relayout — open_room_media_view_() already
+    // triggers its own relayout right after set_visible(true), so this is
+    // purely wasted work (and, combined with ListView's arrange-time
+    // autofill, was the source of a pagination loop that outlived closing
+    // the gallery) when hidden.
+    if (room_media_view_ && room_media_view_->visible())
     {
         const float chat_x = bounds.x + kSidebarW + kSepW;
         room_media_view_->arrange(

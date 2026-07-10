@@ -198,6 +198,12 @@ void RoomMediaView::close()
         return;
     is_open_ = false;
     set_visible(false);
+    // Defense in depth: the arrange-time autofill can still call on_near_top
+    // (hence on_load_older_media(room_id_)) after close, since this widget
+    // keeps getting arranged while hidden. Clearing room_id_ makes any such
+    // stale call harmless even if a future caller reaches on_load_older_media
+    // without going through ShellBase's own media_view_room_id_ check.
+    room_id_.clear();
     if (on_close)
         on_close();
 }

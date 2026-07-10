@@ -402,14 +402,18 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         anchored_relayout_pending_ = false;
         on_anchored_relayout_();
     }
-    if (on_near_top)
+    if (on_near_top && visible())
     {
         // Auto-fire on_near_top to pull more history when the loaded content
         // doesn't fill the viewport. Message lists set autofill_only_when_empty_
         // (Element X behaviour): a room switch shows the cached tail and
         // back-paginates only on scroll, so here we fire only for a genuinely
         // empty list (bootstrap of an empty/focused timeline). Other lists keep
-        // the fill-on-open behaviour.
+        // the fill-on-open behaviour. Gated on visible() — a hidden list (e.g.
+        // a closed overlay that still gets arranged) has no business pulling
+        // more history; without this, a small/media-sparse gallery whose
+        // viewport was never filled would keep re-firing on every unrelated
+        // app-wide relayout after it closed.
         const std::size_t n = adapter_ ? adapter_->count() : 0;
         const bool needs_fill = autofill_only_when_empty_
                                     ? (n == 0)

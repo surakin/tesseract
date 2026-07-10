@@ -1070,6 +1070,18 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         rmv->on_close = [this] { close_room_media_view_(); };
         rmv->on_load_older_media = [this](std::string room_id)
         {
+            // tk::ListView's arrange-time autofill (list_view.cpp) fires
+            // on_near_top whenever the loaded content doesn't fill the
+            // viewport, with no visibility check — MainAppWidget::arrange()
+            // keeps re-arranging the gallery every app-wide relayout even
+            // after close() hides it, and RoomMediaView::room_id_ is never
+            // cleared, so this can fire for a stale room long after the
+            // gallery closed. Bail unless it's still the actively-open
+            // gallery's room; otherwise every such call would re-arm
+            // media_view_retries_left_ below and re-fire a real
+            // paginate_back_async forever.
+            if (room_id != media_view_room_id_)
+                return;
             // Each new scroll-to-top approach gets its own fresh retry
             // budget. media_view_retries_left_ is a single shared counter
             // also drained by the automatic retry chain in
