@@ -6,6 +6,7 @@
 #include "views/MessageListView.h"
 #include "tk_test_surface.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -38,6 +39,17 @@ struct TkVideoViewerStage
         root.paint(pc);
     }
 };
+
+// MessageListView pins content shorter than the viewport to the bottom of
+// it (see ListView::set_anchor_content_bottom) — empty space sits above row
+// 0 rather than below the last row. Add this to any row-relative y
+// coordinate written against the previous top-anchored layout so probes
+// still land on the row. Only valid after `view` has been arranged at
+// `bounds` at least once.
+float bottom_anchor_pad(const MessageListView& view, Rect bounds)
+{
+    return std::max(0.0f, bounds.h - view.content_height());
+}
 
 } // namespace
 
@@ -224,12 +236,13 @@ TEST_CASE("MessageListView video_hit_at returns hit for rendered video row",
     vid.duration_ms = 5000u;
 
     view.set_messages({vid});
-    st.run(view, {0, 0, 600, 400});
+    Rect bounds{0, 0, 600, 400};
+    st.run(view, bounds);
 
     // The video card should have been recorded in video_geom_ during paint.
-    // Probe somewhere in the upper half of the surface (where the video
-    // card appears as the first row).
-    auto hit = view.video_hit_at({300.0f, 80.0f});
+    // Short content is bottom-anchored (see ListView::set_anchor_content_bottom),
+    // so probe relative to the row's actual on-screen position, not the top.
+    auto hit = view.video_hit_at({300.0f, 80.0f + bottom_anchor_pad(view, bounds)});
     REQUIRE(hit.has_value());
     CHECK(hit->event_id == "$vid2");
 }
@@ -251,9 +264,10 @@ TEST_CASE("MessageListView on_video_clicked fires when video row is clicked",
     vid.thumbnail = tesseract::MediaSource::plain("mxc://example.org/thumb.jpg");
 
     view.set_messages({vid});
-    st.run(view, {0, 0, 600, 400});
+    Rect bounds{0, 0, 600, 400};
+    st.run(view, bounds);
 
-    auto hit = view.video_hit_at({300.0f, 80.0f});
+    auto hit = view.video_hit_at({300.0f, 80.0f + bottom_anchor_pad(view, bounds)});
     REQUIRE(hit.has_value());
 
     std::string fired_eid;

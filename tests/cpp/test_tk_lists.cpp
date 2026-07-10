@@ -45,6 +45,17 @@ struct TkListsStage
     }
 };
 
+// MessageListView pins content shorter than the viewport to the bottom of
+// it (see ListView::set_anchor_content_bottom) — empty space sits above row
+// 0 rather than below the last row. Add this to any row-relative y
+// coordinate written against the previous top-anchored layout so probes
+// still land on the row. Only valid after `view` has been arranged at
+// `bounds` at least once (content_height() needs row_offsets_ populated).
+float bottom_anchor_pad(const MessageListView& view, Rect bounds)
+{
+    return std::max(0.0f, bounds.h - view.content_height());
+}
+
 // Minimal adapter for ListView mechanics testing.
 struct FixedHeightAdapter : ListAdapter
 {
@@ -788,9 +799,11 @@ TEST_CASE("MessageListView click fires on_message_clicked with event_id",
         clicked = id;
     };
 
-    st.run(view, {0, 0, 320, 200});
-    REQUIRE(view.on_pointer_down({50, 20}));
-    view.on_pointer_up({50, 20}, true);
+    Rect bounds{0, 0, 320, 200};
+    st.run(view, bounds);
+    Point p{50, 20 + bottom_anchor_pad(view, bounds)};
+    REQUIRE(view.on_pointer_down(p));
+    view.on_pointer_up(p, true);
     CHECK(clicked == "$only");
 }
 
@@ -829,6 +842,9 @@ void paint_with_hover(TkListsStage& st, MessageListView& view, Rect bounds,
                       tk::Point local_in_row)
 {
     st.run(view, bounds);
+    // Short content is bottom-anchored — shift the caller's top-relative
+    // point down onto row 0's actual on-screen position.
+    local_in_row.y += bottom_anchor_pad(view, bounds);
     // First pointer-move primes ListView's hovered_row_index_, but
     // hovered_row_geom_ is empty until paint_row runs for the hovered
     // row. Painting again now picks that row up and records geometry.
@@ -848,13 +864,14 @@ TEST_CASE("MessageListView paints + pseudo-chip only on hover",
     TkListsStage st;
     MessageListView view;
     view.set_messages({make_row_with_reactions()});
-    st.run(view, {0, 0, 320, 200});
+    Rect bounds{0, 0, 320, 200};
+    st.run(view, bounds);
 
     // No hover yet: add-button is not visible.
     CHECK_FALSE(view.hovered_row_geom().add_visible);
 
-    // Move pointer into the row.
-    view.on_pointer_move({50, 20});
+    // Move pointer into the row (short content is bottom-anchored).
+    view.on_pointer_move({50, 20 + bottom_anchor_pad(view, bounds)});
     auto pc = st.paint_ctx();
     view.paint(pc);
 
@@ -1052,18 +1069,21 @@ TEST_CASE(
         make_receipt("@g:x", "Grace"),
     };
     view.set_messages({m});
-    st.run(view, {0, 0, 320, 400});
+    Rect bounds{0, 0, 320, 400};
+    st.run(view, bounds);
+    const float pad = bottom_anchor_pad(view, bounds);
 
     // Sample a pixel near the centre of the rightmost receipt disc.
     // Layout: right_edge = bounds.x + bounds.w - kPadX = 320 - 12 = 308.
     // Rightmost disc centre is (308 - kReceiptSize/2, disc_cy) = (300, ~).
     // The disc fills its area with a coloured initials background.
-    // sample_y is content_height - kTypingRowH - 14 to hit the disc vertical
-    // centre within the message row (content_height includes the always-present
-    // 20 px typing row at the tail; sampling near the top edge hits the
-    // stadium corner rounding and misses the fill).
+    // sample_y is pad + content_height - kTypingRowH - 14 to hit the disc
+    // vertical centre within the message row (content_height includes the
+    // always-present 20 px typing row at the tail; sampling near the top
+    // edge hits the stadium corner rounding and misses the fill; pad
+    // accounts for the bottom-anchored empty band above short content).
     int sample_x = 300;
-    int sample_y = static_cast<int>(view.content_height()) - 20 - 14;
+    int sample_y = static_cast<int>(pad + view.content_height()) - 20 - 14;
     auto disc_px = st.surface->read_pixel(sample_x, sample_y);
     auto bg_px = st.surface->read_pixel(300, 0);
     CHECK(pixel_differs(disc_px, bg_px));
@@ -1086,20 +1106,24 @@ TEST_CASE("MessageListView paints hover timestamp under the avatar",
     // Measure + arrange first so `on_pointer_move` resolves a row index,
     // then hover, then paint once. (TestSurface::read_pixel ends the
     // backing painter, so we only get one paint pass per test.)
+    Rect bounds{0, 0, 320, 400};
     auto lc = st.layout_ctx();
-    view.measure(lc, {320, 400});
-    view.arrange(lc, {0, 0, 320, 400});
-    view.on_pointer_move({50, 20});
+    view.measure(lc, {bounds.w, bounds.h});
+    view.arrange(lc, bounds);
+    const float pad = bottom_anchor_pad(view, bounds);
+    view.on_pointer_move({50, 20 + pad});
     auto pc = st.paint_ctx();
     view.paint(pc);
 
     // content_height() includes the always-present 20 px typing row; subtract
     // it to get the bottom of the message row, then offset by 13 to land on
-    // the HH:MM glyph painted in the avatar column.
-    int row_h = static_cast<int>(view.content_height()) - 20;
+    // the HH:MM glyph painted in the avatar column. pad accounts for the
+    // bottom-anchored empty band the short row sits below.
+    int row_h = static_cast<int>(pad + view.content_height()) - 20;
     auto hovered_px = st.surface->read_pixel(28, row_h - 13);
-    // Pixel well below the only row: untouched by any paint — pristine bg.
-    auto bg_px = st.surface->read_pixel(28, 300);
+    // Pixel well above the only row (in the bottom-anchored empty band):
+    // untouched by any paint — pristine bg.
+    auto bg_px = st.surface->read_pixel(28, 0);
     CHECK(pixel_differs(hovered_px, bg_px));
 }
 
@@ -1943,9 +1967,13 @@ MessageRowData gate_unsized_image_row()
 
 bool any_image_painted(MessageListView& view)
 {
+    // Bottom-anchored short content (see ListView::set_anchor_content_bottom)
+    // can land anywhere in the 600 px test viewport used by these gate
+    // tests, so scan the full height rather than assuming rows sit near
+    // the top.
     for (float x = 40; x < 400; x += 40)
     {
-        for (float y = 30; y < 300; y += 30)
+        for (float y = 30; y < 600; y += 30)
         {
             if (view.image_hit_at({x, y}))
             {
