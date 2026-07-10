@@ -214,7 +214,9 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
         "-framework ImageIO"
         "-framework UniformTypeIdentifiers"
         "-framework AVFoundation"
-        "-framework CoreVideo")
+        "-framework CoreVideo"
+        "-framework CoreMedia"    # video_capture_macos.mm: CMSampleBufferGetImageBuffer
+        "-framework Foundation")  # video_capture_macos.mm: NSString/NSNumber
     target_include_directories(tesseract_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/ui/macos"
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")
