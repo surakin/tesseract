@@ -5271,8 +5271,11 @@ void MainWindow::read_portal_color_scheme_()
         return;
     }
 
+    // ReadOne (portal interface v2+), not the deprecated Read: Read
+    // double-wraps its return value in an extra D-Bus variant layer, which
+    // makes QVariant::toInt() silently yield 0 instead of the real setting.
     QDBusReply<QDBusVariant> reply = iface.call(
-        QStringLiteral("Read"), QStringLiteral("org.freedesktop.appearance"),
+        QStringLiteral("ReadOne"), QStringLiteral("org.freedesktop.appearance"),
         QStringLiteral("color-scheme"));
     if (reply.isValid())
     {

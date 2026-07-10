@@ -1,5 +1,6 @@
 #pragma once
 #include <gtk/gtk.h>
+#include <gio/gio.h>
 
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
@@ -245,6 +246,17 @@ private:
     }
     void apply_theme_ui_(const tk::Theme& t) override;
     tk::ThemeMode os_color_scheme_() const override;
+    // XDG Desktop Portal (org.freedesktop.appearance/color-scheme) — the
+    // source of truth for the OS light/dark preference. GtkSettings'
+    // gtk-application-prefer-dark-theme is app-controlled (we write it
+    // ourselves in apply_theme_ui_) and isn't kept in sync with the desktop
+    // by plain GTK4 (only libadwaita apps get that), so it's kept only as a
+    // last-resort fallback when the portal is unreachable.
+    void read_portal_color_scheme_();
+    static void on_portal_setting_changed_(GDBusConnection*, const char*,
+                                           const char*, const char*,
+                                           const char*, GVariant* parameters,
+                                           gpointer user_data);
     void post_to_ui_(std::function<void()> fn) override;
     void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
@@ -481,6 +493,12 @@ private:
 
     GtkCssProvider* theme_css_provider_ = nullptr;
     gulong prefer_dark_notify_id_ = 0;
+
+    GDBusConnection* portal_bus_ = nullptr;
+    guint portal_setting_changed_sub_ = 0;
+    // -1 = not yet read / portal unreachable, 0 = no preference,
+    // 1 = prefer dark, 2 = prefer light (org.freedesktop.appearance values).
+    int portal_color_scheme_ = -1;
 
     std::unique_ptr<GtkSniTrayIcon> tray_;
 

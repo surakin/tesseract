@@ -3015,6 +3015,21 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         },
         this);
 
+    // Session bus for the XDG Desktop Portal color-scheme query. A dedicated
+    // connection (rather than sharing one with e.g. LinuxNotifierGtk) matches
+    // the existing per-subsystem pattern in this backend (LinuxScreenLockGtk,
+    // GtkSniTrayIcon, ...).
+    portal_bus_ = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+    if (portal_bus_)
+    {
+        portal_setting_changed_sub_ = g_dbus_connection_signal_subscribe(
+            portal_bus_, "org.freedesktop.portal.Desktop",
+            "org.freedesktop.portal.Settings", "SettingChanged",
+            "/org/freedesktop/portal/desktop", nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+            on_portal_setting_changed_, this, nullptr);
+    }
+    read_portal_color_scheme_();
+
     apply_current_theme_();
 
     // Re-apply when the OS dark-mode setting changes (System mode only).
@@ -3128,10 +3143,74 @@ gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/,
 
 tk::ThemeMode MainWindow::os_color_scheme_() const
 {
+    if (portal_color_scheme_ != -1)
+    {
+        return portal_color_scheme_ == 1 ? tk::ThemeMode::Dark
+                                         : tk::ThemeMode::Light;
+    }
+    // Portal unreachable (no xdg-desktop-portal running). Fall back to
+    // whatever GtkSettings has — usually only meaningful if something like
+    // kde-gtk-config populated it from ~/.config/gtk-4.0/settings.ini at
+    // GTK init time, or if the app itself wrote it in apply_theme_ui_.
     gboolean prefer_dark = FALSE;
     g_object_get(gtk_settings_get_default(),
                  "gtk-application-prefer-dark-theme", &prefer_dark, nullptr);
     return prefer_dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+}
+
+void MainWindow::read_portal_color_scheme_()
+{
+    if (!portal_bus_)
+    {
+        return;
+    }
+    // ReadOne (portal interface v2+), not the deprecated Read: Read
+    // double-wraps its return value in an extra D-Bus variant layer.
+    GVariant* reply = g_dbus_connection_call_sync(
+        portal_bus_, "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop", "org.freedesktop.portal.Settings",
+        "ReadOne",
+        g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
+        G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
+    if (!reply)
+    {
+        return;
+    }
+    GVariant* value = nullptr;
+    g_variant_get(reply, "(v)", &value);
+    if (value)
+    {
+        portal_color_scheme_ = g_variant_get_uint32(value);
+        g_variant_unref(value);
+    }
+    g_variant_unref(reply);
+}
+
+void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*,
+                                            const char*, const char*,
+                                            const char*, GVariant* parameters,
+                                            gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    const char* ns = nullptr;
+    const char* key = nullptr;
+    GVariant* value = nullptr;
+    // SettingChanged signal format: (ssv) — namespace, key, new value.
+    g_variant_get(parameters, "(&s&sv)", &ns, &key, &value);
+    if (std::string(ns) != "org.freedesktop.appearance" ||
+        std::string(key) != "color-scheme")
+    {
+        if (value)
+            g_variant_unref(value);
+        return;
+    }
+    self->portal_color_scheme_ = g_variant_get_uint32(value);
+    g_variant_unref(value);
+    if (tesseract::Settings::instance().theme_pref ==
+        tesseract::Settings::ThemePreference::System)
+    {
+        self->apply_current_theme_();
+    }
 }
 
 void MainWindow::apply_theme_ui_(const tk::Theme& t)
@@ -3236,6 +3315,16 @@ MainWindow::~MainWindow()
     {
         g_object_unref(theme_css_provider_);
         theme_css_provider_ = nullptr;
+    }
+    if (portal_bus_)
+    {
+        if (portal_setting_changed_sub_)
+        {
+            g_dbus_connection_signal_unsubscribe(portal_bus_,
+                                                 portal_setting_changed_sub_);
+        }
+        g_object_unref(portal_bus_);
+        portal_bus_ = nullptr;
     }
     if (scroll_debounce_id_)
     {
