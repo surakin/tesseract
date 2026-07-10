@@ -17,13 +17,14 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   testers show up in the room.
 - **Screen sharing**: same testing-tail treatment, at whatever level of
   priority given it's explicitly YMMV/rougher than calls.
-- **GTK4 / Qt6 / macOS builds after the tk:: backend relocation.** Every
-  platform's `canvas_*`/`host_*`/`audio_*`/`video_*`/`screen_capture_*`
-  implementation moved out of `ui/shared/tk/` into its own `ui/<platform>/tk/`,
-  compiled directly into that platform's executable target instead of the
-  shared `tesseract_tk` library. Only Windows has been build-verified since
-  the move. Need someone with GTK4/Qt6/macOS toolchains to confirm all three
-  still configure and build clean.
+- **macOS build after the tk:: backend relocation.** Every platform's
+  `canvas_*`/`host_*`/`audio_*`/`video_*`/`screen_capture_*` implementation
+  moved out of `ui/shared/tk/` into its own `ui/<platform>/tk/`, compiled
+  directly into that platform's executable target instead of the shared
+  `tesseract_tk` library. Windows, GTK4, and Qt6 are now build-verified
+  (`linux-debug` builds `tesseract_gtk`/`tesseract_qt`/`tesseract_tests`
+  clean, 1050/1050 ctest passing as of 2026-07-10). Still need someone with
+  an Xcode toolchain to confirm the macOS build configures and links clean.
 - **MSC2545 custom-emoji inline rendering on GTK4/Qt6.** The timeline
   renders inline custom emoticons via each backend's native "reserve a box,
   no fallback glyph" mechanism — `IDWriteInlineObject` (Windows, verified),

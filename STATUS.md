@@ -1,6 +1,79 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-09** (v0.8.14-unreleased). 1032 C++ + 330 Rust tests.
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-10** (v0.8.14-unreleased). 1050 C++ + 336 Rust tests.
+
+> **Pop-out window feature-parity audit (2026-07-10, v0.8.14-unreleased).**
+> An audit of every `RoomView` callback found 13 places where a feature was
+> wired for the main window's embedded room but never wired for pop-out room
+> windows (or, in one case, the reverse): file-attachment save dialogs,
+> jump-to-original-message, pin/unpin plus the pinned-messages banner,
+> Up-arrow-to-edit-last-message, retry/abort of a failed send, inline
+> autoplay video/GIF, the forward-message picker, the room media gallery,
+> visible-row media/avatar lazy-fetch prioritization, open-DM-in-a-new-window,
+> confirm dialogs, and macOS composer shortcode/slash/GIF popups. Closing
+> these was largely mechanical once `PopoutRoomWidget` was refactored onto
+> `tk::Stack` (its hand-rolled measure/arrange/paint were redundant with
+> `Stack`'s defaults), since most gaps turned out to be single shared-code
+> edits in `RoomWindowBase`/`ShellBase` that fix all four platforms at once.
+> Also: a `ConfirmDialog` open in a pop-out now hides the native compose/
+> search overlays underneath it instead of letting them paint through the
+> modal backdrop, and incoming-call banners/`on_start_call` now resolve to
+> whichever window — main or pop-out — currently has the room open, via
+> `ShellBase::room_view_for_room_()`. Qt6/GTK4/macOS mirror the Windows
+> pattern closely but were only compile-verified on Windows.
+
+<!-- -->
+
+> **MSC2545 image packs now combine stable + unstable event names
+> (2026-07-10, v0.8.14-unreleased).** MSC2545 gives the per-room pack
+> (`m.room.image_pack`) and the enabled-rooms pointer (`m.image_pack.rooms`)
+> each a legacy `im.ponies.*` unstable equivalent. Pack loading previously
+> probed the unstable name first and stopped at the first hit, so a room or
+> account that had only written the stable name — or partially migrated,
+> with images under one name the other lacked — silently lost those images.
+> Reads now fetch both names and combine them (`merge_pack_contents`: union
+> `images` by shortcode, unstable wins a collision; pack metadata filled from
+> whichever side has it) at all four read sites — the rooms-pointer account
+> data, the local state-store fast path, the HTTP fallback, and the implicit
+> all-joined-rooms enumeration. Read-only change; no FFI/C++ changes and no
+> change to how Tesseract writes its own account data.
+
+<!-- -->
+
+> **Linux OS dark/light mode detection fixed on Qt6 and GTK4 (2026-07-10,
+> v0.8.14-unreleased).** Qt6's fallback theme-detection path (used whenever
+> Qt's own `colorScheme()` is unavailable, e.g. Qt < 6.5) called the
+> deprecated `Settings.Read` D-Bus method, which double-wraps its return
+> value in an extra variant layer and made `QVariant::toInt()` silently read
+> 0 instead of the real color-scheme value — Dark could never be detected
+> through that path. Switched to `ReadOne`. GTK4 previously relied entirely
+> on distro-specific bridges (`kde-gtk-config`) and a `GtkSettings` signal
+> that never fires live on Wayland; it now queries the same XDG
+> desktop-settings portal Qt6 uses, keeping the old `GtkSettings` read only
+> as a last-resort fallback.
+
+<!-- -->
+
+> **Windows composer mention pills render as real inline chips
+> (2026-07-10, v0.8.14-unreleased).** `BetterTextArea::insert_mention`
+> previously inserted plain `"@Name "` text with a no-op
+> `set_mention_colors()`, so Windows was the one platform where mentions
+> didn't get a colored chip. Now renders the pill offscreen via a WIC-backed
+> D2D render target and inserts it as a real BetterText image run — the same
+> mechanism already used for custom-emoji pills.
+
+<!-- -->
+
+> **Pinned-events room-list fingerprint fix (2026-07-10, v0.8.14-unreleased).**
+> Pin/unpin sends `m.room.pinned_events` correctly, but the sync loop only
+> forwards a fresh room snapshot to C++ when `room_list_fingerprint()`
+> changes, and `pinned_events` wasn't a tracked field — a pin/unpin that
+> didn't also touch unread/name/avatar/recency left the pinned-messages
+> banner and the Pin/Unpin action label stale until an unrelated change (or
+> app restart) happened to flush it. Fixed by adding a joined-event-id field
+> to the fingerprint key.
+
+<!-- -->
 
 > **Faster local echo under background load (2026-07-09, v0.8.14-unreleased).**
 > A just-sent message's local echo could take seconds to appear in the timeline

@@ -11,6 +11,7 @@ Tagged releases summarize all changes since the previous tag.
 - feat(image-viewer): copy the displayed image to the clipboard from the full-window lightbox, beside the save button
 - feat(composer): render custom MSC2545 emoji inline, end to end
 - feat(room-media-view): add a room media gallery — grouped by month oldest to newest, older months paginate in on scroll-up, opened from a new "Media (N)" row in the room info panel
+- feat(popout): close 13 feature-parity gaps between the main window and pop-out room windows (file save, jump-to-original, pin/unpin, edit-last-message, retry/abort send, inline video/GIF autoplay, forward-message picker, room media gallery, visible-row media priority, open-DM-in-new-window, confirm dialogs, macOS composer popups, Windows image resolver), plus hiding native overlays under an open confirm dialog and routing incoming-call banners/calls to whichever window has the room open
 - perf(timeline): a just-sent message's local echo could take seconds to appear in the timeline under background load
 - perf(timeline): instant room switch — stop auto-filling a short viewport, bottom-anchor short content, keep warm favorites' subscriptions alive
 - perf(timeline): fill a full window from cache on room open instead of the smaller scroll-increment batch
@@ -32,11 +33,118 @@ Tagged releases summarize all changes since the previous tag.
 - fix(build): wire up Windows test-target linking (UNICODE, D2D/D3D11/DWrite, `screen_capture_win32.cpp`, video capture)
 - fix(cpack): declare the `qt6-image-formats-plugins` runtime dependency for the .deb/.rpm packages
 - fix(ci): bundle Qt6 image-format plugins (WebP/TIFF/ICO, etc.) in AppImage builds
+- fix(room-media-view): widen the month-key buffer to silence a release-build format-truncation warning
+- fix(linux): correctly detect OS dark/light mode via the XDG desktop-settings portal on Qt6 and GTK4
+- fix(macos): link CoreMedia/Foundation for the tests target's `video_capture_macos.mm`
+- fix(windows): render composer mention pills as real inline chips instead of plain `@Name` text
+- fix(room-media-view): cancel the in-flight backward-pagination task when the gallery closes
+- fix(sync): include pinned events in the room-list change fingerprint so pin/unpin always reaches the UI
+- fix(image-packs): load MSC2545 image packs by both their stable and unstable event names and combine the results, instead of stopping at the first one found
+- docs(readme): credit BetterText in the acknowledgements
 
 ### Details
 
 #### 2026-07-10
 
+- feat(popout): close 13 feature-parity gaps between the main window and
+  pop-out room windows, found by auditing every `RoomView` callback for
+  wiring that existed on one side but not the other. Refactored
+  `PopoutRoomWidget` onto `tk::Stack` first (its hand-rolled measure/arrange/
+  paint were fully redundant with `Stack`'s defaults), which made adding new
+  overlay members trivial, then closed: file-attachment save dialogs;
+  jump-to-original-message; pin/unpin plus the pinned-messages banner;
+  Up-arrow-to-edit-last-message (Windows/macOS were missing it); retry/abort
+  of a failed send (previously only worked *from* a pop-out, not into the
+  main window); inline autoplay video/GIF in the timeline; the
+  forward-message picker (new `ForwardRoomPicker` overlay, per-platform
+  native search field); the room media gallery (new `RoomMediaView`
+  overlay); visible-row media/avatar lazy-fetch prioritization;
+  open-DM-in-a-new-window; a new self-contained `ConfirmDialog` overlay; and
+  macOS pop-out shortcode/slash/GIF composer popups (porting the
+  Controller+NSPanel pattern already used for @mention). Most of these are
+  single shared-code edits in `RoomWindowBase`/`ShellBase` that fix all four
+  platforms at once. Finally, while a `ConfirmDialog` is open in a pop-out,
+  the native compose text area and search fields are hidden so they don't
+  paint over the modal backdrop, and `PopoutRoomWidget::on_layout_changed`
+  (added earlier but never connected on any platform) is now wired to
+  trigger a relayout — fixing a latent bug where opening/closing the confirm
+  dialog never re-laid-out the pop-out window. Incoming-call banners (and
+  their dismissal) now resolve to whichever window — main or pop-out — is
+  currently displaying the room, via `ShellBase::room_view_for_room_()`, and
+  pop-outs wire `on_start_call` the same way the main window does
+  (`call_session_` is a process-wide singleton, so this is safe everywhere).
+  Verified via `tesseract_win32`/`tesseract_tests` builds after each batch,
+  with the pre-existing 22 ctest failures (2 segfaults + 20 fails —
+  QuickSwitcher, i18n, encryption-setup overlays) confirmed unrelated via a
+  stash/rebuild/retest against the unmodified baseline. Qt6/GTK4/macOS
+  changes mirror the Windows pattern closely but could only be
+  compile-verified on Windows in the environment this landed from.
+- fix(image-packs): MSC2545 defines a stable event type for the per-room
+  pack (`m.room.image_pack`) and the enabled-rooms pointer
+  (`m.image_pack.rooms`), each with a legacy `im.ponies.*` unstable
+  equivalent. `rebuild_image_packs` previously probed the unstable name
+  first and **stopped at the first hit**, so a room or account that had
+  only written the stable name — or had partially migrated, with images
+  under one name the other lacked — silently lost those images. Added
+  `merge_pack_contents()` (unions `images` by shortcode, unstable wins a
+  collision; fills pack-level metadata from whichever side has it) and used
+  it at all four read sites: the rooms-pointer account data, the local
+  state-store fast path, the HTTP fallback, and the implicit
+  all-joined-rooms enumeration. No FFI or C++ changes — every consumer only
+  ever sees the final merged `Vec<ImagePack>`.
+- fix(sync): `pin_event`/`unpin_event` only send the `m.room.pinned_events`
+  state event and return; the sync loop picks up the change but only
+  forwards a fresh room snapshot to C++ when `room_list_fingerprint()`
+  differs from the previous emit, and `pinned_events` wasn't one of the
+  tracked fields. A pin/unpin that didn't also touch unread/name/avatar/
+  recency etc. left the fingerprint unchanged, so the pinned-messages
+  banner and the message action's Pin/Unpin label stayed stale until some
+  unrelated change (or an app restart) happened to flush it. Added a
+  joined-event-id field to the fingerprint key so pin/unpin always perturbs
+  it; also fixed the cargo-test-only pure-Rust `ffi::RoomInfo` stub in
+  `lib.rs`, which had drifted out of sync and was missing
+  `pinned_events`/`PinnedEvent`, blocking the new regression test from
+  compiling.
+- fix(room-media-view): closing the gallery only reset client-side
+  bookkeeping and never cancelled the in-flight `paginate_back_async` tokio
+  task, so it kept running after close; a stale result on a same-room
+  reopen could also be misattributed to the new session since correlation
+  was by `room_id` alone. Added a real `cancel_paginate_back` primitive
+  (mirroring `cancel_media_group`'s `AbortHandle` registry) through the Rust
+  SDK, cxx bridge, and `Client` wrapper, and `close_room_media_view_()` now
+  actually cancels the gallery's own pending request instead of abandoning
+  it.
+- fix(windows): `BetterTextArea::insert_mention` only ever inserted plain
+  `"@Name "` text and `set_mention_colors()` was a no-op, so Windows never
+  drew a mention chip while Qt6/GTK4/macOS all do. Now renders the pill
+  offscreen via a WIC-backed D2D render target plus the existing
+  `tk::Canvas`/`CanvasFactory` abstraction, inserts it as a real BetterText
+  image run (same mechanism as custom-emoji pills), and wires
+  `set_mention_colors()` through from the shell on composer creation and
+  theme change.
+- fix(linux): the deprecated Qt6 `Settings.Read` D-Bus method double-wraps
+  its return value in an extra variant layer, which made
+  `QVariant::toInt()` silently yield 0 instead of the real color-scheme
+  value — the fallback path (used whenever Qt's own `colorScheme()` is
+  unavailable, e.g. Qt < 6.5) could never report Dark. Switched to
+  `ReadOne`, which returns a single, correctly-typed value. GTK4 now ports
+  the same XDG desktop-settings portal query used by the Qt backend:
+  `GtkSettings`' `gtk-application-prefer-dark-theme` is app-controlled, not
+  desktop-driven (only libadwaita apps get automatic portal sync), and
+  previously relied entirely on distro-specific bridges like
+  `kde-gtk-config` plus a signal that never fires live on Wayland; the old
+  `GtkSettings` read is kept only as a last-resort fallback.
+- fix(macos): `video_capture_macos.mm` uses `CMSampleBufferGetImageBuffer`
+  (CoreMedia) and `NSString`/`NSNumber` (Foundation), but the macOS branch
+  of the `tests` target never linked either framework — only
+  `ui/macos/CMakeLists.txt`'s app target did. Since `add_subdirectory(tests)`
+  is unconditional, every default macOS build (including CI) failed to link
+  `tesseract_tests`.
+- fix(room-media-view): widened the month-key buffer (8 → 32 bytes) used by
+  `compute_month_key`; the previous size was tight enough that some
+  release-build toolchains flagged the `snprintf` call with
+  `-Wformat-truncation` even though it never actually truncated.
+- docs(readme): credit BetterText in the acknowledgements.
 - feat(room-media-view): add a room media gallery listing every image/video
   in the current room, grouped by month (oldest month at the top, newest at
   the bottom, mirroring the chat timeline), with older months paginating in
