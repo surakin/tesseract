@@ -40,7 +40,7 @@ MonthKey compute_month_key(std::uint64_t timestamp_ms)
     constexpr const char* kMonths[] = {
         "January", "February", "March",     "April",   "May",      "June",
         "July",    "August",   "September", "October", "November", "December"};
-    char key_buf[8];
+    char key_buf[32];
     std::snprintf(key_buf, sizeof(key_buf), "%04d-%02d",
                  tm_val.tm_year + 1900, tm_val.tm_mon + 1);
     const std::string month_str = tk::tr(kMonths[tm_val.tm_mon]);
