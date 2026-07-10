@@ -1140,10 +1140,11 @@ pub(super) async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
     }
 }
 
-/// Rebuild the aggregated image-pack cache. Reads prefer the unstable
-/// `im.ponies.*` names (first entry in `EMOTE_ROOMS_TYPES` / `ROOM_PACK_TYPES`)
-/// since most homeservers and rooms only carry those. Returns an empty Vec
-/// when not logged in.
+/// Rebuild the aggregated image-pack cache. Reads load BOTH the stable and
+/// unstable (`im.ponies.*`) copies of each paired MSC2545 event type and
+/// combine them via `merge_pack_contents` rather than stopping at the first
+/// one found, so a partially-migrated room/account never silently loses
+/// images. Returns an empty Vec when not logged in.
 #[cfg(not(test))]
 pub(super) async fn rebuild_image_packs(
     client: &Client,
@@ -1176,7 +1177,11 @@ pub(super) async fn rebuild_image_packs(
     }
 
     // -- Globally enabled room packs (account_data) --
-    let mut room_refs: Vec<(String, String)> = Vec::new();
+    // Read both the stable and unstable rooms-pointer events and union the
+    // referenced (room_id, state_key) pairs — either copy may list rooms the
+    // other doesn't if the account data was only partially migrated.
+    let mut room_refs_set: std::collections::BTreeSet<(String, String)> =
+        std::collections::BTreeSet::new();
     for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
         let et = GlobalAccountDataEventType::from(ev_type_str);
         let Ok(Some(raw)) = client.account().account_data_raw(et).await else {
@@ -1185,9 +1190,9 @@ pub(super) async fn rebuild_image_packs(
         let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
             continue;
         };
-        room_refs = crate::image_packs::iter_emote_rooms(&content);
-        break;
+        room_refs_set.extend(crate::image_packs::iter_emote_rooms(&content));
     }
+    let room_refs: Vec<(String, String)> = room_refs_set.into_iter().collect();
 
     use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
     for (room_id_str, state_key) in room_refs {
@@ -1205,8 +1210,11 @@ pub(super) async fn rebuild_image_packs(
 
         let mut found = false;
 
-        // Fast path: local SSS cache.
+        // Fast path: local SSS cache. Try both event types and combine —
+        // either may be the one present in the local cache, or both may be
+        // present with different images.
         if let Some(room) = client.get_room(&room_id) {
+            let mut merged: Option<Value> = None;
             for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
                 let et = StateEventType::from(ev_type_str);
                 // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
@@ -1218,6 +1226,9 @@ pub(super) async fn rebuild_image_packs(
                 let Some(content) = extract_content(&raw_state) else {
                     continue;
                 };
+                merged = crate::image_packs::merge_pack_contents(merged, Some(content));
+            }
+            if let Some(content) = merged {
                 let source = crate::image_packs::PackSource::Room {
                     room_id: room_id_str.clone(),
                     state_key: state_key.clone(),
@@ -1226,7 +1237,6 @@ pub(super) async fn rebuild_image_packs(
                 if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
                     packs.push(pack);
                     found = true;
-                    break;
                 }
             }
         }
@@ -1249,6 +1259,9 @@ pub(super) async fn rebuild_image_packs(
                 Some(v) => v, // already fetched this session (may be None = not found)
                 None => {
                     use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
+                    // Fetch both event types (instead of stopping at the
+                    // first success) and combine — a room may carry both
+                    // with different images.
                     let mut fetched: Option<Value> = None;
                     for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
                         let et = StateEventType::from(ev_type_str);
@@ -1261,8 +1274,10 @@ pub(super) async fn rebuild_image_packs(
                             if let Ok(content) =
                                 serde_json::from_str::<Value>(response.event_or_content.get())
                             {
-                                fetched = Some(content);
-                                break;
+                                fetched = crate::image_packs::merge_pack_contents(
+                                    fetched,
+                                    Some(content),
+                                );
                             }
                         }
                     }
@@ -1293,6 +1308,13 @@ pub(super) async fn rebuild_image_packs(
 
     for room in client.joined_rooms() {
         let room_id_str = room.room_id().to_string();
+
+        // Collect state events from BOTH types, keyed by state_key, merging
+        // when the same state_key carries both — otherwise a room whose pack
+        // exists under only the stable (or only the unstable) type, or whose
+        // two copies differ, would lose data.
+        let mut by_state_key: std::collections::HashMap<String, Value> =
+            std::collections::HashMap::new();
         for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
             let et = StateEventType::from(ev_type_str);
             let Ok(events) = room.get_state_events(et).await else {
@@ -1315,29 +1337,41 @@ pub(super) async fn rebuild_image_packs(
                         raw.get_field("content").ok().flatten(),
                     ),
                 };
-                let source = crate::image_packs::PackSource::Room {
-                    room_id: room_id_str.clone(),
-                    state_key: state_key.clone(),
-                };
-                let id = crate::image_packs::pack_id_for(&source);
-                if !added_ids.insert(id.clone()) {
-                    continue;
-                }
                 let Some(content) = content_opt else { continue };
-                if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content)
-                {
-                    if pack.display_name.is_empty() {
-                        pack.display_name = room
-                            .display_name()
-                            .await
-                            .map(|n| n.to_string())
-                            .unwrap_or_default();
+                match by_state_key.remove(&state_key) {
+                    Some(existing) => {
+                        if let Some(merged) = crate::image_packs::merge_pack_contents(
+                            Some(existing),
+                            Some(content),
+                        ) {
+                            by_state_key.insert(state_key, merged);
+                        }
                     }
-                    packs.push(pack);
+                    None => {
+                        by_state_key.insert(state_key, content);
+                    }
                 }
             }
-            if !events.is_empty() {
-                break;
+        }
+
+        for (state_key, content) in by_state_key {
+            let source = crate::image_packs::PackSource::Room {
+                room_id: room_id_str.clone(),
+                state_key,
+            };
+            let id = crate::image_packs::pack_id_for(&source);
+            if !added_ids.insert(id.clone()) {
+                continue;
+            }
+            if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                if pack.display_name.is_empty() {
+                    pack.display_name = room
+                        .display_name()
+                        .await
+                        .map(|n| n.to_string())
+                        .unwrap_or_default();
+                }
+                packs.push(pack);
             }
         }
     }

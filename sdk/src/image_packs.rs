@@ -15,6 +15,12 @@
 //!
 //! Per spec: when `pack.usage` is absent/empty, BOTH `sticker` and `emoticon`
 //! are allowed. Per-image `usage` overrides pack-level `usage` when present.
+//!
+//! Every pair above has a stable and an unstable (`im.ponies.*`) event type.
+//! Reads load BOTH and combine them via [`merge_pack_contents`] rather than
+//! stopping at the first one found, so a room or account that has only
+//! partially migrated from the unstable name to the stable one (or vice
+//! versa) never loses images that live under just one of the two.
 
 use ruma::events::image_pack::{
     PackImage as RumaPackImage, PackInfo as RumaPackInfo, PackUsage as RumaPackUsage,
@@ -94,13 +100,12 @@ pub const TYPE_EMOTE_ROOMS_UNSTABLE: &str = "im.ponies.emote_rooms";
 pub const TYPE_ROOM_PACK_STABLE: &str = "m.room.image_pack";
 pub const TYPE_ROOM_PACK_UNSTABLE: &str = "im.ponies.room_emotes";
 
-/// Identifier precedence for the two MSC2545 types that have a stable form:
-/// **unstable first** — most homeservers and rooms still only carry the
-/// `im.ponies.*` names; trying the stable name first generates spurious 404s
-/// on servers that don't recognise it yet. Switch to stable-first once the
-/// ecosystem has broadly adopted `m.image_pack.*` / `m.room.image_pack`.
-/// Reads iterate these and take the first hit; writers dual-write both entries
-/// (see `set_account_data_both`) so data is visible to all client versions.
+/// The two MSC2545 types that have a stable form. Reads probe both and
+/// combine the results with [`merge_pack_contents`] — **unstable first** as
+/// the merge's `primary` side, since most homeservers and rooms still only
+/// carry the `im.ponies.*` names and it keeps existing shortcode-collision
+/// behavior unchanged. Switch the order once the ecosystem has broadly
+/// adopted `m.image_pack.*` / `m.room.image_pack`.
 pub const EMOTE_ROOMS_TYPES: [&str; 2] = [TYPE_EMOTE_ROOMS_UNSTABLE, TYPE_EMOTE_ROOMS_STABLE];
 pub const ROOM_PACK_TYPES: [&str; 2] = [TYPE_ROOM_PACK_UNSTABLE, TYPE_ROOM_PACK_STABLE];
 
@@ -274,6 +279,52 @@ pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Op
         source,
         images: entries,
     })
+}
+
+/// Merge two MSC2545 pack `content` JSON blobs representing the stable and
+/// unstable copies of the same logical pack (same room+state_key, or the
+/// same rooms-pointer account-data slot), so a partially migrated pack never
+/// silently loses images. `images` are unioned by shortcode — on a collision
+/// `primary` wins, preserving the existing unstable-first precedence.
+/// Pack-level metadata (`display_name`/`avatar_url`/`attribution`/`usage`)
+/// takes `primary`'s value when present, filled in from `secondary`
+/// otherwise.
+pub fn merge_pack_contents(primary: Option<Value>, secondary: Option<Value>) -> Option<Value> {
+    let (p, s) = match (primary, secondary) {
+        (None, None) => return None,
+        (Some(p), None) => return Some(p),
+        (None, Some(s)) => return Some(s),
+        (Some(p), Some(s)) => (p, s),
+    };
+
+    let mut out = serde_json::Map::new();
+
+    let mut images = serde_json::Map::new();
+    if let Some(obj) = s.get("images").and_then(Value::as_object) {
+        images.extend(obj.clone());
+    }
+    if let Some(obj) = p.get("images").and_then(Value::as_object) {
+        images.extend(obj.clone());
+    }
+    out.insert("images".to_owned(), Value::Object(images));
+
+    let p_pack = p.get("pack").and_then(Value::as_object);
+    let s_pack = s.get("pack").and_then(Value::as_object);
+    if p_pack.is_some() || s_pack.is_some() {
+        let mut pack = serde_json::Map::new();
+        for key in ["display_name", "avatar_url", "attribution", "usage"] {
+            let val = p_pack
+                .and_then(|m| m.get(key))
+                .cloned()
+                .or_else(|| s_pack.and_then(|m| m.get(key)).cloned());
+            if let Some(v) = val {
+                pack.insert(key.to_owned(), v);
+            }
+        }
+        out.insert("pack".to_owned(), Value::Object(pack));
+    }
+
+    Some(Value::Object(out))
 }
 
 /// Iterate every `(room_id, state_key)` pair referenced by an
@@ -478,9 +529,9 @@ mod tests {
     #[test]
     fn type_slices_prefer_unstable_then_stable() {
         // MSC2545: unstable `im.ponies.*` first, stable `m.image_pack.*` /
-        // `m.room.image_pack` as fallback. Read-side intentionally probes
-        // the unstable name first to avoid 404s on servers that don't yet
-        // recognise the stable name (see client.rs ROOM_PACK_TYPES loop).
+        // `m.room.image_pack` second. Both are read and combined (see
+        // client.rs's ROOM_PACK_TYPES loop and merge_pack_contents); the
+        // order here only decides which side wins a shortcode collision.
         assert_eq!(
             EMOTE_ROOMS_TYPES,
             ["im.ponies.emote_rooms", "m.image_pack.rooms"]
@@ -704,6 +755,76 @@ mod tests {
         let c = json!({ "images": { "a": { "url": "mxc://h/a" } } });
         assert!(pack_contains_url(&c, "mxc://h/a"));
         assert!(!pack_contains_url(&c, "mxc://h/b"));
+    }
+
+    #[test]
+    fn merge_pack_contents_unions_disjoint_shortcodes() {
+        let primary = json!({ "images": { "a": { "url": "mxc://h/a" } } });
+        let secondary = json!({ "images": { "b": { "url": "mxc://h/b" } } });
+        let merged = merge_pack_contents(Some(primary), Some(secondary)).unwrap();
+        let images = merged.get("images").unwrap().as_object().unwrap();
+        assert_eq!(images.len(), 2);
+        assert_eq!(
+            images.get("a").unwrap().get("url").unwrap().as_str().unwrap(),
+            "mxc://h/a"
+        );
+        assert_eq!(
+            images.get("b").unwrap().get("url").unwrap().as_str().unwrap(),
+            "mxc://h/b"
+        );
+    }
+
+    #[test]
+    fn merge_pack_contents_primary_wins_shortcode_collision() {
+        let primary = json!({ "images": { "a": { "url": "mxc://h/primary" } } });
+        let secondary = json!({ "images": { "a": { "url": "mxc://h/secondary" } } });
+        let merged = merge_pack_contents(Some(primary), Some(secondary)).unwrap();
+        let images = merged.get("images").unwrap().as_object().unwrap();
+        assert_eq!(images.len(), 1);
+        assert_eq!(
+            images.get("a").unwrap().get("url").unwrap().as_str().unwrap(),
+            "mxc://h/primary"
+        );
+    }
+
+    #[test]
+    fn merge_pack_contents_pack_metadata_fills_from_secondary() {
+        let primary = json!({
+            "images": {},
+            "pack": { "display_name": "Primary Name" }
+        });
+        let secondary = json!({
+            "images": {},
+            "pack": { "display_name": "Secondary Name", "avatar_url": "mxc://h/avatar" }
+        });
+        let merged = merge_pack_contents(Some(primary), Some(secondary)).unwrap();
+        let pack = merged.get("pack").unwrap().as_object().unwrap();
+        assert_eq!(
+            pack.get("display_name").unwrap().as_str().unwrap(),
+            "Primary Name"
+        );
+        assert_eq!(
+            pack.get("avatar_url").unwrap().as_str().unwrap(),
+            "mxc://h/avatar"
+        );
+    }
+
+    #[test]
+    fn merge_pack_contents_one_sided_passes_through() {
+        let primary = json!({ "images": { "a": { "url": "mxc://h/a" } } });
+        assert_eq!(
+            merge_pack_contents(Some(primary.clone()), None).unwrap(),
+            primary
+        );
+        assert_eq!(
+            merge_pack_contents(None, Some(primary.clone())).unwrap(),
+            primary
+        );
+    }
+
+    #[test]
+    fn merge_pack_contents_both_none_is_none() {
+        assert!(merge_pack_contents(None, None).is_none());
     }
 
     #[test]
