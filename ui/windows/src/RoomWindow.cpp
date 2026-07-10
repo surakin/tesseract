@@ -241,6 +241,8 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     // ── NativeTextArea overlay ────────────────────────────────────────────
     text_area_ = surface_->host().make_text_area();
     text_area_->set_placeholder("Message\xe2\x80\xa6");
+    text_area_->set_mention_colors(surface_->theme().palette.accent,
+                                   surface_->theme().palette.text_on_accent);
     text_area_->set_on_changed(
         [this](const std::string& s)
         {
@@ -884,6 +886,10 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     if (surface_)
     {
         surface_->set_theme(t);
+    }
+    if (text_area_)
+    {
+        text_area_->set_mention_colors(t.palette.accent, t.palette.text_on_accent);
     }
     if (mention_popup_surface_)
     {

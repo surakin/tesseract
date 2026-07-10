@@ -681,6 +681,11 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     {
         main_app_surface_->set_theme(current_theme_);
     }
+    if (room_text_area_)
+    {
+        room_text_area_->set_mention_colors(current_theme_.palette.accent,
+                                            current_theme_.palette.text_on_accent);
+    }
     if (emoji_picker_surface_)
     {
         emoji_picker_surface_->set_theme(current_theme_);
@@ -2874,6 +2879,9 @@ void MainWindow::on_create(HWND hwnd)
 
         room_text_area_ = main_app_surface_->host().make_text_area();
         room_text_area_->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
+        room_text_area_->set_mention_colors(
+            main_app_surface_->theme().palette.accent,
+            main_app_surface_->theme().palette.text_on_accent);
         room_text_area_->set_image_resolver(make_static_image_provider_with_fetch_(28, 28));
         // All four composer popups (gif > slash > shortcode > mention) are
         // driven through the shared ComposePopups dispatch; the controllers are

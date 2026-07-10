@@ -3332,6 +3332,97 @@ void bt_register_control_once()
 // line height, matching how a Unicode emoji glyph sits inline with body text.
 constexpr float kInlineEmoticonSizeDip = 20.0f;
 
+// URI prefix used to distinguish synthetic mention-pill image runs from real
+// mxc:// emoticon URIs when enumerating BetterText's image runs (see
+// BetterTextArea::composer_draft / mention_runs_). Never resolved as media.
+constexpr wchar_t kMentionUriPrefix[] = L"tesseract-mention:";
+
+// Padding (DIPs) around the pill text and how much taller than the text
+// layout the chip is — mirrors host_qt.cpp's render_pill() so the composer
+// mention chip reads the same across platforms.
+constexpr float kMentionPillPadX = 8.0f;
+constexpr float kMentionPillPadY = 2.0f;
+
+struct MentionPillBitmap
+{
+    Microsoft::WRL::ComPtr<IWICBitmap> bitmap;
+    float width_dip = 0.f;
+    float height_dip = 0.f;
+};
+
+// Renders a rounded-rect chip with centered text into an offscreen WIC
+// bitmap, using a WIC-backed D2D render target plus the same
+// tk::Canvas/CanvasFactory abstraction (fill_rounded_rect/draw_text/
+// build_text) the rest of the app paints with — the D2D analogue of
+// host_qt.cpp's QPainter-based render_pill(). `dpi_scale` oversamples the
+// bitmap so the chip stays crisp on HiDPI displays (bitmap pixels = DIPs *
+// dpi_scale); BetterTextInsertImageUri still wants the logical DIP size.
+MentionPillBitmap render_mention_pill(const std::string& text, Color bg, Color fg,
+                                      float dpi_scale)
+{
+    using Microsoft::WRL::ComPtr;
+    MentionPillBitmap out;
+
+    auto factory = d2d::make_factory(backend_singleton());
+    if (!factory)
+    {
+        return out;
+    }
+    TextStyle style;
+    style.role = FontRole::Body;
+    std::unique_ptr<TextLayout> layout = factory->build_text(text, style);
+    if (!layout)
+    {
+        return out;
+    }
+    const Size sz = layout->measure();
+
+    const float w_dip = std::ceil(sz.w) + kMentionPillPadX * 2.f;
+    const float h_dip = std::ceil(sz.h) + kMentionPillPadY * 2.f;
+    const float radius = h_dip * 0.5f;
+
+    const UINT pw = static_cast<UINT>(std::max(1.f, std::round(w_dip * dpi_scale)));
+    const UINT ph = static_cast<UINT>(std::max(1.f, std::round(h_dip * dpi_scale)));
+
+    auto fac = d2d::factories(backend_singleton());
+    if (!fac.wic || !fac.d2d)
+    {
+        return out;
+    }
+
+    ComPtr<IWICBitmap> bmp;
+    if (FAILED(fac.wic->CreateBitmap(pw, ph, GUID_WICPixelFormat32bppPBGRA,
+                                      WICBitmapCacheOnDemand, bmp.GetAddressOf())))
+    {
+        return out;
+    }
+
+    D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+        96.f * dpi_scale, 96.f * dpi_scale);
+    ComPtr<ID2D1RenderTarget> rt;
+    if (FAILED(fac.d2d->CreateWicBitmapRenderTarget(bmp.Get(), props, rt.GetAddressOf())))
+    {
+        return out;
+    }
+
+    std::unique_ptr<Canvas> canvas = d2d::make_canvas(backend_singleton(), rt.Get());
+    rt->BeginDraw();
+    canvas->clear(Color::rgba(0, 0, 0, 0));
+    canvas->fill_rounded_rect({0.f, 0.f, w_dip, h_dip}, radius, bg);
+    canvas->draw_text(*layout, {(w_dip - sz.w) * 0.5f, (h_dip - sz.h) * 0.5f}, fg);
+    if (FAILED(rt->EndDraw()))
+    {
+        return out;
+    }
+
+    out.bitmap     = bmp;
+    out.width_dip  = w_dip;
+    out.height_dip = h_dip;
+    return out;
+}
+
 // Routes BetterText's emoji glyph fallback to the same bundled Noto Color
 // Emoji font (and collection) the rest of the app already uses via
 // d2d::Backend::build_emoji_fallback — instead of BetterText's own default
@@ -3711,7 +3802,7 @@ public:
         std::wstring w = utf8_to_wide(text);
         BetterTextSetText(hwnd_, w.c_str());
         suppress_changed_ = false;
-        composer_entries_.clear();
+        mention_runs_.clear();
         refresh_height();
     }
 
@@ -3866,12 +3957,50 @@ public:
                                    nullptr, 0, nullptr, nullptr);
     }
 
+    // Real inline image run — same mechanism as insert_emoticon below, but the
+    // bitmap is rendered synchronously right here (a rounded-rect chip with
+    // centered text, via render_mention_pill()) rather than resolved from a
+    // media uri, since a mention pill has no mxc:// content to fetch. The
+    // rendered bitmap is cached in mention_runs_ keyed by a synthetic
+    // "tesseract-mention:<n>" uri so resolve_image_uri() can hand it back
+    // when BetterText's image provider asks for it, and so composer_draft()
+    // can recover user_id/display_name/is_room for the run without needing
+    // to parse anything back out of the rendered pixels.
     void insert_mention(int start, int end, const std::string& user_id,
                         const std::string& display_name, bool is_room) override
     {
-        std::string visual = is_room ? "@room" : ("@" + display_name);
-        replace_range(start, end, visual + " ");
-        composer_entries_.push_back({visual, user_id, display_name, is_room});
+        if (!hwnd_)
+        {
+            return;
+        }
+        const std::string visual = is_room ? "@room" : ("@" + display_name);
+
+        MentionPillBitmap pill =
+            render_mention_pill(visual, mention_bg_, mention_fg_, dip_scale());
+        if (!pill.bitmap)
+        {
+            // D2D/WIC failure — fall back to plain text so the mention is
+            // never silently dropped (mirrors insert_emoticon's !image path).
+            replace_range(start, end, visual + " ");
+            return;
+        }
+
+        std::wstring uri = kMentionUriPrefix + std::to_wstring(mention_counter_++);
+        mention_runs_[uri] = MentionRun{pill.bitmap, user_id, display_name, is_room};
+
+        std::string cur = text();
+        int ws = utf8_byte_to_utf16_len(cur, start);
+        int we = utf8_byte_to_utf16_len(cur, end);
+        suppress_changed_ = true;
+        BetterTextSetSelection(hwnd_, ws, we);
+        BetterTextInsertImageUri(hwnd_, uri.c_str(), utf8_to_wide(display_name).c_str(),
+                                 pill.width_dip, pill.height_dip);
+        suppress_changed_ = false;
+        if (on_changed_)
+        {
+            on_changed_(text());
+        }
+        refresh_height();
     }
 
     // Real inline image run (unlike Win32RichEditArea's plain-text fallback —
@@ -3916,28 +4045,15 @@ public:
         };
         std::vector<Special> specials;
 
-        std::size_t pos = 0;
-        for (const auto& e : composer_entries_)
-        {
-            std::size_t at = t.find(e.visual, pos);
-            if (at == std::string::npos)
-            {
-                continue;
-            }
-            tesseract::MentionSeg seg;
-            seg.kind         = tesseract::MentionSeg::Kind::Mention;
-            seg.user_id      = e.user_id;
-            seg.display_name = e.display_name;
-            seg.is_room      = e.is_room;
-            specials.push_back({at, e.visual.size(), std::move(seg)});
-            pos = at + e.visual.size();
-        }
-
-        // Custom-emoji image runs are real BetterText Image atoms now, each
-        // rendered as one U+FFFC (EF BF BC in UTF-8) placeholder in text().
+        // Mentions and custom-emoji are both real BetterText Image atoms now
+        // (see insert_mention/insert_emoticon above), each rendered as one
+        // U+FFFC (EF BF BC in UTF-8) placeholder in text().
         // BetterTextGetImageRunCount/Uri/AltText enumerate them in document
         // order, which matches the order their placeholders appear in `t` —
-        // so the i-th run is always the i-th remaining FFFC occurrence.
+        // so the i-th run is always the i-th remaining FFFC occurrence. A
+        // run's uri distinguishes the two kinds: mention_runs_ holds the ones
+        // insert_mention created (keyed by its synthetic uri); anything else
+        // is a real mxc:// emoticon uri.
         constexpr char kObjectReplacementUtf8[] = "\xEF\xBF\xBC";
         std::size_t image_pos = 0;
         const int image_count = BetterTextGetImageRunCount(hwnd_);
@@ -3946,19 +4062,29 @@ public:
             std::size_t at = t.find(kObjectReplacementUtf8, image_pos);
             if (at == std::string::npos)
             {
-                break; // shouldn't happen — defensive, matches the mention loop above
+                break; // shouldn't happen — defensive
             }
             const int uri_len = BetterTextGetImageRunUriLength(hwnd_, i);
             std::wstring wuri(static_cast<std::size_t>(uri_len), L'\0');
             BetterTextGetImageRunUri(hwnd_, i, wuri.data(), uri_len + 1);
-            const int alt_len = BetterTextGetImageRunAltTextLength(hwnd_, i);
-            std::wstring walt(static_cast<std::size_t>(alt_len), L'\0');
-            BetterTextGetImageRunAltText(hwnd_, i, walt.data(), alt_len + 1);
 
             tesseract::MentionSeg seg;
-            seg.kind = tesseract::MentionSeg::Kind::Emoticon;
-            seg.shortcode = wide_to_utf8(walt);
-            seg.mxc_url = wide_to_utf8(wuri);
+            if (auto mit = mention_runs_.find(wuri); mit != mention_runs_.end())
+            {
+                seg.kind         = tesseract::MentionSeg::Kind::Mention;
+                seg.user_id      = mit->second.user_id;
+                seg.display_name = mit->second.display_name;
+                seg.is_room      = mit->second.is_room;
+            }
+            else
+            {
+                const int alt_len = BetterTextGetImageRunAltTextLength(hwnd_, i);
+                std::wstring walt(static_cast<std::size_t>(alt_len), L'\0');
+                BetterTextGetImageRunAltText(hwnd_, i, walt.data(), alt_len + 1);
+                seg.kind      = tesseract::MentionSeg::Kind::Emoticon;
+                seg.shortcode = wide_to_utf8(walt);
+                seg.mxc_url   = wide_to_utf8(wuri);
+            }
             specials.push_back({at, sizeof(kObjectReplacementUtf8) - 1, std::move(seg)});
             image_pos = at + (sizeof(kObjectReplacementUtf8) - 1);
         }
@@ -3993,7 +4119,11 @@ public:
         return segs;
     }
 
-    void set_mention_colors(Color, Color) override {}
+    void set_mention_colors(Color bg, Color fg) override
+    {
+        mention_bg_ = bg;
+        mention_fg_ = fg;
+    }
 
     // ── Win32TextAreaBase ─────────────────────────────────────────────────
 
@@ -4174,6 +4304,11 @@ private:
         {
             return;
         }
+        if (auto mit = mention_runs_.find(uri); mit != mention_runs_.end())
+        {
+            BetterTextNotifyImageResolved(control, 0, uri, mit->second.bitmap.Get(), S_OK);
+            return;
+        }
         if (image_resolver_)
         {
             if (const tk::Image* image = image_resolver_(wide_to_utf8(uri)))
@@ -4207,16 +4342,23 @@ private:
     std::function<const tk::Image*(const std::string&)> image_resolver_;
     ImageProviderAdapter                        image_provider_{ this };
     std::unordered_set<std::wstring>            pending_image_uris_;
+    Color mention_bg_ = Color::rgb(0x0078D4);
+    Color mention_fg_ = Color::rgba(255, 255, 255, 255);
+    int mention_counter_ = 0;
 
-    // Mentions only now — custom emoticons moved to real Image atoms (see
-    // insert_emoticon/composer_draft above), so there's no literal text to
-    // side-table-match for them anymore.
-    struct ComposerEntry
+    // Mention pills are real BetterText Image atoms (see insert_mention /
+    // render_mention_pill above), keyed by their synthetic
+    // "tesseract-mention:<n>" uri — resolve_image_uri() hands back the
+    // pre-rendered bitmap when asked, and composer_draft() looks runs up in
+    // this map (rather than real mxc:// emoticon uris) to recover the original
+    // user_id/display_name/is_room for reconstructing the draft.
+    struct MentionRun
     {
-        std::string visual, user_id, display_name;
+        Microsoft::WRL::ComPtr<IWICBitmap> bitmap;
+        std::string user_id, display_name;
         bool is_room;
     };
-    std::vector<ComposerEntry> composer_entries_;
+    std::unordered_map<std::wstring, MentionRun> mention_runs_;
 };
 
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can
