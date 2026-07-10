@@ -85,6 +85,18 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         if (!path.isEmpty())
             save_source_to_file_(std::move(source_json), path.toStdString());
     };
+    room_view_->on_file_clicked =
+        [this](const tesseract::views::MessageListView::FileHit& hit)
+    {
+        std::string suggested = hit.file_name.empty() ? "download" : hit.file_name;
+        QString path = QFileDialog::getSaveFileName(
+            this, tr("Save file"), QString::fromStdString(suggested),
+            tr("All files (*.*)"));
+        if (path.isEmpty())
+            return;
+        std::string url = hit.source ? hit.source->fetch_token() : std::string{};
+        save_source_to_file_(std::move(url), path.toStdString());
+    };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
     if (auto player = surface_->host().make_audio_player())

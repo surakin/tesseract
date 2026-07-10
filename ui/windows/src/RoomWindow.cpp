@@ -179,6 +179,19 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             save_source_to_file_(std::move(source_json),
                                   wstr_to_utf8(path));
     };
+    room_view_->on_file_clicked =
+        [this](tesseract::views::MessageListView::FileHit hit)
+    {
+        std::wstring suggested(hit.file_name.begin(), hit.file_name.end());
+        if (suggested.empty())
+            suggested = L"download";
+        std::wstring path =
+            parent_->show_save_dialog_(suggested, L"All files\0*.*\0\0");
+        if (path.empty())
+            return;
+        std::string url = hit.source ? hit.source->fetch_token() : std::string{};
+        save_source_to_file_(std::move(url), wstr_to_utf8(path));
+    };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
     if (auto player = surface_->host().make_audio_player())

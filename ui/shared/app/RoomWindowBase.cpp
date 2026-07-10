@@ -11,6 +11,7 @@
 #include <tesseract/visual.h>
 
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 
 namespace tesseract
@@ -43,6 +44,11 @@ void RoomWindowBase::finish_init_()
             if (room_view_)
             {
                 room_view_->set_room(r);
+                // set_room() clears the pinned-messages banner, so seed it
+                // from the cached room info right after.
+                room_view_->set_pinned(r.pinned_events);
+                room_view_->set_can_pin(
+                    shell_->client_ && shell_->client_->can_pin_in_room(room_id_));
             }
             // Set the real title immediately from the cached room info; the
             // subclass created the window with the room_id as a placeholder,
@@ -94,6 +100,11 @@ void RoomWindowBase::finish_init_()
                         std::move(bytes), std::move(mime));
                 }
             });
+        // Up-arrow in an empty composer re-edits the user's last own message.
+        // Some platforms' RoomWindow already wire this themselves before
+        // finish_init_ runs; setting the same lambda again here is harmless.
+        ta->set_on_edit_last(
+            [this] { return room_view_ && room_view_->edit_last_own(); });
     }
 }
 
@@ -487,6 +498,32 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             shell_->return_to_live_(room_id_);
         }
+    };
+    // Jump from a reply/edit preview back to the original event — same
+    // begin_focused_subscription_/subscribe_room_at pattern already used by
+    // apply_popout_thread_transition_ below for thread-root jumps.
+    rv->on_scroll_to_original = [this](const std::string& original_event_id)
+    {
+        if (room_id_.empty() || !shell_->client_)
+        {
+            return;
+        }
+        const std::string eid = original_event_id;
+        const std::string rid = room_id_;
+        shell_->begin_focused_subscription_(rid, eid);
+        auto sess = shell_->active_account_;
+        run_async_mut_([sess, rid, eid]() {
+            if (!sess || !sess->client) return;
+            sess->client->subscribe_room_at(rid, eid);
+        });
+    };
+    rv->on_pin_requested = [this](const std::string& event_id)
+    {
+        pin_event_(event_id);
+    };
+    rv->on_unpin_requested = [this](const std::string& event_id)
+    {
+        unpin_event_(event_id);
     };
 
     // ── Media send (attachments) ──────────────────────────────────────────
@@ -1027,6 +1064,11 @@ void RoomWindowBase::on_room_info_updated(const RoomInfo& r)
     if (room_view_)
     {
         room_view_->set_room(r);
+        // set_room() clears the pinned-messages banner, so re-seed it from
+        // the fresh room info (mirrors finish_init_'s initial seed).
+        room_view_->set_pinned(r.pinned_events);
+        room_view_->set_can_pin(
+            shell_->client_ && shell_->client_->can_pin_in_room(room_id_));
     }
     update_window_title_(r.name);
     request_relayout();
@@ -1321,6 +1363,42 @@ void RoomWindowBase::abort_send_(const std::string& txn_id)
         return;
     }
     shell_->client_->abort_send(room_id_, txn_id);
+}
+
+void RoomWindowBase::pin_event_(const std::string& event_id)
+{
+    if (event_id.empty() || room_id_.empty() || !shell_->client_)
+    {
+        return;
+    }
+    auto sess = shell_->active_account();
+    auto rid = room_id_;
+    auto eid = event_id;
+    run_async_mut_([sess, rid, eid]() mutable {
+        if (!sess || !sess->client) return;
+        auto r = sess->client->pin_event(rid, eid);
+        if (!r.ok)
+        {
+            // TODO: surface this via a transient status mechanism once one exists
+            std::fprintf(stderr, "[pin] pin failed for %s in %s: %s\n",
+                         eid.c_str(), rid.c_str(), r.message.c_str());
+        }
+    });
+}
+
+void RoomWindowBase::unpin_event_(const std::string& event_id)
+{
+    if (event_id.empty() || room_id_.empty() || !shell_->client_)
+    {
+        return;
+    }
+    auto r = shell_->client_->unpin_event(room_id_, event_id);
+    if (!r.ok)
+    {
+        // TODO: surface this via a transient status mechanism once one exists
+        std::fprintf(stderr, "[pin] unpin failed for %s in %s: %s\n",
+                     event_id.c_str(), room_id_.c_str(), r.message.c_str());
+    }
 }
 
 const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const

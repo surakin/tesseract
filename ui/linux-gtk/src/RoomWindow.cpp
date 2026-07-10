@@ -145,6 +145,35 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             }, ctx);
         g_object_unref(dlg);
     };
+    room_view_->on_file_clicked =
+        [this](const tesseract::views::MessageListView::FileHit& hit)
+    {
+        std::string suggested = hit.file_name.empty() ? "download" : hit.file_name;
+        GtkFileDialog* dlg = gtk_file_dialog_new();
+        gtk_file_dialog_set_title(dlg, "Save file");
+        gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
+        struct Ctx { RoomWindow* self; std::string src; };
+        auto* ctx = new Ctx{this, hit.source ? hit.source->fetch_token() : std::string{}};
+        gtk_file_dialog_save(dlg, GTK_WINDOW(window_), nullptr,
+            +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
+            {
+                auto* c = static_cast<Ctx*>(p);
+                GError* err = nullptr;
+                GFile* gf = gtk_file_dialog_save_finish(
+                    GTK_FILE_DIALOG(dialog_obj), res, &err);
+                if (gf)
+                {
+                    char* cpath = g_file_get_path(gf);
+                    std::string dest(cpath);
+                    g_free(cpath);
+                    g_object_unref(gf);
+                    c->self->save_source_to_file_(std::move(c->src), dest);
+                }
+                if (err) g_error_free(err);
+                delete c;
+            }, ctx);
+        g_object_unref(dlg);
+    };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
     if (auto player = surface_->host().make_audio_player())
