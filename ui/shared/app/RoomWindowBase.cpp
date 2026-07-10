@@ -1,6 +1,8 @@
 #include "app/RoomWindowBase.h"
 #include "app/ShellBase.h"
+#include "views/ForwardRoomPicker.h"
 #include "views/ImageViewerOverlay.h"
+#include "views/RoomMediaView.h"
 #include "views/VideoViewerOverlay.h"
 #include "views/media_drop.h"
 #include "views/text_util.h"
@@ -105,6 +107,12 @@ void RoomWindowBase::finish_init_()
         // finish_init_ runs; setting the same lambda again here is harmless.
         ta->set_on_edit_last(
             [this] { return room_view_ && room_view_->edit_last_own(); });
+        // Inline pill-image resolution while composing (e.g. custom-emoji
+        // inserts on Windows' BetterText control). make_static_image_provider_with_fetch_
+        // is a ShellBase method, not MainWindow-specific, so this benefits
+        // every platform; harmless no-op wherever insert_emoticon doesn't
+        // need a resolver.
+        ta->set_image_resolver(shell_->make_static_image_provider_with_fetch_(28, 28));
     }
 }
 
@@ -525,6 +533,127 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     {
         unpin_event_(event_id);
     };
+    // Lazy media/avatar fetch for rows newly scrolled into view. Skips the
+    // main window's active_media_group_/prioritize_media reordering (that's
+    // a single main-window-wide optimization not worth generalizing here) —
+    // just the "fetch it now instead of waiting for the next prefetch pass"
+    // half, scoped to this pop-out's own room/messages.
+    rv->on_visible_range_changed = [this](const std::vector<std::string>&)
+    {
+        if (!room_view_ || !room_view_->message_list())
+        {
+            return;
+        }
+        auto* ml = room_view_->message_list();
+        auto [first, last] = ml->visible_range();
+        if (first < 0)
+        {
+            return;
+        }
+        const auto& msgs = ml->messages();
+        for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+        {
+            const auto& row = msgs[static_cast<std::size_t>(i)];
+            if (visible_media_prepped_.insert(row.event_id).second)
+            {
+                shell_->ensure_row_media_(row, /*fetch_avatars=*/true);
+            }
+        }
+    };
+    rv->on_visible_avatars_changed = [this](const std::vector<std::string>& urls)
+    {
+        auto group = shell_->media_group_for_room_(room_id_);
+        for (const auto& url : urls)
+        {
+            shell_->ensure_user_avatar_(url, group);
+        }
+    };
+    rv->on_has_dm = [this](const std::string& user_id)
+    {
+        return !shell_->find_existing_dm_(user_id).empty();
+    };
+    rv->on_open_dm = [this](std::string user_id)
+    {
+        open_dm_(std::move(user_id));
+    };
+
+    // Forward picker: stable providers wired once so open() always has
+    // rooms — mirrors ShellBase::wire_main_app_widget_'s main-window wiring,
+    // scoped to this pop-out's own room_id_/picker.
+    if (auto* fp = forward_picker_())
+    {
+        fp->set_rooms_provider(
+            [this]() -> std::vector<tesseract::RoomInfo> { return shell_->rooms_; });
+        fp->set_avatar_provider(
+            [this](const std::string& mxc) { return shell_avatar_(mxc); });
+        fp->on_room_avatar_needed =
+            [this](const tesseract::RoomInfo& r) { shell_->ensure_room_avatar_(r); };
+        fp->on_close = [this] { hide_forward_picker_field_(); request_relayout(); };
+    }
+    rv->on_forward_requested = [this](const std::string& event_id)
+    {
+        auto* fp = forward_picker_();
+        if (!fp || room_id_.empty() || fp->is_open())
+        {
+            return;
+        }
+        fp->on_confirmed =
+            [this, source_room = room_id_, event_id](std::vector<std::string> room_ids)
+        {
+            if (!shell_->client_) return;
+            auto* fp_ptr = forward_picker_();
+            if (!fp_ptr) return;
+            fp_ptr->set_forwarding(static_cast<int>(room_ids.size()));
+            for (const auto& rid : room_ids)
+            {
+                const auto req_id = shell_->next_request_id_++;
+                pending_forwards_[req_id] = rid;
+                shell_->client_->forward_event(req_id, source_room, event_id, rid);
+            }
+        };
+        fp->open(room_id_);
+        focus_forward_picker_field_();
+        request_relayout();
+    };
+
+    // Room media gallery: opening/closing/pagination need no per-shell
+    // platform specifics (unlike on_image_clicked/on_video_clicked below,
+    // which restore native keyboard focus per shell), so they live here.
+    // See open_room_media_view_()/close_room_media_view_().
+    rv->on_media_view_requested = [this](std::string /*room_id*/)
+    {
+        open_room_media_view_();
+    };
+    if (auto* rmv = room_media_view_())
+    {
+        rmv->on_close = [this] { close_room_media_view_(); };
+        rmv->on_load_older_media = [this](std::string /*room_id*/)
+        {
+            request_pagination_back_();
+        };
+        rmv->set_image_provider(
+            [this](const std::string& key) -> const tk::Image*
+            {
+                if (const auto* f = shell_->account_manager_.anim_cache().current_frame(key))
+                {
+                    shell_->start_anim_tick_();
+                    return f;
+                }
+                if (const auto* img = shell_->account_manager_.image_cache().peek(key))
+                    return img;
+                if (const auto* img = shell_->account_manager_.thumbnail_cache().peek(key))
+                    return img;
+                if (shell_->media_fetches_in_flight_.size() <
+                    ShellBase::kMaxConcurrentMediaFetches)
+                {
+                    shell_->ensure_media_thumbnail_(
+                        key, static_cast<int>(views::RoomMediaView::kCellSize),
+                        static_cast<int>(views::RoomMediaView::kCellSize),
+                        false, media_view_group_);
+                }
+                return nullptr;
+            });
+    }
 
     // ── Media send (attachments) ──────────────────────────────────────────
     // Without these the compose bar drops a pending attachment on send. Clears
@@ -769,6 +898,13 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 shell_->client_->fetch_source_bytes_async(req_id, src);
             }
         };
+        // The gallery opens the same lightboxes on click — reuse the exact
+        // handlers just installed above rather than duplicating them.
+        if (auto* rmv = room_media_view_())
+        {
+            rmv->on_image_clicked = rv->on_image_clicked;
+            rmv->on_video_clicked = rv->on_video_clicked;
+        }
     }
 
     // ── Jump-to-date (MSC3030) ────────────────────────────────────────────
@@ -1088,6 +1224,24 @@ void RoomWindowBase::on_timeline_reset(std::vector<views::MessageRowData> rows)
 void RoomWindowBase::on_message_inserted(std::size_t idx,
                                          views::MessageRowData row)
 {
+    if (auto* rmv = room_media_view_();
+        rmv && rmv->is_open() &&
+        (row.kind == views::MessageRowData::Kind::Image ||
+         row.kind == views::MessageRowData::Kind::Video))
+    {
+        // idx == 0 is a backward-pagination insert (oldest-first within a
+        // batch, but delivered one at a time here); anything else is a new
+        // live message appended at the end.
+        if (idx == 0)
+        {
+            std::vector<views::MessageRowData> batch{row};
+            rmv->prepend_media(std::move(batch));
+        }
+        else
+        {
+            rmv->append_live_media(row);
+        }
+    }
     if (room_view_)
     {
         room_view_->insert_message(idx, std::move(row));
@@ -1401,6 +1555,170 @@ void RoomWindowBase::unpin_event_(const std::string& event_id)
     }
 }
 
+void RoomWindowBase::open_dm_(std::string user_id)
+{
+    if (user_id.empty() || !shell_->client_)
+    {
+        return;
+    }
+
+    // Fast path: DM already known — open (or focus) its own window.
+    if (auto existing = shell_->find_existing_dm_(user_id); !existing.empty())
+    {
+        if (room_view_)
+        {
+            room_view_->close_user_profile();
+        }
+        shell_->open_room_in_new_window(existing);
+        return;
+    }
+
+    if (shell_->dm_in_flight_user_ids_.count(user_id))
+    {
+        return;
+    }
+    shell_->dm_in_flight_user_ids_.insert(user_id);
+
+    if (room_view_)
+    {
+        room_view_->set_dm_button_state(
+            views::UserProfilePanel::DmButtonState::Sending);
+        request_relayout();
+    }
+
+    auto sess = shell_->active_account();
+    std::weak_ptr<bool> alive_weak = alive_;
+    run_async_mut_([this, sess, user_id, alive_weak]() mutable {
+        if (!sess || !sess->client)
+        {
+            return;
+        }
+        auto dm_id = sess->client->get_or_create_dm(user_id);
+        shell_->post_to_ui_(
+            [this, user_id, dm_id = std::move(dm_id), alive_weak]() mutable
+            {
+                shell_->dm_in_flight_user_ids_.erase(user_id);
+                auto alive = alive_weak.lock();
+                if (!alive || !*alive)
+                {
+                    return;
+                }
+                if (!dm_id.empty())
+                {
+                    if (room_view_)
+                    {
+                        room_view_->close_user_profile();
+                    }
+                    shell_->open_room_in_new_window(dm_id);
+                }
+                else if (room_view_)
+                {
+                    room_view_->set_dm_button_state(
+                        views::UserProfilePanel::DmButtonState::Normal);
+                    request_relayout();
+                }
+            });
+    });
+}
+
+void RoomWindowBase::open_room_media_view_()
+{
+    auto* rmv = room_media_view_();
+    if (!rmv || !room_view_ || room_id_.empty())
+    {
+        return;
+    }
+    // Distinct salt from media_group_for_room_(room_id_) (the room's normal
+    // inline-media group) so closing the gallery never cancels unrelated
+    // fetches — mirrors ShellBase::open_room_media_view_'s own salt.
+    media_view_group_ = shell_->media_group_for_room_(room_id_) ^
+                        0x9E3779B97F4A7C15ull;
+
+    std::string room_name = room_id_;
+    for (const auto& r : shell_->rooms_)
+    {
+        if (r.id == room_id_ && !r.name.empty())
+        {
+            room_name = r.name;
+            break;
+        }
+    }
+    rmv->open(room_id_, room_name);
+    if (auto* ml = room_view_->message_list())
+    {
+        rmv->set_media(ml->messages());
+    }
+    auto pit = shell_->pagination_.find(room_id_);
+    const bool reached_start =
+        pit != shell_->pagination_.end() && pit->second.reached_start;
+    rmv->set_reached_start(reached_start);
+    if (!reached_start && rmv->item_count() < ShellBase::kMediaViewMinPerRound)
+    {
+        request_pagination_back_();
+    }
+    request_relayout();
+}
+
+void RoomWindowBase::close_room_media_view_()
+{
+    // Called from rmv->on_close (fired by the widget's own close button /
+    // backdrop click), so this must NOT call rmv->close() itself — that
+    // would re-fire on_close and recurse. Just clean up fetch state.
+    if (media_view_group_ != 0)
+    {
+        shell_->cancel_media_group_(media_view_group_);
+        media_view_group_ = 0;
+    }
+    request_relayout();
+}
+
+bool RoomWindowBase::handle_forward_done_(std::uint64_t request_id)
+{
+    if (!pending_forwards_.count(request_id))
+    {
+        return false;
+    }
+    pending_forwards_.erase(request_id);
+    if (pending_forwards_.empty())
+    {
+        if (auto* fp = forward_picker_())
+        {
+            fp->close();
+        }
+    }
+    return true;
+}
+
+bool RoomWindowBase::handle_forward_failed_(std::uint64_t request_id,
+                                            const std::string& message)
+{
+    auto it = pending_forwards_.find(request_id);
+    if (it == pending_forwards_.end())
+    {
+        return false;
+    }
+    const std::string target_room = it->second;
+    pending_forwards_.erase(it);
+    if (auto* fp = forward_picker_())
+    {
+        std::string target_name = target_room;
+        for (const auto& r : shell_->rooms_)
+        {
+            if (r.id == target_room && !r.name.empty())
+            {
+                target_name = r.name;
+                break;
+            }
+        }
+        fp->add_forward_error(target_name, message);
+        if (pending_forwards_.empty())
+        {
+            fp->mark_complete();
+        }
+    }
+    return true;
+}
+
 const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
 {
     return shell_->account_manager_.thumbnail_cache().peek(mxc);
@@ -1538,6 +1856,25 @@ void RoomWindowBase::save_source_to_file_(std::string source_json,
             }
         });
     shell_->client_->fetch_source_bytes_async(req_id, source_json);
+}
+
+void RoomWindowBase::fetch_source_bytes_(
+    const std::string& src, std::function<void(std::vector<std::uint8_t>)> on_ready)
+{
+    if (!shell_->client_)
+    {
+        return;
+    }
+    std::weak_ptr<bool> alive_weak = alive_;
+    auto req_id = shell_->begin_media_req_(0,
+        [alive_weak = std::move(alive_weak), on_ready = std::move(on_ready)](
+            std::vector<std::uint8_t> bytes) mutable
+        {
+            auto alive = alive_weak.lock();
+            if (!alive || !*alive) return;
+            on_ready(std::move(bytes));
+        });
+    shell_->client_->fetch_source_bytes_async(req_id, src);
 }
 
 void RoomWindowBase::copy_source_to_clipboard_(std::string source_json)

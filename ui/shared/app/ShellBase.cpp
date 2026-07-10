@@ -4143,28 +4143,48 @@ void ShellBase::handle_search_results_ui_(
 
 void ShellBase::handle_forward_done_ui_(std::uint64_t request_id)
 {
-    pending_forwards_.erase(request_id);
-    if (pending_forwards_.empty())
-        if (auto* fp = main_app_ ? main_app_->forward_picker() : nullptr)
-            fp->close();
+    if (pending_forwards_.count(request_id))
+    {
+        pending_forwards_.erase(request_id);
+        if (pending_forwards_.empty())
+            if (auto* fp = main_app_ ? main_app_->forward_picker() : nullptr)
+                fp->close();
+        return;
+    }
+    // Not the main window's request — request_id is a process-global
+    // counter, so at most one open pop-out's own pending_forwards_ can
+    // recognize it (see RoomWindowBase::handle_forward_done_).
+    for (auto& [rid, w] : secondary_windows_)
+    {
+        if (w->handle_forward_done_(request_id))
+            return;
+    }
 }
 
 void ShellBase::handle_forward_failed_ui_(std::uint64_t      request_id,
                                           const std::string& message)
 {
     auto it = pending_forwards_.find(request_id);
-    if (it == pending_forwards_.end())
+    if (it != pending_forwards_.end())
+    {
+        const auto* room = room_by_id_(it->second);
+        std::string target_name =
+            (room && !room->name.empty()) ? room->name : it->second;
+        pending_forwards_.erase(it);
+        auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
+        if (fp)
+        {
+            fp->add_forward_error(target_name, message);
+            if (pending_forwards_.empty())
+                fp->mark_complete();
+        }
         return;
-    const auto* room = room_by_id_(it->second);
-    std::string target_name =
-        (room && !room->name.empty()) ? room->name : it->second;
-    pending_forwards_.erase(it);
-    auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
-    if (!fp)
-        return;
-    fp->add_forward_error(target_name, message);
-    if (pending_forwards_.empty())
-        fp->mark_complete();
+    }
+    for (auto& [rid, w] : secondary_windows_)
+    {
+        if (w->handle_forward_failed_(request_id, message))
+            return;
+    }
 }
 
 void ShellBase::handle_search_failed_ui_(std::uint64_t request_id,

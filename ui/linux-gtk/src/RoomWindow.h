@@ -2,7 +2,9 @@
 #include <gtk/gtk.h>
 #include "app/RoomWindowBase.h"
 #include "tk/host_gtk.h"
+#include "views/ForwardRoomPicker.h"
 #include "views/GifController.h"
+#include "views/RoomMediaView.h"
 #include "views/GifPopup.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
@@ -51,6 +53,29 @@ protected:
     tk::NativeTextArea* compose_text_area_() override
     {
         return room_text_area_.get();
+    }
+    tesseract::views::ForwardRoomPicker* forward_picker_() override
+    {
+        return forward_picker_widget_;
+    }
+    tesseract::views::RoomMediaView* room_media_view_() override
+    {
+        return room_media_view_widget_;
+    }
+    void focus_forward_picker_field_() override
+    {
+        if (forward_picker_field_)
+        {
+            forward_picker_field_->set_text("");
+            forward_picker_field_->set_focused(true);
+        }
+    }
+    void hide_forward_picker_field_() override
+    {
+        if (forward_picker_field_)
+        {
+            forward_picker_field_->set_visible(false);
+        }
     }
     tk::EncodedImage encode_for_send_(const std::uint8_t* data,
                                       std::size_t size, bool compress) override
@@ -101,6 +126,9 @@ private:
 
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
     std::unique_ptr<tk::NativeTextField> room_search_field_;
+    tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
+    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     GtkWidget* mention_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;

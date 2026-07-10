@@ -68,9 +68,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     gtk_window_set_child(window_, surface_->widget());
 
     auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>();
-    room_view_  = room_widget->room_view();
-    img_viewer_ = room_widget->image_viewer();
-    vid_viewer_ = room_widget->video_viewer();
+    room_view_             = room_widget->room_view();
+    img_viewer_            = room_widget->image_viewer();
+    vid_viewer_            = room_widget->video_viewer();
+    forward_picker_widget_ = room_widget->forward_picker();
+    room_media_view_widget_ = room_widget->room_media_view();
     surface_->set_root(std::move(room_widget));
 
     // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
@@ -81,6 +83,18 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     {
         vid_viewer_->set_video_player(std::move(player));
     }
+
+    // Inline autoplay video/GIF in the timeline (separate from the lightbox
+    // player above — MessageListView falls back to a static thumbnail unless
+    // both of these are set).
+    room_view_->set_video_player_factory(
+        [this]() { return surface_->host().make_video_player(); });
+    room_view_->set_video_fetch_provider(
+        [this](const std::string& src,
+               std::function<void(std::vector<std::uint8_t>)> on_ready)
+        {
+            fetch_source_bytes_(src, std::move(on_ready));
+        });
 
     // ── Image / video save dialogs ────────────────────────────────────────
     img_viewer_->on_save =
@@ -518,6 +532,16 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                     room_search_field_->set_rect(r);
                 }
             }
+            if (forward_picker_widget_ && forward_picker_field_)
+            {
+                const bool vis = forward_picker_widget_->search_field_visible();
+                forward_picker_field_->set_visible(vis);
+                if (vis)
+                {
+                    forward_picker_field_->set_rect(
+                        forward_picker_widget_->search_field_rect());
+                }
+            }
         });
 
     // ── In-room search native text field ─────────────────────────────────
@@ -551,6 +575,50 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                 return true;
             case tk::NavKey::Escape:
                 room_view_->close_room_search();
+                return true;
+            default:
+                return false;
+            }
+        });
+
+    // ── Forward-message picker native search field ─────────────────────────
+    forward_picker_field_ = surface_->host().make_text_field();
+    forward_picker_field_->set_placeholder(_("Search rooms\xe2\x80\xa6"));
+    forward_picker_field_->set_visible(false);
+    forward_picker_field_->set_on_changed(
+        [this](const std::string& q)
+        {
+            if (forward_picker_widget_)
+            {
+                forward_picker_widget_->set_query(q);
+                if (surface_) surface_->relayout();
+            }
+        });
+    forward_picker_field_->set_on_submit(
+        [this]
+        {
+            if (forward_picker_widget_)
+            {
+                forward_picker_widget_->confirm();
+            }
+        });
+    forward_picker_field_->set_on_popup_nav(
+        [this](tk::NavKey nk) -> bool
+        {
+            if (!forward_picker_widget_ || !forward_picker_widget_->is_open())
+                return false;
+            switch (nk)
+            {
+            case tk::NavKey::Up:
+                forward_picker_widget_->move_selection(-1);
+                if (surface_) surface_->relayout();
+                return true;
+            case tk::NavKey::Down:
+                forward_picker_widget_->move_selection(+1);
+                if (surface_) surface_->relayout();
+                return true;
+            case tk::NavKey::Escape:
+                forward_picker_widget_->close();
                 return true;
             default:
                 return false;

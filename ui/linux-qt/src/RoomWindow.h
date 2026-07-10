@@ -4,7 +4,9 @@
 #include "app/RoomWindowBase.h"
 #include "tk/host_qt.h"
 class QMoveEvent;
+#include "views/ForwardRoomPicker.h"
 #include "views/GifController.h"
+#include "views/RoomMediaView.h"
 #include "views/GifPopup.h"
 #include "views/MentionController.h"
 #include "views/MentionPopup.h"
@@ -56,6 +58,29 @@ protected:
     {
         return roomTextArea_.get();
     }
+    tesseract::views::ForwardRoomPicker* forward_picker_() override
+    {
+        return forward_picker_widget_;
+    }
+    tesseract::views::RoomMediaView* room_media_view_() override
+    {
+        return room_media_view_widget_;
+    }
+    void focus_forward_picker_field_() override
+    {
+        if (forward_picker_field_)
+        {
+            forward_picker_field_->set_text("");
+            forward_picker_field_->set_focused(true);
+        }
+    }
+    void hide_forward_picker_field_() override
+    {
+        if (forward_picker_field_)
+        {
+            forward_picker_field_->set_visible(false);
+        }
+    }
     tk::EncodedImage encode_for_send_(const std::uint8_t* data,
                                       std::size_t size, bool compress) override
     {
@@ -89,6 +114,9 @@ private:
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     std::unique_ptr<tk::NativeTextField> roomSearchField_;
+    tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
+    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
 
     // Pop-out-local emoji/sticker pickers (parented to this QWidget). The emoji
     // picker doubles as the reaction picker via pendingReactionEventId_.

@@ -10,15 +10,20 @@
 #include <tesseract/settings.h>
 #include <tesseract/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace tesseract::views
 {
 class ImageViewerOverlay;
 class VideoViewerOverlay;
+class ForwardRoomPicker;
+class RoomMediaView;
 } // namespace tesseract::views
 
 namespace tesseract
@@ -83,6 +88,16 @@ public:
     {
     }
 
+    // Fan-in for async message-forward completions, mirroring on_gif_results
+    // above: ShellBase::forward_event's request_id is process-global, so
+    // ShellBase checks its own main-window pending_forwards_ first, then
+    // calls this on every open pop-out until one recognizes the id. Returns
+    // true if this window issued request_id (and updated its own picker
+    // accordingly), so the caller can stop looking.
+    bool handle_forward_done_(std::uint64_t request_id);
+    bool handle_forward_failed_(std::uint64_t request_id,
+                                const std::string& message);
+
     // Called by ShellBase::tick_anim_ on every animation frame so this window's
     // animated images (inline media, and any open pickers) advance even when
     // the pointer is still. The base repaints the room surface; subclasses
@@ -144,6 +159,26 @@ protected:
     // drives compose state through room_view_ instead. All four pop-out
     // subclasses currently return their own native text area.
     virtual tk::NativeTextArea* compose_text_area_()
+    {
+        return nullptr;
+    }
+
+    // This pop-out's forward-message picker overlay, or nullptr if the
+    // subclass hasn't added one to its PopoutRoomWidget yet.
+    virtual views::ForwardRoomPicker* forward_picker_()
+    {
+        return nullptr;
+    }
+    // Focus/hide this pop-out's own native forward-picker search field
+    // (mirrors ShellBase::focus_forward_picker_field_/hide_forward_picker_field_
+    // for the main window, but scoped per-window since each pop-out needs its
+    // own NativeTextField overlay). Default no-op until a platform adds one.
+    virtual void focus_forward_picker_field_() {}
+    virtual void hide_forward_picker_field_() {}
+
+    // This pop-out's room-media gallery overlay, or nullptr if the subclass
+    // hasn't added one to its PopoutRoomWidget yet.
+    virtual views::RoomMediaView* room_media_view_()
     {
         return nullptr;
     }
@@ -221,6 +256,17 @@ protected:
     void abort_send_(const std::string& txn_id);
     void pin_event_(const std::string& event_id);
     void unpin_event_(const std::string& event_id);
+    // Resolve/create a DM with user_id, then open (or focus) a SEPARATE
+    // pop-out for it — unlike ShellBase::handle_open_dm_, which navigates
+    // the main window itself, this window's own room_id_ must stay put.
+    void open_dm_(std::string user_id);
+    // Open/close this pop-out's room-media gallery for its own room_id_.
+    // Simpler than ShellBase's main-window version: reuses this window's
+    // existing request_pagination_back_() (one batch per scroll-to-top, no
+    // retry/accumulate-until-enough-media loop) rather than duplicating
+    // ShellBase's more elaborate per-gesture retry budget.
+    void open_room_media_view_();
+    void close_room_media_view_();
     void request_pagination_back_();
 
     // Image cache accessors — friend access to ShellBase protected members
@@ -268,6 +314,15 @@ protected:
     // dest_path on the UI thread. No-op if bytes are empty (fetch failed).
     void save_source_to_file_(std::string source_json,
                                std::string dest_path);
+
+    // Fetch source_json bytes and hand them to on_ready — the friend-access
+    // equivalent of ShellBase::begin_media_req_/client_->fetch_source_bytes_async
+    // for platform subclasses, which aren't themselves ShellBase friends.
+    // Used by RoomView::set_video_fetch_provider for inline timeline
+    // autoplay video/GIF.
+    void fetch_source_bytes_(
+        const std::string& src,
+        std::function<void(std::vector<std::uint8_t>)> on_ready);
 
     // Fetch source_json bytes and place the decoded image on the system
     // clipboard via put_image_on_clipboard_. Shared body for the image
@@ -328,6 +383,18 @@ protected:
     // like a room switch); later resets are reconnect/gappy refreshes of the
     // room already shown (refresh in place, no blank).
     bool displayed_once_ = false;
+    // Dedup for on_visible_range_changed's lazy media fetch — mirrors
+    // ShellBase::media_prepped_event_ids_, scoped to this pop-out window.
+    std::unordered_set<std::string> visible_media_prepped_;
+    // In-flight message forwards started from THIS window's picker — mirrors
+    // ShellBase::pending_forwards_, keyed by the same process-global
+    // request_id space (ShellBase::next_request_id_).
+    std::unordered_map<std::uint64_t, std::string> pending_forwards_;
+    // Media-fetch group id for this pop-out's gallery, distinct from
+    // media_group_for_room_(room_id_) (used by the room's normal inline
+    // media) so cancel_media_group_ on gallery close never touches unrelated
+    // fetches. Set on open_room_media_view_(), same salt ShellBase uses.
+    std::uint64_t media_view_group_ = 0;
 
     // Per-popout thread-panel state (separate from ShellBase's main-window
     // state so each window tracks its own panel independently).

@@ -11,6 +11,8 @@
 #include "app/RoomWindowBase.h"
 #include "tk/host_win32.h"
 #include "views/EmojiPicker.h"
+#include "views/ForwardRoomPicker.h"
+#include "views/RoomMediaView.h"
 #include "views/GifController.h"
 #include "views/GifPopup.h"
 #include "views/MentionController.h"
@@ -66,6 +68,33 @@ protected:
     {
         return text_area_.get();
     }
+    tesseract::views::ForwardRoomPicker* forward_picker_() override
+    {
+        return forward_picker_widget_;
+    }
+    tesseract::views::RoomMediaView* room_media_view_() override
+    {
+        return room_media_view_widget_;
+    }
+    void focus_forward_picker_field_() override
+    {
+        if (forward_picker_field_)
+        {
+            forward_picker_field_->set_text("");
+            forward_picker_field_->set_focused(true);
+        }
+    }
+    void hide_forward_picker_field_() override
+    {
+        if (forward_picker_field_)
+        {
+            forward_picker_field_->set_visible(false);
+        }
+        if (hwnd_)
+        {
+            SetFocus(hwnd_);
+        }
+    }
     tk::EncodedImage encode_for_send_(const std::uint8_t* data,
                                       std::size_t size, bool compress) override
     {
@@ -113,6 +142,9 @@ private:
     std::unique_ptr<tk::win32::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
     std::unique_ptr<tk::NativeTextField> search_field_;
+    tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
+    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     HWND mention_popup_hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
