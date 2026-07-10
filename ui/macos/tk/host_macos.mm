@@ -1105,7 +1105,6 @@ private:
 @end
 
 @interface TKEmoticonCell : NSTextAttachmentCell
-@property(nonatomic, strong) NSImage* image;
 @end
 
 @implementation TKEmoticonCell
