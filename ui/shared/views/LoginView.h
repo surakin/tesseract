@@ -17,7 +17,6 @@
 #include <chrono>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <thread>
 
@@ -66,7 +65,7 @@ public:
 
     bool cancel_visible() const;
 
-    void set_status(std::string message, std::optional<tk::Color> colour = {});
+    void set_status(std::string message, bool is_error = false);
 
     enum class DiscoveryState
     {
@@ -246,6 +245,7 @@ private:
     Mode           mode_           = Mode::Initial;
     DiscoveryState discovery_state_{DiscoveryState::Idle};
     std::string    resolved_base_url_;
+    bool           status_is_error_ = false;
 
     // Alert overlay (owned via add_child, raw pointer borrowed back)
     AlertDialog* alert_          = nullptr;

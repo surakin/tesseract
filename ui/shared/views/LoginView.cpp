@@ -132,8 +132,9 @@ bool LoginView::cancel_visible() const
     return cancel_btn_ && cancel_btn_->visible();
 }
 
-void LoginView::set_status(std::string message, std::optional<tk::Color> colour)
+void LoginView::set_status(std::string message, bool is_error)
 {
+    status_is_error_ = is_error;
     if (!status_lbl_)
         return;
     if (message.empty())
@@ -143,7 +144,6 @@ void LoginView::set_status(std::string message, std::optional<tk::Color> colour)
     else
     {
         status_lbl_->set_text(std::move(message));
-        status_lbl_->set_colour(colour);
         status_lbl_->set_visible(true);
     }
 }
@@ -180,12 +180,10 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
     case DiscoveryState::Discovering:
         resolved_base_url_.clear();
         discovery_lbl_->set_text(tk::tr("Checking\xe2\x80\xa6"));
-        discovery_lbl_->set_colour({});
         discovery_lbl_->set_visible(true);
         break;
     case DiscoveryState::Resolved:
         discovery_lbl_->set_text("\xe2\x9c\x93 " + detail);
-        discovery_lbl_->set_colour(tk::Color::rgb(0x2e7d32));
         discovery_lbl_->set_visible(true);
         break;
     case DiscoveryState::Failed:
@@ -193,7 +191,6 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
             "\xe2\x9c\x97 " + (detail.empty()
                                    ? tk::tr("Could not reach this server")
                                    : detail));
-        discovery_lbl_->set_colour(tk::Color::rgb(0xCC2200));
         discovery_lbl_->set_visible(true);
         break;
     }
@@ -297,7 +294,7 @@ void LoginView::start_oauth_(bool register_account)
     std::string hs_raw = tesseract::text::trim(hs_field_->text());
     if (hs_raw.empty())
     {
-        set_status(tk::tr("Please enter a homeserver."), tk::Color::rgb(0xB00020));
+        set_status(tk::tr("Please enter a homeserver."), true);
         relayout_();
         return;
     }
@@ -445,7 +442,7 @@ void LoginView::begin_completed_(bool ok, std::string url)
     join_worker_();
     if (!ok)
     {
-        set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {url}), tk::Color::rgb(0xB00020));
+        set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {url}), true);
         set_state(State::Form);
         if (hs_field_)
             hs_field_->set_enabled(true);
@@ -485,7 +482,7 @@ void LoginView::await_completed_(bool ok, std::string err)
             on_success_();
         return;
     }
-    set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {err}), tk::Color::rgb(0xB00020));
+    set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {err}), true);
     set_state(State::Form);
     if (hs_field_)
         hs_field_->set_enabled(true);
@@ -566,6 +563,26 @@ void LoginView::paint(tk::PaintCtx& ctx)
                     homeserver_field_rect_.w, homeserver_field_rect_.h};
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
         ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
+    }
+
+    if (status_lbl_)
+        status_lbl_->set_colour(
+            status_is_error_ ? std::optional<tk::Color>(ctx.theme.palette.destructive)
+                              : std::nullopt);
+    if (discovery_lbl_)
+    {
+        switch (discovery_state_)
+        {
+        case DiscoveryState::Resolved:
+            discovery_lbl_->set_colour(ctx.theme.palette.success);
+            break;
+        case DiscoveryState::Failed:
+            discovery_lbl_->set_colour(ctx.theme.palette.destructive);
+            break;
+        default:
+            discovery_lbl_->set_colour(std::nullopt);
+            break;
+        }
     }
 
     card_->paint(ctx);

@@ -51,6 +51,10 @@ struct Palette
     Color destructive_hover;
     Color destructive_pressed;
 
+    // Success (green) — status text for a positive outcome (e.g. homeserver
+    // discovery resolved).
+    Color success;
+
     // Reaction chips
     Color chip_bg;
     Color chip_bg_me;

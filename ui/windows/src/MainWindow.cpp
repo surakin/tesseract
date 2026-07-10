@@ -4179,11 +4179,11 @@ void MainWindow::on_create(HWND hwnd)
         }
     }
 
-    apply_current_theme_();
-
     branding_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hwnd, tk::Theme::light());
     branding_surface_->set_root(std::make_unique<tesseract::views::BrandView>());
+
+    apply_current_theme_();
 
     {
         RECT wrc{};

@@ -193,18 +193,15 @@ void JoinRoomView::apply_state()
         if (state_ == State::Loading)
         {
             status_lbl_->set_text(tk::tr("Looking up room\xe2\x80\xa6"));
-            status_lbl_->set_colour({}); // reset to default
         }
         else if (state_ == State::Error)
         {
             status_lbl_->set_text(error_msg_.empty() ? tk::tr("Room not found.")
                                                      : error_msg_);
-            status_lbl_->set_colour(tk::Color::rgb(0xCC2200));
         }
         else
         {
             status_lbl_->set_text("");
-            status_lbl_->set_colour({});
         }
     }
 
@@ -324,6 +321,9 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
     // Status label.
     if (status_lbl_ && status_lbl_->visible())
     {
+        status_lbl_->set_colour(state_ == State::Error
+                                     ? std::optional<tk::Color>(pal.destructive)
+                                     : std::nullopt);
         status_lbl_->paint(ctx);
         y += kStatusH + kSmallGap;
     }

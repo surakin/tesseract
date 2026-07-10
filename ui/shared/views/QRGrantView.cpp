@@ -147,7 +147,6 @@ void QRGrantView::set_state_(State s)
 
     case State::Error:
         status_lbl_->set_text(error_msg_);
-        status_lbl_->set_colour(tk::Color::rgb(0xB00020));
         retry_btn_->set_visible(true);
         cancel_btn_->set_label(tk::tr("Close"));
         cancel_btn_->set_visible(true);
@@ -356,6 +355,11 @@ void QRGrantView::paint(tk::PaintCtx& ctx)
     tk::Rect cb = card_->bounds();
     ctx.canvas.fill_rounded_rect(cb, 10.0f, ctx.theme.palette.chrome_bg);
     ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border, 1.0f);
+
+    if (status_lbl_)
+        status_lbl_->set_colour(state_ == State::Error
+                                     ? std::optional<tk::Color>(ctx.theme.palette.destructive)
+                                     : std::nullopt);
 
     card_->paint(ctx);
 }

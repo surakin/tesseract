@@ -41,6 +41,8 @@ constexpr Palette light_palette()
     p.destructive_hover   = Color::rgb(0xE04848);
     p.destructive_pressed = Color::rgb(0xB52A2A);
 
+    p.success = Color::rgb(0x2ECC40);
+
     // Reaction chips
     p.chip_bg = Color::rgb(0xEBEDF0);
     p.chip_bg_me = Color::rgb(0xCFE3FF);
@@ -103,6 +105,8 @@ constexpr Palette dark_palette()
     p.destructive         = Color::rgb(0xE45656);
     p.destructive_hover   = Color::rgb(0xEC6868);
     p.destructive_pressed = Color::rgb(0xC44343);
+
+    p.success = Color::rgb(0x23B064);
 
     p.chip_bg = Color::rgb(0x2A2D33);
     p.chip_bg_me = Color::rgb(0x1F3A66);
