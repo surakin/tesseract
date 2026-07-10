@@ -1477,6 +1477,13 @@ pub mod ffi {
         /// on completion. Does not pin a C++ worker thread.
         fn paginate_back_async(self: &ClientFfi, request_id: u64, room_id: &str, count: u16);
 
+        /// Abort an in-flight `paginate_back_async` task if one is still
+        /// running under `request_id`. No-op if it already completed or was
+        /// never registered. No `on_paginate_result` fires for a cancelled
+        /// request — callers should tear down their own bookkeeping for
+        /// `request_id` immediately rather than waiting on the callback.
+        fn cancel_paginate_back(self: &ClientFfi, request_id: u64);
+
         /// Non-blocking counterpart of `paginate_forward`. Spawns the HTTP
         /// paginate as a tokio task and fires
         /// `on_paginate_result(request_id, ok, false, reached_end, message)`

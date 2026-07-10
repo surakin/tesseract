@@ -319,6 +319,13 @@ public:
                              const std::string& room_id,
                              std::uint16_t count);
 
+    /// Abort an in-flight `paginate_back_async` request if one is still
+    /// running under `request_id`. No-op if it already completed or was never
+    /// registered. No `on_paginate_result` fires for a cancelled request —
+    /// callers should tear down their own bookkeeping for `request_id`
+    /// immediately rather than waiting on the callback.
+    void cancel_paginate_back(std::uint64_t request_id);
+
     /// Non-blocking counterpart of `paginate_forward`. Delivers result via
     /// `IEventHandler::on_paginate_result(request_id, …)`.
     void paginate_forward_async(std::uint64_t request_id,

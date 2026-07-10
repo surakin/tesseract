@@ -3151,6 +3151,15 @@ protected:
     // Media rows the most recent prepend batch added to the gallery. Read
     // (and reset to 0) by handle_paginate_result_ui_ right after use.
     int media_view_last_round_media_count_ = 0;
+    // request_id of the gallery's own currently in-flight paginate_back_async
+    // call, or 0 if none. Lets close_room_media_view_() cancel it on the Rust
+    // side (client_->cancel_paginate_back) instead of merely abandoning it —
+    // otherwise the tokio task keeps running and, if the gallery is reopened
+    // for the same room before it resolves, its stale result can be
+    // misattributed to the new session (room_id is the only correlation key
+    // handle_paginate_result_ui_ has for the gallery). Cleared here and by
+    // handle_paginate_result_ui_ once the request resolves on its own.
+    std::uint64_t media_view_pending_request_id_ = 0;
     static constexpr int kMediaViewMinPerRound = 6;  // ~one grid row
     static constexpr int kMediaViewMaxRetries  = 4;  // 4*kPaginationBatch raw events/gesture
     // Cap on concurrent media fetches the gallery's image provider will

@@ -1134,7 +1134,7 @@ impl ClientFfi {
         #[cfg(debug_assertions)]
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
 
-        self.rt.spawn(async move {
+        let join = self.rt.spawn(async move {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
@@ -1178,7 +1178,29 @@ impl ClientFfi {
                 Err(e) => deliver(false, false, &e.to_string()),
             }
         });
+        // Opportunistically prune already-finished handles so the map can't
+        // grow unbounded over a long session (tasks don't remove themselves —
+        // avoids a register/remove race with the insert below). Mirrors
+        // `register_media_task` / `register_space_summary_task`.
+        {
+            let mut m = self.paginate_tasks.lock();
+            m.retain(|_, h| !h.is_finished());
+            m.insert(request_id, join.abort_handle());
+        }
     }
+
+    /// Abort an in-flight `paginate_back_async` task if one is still running
+    /// under `request_id`. No-op if it already completed or was never
+    /// registered. No `on_paginate_result` fires for a cancelled request.
+    #[cfg(not(test))]
+    pub fn cancel_paginate_back(&self, request_id: u64) {
+        if let Some(h) = self.paginate_tasks.lock().remove(&request_id) {
+            h.abort();
+        }
+    }
+
+    #[cfg(test)]
+    pub fn cancel_paginate_back(&self, _request_id: u64) {}
 
     #[cfg(test)]
     pub fn paginate_back_async(&self, _request_id: u64, _room_id: &str, _count: u16) {}

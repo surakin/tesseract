@@ -663,6 +663,15 @@ pub struct ClientFfi {
     #[cfg(not(test))]
     pub(super) space_summary_tasks:
         Arc<Mutex<HashMap<String, Vec<(u64, tokio::task::AbortHandle)>>>>,
+    /// Abort handle for an in-flight `paginate_back_async` task, keyed by its
+    /// `request_id`. Only one backward pagination can be in flight per room at
+    /// a time (enforced C++-side by `PaginationState::in_flight`), so unlike
+    /// `media_tasks` this needs no grouping — a flat map is enough.
+    /// `cancel_paginate_back` removes and aborts an entry; finished entries are
+    /// opportunistically pruned on each new registration (tasks don't remove
+    /// themselves — avoids a register/remove race), mirroring `media_tasks`.
+    #[cfg(not(test))]
+    pub(super) paginate_tasks: Arc<Mutex<HashMap<u64, tokio::task::AbortHandle>>>,
     /// Set of `"kind:source"` cache keys for media that matrix-sdk's internal
     /// SQLite store already holds. `fetch_media_async` uses this to skip the
     /// priority gate for locally-cached media: a SQLite hit takes < 1 ms, so a
@@ -959,6 +968,8 @@ impl ClientFfi {
             media_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             space_summary_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            paginate_tasks: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sdk_media_fetched: Arc::new(Mutex::new(std::collections::HashSet::new())),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),

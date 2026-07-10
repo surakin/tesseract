@@ -3889,6 +3889,10 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
         return;
     auto [room_id, is_backward] = it->second;
     pending_paginates_.erase(it);
+    // This request resolved on its own — nothing left for
+    // close_room_media_view_() to cancel.
+    if (request_id == media_view_pending_request_id_)
+        media_view_pending_request_id_ = 0;
 
     auto& state = pagination_[room_id];
     if (is_backward)
@@ -4812,6 +4816,21 @@ void ShellBase::close_room_media_view_()
 {
     if (media_view_group_ != 0)
         cancel_media_group_(media_view_group_);
+    // Cancel the gallery's own in-flight backward pagination, if any, rather
+    // than just abandoning it: the Rust-side tokio task otherwise keeps
+    // running to completion, and a stale result landing after a same-room
+    // reopen would be misattributed to the new session (see
+    // media_view_pending_request_id_'s comment in ShellBase.h).
+    if (media_view_pending_request_id_ != 0)
+    {
+        if (client_)
+            client_->cancel_paginate_back(media_view_pending_request_id_);
+        pending_paginates_.erase(media_view_pending_request_id_);
+        auto pit = pagination_.find(media_view_room_id_);
+        if (pit != pagination_.end())
+            pit->second.in_flight = false;
+        media_view_pending_request_id_ = 0;
+    }
     media_view_room_id_.clear();
     media_view_group_                 = 0;
     media_view_retries_left_          = 0;
@@ -4840,6 +4859,7 @@ void ShellBase::request_media_view_pagination_back_(const std::string& room_id)
     --media_view_retries_left_;
     const auto req_id = next_paginate_id_++;
     pending_paginates_[req_id] = {room_id, /*is_backward=*/true};
+    media_view_pending_request_id_ = req_id;
     client_->paginate_back_async(req_id, room_id, kPaginationBatch);
 }
 
