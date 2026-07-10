@@ -201,6 +201,7 @@ Tesseract stands on the work of many open-source projects.
 | [GTK4](https://www.gtk.org/) + Pango / Cairo / gdk-pixbuf | Linux (GTK shell) | The GNOME Project |
 | [GStreamer](https://gstreamer.freedesktop.org/) (+ gst-plugins-base for Opus) | Linux GTK voice playback | The GStreamer Project |
 | Win32 / Direct2D | Windows | Microsoft |
+| [BetterText](https://github.com/surakin/bettertext) (vendored) | Windows compose text control (D2D/DirectWrite) | surakin |
 | AppKit / CoreGraphics / CoreText | macOS | Apple |
 | [nanosvg](https://github.com/memononen/nanosvg) (vendored) | SVG icon rasterization | Mikko Mononen (incl. AntiGrain code by Maxim Shemanarev) |
 | [Lucide](https://lucide.dev/) (ISC) | UI icon set | The Lucide Contributors (community fork of Feather) |
