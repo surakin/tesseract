@@ -10,23 +10,104 @@ Tagged releases summarize all changes since the previous tag.
 - feat(windows): vendored BetterText (`third_party/bettertext`), a from-scratch D2D/DirectWrite Win32 text control
 - feat(image-viewer): copy the displayed image to the clipboard from the full-window lightbox, beside the save button
 - feat(composer): render custom MSC2545 emoji inline, end to end
+- feat(room-media-view): add a room media gallery — grouped by month oldest to newest, older months paginate in on scroll-up, opened from a new "Media (N)" row in the room info panel
 - perf(timeline): a just-sent message's local echo could take seconds to appear in the timeline under background load
+- perf(timeline): instant room switch — stop auto-filling a short viewport, bottom-anchor short content, keep warm favorites' subscriptions alive
+- perf(timeline): fill a full window from cache on room open instead of the smaller scroll-increment batch
 - build: enable CMake unity builds (`TESSERACT_UNITY_BUILD`, default ON)
 - perf(compose): first (superseded) attempt at the slow local echo
 - build: merged the four `linux-{gtk,qt6}-{debug,release}` CMake presets into `linux-debug`/`linux-release`
 - build: moved the per-platform `tk::` backend implementations out of the cross-platform `tesseract_tk` library into each platform's own target
 - docs(roadmap): rewrote ROADMAP.md as a single priority-ordered backlog (tiers by urgency)
 - docs: call out the Matrix Authentication Service + Sliding Sync server requirement in the README and landing page
+- test(message-list): fix 18 tests broken by the new bottom-anchored short-content layout
 - fix(windows): route BetterText emoji glyphs through Tesseract's bundled Noto Color Emoji font
 - fix: multiline messages weren't rendering as multiline
 - fix: thread replies dropped `formatted_body`, silently losing MSC2545 custom emoji and @mention `matrix.to` links
 - fix: close the reaction/emoji picker on an outside click, and keep a message row's action buttons visible while the picker is open
 - fix: don't drop the room-switch anti-reflow gate on a same-room timeline reset (e.g. a pagination refill)
+- fix(timeline): decrypt old events on jump-to-date in encrypted rooms
+- fix(theme): stop pre-auth status labels (login/join-room/QR-grant) from baking in literal colors instead of reading the theme palette
+- fix(macos): drop a redundant `NSCell` image-property redeclaration on `TKEmoticonCell`
 - fix(build): wire up Windows test-target linking (UNICODE, D2D/D3D11/DWrite, `screen_capture_win32.cpp`, video capture)
 - fix(cpack): declare the `qt6-image-formats-plugins` runtime dependency for the .deb/.rpm packages
 - fix(ci): bundle Qt6 image-format plugins (WebP/TIFF/ICO, etc.) in AppImage builds
 
 ### Details
+
+#### 2026-07-10
+
+- feat(room-media-view): add a room media gallery listing every image/video
+  in the current room, grouped by month (oldest month at the top, newest at
+  the bottom, mirroring the chat timeline), with older months paginating in
+  as the user scrolls up. Opened from a new "Media (N)" row in the room info
+  panel, under the notification-mode selector — `N` is the count of
+  image/video rows already synced into the local timeline, not a server-side
+  total. Reuses the room's existing `Timeline` subscription rather than
+  adding new Rust/FFI surface (matrix-sdk has no media-filtered read API;
+  raw `paginate_back_async` batches are filtered to Image/Video client-side),
+  and reuses the existing `ImageViewerOverlay`/`VideoViewerOverlay`
+  lightboxes for cell clicks. The gallery is scoped to the chat-panel area
+  (the sidebar stays visible/usable behind it) and closes automatically when
+  its `RoomInfoPanel` entry point closes or the active room changes.
+  Pagination is a retry/accumulate loop: since a raw batch is unfiltered, a
+  media-sparse stretch of history may need several backend round-trips
+  before enough media turns up, reaches the room's start, or a per-gesture
+  retry cap is hit.
+- perf: the gallery's denser thumbnail grid and more aggressive backward
+  pagination surfaced several pre-existing relayout/invalidation costs that
+  a normal chat timeline rarely triggers hard enough to notice:
+  - Win32 and macOS's `on_media_bytes_ready_` called the surface's
+    `relayout()` directly and synchronously on every decoded-image
+    completion — a full app-wide `arrange()` per completion. GTK4 and Qt6
+    already routed this through the coalescing `schedule_relayout_()`
+    helper (which folds a burst of calls into one deferred pass); Win32 and
+    macOS now match.
+  - `MessageListView::notify_image_ready()` called the blanket
+    `invalidate_data()` whenever a newly-decoded image's URL matched a row
+    already loaded in the timeline, forcing a full re-measure of every row
+    (rebuilding any not-yet-cached row's text layout) on every match. Now
+    calls the existing targeted `invalidate_row()` for just the matched
+    row(s).
+  - `MessageListView` kept doing this relayout work even while fully
+    covered by the gallery overlay and thus invisible. Added
+    `set_relayout_suppressed()`: while suppressed, `arrange()` short-circuits
+    before the expensive base `ListView::arrange()`; data mutations
+    (messages_, pagination) still apply normally underneath, and the
+    deferred dirty state collapses into a single catch-up re-measure on the
+    next real `arrange()` once the gallery closes.
+- fix(timeline): decrypt old events on jump-to-date in encrypted rooms.
+  Jump-to-date builds a `TimelineFocus::Event` timeline whose `/context`
+  events live only in an in-memory `EventFocusedCache` that is never
+  persisted; the matrix-sdk redecryptor (R2D2) only finds UTDs to retry in
+  the store or the live room cache, so it never re-decrypted this focused
+  cache's historic events when a backup key arrived. Now pre-fetches the
+  room's backed-up Megolm sessions via `download_room_keys_for_room()`
+  before building the focused timeline (a single bounded
+  `GET /room_keys/keys/{roomId}`, a no-op when backup isn't set up), so the
+  `/context` events decrypt inline during the build. Best-effort — a
+  failure is logged and doesn't block the jump.
+- fix(theme): `LoginView`/`JoinRoomView`/`QRGrantView` status and discovery
+  labels called `set_colour()` with hardcoded hex literals, which
+  permanently overrides `Label`'s per-paint fallback to the theme palette —
+  so they stayed tuned for light mode and never reacted to dark mode or a
+  live theme switch. Now resolved from `ctx.theme.palette` in each view's
+  `paint()` instead, matching the surrounding chrome. Also fixes a
+  Windows-only ordering bug where `branding_surface_` was constructed after
+  the startup `apply_current_theme_()` call, so `BrandView` never received
+  the resolved system theme on first launch.
+- test(message-list): fix 18 C++ tests broken by the bottom-anchored
+  short-content layout (`set_anchor_content_bottom()`, above) — every
+  affected test hardcoded pixel coordinates written for the old top-anchored
+  layout (hover/click points, pixel-sample offsets, an image-hit-test scan
+  range), which now miss the row entirely. Added a `bottom_anchor_pad()`
+  test helper computing the same pad the widget applies internally, and used
+  it to shift the affected probes. No production code changes — the tests
+  were simply out of date.
+- fix(macos): `NSCell` already declares an atomic, strong `image` property;
+  redeclaring it nonatomic on `TKEmoticonCell` conflicted with the inherited
+  attribute and silenced auto-synthesis, producing two warnings in the
+  macos-appkit release build.
 
 #### 2026-07-09
 
@@ -43,6 +124,33 @@ Tagged releases summarize all changes since the previous tag.
   supersedes the 2026-07-08 attempt below, which misattributed the delay to the
   C++ UI queue (that queue also carries the prompt room-list update, so it was
   never the bottleneck) — those changes still land as general perf wins.
+- perf(timeline): instant room switch — no viewport auto-fill, bottom-anchor,
+  warm favorites. Switching to a room fired a back-pagination the instant the
+  cached tail didn't fill the viewport (`ListView`'s arrange-time
+  `on_near_top` auto-fire), which crosses the event-cache gap the SDK plants
+  behind a freshly-synced tail and resolves it with a `/messages` round-trip
+  — a spinner on every switch. matrix-sdk-ui pagination is store-first (it
+  only networks at a true gap), so the fix is to stop forcing that
+  pagination on open and let it happen on scroll, mirroring Element X.
+  `ListView` gains `set_autofill_only_when_empty()` (the arrange-time
+  auto-fire now only triggers for a genuinely empty list — enabled on the
+  message list, thread lists keep fill-on-open) and
+  `set_anchor_content_bottom()` + `content_top_pad()` (content shorter than
+  the viewport anchors to the bottom, as chat expects, with the pad applied
+  consistently to paint and hit-testing so clicks/hover stay aligned).
+  `ShellBase::prune_warm_subscriptions_` also keeps favorite rooms in the
+  keep-set so a favorite that's been opened is never evicted past
+  `kWarmRoomsMax` — returning to it stays instant for the session.
+- perf(timeline): fill a full window from cache on room open. The initial
+  history load used the same 50-event scroll increment as a scroll-up
+  fetch, so a maximized desktop window opened only partly filled even when
+  far more recent events were already cached on disk. matrix-sdk pagination
+  is store-first — it reads cached chunks from disk and only reaches the
+  network at a genuine gap — so raising the initial-fill count pulls more
+  already-cached history straight from disk with no server round-trip; a
+  room with a genuine gap right behind the tail does at most one
+  `/messages` to bridge it. Adds `kInitialFillBatch = 100` for the on-open
+  paginate; scroll-up increments keep using `kPaginationBatch = 50`.
 - feat(windows): vendored BetterText (`third_party/bettertext`), a from-scratch
   D2D/DirectWrite Win32 text control, as a new backend for
   `NativeTextField`/`NativeTextArea`. Adds change/submit notifications,
