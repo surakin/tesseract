@@ -2128,6 +2128,7 @@ pub(super) struct RoomListFingerprintKey {
     join_rule: String,
     guest_access: bool,
     history_visibility: String,
+    pinned_ids: String,
 }
 
 /// Change-detection fingerprint for the room-list snapshot. The sync watcher
@@ -2175,6 +2176,17 @@ pub(super) fn room_list_fingerprint(
             // value) until an unrelated field happens to perturb the
             // fingerprint — same failure mode already fixed once for
             // avatar_url/dm_avatar_url above.
+            //
+            // pinned_ids: pin_event/unpin_event (sdk/src/client/pins.rs) only
+            // send the m.room.pinned_events state event and return — they
+            // don't touch unread/name/recency/avatar/etc. either, so without
+            // this the pinned-messages banner and the message action's
+            // Pin/Unpin label stay stale until an unrelated field happens to
+            // perturb the fingerprint (in practice: until app restart, whose
+            // unconditional first emit isn't gated by this comparison at
+            // all). Joined event-id string (not just a count) so reordering
+            // or swapping one pin for another of the same count still
+            // perturbs the fingerprint.
             RoomListFingerprintKey {
                 unread,
                 quiet_unread,
@@ -2190,6 +2202,12 @@ pub(super) fn room_list_fingerprint(
                 join_rule: r.join_rule.clone(),
                 guest_access: r.guest_access,
                 history_visibility: r.history_visibility.clone(),
+                pinned_ids: r
+                    .pinned_events
+                    .iter()
+                    .map(|p| p.event_id.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\u{1}"),
             }
         })
         .collect()
@@ -2427,6 +2445,26 @@ mod tests {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.history_visibility = "world_readable".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_pinned_events_change() {
+        // pin_event/unpin_event only send the m.room.pinned_events state
+        // event and return — they don't touch unread/name/recency/avatar/
+        // etc. either, so without pinned_ids in the fingerprint the pinned-
+        // messages banner and the Pin/Unpin message action stay stale until
+        // an unrelated field happens to perturb the fingerprint (in
+        // practice: until app restart).
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.pinned_events.push(crate::ffi::PinnedEvent {
+            event_id: "$pinned:example.org".to_owned(),
+            sender_name: "Alice".to_owned(),
+            body_preview: "hello".to_owned(),
+            timestamp: 1,
+        });
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }

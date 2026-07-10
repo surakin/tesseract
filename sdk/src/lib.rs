@@ -80,7 +80,16 @@ pub mod ffi {
         pub history_visibility: String,
         pub join_rule: String,
         pub guest_access: bool,
+        pub pinned_events: Vec<PinnedEvent>,
         pub canonical_alias: String,
+    }
+
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct PinnedEvent {
+        pub event_id: String,
+        pub sender_name: String,
+        pub body_preview: String,
+        pub timestamp: u64,
     }
 
     #[derive(Debug, PartialEq, Default)]
