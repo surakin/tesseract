@@ -234,6 +234,14 @@ void RoomInfoPanel::set_notification_mode(std::string mode)
     if (notification_combo_) notification_combo_->set_selected_value(mode);
 }
 
+void RoomInfoPanel::set_media_count(int count)
+{
+    if (count == media_count_) return;
+    media_count_ = count;
+    media_row_layout_.reset();
+    if (on_layout_changed) on_layout_changed();
+}
+
 void RoomInfoPanel::set_topic_edit_text(std::string t)
 {
     topic_edit_text_ = std::move(t);
@@ -421,6 +429,12 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
             y += 32.0f + kPadY;
         }
     }
+
+    // "Media (N)" row — direct-painted/hit-tested like the member rows
+    // (see on_pointer_down/up/move). No popup of its own, so it doesn't
+    // participate in the leave/combo paint-order inversion below.
+    media_row_rect_ = {px, y, kPanelW, kMediaRowH};
+    y += kMediaRowH + kPadY;
 
     // Leave button: flows after content, never overlaps the member list.
     if (leave_btn_)
@@ -805,6 +819,31 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             cv.draw_text(*lbl, {panel_rect_.x + kPadX, hdr_y}, pal.text_muted);
     }
 
+    // 15b. "Media (N)" row — plain clickable text row, no chrome, matching
+    // the member rows rather than a bordered tk::Button (it navigates to the
+    // gallery rather than performing an in-place action).
+    {
+        if (hover_media_)
+            cv.fill_rect(media_row_rect_, pal.subtle_hover);
+        if (!media_row_layout_)
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.halign    = tk::TextHAlign::Leading;
+            st.max_width = kPanelW - kPadX * 2.0f;
+            media_row_layout_ = ctx.factory.build_text(
+                tk::trf(tk::tr("Media ({0})"), {std::to_string(media_count_)}),
+                st);
+        }
+        if (media_row_layout_)
+        {
+            const float ty = media_row_rect_.y +
+                             (kMediaRowH - media_row_layout_->measure().h) * 0.5f;
+            cv.draw_text(*media_row_layout_, {panel_rect_.x + kPadX, ty},
+                         pal.text_primary);
+        }
+    }
+
     // 16. Leave button (painted before the notification combo so the combo's
     //     expanded dropdown overlays it when open)
     if (leave_btn_) leave_btn_->paint(ctx);
@@ -870,6 +909,11 @@ bool RoomInfoPanel::on_pointer_down(tk::Point local)
                 press_member_ = i;
                 return true;
             }
+        }
+        if (rect_contains(media_row_rect_, w))
+        {
+            press_media_ = true;
+            return true;
         }
         // Let child dispatch handle button events inside the panel.
         return false;
@@ -945,6 +989,19 @@ void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
             }
         }
     }
+
+    if (press_media_)
+    {
+        press_media_ = false;
+        if (inside_self)
+        {
+            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (rect_contains(media_row_rect_, w) && on_media_view_requested)
+            {
+                on_media_view_requested(room_id_);
+            }
+        }
+    }
 }
 
 bool RoomInfoPanel::on_pointer_move(tk::Point local)
@@ -994,7 +1051,11 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
         }
     }
 
-    return hover_member_ != prev_hover || link_changed;
+    const bool prev_hover_media = hover_media_;
+    hover_media_ = rect_contains(media_row_rect_, w);
+
+    return hover_member_ != prev_hover || link_changed ||
+           hover_media_ != prev_hover_media;
 }
 
 void RoomInfoPanel::on_pointer_leave()
@@ -1003,6 +1064,8 @@ void RoomInfoPanel::on_pointer_leave()
     press_avatar_   = false;
     hover_member_   = -1;
     press_member_   = -1;
+    hover_media_    = false;
+    press_media_    = false;
     if (hover_topic_ && on_hide_tooltip) on_hide_tooltip();
     hover_topic_    = false;
     if (!hover_link_url_.empty())

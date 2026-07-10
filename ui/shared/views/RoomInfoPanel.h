@@ -34,6 +34,14 @@ public:
     // Set the current per-room notification mode. No-op when the panel is closed.
     void set_notification_mode(std::string mode);
 
+    // Update the locally-known media (image/video) count shown by the
+    // "Media (N)" row. Stored regardless of open state (so it's correct the
+    // instant the panel next opens); RoomView pushes this right before
+    // open() and on every timeline mutation while the panel is open. No-op
+    // if the value is unchanged, so unrelated timeline updates don't
+    // invalidate the cached text layout or force a repaint.
+    void set_media_count(int count);
+
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
     void set_avatar_provider(ImageProvider p);
@@ -61,6 +69,8 @@ public:
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
+    // Fired when the user clicks the "Media (N)" row.
+    std::function<void(std::string room_id)>                on_media_view_requested;
     std::function<void(std::string user_id,
                        std::string display_name,
                        std::string avatar_url)>             on_member_clicked;
@@ -138,6 +148,13 @@ private:
     bool     hover_topic_     = false; // pointer is over the topic region
     // Member row rects: up to 5 (or all when expanded), 44px each
     std::vector<tk::Rect> member_rects_;
+    // "Media (N)" row — locally-known image/video count, direct-painted and
+    // hand-hit-tested like the member rows (see media_row_rect_ below).
+    int      media_count_ = 0;
+    tk::Rect media_row_rect_{};
+    bool     hover_media_ = false;
+    bool     press_media_ = false;
+    std::unique_ptr<tk::TextLayout> media_row_layout_;
 
     // Cached text layouts
     std::unique_ptr<tk::TextLayout> name_layout_;
@@ -174,6 +191,7 @@ private:
     static constexpr float kHeaderH     = 48.0f;
     static constexpr float kButtonH     = 36.0f;
     static constexpr float kMemberRowH  = 44.0f;
+    static constexpr float kMediaRowH   = 36.0f;
     static constexpr float kSmallEditH  = 28.0f;
     static constexpr int   kTopicMaxLines = 5;     // wrapped-topic display cap
     static constexpr float kTopicEditH    = 80.0f; // editable-area height

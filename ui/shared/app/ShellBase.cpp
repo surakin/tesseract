@@ -1042,6 +1042,57 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         ensure_user_avatar_(m.avatar_url, media_group_for_room_(current_room_id_));
     };
 
+    // Room media gallery: opening/closing and thumbnail fetching need no
+    // per-shell platform specifics, so (unlike on_image_clicked/
+    // on_video_clicked, which restore native keyboard focus per shell) they
+    // live here once. See ShellBase::open_room_media_view_ /
+    // close_room_media_view_ / request_media_view_pagination_back_.
+    app->room_view()->on_media_view_requested =
+        [this](std::string room_id) { open_room_media_view_(room_id); };
+    if (auto* rmv = app->room_media_view())
+    {
+        rmv->on_close = [this] { close_room_media_view_(); };
+        rmv->on_load_older_media = [this](std::string room_id)
+        {
+            // Each new scroll-to-top approach gets its own fresh retry
+            // budget. media_view_retries_left_ is a single shared counter
+            // also drained by the automatic retry chain in
+            // handle_paginate_result_ui_ (fired without going through
+            // on_near_top at all) — without resetting it here, once that
+            // chain exhausts the budget (e.g. right after opening the
+            // gallery, before the user gets to scroll at all) every
+            // subsequent scroll-triggered call would silently no-op on the
+            // retries_left <= 0 guard forever, even though there may be
+            // more media further back that was simply never scanned.
+            media_view_retries_left_ = kMediaViewMaxRetries;
+            request_media_view_pagination_back_(room_id);
+        };
+        rmv->set_image_provider(
+            [this](const std::string& key) -> const tk::Image*
+            {
+                if (const auto* f = account_manager_.anim_cache().current_frame(key))
+                {
+                    start_anim_tick_();
+                    return f;
+                }
+                if (const auto* img = account_manager_.image_cache().peek(key))
+                    return img;
+                if (const auto* img = account_manager_.thumbnail_cache().peek(key))
+                    return img;
+                // Throttle: see kMaxConcurrentMediaFetches. Skipped cells
+                // stay on the placeholder — the next repaint (triggered by
+                // any in-flight fetch's completion) re-evaluates them.
+                if (media_fetches_in_flight_.size() < kMaxConcurrentMediaFetches)
+                {
+                    ensure_media_thumbnail_(
+                        key, static_cast<int>(views::RoomMediaView::kCellSize),
+                        static_cast<int>(views::RoomMediaView::kCellSize),
+                        false, media_view_group_);
+                }
+                return nullptr;
+            });
+    }
+
     // Avatar click in UserProfilePanel → open the image viewer. The list only
     // holds an ≤80px thumbnail, so kick a full-size fetch into account_manager_.image_cache();
     // the viewer's image_provider returns the thumbnail instantly and swaps to
@@ -3845,6 +3896,25 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
         state.in_flight = false;
         if (ok)
             state.reached_start = reached_start;
+
+        // Room-media gallery retry/accumulate loop: a raw pagination batch is
+        // unfiltered, so a media-sparse stretch of history may yield few or
+        // no media rows in a single round. Keep pulling batches (up to a
+        // per-gesture cap) until enough media turned up, reached_start, or
+        // the cap is hit — see request_media_view_pagination_back_.
+        if (room_id == media_view_room_id_ && main_app_ &&
+            main_app_->room_media_view())
+        {
+            main_app_->room_media_view()->set_reached_start(state.reached_start);
+            const bool need_more =
+                !state.reached_start &&
+                media_view_last_round_media_count_ < kMediaViewMinPerRound &&
+                media_view_retries_left_ > 0;
+            media_view_last_round_media_count_ = 0;
+            if (need_more)
+                request_media_view_pagination_back_(room_id);
+        }
+
         if (room_id == current_room_id_ && room_view_)
         {
             room_view_->set_paginating(false);
@@ -4680,6 +4750,97 @@ void ShellBase::return_to_live_(const std::string& room_id)
                                                  kPaginationBatch);
                 });
         });
+}
+
+void ShellBase::open_room_media_view_(const std::string& room_id)
+{
+    if (!main_app_ || !main_app_->room_media_view() || !room_view_)
+        return;
+    auto* rmv = main_app_->room_media_view();
+
+    // The gallery fully covers the chat panel, so the main timeline
+    // underneath is invisible for as long as it's open — stop paying for
+    // its relayout work (which the gallery's own aggressive backward
+    // pagination would otherwise keep triggering many times over, since
+    // every paginated batch still lands in message_list_ too — there is
+    // only one shared room Timeline subscription).
+    room_view_->set_message_list_relayout_suppressed(true);
+
+    media_view_room_id_               = room_id;
+    // A fixed odd salt guarantees a distinct, deterministic, non-zero group
+    // id per room that never collides with active_media_group_'s value for
+    // the same room, so cancel_media_group_(media_view_group_) only ever
+    // touches the gallery's own fetches.
+    media_view_group_                 = media_group_for_room_(room_id) ^
+                                        0x9E3779B97F4A7C15ull;
+    media_view_retries_left_          = kMediaViewMaxRetries;
+    media_view_last_round_media_count_ = 0;
+
+    std::string room_name = room_id;
+    auto it = std::find_if(rooms_.begin(), rooms_.end(),
+                           [&](const tesseract::RoomInfo& r)
+                           { return r.id == room_id; });
+    if (it != rooms_.end() && !it->name.empty())
+        room_name = it->name;
+
+    rmv->open(room_id, room_name);
+    // Seed synchronously from whatever the main timeline already has —
+    // there is no separate subscription to wait on. A copy, not a move:
+    // messages() is the live data backing the open room's chat view.
+    if (auto* ml = room_view_->message_list())
+        rmv->set_media(ml->messages());
+    auto pit = pagination_.find(room_id);
+    const bool reached_start =
+        pit != pagination_.end() && pit->second.reached_start;
+    rmv->set_reached_start(reached_start);
+
+    // Most rooms have no media at all in the initially-synced window, so the
+    // gallery frequently opens with item_count() == 0. tk::ListView's
+    // on_wheel/on_near_top both no-op on an empty adapter (nothing to
+    // scroll), so scrolling alone can never kick off the first pagination
+    // round in that state — proactively start it here instead. Once this
+    // round lands, handle_paginate_result_ui_'s retry chain keeps going
+    // automatically (up to kMediaViewMaxRetries) without needing any more
+    // wheel input, so this single call is enough to escape the empty state.
+    if (!reached_start && rmv->item_count() < kMediaViewMinPerRound)
+        request_media_view_pagination_back_(room_id);
+
+    request_relayout_();
+}
+
+void ShellBase::close_room_media_view_()
+{
+    if (media_view_group_ != 0)
+        cancel_media_group_(media_view_group_);
+    media_view_room_id_.clear();
+    media_view_group_                 = 0;
+    media_view_retries_left_          = 0;
+    media_view_last_round_media_count_ = 0;
+    // Lifting suppression leaves whatever dirty state accumulated from
+    // mutations while hidden in place; the request_relayout_() call below
+    // is what actually consumes it, in a single catch-up pass.
+    if (room_view_)
+        room_view_->set_message_list_relayout_suppressed(false);
+    // No per-shell on_close override is needed (unlike on_image_clicked/
+    // on_video_clicked, closing doesn't need to steal native keyboard
+    // focus) — just relayout so any_modal_open_() state is re-evaluated.
+    request_relayout_();
+}
+
+void ShellBase::request_media_view_pagination_back_(const std::string& room_id)
+{
+    if (!client_)
+        return;
+    auto& state = pagination_[room_id];
+    if (state.in_flight || state.reached_start)
+        return;
+    if (media_view_retries_left_ <= 0)
+        return;
+    state.in_flight = true;
+    --media_view_retries_left_;
+    const auto req_id = next_paginate_id_++;
+    pending_paginates_[req_id] = {room_id, /*is_backward=*/true};
+    client_->paginate_back_async(req_id, room_id, kPaginationBatch);
 }
 
 void ShellBase::push_room_list_state_(RoomListState state)
@@ -5922,6 +6083,15 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
         }
     }
 
+    // Room-media gallery: a reset replaces the whole known set (e.g. a
+    // reconnect re-subscribe), not just a prepend — feed it the same way
+    // room_view_ above was fed, filtered to Image/Video.
+    if (room_id == media_view_room_id_ && main_app_ &&
+        main_app_->room_media_view())
+    {
+        main_app_->room_media_view()->set_media(build_rows_(snapshot));
+    }
+
     dispatch_timeline_reset_secondary_(room_id, snapshot);
 }
 
@@ -5948,6 +6118,17 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
         room_view_->insert_message(
             index, tesseract::views::make_row_data(*ev, my_user_id_));
         schedule_relayout_(); // coalesce bursts into one layout pass
+    }
+    // Room-media gallery: append newly-arrived live media (e.g. someone
+    // just posted an image while the gallery is open). Edits/redactions to
+    // an existing gallery item are intentionally not propagated live for
+    // v1 — the count and grid are already documented as reflecting what was
+    // known as of the last (re)load, not a strictly live view.
+    if (room_id == media_view_room_id_ && !in_thread && main_app_ &&
+        main_app_->room_media_view())
+    {
+        main_app_->room_media_view()->append_live_media(
+            tesseract::views::make_row_data(*ev, my_user_id_));
     }
     if (!in_thread)
     {
@@ -6024,6 +6205,28 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
             schedule_relayout_();
         }
     }
+
+    // Room-media gallery retry/accumulate loop (see
+    // request_media_view_pagination_back_): count how much media this raw,
+    // unfiltered batch actually contained — handle_paginate_result_ui_ reads
+    // this right after to decide whether to fire another round. events is
+    // oldest-first, matching prepend_media's documented batch order.
+    if (room_id == media_view_room_id_ && !in_thread && main_app_ &&
+        main_app_->room_media_view())
+    {
+        std::vector<views::MessageRowData> media_rows;
+        for (auto& ev : events)
+        {
+            if (!ev || (ev->type != tesseract::EventType::Image &&
+                       ev->type != tesseract::EventType::Video))
+                continue;
+            media_rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+        media_view_last_round_media_count_ = static_cast<int>(media_rows.size());
+        if (!media_rows.empty())
+            main_app_->room_media_view()->prepend_media(std::move(media_rows));
+    }
+
     if (!in_thread)
     {
         // Events are oldest-first; replicate original PushFront-at-0 order by
@@ -7572,6 +7775,19 @@ void ShellBase::after_active_room_changed_()
     // bleed into the new room. The RoomView UI side (bar close + highlights)
     // is handled by RoomView::set_room() when room_changed is true.
     in_room_search_clear_();
+
+    // The room media gallery is scoped to a single room — current_room_id_
+    // is already the room we're switching TO at this point, so leaving it
+    // open here would show (and keep paginating/fetching for) the room the
+    // user just left. close() fires on_close, which runs
+    // close_room_media_view_()'s cleanup (cancel its media group, clear
+    // media_view_room_id_, lift the main timeline's relayout suppression).
+    if (main_app_ && main_app_->room_media_view() &&
+        main_app_->room_media_view()->is_open() &&
+        media_view_room_id_ != current_room_id_)
+    {
+        main_app_->room_media_view()->close();
+    }
 
     // Navigation history for Alt+Left / Alt+Right. Must be first so it
     // executes in tests (no client_) and before any early return.

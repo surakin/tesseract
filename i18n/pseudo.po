@@ -14,6 +14,22 @@ msgstr "🔒 [Encrypted]"
 msgid "🌉 Bridged"
 msgstr "🌉 [Bridged]"
 
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Media ({0})"
+msgstr "[Media ({0})]"
+
+#: ui/shared/views/RoomMediaView.cpp
+msgid "Media — {0}"
+msgstr "[Media — {0}]"
+
+#: ui/shared/views/RoomMediaView.cpp
+msgid "Loading media…"
+msgstr "[Loading media…]"
+
+#: ui/shared/views/RoomMediaView.cpp
+msgid "No media in this room yet"
+msgstr "[No media in this room yet]"
+
 #: ui/shared/views/SpaceRootView.cpp
 msgid "{0} room"
 msgid_plural "{0} rooms"

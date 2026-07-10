@@ -131,6 +131,12 @@ public:
     // Show/hide the back-pagination spinner (delegates to MessageListView).
     void set_paginating(bool paginating);
 
+    // Suppress the main timeline's expensive relayout work while it's
+    // fully covered by another overlay (the room media gallery) — see
+    // MessageListView::set_relayout_suppressed(). Data mutations (new
+    // messages, pagination) still apply normally underneath.
+    void set_message_list_relayout_suppressed(bool suppressed);
+
     // Scroll to the row matching event_id. Returns true when found.
     bool scroll_to_event_id(const std::string& id);
 
@@ -417,6 +423,9 @@ public:
     std::function<void(std::string room_id)>                on_fetch_room_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
+    // Fired when the user clicks the "Media (N)" row in RoomInfoPanel. The
+    // shell opens the MainAppWidget-level RoomMediaView overlay for room_id.
+    std::function<void(std::string room_id)>                on_media_view_requested;
     // Fired when RoomSettingsView opens, so the shell can push per-field
     // permissions (can_set_room_name/topic/avatar).
     std::function<void(std::string room_id)>                on_room_settings_opened;
@@ -497,6 +506,11 @@ private:
     // for thread_view_->message_list() so action buttons (reply / edit /
     // redact, reactions, media clicks, etc.) work in both contexts.
     void wire_message_list_callbacks_(MessageListView* ml);
+    // Recompute the room-info panel's "Media (N)" count from
+    // message_list_->messages() and push it. Gated on the panel being open
+    // (except from show_room_info(), which always seeds it) so mutations in
+    // rooms nobody is looking at don't pay the O(n) rescan.
+    void refresh_media_count_();
     void show_room_info();
     void show_room_settings();
     void show_user_profile(std::string user_id, std::string display_name,

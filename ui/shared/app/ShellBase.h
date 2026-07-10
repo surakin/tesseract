@@ -3117,6 +3117,59 @@ protected:
     // MSC3030: tear down focused state and re-subscribe live.
     void return_to_live_(const std::string& room_id);
 
+    // ── Room media gallery ("Media (N)" row → RoomMediaView overlay) ──────
+    // The gallery reuses the room's already-active Timeline subscription
+    // (no dedicated Rust/FFI surface) and filters raw pagination batches to
+    // Image/Video client-side, so a single scroll-to-top gesture may need
+    // several backend round-trips in a media-sparse room. These are the only
+    // hooks: everything else (mounting, the count on RoomInfoPanel, the
+    // click→lightbox wiring) lives in RoomMediaView/RoomView/RoomInfoPanel or
+    // the per-shell click handlers (mirroring room_view_->on_image_clicked).
+
+    // Seeds the overlay from room_view_'s already-synced messages() and opens
+    // it. Called from RoomView::on_media_view_requested (wired once in
+    // wire_main_app_widget_, shared by all shells).
+    void open_room_media_view_(const std::string& room_id);
+    // Cancels the gallery's dedicated media-fetch group and clears
+    // media_view_room_id_. Called from RoomMediaView::on_close.
+    void close_room_media_view_();
+    // Issues one more paginate_back_async batch for the gallery's room,
+    // sharing pagination_[room_id] with the main timeline so the two can
+    // never race. Called from RoomMediaView::on_load_older_media and,
+    // internally, by handle_paginate_result_ui_'s retry/accumulate chain.
+    void request_media_view_pagination_back_(const std::string& room_id);
+
+    // Non-zero only while the gallery is open; the room it's open for.
+    std::string   media_view_room_id_;
+    // Distinct from active_media_group_ so closing the gallery or switching
+    // rooms cancels only its own in-flight thumbnail fetches.
+    std::uint64_t media_view_group_ = 0;
+    // Remaining automatic paginate_back_async retries for the current
+    // scroll-to-top gesture (reset in open_room_media_view_ and each time
+    // on_load_older_media fires a *new* gesture — see RoomMediaView.cpp).
+    int media_view_retries_left_ = 0;
+    // Media rows the most recent prepend batch added to the gallery. Read
+    // (and reset to 0) by handle_paginate_result_ui_ right after use.
+    int media_view_last_round_media_count_ = 0;
+    static constexpr int kMediaViewMinPerRound = 6;  // ~one grid row
+    static constexpr int kMediaViewMaxRetries  = 4;  // 4*kPaginationBatch raw events/gesture
+    // Cap on concurrent media fetches the gallery's image provider will
+    // kick off. A dense thumbnail grid can make dozens of cells newly
+    // visible in one paint pass (opening the gallery, a big scroll) — far
+    // more than the sparser main timeline ever shows at once. Kicking a
+    // fetch for all of them simultaneously floods the disk-read/decode
+    // pipeline and lands a burst of UI-thread completions (cache store +
+    // repaint) in a tight window, which reads as stutter/freeze even
+    // though each individual hop is off-thread. Checked against the
+    // *global* media_fetches_in_flight_ size (not gallery-scoped) —
+    // simpler than per-group bookkeeping and the goal is just "don't pile
+    // more concurrent work onto an already-busy pipeline," regardless of
+    // source. Cells beyond the cap stay on the placeholder; each
+    // completion's repaint re-evaluates them, so the backlog drains
+    // itself in waves as slots free up rather than needing an explicit
+    // retry/timer mechanism.
+    static constexpr std::size_t kMaxConcurrentMediaFetches = 8;
+
     // Send public m.read and private m.read.private receipts for event_id in
     // room_id if it differs from the last one sent this session. No-op when
     // either arg is empty.

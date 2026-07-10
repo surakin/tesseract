@@ -11,6 +11,27 @@
 namespace tesseract::views
 {
 
+namespace
+{
+// Count of Image/Video rows currently synced into the timeline — i.e. only
+// what's already loaded locally, not a server-side total. Feeds
+// RoomInfoPanel's "Media (N)" row; grows as more history is paginated in
+// (including via the room-media gallery's own backward pagination).
+int count_synced_media_(const std::vector<MessageRowData>& rows)
+{
+    int n = 0;
+    for (const auto& r : rows)
+    {
+        if (r.kind == MessageRowData::Kind::Image ||
+            r.kind == MessageRowData::Kind::Video)
+        {
+            ++n;
+        }
+    }
+    return n;
+}
+} // namespace
+
 // Transparent, paints-nothing widget that sits on top of message_list_ while
 // the thread panel is open. Claims pointer-down (so the message list never
 // sees a click) and fires on_click on release; returns true from pointer
@@ -691,6 +712,16 @@ void RoomView::wire_internal_callbacks()
         }
         if (on_leave_room) on_leave_room(std::move(room_id));
     };
+    room_info_panel_->on_media_view_requested = [this](std::string room_id)
+    {
+        // Close the panel as we hand off to the gallery — otherwise it
+        // stays open (and, since RoomInfoPanel is a RoomView-owned overlay
+        // rather than a MainAppWidget-level one, visually underneath) once
+        // the gallery closes again.
+        if (room_info_panel_) room_info_panel_->close();
+        if (on_layout_changed) on_layout_changed();
+        if (on_media_view_requested) on_media_view_requested(std::move(room_id));
+    };
     room_info_panel_->on_member_clicked =
         [this](std::string uid, std::string name, std::string av)
     {
@@ -773,8 +804,21 @@ void RoomView::show_room_info()
         return;
     if (user_profile_panel_ && user_profile_panel_->is_open())
         user_profile_panel_->close();
+    if (message_list_)
+    {
+        room_info_panel_->set_media_count(
+            count_synced_media_(message_list_->messages()));
+    }
     room_info_panel_->open(current_room_info_);
     if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::refresh_media_count_()
+{
+    if (!room_info_panel_ || !room_info_panel_->is_open() || !message_list_)
+        return;
+    room_info_panel_->set_media_count(
+        count_synced_media_(message_list_->messages()));
 }
 
 void RoomView::show_room_settings()
@@ -1112,6 +1156,14 @@ void RoomView::set_paginating(bool paginating)
     }
 }
 
+void RoomView::set_message_list_relayout_suppressed(bool suppressed)
+{
+    if (message_list_)
+    {
+        message_list_->set_relayout_suppressed(suppressed);
+    }
+}
+
 bool RoomView::scroll_to_event_id(const std::string& id)
 {
     return message_list_ && message_list_->scroll_to_event_id(id);
@@ -1187,6 +1239,7 @@ void RoomView::set_messages(std::vector<MessageRowData> msgs, bool room_switch)
     {
         message_list_->set_messages(std::move(msgs), room_switch);
     }
+    refresh_media_count_();
 }
 
 void RoomView::insert_message(std::size_t index, MessageRowData msg)
@@ -1195,6 +1248,7 @@ void RoomView::insert_message(std::size_t index, MessageRowData msg)
     {
         message_list_->insert_message(index, std::move(msg));
     }
+    refresh_media_count_();
 }
 
 void RoomView::update_message(std::size_t index, MessageRowData msg)
@@ -1203,6 +1257,7 @@ void RoomView::update_message(std::size_t index, MessageRowData msg)
     {
         message_list_->update_message(index, std::move(msg));
     }
+    refresh_media_count_();
 }
 
 void RoomView::remove_message(std::size_t index)
@@ -1211,6 +1266,7 @@ void RoomView::remove_message(std::size_t index)
     {
         message_list_->remove_message(index);
     }
+    refresh_media_count_();
 }
 
 void RoomView::append_message(MessageRowData msg)
@@ -1219,18 +1275,21 @@ void RoomView::append_message(MessageRowData msg)
     {
         message_list_->append_message(std::move(msg));
     }
+    refresh_media_count_();
 }
 
 void RoomView::prepend_messages(std::vector<MessageRowData> rows)
 {
     if (message_list_)
         message_list_->prepend_messages(std::move(rows));
+    refresh_media_count_();
 }
 
 void RoomView::append_messages(std::vector<MessageRowData> rows)
 {
     if (message_list_)
         message_list_->append_messages(std::move(rows));
+    refresh_media_count_();
 }
 
 void RoomView::notify_image_ready(const std::string& url)

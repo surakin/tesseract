@@ -685,6 +685,19 @@ public:
     // or when set_messages() resets the list.
     void set_pending_scroll_event_id(const std::string& event_id);
 
+    // Suppress the expensive part of arrange() (the base ListView's
+    // rebuild_heights/rebuild_dirty_, which can rebuild many rows' text
+    // layouts) while this view is fully covered and invisible — e.g.
+    // behind the room media gallery overlay. Mutations still update
+    // messages_ and mark rows dirty normally while suppressed; that
+    // deferred dirty state is simply picked up and processed in one pass
+    // by the next real arrange() once suppression lifts, instead of once
+    // per mutation while nobody can see the result.
+    void set_relayout_suppressed(bool suppressed)
+    {
+        relayout_suppressed_ = suppressed;
+    }
+
     // Show/hide historical mode. The pill stays visible regardless of scroll
     // position, and clicking it fires on_return_to_live instead of
     // scroll_to_bottom(). Calls invalidate_data(); the caller must also schedule
@@ -937,6 +950,8 @@ private:
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
     std::string pending_scroll_event_id_;
+    // See set_relayout_suppressed().
+    bool relayout_suppressed_ = false;
 
     // Per-frame chip geometry for the hovered row. Mutable so paint_row
     // can write into it from a const-ish paint pass.

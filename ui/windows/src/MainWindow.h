@@ -347,6 +347,7 @@ private:
     tesseract::views::VerificationBanner* verif_shared_ = nullptr;
     tesseract::views::ImageViewerOverlay* img_viewer_ = nullptr;
     tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;
+    tesseract::views::RoomMediaView* room_media_view_ = nullptr;
 
     // Native overlays hosted on main_app_surface_.
     std::unique_ptr<tk::NativeTextField> room_search_field_;

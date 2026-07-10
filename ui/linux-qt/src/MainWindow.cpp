@@ -1082,6 +1082,50 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 client_->fetch_source_bytes_async(req_id, src);
             }
         };
+
+        // Room media gallery cell clicks → the same lightboxes as the main
+        // timeline. Per-shell (not wire_main_app_widget_) because opening a
+        // lightbox needs to grab native keyboard focus, mirroring
+        // room_view()'s on_image_clicked/on_video_clicked above exactly.
+        mainApp_->room_media_view()->on_image_clicked =
+            [this](const tesseract::views::MessageListView::ImageHit& hit)
+        {
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            mainApp_->image_viewer()->open(src_tok, thumb_tok,
+                                           hit.body, hit.natural_w,
+                                           hit.natural_h);
+            mainApp_->show_image_viewer(true);
+            mainAppSurface_->relayout();
+            mainAppSurface_->setFocus();
+            ensure_viewer_fullres_(src_tok);
+        };
+        mainApp_->room_media_view()->on_video_clicked =
+            [this](const tesseract::views::MessageListView::VideoHit& hit)
+        {
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            mainApp_->video_viewer()->open(
+                src_tok, thumb_tok, hit.mime_type,
+                hit.duration_ms, hit.natural_w, hit.natural_h,
+                hit.loop, hit.no_audio, hit.hide_controls);
+            mainApp_->show_video_viewer(true);
+            mainAppSurface_->relayout();
+            mainAppSurface_->setFocus();
+            std::string src = src_tok;
+            if (client_)
+            {
+                auto req_id = begin_media_req_(0,
+                    [this](std::vector<std::uint8_t> bytes) mutable
+                    {
+                        if (mainApp_ && !bytes.empty())
+                            mainApp_->video_viewer()->load_bytes(
+                                bytes.data(), bytes.size());
+                    });
+                client_->fetch_source_bytes_async(req_id, src);
+            }
+        };
+
         mainApp_->room_view()->on_file_clicked =
             [this](const tesseract::views::MessageListView::FileHit& hit)
         {

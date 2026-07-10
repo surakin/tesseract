@@ -552,6 +552,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         verif_shared_ = main_app_->verif_banner();
         img_viewer_ = main_app_->image_viewer();
         vid_viewer_ = main_app_->video_viewer();
+        room_media_view_ = main_app_->room_media_view();
         main_app_->on_quick_switch_shortcut = [this] { open_quick_switch_(); };
         main_app_->on_message_search_shortcut =
             [this] { open_message_search_(); };
@@ -2141,6 +2142,49 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 client_->fetch_source_bytes_async(req_id, src);
             }
         };
+
+        // Room media gallery cell clicks → the same lightboxes as the main
+        // timeline. Per-shell (not wire_main_app_widget_) because opening a
+        // lightbox needs to grab native keyboard focus, mirroring
+        // room_view_'s on_image_clicked/on_video_clicked above exactly.
+        if (room_media_view_)
+        {
+            room_media_view_->on_image_clicked =
+                [this](const tesseract::views::MessageListView::ImageHit& hit)
+            {
+                const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+                const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+                img_viewer_->open(src_tok, thumb_tok, hit.body,
+                                  hit.natural_w, hit.natural_h);
+                main_app_->show_image_viewer(true);
+                main_app_surface_->relayout();
+                gtk_widget_grab_focus(main_app_surface_->widget());
+                ensure_viewer_fullres_(src_tok);
+            };
+            room_media_view_->on_video_clicked =
+                [this](const tesseract::views::MessageListView::VideoHit& hit)
+            {
+                const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+                const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+                vid_viewer_->open(src_tok, thumb_tok, hit.mime_type,
+                                  hit.duration_ms, hit.natural_w, hit.natural_h,
+                                  hit.loop, hit.no_audio, hit.hide_controls);
+                main_app_->show_video_viewer(true);
+                main_app_surface_->relayout();
+                gtk_widget_grab_focus(main_app_surface_->widget());
+                std::string src = src_tok;
+                if (client_)
+                {
+                    auto req_id = begin_media_req_(0,
+                        [this](std::vector<uint8_t> bytes) mutable
+                        {
+                            if (vid_viewer_ && !bytes.empty())
+                                vid_viewer_->load_bytes(bytes.data(), bytes.size());
+                        });
+                    client_->fetch_source_bytes_async(req_id, src);
+                }
+            };
+        }
 
         vid_viewer_->on_save =
             [this](std::string source_json, std::string mime_type)

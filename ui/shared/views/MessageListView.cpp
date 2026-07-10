@@ -5108,7 +5108,7 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
 void MessageListView::notify_image_ready(const std::string& url)
 {
     room_switch_gate_.notify_loaded(url);
-    bool matched = false;
+    std::vector<std::size_t> matched_indices;
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
         // Match either the full-res token or the thumbnail token.
@@ -5139,10 +5139,10 @@ void MessageListView::notify_image_ready(const std::string& url)
         {
             // Newly decoded → re-pin this row now that the image exists.
             try_acquire_image_(m);
-            matched = true;
+            matched_indices.push_back(i);
         }
         // Pin newly-decoded sender avatar. Avatars don't change row height so
-        // this doesn't contribute to the relayout-triggering `matched` flag.
+        // this doesn't contribute to matched_indices (no re-measure needed).
         if (!url.empty() && m.sender_avatar_url == url &&
             (!m.owned_avatar || m.owned_avatar_key != url))
         {
@@ -5150,14 +5150,30 @@ void MessageListView::notify_image_ready(const std::string& url)
             m.owned_avatar_key = url;
         }
     }
-    if (!matched)
+    if (matched_indices.empty())
     {
         return;
     }
+    // Targeted invalidation — re-measure only the rows whose image just
+    // arrived (invalidate_row widens to each adapter's declared
+    // height_dependency_span, e.g. day-separator/continuation coupling, but
+    // that's still far narrower than every row). A blanket invalidate_data()
+    // here forces a full re-measure of the entire timeline — including
+    // rebuilding any not-already-cached row's text layout — on every single
+    // image completion. That's fine for a couple of images loading as the
+    // user reads, but with many completions landing in a burst (e.g. the
+    // room media gallery pre-fetching thumbnails, several of which are also
+    // rows already sitting in the loaded timeline window) it's a full
+    // re-measure per completion — a real, user-visible freeze.
+    //
     // Anchor unconditionally: a decoded image grows its row downward, so an
     // image loading anywhere above the anchored row would otherwise push the
     // viewport. preserve_top_through no-ops on stick-to-bottom / at-top.
-    preserve_top_through([&] { invalidate_data(); });
+    preserve_top_through([&]
+    {
+        for (std::size_t i : matched_indices)
+            invalidate_row(i);
+    });
 }
 
 void MessageListView::update_voice_waveform(const std::string&         event_id,
@@ -5259,6 +5275,18 @@ void MessageListView::set_pending_scroll_event_id(const std::string& event_id)
 
 void MessageListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
+    if (relayout_suppressed_)
+    {
+        // Fully covered by another overlay (e.g. the room media gallery) —
+        // skip the expensive base ListView::arrange(), which would
+        // re-measure any row a mutation marked dirty while suppressed
+        // (rebuilding text layouts for content nobody can currently see).
+        // Just keep bounds_ current for hit-testing consistency; the left
+        // behind dirty state is picked up and processed in a single pass
+        // by the next real arrange() once suppression lifts.
+        bounds_ = bounds;
+        return;
+    }
     set_near_top_threshold_px(bounds.h);
     tk::ListView::arrange(ctx, bounds);
     // Apply any deferred scroll now that row_offsets_ are rebuilt and the

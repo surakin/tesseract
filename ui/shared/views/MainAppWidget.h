@@ -31,6 +31,7 @@
 #include "ForwardRoomPicker.h"
 #include "QuickSwitcher.h"
 #include "MessageSearchView.h"
+#include "RoomMediaView.h"
 #include "RoomListView.h"
 #include "RoomView.h"
 #include "UserInfo.h"
@@ -150,6 +151,10 @@ public:
     MessageSearchView* message_search() const { return message_search_; }
     bool     message_search_field_visible() const;
     tk::Rect message_search_field_rect()    const;
+
+    // ── Room media gallery ────────────────────────────────────────────────
+
+    RoomMediaView* room_media_view() const { return room_media_view_; }
 
     // ── Forward room picker ───────────────────────────────────────────────
 
@@ -295,6 +300,7 @@ public:
     // ── tk::Widget overrides ──────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
+    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     bool on_key_down(const tk::KeyEvent& event) override;
 
 private:
@@ -368,6 +374,12 @@ private:
     // Forward room picker — topmost modal overlay, shown when the user
     // selects "Forward message" from the action bar.
     ForwardRoomPicker* forward_picker_ = nullptr;
+
+    // Room media gallery — full-bleed overlay, opened from the "Media (N)"
+    // row in RoomInfoPanel. Sits alongside img_viewer_/vid_viewer_ (a cell
+    // tap opens one of those on top of it) rather than the topmost
+    // QuickSwitcher/MessageSearchView tier.
+    RoomMediaView* room_media_view_ = nullptr;
 
 #ifdef TESSERACT_CALLS_ENABLED
     FloatingCallLayerWidget* floating_call_layer_ = nullptr;

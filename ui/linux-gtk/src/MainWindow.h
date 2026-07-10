@@ -441,6 +441,8 @@ private:
 
     tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;
 
+    tesseract::views::RoomMediaView* room_media_view_ = nullptr;
+
     GtkWidget* join_room_dialog_window_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> join_room_surface_;
     tesseract::views::JoinRoomView* join_room_shared_ = nullptr;

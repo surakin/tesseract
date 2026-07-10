@@ -1757,6 +1757,7 @@ void MainWindow::on_create(HWND hwnd)
         verif_shared_ = main_app_->verif_banner();
         img_viewer_ = main_app_->image_viewer();
         vid_viewer_ = main_app_->video_viewer();
+        room_media_view_ = main_app_->room_media_view();
 
         // Space nav callback.
         main_app_->on_space_back = [this]
@@ -3703,6 +3704,70 @@ void MainWindow::on_create(HWND hwnd)
             }
         };
 
+        // Room media gallery cell clicks → the same lightboxes as the main
+        // timeline. Per-shell (not wire_main_app_widget_) because opening a
+        // lightbox needs to steal native keyboard focus so Esc is handled
+        // immediately, mirroring room_view_->on_image_clicked/on_video_clicked
+        // above exactly.
+        if (room_media_view_)
+        {
+            room_media_view_->on_image_clicked =
+                [this](const tesseract::views::MessageListView::ImageHit& hit)
+            {
+                if (!img_viewer_ || !main_app_)
+                {
+                    return;
+                }
+                const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+                const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+                img_viewer_->open(src_tok, thumb_tok, hit.body,
+                                  hit.natural_w, hit.natural_h);
+                main_app_->show_image_viewer(true);
+                if (main_app_surface_)
+                {
+                    main_app_surface_->relayout();
+                }
+                if (hwnd_)
+                {
+                    SetFocus(hwnd_);
+                }
+                ensure_viewer_fullres_(src_tok);
+            };
+            room_media_view_->on_video_clicked =
+                [this](const tesseract::views::MessageListView::VideoHit& hit)
+            {
+                if (!vid_viewer_ || !main_app_)
+                {
+                    return;
+                }
+                const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+                const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+                vid_viewer_->open(src_tok, thumb_tok, hit.mime_type,
+                                  hit.duration_ms, hit.natural_w, hit.natural_h,
+                                  hit.loop, hit.no_audio, hit.hide_controls);
+                main_app_->show_video_viewer(true);
+                if (main_app_surface_)
+                {
+                    main_app_surface_->relayout();
+                }
+                if (hwnd_)
+                {
+                    SetFocus(hwnd_);
+                }
+                std::string src = src_tok;
+                if (client_)
+                {
+                    auto req_id = begin_media_req_(0,
+                        [this](std::vector<std::uint8_t> bytes) mutable
+                        {
+                            if (vid_viewer_ && !bytes.empty())
+                                vid_viewer_->load_bytes(bytes.data(), bytes.size());
+                        });
+                    client_->fetch_source_bytes_async(req_id, src);
+                }
+            };
+        }
+
         room_view_->on_file_clicked =
             [this](const tesseract::views::MessageListView::FileHit& hit)
         {
@@ -5426,8 +5491,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                             cache_key, std::move(img));
                         if (kind == MediaKind::RoomAvatar)
                         {
-                            if (main_app_surface_)
-                                main_app_surface_->relayout();
+                            // Coalescing — see the MediaThumbnail/MediaImage
+                            // case below for why a direct, uncoalesced
+                            // relayout() per completion is a problem for any
+                            // burst (e.g. many room avatars after login).
+                            schedule_relayout_();
                         }
                         else // UserAvatar
                         {
@@ -5494,8 +5562,17 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         }
                         if (room_view_)
                             room_view_->notify_image_ready(cache_key);
-                        if (main_app_surface_)
-                            main_app_surface_->relayout();
+                        // Coalescing, not main_app_surface_->relayout()
+                        // directly: a dense grid (the room media gallery)
+                        // can land dozens of these completions in a tight
+                        // burst, and an uncoalesced call here does a full
+                        // app-wide arrange() per completion — including a
+                        // full re-measure of the main chat timeline's rows
+                        // (DirectWrite text-layout rebuilds on any
+                        // LinkLayoutCache miss), which has nothing to do
+                        // with a thumbnail arriving. schedule_relayout_()
+                        // folds a burst of these into one deferred pass.
+                        schedule_relayout_();
                         if (shortcode_popup_visible_() &&
                             shortcode_popup_surface_)
                             shortcode_popup_surface_->relayout();

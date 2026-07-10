@@ -811,6 +811,22 @@ msgstr "🔒 Cifrado"
 msgid "🌉 Bridged"
 msgstr "🌉 Con puente"
 
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Media ({0})"
+msgstr "Multimedia ({0})"
+
+#: ui/shared/views/RoomMediaView.cpp
+msgid "Media — {0}"
+msgstr "Multimedia — {0}"
+
+#: ui/shared/views/RoomMediaView.cpp
+msgid "Loading media…"
+msgstr "Cargando contenido multimedia…"
+
+#: ui/shared/views/RoomMediaView.cpp
+msgid "No media in this room yet"
+msgstr "Todavía no hay contenido multimedia en esta sala"
+
 #: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/CallOverlayWidget.cpp
 msgid "Share screen"
 msgstr "Compartir pantalla"

@@ -664,6 +664,17 @@ MainAppWidget::MainAppWidget()
     auto overlays = std::make_unique<OverlayStackWidget>();
     overlay_stack_ = add_child(std::move(overlays));
 
+    // Room media gallery, scoped to the chat-panel area by MainAppWidget's
+    // arrange() override below (not full-bleed like the lightboxes). Added
+    // BEFORE img_viewer_/vid_viewer_ so a cell tap's lightbox always paints
+    // (and dispatches pointer events) above the gallery rather than being
+    // hidden behind it — child order in a Stack is paint/dispatch z-order,
+    // later-added wins. Hidden until opened via RoomInfoPanel's "Media (N)"
+    // row.
+    auto rmv = std::make_unique<RoomMediaView>();
+    room_media_view_ = overlay_stack_->add_child(std::move(rmv));
+    room_media_view_->set_visible(false);
+
     auto img = std::make_unique<ImageViewerOverlay>();
     img_viewer_ = overlay_stack_->add_child(std::move(img));
     img_viewer_->set_visible(false);
@@ -903,6 +914,11 @@ bool MainAppWidget::dismiss_top_transient_()
     {
         img_viewer_->close();
         img_viewer_->set_visible(false);
+        return true;
+    }
+    if (room_media_view_ && room_media_view_->is_open())
+    {
+        room_media_view_->close();
         return true;
     }
     if (room_view_ && room_view_->room_search_open())
@@ -1235,6 +1251,7 @@ bool MainAppWidget::any_modal_open_() const
            (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||
            (message_search_    && message_search_->is_open()) ||
+           (room_media_view_   && room_media_view_->is_open()) ||
            (forward_picker_    && forward_picker_->is_open());
 #ifdef TESSERACT_CALLS_ENABLED
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
@@ -1359,6 +1376,26 @@ tk::NativeOverlayRegistry MainAppWidget::native_overlays() const
 tk::Size MainAppWidget::measure(tk::LayoutCtx&, tk::Size constraints)
 {
     return constraints;
+}
+
+void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
+{
+    // Default: every child (root_layout_, overlay_stack_, ...) fills the
+    // full widget bounds — this is what gives the lightboxes/quick switcher/
+    // message search their full-bleed coverage.
+    tk::Widget::arrange(ctx, bounds);
+
+    // The room media gallery is the one overlay that should NOT cover the
+    // sidebar (room list stays visible/usable behind it) — re-arrange it
+    // to just the chat-panel portion, overriding the full-bleed rect the
+    // default pass above just gave it as an OverlayStackWidget child.
+    if (room_media_view_)
+    {
+        const float chat_x = bounds.x + kSidebarW + kSepW;
+        room_media_view_->arrange(
+            ctx, {chat_x, bounds.y, std::max(0.0f, bounds.w - kSidebarW - kSepW),
+                 bounds.h});
+    }
 }
 
 bool MainAppWidget::on_key_down(const tk::KeyEvent& event)

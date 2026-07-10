@@ -1079,7 +1079,17 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                         }
                         if (room_view_)
                             room_view_->notify_image_ready(key);
-                        [c _relayoutChatSurface];
+                        // Coalescing, not [c _relayoutChatSurface] directly:
+                        // a dense grid (the room media gallery) can land
+                        // dozens of these completions in a tight burst, and
+                        // an uncoalesced relayout() here does a full
+                        // app-wide arrange() per completion — including a
+                        // full re-measure of the main chat timeline's rows
+                        // — which has nothing to do with a thumbnail
+                        // arriving. schedule_relayout_() folds a burst of
+                        // these into one deferred pass (mirrors GTK4/Qt6,
+                        // which already use this here).
+                        schedule_relayout_();
                         [c _relayoutShortcodePopupIfVisible];
                         notify_secondary_media_ready_(key, kind);
                     });
@@ -2452,6 +2462,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     tesseract::views::VerificationBanner* _verifShared; // via _mainApp
     tesseract::views::ImageViewerOverlay* _imgViewer;   // via _mainApp
     tesseract::views::VideoViewerOverlay* _vidViewer;   // via _mainApp
+    tesseract::views::RoomMediaView* _roomMediaView;    // via _mainApp
 
     // Shortcode suggestion popup — NSPanel hosting a tk::macos::Surface.
     NSPanel* _shortcodePanel;
@@ -2714,6 +2725,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _verifShared = _mainApp->verif_banner();
         _imgViewer = _mainApp->image_viewer();
         _vidViewer = _mainApp->video_viewer();
+        _roomMediaView = _mainApp->room_media_view();
         _shell->room_view_ = _roomView;
         _shell->main_app_ = _mainApp;
         _shell->app_surface_ = _mainAppSurface.get();
@@ -3494,6 +3506,61 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_shell->client_->fetch_source_bytes_async(req_id, src);
             }
         };
+
+        // Room media gallery cell clicks → the same lightboxes as the main
+        // timeline. Per-shell (not wire_main_app_widget_) because opening a
+        // lightbox needs to grab native keyboard focus, mirroring
+        // room_view()'s on_image_clicked/on_video_clicked above exactly.
+        _mainApp->room_media_view()->on_image_clicked =
+            [weakSelf](const tesseract::views::MessageListView::ImageHit& hit)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainApp || !s->_mainAppSurface)
+            {
+                return;
+            }
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            s->_imgViewer->open(src_tok, thumb_tok, hit.body,
+                                hit.natural_w, hit.natural_h);
+            s->_mainApp->show_image_viewer(true);
+            s->_mainAppSurface->relayout();
+            s->_shell->ensure_viewer_fullres(src_tok);
+            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            [view.window makeFirstResponder:view];
+        };
+        _mainApp->room_media_view()->on_video_clicked =
+            [weakSelf](const tesseract::views::MessageListView::VideoHit& hit)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainApp || !s->_mainAppSurface)
+            {
+                return;
+            }
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            s->_vidViewer->open(src_tok, thumb_tok,
+                                hit.mime_type, hit.duration_ms, hit.natural_w,
+                                hit.natural_h, hit.loop, hit.no_audio,
+                                hit.hide_controls);
+            s->_mainApp->show_video_viewer(true);
+            s->_mainAppSurface->relayout();
+            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            [view.window makeFirstResponder:view];
+            if (s->_shell->client_)
+            {
+                std::string src = src_tok;
+                auto req_id = s->_shell->begin_media_req_(0,
+                    [weakSelf](std::vector<uint8_t> bytes) mutable
+                    {
+                        MainWindowController* s2 = weakSelf;
+                        if (!s2 || !s2->_vidViewer) return;
+                        s2->_vidViewer->load_bytes(bytes.data(), bytes.size());
+                    });
+                s->_shell->client_->fetch_source_bytes_async(req_id, src);
+            }
+        };
+
         _mainApp->room_view()->on_file_clicked =
             [weakSelf](const tesseract::views::MessageListView::FileHit& hit)
         {
