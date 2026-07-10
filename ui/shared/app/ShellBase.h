@@ -176,6 +176,11 @@ public:
     void end_call();
     // Returns the active CallSession, or nullptr when not in a call.
     CallSession* active_call() const { return call_session_.get(); }
+    // Resolve whichever window (main window or a pop-out) is currently
+    // displaying room_id, or nullptr if none — used to target the incoming-
+    // call banner (and its dismissal) at the right window instead of
+    // assuming room_view_ (the main window's own RoomView).
+    views::RoomView* room_view_for_room_(const std::string& room_id) const;
 #endif // TESSERACT_CALLS_ENABLED
 
     // ── Tab management (call from the UI thread only) ─────────────────────────

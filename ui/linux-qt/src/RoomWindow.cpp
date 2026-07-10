@@ -51,6 +51,14 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     vid_viewer_            = room_widget->video_viewer();
     forward_picker_widget_ = room_widget->forward_picker();
     room_media_view_widget_ = room_widget->room_media_view();
+    confirm_dialog_widget_ = room_widget->confirm_dialog();
+    room_widget->on_layout_changed = [this]
+    {
+        if (surface_)
+        {
+            surface_->relayout();
+        }
+    };
     surface_->set_root(std::move(room_widget));
 
     // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
@@ -411,16 +419,23 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     surface_->set_on_layout(
         [this]
         {
+            // Native child controls always paint over canvas-drawn overlays,
+            // so hide them while the confirm dialog covers the window —
+            // otherwise the compose box/search fields would poke through on
+            // top of the modal backdrop.
+            const bool confirm_open =
+                confirm_dialog_widget_ && confirm_dialog_widget_->is_open();
             if (room_view_ && roomTextArea_)
             {
                 const tk::Rect ta = room_view_->compose_text_area_rect();
-                roomTextArea_->set_visible(!ta.empty());
-                if (!ta.empty())
+                roomTextArea_->set_visible(!confirm_open && !ta.empty());
+                if (!confirm_open && !ta.empty())
                     roomTextArea_->set_rect(ta);
             }
             if (room_view_ && roomSearchField_)
             {
-                const bool vis = room_view_->room_search_field_visible();
+                const bool vis =
+                    !confirm_open && room_view_->room_search_field_visible();
                 roomSearchField_->set_visible(vis);
                 if (vis)
                 {
@@ -431,7 +446,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             }
             if (forward_picker_widget_ && forward_picker_field_)
             {
-                const bool vis = forward_picker_widget_->search_field_visible();
+                const bool vis = !confirm_open &&
+                                forward_picker_widget_->search_field_visible();
                 forward_picker_field_->set_visible(vis);
                 if (vis)
                 {

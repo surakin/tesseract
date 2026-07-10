@@ -4,6 +4,7 @@
 #include "app/RoomWindowBase.h"
 #include "tk/host_qt.h"
 class QMoveEvent;
+#include "views/ConfirmDialog.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/GifController.h"
 #include "views/RoomMediaView.h"
@@ -117,6 +118,7 @@ private:
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
+    tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
 
     // Pop-out-local emoji/sticker pickers (parented to this QWidget). The emoji
     // picker doubles as the reaction picker via pendingReactionEventId_.

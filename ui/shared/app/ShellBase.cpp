@@ -8721,6 +8721,14 @@ ShellBase::SpaceNavFrame::capture(views::RoomListView* rlv)
 
 #ifdef TESSERACT_CALLS_ENABLED
 
+views::RoomView* ShellBase::room_view_for_room_(const std::string& room_id) const
+{
+    if (room_id == current_room_id_)
+        return room_view_;
+    auto it = secondary_windows_.find(room_id);
+    return it != secondary_windows_.end() ? it->second->room_view() : nullptr;
+}
+
 void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
                                            std::string slot_id,
                                            std::string caller_user_id,
@@ -8728,11 +8736,12 @@ void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
                                            std::uint64_t lifetime_ms,
                                            std::string notification_event_id)
 {
-    if (!room_view_ || !main_app_) return;
     if (!server_info_.supports_calls) return;
 
-    // Only show the banner when the caller is in the currently-viewed room.
-    if (room_id != current_room_id_) return;
+    // Show the banner in whichever window (main window or a pop-out) is
+    // currently displaying this room — not just the main window.
+    auto* rv = room_view_for_room_(room_id);
+    if (!rv) return;
 
     // Never show an incoming-call banner while a call is already active — sync
     // can re-fire member-state invitation events after the call has started.
@@ -8740,7 +8749,7 @@ void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
 
     // If the banner was auto-dismissed (timeout), clear the pending ID so we
     // don't suppress new invitations.
-    if (room_view_ && !room_view_->call_banner_visible())
+    if (!rv->call_banner_visible())
         rtc_pending_notification_id_.clear();
 
     // Deduplication: if we already have a notification-path banner showing
@@ -8759,7 +8768,7 @@ void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
     if (!notification_event_id.empty())
         rtc_pending_notification_id_ = notification_event_id;
 
-    room_view_->show_call_banner(room_id, slot_id, display_name, call_intent, lifetime_ms);
+    rv->show_call_banner(room_id, slot_id, display_name, call_intent, lifetime_ms);
 }
 
 void ShellBase::handle_rtc_video_frame_ui_(
@@ -9005,8 +9014,9 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
             ov->set_show_video_button(false);
     }
 
-    // Dismiss the incoming-call banner (if the user answered via banner).
-    if (room_view_) room_view_->dismiss_call_banner();
+    // Dismiss the incoming-call banner (if the user answered via banner) —
+    // wherever it's showing, main window or a pop-out.
+    if (auto* rv = room_view_for_room_(room_id)) rv->dismiss_call_banner();
 
     // Flip the call button to active state in main window and all pop-outs.
     if (room_view_ && room_view_->header())
@@ -9097,9 +9107,13 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
         call_session_->session_id() != session_id)
         return;
 
-    // Clear the pending notification dedup tracker and any standing banner.
+    // Clear the pending notification dedup tracker and any standing banner
+    // — wherever it's showing, main window or a pop-out.
     rtc_pending_notification_id_.clear();
-    if (room_view_) room_view_->dismiss_call_banner();
+    if (auto* rv = room_view_for_room_(call_session_->room_id()))
+    {
+        rv->dismiss_call_banner();
+    }
 
     // Surface disconnect reason for non-normal ends.
     if (!reason.empty()

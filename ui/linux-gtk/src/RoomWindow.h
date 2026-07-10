@@ -2,6 +2,7 @@
 #include <gtk/gtk.h>
 #include "app/RoomWindowBase.h"
 #include "tk/host_gtk.h"
+#include "views/ConfirmDialog.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/GifController.h"
 #include "views/RoomMediaView.h"
@@ -129,6 +130,7 @@ private:
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
+    tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
     GtkWidget* mention_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;

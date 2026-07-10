@@ -5,6 +5,7 @@
 #include "app/RoomWindowBase.h"
 #include "tk/host_macos.h"
 #include "tk/i18n.h"
+#include "views/ConfirmDialog.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/PopoutRoomWidget.h"
@@ -167,6 +168,7 @@ private:
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
+    tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
     NSPanel* mention_panel_ = nil;
     std::unique_ptr<tk::macos::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
@@ -246,6 +248,14 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     vid_viewer_            = room_widget->video_viewer();
     forward_picker_widget_ = room_widget->forward_picker();
     room_media_view_widget_ = room_widget->room_media_view();
+    confirm_dialog_widget_ = room_widget->confirm_dialog();
+    room_widget->on_layout_changed = [this]
+    {
+        if (surface_)
+        {
+            surface_->relayout();
+        }
+    };
     surface_->set_root(std::move(room_widget));
 
     // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
@@ -435,13 +445,24 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     surface_->set_on_layout(
         [this]
         {
+            // Native child controls always paint over canvas-drawn overlays,
+            // so hide them while the confirm dialog covers the window —
+            // otherwise the compose box/search fields would poke through on
+            // top of the modal backdrop.
+            const bool confirm_open =
+                confirm_dialog_widget_ && confirm_dialog_widget_->is_open();
             if (room_view_ && text_area_)
             {
-                text_area_->set_rect(room_view_->compose_text_area_rect());
+                text_area_->set_visible(!confirm_open);
+                if (!confirm_open)
+                {
+                    text_area_->set_rect(room_view_->compose_text_area_rect());
+                }
             }
             if (room_view_ && search_field_)
             {
-                const bool vis = room_view_->room_search_field_visible();
+                const bool vis =
+                    !confirm_open && room_view_->room_search_field_visible();
                 search_field_->set_visible(vis);
                 if (vis)
                 {
@@ -452,7 +473,8 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
             }
             if (forward_picker_widget_ && forward_picker_field_)
             {
-                const bool vis = forward_picker_widget_->search_field_visible();
+                const bool vis = !confirm_open &&
+                                forward_picker_widget_->search_field_visible();
                 forward_picker_field_->set_visible(vis);
                 if (vis)
                 {

@@ -11,6 +11,7 @@
 #include "app/RoomWindowBase.h"
 #include "tk/host_win32.h"
 #include "views/EmojiPicker.h"
+#include "views/ConfirmDialog.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/RoomMediaView.h"
 #include "views/GifController.h"
@@ -145,6 +146,7 @@ private:
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
+    tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
     HWND mention_popup_hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
     tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
