@@ -111,6 +111,7 @@ inline ImagePack from_ffi(const tesseract_ffi::ImagePackFfi& p)
         .source_kind = kind,
         .source_room = std::string(p.source_room),
         .source_state_key = std::string(p.source_state_key),
+        .is_subscribed = p.is_subscribed,
     };
 }
 

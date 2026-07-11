@@ -1548,7 +1548,10 @@ public:
 
     // Read a single dropped GFile and forward to the installed handler.
     // Returns true on success. Used to iterate over multi-file drops.
-    bool dispatch_file_drop(GFile* file)
+    // `pos` is the drop location in the same widget-local space
+    // motion_cb/click_pressed_cb already use for tk::Point — no conversion
+    // needed.
+    bool dispatch_file_drop(GFile* file, tk::Point pos)
     {
         if (!file || !on_file_drop_)
         {
@@ -1624,7 +1627,7 @@ public:
             g_free(basename);
         }
 
-        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename));
+        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename), pos);
 
         if (mime_c)
         {
@@ -2057,8 +2060,8 @@ gboolean key_pressed_cb(GtkEventControllerKey*, guint keyval, guint,
 // GdkFileList (multi-file drag from Nautilus) or a single GFile (URI
 // drag from Firefox etc.). Iterates over every dropped file; the shell
 // dispatches by mime.
-gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double /*x*/,
-                 double /*y*/, gpointer p)
+gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
+                 double y, gpointer p)
 {
     Host* host = static_cast<Host*>(p);
     if (!host || !value)
@@ -2068,6 +2071,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double /*x*/,
 
     host->set_drag_active(false);
 
+    const tk::Point pos{static_cast<float>(x), static_cast<float>(y)};
     bool any = false;
     if (G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST))
     {
@@ -2075,7 +2079,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double /*x*/,
         for (GSList* it = list; it != nullptr; it = it->next)
         {
             GFile* f = G_FILE(it->data);
-            if (host->dispatch_file_drop(f))
+            if (host->dispatch_file_drop(f, pos))
             {
                 any = true;
             }
@@ -2084,7 +2088,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double /*x*/,
     else if (G_VALUE_HOLDS(value, G_TYPE_FILE))
     {
         GFile* f = G_FILE(g_value_get_object(value));
-        if (host->dispatch_file_drop(f))
+        if (host->dispatch_file_drop(f, pos))
         {
             any = true;
         }

@@ -184,6 +184,14 @@ static StickerPickerPanel* g_stickerPanel = nil;
     }
 }
 
+- (void)setCurrentRoomId:(const std::string&)roomId
+{
+    if (_shared)
+    {
+        _shared->set_current_room_id(roomId);
+    }
+}
+
 - (void)popupAboveView:(NSView*)anchor
 {
     if (self.isVisible)

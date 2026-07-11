@@ -248,6 +248,18 @@ void SettingsWidget::set_theme(const tk::Theme& t)
     surface_->relayout();
 }
 
+void SettingsWidget::update_anim_regions()
+{
+    if (surface_)
+        surface_->relayout();
+}
+
+void SettingsWidget::request_repaint()
+{
+    if (surface_)
+        gtk_widget_queue_draw(surface_->widget());
+}
+
 void SettingsWidget::populate(
     std::string display_name, std::string user_id, std::string avatar_mxc,
     tesseract::views::AccountSection::ImageProvider provider,

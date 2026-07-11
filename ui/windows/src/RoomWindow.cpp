@@ -225,8 +225,10 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     // routes the payload + runs the shell's media probe against this window).
     surface_->set_on_file_drop(
         [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename)
+               std::string filename, tk::Point /*pos*/)
         {
+            // Pop-out room windows have no RoomSettingsView/image-pack tab
+            // to route to by position — always the compose bar.
             handle_file_drop_(std::move(bytes), std::move(mime),
                               std::move(filename));
         });
@@ -427,9 +429,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 if (shortcode_popup_surface_)
                     shortcode_popup_surface_->host().request_repaint();
             };
-            sh.emoticons =
-                [this]() -> const std::vector<tesseract::ImagePackImage>&
-            { return shell_emoticons_(); };
+            sh.emoticons = [this]() { return shell_emoticons_(); };
             sh.fetch_image = [this](const std::string& url)
             { shell_ensure_media_image_(url, 28, 28); };
             shortcode_controller_ =
@@ -734,6 +734,7 @@ void RoomWindow::ensure_pickers_()
     {
         auto picker = std::make_unique<tesseract::views::EmojiPicker>();
         emoji_picker_ = picker.get();
+        emoji_picker_->set_current_room_id(room_id_);
         emoji_picker_->set_client(shell_client_());
         emoji_picker_->set_image_provider(picker_image_provider_(false));
         emoji_picker_->on_selected =
@@ -776,6 +777,7 @@ void RoomWindow::ensure_pickers_()
     {
         auto picker = std::make_unique<tesseract::views::StickerPicker>();
         sticker_picker_ = picker.get();
+        sticker_picker_->set_current_room_id(room_id_);
         sticker_picker_->set_client(shell_client_());
         sticker_picker_->set_image_provider(picker_image_provider_(true));
         sticker_picker_->on_selected =

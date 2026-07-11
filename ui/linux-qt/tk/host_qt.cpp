@@ -1656,6 +1656,13 @@ void Surface::dropEvent(QDropEvent* e)
         return;
     }
 
+    // Same widget-local, DPI-independent logical-pixel space
+    // dispatch_pointer_down/mousePressEvent already build tk::Point from
+    // (Qt6's position(), not the deprecated Qt5 pos()) — no conversion
+    // needed.
+    const tk::Point drop_pos{static_cast<float>(e->position().x()),
+                             static_cast<float>(e->position().y())};
+
     bool handled = false;
 
     // 1) File drops — iterate over every dropped local file. Each fires
@@ -1707,7 +1714,7 @@ void Surface::dropEvent(QDropEvent* e)
                 reinterpret_cast<const std::uint8_t*>(ba.constData()) +
                     ba.size());
             on_file_drop_(std::move(bytes), mime.toStdString(),
-                          fi.fileName().toStdString());
+                          fi.fileName().toStdString(), drop_pos);
             handled = true;
         }
     }
@@ -1729,7 +1736,7 @@ void Surface::dropEvent(QDropEvent* e)
                     reinterpret_cast<const std::uint8_t*>(out.constData()),
                     reinterpret_cast<const std::uint8_t*>(out.constData()) +
                         out.size());
-                on_file_drop_(std::move(bytes), "image/png", std::string{});
+                on_file_drop_(std::move(bytes), "image/png", std::string{}, drop_pos);
                 handled = true;
             }
         }

@@ -38,12 +38,62 @@ impl ClientFfi {
                 source_kind: p.source_kind().to_owned(),
                 source_room: p.source_room().to_owned(),
                 source_state_key: p.source_state_key().to_owned(),
+                is_subscribed: p.is_subscribed,
             })
             .collect()
     }
 
     #[cfg(test)]
     pub fn list_image_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
+        Vec::new()
+    }
+
+    /// Every room-sourced MSC2545 pack known so far, for the "Known Packs"
+    /// settings page (browse rooms with a pack, subscribe/unsubscribe). A
+    /// fast local read — no network I/O: rooms are discovered lazily as the
+    /// user visits them (or as soon as they're in `m.image_pack.rooms` /
+    /// `im.ponies.emote_rooms`, prefilled at session start), and each
+    /// discovery persists to the `room_image_pack_cache` table in
+    /// `app_cache.db` via `rebuild_image_packs`. `is_subscribed` is
+    /// recomputed fresh from live account data on every call since it can
+    /// change independently of whether a room still has a pack.
+    #[cfg(not(test))]
+    pub fn list_known_room_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
+        let cached = {
+            let db = self.app_cache_db.lock();
+            db.as_ref()
+                .map(super::backfill::read_known_room_packs)
+                .unwrap_or_default()
+        };
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        let subscribed_set = self.rt.block_on(super::collect_subscribed_room_refs(&client));
+        cached
+            .into_iter()
+            .map(|(room_id, state_key, display_name)| {
+                let is_subscribed = subscribed_set.contains(&(room_id.clone(), state_key.clone()));
+                let id = crate::image_packs::pack_id_for(&crate::image_packs::PackSource::Room {
+                    room_id: room_id.clone(),
+                    state_key: state_key.clone(),
+                });
+                crate::ffi::ImagePackFfi {
+                    id,
+                    display_name,
+                    avatar_url: String::new(),
+                    attribution: String::new(),
+                    usage_mask: crate::image_packs::USAGE_ANY,
+                    source_kind: "room".to_owned(),
+                    source_room: room_id,
+                    source_state_key: state_key,
+                    is_subscribed,
+                }
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub fn list_known_room_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
         Vec::new()
     }
 
@@ -479,6 +529,489 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn toggle_favorite_sticker(&self, _image_url: &str) -> OpResult {
         err("not logged in")
+    }
+
+    /// Remove `shortcode` from the user's personal pack
+    /// (`im.ponies.user_emotes`). No-op (ok:true) if the shortcode doesn't
+    /// exist. Same read→modify→write skeleton as `save_sticker_to_user_pack`.
+    #[cfg(not(test))]
+    pub fn remove_user_pack_image(&self, shortcode: &str) -> OpResult {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::serde::Raw;
+        use serde_json::Value;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/remove".to_string(),
+        );
+
+        let ev_type = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
+        let _ad_guard = {
+            let l = Arc::clone(&self.account_data_lock);
+            self.rt.block_on(async move { l.lock_owned().await })
+        };
+
+        let client_for_read = client.clone();
+        let read_result = self
+            .rt
+            .block_on(async move { client_for_read.account().account_data_raw(ev_type).await });
+
+        let current: Value = match read_result {
+            Ok(Some(raw)) => match serde_json::from_str(raw.json().get()) {
+                Ok(v) => v,
+                Err(e) => {
+                    return err(format!(
+                        "existing user pack failed to parse — refusing to \
+                         overwrite (would destroy your saved stickers): {e}"
+                    ))
+                }
+            },
+            Ok(None) => return ok(""),
+            Err(e) => return err(format!("read user pack: {e}")),
+        };
+
+        let new_content = crate::image_packs::remove_image_from_user_pack(current, shortcode);
+
+        let raw = match Raw::new(&new_content) {
+            Ok(r) => r.cast_unchecked(),
+            Err(e) => return err(format!("serialize user pack: {e}")),
+        };
+        let client_for_write = client.clone();
+        let ev_type_for_write =
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
+        let write_result = self.rt.block_on(async move {
+            client_for_write
+                .account()
+                .set_account_data_raw(ev_type_for_write, raw)
+                .await
+        });
+
+        match write_result {
+            Ok(_) => {
+                self.user_pack_write_pending
+                    .store(true, std::sync::atomic::Ordering::Release);
+                self.update_user_pack_in_cache(&new_content);
+                ok("")
+            }
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn remove_user_pack_image(&self, _shortcode: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Rename `old_shortcode` to `new_shortcode` in the user's personal pack.
+    /// If `new_shortcode` collides with an existing entry, a numeric suffix
+    /// is appended (mirrors `save_sticker_to_user_pack`'s collision
+    /// handling); the resolved shortcode is reported in the result message
+    /// on success so the caller can tell whether a suffix was applied.
+    #[cfg(not(test))]
+    pub fn rename_user_pack_image(&self, old_shortcode: &str, new_shortcode: &str) -> OpResult {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::serde::Raw;
+        use serde_json::Value;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/rename".to_string(),
+        );
+
+        let ev_type = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
+        let _ad_guard = {
+            let l = Arc::clone(&self.account_data_lock);
+            self.rt.block_on(async move { l.lock_owned().await })
+        };
+
+        let client_for_read = client.clone();
+        let read_result = self
+            .rt
+            .block_on(async move { client_for_read.account().account_data_raw(ev_type).await });
+
+        let current: Value = match read_result {
+            Ok(Some(raw)) => match serde_json::from_str(raw.json().get()) {
+                Ok(v) => v,
+                Err(e) => {
+                    return err(format!(
+                        "existing user pack failed to parse — refusing to \
+                         overwrite (would destroy your saved stickers): {e}"
+                    ))
+                }
+            },
+            Ok(None) => return err("shortcode does not exist"),
+            Err(e) => return err(format!("read user pack: {e}")),
+        };
+
+        let (new_content, applied_shortcode) =
+            crate::image_packs::rename_image_in_user_pack(current, old_shortcode, new_shortcode);
+        if applied_shortcode == old_shortcode && old_shortcode != new_shortcode {
+            return err("shortcode does not exist");
+        }
+
+        let raw = match Raw::new(&new_content) {
+            Ok(r) => r.cast_unchecked(),
+            Err(e) => return err(format!("serialize user pack: {e}")),
+        };
+        let client_for_write = client.clone();
+        let ev_type_for_write =
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
+        let write_result = self.rt.block_on(async move {
+            client_for_write
+                .account()
+                .set_account_data_raw(ev_type_for_write, raw)
+                .await
+        });
+
+        match write_result {
+            Ok(_) => {
+                self.user_pack_write_pending
+                    .store(true, std::sync::atomic::Ordering::Release);
+                self.update_user_pack_in_cache(&new_content);
+                ok(applied_shortcode)
+            }
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn rename_user_pack_image(&self, _old_shortcode: &str, _new_shortcode: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Explicitly subscribe/unsubscribe `(room_id, state_key)`'s image pack
+    /// via the user's `m.image_pack.rooms` / `im.ponies.emote_rooms` account
+    /// data (dual-written — both event types are read, modified, and written
+    /// independently so a partially-migrated account never loses the other
+    /// copy's entries). Forces a synchronous aggregator rebuild before
+    /// returning so `ImagePack::is_subscribed` reflects the change
+    /// immediately, matching `save_sticker_to_user_pack`'s no-round-trip-lag
+    /// guarantee for the personal pack.
+    #[cfg(not(test))]
+    pub fn set_pack_room_subscribed(
+        &self,
+        room_id: &str,
+        state_key: &str,
+        subscribed: bool,
+    ) -> OpResult {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::serde::Raw;
+        use serde_json::Value;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/subscribe".to_string(),
+        );
+
+        let _ad_guard = {
+            let l = Arc::clone(&self.account_data_lock);
+            self.rt.block_on(async move { l.lock_owned().await })
+        };
+
+        for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
+            let ev_type = GlobalAccountDataEventType::from(ev_type_str);
+            let client_for_read = client.clone();
+            let ev_type_for_read = ev_type.clone();
+            let read_result = self.rt.block_on(async move {
+                client_for_read
+                    .account()
+                    .account_data_raw(ev_type_for_read)
+                    .await
+            });
+            let current_content: Value = match read_result {
+                Ok(Some(raw)) => match serde_json::from_str(raw.json().get()) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return err(format!(
+                            "existing pack subscriptions ({ev_type_str}) failed to \
+                             parse — refusing to overwrite: {e}"
+                        ))
+                    }
+                },
+                Ok(None) => Value::Object(serde_json::Map::new()),
+                Err(e) => return err(format!("read {ev_type_str}: {e}")),
+            };
+
+            let new_content = if subscribed {
+                crate::image_packs::add_room_pack_subscription(current_content, room_id, state_key)
+            } else {
+                crate::image_packs::remove_room_pack_subscription(
+                    current_content,
+                    room_id,
+                    state_key,
+                )
+            };
+
+            let raw = match Raw::new(&new_content) {
+                Ok(r) => r.cast_unchecked(),
+                Err(e) => return err(format!("serialize {ev_type_str}: {e}")),
+            };
+            let client_for_write = client.clone();
+            let ev_type_for_write = ev_type.clone();
+            let write_result = self.rt.block_on(async move {
+                client_for_write
+                    .account()
+                    .set_account_data_raw(ev_type_for_write, raw)
+                    .await
+            });
+            if let Err(e) = write_result {
+                return err(format!("write {ev_type_str}: {e}"));
+            }
+        }
+
+        self.refresh_image_packs_blocking();
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn set_pack_room_subscribed(
+        &self,
+        _room_id: &str,
+        _state_key: &str,
+        _subscribed: bool,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Create or replace one of a room's MSC2545 packs — see the FFI decl's
+    /// doc comment in bridge.rs for the full contract (wholesale replace,
+    /// new-pack state_key assignment, existing-type preservation).
+    #[cfg(not(test))]
+    pub fn save_room_pack(
+        &self,
+        room_id: &str,
+        state_key: &str,
+        is_new: bool,
+        display_name: &str,
+        usage_mask: u8,
+        images: Vec<crate::ffi::PackImageInputFfi>,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let rid = match room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() {
+            Ok(r) => r,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        if client.get_room(&rid).is_none() {
+            return err("room not found");
+        }
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/save_room_pack".to_string(),
+        );
+
+        // Build the images map fresh — a full replacement, not a merge onto
+        // existing content, since the caller (ImagePackEditorView) always
+        // stages the complete desired set for this pack, not a diff. This
+        // is what makes a removed tile actually disappear.
+        //
+        // Assign a fresh shortcode (mirrors save_sticker_to_user_pack's
+        // suggest_shortcode-based collision handling) whenever the staged
+        // one is empty or already taken in this same batch — the editor
+        // lets images be dropped with no shortcode at all, and every
+        // untitled image in the same drop shares the same empty string, so
+        // inserting them verbatim would silently collapse all but the last
+        // one into a single map entry.
+        let mut images_obj = serde_json::Map::new();
+        for img in &images {
+            let info: serde_json::Value = serde_json::from_str(&img.info_json)
+                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+            let mut entry = match info {
+                serde_json::Value::Object(m) => m,
+                _ => serde_json::Map::new(),
+            };
+            entry.insert("url".to_owned(), serde_json::Value::String(img.url.clone()));
+            if !img.body.is_empty() {
+                entry.insert("body".to_owned(), serde_json::Value::String(img.body.clone()));
+            }
+            let shortcode = if img.shortcode.is_empty() || images_obj.contains_key(&img.shortcode) {
+                crate::image_packs::suggest_shortcode(&img.body, &images_obj)
+            } else {
+                img.shortcode.clone()
+            };
+            images_obj.insert(shortcode, serde_json::Value::Object(entry));
+        }
+        let usage_strs = crate::image_packs::usage_mask_to_strs(usage_mask);
+        let content = serde_json::json!({
+            "pack": { "display_name": display_name, "usage": usage_strs },
+            "images": serde_json::Value::Object(images_obj),
+        });
+
+        let (final_state_key, types_to_write): (String, Vec<&'static str>) = if is_new {
+            let existing_keys = self.rt.block_on(super::room_pack_state_keys(
+                &client,
+                &self.room_state_cache,
+                &rid,
+            ));
+            let key = crate::image_packs::loop_suffixed_state_key(&existing_keys, display_name);
+            (key, vec![crate::image_packs::TYPE_ROOM_PACK_STABLE])
+        } else {
+            let types = self.rt.block_on(super::room_pack_event_types_for_key(
+                &client,
+                &self.room_state_cache,
+                &rid,
+                state_key,
+            ));
+            let types = if types.is_empty() {
+                vec![crate::image_packs::TYPE_ROOM_PACK_STABLE]
+            } else {
+                types
+            };
+            (state_key.to_owned(), types)
+        };
+
+        for ev_type in &types_to_write {
+            let client_for_write = client.clone();
+            let room_for_write = match client_for_write.get_room(&rid) {
+                Some(r) => r,
+                None => return err("room not found"),
+            };
+            let key_for_write = final_state_key.clone();
+            let content_for_write = content.clone();
+            let ev_type_owned = (*ev_type).to_owned();
+            let result = self.rt.block_on(async move {
+                room_for_write
+                    .send_state_event_raw(&ev_type_owned, &key_for_write, content_for_write)
+                    .await
+            });
+            if let Err(e) = result {
+                return err(format!("{ev_type}: {e}"));
+            }
+        }
+
+        super::invalidate_room_state_cache(&self.room_state_cache, &rid);
+        self.refresh_image_packs_blocking();
+        ok(final_state_key)
+    }
+
+    #[cfg(test)]
+    pub fn save_room_pack(
+        &self,
+        _room_id: &str,
+        _state_key: &str,
+        _is_new: bool,
+        _display_name: &str,
+        _usage_mask: u8,
+        _images: Vec<crate::ffi::PackImageInputFfi>,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Empty an existing room pack's `images` map — see the FFI decl's doc
+    /// comment in bridge.rs for the full contract (can't truly delete a
+    /// state event, only empty it).
+    #[cfg(not(test))]
+    pub fn remove_room_pack(&self, room_id: &str, state_key: &str) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let rid = match room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() {
+            Ok(r) => r,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/remove_room_pack".to_string(),
+        );
+
+        let types = self.rt.block_on(super::room_pack_event_types_for_key(
+            &client,
+            &self.room_state_cache,
+            &rid,
+            state_key,
+        ));
+        if types.is_empty() {
+            // Nothing to remove — no-op success, mirrors remove_user_pack_image's
+            // "shortcode doesn't exist" no-op-ok behavior.
+            return ok("");
+        }
+
+        let content = serde_json::json!({ "images": serde_json::Value::Object(serde_json::Map::new()) });
+        for ev_type in &types {
+            let room_for_write = match client.get_room(&rid) {
+                Some(r) => r,
+                None => return err("room not found"),
+            };
+            let key_for_write = state_key.to_owned();
+            let content_for_write = content.clone();
+            let ev_type_owned = (*ev_type).to_owned();
+            let result = self.rt.block_on(async move {
+                room_for_write
+                    .send_state_event_raw(&ev_type_owned, &key_for_write, content_for_write)
+                    .await
+            });
+            if let Err(e) = result {
+                return err(format!("{ev_type}: {e}"));
+            }
+        }
+
+        super::invalidate_room_state_cache(&self.room_state_cache, &rid);
+        self.refresh_image_packs_blocking();
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn remove_room_pack(&self, _room_id: &str, _state_key: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Synchronously rebuild the aggregated image-pack cache and replace it
+    /// in place, firing `on_image_packs_updated` — used after a subscription
+    /// change so `ImagePack::is_subscribed` is correct before the call
+    /// returns, rather than waiting for the next sync-driven rebuild.
+    #[cfg(not(test))]
+    fn refresh_image_packs_blocking(&self) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let mut http_cache: std::collections::HashMap<
+            (matrix_sdk::ruma::OwnedRoomId, String),
+            Option<serde_json::Value>,
+        > = std::collections::HashMap::new();
+        let active_rooms_snapshot = self.active_rooms.lock().clone();
+        let app_cache_db = Arc::clone(&self.app_cache_db);
+        let room_state_cache = Arc::clone(&self.room_state_cache);
+        let packs = self.rt.block_on(async move {
+            super::rebuild_image_packs(&client, &mut http_cache, &active_rooms_snapshot, &app_cache_db, &room_state_cache).await
+        });
+        {
+            let mut cache = self.image_packs.lock();
+            *cache = packs;
+        }
+        if let Some(h) = &self.handler {
+            let g = h.lock();
+            g.on_image_packs_updated();
+        }
     }
 
     /// Update only the user pack slot in the in-memory cache from `content`

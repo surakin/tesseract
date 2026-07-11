@@ -162,8 +162,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // routes the payload + runs the shell's media probe against this window).
     surface_->set_on_file_drop(
         [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename)
+               std::string filename, tk::Point /*pos*/)
         {
+            // Pop-out room windows have no RoomSettingsView/image-pack tab
+            // to route to by position — always the compose bar.
             handle_file_drop_(std::move(bytes), std::move(mime),
                               std::move(filename));
         });
@@ -337,8 +339,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             if (shortcode_popup_surface_)
                 shortcode_popup_surface_->update();
         };
-        sh.emoticons = [this]() -> const std::vector<tesseract::ImagePackImage>&
-        { return shell_emoticons_(); };
+        sh.emoticons = [this]() { return shell_emoticons_(); };
         sh.fetch_image = [this](const std::string& url)
         { shell_ensure_media_image_(url, 28, 28); };
         sh.resolve_image = [this](const std::string& url) -> const tk::Image*
@@ -542,6 +543,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // Pop-out-local emoji / sticker pickers (parented to this window). The
     // emoji picker doubles as the reaction picker via pendingReactionEventId_.
     emojiPicker_ = new ::EmojiPicker(this);
+    emojiPicker_->setCurrentRoomId(room_id_);
     emojiPicker_->setClient(shell_client_());
     emojiPicker_->setImageProvider(picker_image_provider_(false));
     emojiPicker_->onSelected = [this](const QString& glyph)
@@ -592,6 +594,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             room_view_->message_list()->set_hover_locked(false);
     };
     stickerPicker_ = new ::StickerPicker(this);
+    stickerPicker_->setCurrentRoomId(room_id_);
     stickerPicker_->setClient(shell_client_());
     stickerPicker_->setImageProvider(picker_image_provider_(true));
     stickerPicker_->onSelected = [this](const tesseract::ImagePackImage& img)

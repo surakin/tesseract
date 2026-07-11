@@ -43,6 +43,16 @@ public:
     /// be null (the picker still functions; the Frequents tab is empty).
     void set_client(tesseract::Client* c);
 
+    /// Which room this picker is currently being shown for (empty = no
+    /// room context, e.g. viewing the room list). Read by
+    /// `refresh_emoticon_packs()` to order that room's own pack right
+    /// after the personal pack — see `order_picker_packs`. Callers should
+    /// set this before calling `refresh_emoticon_packs()`.
+    void set_current_room_id(std::string room_id)
+    {
+        current_room_id_ = std::move(room_id);
+    }
+
     /// Pull the latest Frequents from the client. Call before each
     /// presentation so re-shows reflect new picks.
     void refresh_frequents();
@@ -130,6 +140,7 @@ private:
     }
 
     tesseract::Client* client_ = nullptr;
+    std::string current_room_id_;
 
     Page page_ = Page::Category;
     tesseract::emoji::Category category_ =

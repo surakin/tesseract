@@ -34,6 +34,11 @@ public:
     /// Call from the host's `IEventHandler::on_image_packs_updated`.
     void refreshPacks();
 
+    /// Which room this picker is currently being shown for — forwarded to
+    /// the wrapped shared picker; call before refreshPacks() so the room's
+    /// own pack sorts right after the personal pack.
+    void setCurrentRoomId(const std::string& room_id);
+
     /// Trigger a redraw — call from the host after new sticker bitmaps
     /// land in the local image cache.
     void invalidateImages();

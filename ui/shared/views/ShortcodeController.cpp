@@ -8,10 +8,9 @@ namespace tesseract::views
 
 namespace
 {
-const std::vector<tesseract::ImagePackImage>& empty_emoticons()
+std::vector<tesseract::ImagePackImage> empty_emoticons()
 {
-    static const std::vector<tesseract::ImagePackImage> kEmpty;
-    return kEmpty;
+    return {};
 }
 } // namespace
 
@@ -35,7 +34,7 @@ bool ShortcodeController::on_text_changed(const std::string& text, int cursor)
         return false;
     }
 
-    const std::vector<tesseract::ImagePackImage>& packs =
+    const std::vector<tesseract::ImagePackImage> packs =
         hooks_.emoticons ? hooks_.emoticons() : empty_emoticons();
 
     // Auto-expand: ":smile:" followed by a space / EOT → replace with the

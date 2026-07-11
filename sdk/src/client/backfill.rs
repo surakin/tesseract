@@ -994,6 +994,13 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
              room_id    TEXT    NOT NULL PRIMARY KEY,
              is_bridged INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS room_image_pack_cache (
+             room_id      TEXT    NOT NULL,
+             state_key    TEXT    NOT NULL,
+             display_name TEXT    NOT NULL DEFAULT '',
+             checked_at   INTEGER NOT NULL,
+             PRIMARY KEY (room_id, state_key)
+         );
          DELETE FROM room_summary_cache
              WHERE fetched_at_secs < strftime('%s','now') - 2592000;",
     )
@@ -1170,6 +1177,87 @@ pub(super) fn load_room_summary_conn(conn: &rusqlite::Connection, room_id: &str)
     };
     stmt.query_row(rusqlite::params![room_id], |row| row.get::<_, String>(0))
         .unwrap_or_default()
+}
+
+// ── room_image_pack_cache DB helpers ──────────────────────────────────────
+//
+// Lazily-built local record of which rooms have an MSC2545 image pack.
+// Sliding sync's `required_state` doesn't include custom event types like
+// `m.room.image_pack`/`im.ponies.room_emotes`, so there's no cheap way to
+// know which of an account's joined rooms have a pack without fetching
+// each one's state individually — sweeping every joined room up front does
+// that fetch for rooms the user may never even look at, and for an account
+// with many rooms can take minutes. Instead this table is populated
+// incrementally by `rebuild_image_packs` as it processes each room in the
+// subscribed+active set (see that function) — written to on every rebuild,
+// so a room's pack appearing/changing/disappearing is reflected the next
+// time that room is processed (subscribed rooms every session, visited
+// rooms whenever `set_active_room` marks them newly active). The "Known
+// Packs" settings page reads only this table (`read_known_room_packs`) —
+// a fast local query, never a network operation.
+
+pub(super) fn upsert_known_room_pack(
+    conn: &rusqlite::Connection,
+    room_id: &str,
+    state_key: &str,
+    display_name: &str,
+    checked_at: i64,
+) {
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO room_image_pack_cache \
+         (room_id, state_key, display_name, checked_at) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![room_id, state_key, display_name, checked_at],
+    );
+}
+
+pub(super) fn delete_known_room_pack(conn: &rusqlite::Connection, room_id: &str, state_key: &str) {
+    let _ = conn.execute(
+        "DELETE FROM room_image_pack_cache WHERE room_id = ?1 AND state_key = ?2",
+        rusqlite::params![room_id, state_key],
+    );
+}
+
+/// Replace every persisted row for `room_id` with exactly the packs given —
+/// unlike `upsert_known_room_pack`/`delete_known_room_pack` (one specific
+/// state_key), this is a whole-room resync: used after a full-state
+/// discovery of every state_key a room defines, so state_keys that
+/// disappeared since the last discovery are dropped along with the ones
+/// that changed or stayed the same.
+pub(super) fn replace_known_room_packs(
+    conn: &rusqlite::Connection,
+    room_id: &str,
+    packs: &[crate::image_packs::ImagePack],
+    checked_at: i64,
+) {
+    let _ = conn.execute(
+        "DELETE FROM room_image_pack_cache WHERE room_id = ?1",
+        rusqlite::params![room_id],
+    );
+    for pack in packs {
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO room_image_pack_cache \
+             (room_id, state_key, display_name, checked_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![room_id, pack.source_state_key(), pack.display_name, checked_at],
+        );
+    }
+}
+
+pub(super) fn read_known_room_packs(conn: &rusqlite::Connection) -> Vec<(String, String, String)> {
+    let Ok(mut stmt) =
+        conn.prepare("SELECT room_id, state_key, display_name FROM room_image_pack_cache")
+    else {
+        return vec![];
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    }) else {
+        return vec![];
+    };
+    rows.filter_map(|r| r.ok()).collect()
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1453,5 +1541,133 @@ mod media_backoff_tests {
         let rows = query_media_backoff(&conn);
         assert_eq!(rows[0].1, 5); // attempts preserved
         assert_eq!(rows[0].2, 1); // deadline preserved as-is
+    }
+}
+
+#[cfg(test)]
+mod known_room_pack_tests {
+    use super::{
+        delete_known_room_pack, read_known_room_packs, replace_known_room_packs,
+        upsert_known_room_pack,
+    };
+    use crate::image_packs::{ImagePack, PackSource};
+    use rusqlite::Connection;
+
+    fn room_pack(state_key: &str, display_name: &str) -> ImagePack {
+        ImagePack {
+            id: format!("room:!a:ex.org/{state_key}"),
+            display_name: display_name.to_owned(),
+            avatar_url: String::new(),
+            attribution: String::new(),
+            usage: crate::image_packs::USAGE_ANY,
+            source: PackSource::Room {
+                room_id: "!a:ex.org".to_owned(),
+                state_key: state_key.to_owned(),
+            },
+            images: Vec::new(),
+            is_subscribed: false,
+        }
+    }
+
+    fn make_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE room_image_pack_cache (
+                 room_id      TEXT NOT NULL,
+                 state_key    TEXT NOT NULL,
+                 display_name TEXT NOT NULL DEFAULT '',
+                 checked_at   INTEGER NOT NULL,
+                 PRIMARY KEY (room_id, state_key)
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn upsert_and_read_round_trip() {
+        let conn = make_conn();
+        upsert_known_room_pack(&conn, "!a:ex.org", "", "Room Pack", 1000);
+        let rows = read_known_room_packs(&conn);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0],
+            ("!a:ex.org".to_owned(), "".to_owned(), "Room Pack".to_owned())
+        );
+    }
+
+    #[test]
+    fn upsert_replaces_existing_row_for_same_key() {
+        let conn = make_conn();
+        upsert_known_room_pack(&conn, "!a:ex.org", "", "Old Name", 1000);
+        upsert_known_room_pack(&conn, "!a:ex.org", "", "New Name", 2000);
+        let rows = read_known_room_packs(&conn);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].2, "New Name");
+    }
+
+    #[test]
+    fn delete_removes_entry() {
+        let conn = make_conn();
+        upsert_known_room_pack(&conn, "!a:ex.org", "", "Room Pack", 1000);
+        delete_known_room_pack(&conn, "!a:ex.org", "");
+        assert!(read_known_room_packs(&conn).is_empty());
+    }
+
+    #[test]
+    fn delete_of_absent_key_is_a_noop() {
+        let conn = make_conn();
+        delete_known_room_pack(&conn, "!missing:ex.org", ""); // must not panic
+        assert!(read_known_room_packs(&conn).is_empty());
+    }
+
+    #[test]
+    fn distinct_state_keys_in_same_room_are_independent_rows() {
+        let conn = make_conn();
+        upsert_known_room_pack(&conn, "!a:ex.org", "", "Default Pack", 1000);
+        upsert_known_room_pack(&conn, "!a:ex.org", "second", "Second Pack", 1000);
+        let mut rows = read_known_room_packs(&conn);
+        rows.sort();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn replace_overwrites_all_rows_for_room() {
+        let conn = make_conn();
+        upsert_known_room_pack(&conn, "!a:ex.org", "", "Stale Default", 1000);
+        upsert_known_room_pack(&conn, "!a:ex.org", "stale", "Stale Named", 1000);
+        replace_known_room_packs(
+            &conn,
+            "!a:ex.org",
+            &[room_pack("", "Fresh Default"), room_pack("named", "Fresh Named")],
+            2000,
+        );
+        let mut rows = read_known_room_packs(&conn);
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                ("!a:ex.org".to_owned(), "".to_owned(), "Fresh Default".to_owned()),
+                ("!a:ex.org".to_owned(), "named".to_owned(), "Fresh Named".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn replace_with_empty_slice_clears_room() {
+        let conn = make_conn();
+        upsert_known_room_pack(&conn, "!a:ex.org", "", "Old Pack", 1000);
+        replace_known_room_packs(&conn, "!a:ex.org", &[], 2000);
+        assert!(read_known_room_packs(&conn).is_empty());
+    }
+
+    #[test]
+    fn replace_does_not_touch_other_rooms() {
+        let conn = make_conn();
+        upsert_known_room_pack(&conn, "!b:ex.org", "", "Other Room Pack", 1000);
+        replace_known_room_packs(&conn, "!a:ex.org", &[room_pack("", "A Pack")], 2000);
+        let mut rows = read_known_room_packs(&conn);
+        rows.sort();
+        assert_eq!(rows.len(), 2);
     }
 }

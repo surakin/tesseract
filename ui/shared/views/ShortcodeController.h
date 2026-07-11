@@ -39,8 +39,10 @@ public:
         std::function<void()> hide;
         std::function<void()> repaint;
         // The live custom-emoticon pack list (shell-owned cache) used to rank
-        // suggestions alongside the Unicode set.
-        std::function<const std::vector<tesseract::ImagePackImage>&()> emoticons;
+        // suggestions alongside the Unicode set. Computed fresh per call
+        // (see ShellBase::emoticons_for_room_) since it's scoped to
+        // whichever room this composer is showing.
+        std::function<std::vector<tesseract::ImagePackImage>()> emoticons;
         // Prefetch a custom emoticon's image (mxc URL) into the shell's media
         // cache so the popup's image_provider can resolve it on a later repaint.
         // Optional: when null, custom emoticons render without a thumbnail.

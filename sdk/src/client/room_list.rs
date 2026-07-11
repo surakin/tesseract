@@ -7,7 +7,7 @@ use super::{err, ok, ClientFfi};
 
 use crate::ffi::OpResult;
 
-#[cfg(all(not(test), debug_assertions))]
+#[cfg(not(test))]
 use std::sync::Arc;
 
 #[cfg(not(test))]
@@ -1298,9 +1298,8 @@ impl ClientFfi {
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = self.in_flight_urls.clone();
+        let room_state_cache = Arc::clone(&self.room_state_cache);
         self.rt.spawn(async move {
-            use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
-
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
@@ -1315,8 +1314,9 @@ impl ClientFfi {
             let mut guest_access = false;
             let mut history_visibility = "shared".to_string();
 
-            if let Ok(resp) = client.send(state_api::Request::new(rid)).await {
-                for raw in &resp.room_state {
+            {
+                let room_state = super::fetch_room_state_cached(&client, &room_state_cache, &rid).await;
+                for raw in room_state.iter() {
                     let Ok(Some(ty)) = raw.get_field::<String>("type") else {
                         continue;
                     };
@@ -1823,6 +1823,42 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn can_set_room_power_levels(&self, _room_id: &str) -> bool {
+        false
+    }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending either the stable or unstable MSC2545 room image-pack state
+    /// event type in this room (see image_packs::ROOM_PACK_TYPES — a room's
+    /// packs may live under either type, so permission to send *either* is
+    /// enough to edit them). Cached read — no network round-trip. False on
+    /// any uncertainty. Mirrors can_set_room_name.
+    #[cfg(not(test))]
+    pub fn can_set_room_image_packs(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => crate::image_packs::ROOM_PACK_TYPES
+                .iter()
+                .any(|t| pl.user_can_send_state(user_id, StateEventType::from(*t))),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_image_packs(&self, _room_id: &str) -> bool {
         false
     }
 }

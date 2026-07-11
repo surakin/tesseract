@@ -63,6 +63,11 @@ struct ImagePack
     /// For `PackSourceKind::Room`, the state_key inside that room. Empty
     /// otherwise. May legitimately be the empty string ("default" pack).
     std::string source_state_key;
+    /// Only meaningful for `PackSourceKind::Room`; true when this pack is in
+    /// the user's explicit `m.image_pack.rooms`/`im.ponies.emote_rooms`
+    /// subscription list, as opposed to being visible only because the user
+    /// is joined to the source room.
+    bool is_subscribed = false;
 };
 
 struct ImagePackImage
@@ -105,5 +110,17 @@ inline const char* pack_usage_filter_to_str(PackUsageFilter f) noexcept
         return "any";
     }
 }
+
+/// One resolved image passed to `Client::save_room_pack` — `url` must
+/// already be an uploaded `mxc://` URI (upload any brand-new image bytes
+/// via `Client::upload_media` first); `save_room_pack` never uploads
+/// anything itself.
+struct PackImageInput
+{
+    std::string shortcode;
+    std::string url; // mxc://
+    std::string body;
+    std::string info_json;
+};
 
 } // namespace tesseract

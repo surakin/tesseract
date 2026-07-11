@@ -161,7 +161,7 @@ public:
         on_right_click_ = std::move(cb);
     }
     bool pasteboard_has_dropable(NSPasteboard* pb) const;
-    bool dispatch_file_drop(NSPasteboard* pb);
+    bool dispatch_file_drop(NSPasteboard* pb, tk::Point pos);
     void set_drag_active(bool active);
     bool drag_active() const
     {
@@ -496,8 +496,16 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     {
         return NO;
     }
-    BOOL ok =
-        self.hostPtr->dispatch_file_drop(sender.draggingPasteboard) ? YES : NO;
+    // Mirrors -tkLocationFromEvent:'s NSEvent.locationInWindow conversion.
+    // NSDraggingInfo.draggingLocation's exact coordinate space (window vs.
+    // already-view-space) isn't confirmed against this SDK revision on real
+    // hardware — flagging this as the one part of the drop-position
+    // plumbing that needs on-device verification.
+    NSPoint loc = [self convertPoint:sender.draggingLocation fromView:nil];
+    tk::Point pos{static_cast<float>(loc.x), static_cast<float>(loc.y)};
+    BOOL ok = self.hostPtr->dispatch_file_drop(sender.draggingPasteboard, pos)
+                 ? YES
+                 : NO;
     self.hostPtr->set_drag_active(false);
     return ok;
 }
@@ -2243,7 +2251,7 @@ bool Host::pasteboard_has_dropable(NSPasteboard* pb) const
     return false;
 }
 
-bool Host::dispatch_file_drop(NSPasteboard* pb)
+bool Host::dispatch_file_drop(NSPasteboard* pb, tk::Point pos)
 {
     if (!pb || !on_file_drop_)
     {
@@ -2306,7 +2314,7 @@ bool Host::dispatch_file_drop(NSPasteboard* pb)
             path.lastPathComponent.UTF8String
                 ? std::string(path.lastPathComponent.UTF8String)
                 : std::string{};
-        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename));
+        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename), pos);
         any = true;
     }
     if (any)
@@ -2321,7 +2329,7 @@ bool Host::dispatch_file_drop(NSPasteboard* pb)
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(png.bytes),
             static_cast<const std::uint8_t*>(png.bytes) + png.length);
-        on_file_drop_(std::move(bytes), "image/png", std::string{});
+        on_file_drop_(std::move(bytes), "image/png", std::string{}, pos);
         return true;
     }
     NSData* jpg = [pb dataForType:@"public.jpeg"];
@@ -2330,7 +2338,7 @@ bool Host::dispatch_file_drop(NSPasteboard* pb)
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(jpg.bytes),
             static_cast<const std::uint8_t*>(jpg.bytes) + jpg.length);
-        on_file_drop_(std::move(bytes), "image/jpeg", std::string{});
+        on_file_drop_(std::move(bytes), "image/jpeg", std::string{}, pos);
         return true;
     }
 

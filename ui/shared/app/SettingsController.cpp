@@ -205,6 +205,171 @@ void SettingsController::load_devices()
         });
 }
 
+void SettingsController::load_image_packs()
+{
+    auto* c = client_;
+    if (!c)
+    {
+        post_to_ui_([this]()
+        {
+            if (on_image_packs_loaded)
+                on_image_packs_loaded({});
+            if (on_user_pack_images_loaded)
+                on_user_pack_images_loaded({});
+        });
+        return;
+    }
+
+    // Two independent dispatches, not one: even though list_known_room_packs()
+    // below is now a fast local cache read (no network sweep), keeping the
+    // dispatches split still lets each side reload independently and avoids
+    // coupling the personal pack's images to Known Packs' load lifecycle.
+    if (!user_pack_images_loading_.exchange(true))
+    {
+        run_async_(
+            [this, c]()
+            {
+                auto user_images =
+                    c->list_pack_images("user", tesseract::PackUsageFilter::Any);
+                post_to_ui_(
+                    [this, c, user_images = std::move(user_images)]() mutable
+                    {
+                        user_pack_images_loading_.store(false);
+                        if (c != client_)
+                            return;
+                        if (on_user_pack_images_loaded)
+                            on_user_pack_images_loaded(std::move(user_images));
+                    });
+            });
+    }
+
+    if (known_packs_loading_.exchange(true))
+        return;
+
+    run_async_(
+        [this, c]()
+        {
+            // Known Packs browses every room known to have a pack so far
+            // (to subscribe/unsubscribe), not just the ones already kept
+            // warm for the pickers — list_known_room_packs() reads the
+            // lazily-built, persisted cache: rooms are discovered as the
+            // user visits them (or immediately if already subscribed via
+            // m.image_pack.rooms), not swept all at once, so this call is
+            // a fast local read regardless of account size.
+            auto packs = c->list_known_room_packs();
+            post_to_ui_(
+                [this, c, packs = std::move(packs)]() mutable
+                {
+                    known_packs_loading_.store(false);
+                    if (c != client_)
+                        return;
+                    if (on_image_packs_loaded)
+                        on_image_packs_loaded(std::move(packs));
+                });
+        });
+}
+
+void SettingsController::save_user_pack_changes(
+    tesseract::views::UserPackEditor::Result diff)
+{
+    auto* c = client_;
+    if (!c)
+    {
+        post_to_ui_([this]()
+        {
+            if (on_user_pack_save_result)
+                on_user_pack_save_result(false, "not logged in");
+        });
+        return;
+    }
+
+    run_async_(
+        [this, c, diff = std::move(diff)]() mutable
+        {
+            bool all_ok = true;
+            std::string first_error;
+            auto note = [&](const tesseract::Result& r)
+            {
+                if (!r.ok && all_ok)
+                {
+                    all_ok = false;
+                    first_error = r.message;
+                }
+            };
+
+            for (const auto& shortcode : diff.removed_shortcodes)
+                note(c->remove_user_pack_image(shortcode));
+
+            for (const auto& img : diff.images)
+            {
+                if (!img.existing_url.empty())
+                {
+                    // Already-uploaded image (unchanged, or its shortcode was
+                    // edited in place) — upsert re-saves it under the current
+                    // shortcode/body/info, and favorite is synced separately
+                    // below since save_sticker_to_user_pack doesn't take it.
+                    note(c->save_sticker_to_user_pack(img.shortcode, img.body,
+                                                      img.existing_url,
+                                                      img.info_json));
+                    if (img.favorite)
+                        note(c->toggle_favorite_sticker(img.existing_url));
+                }
+                else if (!img.pending_bytes.empty())
+                {
+                    // Brand-new image (pasted/dropped/picked, never uploaded) —
+                    // upload the raw bytes first, then save under the
+                    // resulting mxc:// exactly like the existing-image branch.
+                    auto upload = c->upload_media(img.pending_bytes, img.pending_mime);
+                    if (!upload.ok)
+                    {
+                        note(upload);
+                        continue;
+                    }
+                    note(c->save_sticker_to_user_pack(img.shortcode, img.body,
+                                                      upload.message,
+                                                      img.info_json));
+                    if (img.favorite)
+                        note(c->toggle_favorite_sticker(upload.message));
+                }
+            }
+
+            post_to_ui_(
+                [this, all_ok, first_error = std::move(first_error)]() mutable
+                {
+                    if (on_user_pack_save_result)
+                        on_user_pack_save_result(all_ok, std::move(first_error));
+                });
+        });
+}
+
+void SettingsController::set_pack_subscribed(std::string room_id,
+                                             std::string state_key,
+                                             bool subscribed)
+{
+    auto* c = client_;
+    if (!c)
+        return;
+
+    run_async_(
+        [this, c, room_id = std::move(room_id), state_key = std::move(state_key),
+         subscribed]() mutable
+        {
+            auto r = c->set_pack_room_subscribed(room_id, state_key, subscribed);
+            post_to_ui_(
+                [this, c, ok = r.ok]()
+                {
+                    if (c != client_)
+                        return;
+                    // Re-sync checkbox truth once the write has actually
+                    // settled (rather than racing it) — set_pack_room_subscribed
+                    // already forces a synchronous cache rebuild server-side,
+                    // so this just refreshes the UI-facing snapshot.
+                    if (ok)
+                        load_image_packs();
+                });
+        });
+}
+
 void SettingsController::rename_device(std::string device_id, std::string name)
 {
     if (!acquire_device_op_(device_id))

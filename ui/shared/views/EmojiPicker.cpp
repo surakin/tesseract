@@ -1,6 +1,7 @@
 #include "EmojiPicker.h"
 
 #include "tk/theme.h"
+#include "views/image_pack_order.h"
 
 #include <tesseract/client.h>
 
@@ -83,6 +84,7 @@ void EmojiPicker::refresh_emoticon_packs()
     custom_packs_.clear();
     if (client_)
     {
+        std::vector<tesseract::ImagePack> filtered;
         for (auto& p : client_->list_image_packs())
         {
             if (any(p.usage & tesseract::PackUsage::Emoticon))
@@ -96,9 +98,10 @@ void EmojiPicker::refresh_emoticon_packs()
                     if (!imgs.empty())
                         p.avatar_url = imgs.front().url;
                 }
-                custom_packs_.push_back(std::move(p));
+                filtered.push_back(std::move(p));
             }
         }
+        custom_packs_ = order_picker_packs(std::move(filtered), current_room_id_);
     }
     // If the active CustomPack went away, fall back to a built-in category.
     if (page_ == Page::CustomPack &&

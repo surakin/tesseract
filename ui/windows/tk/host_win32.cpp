@@ -5195,13 +5195,25 @@ public:
         return static_cast<bool>(on_file_drop_);
     }
     void fire_file_drop(std::vector<std::uint8_t> bytes, std::string mime,
-                        std::string filename)
+                        std::string filename, tk::Point pos)
     {
         if (on_file_drop_)
         {
             on_file_drop_(std::move(bytes), std::move(mime),
-                          std::move(filename));
+                          std::move(filename), pos);
         }
+    }
+    // Converts a drop's screen-space POINTL to the same client-area,
+    // DPI-independent tk::Point space fire_right_click already builds —
+    // mirrors the ScreenToClient + phys_to_dip pipeline the WM_MOUSEWHEEL
+    // path uses (that message, unlike WM_LBUTTONDOWN/WM_MOUSEMOVE, also
+    // delivers screen coordinates).
+    tk::Point screen_to_tk_point(POINT screen_pt) const
+    {
+        POINT pt = screen_pt;
+        ScreenToClient(hwnd_, &pt);
+        return {phys_to_dip(static_cast<float>(pt.x)),
+               phys_to_dip(static_cast<float>(pt.y))};
     }
     void fire_file_drop_error(std::string reason)
     {
@@ -5591,7 +5603,7 @@ public:
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD /*grfKeyState*/,
-                                   POINTL /*pt*/, DWORD* pdwEffect) override
+                                   POINTL pt, DWORD* pdwEffect) override
     {
         if (pdwEffect)
         {
@@ -5605,6 +5617,12 @@ public:
         {
             return S_OK;
         }
+
+        // IDropTarget::Drop's POINTL is screen-space per the OLE contract
+        // (unlike WM_LBUTTONDOWN/WM_MOUSEMOVE, which are already client-
+        // relative) — convert once, same pipeline WM_MOUSEWHEEL uses.
+        const tk::Point drop_pos =
+            host_->screen_to_tk_point(POINT{pt.x, pt.y});
 
         FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         STGMEDIUM stg{};
@@ -5629,7 +5647,7 @@ public:
                 {
                     continue;
                 }
-                if (try_dispatch_file(path))
+                if (try_dispatch_file(path, drop_pos))
                 {
                     dispatched = true;
                 }
@@ -5732,7 +5750,7 @@ private:
         return data->QueryGetData(&fe) == S_OK;
     }
 
-    bool try_dispatch_file(const std::wstring& path)
+    bool try_dispatch_file(const std::wstring& path, tk::Point pos)
     {
         if (!host_)
         {
@@ -5795,7 +5813,7 @@ private:
         }
 
         host_->fire_file_drop(std::move(bytes), std::move(mime),
-                              wide_to_utf8(basename(path)));
+                              wide_to_utf8(basename(path)), pos);
         return true;
     }
 

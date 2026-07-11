@@ -36,6 +36,8 @@ add_executable(tesseract_tests
     cpp/test_tk_account_picker.cpp
     cpp/test_tk_login_view.cpp
     cpp/test_tk_sticker_picker.cpp
+    cpp/test_image_pack_order.cpp
+    cpp/test_image_pack_shortcode_suggest.cpp
     cpp/test_shortcode_engine.cpp
     cpp/test_tk_shortcode_popup.cpp
     cpp/test_mention_engine.cpp
@@ -68,6 +70,7 @@ add_executable(tesseract_tests
     cpp/test_tk_account_section.cpp
     cpp/test_room_settings_diff.cpp
     cpp/test_tk_room_settings_view.cpp
+    cpp/test_tk_image_pack_editor_view.cpp
     cpp/test_tk_room_media_section.cpp
     cpp/test_tk_room_security_section.cpp
     cpp/test_tk_room_permissions_section.cpp

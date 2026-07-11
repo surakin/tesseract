@@ -256,6 +256,14 @@ pub mod ffi {
         pub favorite: bool,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct PackImageInputFfi {
+        pub shortcode: String,
+        pub url: String,
+        pub body: String,
+        pub info_json: String,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct DeviceFfi {
         pub device_id: String,

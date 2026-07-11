@@ -610,6 +610,11 @@ pub mod ffi {
         source_kind: String,
         source_room: String,
         source_state_key: String,
+        /// Only meaningful when `source_kind == "room"`; true when this pack
+        /// is in the user's explicit `m.image_pack.rooms` /
+        /// `im.ponies.emote_rooms` subscription list, as opposed to being
+        /// visible only because the user is joined to the source room.
+        is_subscribed: bool,
     }
 
     /// One image entry inside a pack. `usage_mask` is the per-image usage
@@ -623,6 +628,16 @@ pub mod ffi {
         info_json: String,
         usage_mask: u8,
         favorite: bool,
+    }
+
+    /// One resolved image for `save_room_pack` — `url` must already be an
+    /// uploaded `mxc://` URI (the caller uploads any brand-new image bytes
+    /// via `upload_media` first); this call never uploads anything itself.
+    struct PackImageInputFfi {
+        shortcode: String,
+        url: String,
+        body: String,
+        info_json: String,
     }
 
     /// One Matrix device/session for the current user, returned by
@@ -1924,6 +1939,15 @@ pub mod ffi {
         /// is open before the first sync settles.
         fn list_image_packs(self: &ClientFfi) -> Vec<ImagePackFfi>;
 
+        /// Every room-sourced MSC2545 pack known so far, for the "Known
+        /// Packs" settings page. A fast local read (sqlite + account data,
+        /// no network roundtrip) — rooms are discovered lazily as the user
+        /// visits them or as soon as they're in `m.image_pack.rooms` /
+        /// `im.ponies.emote_rooms`, persisted to `app_cache.db` as they're
+        /// found. A room that's neither subscribed nor yet visited won't
+        /// appear until visited.
+        fn list_known_room_packs(self: &ClientFfi) -> Vec<ImagePackFfi>;
+
         /// Return every image entry in `pack_id` whose usage mask matches
         /// `usage_filter` ("sticker" | "emoticon" | "any"). Order is
         /// well-defined and stable for a given pack snapshot.
@@ -1985,6 +2009,73 @@ pub mod ffi {
         /// whose `url` matches `image_url`. No-op when the sticker isn't in
         /// the user pack (call `save_sticker_to_user_pack` first).
         fn toggle_favorite_sticker(self: &ClientFfi, image_url: &str) -> OpResult;
+
+        /// Remove `shortcode` from the user's personal pack. No-op (ok:true)
+        /// if the shortcode doesn't exist. GET-modify-PUT; local cache
+        /// updates immediately (no need to wait for the next sync).
+        fn remove_user_pack_image(self: &ClientFfi, shortcode: &str) -> OpResult;
+
+        /// Rename `old_shortcode` to `new_shortcode` in the user's personal
+        /// pack. If `new_shortcode` collides with an existing entry, a
+        /// numeric suffix is appended (mirrors `save_sticker_to_user_pack`'s
+        /// collision handling) — on success, `OpResult::message` carries the
+        /// actually-applied shortcode, which may differ from the requested
+        /// one.
+        fn rename_user_pack_image(
+            self: &ClientFfi,
+            old_shortcode: &str,
+            new_shortcode: &str,
+        ) -> OpResult;
+
+        /// Explicitly subscribe/unsubscribe `(room_id, state_key)`'s image
+        /// pack via the user's `m.image_pack.rooms` / `im.ponies.emote_rooms`
+        /// account data (dual-written to both event types). Forces a
+        /// synchronous local rebuild before returning, so
+        /// `ImagePackFfi::is_subscribed` and `list_image_packs()` reflect the
+        /// change immediately; `on_image_packs_updated` fires too.
+        fn set_pack_room_subscribed(
+            self: &ClientFfi,
+            room_id: &str,
+            state_key: &str,
+            subscribed: bool,
+        ) -> OpResult;
+
+        /// Create or replace one of a room's MSC2545 packs — a wholesale
+        /// replace of its `images` map with exactly `images` (not an
+        /// upsert), since the caller (ImagePackEditorView) always stages a
+        /// full snapshot per pack, not a diff. `state_key` is ignored when
+        /// `is_new` (a fresh, collision-free key is assigned from
+        /// `display_name` and returned in `OpResult::message` on success);
+        /// otherwise it must name an existing pack. A brand-new pack is
+        /// written only to the stable `m.room.image_pack` type; an existing
+        /// pack is written back to exactly whichever of the stable/unstable
+        /// types it currently has content under (both, if both), so this
+        /// never introduces a duplicate copy under a type the room didn't
+        /// already use. Invalidates this room's cached full state and
+        /// forces a synchronous local rebuild before returning (mirrors
+        /// `set_pack_room_subscribed`), so `list_image_packs()` /
+        /// `list_known_room_packs()` and `on_image_packs_updated` reflect
+        /// the change immediately. Blocks — worker thread.
+        fn save_room_pack(
+            self: &ClientFfi,
+            room_id: &str,
+            state_key: &str,
+            is_new: bool,
+            display_name: &str,
+            usage_mask: u8,
+            images: Vec<PackImageInputFfi>,
+        ) -> OpResult;
+
+        /// Empty an existing room pack's `images` map (`{"images": {}}`),
+        /// written to whichever of the stable/unstable event types it
+        /// currently has content under. Matrix state events cannot be
+        /// truly deleted — the (now-empty) state event remains in the
+        /// room's history and this pack will keep showing up as a
+        /// zero-image entry anywhere packs are listed, for this and every
+        /// other client, until/unless the room's state history is
+        /// redacted. Same cache-invalidate-and-rebuild tail as
+        /// `save_room_pack`. Blocks — worker thread.
+        fn remove_room_pack(self: &ClientFfi, room_id: &str, state_key: &str) -> OpResult;
 
         // ----- Application prefs (im.gnomos.tesseract global account-data) -----
 
@@ -2356,6 +2447,14 @@ pub mod ffi {
         /// thread (reads cached power levels, no network round-trip).
         fn can_set_room_power_levels(self: &ClientFfi, room_id: &str) -> bool;
 
+        /// True iff the current user's power level meets the requirement for
+        /// sending the room's MSC2545 image-pack state event (either the
+        /// stable m.room.image_pack or unstable im.ponies.room_emotes type —
+        /// permission to send either is enough to edit a room's packs).
+        /// False on any uncertainty. Blocks — worker thread (reads cached
+        /// power levels, no network round-trip).
+        fn can_set_room_image_packs(self: &ClientFfi, room_id: &str) -> bool;
+
         /// Read the room's current power levels, narrowed to the fields the
         /// Permissions tab edits. Synchronous — Room::power_levels() is a
         /// cached local read with no network round-trip, unlike the fields
@@ -2432,6 +2531,13 @@ pub mod ffi {
         /// currently-subscribed rooms — callers should re-`subscribe_room`
         /// the active room after toggling to refresh it immediately.
         fn set_show_membership_events(self: &ClientFfi, enabled: bool);
+
+        /// Record `room_id` as recently active (main-window tab switch,
+        /// pop-out window open) so the image-pack cache keeps that room's
+        /// own MSC2545 pack fetched over the network even without an
+        /// explicit m.image_pack.rooms subscription. Thread-safe; no-op for
+        /// an empty room_id.
+        fn set_active_room(self: &ClientFfi, room_id: &str);
 
         /// Issue one immediate round of DM presence polls without waiting
         /// for the 60s interval. Used by the UI shell when the window

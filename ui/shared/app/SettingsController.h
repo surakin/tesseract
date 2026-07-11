@@ -1,7 +1,9 @@
 #pragma once
 
 #include "tesseract/client.h"
+#include "tesseract/image_pack.h"
 #include "tesseract/up_connector.h"
+#include "views/settings/UserPackEditor.h"
 
 #include <atomic>
 #include <functional>
@@ -52,6 +54,17 @@ public:
     // homeserver. Releases the per-device in-flight slot held by
     // delete_device's UIA branch so a fresh delete can be initiated later.
     void cancel_device_deletion(std::string device_id);
+
+    // Emojis & Stickers (global image packs).
+    void load_image_packs();
+    void save_user_pack_changes(tesseract::views::UserPackEditor::Result diff);
+    void set_pack_subscribed(std::string room_id, std::string state_key,
+                             bool subscribed);
+
+    std::function<void(std::vector<tesseract::ImagePack>)> on_image_packs_loaded;
+    std::function<void(std::vector<tesseract::ImagePackImage>)>
+        on_user_pack_images_loaded;
+    std::function<void(bool ok, std::string error)> on_user_pack_save_result;
 
     std::function<void(bool ok, std::string error)> on_avatar_result;
     std::function<void(bool ok, std::string error)> on_name_result;
@@ -114,6 +127,11 @@ private:
     std::atomic<bool> avatar_in_flight_{false};
     std::atomic<bool> name_in_flight_{false};
     std::atomic<bool> devices_loading_{false};
+    // Split so Known Packs and the personal pack's images can each reload
+    // independently — see load_image_packs()'s two independent run_async_
+    // dispatches.
+    std::atomic<bool> known_packs_loading_{false};
+    std::atomic<bool> user_pack_images_loading_{false};
 
     std::mutex device_ops_mu_;
     std::set<std::string> device_ops_in_flight_;

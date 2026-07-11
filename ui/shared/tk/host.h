@@ -263,8 +263,13 @@ public:
 // should receive — empty for in-app image-data drops where no filename
 // is available (the ComposeBar synthesises one). `application/octet-
 // stream` is used when the backend can't sniff a more specific mime.
-using FileDropHandler = std::function<void(
-    std::vector<std::uint8_t> bytes, std::string mime, std::string filename)>;
+// `pos` is the drop location in the same world/root-surface coordinate
+// space as `Widget::bounds_`/`dispatch_pointer_down` — top-left origin,
+// DPI-independent logical pixels, matching the point every backend already
+// builds for ordinary pointer events.
+using FileDropHandler =
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, Point pos)>;
 
 // Deprecated alias for `FileDropHandler` kept while shells migrate.
 using ImageDropHandler = FileDropHandler;

@@ -22,6 +22,12 @@ namespace tesseract
 RoomWindowBase::RoomWindowBase(ShellBase* shell, std::string room_id)
     : shell_(shell), room_id_(std::move(room_id))
 {
+    // Pop-outs show one fixed room for their whole lifetime and never go
+    // through ShellBase::after_active_room_changed_() — keep this room's
+    // own MSC2545 pack fetched the same way the main window does on switch
+    // (see Client::set_active_room's doc comment).
+    if (shell_ && shell_->client_)
+        shell_->client_->set_active_room(room_id_);
 }
 
 RoomWindowBase::~RoomWindowBase()
@@ -307,6 +313,7 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             v->set_field_permissions(false, false, false);
             v->set_security_field_permissions(false, false, false, false);
             v->set_permissions_field_permissions(false);
+            v->set_image_pack_field_permissions(false);
             v->set_own_power_level({});
             shell_->seed_room_media_section_(room_id);
             return;
@@ -325,10 +332,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         v->set_own_power_level(shell_->client_->room_own_power_level(room_id));
         shell_->seed_room_media_section_(room_id);
         shell_->fetch_room_security_state_(room_id);
+        shell_->seed_image_pack_tab_(room_id, v);
     };
     rv->on_room_settings_avatar_upload_requested =
-        [this](std::string room_id) {
-        shell_->stage_room_settings_avatar_upload_(room_id);
+        [this, rv](std::string room_id) {
+        shell_->stage_room_settings_avatar_upload_(room_id, rv->room_settings_view());
     };
     rv->room_settings_view()->on_accept =
         [this, rv](std::string room_id, views::RoomSettingsChanges changes) {
@@ -1737,10 +1745,10 @@ const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
     return shell_->account_manager_.thumbnail_cache().peek(mxc);
 }
 
-const std::vector<tesseract::ImagePackImage>&
+std::vector<tesseract::ImagePackImage>
 RoomWindowBase::shell_emoticons_() const
 {
-    return shell_->cached_emoticons_;
+    return shell_->emoticons_for_room_(room_id_);
 }
 
 void RoomWindowBase::shell_ensure_media_image_(const std::string& url, int w,

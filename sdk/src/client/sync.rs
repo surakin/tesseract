@@ -187,6 +187,7 @@ impl ClientFfi {
             let packs_cache = Arc::clone(&self.image_packs);
             let write_pending = Arc::clone(&self.user_pack_write_pending);
             let packs_dirty = Arc::clone(&self.packs_dirty);
+            let active_rooms = Arc::clone(&self.active_rooms);
             // Open the per-account cache DBs for this session.
             // Load persisted backfill timestamps now so the first
             // on_rooms_updated() already classifies rooms correctly;
@@ -233,6 +234,7 @@ impl ClientFfi {
             let previews = Arc::clone(&self.backfill_previews);
             let dm_counterparts_w = Arc::clone(&self.dm_counterparts);
             let app_cache_db_rw = Arc::clone(&self.app_cache_db);
+            let room_state_cache_rw = Arc::clone(&self.room_state_cache);
             let mut call_member_rx = call_member_rx;
 
             self.spawn_tracked(async move {
@@ -298,7 +300,8 @@ impl ClientFfi {
                     (OwnedRoomId, String),
                     Option<serde_json::Value>,
                 > = std::collections::HashMap::new();
-                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache).await;
+                let active_rooms_snapshot = active_rooms.lock().clone();
+                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw).await;
                 { let mut g = packs_cache.lock(); *g = pks; }
                 { let guard = h.lock(); guard.on_image_packs_updated(); }
 
@@ -458,7 +461,8 @@ impl ClientFfi {
                             // room updates; piggy-backing keeps us off
                             // a polling timer and out of the event
                             // handler machinery.
-                            let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache).await;
+                            let active_rooms_snapshot = active_rooms.lock().clone();
+                            let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw).await;
                             {
                                 let mut g = packs_cache.lock();
                                 use std::sync::atomic::Ordering;
@@ -989,6 +993,67 @@ impl ClientFfi {
     pub fn set_show_membership_events(&self, enabled: bool) {
         self.show_membership_events
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    // -----------------------------------------------------------------------
+    // Recently-active rooms (image-pack fetch scope)
+    // -----------------------------------------------------------------------
+
+    /// Record `room_id` as recently active (main-window tab switch, pop-out
+    /// window open) so `rebuild_image_packs` keeps that room's own MSC2545
+    /// pack fetched over the network — see `active_rooms`'s field doc.
+    /// Thread-safe; no-op for an empty `room_id`. Called from the C++ shell
+    /// on every room switch / pop-out open.
+    ///
+    /// When the room is genuinely new to the LRU, invalidates that room's
+    /// cached full state (`invalidate_room_state_cache` — a revisit should
+    /// pick up server-side changes) and spawns an immediate background
+    /// fetch of every pack the room defines (`refresh_room_packs`) rather
+    /// than waiting for `packs_dirty` to be noticed by the next
+    /// notable-sync-driven `rebuild_image_packs` pass in `start_sync`'s
+    /// loop — that pass only runs when an unrelated sync event happens to
+    /// wake it, which can leave a freshly-visited room's packs undiscovered
+    /// indefinitely on a quiet account. This call itself stays synchronous/
+    /// non-blocking (it's invoked on the UI thread) — the fetch runs on
+    /// `self.rt` and reports back via `on_image_packs_updated`.
+    pub fn set_active_room(&self, room_id: &str) {
+        let newly_added = {
+            let mut list = self.active_rooms.lock();
+            crate::image_packs::push_active_room(&mut list, room_id, 8)
+        };
+        if newly_added {
+            self.packs_dirty
+                .store(true, std::sync::atomic::Ordering::Release);
+
+            if let Some(client) = self.client.clone() {
+                let app_cache_db = Arc::clone(&self.app_cache_db);
+                let room_state_cache = Arc::clone(&self.room_state_cache);
+                let image_packs = Arc::clone(&self.image_packs);
+                let handler = self.handler.clone();
+                let room_id = room_id.to_owned();
+                if let Ok(rid) = room_id.parse() {
+                    super::invalidate_room_state_cache(&self.room_state_cache, &rid);
+                }
+                self.rt.spawn(async move {
+                    let discovered = super::refresh_room_packs(
+                        &client,
+                        &app_cache_db,
+                        &room_state_cache,
+                        &room_id,
+                    )
+                    .await;
+                    {
+                        let mut g = image_packs.lock();
+                        g.retain(|p| p.source_room() != room_id);
+                        g.extend(discovered);
+                    }
+                    if let Some(h) = handler {
+                        let guard = h.lock();
+                        guard.on_image_packs_updated();
+                    }
+                });
+            }
+        }
     }
 
     /// Issue one immediate round of DM presence polls, regardless of the

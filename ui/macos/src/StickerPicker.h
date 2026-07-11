@@ -42,6 +42,13 @@ class Client;
 /// Re-pull packs from the SDK. Call from on_image_packs_updated.
 - (void)refreshPacks;
 
+/// Which room this panel is currently being shown for (this is a
+/// singleton panel shared across the main window and every pop-out room
+/// window, so whichever caller shows it last determines the room context)
+/// — forwarded to the wrapped shared picker; call before refreshPacks so
+/// the room's own pack sorts right after the personal pack.
+- (void)setCurrentRoomId:(const std::string&)roomId;
+
 /// Show the panel above anchorView.
 - (void)popupAboveView:(NSView*)anchorView;
 

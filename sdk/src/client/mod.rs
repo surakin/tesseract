@@ -562,6 +562,25 @@ pub struct ClientFfi {
     /// cache after login.
     #[cfg(not(test))]
     pub(super) packs_dirty: Arc<std::sync::atomic::AtomicBool>,
+    /// Small most-recently-active-room LRU (capped at 8, see
+    /// `image_packs::push_active_room`) — rooms the UI has recently shown
+    /// (main-window tab switches, pop-out windows), so `rebuild_image_packs`
+    /// knows which rooms' own MSC2545 packs to keep fetched over the
+    /// network even without an explicit `im.ponies.emote_rooms` subscription.
+    /// Set via `set_active_room` (called from the C++ shell on every room
+    /// switch / pop-out open).
+    #[cfg(not(test))]
+    pub(super) active_rooms: Arc<Mutex<Vec<String>>>,
+    /// Per-room cache of the full `GET /rooms/{roomId}/state` response,
+    /// shared by every consumer that needs to filter a room's live state
+    /// for some event type (MSC2545 image-pack discovery,
+    /// `fetch_room_security_state_async`'s security fields) so they issue
+    /// one network fetch per room-visit instead of each doing their own —
+    /// see `RoomStateCache`/`fetch_room_state_cached`/
+    /// `invalidate_room_state_cache`. Invalidated by `set_active_room`
+    /// whenever a room genuinely becomes newly active.
+    #[cfg(not(test))]
+    pub(super) room_state_cache: RoomStateCache,
     /// Serializes every account-data read-modify-write (`recent_emoji_bump`,
     /// `save_sticker_to_user_pack`, `toggle_favorite_sticker`). Matrix
     /// account-data is last-write-wins with no server-side merge, so two
@@ -927,6 +946,10 @@ impl ClientFfi {
             #[cfg(not(test))]
             packs_dirty: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             #[cfg(not(test))]
+            active_rooms: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(not(test))]
+            room_state_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            #[cfg(not(test))]
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir: default_data_dir(),
             http_client: reqwest::Client::builder()
@@ -1114,6 +1137,13 @@ impl ClientFfi {
         self.show_membership_events
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
+
+    /// Test-only no-op stub — the production impl lives in `client::sync`
+    /// and needs `active_rooms`/`packs_dirty`, which don't exist on the
+    /// test build's `ClientFfi` (there is no pack-rebuild machinery to
+    /// notify in test mode).
+    #[cfg(test)]
+    pub fn set_active_room(&self, _room_id: &str) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,17 +1170,359 @@ pub(super) async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
     }
 }
 
-/// Rebuild the aggregated image-pack cache. Reads load BOTH the stable and
-/// unstable (`im.ponies.*`) copies of each paired MSC2545 event type and
-/// combine them via `merge_pack_contents` rather than stopping at the first
-/// one found, so a partially-migrated room/account never silently loses
-/// images. Returns an empty Vec when not logged in.
+/// Per-room cache of the full `GET /rooms/{roomId}/state` response, shared
+/// by every consumer that needs to filter a room's live state for some
+/// event type — see `fetch_room_state_cached`.
+#[cfg(not(test))]
+pub(super) type RoomStateCache = Arc<Mutex<
+    std::collections::HashMap<
+        OwnedRoomId,
+        Arc<Vec<matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnyStateEvent>>>,
+    >,
+>>;
+
+/// One full `GET /rooms/{roomId}/state` per room, shared by every consumer
+/// that needs to filter a room's live state for some event type (MSC2545
+/// image-pack discovery, `fetch_room_security_state_async`'s security
+/// fields, …) instead of each issuing its own request. Cached until
+/// `invalidate_room_state_cache` clears the entry — callers must keep this
+/// scoped to a small set of rooms (active/subscribed/currently-open), never
+/// a joined-rooms sweep.
+#[cfg(not(test))]
+async fn fetch_room_state_cached(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+) -> Arc<Vec<matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnyStateEvent>>> {
+    if let Some(existing) = cache.lock().get(room_id) {
+        return Arc::clone(existing);
+    }
+    use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
+    let room_state = client
+        .send(state_api::Request::new(room_id.clone()))
+        .await
+        .map(|r| r.room_state)
+        .unwrap_or_default();
+    let room_state = Arc::new(room_state);
+    cache.lock().insert(room_id.clone(), Arc::clone(&room_state));
+    room_state
+}
+
+/// Drop a room's cached full state so the next `fetch_room_state_cached`
+/// call re-fetches. Called by `Client::set_active_room` whenever a room
+/// genuinely becomes newly active, so revisiting a room picks up
+/// server-side changes.
+#[cfg(not(test))]
+pub(super) fn invalidate_room_state_cache(cache: &RoomStateCache, room_id: &OwnedRoomId) {
+    cache.lock().remove(room_id);
+}
+
+/// Discover every MSC2545 pack a room defines, across *all* state_keys —
+/// not just a single already-known one. MSC2545 does not require the empty
+/// state key; rooms with multiple named packs use distinct non-empty ones.
+/// There is no per-type "list all state keys" endpoint, so this filters the
+/// shared full-state cache client-side, combining stable/unstable dupes per
+/// key via the existing `merge_pack_contents`. Returns raw merged content
+/// (not parsed `ImagePack`s) — callers parse.
+#[cfg(not(test))]
+async fn fetch_all_room_pack_contents(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+) -> Vec<(String, serde_json::Value)> {
+    let state = fetch_room_state_cached(client, cache, room_id).await;
+
+    let mut by_state_key: std::collections::BTreeMap<String, serde_json::Value> =
+        std::collections::BTreeMap::new();
+    for raw in state.iter() {
+        let Ok(Some(ty)) = raw.get_field::<String>("type") else {
+            continue;
+        };
+        if !crate::image_packs::ROOM_PACK_TYPES.contains(&ty.as_str()) {
+            continue;
+        }
+        let Ok(Some(state_key)) = raw.get_field::<String>("state_key") else {
+            continue;
+        };
+        let Ok(Some(content)) = raw.get_field::<serde_json::Value>("content") else {
+            continue;
+        };
+        let merged =
+            crate::image_packs::merge_pack_contents(by_state_key.remove(&state_key), Some(content));
+        if let Some(m) = merged {
+            by_state_key.insert(state_key, m);
+        }
+    }
+    by_state_key.into_iter().collect()
+}
+
+/// Every state_key currently in use by any of `ROOM_PACK_TYPES` in this
+/// room — used by `save_room_pack` to pick a collision-free key for a
+/// brand-new pack.
+#[cfg(not(test))]
+pub(super) async fn room_pack_state_keys(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+) -> std::collections::BTreeSet<String> {
+    fetch_all_room_pack_contents(client, cache, room_id)
+        .await
+        .into_iter()
+        .map(|(state_key, _)| state_key)
+        .collect()
+}
+
+/// Which of `ROOM_PACK_TYPES` currently have content for `state_key` in
+/// this room's cached full state — used by `save_room_pack`/
+/// `remove_room_pack` to write back to exactly the type(s) an existing
+/// pack already uses, never introducing a duplicate copy under a type the
+/// room didn't already have.
+#[cfg(not(test))]
+pub(super) async fn room_pack_event_types_for_key(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+    state_key: &str,
+) -> Vec<&'static str> {
+    let state = fetch_room_state_cached(client, cache, room_id).await;
+    let mut types = Vec::new();
+    for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+        let has_content = state.iter().any(|raw| {
+            raw.get_field::<String>("type").ok().flatten().as_deref() == Some(ev_type_str)
+                && raw.get_field::<String>("state_key").ok().flatten().as_deref()
+                    == Some(state_key)
+        });
+        if has_content {
+            types.push(ev_type_str);
+        }
+    }
+    types
+}
+
+/// Discover and parse every pack a room defines (see
+/// `fetch_all_room_pack_contents`), applying the same display-name
+/// fallback and `is_subscribed` computation `fetch_room_pack` uses for a
+/// single known key. Used by both the switch-triggered `refresh_room_packs`
+/// and `rebuild_image_packs`'s active-room handling.
+#[cfg(not(test))]
+async fn discover_and_parse_room_packs(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+    room_id_str: &str,
+    subscribed_set: &std::collections::BTreeSet<(String, String)>,
+) -> Vec<crate::image_packs::ImagePack> {
+    let mut room_name: Option<String> = None;
+    let mut packs = Vec::new();
+    for (state_key, content) in fetch_all_room_pack_contents(client, cache, room_id).await {
+        let source = crate::image_packs::PackSource::Room {
+            room_id: room_id_str.to_owned(),
+            state_key: state_key.clone(),
+        };
+        let id = crate::image_packs::pack_id_for(&source);
+        let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) else {
+            continue;
+        };
+        // A room pack that's been "removed" (see remove_room_pack) still
+        // exists as a state event — Matrix has no true delete — but with
+        // an empty images map and no display_name, so without this it
+        // would keep resurfacing everywhere packs are listed, falling back
+        // to the room's own name below and looking like a confusing
+        // leftover rather than a pack the user actually deleted.
+        if pack.images.is_empty() {
+            continue;
+        }
+        if pack.display_name.is_empty() {
+            if room_name.is_none() {
+                room_name = Some(match client.get_room(room_id) {
+                    Some(r) => r.display_name().await.map(|n| n.to_string()).unwrap_or_default(),
+                    None => String::new(),
+                });
+            }
+            pack.display_name = room_name.clone().unwrap_or_default();
+        }
+        pack.is_subscribed = subscribed_set.contains(&(room_id_str.to_owned(), state_key));
+        packs.push(pack);
+    }
+    packs
+}
+
+/// Collect every `(room_id, state_key)` pair the user has explicitly
+/// enabled via `m.image_pack.rooms`/`im.ponies.emote_rooms` account data.
+/// Reads both the stable and unstable copies and unions them — either copy
+/// may list rooms the other doesn't if the account data was only partially
+/// migrated.
+#[cfg(not(test))]
+async fn collect_subscribed_room_refs(
+    client: &Client,
+) -> std::collections::BTreeSet<(String, String)> {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    use serde_json::Value;
+
+    let mut room_refs_set: std::collections::BTreeSet<(String, String)> =
+        std::collections::BTreeSet::new();
+    for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
+        let et = GlobalAccountDataEventType::from(ev_type_str);
+        let Ok(Some(raw)) = client.account().account_data_raw(et).await else {
+            continue;
+        };
+        let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
+            continue;
+        };
+        room_refs_set.extend(crate::image_packs::iter_emote_rooms(&content));
+    }
+    room_refs_set
+}
+
+/// Fetch one room's MSC2545 pack (`(room_id, state_key)`), local-cache
+/// first then HTTP fallback. Called from `rebuild_image_packs` (subscribed +
+/// recently-active rooms, kept warm for the picker) — the only caller now
+/// that the Known Packs settings page reads a persisted cache instead of
+/// sweeping rooms directly (see `ClientFfi::list_known_room_packs`). Does
+/// not set `is_subscribed` — callers know their own subscription context.
+#[cfg(not(test))]
+async fn fetch_room_pack(
+    client: &Client,
+    http_cache: &mut std::collections::HashMap<(OwnedRoomId, String), Option<serde_json::Value>>,
+    room_id: &OwnedRoomId,
+    room_id_str: &str,
+    state_key: &str,
+) -> Option<crate::image_packs::ImagePack> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    use matrix_sdk::ruma::events::StateEventType;
+    use serde_json::Value;
+
+    // Helper: extract content Value from a state event envelope.
+    let extract_content = |raw_state: &RawAnySyncOrStrippedState| -> Option<Value> {
+        match raw_state {
+            RawAnySyncOrStrippedState::Sync(raw) => raw.get_field("content").ok().flatten(),
+            RawAnySyncOrStrippedState::Stripped(raw) => raw.get_field("content").ok().flatten(),
+        }
+    };
+
+    // Fast path: local SSS cache. Try both event types and combine — either
+    // may be the one present in the local cache, or both may be present
+    // with different images.
+    if let Some(room) = client.get_room(room_id) {
+        let mut merged: Option<Value> = None;
+        for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+            let et = StateEventType::from(ev_type_str);
+            // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
+            // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
+            // variants carry `{type, content, state_key,...}`.
+            let Ok(Some(raw_state)) = room.get_state_event(et, state_key).await else {
+                continue;
+            };
+            let Some(content) = extract_content(&raw_state) else {
+                continue;
+            };
+            merged = crate::image_packs::merge_pack_contents(merged, Some(content));
+        }
+        if let Some(content) = merged {
+            let source = crate::image_packs::PackSource::Room {
+                room_id: room_id_str.to_owned(),
+                state_key: state_key.to_owned(),
+            };
+            let id = crate::image_packs::pack_id_for(&source);
+            if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                // A "removed" pack (see remove_room_pack) still exists as a
+                // state event with an empty images map — treat it as absent
+                // rather than resurfacing it with a room-name fallback.
+                if pack.images.is_empty() {
+                    return None;
+                }
+                if pack.display_name.is_empty() {
+                    pack.display_name =
+                        room.display_name().await.map(|n| n.to_string()).unwrap_or_default();
+                }
+                return Some(pack);
+            }
+        }
+    }
+
+    // HTTP fallback: SSS required_state does not include custom event types
+    // (im.ponies.room_emotes / m.room.image_pack), so they are absent from
+    // the local cache on first subscription. We fetch once per (room_id,
+    // state_key) per session and cache the result — subsequent rebuilds
+    // reuse it without hitting the server again. Guard: only attempt when
+    // the user is currently joined — a stale subscription entry for a room
+    // the user has left produces a 403.
+    let is_joined = client
+        .get_room(room_id)
+        .map(|r| r.state() == matrix_sdk::RoomState::Joined)
+        .unwrap_or(false);
+    if !is_joined {
+        return None;
+    }
+    let cache_key = (room_id.clone(), state_key.to_owned());
+    let cached = http_cache.get(&cache_key).cloned();
+    let content_opt: Option<Value> = match cached {
+        Some(v) => v, // already fetched this session (may be None = not found)
+        None => {
+            use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
+            // Fetch both event types (instead of stopping at the first
+            // success) and combine — a room may carry both with different
+            // images.
+            let mut fetched: Option<Value> = None;
+            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+                let et = StateEventType::from(ev_type_str);
+                let req = get_state_event_for_key::v3::Request::new(
+                    room_id.clone(),
+                    et,
+                    state_key.to_owned(),
+                );
+                if let Ok(response) = client.send(req).await {
+                    if let Ok(content) =
+                        serde_json::from_str::<Value>(response.event_or_content.get())
+                    {
+                        fetched = crate::image_packs::merge_pack_contents(fetched, Some(content));
+                    }
+                }
+            }
+            http_cache.insert(cache_key, fetched.clone());
+            fetched
+        }
+    };
+    let content = content_opt?;
+    let source = crate::image_packs::PackSource::Room {
+        room_id: room_id_str.to_owned(),
+        state_key: state_key.to_owned(),
+    };
+    let id = crate::image_packs::pack_id_for(&source);
+    let mut pack = crate::image_packs::parse_pack_content(id, source, &content)?;
+    if pack.images.is_empty() {
+        return None;
+    }
+    if pack.display_name.is_empty() {
+        pack.display_name = match client.get_room(room_id) {
+            Some(r) => r.display_name().await.map(|n| n.to_string()).unwrap_or_default(),
+            None => String::new(),
+        };
+    }
+    Some(pack)
+}
+
+/// Rebuild the aggregated image-pack cache kept warm for the emoji/sticker
+/// pickers: the personal pack, every room explicitly enabled via
+/// `m.image_pack.rooms`/`im.ponies.emote_rooms`, and every recently-active
+/// room (`active_rooms` — see its field doc). Deliberately does *not*
+/// include every joined room — an always-on background sweep of every
+/// joined room's custom state would mean one HTTP request per room per
+/// rebuild for accounts with many rooms. As a side effect, every room
+/// processed here (found or not) is upserted/deleted in the persisted
+/// `room_image_pack_cache` table via `app_cache_db`, which is what backs
+/// the "Known Packs" settings page's lazy, on-visit discovery (see
+/// `ClientFfi::list_known_room_packs`). Returns an empty Vec when not
+/// logged in.
 #[cfg(not(test))]
 pub(super) async fn rebuild_image_packs(
     client: &Client,
     http_cache: &mut std::collections::HashMap<(OwnedRoomId, String), Option<serde_json::Value>>,
+    active_rooms: &[String],
+    app_cache_db: &std::sync::Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
+    room_state_cache: &RoomStateCache,
 ) -> Vec<crate::image_packs::ImagePack> {
-    use matrix_sdk::ruma::events::{GlobalAccountDataEventType, StateEventType};
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
     use serde_json::Value;
 
     let mut packs: Vec<crate::image_packs::ImagePack> = Vec::new();
@@ -1176,203 +1548,128 @@ pub(super) async fn rebuild_image_packs(
         }
     }
 
-    // -- Globally enabled room packs (account_data) --
-    // Read both the stable and unstable rooms-pointer events and union the
-    // referenced (room_id, state_key) pairs — either copy may list rooms the
-    // other doesn't if the account data was only partially migrated.
-    let mut room_refs_set: std::collections::BTreeSet<(String, String)> =
-        std::collections::BTreeSet::new();
-    for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
-        let et = GlobalAccountDataEventType::from(ev_type_str);
-        let Ok(Some(raw)) = client.account().account_data_raw(et).await else {
-            continue;
-        };
-        let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
-            continue;
-        };
-        room_refs_set.extend(crate::image_packs::iter_emote_rooms(&content));
-    }
-    let room_refs: Vec<(String, String)> = room_refs_set.into_iter().collect();
+    let subscribed_set = collect_subscribed_room_refs(client).await;
+    let active_set: std::collections::BTreeSet<String> = active_rooms.iter().cloned().collect();
 
-    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
-    for (room_id_str, state_key) in room_refs {
+    // -- Recently-active rooms: full discovery, every state_key --
+    // Not just a guessed empty state key — MSC2545 rooms with multiple
+    // named packs use distinct non-empty ones. The shared room_state_cache
+    // memoizes the network fetch per room until set_active_room invalidates
+    // it on a genuine new visit, so this doesn't hit the network on every
+    // periodic rebuild pass.
+    for room_id_str in &active_set {
         let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
             continue;
         };
-
-        // Helper: extract content Value from a state event envelope.
-        let extract_content = |raw_state: &RawAnySyncOrStrippedState| -> Option<Value> {
-            match raw_state {
-                RawAnySyncOrStrippedState::Sync(raw) => raw.get_field("content").ok().flatten(),
-                RawAnySyncOrStrippedState::Stripped(raw) => raw.get_field("content").ok().flatten(),
+        let discovered = discover_and_parse_room_packs(
+            client,
+            room_state_cache,
+            &room_id,
+            room_id_str,
+            &subscribed_set,
+        )
+        .await;
+        {
+            let db = app_cache_db.lock();
+            if let Some(conn) = db.as_ref() {
+                let checked_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                backfill::replace_known_room_packs(conn, room_id_str, &discovered, checked_at);
             }
+        }
+        packs.extend(discovered);
+    }
+
+    // -- Subscribed rooms not also active (already fully covered above) --
+    // Exact (room_id, state_key) from account data — a single-key fetch is
+    // correct here since the state_key is already known precisely, no
+    // discovery needed.
+    for (room_id_str, state_key) in &subscribed_set {
+        if active_set.contains(room_id_str) {
+            continue;
+        }
+        let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
+            continue;
         };
+        let fetched = fetch_room_pack(client, http_cache, &room_id, room_id_str, state_key).await;
 
-        let mut found = false;
-
-        // Fast path: local SSS cache. Try both event types and combine —
-        // either may be the one present in the local cache, or both may be
-        // present with different images.
-        if let Some(room) = client.get_room(&room_id) {
-            let mut merged: Option<Value> = None;
-            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
-                let et = StateEventType::from(ev_type_str);
-                // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
-                // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
-                // variants carry `{type, content, state_key,...}`.
-                let Ok(Some(raw_state)) = room.get_state_event(et, &state_key).await else {
-                    continue;
-                };
-                let Some(content) = extract_content(&raw_state) else {
-                    continue;
-                };
-                merged = crate::image_packs::merge_pack_contents(merged, Some(content));
-            }
-            if let Some(content) = merged {
-                let source = crate::image_packs::PackSource::Room {
-                    room_id: room_id_str.clone(),
-                    state_key: state_key.clone(),
-                };
-                let id = crate::image_packs::pack_id_for(&source);
-                if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
-                    packs.push(pack);
-                    found = true;
+        // Keep the persisted "Known Packs" cache in sync with what we just
+        // learned: found a pack -> upsert (also covers display_name
+        // changes), no pack -> delete any stale row (covers pack removal).
+        {
+            let db = app_cache_db.lock();
+            if let Some(conn) = db.as_ref() {
+                match &fetched {
+                    Some(pack) => {
+                        let checked_at = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                        backfill::upsert_known_room_pack(
+                            conn,
+                            room_id_str,
+                            state_key,
+                            &pack.display_name,
+                            checked_at,
+                        );
+                    }
+                    None => {
+                        backfill::delete_known_room_pack(conn, room_id_str, state_key);
+                    }
                 }
             }
         }
 
-        // HTTP fallback: SSS required_state does not include custom event types
-        // (im.ponies.room_emotes / m.room.image_pack), so they are absent from
-        // the local cache on first subscription.  We fetch once per
-        // (room_id, state_key) per session and cache the result — subsequent
-        // notable-update rebuilds reuse it without hitting the server again.
-        // Guard: only attempt when the user is currently joined — a stale
-        // subscription entry for a room the user has left produces a 403.
-        let is_joined = client
-            .get_room(&room_id)
-            .map(|r| r.state() == matrix_sdk::RoomState::Joined)
-            .unwrap_or(false);
-        if !found && is_joined {
-            let cache_key = (room_id.clone(), state_key.clone());
-            let cached = http_cache.get(&cache_key).cloned();
-            let content_opt: Option<Value> = match cached {
-                Some(v) => v, // already fetched this session (may be None = not found)
-                None => {
-                    use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
-                    // Fetch both event types (instead of stopping at the
-                    // first success) and combine — a room may carry both
-                    // with different images.
-                    let mut fetched: Option<Value> = None;
-                    for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
-                        let et = StateEventType::from(ev_type_str);
-                        let req = get_state_event_for_key::v3::Request::new(
-                            room_id.clone(),
-                            et,
-                            state_key.clone(),
-                        );
-                        if let Ok(response) = client.send(req).await {
-                            if let Ok(content) =
-                                serde_json::from_str::<Value>(response.event_or_content.get())
-                            {
-                                fetched = crate::image_packs::merge_pack_contents(
-                                    fetched,
-                                    Some(content),
-                                );
-                            }
-                        }
-                    }
-                    http_cache.insert(cache_key, fetched.clone());
-                    fetched
-                }
-            };
-            if let Some(content) = content_opt {
-                let source = crate::image_packs::PackSource::Room {
-                    room_id: room_id_str.clone(),
-                    state_key: state_key.clone(),
-                };
-                let id = crate::image_packs::pack_id_for(&source);
-                if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
-                    packs.push(pack);
-                }
-            }
+        if let Some(mut pack) = fetched {
+            pack.is_subscribed = true;
+            packs.push(pack);
         }
     }
 
-    // -- Room packs from ALL joined rooms (implicit membership, beyond the
-    //    explicit im.ponies.emote_rooms subscription list above) --
-    // This surfaces image packs published by rooms the user is a member of
-    // without requiring them to have explicitly subscribed via account data.
-    // Dedup against packs already added above.
-    let mut added_ids: std::collections::HashSet<String> =
-        packs.iter().map(|p| p.id.clone()).collect();
+    packs
+}
 
-    for room in client.joined_rooms() {
-        let room_id_str = room.room_id().to_string();
+/// Fetch and cache every pack a single room defines, immediately — not
+/// waiting for the next notable-sync-driven `rebuild_image_packs` pass.
+/// Spawned as a background task by `Client::set_active_room` (see its doc
+/// comment) so a room the user just switched into doesn't sit undiscovered
+/// until some unrelated sync event happens to arrive. Deliberately not a
+/// full `rebuild_image_packs` call, which would re-fetch every entry in
+/// `active_rooms` (up to 8 rooms) on every single switch — this is scoped
+/// to the one room, reusing whatever `discover_and_parse_room_packs`'s
+/// shared `room_state_cache` fetch produces. Replaces (not merges) every
+/// persisted cache row for this room, so packs that were removed since the
+/// last visit are correctly dropped too.
+#[cfg(not(test))]
+pub(super) async fn refresh_room_packs(
+    client: &Client,
+    app_cache_db: &std::sync::Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
+    room_state_cache: &RoomStateCache,
+    room_id_str: &str,
+) -> Vec<crate::image_packs::ImagePack> {
+    let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
+        return Vec::new();
+    };
+    let subscribed_set = collect_subscribed_room_refs(client).await;
+    let packs = discover_and_parse_room_packs(
+        client,
+        room_state_cache,
+        &room_id,
+        room_id_str,
+        &subscribed_set,
+    )
+    .await;
 
-        // Collect state events from BOTH types, keyed by state_key, merging
-        // when the same state_key carries both — otherwise a room whose pack
-        // exists under only the stable (or only the unstable) type, or whose
-        // two copies differ, would lose data.
-        let mut by_state_key: std::collections::HashMap<String, Value> =
-            std::collections::HashMap::new();
-        for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
-            let et = StateEventType::from(ev_type_str);
-            let Ok(events) = room.get_state_events(et).await else {
-                continue;
-            };
-            for raw_state in &events {
-                let (state_key, content_opt): (String, Option<Value>) = match raw_state {
-                    RawAnySyncOrStrippedState::Sync(raw) => (
-                        raw.get_field("state_key")
-                            .ok()
-                            .flatten()
-                            .unwrap_or_default(),
-                        raw.get_field("content").ok().flatten(),
-                    ),
-                    RawAnySyncOrStrippedState::Stripped(raw) => (
-                        raw.get_field("state_key")
-                            .ok()
-                            .flatten()
-                            .unwrap_or_default(),
-                        raw.get_field("content").ok().flatten(),
-                    ),
-                };
-                let Some(content) = content_opt else { continue };
-                match by_state_key.remove(&state_key) {
-                    Some(existing) => {
-                        if let Some(merged) = crate::image_packs::merge_pack_contents(
-                            Some(existing),
-                            Some(content),
-                        ) {
-                            by_state_key.insert(state_key, merged);
-                        }
-                    }
-                    None => {
-                        by_state_key.insert(state_key, content);
-                    }
-                }
-            }
-        }
-
-        for (state_key, content) in by_state_key {
-            let source = crate::image_packs::PackSource::Room {
-                room_id: room_id_str.clone(),
-                state_key,
-            };
-            let id = crate::image_packs::pack_id_for(&source);
-            if !added_ids.insert(id.clone()) {
-                continue;
-            }
-            if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) {
-                if pack.display_name.is_empty() {
-                    pack.display_name = room
-                        .display_name()
-                        .await
-                        .map(|n| n.to_string())
-                        .unwrap_or_default();
-                }
-                packs.push(pack);
-            }
+    {
+        let db = app_cache_db.lock();
+        if let Some(conn) = db.as_ref() {
+            let checked_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            backfill::replace_known_room_packs(conn, room_id_str, &packs, checked_at);
         }
     }
 

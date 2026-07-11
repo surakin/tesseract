@@ -1655,6 +1655,12 @@ bool Client::can_set_room_power_levels(const std::string& room_id)
     return impl_->ffi->can_set_room_power_levels(room_id);
 }
 
+bool Client::can_set_room_image_packs(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_image_packs(room_id);
+}
+
 RoomPermissions Client::room_power_levels(const std::string& room_id)
 {
     SH_FFI;
@@ -1888,6 +1894,18 @@ std::vector<ImagePack> Client::list_image_packs() const
     return ffi_vec<ImagePack>(impl_->ffi->list_image_packs());
 }
 
+std::vector<ImagePack> Client::list_known_room_packs() const
+{
+    SH_FFI;
+    return ffi_vec<ImagePack>(impl_->ffi->list_known_room_packs());
+}
+
+void Client::set_active_room(const std::string& room_id)
+{
+    SH_FFI;
+    impl_->ffi->set_active_room(room_id);
+}
+
 std::vector<ImagePackImage>
 Client::list_pack_images(const std::string& pack_id,
                          PackUsageFilter filter) const
@@ -1945,6 +1963,58 @@ Result Client::toggle_favorite_sticker(const std::string& image_url)
 {
     SH_FFI;
     return from_ffi(impl_->ffi->toggle_favorite_sticker(image_url));
+}
+
+Result Client::remove_user_pack_image(const std::string& shortcode)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->remove_user_pack_image(shortcode));
+}
+
+Result Client::rename_user_pack_image(const std::string& old_shortcode,
+                                      const std::string& new_shortcode)
+{
+    SH_FFI;
+    return from_ffi(
+        impl_->ffi->rename_user_pack_image(old_shortcode, new_shortcode));
+}
+
+Result Client::set_pack_room_subscribed(const std::string& room_id,
+                                        const std::string& state_key,
+                                        bool subscribed)
+{
+    SH_FFI;
+    return from_ffi(
+        impl_->ffi->set_pack_room_subscribed(room_id, state_key, subscribed));
+}
+
+Result Client::save_room_pack(const std::string& room_id,
+                              const std::string& state_key, bool is_new,
+                              const std::string& display_name,
+                              std::uint8_t usage_mask,
+                              const std::vector<PackImageInput>& images)
+{
+    SH_FFI;
+    rust::Vec<tesseract_ffi::PackImageInputFfi> ffi_images;
+    for (const auto& img : images)
+    {
+        ffi_images.push_back(tesseract_ffi::PackImageInputFfi{
+            .shortcode  = img.shortcode,
+            .url        = img.url,
+            .body       = img.body,
+            .info_json  = img.info_json,
+        });
+    }
+    return from_ffi(impl_->ffi->save_room_pack(room_id, state_key, is_new,
+                                               display_name, usage_mask,
+                                               std::move(ffi_images)));
+}
+
+Result Client::remove_room_pack(const std::string& room_id,
+                                const std::string& state_key)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->remove_room_pack(room_id, state_key));
 }
 
 std::vector<std::string>

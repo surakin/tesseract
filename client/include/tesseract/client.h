@@ -1247,6 +1247,13 @@ public:
     /// false on any uncertainty.
     bool can_set_room_power_levels(const std::string& room_id);
 
+    /// True iff the current user's PL meets the requirement for sending the
+    /// room's MSC2545 image-pack state event (either the stable
+    /// m.room.image_pack or unstable im.ponies.room_emotes type —
+    /// permission to send either is enough to edit a room's packs). Cached
+    /// read — no network. Returns false on any uncertainty.
+    bool can_set_room_image_packs(const std::string& room_id);
+
     /// Read the room's current power levels, narrowed to the fields the
     /// Permissions tab edits. Synchronous — cached local read, no network
     /// round-trip (unlike RoomSecurityState, which needs an async GET
@@ -1323,6 +1330,22 @@ public:
     /// notified via `IEventHandler::on_image_packs_updated`.
     std::vector<ImagePack> list_image_packs() const;
 
+    /// Every room-sourced MSC2545 pack known so far, for the "Known Packs"
+    /// settings page (browse rooms with a pack, subscribe/unsubscribe). A
+    /// fast local read — no network I/O: rooms are discovered lazily as
+    /// the user visits them, or as soon as they're in
+    /// m.image_pack.rooms/im.ponies.emote_rooms, and cached persistently.
+    /// A room that's neither subscribed nor yet visited won't appear
+    /// until visited.
+    std::vector<ImagePack> list_known_room_packs() const;
+
+    /// Record `room_id` as recently active (main-window tab switch, pop-out
+    /// window open) so the image-pack cache keeps that room's own MSC2545
+    /// pack fetched over the network even without an explicit
+    /// m.image_pack.rooms subscription — see ImagePack's own doc comment.
+    /// Thread-safe; no-op for an empty room_id.
+    void set_active_room(const std::string& room_id);
+
     /// Return every image entry in `pack_id` whose usage intersects
     /// `filter`. Use `PackUsageFilter::Sticker` for the StickerPicker and
     /// `PackUsageFilter::Emoticon` for the EmojiPicker's custom tab.
@@ -1368,6 +1391,56 @@ public:
     /// `url` matches `image_url`. No-op when the sticker isn't in the user
     /// pack — call `save_sticker_to_user_pack` first.
     Result toggle_favorite_sticker(const std::string& image_url);
+
+    /// Remove `shortcode` from the user's personal pack. No-op (ok:true) if
+    /// the shortcode doesn't exist. GET-modify-PUT; local cache updates
+    /// immediately.
+    Result remove_user_pack_image(const std::string& shortcode);
+
+    /// Rename `old_shortcode` to `new_shortcode` in the user's personal
+    /// pack. If `new_shortcode` collides with an existing entry a numeric
+    /// suffix is appended (mirrors `save_sticker_to_user_pack`'s collision
+    /// handling) — on success, `Result::message` carries the
+    /// actually-applied shortcode, which may differ from the requested one.
+    Result rename_user_pack_image(const std::string& old_shortcode,
+                                  const std::string& new_shortcode);
+
+    /// Explicitly subscribe/unsubscribe `(room_id, state_key)`'s image pack
+    /// via the user's `m.image_pack.rooms` / `im.ponies.emote_rooms`
+    /// account data (dual-written). Local cache + `ImagePack::is_subscribed`
+    /// refresh synchronously before this returns; `on_image_packs_updated`
+    /// fires too.
+    Result set_pack_room_subscribed(const std::string& room_id,
+                                    const std::string& state_key,
+                                    bool subscribed);
+
+    /// Create or replace one of a room's MSC2545 packs — a wholesale
+    /// replace of its images with exactly `images` (not an upsert), since
+    /// callers (ImagePackEditorView) always stage a full snapshot per
+    /// pack, not a diff. Pass `is_new = true` with an empty `state_key`
+    /// for a brand-new pack — a fresh, collision-free key is assigned
+    /// from `display_name` and returned in `Result::message` on success.
+    /// For an existing pack, `state_key` must name it; the write goes to
+    /// whichever of the stable `m.room.image_pack` / unstable
+    /// `im.ponies.room_emotes` types it currently has content under
+    /// (both, if both) so this never introduces a duplicate copy under a
+    /// type the room didn't already use. Refreshes the local pack cache
+    /// synchronously before returning (`on_image_packs_updated` fires
+    /// too). Blocks — call from a worker thread.
+    Result save_room_pack(const std::string& room_id,
+                          const std::string& state_key, bool is_new,
+                          const std::string& display_name,
+                          std::uint8_t usage_mask,
+                          const std::vector<PackImageInput>& images);
+
+    /// Empty an existing room pack's images (`{"images": {}}`), written to
+    /// whichever event type(s) it currently has content under. Matrix
+    /// state events cannot be truly deleted — the pack will keep
+    /// appearing as a zero-image entry anywhere packs are listed until
+    /// the room's state history is redacted (out of scope here). Same
+    /// cache-refresh tail as `save_room_pack`. Blocks — worker thread.
+    Result remove_room_pack(const std::string& room_id,
+                            const std::string& state_key);
 
     // ------------------------------------------------------------------
     // Spaces

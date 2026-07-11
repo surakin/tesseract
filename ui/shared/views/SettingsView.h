@@ -8,6 +8,7 @@
 //       – Notifications (enable/disable toggle)
 //       – Media (full-media prefetch toggle)
 //       – Privacy / Server / Sessions / About
+//       – Emojis & Stickers (personal pack editor + known-pack subscriptions)
 //       – Language (locale selection, takes effect after restart)
 //
 // The shell constructs SettingsView once, wires the public callbacks, and
@@ -21,6 +22,7 @@
 #include "views/settings/AccountSection.h"
 #include "views/settings/AppearanceSection.h"
 #include "views/settings/DevicesSection.h"
+#include "views/settings/ImagePacksSection.h"
 #include "views/settings/LanguageSection.h"
 #include "views/settings/MediaSection.h"
 #include "views/settings/NotificationsSection.h"
@@ -36,7 +38,9 @@
 
 #include "tesseract/settings.h"
 
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -136,6 +140,36 @@ public:
 
     // Mark which device id is the current session in the Sessions tab.
     void set_current_device_id(std::string id);
+
+    // ----- Emojis & Stickers section -----------------------------------------
+
+    // Personal-pack passthrough (baseline load resets the editor's dirty bit).
+    void set_user_pack_images(std::vector<tesseract::ImagePackImage> images);
+    void set_user_pack_image_provider(ImagePackImageProvider p);
+    void set_user_pack_tile_preview(std::uint64_t local_id,
+                                    std::shared_ptr<tk::Image> image);
+    void set_user_pack_saving(bool saving);
+    void set_user_pack_save_result(bool ok, std::string error);
+
+    // Fired when the user pastes/drops a new image into the personal-pack
+    // editor. Wired by each shell (mirrors RoomSettingsView's
+    // on_image_pack_pending_image_added) to decode the bytes off-thread and
+    // push the preview back via set_user_pack_tile_preview.
+    std::function<void(std::uint64_t local_id,
+                       const std::vector<std::uint8_t>& bytes,
+                       const std::string& mime)>
+        on_user_pack_pending_image_added;
+
+    // Known-packs passthrough — every room-sourced pack the aggregator
+    // knows about, with is_subscribed reflecting the account-wide
+    // m.image_pack.rooms event.
+    void set_known_packs(std::vector<tesseract::ImagePack> all_room_packs);
+
+    // Exposed so each shell can pass it to
+    // ShellBase::handle_user_pack_pending_image_added_ as the decode target,
+    // mirroring RoomSettingsView's shape (there, the shell reaches the
+    // per-room editor via room_settings_view() itself as the target).
+    UserPackEditor* user_pack_editor() const;
 
     // Wire the controller: sets controller callbacks → AccountSection state,
     // and AccountSection click callbacks → SettingsView output callbacks.
@@ -302,6 +336,7 @@ private:
     AboutSection*    about_          = nullptr;
     ConfirmDialog*   confirm_dialog_ = nullptr;
     LanguageSection* language_       = nullptr;
+    ImagePacksSection* image_packs_  = nullptr;
 
     std::function<void()> request_repaint_;
 };

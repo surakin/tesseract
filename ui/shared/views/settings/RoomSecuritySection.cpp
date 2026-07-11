@@ -15,6 +15,7 @@ RoomSecuritySection::RoomSecuritySection()
 {
     // ── Encryption ───────────────────────────────────────────────────────
     auto* enc_group = add_group(tk::tr("Encryption"));
+    encryption_group_ = enc_group;
     auto enc_check = std::make_unique<tk::CheckButton>(tk::tr("Encrypt this room"));
     encryption_check_ = enc_group->add_widget(std::move(enc_check));
     encryption_check_->on_change = [this](bool checked)
@@ -164,6 +165,16 @@ void RoomSecuritySection::set_committing(bool committing)
     join_rule_combo_->set_enabled(can_join_rule_ && !committing_);
     guest_access_check_->set_enabled(can_guest_access_ && !committing_);
     history_combo_->set_enabled(can_history_ && !committing_);
+}
+
+void RoomSecuritySection::set_encryption_field_visible(bool visible)
+{
+    const bool was_visible = encryption_group_->visible();
+    encryption_group_->set_visible(visible);
+    // See refresh_encryption_warning_'s comment — a widget that just became
+    // visible needs a fresh arrange() pass or it paints at stale bounds_.
+    if (was_visible != visible && on_layout_changed)
+        on_layout_changed();
 }
 
 void RoomSecuritySection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)

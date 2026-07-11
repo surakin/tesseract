@@ -19,6 +19,7 @@
 #include "tk/controls.h"
 #include "tk/side_tab_view.h"
 #include "tk/widget.h"
+#include "views/ImagePackEditorView.h"
 #include "views/Toast.h"
 #include "views/settings/RoomGeneralSection.h"
 #include "views/settings/RoomMediaSection.h"
@@ -62,6 +63,12 @@ struct RoomSettingsChanges
     std::optional<std::string> history_visibility;
     std::optional<RoomMediaOverrideChange> media_override;
     std::optional<tesseract::RoomPermissions> permissions;
+    // Set only if the Emojis & Stickers tab was actually edited
+    // (ImagePackEditorView::has_changes()); the full staged snapshot for
+    // that tab (not a diff — see ImagePackEditorResult's own doc comment,
+    // unlike every other field here). There is still no backend to persist
+    // it (see ImagePackEditorView.h), so today every shell just ignores it.
+    std::optional<ImagePackEditorResult> image_packs;
 };
 
 // Bundles a snapshot of every staged field. Passed twice (original, staged)
@@ -205,6 +212,47 @@ public:
     // so the Room ID copy-toast can auto-dismiss itself.
     void set_post_delayed(std::function<void(int, std::function<void()>)> f);
 
+    // ── Emojis & Stickers tab (ImagePackEditorView) — passthrough API ──────
+    // Mirrors set_avatar_provider/set_media_override's shape: this view has
+    // no Client dependency, so ShellBase fetches and pushes data in, and
+    // receives the raw bytes for a dropped/pasted image back out to decode.
+    void set_image_pack_available_packs(std::vector<tesseract::ImagePack> packs);
+    // Single all-or-nothing gate for the whole tab, mirroring
+    // set_permissions_field_permissions' shape (Matrix has no finer
+    // granularity than "can this user send the room's image-pack state
+    // event at all").
+    void set_image_pack_field_permissions(bool can_edit);
+    void set_image_pack_images(std::string pack_id,
+                               std::vector<tesseract::ImagePackImage> images);
+    void set_image_pack_provider(ImagePackImageProvider p);
+    void set_image_pack_tile_preview(std::uint64_t local_id,
+                                     std::shared_ptr<tk::Image> image);
+    void set_image_pack_new_pack_name_text(std::string text);
+    void set_image_pack_editing_shortcode_text(std::string text);
+    void commit_image_pack_editing_shortcode();
+    void cancel_image_pack_editing_shortcode();
+    void set_image_pack_editing_name_text(std::string text);
+    void commit_image_pack_editing_name();
+    // Clipboard paste (no position) — targets the active pack.
+    void add_image_pack_pasted_image(std::vector<std::uint8_t> bytes,
+                                     std::string mime);
+    // Drag-drop (world/surface-space position) — targets whichever pack's
+    // section contains `pos`, falling back to the active pack. `filename`
+    // (empty if unavailable) seeds the new tile's suggested shortcode.
+    void add_image_pack_dropped_image(tk::Point pos,
+                                      std::vector<std::uint8_t> bytes,
+                                      std::string mime,
+                                      std::string filename = {});
+
+    // Fired once per pack after set_image_pack_available_packs, not just for
+    // one "selected" pack — every listed pack needs its images fetched now
+    // that they're all shown at once.
+    std::function<void(std::string pack_id)> on_image_pack_images_needed;
+    std::function<void(std::uint64_t local_id,
+                       const std::vector<std::uint8_t>& bytes,
+                       const std::string& mime)>
+        on_image_pack_pending_image_added;
+
     // Fired when the user clicks the Room ID row; the shell performs the
     // actual clipboard write (this view has no Host access), then the toast
     // shown by this view is dismissed on its own timer. (Copying an ID to
@@ -236,7 +284,33 @@ public:
     // (mirrors the section's own combo accessors).
     RoomPermissionsSection* permissions_section() const { return permissions_; }
 
+    // Accessor for the "Emojis & Stickers" tab (see ImagePackEditorView.h).
+    // Commits through this view's own shared Accept/Cancel footer like
+    // every other tab — image_pack_editor()->build_result() is read into
+    // RoomSettingsChanges::image_packs at Accept time, guarded by
+    // has_changes() same as every other field here.
+    ImagePackEditorView* image_pack_editor() const { return image_packs_; }
+
+    // Passthrough NativeTextField overlay rects for the image-pack tab,
+    // mirroring name_field_rect()/topic_edit_rect()'s delegation pattern —
+    // empty whenever this tab isn't the selected one.
+    tk::Rect image_pack_new_pack_name_field_rect() const;
+    std::uint64_t image_pack_new_pack_name_reset_generation() const;
+    tk::Rect image_pack_shortcode_edit_rect() const;
+    std::string image_pack_shortcode_edit_initial_text() const;
+    std::uint64_t image_pack_shortcode_edit_reset_generation() const;
+    tk::Rect image_pack_name_edit_rect() const;
+    std::string image_pack_name_edit_initial_text() const;
+    // Scope for the host's drop-target hit-test — non-empty whenever this
+    // tab is open, regardless of which pack (if any) a given point lands
+    // on (see ImagePackEditorView::add_pending_image_at for per-pack
+    // routing).
+    tk::Rect image_pack_list_rect() const;
+
 private:
+    bool image_pack_tab_selected_() const;
+
+    static constexpr int kImagePackTabIndex = 4;
     // Recomputes would_lock_out_self_ from staged_permissions_ and
     // own_power_level_, pushes it to permissions_ for the warning banner,
     // and calls refresh_accept_enabled_(). Called whenever either input
@@ -250,6 +324,12 @@ private:
 
     bool open_       = false;
     bool committing_ = false;
+    // Set from info.is_space in open(). Space-root mode hides the Media tab
+    // and the encryption field (neither applies to a space: it has no
+    // browsable message timeline, and encrypting it is discouraged since it
+    // carries no message content of its own) and swaps the title bar to
+    // "Space Settings".
+    bool is_space_   = false;
 
     std::string room_id_;
     std::string original_name_;
@@ -291,6 +371,7 @@ private:
     RoomMediaSection*       media_       = nullptr;
     RoomSecuritySection*    security_    = nullptr;
     RoomPermissionsSection* permissions_ = nullptr;
+    ImagePackEditorView*    image_packs_ = nullptr;
     Toast*                  toast_       = nullptr;
 
     tk::Button* accept_btn_ = nullptr;
@@ -302,6 +383,11 @@ private:
 
     std::unique_ptr<tk::TextLayout> title_layout_;
     std::unique_ptr<tk::TextLayout> commit_error_layout_;
+
+    // Index of the "Media" tab within tabs_, in add_tab() order (General=0,
+    // Media=1, Security=2, Permissions=3, Emojis & Stickers=kImagePackTabIndex)
+    // — hidden in space-root mode.
+    static constexpr int kMediaTabIdx = 1;
 
     static constexpr float kPadX      = 24.0f;
     static constexpr float kBarHeight = 48.0f; // top title bar, matches SettingsView's back-bar

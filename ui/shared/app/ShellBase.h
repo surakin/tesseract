@@ -65,8 +65,10 @@ namespace views
 class ComposeBar;
 class MainAppWidget;
 class RoomSearchBar;
+class RoomSettingsView;
 class RoomView;
 class SettingsView;
+class UserPackEditor;
 class UserProfilePanel;
 }
 
@@ -565,9 +567,17 @@ protected:
     views::MainAppWidget* main_app_ = nullptr;
     views::RoomView* room_view_ = nullptr;
 
-    // MSC2545 emoticon flat list (shortcode popup source). Rebuilt on
-    // handle_image_packs_updated_ui_.
+    // MSC2545 emoticon flat list — every pack's images, unfiltered by room.
+    // Rebuilt on handle_image_packs_updated_ui_. Used only by
+    // shortcode_for_mxc_ (rendering an *existing* reaction chip's label,
+    // which must resolve regardless of room scope) — the shortcode popup's
+    // own candidate list is emoticons_for_room_(), not this.
     std::vector<tesseract::ImagePackImage> cached_emoticons_;
+    // Same images as cached_emoticons_, grouped by their owning pack — the
+    // source emoticons_for_room_ filters per composer without re-fetching
+    // from the SDK. Rebuilt alongside cached_emoticons_.
+    std::vector<std::pair<tesseract::ImagePack, std::vector<tesseract::ImagePackImage>>>
+        emoticon_packs_;
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;
@@ -1619,11 +1629,16 @@ protected:
 
     // Open a file picker, upload the selected image as raw media (never
     // committing it to any room/profile state), and stage the resulting
-    // mxc:// URI into room_view_'s RoomSettingsView via set_staged_avatar().
-    // The room-level m.room.avatar state event is only sent when the user
-    // clicks Accept (see apply_room_settings_). No-op if not logged in or
-    // room_view_ is unset. Call from the UI thread.
-    void stage_room_settings_avatar_upload_(const std::string& room_id);
+    // mxc:// URI into `target` via set_staged_avatar(). The room-level
+    // m.room.avatar state event is only sent when the user clicks Accept
+    // (see apply_room_settings_). No-op if not logged in or `target` is
+    // null. Call from the UI thread. `target` is whichever RoomSettingsView
+    // instance requested the upload — room_view_->room_settings_view() for
+    // a normal room, or main_app_->space_root()->settings_view() for a
+    // space root — both operate on room ids generically, so this one
+    // implementation serves both without duplicating the upload/retry logic.
+    void stage_room_settings_avatar_upload_(const std::string& room_id,
+                                            views::RoomSettingsView* target);
 
     // Outcome of a RoomSettingsView Accept commit.
     struct RoomSettingsCommitOutcome
@@ -1646,6 +1661,21 @@ protected:
     static RoomSettingsCommitOutcome apply_room_settings_(
         tesseract::Client* client, const std::string& room_id,
         const views::RoomSettingsChanges& changes);
+
+    // Persist the Emojis & Stickers tab's staged changes (see
+    // apply_room_settings_'s `changes.image_packs` branch, which calls
+    // this): uploads any brand-new image's bytes via `upload_media` first
+    // (a single image's upload failure drops only that image, recorded as
+    // an error, and does not abort the rest of that pack's save), then
+    // calls `Client::save_room_pack` once per staged pack (a wholesale
+    // replace, not an upsert — see ImagePackEditorResult's own doc
+    // comment) and `Client::remove_room_pack` once per
+    // `removed_state_keys` entry. Returns one error string per failure,
+    // prefixed `"image_packs.<what>: "`, for the caller to join into the
+    // same aggregate error `apply_room_settings_` already builds for every
+    // other field. Blocks — call from a worker thread.
+    static std::vector<std::string> apply_image_pack_changes_(
+        tesseract::Client* client, const views::ImagePackEditorResult& result);
 
     // Monotonic clock in ms from the SAME epoch the shell's animation
     // timer / anim_cache_.advance() uses (Qt: QDateTime msecs; GTK:
@@ -1950,6 +1980,18 @@ protected:
     // re-tap toggle can carry the shortcode out on the wire. Returns an
     // empty string when the mxc isn't in any of the user's emoticon packs.
     std::string shortcode_for_mxc_(const std::string& mxc) const;
+
+    // The shortcode-popup candidate list for a composer showing `room_id`
+    // (personal pack + that room's own pack + every subscribed room's
+    // pack — same visibility rule as views::order_picker_packs, via
+    // views::is_pack_picker_visible, but without the picker-tab ordering
+    // since shortcode lookup ranks by text match). Computed fresh per call
+    // (cheap: at most a few hundred entries) since different open
+    // composers — main window vs. each pop-out — may be showing different
+    // rooms; RoomWindowBase::shell_emoticons_() calls this with its own
+    // persistent room_id_, not the main window's current_room_id_.
+    std::vector<tesseract::ImagePackImage>
+    emoticons_for_room_(const std::string& room_id) const;
 
     // Per-shell media-prefetch for one row. Default = ensure_row_media_.
     // Qt6 overrides to also record decode-size hints (mediaImageSizes_).
@@ -2682,17 +2724,29 @@ protected:
         { return account_manager_.image_cache().peek(url); };
     }
 
-    // Static-image lookup + fetch-on-miss: like make_static_image_provider_
-    // above, but also kicks off ensure_media_image_ as a side effect when
-    // the cache misses. Used by NativeTextArea::set_image_resolver (the
+    // Animated-frame → static-image lookup + fetch-on-miss: like
+    // make_static_image_provider_ above, but also kicks off ensure_media_image_
+    // as a side effect when the cache misses, and — like
+    // make_picker_image_provider_ — checks anim_cache_ first so an animated
+    // WebP/GIF resolves to its current frame instead of never rendering (the
+    // fetch/decode pipeline behind ensure_media_image_ already detects and
+    // decodes multi-frame content into anim_cache_ regardless of caller; this
+    // just needs to read it). Used by NativeTextArea::set_image_resolver (the
     // Windows BetterText compose box's inline custom-emoji rendering), which
     // — unlike the shortcode popup — has no separate "prefetch the visible
-    // suggestions" step to rely on before the image is actually needed.
+    // suggestions" step to rely on before the image is actually needed, and by
+    // ImagePackEditorView's pack-tile provider (RoomSettingsView's Emojis &
+    // Stickers tab).
     std::function<const tk::Image*(const std::string&)>
     make_static_image_provider_with_fetch_(int max_w, int max_h)
     {
         return [this, max_w, max_h](const std::string& url) -> const tk::Image*
         {
+            if (const auto* f = account_manager_.anim_cache().current_frame(url))
+            {
+                start_anim_tick_();
+                return f;
+            }
             if (const auto* img = account_manager_.image_cache().peek(url))
             {
                 return img;
@@ -2877,6 +2931,43 @@ protected:
     // lands in handle_room_security_state_ready_ui_, which pushes it into
     // RoomSettingsView via set_security_state if the dialog is still open.
     void fetch_room_security_state_(const std::string& room_id);
+
+    // ── Emojis & Stickers tab (ImagePackEditorView), initial-testing
+    // placement — see RoomSettingsView::set_image_pack_*. This view has no
+    // Client dependency, so ShellBase fetches and pushes data in, mirroring
+    // seed_room_media_section_'s shape. list_image_packs()/list_pack_images()
+    // are cached local reads (no network round-trip), so unlike
+    // fetch_room_security_state_ these are synchronous — no request_id
+    // bookkeeping needed. Called from each shell's on_room_settings_opened
+    // handler, right after fetch_room_security_state_. `target` is whichever
+    // RoomSettingsView instance is asking — room_view_->room_settings_view()
+    // for a normal room, or main_app_->space_root()->settings_view() for a
+    // space root; image packs are ordinary room state, so a space's own
+    // packs are seeded the same way.
+    void seed_image_pack_tab_(const std::string& room_id,
+                             views::RoomSettingsView* target);
+    // Wired (alongside on_accept) to each RoomSettingsView instance's
+    // on_image_pack_images_needed — fired once per pack (every pack is
+    // shown at once now, not just a single "selected" one) — pushes that
+    // pack's images into `target`.
+    void handle_image_pack_images_needed_(const std::string& pack_id,
+                                          views::RoomSettingsView* target);
+    // Wired to each RoomSettingsView instance's on_image_pack_pending_image_added —
+    // decodes a dropped/pasted image off-thread (decode_image_ is safe to
+    // call from a worker) and pushes the local preview back into `target`
+    // once ready.
+    void handle_image_pack_pending_image_added_(std::uint64_t local_id,
+                                                std::vector<uint8_t> bytes,
+                                                std::string mime,
+                                                views::RoomSettingsView* target);
+    // Same decode-off-thread-then-post-back shape as
+    // handle_image_pack_pending_image_added_ above, targeting the global
+    // Settings "Emojis & Stickers" tab's personal-pack editor instead of a
+    // per-room tab.
+    void handle_user_pack_pending_image_added_(std::uint64_t local_id,
+                                               std::vector<uint8_t> bytes,
+                                               std::string mime,
+                                               views::UserPackEditor* target);
 
     // Estimate how many trailing rows of a freshly-loaded snapshot could
     // plausibly be on screen, for build_rows_()'s synchronous media-prefetch

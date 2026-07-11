@@ -63,6 +63,20 @@ public:
     /// Silently initialise the "show room join/leave events" checkbox.
     void set_show_membership_events_pref(bool enabled);
 
+    /// Repaint just the regions covering animated stickers (Emojis &
+    /// Stickers tab). Called from MainWindow::repaint_anim_frame_ on every
+    /// ~60Hz animation tick while this widget is visible — mirrors
+    /// mainAppSurface_->update_anim_regions(), since this widget hosts its
+    /// own separate tk::qt6::Surface the shell's generic animation-tick
+    /// invalidation doesn't otherwise know about.
+    void update_anim_regions();
+
+    /// Repaint the settings surface (its own tk::qt6::Surface, separate
+    /// from mainAppSurface_ — see update_anim_regions()) so newly-decoded
+    /// static images (e.g. Emojis & Stickers pack thumbnails) become
+    /// visible without waiting for an unrelated relayout/resize.
+    void request_repaint();
+
 signals:
     void settingsClosed();
     void logoutRequested();

@@ -18,6 +18,7 @@
 #include "views/RoomView.h"
 #include "views/UserInfo.h"
 #include "views/html_spans.h"
+#include "views/image_pack_order.h"
 #include "views/map_tiles.h"
 #include <tesseract/paths.h>
 #include <tesseract/session_store.h>
@@ -2328,6 +2329,84 @@ void ShellBase::fetch_room_security_state_(const std::string& room_id)
     auto req_id = next_request_id_++;
     pending_security_state_requests_[req_id] = room_id;
     client_->fetch_room_security_state_async(req_id, room_id);
+}
+
+void ShellBase::seed_image_pack_tab_(const std::string& room_id,
+                                     views::RoomSettingsView* target)
+{
+    if (!target || !client_)
+        return;
+    if (!target->is_open() || target->room_id() != room_id)
+        return;
+    target->set_image_pack_field_permissions(
+        client_->can_set_room_image_packs(room_id));
+    auto packs = client_->list_image_packs();
+    std::vector<tesseract::ImagePack> room_packs;
+    for (auto& p : packs)
+    {
+        if (p.source_kind == tesseract::PackSourceKind::Room &&
+            p.source_room == room_id)
+            room_packs.push_back(std::move(p));
+    }
+    target->set_image_pack_available_packs(std::move(room_packs));
+}
+
+void ShellBase::handle_image_pack_images_needed_(const std::string& pack_id,
+                                                 views::RoomSettingsView* target)
+{
+    if (!target || !client_)
+        return;
+    if (!target->is_open())
+        return;
+    auto images =
+        client_->list_pack_images(pack_id, tesseract::PackUsageFilter::Any);
+    target->set_image_pack_images(pack_id, std::move(images));
+}
+
+void ShellBase::handle_image_pack_pending_image_added_(
+    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string /*mime*/,
+    views::RoomSettingsView* target)
+{
+    run_async_(
+        [this, local_id, bytes = std::move(bytes), target]()
+        {
+            DecodedImage decoded = decode_image_(bytes, 256, 256);
+            std::shared_ptr<tk::Image> preview;
+            if (decoded.still)
+                preview = std::shared_ptr<tk::Image>(std::move(decoded.still));
+            else if (!decoded.frames.empty())
+                preview =
+                    std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
+            post_to_ui_alive_(
+                [this, local_id, target, preview = std::move(preview)]() mutable
+                {
+                    if (target)
+                        target->set_image_pack_tile_preview(local_id, std::move(preview));
+                });
+        });
+}
+
+void ShellBase::handle_user_pack_pending_image_added_(
+    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string /*mime*/,
+    views::UserPackEditor* target)
+{
+    run_async_(
+        [this, local_id, bytes = std::move(bytes), target]()
+        {
+            DecodedImage decoded = decode_image_(bytes, 256, 256);
+            std::shared_ptr<tk::Image> preview;
+            if (decoded.still)
+                preview = std::shared_ptr<tk::Image>(std::move(decoded.still));
+            else if (!decoded.frames.empty())
+                preview =
+                    std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
+            post_to_ui_alive_(
+                [this, local_id, target, preview = std::move(preview)]() mutable
+                {
+                    if (target)
+                        target->set_tile_preview(local_id, std::move(preview));
+                });
+        });
 }
 
 void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
@@ -6661,15 +6740,41 @@ void ShellBase::handle_image_packs_updated_ui_()
 {
     refresh_pickers_packs_();
     cached_emoticons_.clear();
+    emoticon_packs_.clear();
     if (client_)
     {
         for (auto& pack : client_->list_image_packs())
         {
-            for (auto& img : client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
+            auto imgs = client_->list_pack_images(
+                pack.id, tesseract::PackUsageFilter::Emoticon);
+            for (const auto& img : imgs)
             {
-                cached_emoticons_.push_back(std::move(img));
+                cached_emoticons_.push_back(img);
             }
+            emoticon_packs_.emplace_back(pack, std::move(imgs));
+        }
+    }
+    // Keep the global Settings "Emojis & Stickers" tab's known-packs list
+    // and personal-pack snapshot current too — cheap (local cache reads
+    // only), same justification as the cached_emoticons_ rebuild above.
+    if (settings_controller_)
+        settings_controller_->load_image_packs();
+    // Re-seed any currently-open Room Settings "Emojis & Stickers" tab too.
+    // seed_image_pack_tab_ no-ops on its own if the target isn't open or
+    // doesn't match room_id, so this is safe to call unconditionally —
+    // covers the race where the user opens Room Settings for a room whose
+    // pack fetch (kicked off by set_active_room) hasn't resolved yet.
+    if (room_view_)
+    {
+        if (auto* v = room_view_->room_settings_view())
+            seed_image_pack_tab_(v->room_id(), v);
+    }
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        if (w->room_view())
+        {
+            if (auto* v = w->room_view()->room_settings_view())
+                seed_image_pack_tab_(v->room_id(), v);
         }
     }
 }
@@ -6688,6 +6793,21 @@ std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
         }
     }
     return {};
+}
+
+std::vector<tesseract::ImagePackImage>
+ShellBase::emoticons_for_room_(const std::string& room_id) const
+{
+    std::vector<tesseract::ImagePackImage> out;
+    for (const auto& [pack, imgs] : emoticon_packs_)
+    {
+        if (!views::is_pack_picker_visible(pack, room_id))
+        {
+            continue;
+        }
+        out.insert(out.end(), imgs.begin(), imgs.end());
+    }
+    return out;
 }
 
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
@@ -7844,6 +7964,16 @@ void ShellBase::after_active_room_changed_()
     // is handled by RoomView::set_room() when room_changed is true.
     in_room_search_clear_();
 
+    // Keep the current room's own MSC2545 image pack fetched (see
+    // Client::set_active_room's doc comment) and re-order the emoji/sticker
+    // pickers' tabs (personal / current room / subscribed rooms) for the
+    // new room right away, using whatever's already cached — a second
+    // refresh follows once the pack rebuild this may trigger resolves, via
+    // the existing on_image_packs_updated path.
+    if (client_)
+        client_->set_active_room(current_room_id_);
+    refresh_pickers_packs_();
+
     // The room media gallery is scoped to a single room — current_room_id_
     // is already the room we're switching TO at this point, so leaving it
     // open here would show (and keep paginating/fetching for) the room the
@@ -8191,31 +8321,29 @@ void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
         });
 }
 
-void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id)
+void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id,
+                                                   views::RoomSettingsView* target)
 {
     auto* c = client_;
-    if (!c || !room_view_)
+    if (!c || !target)
         return;
 
-    if (auto* v = room_view_->room_settings_view())
-        v->set_avatar_busy(true);
+    target->set_avatar_busy(true);
 
     pick_image_file_(
-        [this, c, room_id](std::vector<uint8_t> bytes, std::string mime) mutable
+        [this, c, room_id, target](std::vector<uint8_t> bytes, std::string mime) mutable
         {
             if (bytes.empty())
             {
                 // Cancelled — clear the busy indicator.
-                if (room_view_)
-                    if (auto* v = room_view_->room_settings_view())
-                        v->set_avatar_busy(false);
+                target->set_avatar_busy(false);
                 return;
             }
             if (c != client_)
                 return; // logged out between pick and callback
             auto sess = active_account_;
             run_async_mut_(
-                [this, sess, room_id,
+                [this, sess, room_id, target,
                  bytes = std::move(bytes),
                  mime  = std::move(mime)]() mutable
                 {
@@ -8223,21 +8351,78 @@ void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id)
                         return;
                     auto upload = sess->client->upload_media(bytes, mime);
                     post_to_ui_alive_(
-                        [this, sess, upload = std::move(upload)]() mutable
+                        [this, sess, target, upload = std::move(upload)]() mutable
                         {
-                            if (sess != active_account_ || !room_view_)
+                            if (sess != active_account_)
                                 return;
-                            auto* v = room_view_->room_settings_view();
-                            if (!v)
-                                return;
-                            v->set_avatar_busy(false);
+                            target->set_avatar_busy(false);
                             if (upload.ok)
-                                v->set_staged_avatar(upload.message);
+                                target->set_staged_avatar(upload.message);
                             else
-                                v->set_avatar_error(upload.message);
+                                target->set_avatar_error(upload.message);
                         });
                 });
         });
+}
+
+std::vector<std::string> ShellBase::apply_image_pack_changes_(
+    tesseract::Client* client, const views::ImagePackEditorResult& result)
+{
+    std::vector<std::string> errors;
+    if (!client)
+    {
+        errors.push_back("image_packs: not logged in");
+        return errors;
+    }
+
+    for (const auto& state_key : result.removed_state_keys)
+    {
+        auto r = client->remove_room_pack(result.room_id, state_key);
+        if (!r.ok)
+            errors.push_back("image_packs.remove: " + r.message);
+    }
+
+    for (const auto& pack : result.packs)
+    {
+        std::vector<tesseract::PackImageInput> resolved;
+        resolved.reserve(pack.images.size());
+        for (const auto& img : pack.images)
+        {
+            if (!img.existing_url.empty())
+            {
+                resolved.push_back(tesseract::PackImageInput{
+                    .shortcode  = img.shortcode,
+                    .url        = img.existing_url,
+                    .body       = img.body,
+                    .info_json  = img.info_json,
+                });
+            }
+            else if (!img.pending_bytes.empty())
+            {
+                auto upload = client->upload_media(img.pending_bytes, img.pending_mime);
+                if (!upload.ok)
+                {
+                    errors.push_back("image_packs." + pack.display_name + ": " +
+                                     upload.message);
+                    continue; // drop just this image; keep the rest of the pack
+                }
+                resolved.push_back(tesseract::PackImageInput{
+                    .shortcode  = img.shortcode,
+                    .url        = upload.message,
+                    .body       = img.body,
+                    .info_json  = img.info_json,
+                });
+            }
+        }
+
+        auto r = client->save_room_pack(result.room_id, pack.state_key, pack.is_new,
+                                        pack.display_name,
+                                        static_cast<std::uint8_t>(pack.usage), resolved);
+        if (!r.ok)
+            errors.push_back("image_packs." + pack.display_name + ": " + r.message);
+    }
+
+    return errors;
 }
 
 ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
@@ -8293,6 +8478,11 @@ ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
     {
         auto r = client->set_room_power_levels(room_id, *changes.permissions);
         if (!r.ok) errors.push_back("permissions: " + r.message);
+    }
+    if (changes.image_packs)
+    {
+        auto pack_errors = apply_image_pack_changes_(client, *changes.image_packs);
+        errors.insert(errors.end(), pack_errors.begin(), pack_errors.end());
     }
     // Fire-and-forget account-data write — no completion result to check,
     // so it never contributes to the joined error string. The optimistic

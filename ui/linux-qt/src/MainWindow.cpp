@@ -100,6 +100,15 @@ namespace qt6
 // All IEventHandler method bodies live in EventHandlerBase (shared/app/).
 // No EventBridge:: method definitions needed here.
 
+tesseract::views::RoomSettingsView* MainWindow::activeRoomSettingsView_() const
+{
+    if (mainApp_ && mainApp_->room_view()->room_settings_view()->is_open())
+        return mainApp_->room_view()->room_settings_view();
+    if (mainApp_)
+        return mainApp_->space_root()->settings_view();
+    return nullptr;
+}
+
 // ---------------------------------------------------------------------------
 // MainWindow constructor
 // ---------------------------------------------------------------------------
@@ -481,6 +490,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         sfp->host().post_delayed(ms, std::move(fn));
                     }
                 });
+            mainApp_->space_root()->set_post_delayed(
+                [sfp](int ms, std::function<void()> fn)
+                {
+                    if (sfp)
+                    {
+                        sfp->host().post_delayed(ms, std::move(fn));
+                    }
+                });
         }
         mainApp_->room_view()->set_video_player_factory(
             [this]()
@@ -510,8 +527,20 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 mainAppSurface_->relayout();
             }
         };
+        mainApp_->space_root()->on_layout_changed = [this]
+        {
+            if (mainAppSurface_)
+            {
+                mainAppSurface_->relayout();
+            }
+        };
         setup_link_clicked_(mainApp_->room_view());
         mainApp_->room_view()->on_set_clipboard = [this](std::string_view t)
+        {
+            if (mainAppSurface_)
+                mainAppSurface_->host().set_clipboard_text(t);
+        };
+        mainApp_->space_root()->on_copy_to_clipboard = [this](std::string t)
         {
             if (mainAppSurface_)
                 mainAppSurface_->host().set_clipboard_text(t);
@@ -1245,8 +1274,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 v->set_field_permissions(false, false, false);
                 v->set_security_field_permissions(false, false, false, false);
                 v->set_permissions_field_permissions(false);
+                v->set_image_pack_field_permissions(false);
                 v->set_own_power_level({});
                 seed_room_media_section_(room_id);
+                seed_image_pack_tab_(room_id, v);
                 return;
             }
             v->set_field_permissions(client_->can_set_room_name(room_id),
@@ -1263,11 +1294,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             v->set_own_power_level(client_->room_own_power_level(room_id));
             seed_room_media_section_(room_id);
             fetch_room_security_state_(room_id);
+            seed_image_pack_tab_(room_id, v);
         };
         mainApp_->room_view()->on_room_settings_avatar_upload_requested =
             [this](const std::string& room_id)
         {
-            stage_room_settings_avatar_upload_(room_id);
+            stage_room_settings_avatar_upload_(room_id, mainApp_->room_view()->room_settings_view());
         };
         mainApp_->room_view()->room_settings_view()->on_accept =
             [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
@@ -1297,6 +1329,102 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         },
                         Qt::QueuedConnection);
                 });
+        };
+        mainApp_->room_view()->room_settings_view()->set_image_pack_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        mainApp_->room_view()->room_settings_view()->on_image_pack_images_needed =
+            [this](std::string pack_id)
+        { handle_image_pack_images_needed_(pack_id, mainApp_->room_view()->room_settings_view()); };
+        mainApp_->room_view()->room_settings_view()->on_image_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        { handle_image_pack_pending_image_added_(local_id, bytes, mime, mainApp_->room_view()->room_settings_view()); };
+        // Space-root settings (wrench icon on SpaceRootView): the same
+        // per-room-id permission gating / accept / avatar-upload plumbing
+        // above works unchanged for a space's room id — including image
+        // packs, which are ordinary room state so a space can host its own
+        // (only the Media tab is skipped, since it has no meaning for a
+        // space).
+        mainApp_->space_root()->on_settings_opened =
+            [this](const std::string& room_id)
+        {
+            auto* v = mainApp_->space_root()->settings_view();
+            if (!v)
+                return;
+            if (!client_)
+            {
+                v->set_field_permissions(false, false, false);
+                v->set_security_field_permissions(false, false, false, false);
+                v->set_permissions_field_permissions(false);
+                v->set_image_pack_field_permissions(false);
+                v->set_own_power_level({});
+                seed_image_pack_tab_(room_id, v);
+                return;
+            }
+            v->set_field_permissions(client_->can_set_room_name(room_id),
+                                     client_->can_set_room_topic(room_id),
+                                     client_->can_set_room_avatar(room_id));
+            v->set_security_field_permissions(
+                client_->can_set_room_encryption(room_id),
+                client_->can_set_room_join_rules(room_id),
+                client_->can_set_room_guest_access(room_id),
+                client_->can_set_room_history_visibility(room_id));
+            v->set_permissions_field_permissions(
+                client_->can_set_room_power_levels(room_id));
+            v->set_permissions_state(client_->room_power_levels(room_id));
+            v->set_own_power_level(client_->room_own_power_level(room_id));
+            fetch_room_security_state_(room_id);
+            seed_image_pack_tab_(room_id, v);
+        };
+        mainApp_->space_root()->on_settings_avatar_upload_requested =
+            [this](const std::string& room_id)
+        {
+            stage_room_settings_avatar_upload_(
+                room_id, mainApp_->space_root()->settings_view());
+        };
+        mainApp_->space_root()->settings_view()->on_accept =
+            [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            run_async_mut_(
+                [this, c, room_id = std::move(room_id),
+                 changes = std::move(changes)]()
+                {
+                    auto outcome = ShellBase::apply_room_settings_(c, room_id, changes);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, outcome, room_id,
+                         media_override = changes.media_override]()
+                        {
+                            if (!mainApp_)
+                                return;
+                            if (auto* v =
+                                    mainApp_->space_root()->settings_view())
+                                v->set_commit_result(outcome.ok, outcome.error);
+                            if (outcome.ok && media_override)
+                                commit_room_media_preview_override_(
+                                    room_id, media_override->has_override,
+                                    media_override->mode);
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
+        mainApp_->space_root()->settings_view()->set_image_pack_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        mainApp_->space_root()->settings_view()->on_image_pack_images_needed =
+            [this](std::string pack_id)
+        {
+            handle_image_pack_images_needed_(
+                pack_id, mainApp_->space_root()->settings_view());
+        };
+        mainApp_->space_root()->settings_view()->on_image_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        {
+            handle_image_pack_pending_image_added_(
+                local_id, bytes, mime, mainApp_->space_root()->settings_view());
         };
         setup_dm_callbacks();
         mainApp_->room_view()->on_ignore_user =
@@ -1456,7 +1584,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         auto w = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = w.get();
         shortcode_popup_widget_->set_image_provider(
-            make_static_image_provider_());
+            make_static_image_provider_with_fetch_(28, 28));
         shortcode_popup_surface_->set_root(std::move(w));
         auto* lay = new QVBoxLayout(shortcode_popup_frame_);
         lay->setContentsMargins(0, 0, 0, 0);
@@ -1474,11 +1602,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             if (shortcode_popup_surface_)
                 shortcode_popup_surface_->update();
         };
-        sh.emoticons = [this]() -> const std::vector<tesseract::ImagePackImage>&
-        { return cached_emoticons_; };
+        sh.emoticons = [this]()
+        { return emoticons_for_room_(current_room_id_); };
         sh.fetch_image = [this](const std::string& url)
         { ensure_media_image_(url, 28, 28); };
-        sh.resolve_image = make_static_image_provider_();
+        sh.resolve_image = make_static_image_provider_with_fetch_(28, 28);
         shortcode_controller_ =
             std::make_unique<tesseract::views::ShortcodeController>(
                 roomTextArea_.get(), shortcode_popup_widget_, std::move(sh));
@@ -1827,14 +1955,18 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
     topicTextArea_->set_visible(false);
 
+    // activeRoomSettingsView_() resolves to whichever RoomSettingsView
+    // instance (mainApp_->room_view()'s or the space-root one) currently has
+    // a tab open — a space's General/Emojis & Stickers tabs are backed by a
+    // separate RoomSettingsView instance.
     roomSettingsNameField_ = mainAppSurface_->host().make_text_field();
     roomSettingsNameField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
     roomSettingsNameField_->set_on_changed(
         [this](const std::string& t)
         {
-            if (mainApp_)
-                mainApp_->room_view()->room_settings_view()->set_name_edit_text(t);
+            if (auto* v = activeRoomSettingsView_())
+                v->set_name_edit_text(t);
         });
     roomSettingsNameField_->set_visible(false);
 
@@ -1845,18 +1977,91 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     roomSettingsTopicArea_->set_on_changed(
         [this](const std::string& t)
         {
-            if (mainApp_)
-                mainApp_->room_view()->room_settings_view()->set_topic_edit_text(t);
+            if (auto* v = activeRoomSettingsView_())
+                v->set_topic_edit_text(t);
         });
     roomSettingsTopicArea_->set_on_height_changed(
         [this](float h)
         {
-            if (!mainApp_ || !mainAppSurface_)
+            if (!mainAppSurface_)
                 return;
-            mainApp_->room_view()->room_settings_view()->set_topic_area_natural_height(h);
+            if (auto* v = activeRoomSettingsView_())
+                v->set_topic_area_natural_height(h);
             mainAppSurface_->relayout();
         });
     roomSettingsTopicArea_->set_visible(false);
+
+    imagePackNameField_ = mainAppSurface_->host().make_text_field();
+    imagePackNameField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    imagePackNameField_->set_placeholder(tr("Pack name").toStdString());
+    imagePackNameField_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (auto* v = activeRoomSettingsView_())
+                v->set_image_pack_new_pack_name_text(t);
+        });
+    imagePackNameField_->set_visible(false);
+
+    imagePackShortcodeField_ = mainAppSurface_->host().make_text_field();
+    imagePackShortcodeField_->set_compact(true);
+    imagePackShortcodeField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    imagePackShortcodeField_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (auto* v = activeRoomSettingsView_())
+                v->set_image_pack_editing_shortcode_text(t);
+        });
+    imagePackShortcodeField_->set_on_submit(
+        [this]()
+        {
+            if (auto* v = activeRoomSettingsView_())
+                v->commit_image_pack_editing_shortcode();
+        });
+    imagePackShortcodeField_->set_on_focus_changed(
+        [this](bool focused)
+        {
+            if (!focused)
+                if (auto* v = activeRoomSettingsView_())
+                    v->cancel_image_pack_editing_shortcode();
+        });
+    imagePackShortcodeField_->set_visible(false);
+
+    imagePackRenameField_ = mainAppSurface_->host().make_text_field();
+    imagePackRenameField_->set_compact(true);
+    imagePackRenameField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    imagePackRenameField_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (auto* v = activeRoomSettingsView_())
+                v->set_image_pack_editing_name_text(t);
+        });
+    imagePackRenameField_->set_on_submit(
+        [this]()
+        {
+            if (auto* v = activeRoomSettingsView_())
+                v->commit_image_pack_editing_name();
+        });
+    imagePackRenameField_->set_on_focus_changed(
+        [this](bool focused)
+        {
+            if (!focused)
+                if (auto* v = activeRoomSettingsView_())
+                    v->commit_image_pack_editing_name();
+        });
+    imagePackRenameField_->set_visible(false);
+
+    imagePackPasteCatcher_ = mainAppSurface_->host().make_text_area();
+    imagePackPasteCatcher_->set_visible(false);
+    imagePackPasteCatcher_->set_on_image_paste(
+        [this](std::vector<std::uint8_t> bytes, std::string mime)
+        {
+            if (auto* v = activeRoomSettingsView_())
+                v->add_image_pack_pasted_image(
+                    std::move(bytes), std::move(mime));
+        });
 
     roomSearchField_ = mainAppSurface_->host().make_text_field();
     roomSearchField_->set_text_color(
@@ -2217,9 +2422,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 }
             }
 
-            if (mainApp_ && roomSettingsNameField_ && roomSettingsTopicArea_)
+            if (roomSettingsNameField_ && roomSettingsTopicArea_ &&
+                activeRoomSettingsView_())
             {
-                auto* rsv = mainApp_->room_view()->room_settings_view();
+                auto* rsv = activeRoomSettingsView_();
                 const tk::Rect nr = rsv->name_field_rect();
                 const bool name_now_visible = !nr.empty();
                 const bool name_was_visible = roomSettingsNameFieldVisible_;
@@ -2244,14 +2450,101 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         roomSettingsTopicArea_->set_text(rsv->topic_edit_initial_text());
                 }
             }
+
+            if (imagePackNameField_ && imagePackShortcodeField_ &&
+                imagePackRenameField_ && imagePackPasteCatcher_ &&
+                activeRoomSettingsView_())
+            {
+                auto* rsv = activeRoomSettingsView_();
+
+                const tk::Rect pnr = rsv->image_pack_new_pack_name_field_rect();
+                const bool pack_name_now_visible = !pnr.empty();
+                imagePackNameFieldVisible_ = pack_name_now_visible;
+                imagePackNameField_->set_visible(pack_name_now_visible);
+                if (pack_name_now_visible)
+                    imagePackNameField_->set_rect(pnr);
+                // The create-row field stays visible continuously (unlike a
+                // field that shows/hides), so there's no visibility-
+                // transition edge to hook a "clear the displayed text"
+                // reset off of — diff the generation counter instead.
+                const std::uint64_t name_gen =
+                    rsv->image_pack_new_pack_name_reset_generation();
+                if (name_gen != imagePackNameResetGenSeen_)
+                {
+                    imagePackNameResetGenSeen_ = name_gen;
+                    imagePackNameField_->set_text("");
+                }
+
+                const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
+                const bool shortcode_now_visible = !scr.empty();
+                imagePackShortcodeField_->set_visible(shortcode_now_visible);
+                if (shortcode_now_visible)
+                {
+                    imagePackShortcodeField_->set_rect(scr);
+                    // The field stays visible continuously across a
+                    // handoff from one tile's shortcode to another (e.g.
+                    // dropping a second image while the first's field is
+                    // still open) — diff the reset generation, not a
+                    // visibility rising edge, so the new tile's suggested
+                    // shortcode always replaces whatever was previously
+                    // displayed.
+                    const std::uint64_t shortcode_gen =
+                        rsv->image_pack_shortcode_edit_reset_generation();
+                    if (shortcode_gen != imagePackShortcodeResetGenSeen_)
+                    {
+                        imagePackShortcodeResetGenSeen_ = shortcode_gen;
+                        imagePackShortcodeField_->set_text(
+                            rsv->image_pack_shortcode_edit_initial_text());
+                        imagePackShortcodeField_->set_focused(true);
+                    }
+                }
+
+                const tk::Rect renr = rsv->image_pack_name_edit_rect();
+                const bool rename_now_visible = !renr.empty();
+                const bool rename_was_visible = imagePackRenameFieldVisible_;
+                imagePackRenameFieldVisible_ = rename_now_visible;
+                imagePackRenameField_->set_visible(rename_now_visible);
+                if (rename_now_visible)
+                {
+                    imagePackRenameField_->set_rect(renr);
+                    if (!rename_was_visible)
+                    {
+                        imagePackRenameField_->set_text(
+                            rsv->image_pack_name_edit_initial_text());
+                        imagePackRenameField_->set_focused(true);
+                    }
+                }
+
+                const tk::Rect gr = rsv->image_pack_list_rect();
+                const bool grid_now_visible = !gr.empty();
+                const bool paste_catcher_was_visible = imagePackPasteCatcherVisible_;
+                imagePackPasteCatcherVisible_ = grid_now_visible;
+                imagePackPasteCatcher_->set_visible(grid_now_visible);
+                if (grid_now_visible)
+                {
+                    imagePackPasteCatcher_->set_rect({gr.x, gr.y, 1.0f, 1.0f});
+                    // Focus it only on the open->visible transition — a real
+                    // user click into the name/shortcode field should keep
+                    // its own focus, not get stolen back on the next relayout.
+                    if (!paste_catcher_was_visible)
+                        imagePackPasteCatcher_->set_focused(true);
+                }
+            }
         });
 
     mainAppSurface_->set_on_file_drop(
         [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename)
+               std::string filename, tk::Point pos)
         {
             if (!mainApp_)
                 return;
+            if (auto* rsv = activeRoomSettingsView_();
+                rsv && !rsv->image_pack_list_rect().empty())
+            {
+                rsv->add_image_pack_dropped_image(pos, std::move(bytes),
+                                                  std::move(mime), filename);
+                return;
+            }
             auto outcome = tesseract::views::dispatch_file_drop(
                 *mainApp_->room_view()->compose_bar(), std::move(bytes),
                 std::move(mime), std::move(filename),
@@ -3637,6 +3930,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     schedule_relayout_();
                     if (shortcode_popup_visible_() && shortcode_popup_surface_)
                         shortcode_popup_surface_->update();
+                    if (settingsWidget_ && settingsWidget_->isVisible())
+                        settingsWidget_->request_repaint();
                     notify_secondary_media_ready_(cache_key, kind);
                 });
         });
@@ -3649,8 +3944,20 @@ void MainWindow::bind_settings_controller_()
     // The SettingsWidget installs its own key/file dialog hooks internally,
     // so there is no separate wire_key_dialog_callbacks_ step on Qt.
     if (settingsWidget_)
+    {
         settingsWidget_->set_controller(settings_controller_.get(),
                                         my_display_name_);
+        settingsWidget_->settings_view()->set_user_pack_image_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        settingsWidget_->settings_view()->on_user_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        {
+            handle_user_pack_pending_image_added_(
+                local_id, bytes, mime,
+                settingsWidget_->settings_view()->user_pack_editor());
+        };
+    }
 }
 
 void MainWindow::pick_image_file_(
@@ -4079,6 +4386,14 @@ void MainWindow::repaint_anim_frame_()
     {
         stickerPicker_->invalidateImages();
     }
+    if (settingsWidget_ && settingsWidget_->isVisible())
+    {
+        // Settings' "Emojis & Stickers" tab hosts its own top-level surface,
+        // separate from mainAppSurface_, so it needs its own animation-tick
+        // invalidation or animated stickers there only advance on
+        // mouse-move-driven repaints.
+        settingsWidget_->update_anim_regions();
+    }
 }
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
@@ -4449,9 +4764,18 @@ void MainWindow::openSettings()
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
 
+    // Route through bind_settings_controller_() rather than calling
+    // set_controller() directly: that's the only place that also wires
+    // settings_view()->set_user_pack_image_provider() (and
+    // on_user_pack_pending_image_added). ensure_settings_controller_()
+    // already calls bind_settings_controller_() on login/account-switch,
+    // but at that point settingsWidget_ is still null (created lazily,
+    // right here, on first open) so its `if (settingsWidget_)` guard is a
+    // no-op — the provider never got wired until this call closes that gap,
+    // which is why every pack tile rendered as an empty box despite the
+    // list itself loading correctly.
     if (settings_controller_)
-        settingsWidget_->set_controller(settings_controller_.get(),
-                                        my_display_name_);
+        bind_settings_controller_();
 
     // set_controller creates the NativeTextField overlays; push extended profile
     // after so set_text calls land on live fields.
@@ -4564,10 +4888,12 @@ void MainWindow::refresh_pickers_packs_()
 {
     if (stickerPicker_)
     {
+        stickerPicker_->setCurrentRoomId(current_room_id_);
         stickerPicker_->refreshPacks();
     }
     if (emojiPicker_)
     {
+        emojiPicker_->setCurrentRoomId(current_room_id_);
         emojiPicker_->refreshEmoticonPacks();
     }
 }

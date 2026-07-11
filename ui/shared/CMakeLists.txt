@@ -103,6 +103,8 @@ set(_tk_sources
     views/EncryptionSetupOverlay.cpp
     views/StickerPicker.h
     views/StickerPicker.cpp
+    views/image_pack_order.h
+    views/image_pack_order.cpp
     views/ThreadListView.h
     views/ThreadListView.cpp
     views/ThreadView.h
@@ -137,6 +139,10 @@ set(_tk_sources
     views/ForwardRoomPicker.cpp
     views/MessageSearchView.h
     views/MessageSearchView.cpp
+    views/ImagePackTileGridBase.h
+    views/ImagePackTileGridBase.cpp
+    views/ImagePackEditorView.h
+    views/ImagePackEditorView.cpp
     views/RoomMediaView.h
     views/RoomMediaView.cpp
     views/RoomSearchBar.h
@@ -228,6 +234,12 @@ set(_tk_sources
     views/settings/RoomSecuritySection.cpp
     views/settings/RoomPermissionsSection.h
     views/settings/RoomPermissionsSection.cpp
+    views/settings/UserPackEditor.h
+    views/settings/UserPackEditor.cpp
+    views/settings/KnownPacksList.h
+    views/settings/KnownPacksList.cpp
+    views/settings/ImagePacksSection.h
+    views/settings/ImagePacksSection.cpp
 )
 
 # Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,
