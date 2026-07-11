@@ -2688,17 +2688,29 @@ protected:
         { return account_manager_.image_cache().peek(url); };
     }
 
-    // Static-image lookup + fetch-on-miss: like make_static_image_provider_
-    // above, but also kicks off ensure_media_image_ as a side effect when
-    // the cache misses. Used by NativeTextArea::set_image_resolver (the
+    // Animated-frame → static-image lookup + fetch-on-miss: like
+    // make_static_image_provider_ above, but also kicks off ensure_media_image_
+    // as a side effect when the cache misses, and — like
+    // make_picker_image_provider_ — checks anim_cache_ first so an animated
+    // WebP/GIF resolves to its current frame instead of never rendering (the
+    // fetch/decode pipeline behind ensure_media_image_ already detects and
+    // decodes multi-frame content into anim_cache_ regardless of caller; this
+    // just needs to read it). Used by NativeTextArea::set_image_resolver (the
     // Windows BetterText compose box's inline custom-emoji rendering), which
     // — unlike the shortcode popup — has no separate "prefetch the visible
-    // suggestions" step to rely on before the image is actually needed.
+    // suggestions" step to rely on before the image is actually needed, and by
+    // ImagePackEditorView's pack-tile provider (RoomSettingsView's Emojis &
+    // Stickers tab).
     std::function<const tk::Image*(const std::string&)>
     make_static_image_provider_with_fetch_(int max_w, int max_h)
     {
         return [this, max_w, max_h](const std::string& url) -> const tk::Image*
         {
+            if (const auto* f = account_manager_.anim_cache().current_frame(url))
+            {
+                start_anim_tick_();
+                return f;
+            }
             if (const auto* img = account_manager_.image_cache().peek(url))
             {
                 return img;
