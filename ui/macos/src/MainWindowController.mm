@@ -4102,18 +4102,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             s->_shell->handle_image_pack_pending_image_added(
                 local_id, bytes, mime, s->_mainApp->room_view()->room_settings_view());
         };
-        _mainApp->room_view()->room_settings_view()->on_image_pack_accept =
-            [weakSelf](tesseract::views::ImagePackEditorResult /*result*/)
-        {
-            // No backend to persist this yet (see ImagePackEditorView.h) —
-            // close the dialog so the initial-testing round-trip still
-            // feels complete end to end.
-            MainWindowController* s = weakSelf;
-            if (!s)
-                return;
-            if (auto* v = s->_mainApp->room_view()->room_settings_view())
-                v->close();
-        };
         // Space-root settings (wrench icon on SpaceRootView): the same
         // per-room-id permission gating / accept / avatar-upload plumbing
         // above works unchanged for a space's room id — including image
@@ -4223,15 +4211,6 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 return;
             s->_shell->handle_image_pack_pending_image_added(
                 local_id, bytes, mime, s->_mainApp->space_root()->settings_view());
-        };
-        _mainApp->space_root()->settings_view()->on_image_pack_accept =
-            [weakSelf](tesseract::views::ImagePackEditorResult /*result*/)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-                return;
-            if (auto* v = s->_mainApp->space_root()->settings_view())
-                v->close();
         };
         _shell->setup_dm_callbacks();
         _mainApp->room_view()->on_ignore_user =

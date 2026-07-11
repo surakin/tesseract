@@ -2573,15 +2573,6 @@ void MainWindow::on_create(HWND hwnd)
             [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
                   const std::string& mime)
         { handle_image_pack_pending_image_added_(local_id, bytes, mime, room_view_->room_settings_view()); };
-        room_view_->room_settings_view()->on_image_pack_accept =
-            [this](tesseract::views::ImagePackEditorResult /*result*/)
-        {
-            // No backend to persist this yet (see ImagePackEditorView.h) —
-            // close the dialog so the initial-testing round-trip still
-            // feels complete end to end.
-            if (auto* v = room_view_->room_settings_view())
-                v->close();
-        };
         // Space-root settings (wrench icon on SpaceRootView): the same
         // per-room-id permission gating / accept / avatar-upload plumbing
         // above works unchanged for a space's room id — including image
@@ -2659,12 +2650,6 @@ void MainWindow::on_create(HWND hwnd)
         {
             handle_image_pack_pending_image_added_(
                 local_id, bytes, mime, main_app_->space_root()->settings_view());
-        };
-        main_app_->space_root()->settings_view()->on_image_pack_accept =
-            [this](tesseract::views::ImagePackEditorResult /*result*/)
-        {
-            if (auto* v = main_app_->space_root()->settings_view())
-                v->close();
         };
         main_app_->space_root()->on_copy_to_clipboard = [this](std::string t)
         {

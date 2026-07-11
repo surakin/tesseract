@@ -78,10 +78,13 @@ RoomSettingsView::RoomSettingsView()
                 staged_guest_access_, staged_history_visibility_,
                 staged_media_has_override_, staged_media_mode_,
                 staged_permissions_});
+        if (image_packs_->has_changes())
+            changes.image_packs = image_packs_->build_result();
         committing_ = true;
         general_->set_committing(true);
         security_->set_committing(true);
         permissions_->set_committing(true);
+        image_packs_->set_committing(true);
         commit_error_.clear();
         commit_error_layout_.reset();
         refresh_accept_enabled_();
@@ -167,18 +170,6 @@ RoomSettingsView::RoomSettingsView()
     image_packs_->on_layout_changed = [this]()
     {
         if (on_layout_changed) on_layout_changed();
-    };
-    // Cancelling the image-pack tab closes the whole dialog, same outward
-    // effect as the main Cancel button — this tab has no separate "just
-    // reset this one tab" concept, matching how Cancel discards every other
-    // tab's staged edits too.
-    image_packs_->on_cancel = [this]()
-    {
-        if (on_cancel) on_cancel();
-    };
-    image_packs_->on_accept = [this](ImagePackEditorResult result)
-    {
-        if (on_image_pack_accept) on_image_pack_accept(std::move(result));
     };
     image_packs_->on_pack_images_needed = [this](std::string pack_id)
     {
@@ -453,6 +444,7 @@ void RoomSettingsView::set_commit_result(bool ok, std::string error)
     general_->set_committing(false);
     security_->set_committing(false);
     permissions_->set_committing(false);
+    image_packs_->set_committing(false);
     if (ok)
     {
         close();
@@ -592,48 +584,34 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
     tk::Widget::arrange(lc, bounds);
 
-    // The image-pack tab manages its own independent Accept/Cancel footer
-    // (see ImagePackEditorView) — give it the full remaining height instead
-    // of reserving space for this view's own footer, and hide/skip that
-    // footer's buttons entirely so there's no double footer or click-through
-    // to a hidden button underneath the tab's own one.
-    const bool image_pack_tab =
-        tabs_ && tabs_->selected_idx() == kImagePackTabIndex;
-
     // Title bar, tabs, and footer bar are chrome sandwiched top/bottom
     // around the tab content — same idiom as SettingsView's back-bar, so
     // the footer reads as part of the same surface rather than a
-    // disconnected strip below the tab widget.
+    // disconnected strip below the tab widget. One shared footer for every
+    // tab, image packs included — see image_pack_editor()'s doc comment.
     const float tabs_y   = bounds.y + kBarHeight + 1.0f;
-    const float footer_y = image_pack_tab ? bounds.y + bounds.h
-                                          : bounds.y + bounds.h - kFooterH;
+    const float footer_y = bounds.y + bounds.h - kFooterH;
     const float tabs_h   = std::max(0.0f, footer_y - tabs_y);
     if (tabs_)
         tabs_->arrange(lc, {bounds.x, tabs_y, bounds.w, tabs_h});
 
-    if (accept_btn_) accept_btn_->set_visible(!image_pack_tab);
-    if (cancel_btn_) cancel_btn_->set_visible(!image_pack_tab);
+    // Accept/Cancel — right-aligned within the footer bar, same right
+    // margin (kPadX) the title bar uses.
+    const float btn_w_min = 88.0f;
+    tk::Size accept_sz = accept_btn_ ? accept_btn_->measure(lc, {-1.0f, kBtnH})
+                                    : tk::Size{btn_w_min, kBtnH};
+    tk::Size cancel_sz = cancel_btn_ ? cancel_btn_->measure(lc, {-1.0f, kBtnH})
+                                    : tk::Size{btn_w_min, kBtnH};
+    const float accept_w = std::max(accept_sz.w, btn_w_min);
+    const float cancel_w = std::max(cancel_sz.w, btn_w_min);
+    const float btns_y   = footer_y + (kFooterH - kBtnH) * 0.5f;
+    const float accept_x = bounds.x + bounds.w - kPadX - accept_w;
+    const float cancel_x = accept_x - kBtnGap - cancel_w;
 
-    if (!image_pack_tab)
-    {
-        // Accept/Cancel — right-aligned within the footer bar, same right
-        // margin (kPadX) the title bar uses.
-        const float btn_w_min = 88.0f;
-        tk::Size accept_sz = accept_btn_ ? accept_btn_->measure(lc, {-1.0f, kBtnH})
-                                        : tk::Size{btn_w_min, kBtnH};
-        tk::Size cancel_sz = cancel_btn_ ? cancel_btn_->measure(lc, {-1.0f, kBtnH})
-                                        : tk::Size{btn_w_min, kBtnH};
-        const float accept_w = std::max(accept_sz.w, btn_w_min);
-        const float cancel_w = std::max(cancel_sz.w, btn_w_min);
-        const float btns_y   = footer_y + (kFooterH - kBtnH) * 0.5f;
-        const float accept_x = bounds.x + bounds.w - kPadX - accept_w;
-        const float cancel_x = accept_x - kBtnGap - cancel_w;
-
-        if (cancel_btn_)
-            cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
-        if (accept_btn_)
-            accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
-    }
+    if (cancel_btn_)
+        cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
+    if (accept_btn_)
+        accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
 
     if (toast_)
         toast_->arrange(lc, bounds);
@@ -678,44 +656,36 @@ void RoomSettingsView::paint(tk::PaintCtx& ctx)
     if (tabs_ && tabs_->visible())
         tabs_->paint(ctx);
 
-    // The image-pack tab paints its own independent footer inside its own
-    // bounds (see arrange()'s image_pack_tab branch) — skip this view's own
-    // footer bar/buttons entirely rather than drawing a redundant one.
-    const bool image_pack_tab =
-        tabs_ && tabs_->selected_idx() == kImagePackTabIndex;
-    if (!image_pack_tab)
+    // Footer bar — same chrome as the title bar, so Accept/Cancel read as
+    // part of the settings surface rather than a detached bar underneath
+    // the tab widget. Shown for every tab, image packs included.
+    const float footer_y = bounds_.y + bounds_.h - kFooterH;
+    const tk::Rect footer_rect = {bounds_.x, footer_y, bounds_.w, kFooterH};
+    cv.fill_rect({bounds_.x, footer_y, bounds_.w, 1.0f}, pal.separator);
+    cv.fill_rect({bounds_.x, footer_y + 1.0f, bounds_.w, kFooterH - 1.0f}, pal.sidebar_bg);
+
+    // Commit error, left-aligned within the footer bar.
+    if (!commit_error_.empty())
     {
-        // Footer bar — same chrome as the title bar, so Accept/Cancel read as
-        // part of the settings surface rather than a detached bar underneath
-        // the tab widget.
-        const float footer_y = bounds_.y + bounds_.h - kFooterH;
-        const tk::Rect footer_rect = {bounds_.x, footer_y, bounds_.w, kFooterH};
-        cv.fill_rect({bounds_.x, footer_y, bounds_.w, 1.0f}, pal.separator);
-        cv.fill_rect({bounds_.x, footer_y + 1.0f, bounds_.w, kFooterH - 1.0f}, pal.sidebar_bg);
-
-        // Commit error, left-aligned within the footer bar.
-        if (!commit_error_.empty())
+        if (!commit_error_layout_)
         {
-            if (!commit_error_layout_)
-            {
-                tk::TextStyle st{};
-                st.role      = tk::FontRole::Small;
-                st.halign    = tk::TextHAlign::Leading;
-                st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
-                commit_error_layout_ = ctx.factory.build_text(commit_error_, st);
-            }
-            if (commit_error_layout_)
-            {
-                const float err_y = footer_rect.y +
-                                    (kFooterH - commit_error_layout_->measure().h) * 0.5f;
-                cv.draw_text(*commit_error_layout_, {bounds_.x + kPadX, err_y},
-                             tk::Color::rgb(0xcc3333));
-            }
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Small;
+            st.halign    = tk::TextHAlign::Leading;
+            st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
+            commit_error_layout_ = ctx.factory.build_text(commit_error_, st);
         }
-
-        if (cancel_btn_) cancel_btn_->paint(ctx);
-        if (accept_btn_) accept_btn_->paint(ctx);
+        if (commit_error_layout_)
+        {
+            const float err_y = footer_rect.y +
+                                (kFooterH - commit_error_layout_->measure().h) * 0.5f;
+            cv.draw_text(*commit_error_layout_, {bounds_.x + kPadX, err_y},
+                         tk::Color::rgb(0xcc3333));
+        }
     }
+
+    if (cancel_btn_) cancel_btn_->paint(ctx);
+    if (accept_btn_) accept_btn_->paint(ctx);
 
     if (toast_ && toast_->visible()) toast_->paint(ctx);
 }

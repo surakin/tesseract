@@ -175,6 +175,91 @@ TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
     CHECK(*accepted_changes.name == "New Name");
     CHECK_FALSE(accepted_changes.topic.has_value());
     CHECK_FALSE(accepted_changes.avatar_mxc.has_value());
+    // Emojis & Stickers was never visited -> unset, same as any other
+    // untouched field.
+    CHECK_FALSE(accepted_changes.image_packs.has_value());
+}
+
+TEST_CASE("RoomSettingsView: shared footer stays visible and in the same "
+          "place on the Emojis & Stickers tab",
+          "[room_settings][view]")
+{
+    // The image-pack tab used to hide this view's own footer and paint its
+    // own instead; it now commits through the one shared footer like every
+    // other tab (see image_pack_editor()'s doc comment).
+    RoomSettingsView v;
+    v.open(make_room_info());
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    REQUIRE(v.accept_button() != nullptr);
+    CHECK(v.accept_button()->visible());
+    const tk::Rect accept_rect_before = v.accept_button()->bounds();
+
+    // Side tab column: kSidebarWidth=200, kTabHeight=36 (tk::SideTabView),
+    // tabs start at y = kBarHeight(48) + 1 = 49. Emojis & Stickers is the
+    // 5th tab (index 4): row center y = 49 + (4 + 0.5) * 36 = 211.
+    const tk::Point tab_pt{100.0f, 211.0f};
+    tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
+    REQUIRE(tab_hit != nullptr);
+    tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    REQUIRE(!v.image_pack_new_pack_name_field_rect().empty());
+
+    CHECK(v.accept_button()->visible());
+    const tk::Rect accept_rect_after = v.accept_button()->bounds();
+    CHECK(accept_rect_after.x == accept_rect_before.x);
+    CHECK(accept_rect_after.y == accept_rect_before.y);
+    CHECK(accept_rect_after.w == accept_rect_before.w);
+    CHECK(accept_rect_after.h == accept_rect_before.h);
+}
+
+TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
+          "the Emojis & Stickers tab was actually edited",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    // Switch to the Emojis & Stickers tab (index 4; see the footer test
+    // above for the sidebar tab-row geometry derivation).
+    const tk::Point tab_pt{100.0f, 211.0f};
+    tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
+    REQUIRE(tab_hit != nullptr);
+    tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    v.set_image_pack_new_pack_name_text("New Pack");
+
+    // Create button: SideTabView's content area starts at x=200, tabs
+    // start at y=49; ImagePackEditorView::arrange() puts Create at
+    // x[688,776], y[85,117] within that -> world center (732, 101).
+    const tk::Point create_pt{732.0f, 101.0f};
+    tk::Widget* create_hit = v.dispatch_pointer_down(create_pt);
+    REQUIRE(create_hit != nullptr);
+    create_hit->on_pointer_up(create_hit->world_to_local(create_pt),
+                              /*inside_self=*/true);
+    REQUIRE(v.image_pack_editor()->packs().size() == 1);
+    REQUIRE(v.image_pack_editor()->has_changes());
+
+    tesseract::views::RoomSettingsChanges accepted_changes;
+    v.on_accept = [&](std::string, tesseract::views::RoomSettingsChanges changes) {
+        accepted_changes = std::move(changes);
+    };
+    const tk::Point accept_pt{730.0f, 558.0f};
+    tk::Widget* accept_hit = v.dispatch_pointer_down(accept_pt);
+    REQUIRE(accept_hit != nullptr);
+    accept_hit->on_pointer_up(accept_hit->world_to_local(accept_pt),
+                              /*inside_self=*/true);
+
+    REQUIRE(accepted_changes.image_packs.has_value());
+    REQUIRE(accepted_changes.image_packs->packs.size() == 1);
+    CHECK(accepted_changes.image_packs->packs[0].display_name == "New Pack");
 }
 
 TEST_CASE("RoomSettingsView: set_commit_result(true) closes the view",

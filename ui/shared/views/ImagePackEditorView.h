@@ -4,9 +4,10 @@
 // Lists every pack in the room at once, each as its own named section with
 // its own image grid, rather than editing one pack at a time. Stages every
 // edit (pack create/remove, per-pack usage, image add/remove/rename) in
-// memory; nothing is persisted until Accept fires on_accept with the full
-// staged snapshot. Like RoomSettingsView, this view has no Client/Host
-// dependency of its own — the host pushes pack/image data in via setters
+// memory; nothing is persisted until RoomSettingsView's own Accept commits
+// it (see build_result()). Like RoomSettingsView's other tab sections
+// (RoomGeneralSection etc.), this view has no footer of its own and no
+// Client/Host dependency — the host pushes pack/image data in via setters
 // (set_available_packs/set_pack_images) and receives raw bytes to decode/
 // upload via callbacks (on_pending_image_added), mirroring how
 // RoomSettingsView's tabs are fed by ShellBase rather than fetching
@@ -87,7 +88,7 @@ struct StagedPack
     std::vector<StagedPackImage> images;
 };
 
-// The full staged snapshot handed to on_accept — not a diff. Whoever
+// The full staged snapshot returned by build_result() — not a diff. Whoever
 // implements the (currently nonexistent) backend create/update/delete call
 // can diff `packs` against Client::list_image_packs()/list_pack_images()
 // for the room; `removed_pack_ids` names existing packs the user deleted
@@ -238,6 +239,12 @@ public:
     bool is_open() const { return open_; }
     const std::string& room_id() const { return room_id_; }
 
+    // Gates create_btn_ and the native-overlay rects below while
+    // RoomSettingsView's shared Accept commit is in flight — mirrors
+    // RoomGeneralSection::set_committing's shallow scope (not a full
+    // interaction lock over every list click).
+    void set_committing(bool committing);
+
     // Pushed by the host right after open() (and again if the room's pack
     // list changes while open). Populates the section list with every
     // pack, auto-selects the first as active, and fires
@@ -303,8 +310,20 @@ public:
     // add_pending_image_at for the actual per-pack routing).
     tk::Rect list_rect() const;
 
-    std::function<void()> on_cancel;
-    std::function<void(ImagePackEditorResult result)> on_accept;
+    // True once the user has made any edit since the last open()/
+    // set_available_packs() baseline (pack create/remove/rename/usage
+    // change, image add/remove/shortcode edit) — a coarse dirty bit, not a
+    // real diff (build_result() is a full snapshot, not a diff — see its
+    // own doc comment). Lets RoomSettingsView's shared Accept skip
+    // building/delivering a result at all when this tab was never touched,
+    // mirroring how every other tab only reports fields that changed.
+    bool has_changes() const { return dirty_; }
+
+    // The current staged snapshot — not a diff, see ImagePackEditorResult's
+    // own doc comment. Called by RoomSettingsView's shared Accept click
+    // handler, guarded by has_changes().
+    ImagePackEditorResult build_result() const;
+
     // Fired whenever this view's own layout-affecting state changes (open/
     // close, pack add/remove, begin/end editing a shortcode) so the host
     // can reposition/hide its native overlays — mirrors RoomSettingsView's
@@ -317,8 +336,6 @@ public:
 
     // Test accessors.
     tk::Button* create_button() const { return create_btn_; }
-    tk::Button* accept_button() const { return accept_btn_; }
-    tk::Button* cancel_button() const { return cancel_btn_; }
     ImagePackSectionList* list() const { return list_; }
     const std::vector<StagedPack>& packs() const { return packs_; }
     std::optional<std::size_t> active_pack_index() const { return active_pack_index_; }
@@ -330,7 +347,6 @@ private:
     void begin_editing_shortcode_(std::size_t pack_idx, std::size_t tile_idx);
     void begin_editing_pack_name_(std::size_t pack_idx);
     void remove_tile_(std::size_t pack_idx, std::size_t tile_idx);
-    void refresh_accept_enabled_();
     void layout_changed_();
     // Common tail of add_pending_image_to_active/add_pending_image_at once
     // the target pack index is known.
@@ -340,6 +356,7 @@ private:
 
     bool open_       = false;
     bool committing_ = false;
+    bool dirty_      = false;
 
     std::string room_id_;
     std::vector<StagedPack> packs_;
@@ -355,8 +372,6 @@ private:
 
     ImagePackSectionList* list_       = nullptr;
     tk::Button*           create_btn_ = nullptr;
-    tk::Button*           accept_btn_ = nullptr;
-    tk::Button*           cancel_btn_ = nullptr;
 
     tk::Rect new_pack_name_field_rect_{};
 
@@ -367,8 +382,6 @@ private:
     static constexpr float kRowH     = 32.0f;
     static constexpr float kLabelGap = 4.0f;
     static constexpr float kLabelH   = 16.0f;
-    static constexpr float kFooterH  = 64.0f;
-    static constexpr float kBtnH     = 36.0f;
     static constexpr float kBtnGap   = 8.0f;
 };
 

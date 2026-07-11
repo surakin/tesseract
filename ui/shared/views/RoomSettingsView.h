@@ -63,6 +63,12 @@ struct RoomSettingsChanges
     std::optional<std::string> history_visibility;
     std::optional<RoomMediaOverrideChange> media_override;
     std::optional<tesseract::RoomPermissions> permissions;
+    // Set only if the Emojis & Stickers tab was actually edited
+    // (ImagePackEditorView::has_changes()); the full staged snapshot for
+    // that tab (not a diff — see ImagePackEditorResult's own doc comment,
+    // unlike every other field here). There is still no backend to persist
+    // it (see ImagePackEditorView.h), so today every shell just ignores it.
+    std::optional<ImagePackEditorResult> image_packs;
 };
 
 // Bundles a snapshot of every staged field. Passed twice (original, staged)
@@ -238,10 +244,6 @@ public:
                        const std::vector<std::uint8_t>& bytes,
                        const std::string& mime)>
         on_image_pack_pending_image_added;
-    // No backend to persist this yet (see ImagePackEditorView.h) — wired
-    // through so ShellBase can still react (e.g. close the dialog) once one
-    // exists.
-    std::function<void(ImagePackEditorResult result)> on_image_pack_accept;
 
     // Fired when the user clicks the Room ID row; the shell performs the
     // actual clipboard write (this view has no Host access), then the toast
@@ -274,12 +276,11 @@ public:
     // (mirrors the section's own combo accessors).
     RoomPermissionsSection* permissions_section() const { return permissions_; }
 
-    // Accessor for the "Emojis & Stickers" tab (initial-testing placement —
-    // see ImagePackEditorView.h). This tab manages its own independent
-    // Accept/Cancel lifecycle (image-pack persistence is a structurally
-    // different, currently nonexistent backend write, not one of the
-    // name/topic/security/permissions fields RoomSettingsChanges covers), so
-    // RoomSettingsView's own footer is hidden whenever this tab is selected.
+    // Accessor for the "Emojis & Stickers" tab (see ImagePackEditorView.h).
+    // Commits through this view's own shared Accept/Cancel footer like
+    // every other tab — image_pack_editor()->build_result() is read into
+    // RoomSettingsChanges::image_packs at Accept time, guarded by
+    // has_changes() same as every other field here.
     ImagePackEditorView* image_pack_editor() const { return image_packs_; }
 
     // Passthrough NativeTextField overlay rects for the image-pack tab,

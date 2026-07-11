@@ -316,23 +316,9 @@ TEST_CASE("ImagePackEditorView: clicking a header's remove chip deletes "
     // active_pack_index_ pointed at the removed pack (0) -> cleared.
     CHECK_FALSE(v.active_pack_index().has_value());
 
-    int accept_count = 0;
-    ImagePackEditorResult accepted;
-    v.on_accept = [&](ImagePackEditorResult r)
-    {
-        ++accept_count;
-        accepted = std::move(r);
-    };
-    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
-    const float footer_y = 600.0f - 64.0f;
-    const float btns_y   = footer_y + (64.0f - 36.0f) * 0.5f;
-    const float accept_x = 800.0f - 24.0f - 88.0f * 0.5f;
-    const tk::Point apt{accept_x, btns_y + 18.0f};
-    tk::Widget* ahit = v.dispatch_pointer_down(apt);
-    REQUIRE(ahit != nullptr);
-    ahit->on_pointer_up(ahit->world_to_local(apt), /*inside_self=*/true);
-
-    REQUIRE(accept_count == 1);
+    // build_result() is what RoomSettingsView's shared Accept click reads —
+    // this view no longer has its own Accept button to click.
+    const ImagePackEditorResult accepted = v.build_result();
     REQUIRE(accepted.removed_pack_ids.size() == 1);
     CHECK(accepted.removed_pack_ids[0] == "p1");
 }
@@ -373,16 +359,7 @@ TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
 
     CHECK(v.packs().empty());
 
-    ImagePackEditorResult accepted;
-    v.on_accept = [&](ImagePackEditorResult r) { accepted = std::move(r); };
-    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
-    const float footer_y = 600.0f - 64.0f;
-    const float btns_y   = footer_y + (64.0f - 36.0f) * 0.5f;
-    const float accept_x = 800.0f - 24.0f - 88.0f * 0.5f;
-    const tk::Point apt{accept_x, btns_y + 18.0f};
-    tk::Widget* ahit = v.dispatch_pointer_down(apt);
-    REQUIRE(ahit != nullptr);
-    ahit->on_pointer_up(ahit->world_to_local(apt), /*inside_self=*/true);
+    const ImagePackEditorResult accepted = v.build_result();
     CHECK(accepted.removed_pack_ids.empty());
 }
 
@@ -601,8 +578,8 @@ TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll",
     CHECK(v.list()->scroll_y() == 0.0f);
 }
 
-TEST_CASE("ImagePackEditorView: Accept fires on_accept with every "
-         "remaining pack, including a tile with only pending_bytes",
+TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
+         "pack, including a tile with only pending_bytes",
          "[image_pack][view]")
 {
     ImagePackEditorView v;
@@ -615,23 +592,9 @@ TEST_CASE("ImagePackEditorView: Accept fires on_accept with every "
     TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    ImagePackEditorResult accepted;
-    int accept_count = 0;
-    v.on_accept = [&](ImagePackEditorResult result)
-    {
-        ++accept_count;
-        accepted = std::move(result);
-    };
-
-    const float footer_y = 600.0f - 64.0f;
-    const float btns_y   = footer_y + (64.0f - 36.0f) * 0.5f;
-    const float accept_x = 800.0f - 24.0f - 88.0f * 0.5f;
-    const tk::Point pt{accept_x, btns_y + 18.0f};
-    tk::Widget* hit = v.dispatch_pointer_down(pt);
-    REQUIRE(hit != nullptr);
-    hit->on_pointer_up(hit->world_to_local(pt), /*inside_self=*/true);
-
-    REQUIRE(accept_count == 1);
+    // RoomSettingsView's shared Accept click reads this directly — this
+    // view no longer has its own Accept button.
+    const ImagePackEditorResult accepted = v.build_result();
     CHECK(accepted.room_id == "!room:example.org");
     REQUIRE(accepted.packs.size() == 1);
     CHECK(accepted.packs[0].pack_id == "p1");
@@ -643,7 +606,9 @@ TEST_CASE("ImagePackEditorView: Accept fires on_accept with every "
     CHECK(accepted.removed_pack_ids.empty());
 }
 
-TEST_CASE("ImagePackEditorView: Cancel fires on_cancel", "[image_pack][view]")
+TEST_CASE("ImagePackEditorView: set_committing(true) disables the Create "
+         "button and hides the native-overlay rects",
+         "[image_pack][view]")
 {
     ImagePackEditorView v;
     v.open("!room:example.org");
@@ -652,18 +617,17 @@ TEST_CASE("ImagePackEditorView: Cancel fires on_cancel", "[image_pack][view]")
     TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    int cancel_count = 0;
-    v.on_cancel = [&] { ++cancel_count; };
+    REQUIRE(v.create_button() != nullptr);
+    CHECK(v.create_button()->enabled());
+    CHECK_FALSE(v.new_pack_name_field_rect().empty());
 
-    const float footer_y = 600.0f - 64.0f;
-    const float btns_y   = footer_y + (64.0f - 36.0f) * 0.5f;
-    const float cancel_x = 800.0f - 24.0f - 88.0f - 8.0f - 88.0f * 0.5f;
-    const tk::Point pt{cancel_x, btns_y + 18.0f};
-    tk::Widget* hit = v.dispatch_pointer_down(pt);
-    REQUIRE(hit != nullptr);
-    hit->on_pointer_up(hit->world_to_local(pt), /*inside_self=*/true);
+    v.set_committing(true);
+    CHECK_FALSE(v.create_button()->enabled());
+    CHECK(v.new_pack_name_field_rect().empty());
 
-    CHECK(cancel_count == 1);
+    v.set_committing(false);
+    CHECK(v.create_button()->enabled());
+    CHECK_FALSE(v.new_pack_name_field_rect().empty());
 }
 
 TEST_CASE("ImagePackEditorView: close() closes the view", "[image_pack][view]")

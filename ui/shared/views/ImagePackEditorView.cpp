@@ -576,7 +576,10 @@ ImagePackEditorView::ImagePackEditorView()
         [this](std::size_t idx, tesseract::PackUsage u)
     {
         if (idx < packs_.size())
+        {
             packs_[idx].usage = u;
+            dirty_ = true;
+        }
     };
     list_->on_pack_remove_requested = [this](std::size_t idx) { remove_pack_(idx); };
     list_->on_tile_remove_requested =
@@ -594,40 +597,6 @@ ImagePackEditorView::ImagePackEditorView()
                 create_pack_();
         });
 
-    accept_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("Accept"), std::function<void()>{},
-                                     tk::Button::Variant::Primary));
-    cancel_btn_ = add_child(
-        std::make_unique<tk::Button>(tk::tr("Cancel"), std::function<void()>{},
-                                     tk::Button::Variant::Subtle));
-
-    accept_btn_->set_on_click(
-        [this]()
-        {
-            if (committing_)
-                return;
-            committing_ = true;
-            create_btn_->set_enabled(false);
-            cancel_btn_->set_enabled(false);
-            refresh_accept_enabled_();
-            if (on_accept)
-            {
-                ImagePackEditorResult result;
-                result.room_id         = room_id_;
-                result.packs           = packs_;
-                result.removed_pack_ids = removed_pack_ids_;
-                on_accept(std::move(result));
-            }
-        });
-    cancel_btn_->set_on_click(
-        [this]()
-        {
-            if (committing_)
-                return;
-            if (on_cancel)
-                on_cancel();
-        });
-
     // Closed-by-default; same idiom as RoomSettingsView/RoomInfoPanel.
     set_visible(false);
 }
@@ -639,6 +608,7 @@ void ImagePackEditorView::open(std::string room_id)
     room_id_    = std::move(room_id);
     open_       = true;
     committing_ = false;
+    dirty_      = false;
     packs_.clear();
     removed_pack_ids_.clear();
     active_pack_index_.reset();
@@ -653,8 +623,6 @@ void ImagePackEditorView::open(std::string room_id)
     list_->refresh();
 
     create_btn_->set_enabled(true);
-    accept_btn_->set_enabled(true);
-    cancel_btn_->set_enabled(true);
 
     set_visible(true);
     layout_changed_();
@@ -678,6 +646,7 @@ void ImagePackEditorView::set_available_packs(
 {
     if (!open_)
         return;
+    dirty_ = false;
     packs_.clear();
     packs_.reserve(packs.size());
     for (auto& p : packs)
@@ -697,7 +666,6 @@ void ImagePackEditorView::set_available_packs(
     list_->set_active_pack_index(active_pack_index_);
     list_->set_editing(std::nullopt);
     list_->refresh();
-    refresh_accept_enabled_();
     layout_changed_();
 
     if (on_pack_images_needed)
@@ -740,7 +708,7 @@ void ImagePackEditorView::set_image_provider(ImagePackImageProvider p)
 
 tk::Rect ImagePackEditorView::new_pack_name_field_rect() const
 {
-    if (!open_)
+    if (!open_ || committing_)
         return {};
     return new_pack_name_field_rect_;
 }
@@ -752,7 +720,7 @@ void ImagePackEditorView::set_new_pack_name_text(std::string text)
 
 tk::Rect ImagePackEditorView::shortcode_edit_rect() const
 {
-    if (!open_ || !editing_)
+    if (!open_ || !editing_ || committing_)
         return {};
     return list_->label_rect_at(editing_->first, editing_->second);
 }
@@ -771,6 +739,7 @@ void ImagePackEditorView::commit_editing_shortcode()
 {
     if (!editing_)
         return;
+    dirty_ = true;
     editing_.reset();
     list_->set_editing(std::nullopt);
     layout_changed_();
@@ -788,7 +757,7 @@ void ImagePackEditorView::begin_editing_shortcode_(std::size_t pack_idx,
 
 tk::Rect ImagePackEditorView::pack_name_edit_rect() const
 {
-    if (!open_ || !editing_pack_name_)
+    if (!open_ || !editing_pack_name_ || committing_)
         return {};
     return list_->name_rect_at(*editing_pack_name_);
 }
@@ -811,6 +780,7 @@ void ImagePackEditorView::commit_editing_pack_name()
 {
     if (!editing_pack_name_)
         return;
+    dirty_ = true;
     editing_pack_name_.reset();
     list_->set_editing_name(std::nullopt);
     layout_changed_();
@@ -832,6 +802,7 @@ void ImagePackEditorView::remove_tile_(std::size_t pack_idx, std::size_t tile_id
         return;
     auto& images = packs_[pack_idx].images;
     images.erase(images.begin() + static_cast<std::ptrdiff_t>(tile_idx));
+    dirty_ = true;
 
     if (editing_ && editing_->first == pack_idx)
     {
@@ -866,6 +837,7 @@ void ImagePackEditorView::remove_pack_(std::size_t idx)
     if (!packs_[idx].is_new)
         removed_pack_ids_.push_back(packs_[idx].pack_id);
     packs_.erase(packs_.begin() + static_cast<std::ptrdiff_t>(idx));
+    dirty_ = true;
 
     if (active_pack_index_)
     {
@@ -892,7 +864,6 @@ void ImagePackEditorView::remove_pack_(std::size_t idx)
     list_->set_editing(editing_);
     list_->set_editing_name(editing_pack_name_);
     list_->refresh();
-    refresh_accept_enabled_();
     layout_changed_();
 }
 
@@ -907,10 +878,10 @@ void ImagePackEditorView::create_pack_()
     active_pack_index_ = packs_.size() - 1;
     new_pack_name_draft_.clear();
     ++new_pack_name_reset_gen_;
+    dirty_ = true;
 
     list_->set_active_pack_index(active_pack_index_);
     list_->refresh();
-    refresh_accept_enabled_();
     layout_changed_();
 }
 
@@ -925,6 +896,7 @@ void ImagePackEditorView::add_pending_image_to_pack_(
     img.pending_mime  = std::move(mime);
     packs_[pack_idx].images.push_back(std::move(img));
     const std::size_t new_tile_idx = packs_[pack_idx].images.size() - 1;
+    dirty_ = true;
     list_->refresh();
 
     if (on_pending_image_added)
@@ -982,9 +954,20 @@ tk::Rect ImagePackEditorView::list_rect() const
     return list_->bounds();
 }
 
-void ImagePackEditorView::refresh_accept_enabled_()
+void ImagePackEditorView::set_committing(bool committing)
 {
-    accept_btn_->set_enabled(!committing_);
+    committing_ = committing;
+    create_btn_->set_enabled(!committing_);
+    layout_changed_();
+}
+
+ImagePackEditorResult ImagePackEditorView::build_result() const
+{
+    ImagePackEditorResult result;
+    result.room_id          = room_id_;
+    result.packs            = packs_;
+    result.removed_pack_ids = removed_pack_ids_;
+    return result;
 }
 
 void ImagePackEditorView::layout_changed_()
@@ -1016,26 +999,12 @@ void ImagePackEditorView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
             lc, {bounds.x + kPadX + field_w + kBtnGap, y, create_w, kRowH});
     y += kRowH + kPadY;
 
-    const float footer_y = bounds.y + bounds.h - kFooterH;
-    const float list_h   = std::max(0.0f, footer_y - y);
+    // No footer of our own to carve out — RoomSettingsView's shared
+    // Accept/Cancel footer now reserves that space, so the list gets the
+    // entire remaining height.
+    const float list_h = std::max(0.0f, bounds.y + bounds.h - y);
     if (list_)
         list_->arrange(lc, {bounds.x, y, bounds.w, list_h});
-
-    const float btn_w_min = 88.0f;
-    tk::Size accept_sz = accept_btn_ ? accept_btn_->measure(lc, {-1.0f, kBtnH})
-                                    : tk::Size{btn_w_min, kBtnH};
-    tk::Size cancel_sz = cancel_btn_ ? cancel_btn_->measure(lc, {-1.0f, kBtnH})
-                                    : tk::Size{btn_w_min, kBtnH};
-    const float accept_w = std::max(accept_sz.w, btn_w_min);
-    const float cancel_w = std::max(cancel_sz.w, btn_w_min);
-    const float btns_y   = footer_y + (kFooterH - kBtnH) * 0.5f;
-    const float accept_x = bounds.x + bounds.w - kPadX - accept_w;
-    const float cancel_x = accept_x - kBtnGap - cancel_w;
-
-    if (cancel_btn_)
-        cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
-    if (accept_btn_)
-        accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
 }
 
 void ImagePackEditorView::paint(tk::PaintCtx& ctx)
@@ -1082,16 +1051,6 @@ void ImagePackEditorView::paint(tk::PaintCtx& ctx)
             list_->paint(ctx);
         }
     }
-
-    const float footer_y = bounds_.y + bounds_.h - kFooterH;
-    cv.fill_rect({bounds_.x, footer_y, bounds_.w, 1.0f}, pal.separator);
-    cv.fill_rect({bounds_.x, footer_y + 1.0f, bounds_.w, kFooterH - 1.0f},
-                pal.sidebar_bg);
-
-    if (cancel_btn_ && cancel_btn_->visible())
-        cancel_btn_->paint(ctx);
-    if (accept_btn_ && accept_btn_->visible())
-        accept_btn_->paint(ctx);
 }
 
 } // namespace tesseract::views
