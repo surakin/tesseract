@@ -4235,6 +4235,29 @@ private:
         {
             return 0;
         }
+        // Ctrl+V / Shift+Ins with an image on the clipboard → intercept
+        // BEFORE BetterText's own WM_KEYDOWN handling. BetterText handles
+        // Ctrl+V internally (text-only) and never lets WM_PASTE reach this
+        // subclass proc, so the WM_PASTE handler below can't catch it.
+        if (msg == WM_KEYDOWN)
+        {
+            const bool is_ctrl_v =
+                wParam == 'V' && (GetKeyState(VK_CONTROL) & 0x8000);
+            const bool is_shift_ins =
+                wParam == VK_INSERT && (GetKeyState(VK_SHIFT) & 0x8000);
+            if ((is_ctrl_v || is_shift_ins) &&
+                self->on_image_paste_ && self->wic_ &&
+                (IsClipboardFormatAvailable(CF_DIBV5) ||
+                 IsClipboardFormatAvailable(CF_DIB)))
+            {
+                std::vector<std::uint8_t> bytes;
+                if (clipboard_image_to_png(self->wic_, hwnd, bytes))
+                {
+                    self->on_image_paste_(std::move(bytes), "image/png");
+                    return 0;
+                }
+            }
+        }
         // Intercept Ctrl+V / Shift+Insert / right-click "Paste" before
         // BetterText inserts text. If clipboard holds a DIB and we have an
         // image-paste handler, route to it and skip the default.
