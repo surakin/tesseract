@@ -421,11 +421,14 @@ public:
         tesseract::MediaPreviewConfig::Mode mode);
     void seed_room_media_section(const std::string& room_id);
     void fetch_room_security_state(const std::string& room_id);
-    void seed_image_pack_tab(const std::string& room_id);
-    void handle_image_pack_images_needed(const std::string& pack_id);
+    void seed_image_pack_tab(const std::string& room_id,
+                            tesseract::views::RoomSettingsView* target);
+    void handle_image_pack_images_needed(const std::string& pack_id,
+                                         tesseract::views::RoomSettingsView* target);
     void handle_image_pack_pending_image_added(std::uint64_t local_id,
                                                std::vector<uint8_t> bytes,
-                                               std::string mime);
+                                               std::string mime,
+                                               tesseract::views::RoomSettingsView* target);
     void wire_main_app_widget(tesseract::views::MainAppWidget* app);
     void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
                                tk::Host& host,
@@ -2333,13 +2336,16 @@ void MacShell::seed_room_media_section(const std::string& room_id)
     { seed_room_media_section_(room_id); }
 void MacShell::fetch_room_security_state(const std::string& room_id)
     { fetch_room_security_state_(room_id); }
-void MacShell::seed_image_pack_tab(const std::string& room_id)
-    { seed_image_pack_tab_(room_id); }
-void MacShell::handle_image_pack_images_needed(const std::string& pack_id)
-    { handle_image_pack_images_needed_(pack_id); }
+void MacShell::seed_image_pack_tab(const std::string& room_id,
+                                   tesseract::views::RoomSettingsView* target)
+    { seed_image_pack_tab_(room_id, target); }
+void MacShell::handle_image_pack_images_needed(const std::string& pack_id,
+                                               tesseract::views::RoomSettingsView* target)
+    { handle_image_pack_images_needed_(pack_id, target); }
 void MacShell::handle_image_pack_pending_image_added(
-    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string mime)
-    { handle_image_pack_pending_image_added_(local_id, std::move(bytes), std::move(mime)); }
+    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string mime,
+    tesseract::views::RoomSettingsView* target)
+    { handle_image_pack_pending_image_added_(local_id, std::move(bytes), std::move(mime), target); }
 void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
     { wire_main_app_widget_(app); }
 void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
@@ -3999,7 +4005,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 v->set_permissions_field_permissions(false);
                 v->set_own_power_level({});
                 s->_shell->seed_room_media_section(room_id);
-                s->_shell->seed_image_pack_tab(room_id);
+                s->_shell->seed_image_pack_tab(room_id, v);
                 return;
             }
             v->set_field_permissions(
@@ -4019,7 +4025,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_shell->client_->room_own_power_level(room_id));
             s->_shell->seed_room_media_section(room_id);
             s->_shell->fetch_room_security_state(room_id);
-            s->_shell->seed_image_pack_tab(room_id);
+            s->_shell->seed_image_pack_tab(room_id, v);
         };
         _mainApp->room_view()->on_room_settings_avatar_upload_requested =
             [weakSelf](std::string room_id)
@@ -4075,7 +4081,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = weakSelf;
             if (!s)
                 return;
-            s->_shell->handle_image_pack_images_needed(pack_id);
+            s->_shell->handle_image_pack_images_needed(
+                pack_id, s->_mainApp->room_view()->room_settings_view());
         };
         _mainApp->room_view()->room_settings_view()->on_image_pack_pending_image_added =
             [weakSelf](std::uint64_t local_id,
@@ -4085,7 +4092,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = weakSelf;
             if (!s)
                 return;
-            s->_shell->handle_image_pack_pending_image_added(local_id, bytes, mime);
+            s->_shell->handle_image_pack_pending_image_added(
+                local_id, bytes, mime, s->_mainApp->room_view()->room_settings_view());
         };
         _mainApp->room_view()->room_settings_view()->on_image_pack_accept =
             [weakSelf](tesseract::views::ImagePackEditorResult /*result*/)
@@ -4101,11 +4109,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         };
         // Space-root settings (wrench icon on SpaceRootView): the same
         // per-room-id permission gating / accept / avatar-upload plumbing
-        // above works unchanged for a space's room id — only the Media tab
-        // and Emojis & Stickers tab seeding are skipped, since
-        // RoomSettingsView hides both entirely in space-root mode (Media
-        // has no meaning for a space; image packs aren't wired to the
-        // space-root settings instance yet).
+        // above works unchanged for a space's room id — including image
+        // packs, which are ordinary room state so a space can host its own
+        // (only the Media tab is skipped, since it has no meaning for a
+        // space).
         _mainApp->space_root()->on_settings_opened =
             [weakSelf](std::string room_id)
         {
@@ -4121,6 +4128,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 v->set_security_field_permissions(false, false, false, false);
                 v->set_permissions_field_permissions(false);
                 v->set_own_power_level({});
+                s->_shell->seed_image_pack_tab(room_id, v);
                 return;
             }
             v->set_field_permissions(
@@ -4139,6 +4147,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             v->set_own_power_level(
                 s->_shell->client_->room_own_power_level(room_id));
             s->_shell->fetch_room_security_state(room_id);
+            s->_shell->seed_image_pack_tab(room_id, v);
         };
         _mainApp->space_root()->on_settings_avatar_upload_requested =
             [weakSelf](std::string room_id)
@@ -4176,6 +4185,46 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                                 media_override->mode);
                     });
                 });
+        };
+        _mainApp->space_root()->settings_view()->set_image_pack_provider(
+            [weakSelf](const std::string& url) -> const tk::Image*
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return nullptr;
+            if (const auto* img = s->_shell->account_manager_.image_cache().peek(url))
+                return img;
+            s->_shell->ensure_media_image(url, 96, 96);
+            return nullptr;
+        });
+        _mainApp->space_root()->settings_view()->on_image_pack_images_needed =
+            [weakSelf](std::string pack_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->handle_image_pack_images_needed(
+                pack_id, s->_mainApp->space_root()->settings_view());
+        };
+        _mainApp->space_root()->settings_view()->on_image_pack_pending_image_added =
+            [weakSelf](std::uint64_t local_id,
+                      const std::vector<std::uint8_t>& bytes,
+                      const std::string& mime)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->handle_image_pack_pending_image_added(
+                local_id, bytes, mime, s->_mainApp->space_root()->settings_view());
+        };
+        _mainApp->space_root()->settings_view()->on_image_pack_accept =
+            [weakSelf](tesseract::views::ImagePackEditorResult /*result*/)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            if (auto* v = s->_mainApp->space_root()->settings_view())
+                v->close();
         };
         _shell->setup_dm_callbacks();
         _mainApp->room_view()->on_ignore_user =

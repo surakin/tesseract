@@ -226,7 +226,6 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
 
     is_space_ = info.is_space;
     tabs_->set_tab_visible(kMediaTabIdx, !is_space_);
-    tabs_->set_tab_visible(kImagePackTabIndex, !is_space_);
     security_->set_encryption_field_visible(!is_space_);
 
     room_id_ = info.id;

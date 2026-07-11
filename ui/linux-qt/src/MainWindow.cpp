@@ -1267,7 +1267,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 v->set_permissions_field_permissions(false);
                 v->set_own_power_level({});
                 seed_room_media_section_(room_id);
-                seed_image_pack_tab_(room_id);
+                seed_image_pack_tab_(room_id, v);
                 return;
             }
             v->set_field_permissions(client_->can_set_room_name(room_id),
@@ -1284,7 +1284,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             v->set_own_power_level(client_->room_own_power_level(room_id));
             seed_room_media_section_(room_id);
             fetch_room_security_state_(room_id);
-            seed_image_pack_tab_(room_id);
+            seed_image_pack_tab_(room_id, v);
         };
         mainApp_->room_view()->on_room_settings_avatar_upload_requested =
             [this](const std::string& room_id)
@@ -1323,11 +1323,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mainApp_->room_view()->room_settings_view()->set_image_pack_provider(
             make_static_image_provider_with_fetch_(96, 96));
         mainApp_->room_view()->room_settings_view()->on_image_pack_images_needed =
-            [this](std::string pack_id) { handle_image_pack_images_needed_(pack_id); };
+            [this](std::string pack_id)
+        { handle_image_pack_images_needed_(pack_id, mainApp_->room_view()->room_settings_view()); };
         mainApp_->room_view()->room_settings_view()->on_image_pack_pending_image_added =
             [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
                   const std::string& mime)
-        { handle_image_pack_pending_image_added_(local_id, bytes, mime); };
+        { handle_image_pack_pending_image_added_(local_id, bytes, mime, mainApp_->room_view()->room_settings_view()); };
         mainApp_->room_view()->room_settings_view()->on_image_pack_accept =
             [this](tesseract::views::ImagePackEditorResult /*result*/)
         {
@@ -1339,11 +1340,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         };
         // Space-root settings (wrench icon on SpaceRootView): the same
         // per-room-id permission gating / accept / avatar-upload plumbing
-        // above works unchanged for a space's room id — only the Media tab
-        // and Emojis & Stickers tab seeding are skipped, since
-        // RoomSettingsView hides both entirely in space-root mode (Media
-        // has no meaning for a space; image packs aren't wired to the
-        // space-root settings instance yet).
+        // above works unchanged for a space's room id — including image
+        // packs, which are ordinary room state so a space can host its own
+        // (only the Media tab is skipped, since it has no meaning for a
+        // space).
         mainApp_->space_root()->on_settings_opened =
             [this](const std::string& room_id)
         {
@@ -1356,6 +1356,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 v->set_security_field_permissions(false, false, false, false);
                 v->set_permissions_field_permissions(false);
                 v->set_own_power_level({});
+                seed_image_pack_tab_(room_id, v);
                 return;
             }
             v->set_field_permissions(client_->can_set_room_name(room_id),
@@ -1371,6 +1372,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             v->set_permissions_state(client_->room_power_levels(room_id));
             v->set_own_power_level(client_->room_own_power_level(room_id));
             fetch_room_security_state_(room_id);
+            seed_image_pack_tab_(room_id, v);
         };
         mainApp_->space_root()->on_settings_avatar_upload_requested =
             [this](const std::string& room_id)
@@ -1406,6 +1408,27 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         },
                         Qt::QueuedConnection);
                 });
+        };
+        mainApp_->space_root()->settings_view()->set_image_pack_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        mainApp_->space_root()->settings_view()->on_image_pack_images_needed =
+            [this](std::string pack_id)
+        {
+            handle_image_pack_images_needed_(
+                pack_id, mainApp_->space_root()->settings_view());
+        };
+        mainApp_->space_root()->settings_view()->on_image_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        {
+            handle_image_pack_pending_image_added_(
+                local_id, bytes, mime, mainApp_->space_root()->settings_view());
+        };
+        mainApp_->space_root()->settings_view()->on_image_pack_accept =
+            [this](tesseract::views::ImagePackEditorResult /*result*/)
+        {
+            if (auto* v = mainApp_->space_root()->settings_view())
+                v->close();
         };
         setup_dm_callbacks();
         mainApp_->room_view()->on_ignore_user =
