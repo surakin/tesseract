@@ -257,10 +257,38 @@ pub(super) fn resanitized_formatted_body(
     let Ok(json) = serde_json::from_str::<serde_json::Value>(raw.json().get()) else {
         return fallback;
     };
-    let is_html = json.pointer("/content/format").and_then(|f| f.as_str())
+    resanitized_formatted_body_from_json(&json, fallback)
+}
+
+/// JSON-pointer logic for `resanitized_formatted_body`, split out so it can
+/// be unit-tested without constructing an `EventTimelineItem`.
+///
+/// For a replacement (`m.replace`) event, `latest_json()` is the *edit*
+/// event, whose top-level `content.format`/`content.formatted_body` are only
+/// a legacy fallback for clients that don't understand edits — and
+/// ruma-events' `make_replacement_body()` unconditionally stamps a synthetic
+/// `"* "` HTML fallback there even for plain-text edits with no real HTML.
+/// The real content lives under `content["m.new_content"]`, so replacements
+/// must read from there instead of the top level.
+pub(super) fn resanitized_formatted_body_from_json(
+    json: &serde_json::Value,
+    fallback: String,
+) -> String {
+    let is_replacement = json
+        .pointer("/content/m.relates_to/rel_type")
+        .and_then(|v| v.as_str())
+        == Some("m.replace");
+    let content_ptr = if is_replacement {
+        "/content/m.new_content"
+    } else {
+        "/content"
+    };
+    let is_html = json
+        .pointer(&format!("{content_ptr}/format"))
+        .and_then(|f| f.as_str())
         == Some("org.matrix.custom.html");
     let Some(raw_html) = json
-        .pointer("/content/formatted_body")
+        .pointer(&format!("{content_ptr}/formatted_body"))
         .and_then(|f| f.as_str())
         .filter(|_| is_html)
     else {
@@ -1280,5 +1308,92 @@ mod membership_action_tests {
         assert_eq!(membership_action_str(M::None), None);
         assert_eq!(membership_action_str(M::Error), None);
         assert_eq!(membership_action_str(M::NotImplemented), None);
+    }
+}
+
+#[cfg(test)]
+mod resanitized_formatted_body_tests {
+    use super::resanitized_formatted_body_from_json;
+
+    #[test]
+    fn plain_text_edit_ignores_synthetic_fallback_html() {
+        // ruma-events' make_replacement_body() unconditionally stamps a
+        // synthetic "* " HTML fallback on the top-level content of an edit
+        // event, even when the edit itself has no real HTML. The resolved
+        // fallback (passed in from the aggregated content) must win, not
+        // that synthetic top-level "*".
+        let json = serde_json::json!({
+            "type": "m.room.message",
+            "content": {
+                "msgtype": "m.text",
+                "body": "* edited body",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "* ",
+                "m.new_content": { "msgtype": "m.text", "body": "edited body" },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        });
+        assert_eq!(
+            resanitized_formatted_body_from_json(&json, String::new()),
+            ""
+        );
+    }
+
+    #[test]
+    fn html_edit_reads_new_content_formatted_body() {
+        let json = serde_json::json!({
+            "type": "m.room.message",
+            "content": {
+                "msgtype": "m.text",
+                "body": "* edited body",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "* ",
+                "m.new_content": {
+                    "msgtype": "m.text",
+                    "body": "edited body",
+                    "format": "org.matrix.custom.html",
+                    "formatted_body": "<p>edited body</p>"
+                },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        });
+        assert_eq!(
+            resanitized_formatted_body_from_json(&json, String::new()),
+            "<p>edited body</p>"
+        );
+    }
+
+    #[test]
+    fn non_edit_event_still_reads_top_level_formatted_body() {
+        let json = serde_json::json!({
+            "type": "m.room.message",
+            "content": {
+                "msgtype": "m.text",
+                "body": "edited body",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "<p>edited body</p>"
+            }
+        });
+        assert_eq!(
+            resanitized_formatted_body_from_json(&json, String::new()),
+            "<p>edited body</p>"
+        );
+    }
+
+    #[test]
+    fn plain_text_edit_with_no_formatted_new_content_falls_back() {
+        let json = serde_json::json!({
+            "type": "m.room.message",
+            "content": {
+                "msgtype": "m.text",
+                "body": "* edited body",
+                "m.new_content": { "msgtype": "m.text", "body": "edited body" },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        });
+        assert_eq!(
+            resanitized_formatted_body_from_json(&json, "fallback".to_owned()),
+            "fallback"
+        );
     }
 }
