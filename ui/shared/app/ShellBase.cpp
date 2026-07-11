@@ -8365,6 +8365,66 @@ void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id,
         });
 }
 
+std::vector<std::string> ShellBase::apply_image_pack_changes_(
+    tesseract::Client* client, const views::ImagePackEditorResult& result)
+{
+    std::vector<std::string> errors;
+    if (!client)
+    {
+        errors.push_back("image_packs: not logged in");
+        return errors;
+    }
+
+    for (const auto& state_key : result.removed_state_keys)
+    {
+        auto r = client->remove_room_pack(result.room_id, state_key);
+        if (!r.ok)
+            errors.push_back("image_packs.remove: " + r.message);
+    }
+
+    for (const auto& pack : result.packs)
+    {
+        std::vector<tesseract::PackImageInput> resolved;
+        resolved.reserve(pack.images.size());
+        for (const auto& img : pack.images)
+        {
+            if (!img.existing_url.empty())
+            {
+                resolved.push_back(tesseract::PackImageInput{
+                    .shortcode  = img.shortcode,
+                    .url        = img.existing_url,
+                    .body       = img.body,
+                    .info_json  = img.info_json,
+                });
+            }
+            else if (!img.pending_bytes.empty())
+            {
+                auto upload = client->upload_media(img.pending_bytes, img.pending_mime);
+                if (!upload.ok)
+                {
+                    errors.push_back("image_packs." + pack.display_name + ": " +
+                                     upload.message);
+                    continue; // drop just this image; keep the rest of the pack
+                }
+                resolved.push_back(tesseract::PackImageInput{
+                    .shortcode  = img.shortcode,
+                    .url        = upload.message,
+                    .body       = img.body,
+                    .info_json  = img.info_json,
+                });
+            }
+        }
+
+        auto r = client->save_room_pack(result.room_id, pack.state_key, pack.is_new,
+                                        pack.display_name,
+                                        static_cast<std::uint8_t>(pack.usage), resolved);
+        if (!r.ok)
+            errors.push_back("image_packs." + pack.display_name + ": " + r.message);
+    }
+
+    return errors;
+}
+
 ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
     tesseract::Client* client, const std::string& room_id,
     const views::RoomSettingsChanges& changes)
@@ -8418,6 +8478,11 @@ ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
     {
         auto r = client->set_room_power_levels(room_id, *changes.permissions);
         if (!r.ok) errors.push_back("permissions: " + r.message);
+    }
+    if (changes.image_packs)
+    {
+        auto pack_errors = apply_image_pack_changes_(client, *changes.image_packs);
+        errors.insert(errors.end(), pack_errors.begin(), pack_errors.end());
     }
     // Fire-and-forget account-data write — no completion result to check,
     // so it never contributes to the joined error string. The optimistic

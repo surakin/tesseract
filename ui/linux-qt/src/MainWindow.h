@@ -375,7 +375,7 @@ private:
     std::unique_ptr<tk::NativeTextField> imagePackNameField_;
     bool imagePackNameFieldVisible_ = false;
     std::unique_ptr<tk::NativeTextField> imagePackShortcodeField_;
-    bool imagePackShortcodeFieldVisible_ = false;
+    std::uint64_t imagePackShortcodeResetGenSeen_ = 0;
     std::unique_ptr<tk::NativeTextField> imagePackRenameField_;
     bool imagePackRenameFieldVisible_ = false;
     // Zero-size clipboard-paste catcher, focused whenever the tab becomes

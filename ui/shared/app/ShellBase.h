@@ -1662,6 +1662,21 @@ protected:
         tesseract::Client* client, const std::string& room_id,
         const views::RoomSettingsChanges& changes);
 
+    // Persist the Emojis & Stickers tab's staged changes (see
+    // apply_room_settings_'s `changes.image_packs` branch, which calls
+    // this): uploads any brand-new image's bytes via `upload_media` first
+    // (a single image's upload failure drops only that image, recorded as
+    // an error, and does not abort the rest of that pack's save), then
+    // calls `Client::save_room_pack` once per staged pack (a wholesale
+    // replace, not an upsert — see ImagePackEditorResult's own doc
+    // comment) and `Client::remove_room_pack` once per
+    // `removed_state_keys` entry. Returns one error string per failure,
+    // prefixed `"image_packs.<what>: "`, for the caller to join into the
+    // same aggregate error `apply_room_settings_` already builds for every
+    // other field. Blocks — call from a worker thread.
+    static std::vector<std::string> apply_image_pack_changes_(
+        tesseract::Client* client, const views::ImagePackEditorResult& result);
+
     // Monotonic clock in ms from the SAME epoch the shell's animation
     // timer / anim_cache_.advance() uses (Qt: QDateTime msecs; GTK:
     // g_get_monotonic_time/1000; macOS: NSDate*1000; Win32: GetTickCount64).

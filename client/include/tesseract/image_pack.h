@@ -111,4 +111,16 @@ inline const char* pack_usage_filter_to_str(PackUsageFilter f) noexcept
     }
 }
 
+/// One resolved image passed to `Client::save_room_pack` — `url` must
+/// already be an uploaded `mxc://` URI (upload any brand-new image bytes
+/// via `Client::upload_media` first); `save_room_pack` never uploads
+/// anything itself.
+struct PackImageInput
+{
+    std::string shortcode;
+    std::string url; // mxc://
+    std::string body;
+    std::string info_json;
+};
+
 } // namespace tesseract

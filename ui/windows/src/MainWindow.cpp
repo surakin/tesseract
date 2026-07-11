@@ -2769,7 +2769,7 @@ void MainWindow::on_create(HWND hwnd)
                     rsv && !rsv->image_pack_list_rect().empty())
                 {
                     rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                      std::move(mime));
+                                                      std::move(mime), filename);
                     return;
                 }
                 auto outcome = tesseract::views::dispatch_file_drop(
@@ -3539,7 +3539,7 @@ void MainWindow::on_create(HWND hwnd)
                 auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
                 shortcode_popup_widget_ = pw.get();
                 shortcode_popup_widget_->set_image_provider(
-                    make_static_image_provider_());
+                    make_static_image_provider_with_fetch_(28, 28));
                 shortcode_popup_surface_->set_root(std::move(pw));
             }
             tesseract::views::ShortcodeController::Hooks sch;
@@ -3555,7 +3555,7 @@ void MainWindow::on_create(HWND hwnd)
                 [this]() { return emoticons_for_room_(current_room_id_); };
             sch.fetch_image = [this](const std::string& url)
             { ensure_media_image_(url, 28, 28); };
-            sch.resolve_image = make_static_image_provider_();
+            sch.resolve_image = make_static_image_provider_with_fetch_(28, 28);
             shortcode_controller_ =
                 std::make_unique<tesseract::views::ShortcodeController>(
                     room_text_area_.get(), shortcode_popup_widget_,
@@ -3635,7 +3635,7 @@ void MainWindow::on_create(HWND hwnd)
             {
                 if (!focused)
                     if (auto* v = active_room_settings_view_())
-                        v->commit_image_pack_editing_shortcode();
+                        v->cancel_image_pack_editing_shortcode();
             });
         image_pack_shortcode_field_->set_visible(false);
 
@@ -4164,15 +4164,26 @@ void MainWindow::on_create(HWND hwnd)
 
                     const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
                     const bool shortcode_now_visible = !hide && !scr.empty();
-                    const bool shortcode_was_visible =
-                        image_pack_shortcode_field_visible_;
-                    image_pack_shortcode_field_visible_ = shortcode_now_visible;
                     image_pack_shortcode_field_->set_visible(shortcode_now_visible);
                     if (shortcode_now_visible)
                     {
                         image_pack_shortcode_field_->set_rect(scr);
-                        if (!shortcode_was_visible)
+                        // The field stays visible continuously across a
+                        // handoff from one tile's shortcode to another
+                        // (e.g. dropping a second image while the
+                        // first's field is still open) — diff the reset
+                        // generation, not a visibility rising edge, so
+                        // the new tile's suggested shortcode always
+                        // replaces whatever was previously displayed.
+                        const std::uint64_t shortcode_gen =
+                            rsv->image_pack_shortcode_edit_reset_generation();
+                        if (shortcode_gen != image_pack_shortcode_reset_gen_seen_)
+                        {
+                            image_pack_shortcode_reset_gen_seen_ = shortcode_gen;
+                            image_pack_shortcode_field_->set_text(
+                                rsv->image_pack_shortcode_edit_initial_text());
                             image_pack_shortcode_field_->set_focused(true);
+                        }
                     }
 
                     const tk::Rect renr = rsv->image_pack_name_edit_rect();

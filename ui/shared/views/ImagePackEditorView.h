@@ -62,17 +62,18 @@ struct StagedPack
     std::vector<StagedPackImage> images;
 };
 
-// The full staged snapshot returned by build_result() — not a diff. Whoever
-// implements the (currently nonexistent) backend create/update/delete call
-// can diff `packs` against Client::list_image_packs()/list_pack_images()
-// for the room; `removed_pack_ids` names existing packs the user deleted
-// (a pack that never existed server-side just isn't in `packs` at all, so
-// it needs no entry here).
+// The full staged snapshot returned by build_result() — not a diff. Each
+// entry in `packs` is written as a wholesale replacement of that pack's
+// images (see ShellBase::apply_image_pack_changes_), since there's no
+// diff to apply incrementally. `removed_state_keys` names existing packs
+// the user deleted, by state_key (not the synthetic `pack_id`, which the
+// backend has no use for) — a pack that never existed server-side just
+// isn't in `packs` at all, so it needs no entry here.
 struct ImagePackEditorResult
 {
     std::string room_id;
     std::vector<StagedPack> packs;
-    std::vector<std::string> removed_pack_ids;
+    std::vector<std::string> removed_state_keys;
 };
 
 // The scrollable list of pack sections. Owns no data — reads directly from
@@ -250,9 +251,25 @@ public:
     // layout pass instead and calls set_text("") when it changes.
     std::uint64_t new_pack_name_reset_generation() const { return new_pack_name_reset_gen_; }
 
-    tk::Rect shortcode_edit_rect() const; // valid only while a tile is being edited
-    void     set_editing_shortcode_text(std::string text);
-    void     commit_editing_shortcode(); // called by the host on submit/blur
+    tk::Rect    shortcode_edit_rect() const; // valid only while a tile is being edited
+    std::string shortcode_edit_initial_text() const; // seed text once, per shortcode_edit_reset_generation()
+    // Bumped every time a *different* tile starts being edited (a fresh
+    // drop while another tile's shortcode was still open counts — the
+    // field stays visible continuously across that handoff, with no
+    // visibility-transition edge). Diff this each layout pass (mirrors
+    // new_pack_name_reset_generation()) and re-seed the native field's
+    // text from shortcode_edit_initial_text() whenever it changes —
+    // otherwise the field keeps showing whichever tile's text it last
+    // held instead of the newly-targeted tile's.
+    std::uint64_t shortcode_edit_reset_generation() const { return shortcode_edit_reset_gen_; }
+    void        set_editing_shortcode_text(std::string text);
+    void        commit_editing_shortcode(); // called by the host on submit/Enter
+    // Discards any edits made since this tile's shortcode field was
+    // opened, restoring the value it had at that point (the suggested
+    // shortcode for a fresh drop, or the existing one when renaming) —
+    // called by the host when focus leaves the field by any means other
+    // than Enter (click elsewhere, Escape, switching tabs, etc).
+    void        cancel_editing_shortcode();
 
     // Clicking an existing pack's name header turns it into an editable
     // NativeTextField overlay (mirrors the shortcode fields above, scoped to
@@ -263,15 +280,20 @@ public:
     void        commit_editing_pack_name(); // called by the host on submit/blur
 
     // Clipboard paste has no position — targets the active pack. No-op if
-    // there is no active pack (e.g. the room has no packs yet).
+    // there is no active pack (e.g. the room has no packs yet). Paste
+    // never carries a filename, so the new tile's shortcode starts empty
+    // (same as before this existed).
     void add_pending_image_to_active(std::vector<std::uint8_t> bytes, std::string mime);
     // Drag-drop has a position (world/surface space, same origin as
     // bounds()/dispatch_pointer_down elsewhere in this codebase). Targets
     // whichever pack's section contains `world`; falls back to the active
     // pack if the point isn't over any pack's section; no-op if neither
-    // resolves.
+    // resolves. `filename` (the dropped file's basename, empty if
+    // unavailable) seeds the new tile's shortcode via
+    // suggest_pack_shortcode_from_filename, de-duped against that pack's
+    // other staged images.
     void add_pending_image_at(tk::Point world, std::vector<std::uint8_t> bytes,
-                              std::string mime);
+                              std::string mime, std::string filename = {});
 
     std::function<void(std::uint64_t local_id,
                        const std::vector<std::uint8_t>& bytes,
@@ -327,10 +349,11 @@ private:
     void remove_tile_(std::size_t pack_idx, std::size_t tile_idx);
     void layout_changed_();
     // Common tail of add_pending_image_to_active/add_pending_image_at once
-    // the target pack index is known.
+    // the target pack index is known. `filename` empty means no suggested
+    // shortcode (paste).
     void add_pending_image_to_pack_(std::size_t pack_idx,
                                     std::vector<std::uint8_t> bytes,
-                                    std::string mime);
+                                    std::string mime, std::string filename);
 
     bool open_       = false;
     bool committing_ = false;
@@ -339,7 +362,7 @@ private:
 
     std::string room_id_;
     std::vector<StagedPack> packs_;
-    std::vector<std::string> removed_pack_ids_;
+    std::vector<std::string> removed_state_keys_;
     std::optional<std::size_t> active_pack_index_;
     std::uint64_t next_local_id_ = 0;
 
@@ -347,6 +370,8 @@ private:
     std::uint64_t new_pack_name_reset_gen_ = 0;
 
     std::optional<std::pair<std::size_t, std::size_t>> editing_; // (pack_idx, tile_idx)
+    std::uint64_t shortcode_edit_reset_gen_ = 0;
+    std::string editing_shortcode_original_; // snapshot for cancel_editing_shortcode
     std::optional<std::size_t> editing_pack_name_;
 
     ImagePackSectionList* list_       = nullptr;

@@ -794,6 +794,197 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Create or replace one of a room's MSC2545 packs — see the FFI decl's
+    /// doc comment in bridge.rs for the full contract (wholesale replace,
+    /// new-pack state_key assignment, existing-type preservation).
+    #[cfg(not(test))]
+    pub fn save_room_pack(
+        &self,
+        room_id: &str,
+        state_key: &str,
+        is_new: bool,
+        display_name: &str,
+        usage_mask: u8,
+        images: Vec<crate::ffi::PackImageInputFfi>,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let rid = match room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() {
+            Ok(r) => r,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        if client.get_room(&rid).is_none() {
+            return err("room not found");
+        }
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/save_room_pack".to_string(),
+        );
+
+        // Build the images map fresh — a full replacement, not a merge onto
+        // existing content, since the caller (ImagePackEditorView) always
+        // stages the complete desired set for this pack, not a diff. This
+        // is what makes a removed tile actually disappear.
+        //
+        // Assign a fresh shortcode (mirrors save_sticker_to_user_pack's
+        // suggest_shortcode-based collision handling) whenever the staged
+        // one is empty or already taken in this same batch — the editor
+        // lets images be dropped with no shortcode at all, and every
+        // untitled image in the same drop shares the same empty string, so
+        // inserting them verbatim would silently collapse all but the last
+        // one into a single map entry.
+        let mut images_obj = serde_json::Map::new();
+        for img in &images {
+            let info: serde_json::Value = serde_json::from_str(&img.info_json)
+                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+            let mut entry = match info {
+                serde_json::Value::Object(m) => m,
+                _ => serde_json::Map::new(),
+            };
+            entry.insert("url".to_owned(), serde_json::Value::String(img.url.clone()));
+            if !img.body.is_empty() {
+                entry.insert("body".to_owned(), serde_json::Value::String(img.body.clone()));
+            }
+            let shortcode = if img.shortcode.is_empty() || images_obj.contains_key(&img.shortcode) {
+                crate::image_packs::suggest_shortcode(&img.body, &images_obj)
+            } else {
+                img.shortcode.clone()
+            };
+            images_obj.insert(shortcode, serde_json::Value::Object(entry));
+        }
+        let usage_strs = crate::image_packs::usage_mask_to_strs(usage_mask);
+        let content = serde_json::json!({
+            "pack": { "display_name": display_name, "usage": usage_strs },
+            "images": serde_json::Value::Object(images_obj),
+        });
+
+        let (final_state_key, types_to_write): (String, Vec<&'static str>) = if is_new {
+            let existing_keys = self.rt.block_on(super::room_pack_state_keys(
+                &client,
+                &self.room_state_cache,
+                &rid,
+            ));
+            let key = crate::image_packs::loop_suffixed_state_key(&existing_keys, display_name);
+            (key, vec![crate::image_packs::TYPE_ROOM_PACK_STABLE])
+        } else {
+            let types = self.rt.block_on(super::room_pack_event_types_for_key(
+                &client,
+                &self.room_state_cache,
+                &rid,
+                state_key,
+            ));
+            let types = if types.is_empty() {
+                vec![crate::image_packs::TYPE_ROOM_PACK_STABLE]
+            } else {
+                types
+            };
+            (state_key.to_owned(), types)
+        };
+
+        for ev_type in &types_to_write {
+            let client_for_write = client.clone();
+            let room_for_write = match client_for_write.get_room(&rid) {
+                Some(r) => r,
+                None => return err("room not found"),
+            };
+            let key_for_write = final_state_key.clone();
+            let content_for_write = content.clone();
+            let ev_type_owned = (*ev_type).to_owned();
+            let result = self.rt.block_on(async move {
+                room_for_write
+                    .send_state_event_raw(&ev_type_owned, &key_for_write, content_for_write)
+                    .await
+            });
+            if let Err(e) = result {
+                return err(format!("{ev_type}: {e}"));
+            }
+        }
+
+        super::invalidate_room_state_cache(&self.room_state_cache, &rid);
+        self.refresh_image_packs_blocking();
+        ok(final_state_key)
+    }
+
+    #[cfg(test)]
+    pub fn save_room_pack(
+        &self,
+        _room_id: &str,
+        _state_key: &str,
+        _is_new: bool,
+        _display_name: &str,
+        _usage_mask: u8,
+        _images: Vec<crate::ffi::PackImageInputFfi>,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Empty an existing room pack's `images` map — see the FFI decl's doc
+    /// comment in bridge.rs for the full contract (can't truly delete a
+    /// state event, only empty it).
+    #[cfg(not(test))]
+    pub fn remove_room_pack(&self, room_id: &str, state_key: &str) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let rid = match room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() {
+            Ok(r) => r,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "image_packs/remove_room_pack".to_string(),
+        );
+
+        let types = self.rt.block_on(super::room_pack_event_types_for_key(
+            &client,
+            &self.room_state_cache,
+            &rid,
+            state_key,
+        ));
+        if types.is_empty() {
+            // Nothing to remove — no-op success, mirrors remove_user_pack_image's
+            // "shortcode doesn't exist" no-op-ok behavior.
+            return ok("");
+        }
+
+        let content = serde_json::json!({ "images": serde_json::Value::Object(serde_json::Map::new()) });
+        for ev_type in &types {
+            let room_for_write = match client.get_room(&rid) {
+                Some(r) => r,
+                None => return err("room not found"),
+            };
+            let key_for_write = state_key.to_owned();
+            let content_for_write = content.clone();
+            let ev_type_owned = (*ev_type).to_owned();
+            let result = self.rt.block_on(async move {
+                room_for_write
+                    .send_state_event_raw(&ev_type_owned, &key_for_write, content_for_write)
+                    .await
+            });
+            if let Err(e) = result {
+                return err(format!("{ev_type}: {e}"));
+            }
+        }
+
+        super::invalidate_room_state_cache(&self.room_state_cache, &rid);
+        self.refresh_image_packs_blocking();
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn remove_room_pack(&self, _room_id: &str, _state_key: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// Synchronously rebuild the aggregated image-pack cache and replace it
     /// in place, firing `on_image_packs_updated` — used after a subscription
     /// change so `ImagePack::is_subscribed` is correct before the call

@@ -37,12 +37,15 @@ tesseract::ImagePack make_pack(std::string id, std::string name,
                                const std::string& room_id)
 {
     tesseract::ImagePack p;
+    // Distinct per-pack state_key (mirroring `id`, not production's
+    // "room:!id/key" format — this is a test fixture) so removed_state_keys
+    // can tell which of several packs in a fixture was actually removed.
+    p.source_state_key = id;
     p.id = std::move(id);
     p.display_name = std::move(name);
     p.usage = tesseract::PackUsage::Any;
     p.source_kind = tesseract::PackSourceKind::Room;
     p.source_room = room_id;
-    p.source_state_key = "";
     return p;
 }
 
@@ -402,8 +405,8 @@ TEST_CASE("ImagePackEditorView: clicking a header's remove chip deletes "
     // build_result() is what RoomSettingsView's shared Accept click reads â€”
     // this view no longer has its own Accept button to click.
     const ImagePackEditorResult accepted = v.build_result();
-    REQUIRE(accepted.removed_pack_ids.size() == 1);
-    CHECK(accepted.removed_pack_ids[0] == "p1");
+    REQUIRE(accepted.removed_state_keys.size() == 1);
+    CHECK(accepted.removed_state_keys[0] == "p1");
 }
 
 TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
@@ -444,7 +447,7 @@ TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
     CHECK(v.packs().empty());
 
     const ImagePackEditorResult accepted = v.build_result();
-    CHECK(accepted.removed_pack_ids.empty());
+    CHECK(accepted.removed_state_keys.empty());
 }
 
 TEST_CASE("ImagePackEditorView: add_pending_image_to_active targets the "
@@ -697,7 +700,7 @@ TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
     CHECK(accepted.packs[0].images[1].existing_url.empty());
     CHECK(accepted.packs[0].images[1].pending_bytes ==
          std::vector<std::uint8_t>{9, 9, 9});
-    CHECK(accepted.removed_pack_ids.empty());
+    CHECK(accepted.removed_state_keys.empty());
 }
 
 TEST_CASE("ImagePackEditorView: set_committing(true) disables the Create "

@@ -514,6 +514,11 @@ void RoomSettingsView::commit_image_pack_editing_shortcode()
     image_packs_->commit_editing_shortcode();
 }
 
+void RoomSettingsView::cancel_image_pack_editing_shortcode()
+{
+    image_packs_->cancel_editing_shortcode();
+}
+
 void RoomSettingsView::set_image_pack_editing_name_text(std::string text)
 {
     image_packs_->set_editing_pack_name_text(std::move(text));
@@ -531,9 +536,11 @@ void RoomSettingsView::add_image_pack_pasted_image(
 }
 
 void RoomSettingsView::add_image_pack_dropped_image(
-    tk::Point pos, std::vector<std::uint8_t> bytes, std::string mime)
+    tk::Point pos, std::vector<std::uint8_t> bytes, std::string mime,
+    std::string filename)
 {
-    image_packs_->add_pending_image_at(pos, std::move(bytes), std::move(mime));
+    image_packs_->add_pending_image_at(pos, std::move(bytes), std::move(mime),
+                                       std::move(filename));
 }
 
 bool RoomSettingsView::image_pack_tab_selected_() const
@@ -558,6 +565,16 @@ tk::Rect RoomSettingsView::image_pack_shortcode_edit_rect() const
     if (!image_pack_tab_selected_())
         return {};
     return image_packs_->shortcode_edit_rect();
+}
+
+std::string RoomSettingsView::image_pack_shortcode_edit_initial_text() const
+{
+    return image_packs_->shortcode_edit_initial_text();
+}
+
+std::uint64_t RoomSettingsView::image_pack_shortcode_edit_reset_generation() const
+{
+    return image_packs_->shortcode_edit_reset_generation();
 }
 
 tk::Rect RoomSettingsView::image_pack_name_edit_rect() const

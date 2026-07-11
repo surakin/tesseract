@@ -1414,6 +1414,34 @@ public:
                                     const std::string& state_key,
                                     bool subscribed);
 
+    /// Create or replace one of a room's MSC2545 packs — a wholesale
+    /// replace of its images with exactly `images` (not an upsert), since
+    /// callers (ImagePackEditorView) always stage a full snapshot per
+    /// pack, not a diff. Pass `is_new = true` with an empty `state_key`
+    /// for a brand-new pack — a fresh, collision-free key is assigned
+    /// from `display_name` and returned in `Result::message` on success.
+    /// For an existing pack, `state_key` must name it; the write goes to
+    /// whichever of the stable `m.room.image_pack` / unstable
+    /// `im.ponies.room_emotes` types it currently has content under
+    /// (both, if both) so this never introduces a duplicate copy under a
+    /// type the room didn't already use. Refreshes the local pack cache
+    /// synchronously before returning (`on_image_packs_updated` fires
+    /// too). Blocks — call from a worker thread.
+    Result save_room_pack(const std::string& room_id,
+                          const std::string& state_key, bool is_new,
+                          const std::string& display_name,
+                          std::uint8_t usage_mask,
+                          const std::vector<PackImageInput>& images);
+
+    /// Empty an existing room pack's images (`{"images": {}}`), written to
+    /// whichever event type(s) it currently has content under. Matrix
+    /// state events cannot be truly deleted — the pack will keep
+    /// appearing as a zero-image entry anywhere packs are listed until
+    /// the room's state history is redacted (out of scope here). Same
+    /// cache-refresh tail as `save_room_pack`. Blocks — worker thread.
+    Result remove_room_pack(const std::string& room_id,
+                            const std::string& state_key);
+
     // ------------------------------------------------------------------
     // Spaces
     // ------------------------------------------------------------------

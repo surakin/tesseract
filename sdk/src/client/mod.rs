@@ -1256,6 +1256,49 @@ async fn fetch_all_room_pack_contents(
     by_state_key.into_iter().collect()
 }
 
+/// Every state_key currently in use by any of `ROOM_PACK_TYPES` in this
+/// room — used by `save_room_pack` to pick a collision-free key for a
+/// brand-new pack.
+#[cfg(not(test))]
+pub(super) async fn room_pack_state_keys(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+) -> std::collections::BTreeSet<String> {
+    fetch_all_room_pack_contents(client, cache, room_id)
+        .await
+        .into_iter()
+        .map(|(state_key, _)| state_key)
+        .collect()
+}
+
+/// Which of `ROOM_PACK_TYPES` currently have content for `state_key` in
+/// this room's cached full state — used by `save_room_pack`/
+/// `remove_room_pack` to write back to exactly the type(s) an existing
+/// pack already uses, never introducing a duplicate copy under a type the
+/// room didn't already have.
+#[cfg(not(test))]
+pub(super) async fn room_pack_event_types_for_key(
+    client: &Client,
+    cache: &RoomStateCache,
+    room_id: &OwnedRoomId,
+    state_key: &str,
+) -> Vec<&'static str> {
+    let state = fetch_room_state_cached(client, cache, room_id).await;
+    let mut types = Vec::new();
+    for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+        let has_content = state.iter().any(|raw| {
+            raw.get_field::<String>("type").ok().flatten().as_deref() == Some(ev_type_str)
+                && raw.get_field::<String>("state_key").ok().flatten().as_deref()
+                    == Some(state_key)
+        });
+        if has_content {
+            types.push(ev_type_str);
+        }
+    }
+    types
+}
+
 /// Discover and parse every pack a room defines (see
 /// `fetch_all_room_pack_contents`), applying the same display-name
 /// fallback and `is_subscribed` computation `fetch_room_pack` uses for a
@@ -1280,6 +1323,15 @@ async fn discover_and_parse_room_packs(
         let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) else {
             continue;
         };
+        // A room pack that's been "removed" (see remove_room_pack) still
+        // exists as a state event — Matrix has no true delete — but with
+        // an empty images map and no display_name, so without this it
+        // would keep resurfacing everywhere packs are listed, falling back
+        // to the room's own name below and looking like a confusing
+        // leftover rather than a pack the user actually deleted.
+        if pack.images.is_empty() {
+            continue;
+        }
         if pack.display_name.is_empty() {
             if room_name.is_none() {
                 room_name = Some(match client.get_room(room_id) {
@@ -1373,6 +1425,12 @@ async fn fetch_room_pack(
             };
             let id = crate::image_packs::pack_id_for(&source);
             if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                // A "removed" pack (see remove_room_pack) still exists as a
+                // state event with an empty images map — treat it as absent
+                // rather than resurfacing it with a room-name fallback.
+                if pack.images.is_empty() {
+                    return None;
+                }
                 if pack.display_name.is_empty() {
                     pack.display_name =
                         room.display_name().await.map(|n| n.to_string()).unwrap_or_default();
@@ -1432,6 +1490,9 @@ async fn fetch_room_pack(
     };
     let id = crate::image_packs::pack_id_for(&source);
     let mut pack = crate::image_packs::parse_pack_content(id, source, &content)?;
+    if pack.images.is_empty() {
+        return None;
+    }
     if pack.display_name.is_empty() {
         pack.display_name = match client.get_room(room_id) {
             Some(r) => r.display_name().await.map(|n| n.to_string()).unwrap_or_default(),

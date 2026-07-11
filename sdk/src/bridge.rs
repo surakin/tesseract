@@ -630,6 +630,16 @@ pub mod ffi {
         favorite: bool,
     }
 
+    /// One resolved image for `save_room_pack` — `url` must already be an
+    /// uploaded `mxc://` URI (the caller uploads any brand-new image bytes
+    /// via `upload_media` first); this call never uploads anything itself.
+    struct PackImageInputFfi {
+        shortcode: String,
+        url: String,
+        body: String,
+        info_json: String,
+    }
+
     /// One Matrix device/session for the current user, returned by
     /// `list_devices()`. `verification_state` is 0=Unknown, 1=Unverified,
     /// 2=Verified. `is_current` is true for the device this client is
@@ -2029,6 +2039,43 @@ pub mod ffi {
             state_key: &str,
             subscribed: bool,
         ) -> OpResult;
+
+        /// Create or replace one of a room's MSC2545 packs — a wholesale
+        /// replace of its `images` map with exactly `images` (not an
+        /// upsert), since the caller (ImagePackEditorView) always stages a
+        /// full snapshot per pack, not a diff. `state_key` is ignored when
+        /// `is_new` (a fresh, collision-free key is assigned from
+        /// `display_name` and returned in `OpResult::message` on success);
+        /// otherwise it must name an existing pack. A brand-new pack is
+        /// written only to the stable `m.room.image_pack` type; an existing
+        /// pack is written back to exactly whichever of the stable/unstable
+        /// types it currently has content under (both, if both), so this
+        /// never introduces a duplicate copy under a type the room didn't
+        /// already use. Invalidates this room's cached full state and
+        /// forces a synchronous local rebuild before returning (mirrors
+        /// `set_pack_room_subscribed`), so `list_image_packs()` /
+        /// `list_known_room_packs()` and `on_image_packs_updated` reflect
+        /// the change immediately. Blocks — worker thread.
+        fn save_room_pack(
+            self: &ClientFfi,
+            room_id: &str,
+            state_key: &str,
+            is_new: bool,
+            display_name: &str,
+            usage_mask: u8,
+            images: Vec<PackImageInputFfi>,
+        ) -> OpResult;
+
+        /// Empty an existing room pack's `images` map (`{"images": {}}`),
+        /// written to whichever of the stable/unstable event types it
+        /// currently has content under. Matrix state events cannot be
+        /// truly deleted — the (now-empty) state event remains in the
+        /// room's history and this pack will keep showing up as a
+        /// zero-image entry anywhere packs are listed, for this and every
+        /// other client, until/unless the room's state history is
+        /// redacted. Same cache-invalidate-and-rebuild tail as
+        /// `save_room_pack`. Blocks — worker thread.
+        fn remove_room_pack(self: &ClientFfi, room_id: &str, state_key: &str) -> OpResult;
 
         // ----- Application prefs (im.gnomos.tesseract global account-data) -----
 

@@ -998,7 +998,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             auto w = std::make_unique<tesseract::views::ShortcodePopup>();
             shortcode_popup_widget_ = w.get();
             shortcode_popup_widget_->set_image_provider(
-                make_static_image_provider_());
+                make_static_image_provider_with_fetch_(28, 28));
             shortcode_popup_surface_->set_root(std::move(w));
             gtk_popover_set_child(GTK_POPOVER(shortcode_popover_),
                                   shortcode_popup_surface_->widget());
@@ -1017,7 +1017,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 [this]() { return emoticons_for_room_(current_room_id_); };
             sh.fetch_image = [this](const std::string& url)
             { ensure_media_image_(url, 28, 28); };
-            sh.resolve_image = make_static_image_provider_();
+            sh.resolve_image = make_static_image_provider_with_fetch_(28, 28);
             shortcode_controller_ =
                 std::make_unique<tesseract::views::ShortcodeController>(
                     room_text_area_.get(), shortcode_popup_widget_,
@@ -1427,7 +1427,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         {
             if (!focused)
                 if (auto* v = active_room_settings_view_())
-                    v->commit_image_pack_editing_shortcode();
+                    v->cancel_image_pack_editing_shortcode();
         });
         image_pack_shortcode_field_->set_visible(false);
 
@@ -1472,7 +1472,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 rsv && !rsv->image_pack_list_rect().empty())
             {
                 rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                  std::move(mime));
+                                                  std::move(mime), filename);
                 return;
             }
             const auto limit = client_->media_upload_limit();
@@ -2888,14 +2888,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     }
 
                     const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
-                    const bool shortcode_was_visible = image_pack_shortcode_field_visible_;
-                    image_pack_shortcode_field_visible_ = !scr.empty();
                     image_pack_shortcode_field_->set_visible(!scr.empty());
                     if (!scr.empty())
                     {
                         image_pack_shortcode_field_->set_rect(scr);
-                        if (!shortcode_was_visible)
+                        // The field stays visible continuously across a
+                        // handoff from one tile's shortcode to another
+                        // (e.g. dropping a second image while the first's
+                        // field is still open) — diff the reset
+                        // generation, not a visibility rising edge, so the
+                        // new tile's suggested shortcode always replaces
+                        // whatever was previously displayed.
+                        const std::uint64_t shortcode_gen =
+                            rsv->image_pack_shortcode_edit_reset_generation();
+                        if (shortcode_gen != image_pack_shortcode_reset_gen_seen_)
+                        {
+                            image_pack_shortcode_reset_gen_seen_ = shortcode_gen;
+                            image_pack_shortcode_field_->set_text(
+                                rsv->image_pack_shortcode_edit_initial_text());
                             image_pack_shortcode_field_->set_focused(true);
+                        }
                     }
 
                     const tk::Rect renr = rsv->image_pack_name_edit_rect();

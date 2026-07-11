@@ -1988,6 +1988,35 @@ Result Client::set_pack_room_subscribed(const std::string& room_id,
         impl_->ffi->set_pack_room_subscribed(room_id, state_key, subscribed));
 }
 
+Result Client::save_room_pack(const std::string& room_id,
+                              const std::string& state_key, bool is_new,
+                              const std::string& display_name,
+                              std::uint8_t usage_mask,
+                              const std::vector<PackImageInput>& images)
+{
+    SH_FFI;
+    rust::Vec<tesseract_ffi::PackImageInputFfi> ffi_images;
+    for (const auto& img : images)
+    {
+        ffi_images.push_back(tesseract_ffi::PackImageInputFfi{
+            .shortcode  = img.shortcode,
+            .url        = img.url,
+            .body       = img.body,
+            .info_json  = img.info_json,
+        });
+    }
+    return from_ffi(impl_->ffi->save_room_pack(room_id, state_key, is_new,
+                                               display_name, usage_mask,
+                                               std::move(ffi_images)));
+}
+
+Result Client::remove_room_pack(const std::string& room_id,
+                                const std::string& state_key)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->remove_room_pack(room_id, state_key));
+}
+
 std::vector<std::string>
 Client::space_children(const std::string& space_id) const
 {

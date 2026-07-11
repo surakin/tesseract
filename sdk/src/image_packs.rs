@@ -88,6 +88,24 @@ pub const USAGE_STICKER: u8 = 1 << 0;
 pub const USAGE_EMOTICON: u8 = 1 << 1;
 pub const USAGE_ANY: u8 = USAGE_STICKER | USAGE_EMOTICON;
 
+/// Inverse of `decode_usage`/`usage_set_to_mask` — encodes a usage bitmask
+/// back into MSC2545's `pack.usage` array shape. Empty for `USAGE_ANY`
+/// (rather than `["sticker","emoticon"]`), matching the spec's "missing/
+/// empty means any" convention on the way out, not just on read.
+pub fn usage_mask_to_strs(mask: u8) -> Vec<&'static str> {
+    if mask & USAGE_STICKER != 0 && mask & USAGE_EMOTICON != 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if mask & USAGE_STICKER != 0 {
+        out.push("sticker");
+    }
+    if mask & USAGE_EMOTICON != 0 {
+        out.push("emoticon");
+    }
+    out
+}
+
 // MSC2545 (merged) defines stable types for the per-room pack and the
 // enabled-rooms list, each with an `im.ponies.*` unstable equivalent. It
 // does NOT define a personal account-data pack at all — `im.ponies.user_emotes`
@@ -458,6 +476,33 @@ fn loop_suffixed_shortcode(existing: &serde_json::Map<String, Value>, base: &str
     for n in 2..=10_000 {
         let candidate = format!("{base}_{n}");
         if !existing.contains_key(&candidate) {
+            return candidate;
+        }
+    }
+    format!(
+        "{base}_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )
+}
+
+/// Assign a collision-free state_key for a brand-new room image pack.
+/// Unlike shortcodes, Matrix state keys are arbitrary UTF-8 with no
+/// character-set restriction, so a new pack's display_name is used
+/// directly as its state_key when free, else suffixed like
+/// `loop_suffixed_shortcode`/`suggest_shortcode`.
+pub fn loop_suffixed_state_key(
+    existing_keys: &std::collections::BTreeSet<String>,
+    base: &str,
+) -> String {
+    if !existing_keys.contains(base) {
+        return base.to_owned();
+    }
+    for n in 2..=10_000 {
+        let candidate = format!("{base}_{n}");
+        if !existing_keys.contains(&candidate) {
             return candidate;
         }
     }
@@ -921,6 +966,28 @@ mod tests {
         m.insert("happy".into(), Value::Null);
         m.insert("happy_2".into(), Value::Null);
         assert_eq!(suggest_shortcode("happy", &m), "happy_3");
+    }
+
+    #[test]
+    fn loop_suffixed_state_key_uses_base_when_free() {
+        let existing = std::collections::BTreeSet::new();
+        assert_eq!(loop_suffixed_state_key(&existing, "Stickers"), "Stickers");
+    }
+
+    #[test]
+    fn loop_suffixed_state_key_appends_suffix_on_one_collision() {
+        let mut existing = std::collections::BTreeSet::new();
+        existing.insert("Stickers".to_owned());
+        assert_eq!(loop_suffixed_state_key(&existing, "Stickers"), "Stickers_2");
+    }
+
+    #[test]
+    fn loop_suffixed_state_key_appends_suffix_past_multiple_collisions() {
+        let mut existing = std::collections::BTreeSet::new();
+        existing.insert("Stickers".to_owned());
+        existing.insert("Stickers_2".to_owned());
+        existing.insert("Stickers_3".to_owned());
+        assert_eq!(loop_suffixed_state_key(&existing, "Stickers"), "Stickers_4");
     }
 
     #[test]

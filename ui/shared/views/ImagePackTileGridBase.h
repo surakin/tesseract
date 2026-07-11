@@ -61,6 +61,25 @@ struct StagedPackImage
     std::shared_ptr<tk::Image> local_preview;
 };
 
+// Suggest a shortcode from a dropped file's name — strips the extension
+// and sanitizes to lowercase alphanumerics with spaces/dashes/underscores
+// folded to a single underscore (mirrors the Rust-side
+// `suggest_shortcode`'s character-filtering, kept independent here since
+// this runs synchronously in the widget, before any Client round trip).
+// Falls back to "sticker" when nothing usable remains (e.g. an
+// extension-only or symbol-only name). Does not de-duplicate against
+// sibling tiles — callers do that themselves against whatever siblings
+// they're staging into (ImagePackEditorView: one pack's images;
+// UserPackEditor: the whole flat list).
+std::string suggest_pack_shortcode_from_filename(const std::string& filename);
+
+// De-dupes `base` (e.g. from suggest_pack_shortcode_from_filename) against
+// every already-staged sibling's shortcode in `siblings`, appending a
+// numeric suffix on collision (mirrors the Rust-side `suggest_shortcode`'s
+// loop). Returns `base` unchanged when it doesn't collide.
+std::string dedupe_pack_shortcode(const std::vector<StagedPackImage>& siblings,
+                                  const std::string& base);
+
 class ImagePackTileGridBase : public tk::ScrollableBase
 {
 public:

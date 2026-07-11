@@ -509,7 +509,7 @@ void ImagePackEditorView::open(std::string room_id)
     // permissions_->set_field_permissions(false, ...) placeholders).
     can_edit_ = false;
     packs_.clear();
-    removed_pack_ids_.clear();
+    removed_state_keys_.clear();
     active_pack_index_.reset();
     next_local_id_ = 0;
     new_pack_name_draft_.clear();
@@ -559,7 +559,7 @@ void ImagePackEditorView::set_available_packs(
         sp.usage        = p.usage;
         packs_.push_back(std::move(sp));
     }
-    removed_pack_ids_.clear();
+    removed_state_keys_.clear();
     active_pack_index_ = packs_.empty() ? std::nullopt
                                        : std::optional<std::size_t>(0);
     editing_.reset();
@@ -625,6 +625,16 @@ tk::Rect ImagePackEditorView::shortcode_edit_rect() const
     return list_->label_rect_at(editing_->first, editing_->second);
 }
 
+std::string ImagePackEditorView::shortcode_edit_initial_text() const
+{
+    if (!editing_)
+        return {};
+    const auto [p, t] = *editing_;
+    if (p >= packs_.size() || t >= packs_[p].images.size())
+        return {};
+    return packs_[p].images[t].shortcode;
+}
+
 void ImagePackEditorView::set_editing_shortcode_text(std::string text)
 {
     if (!editing_)
@@ -645,12 +655,26 @@ void ImagePackEditorView::commit_editing_shortcode()
     layout_changed_();
 }
 
+void ImagePackEditorView::cancel_editing_shortcode()
+{
+    if (!editing_)
+        return;
+    const auto [p, t] = *editing_;
+    if (p < packs_.size() && t < packs_[p].images.size())
+        packs_[p].images[t].shortcode = editing_shortcode_original_;
+    editing_.reset();
+    list_->set_editing(std::nullopt);
+    layout_changed_();
+}
+
 void ImagePackEditorView::begin_editing_shortcode_(std::size_t pack_idx,
                                                    std::size_t tile_idx)
 {
     if (pack_idx >= packs_.size() || tile_idx >= packs_[pack_idx].images.size())
         return;
     editing_ = {pack_idx, tile_idx};
+    editing_shortcode_original_ = packs_[pack_idx].images[tile_idx].shortcode;
+    ++shortcode_edit_reset_gen_;
     list_->set_editing(editing_);
     layout_changed_();
 }
@@ -736,7 +760,7 @@ void ImagePackEditorView::remove_pack_(std::size_t idx)
     if (idx >= packs_.size() || !can_edit_)
         return;
     if (!packs_[idx].is_new)
-        removed_pack_ids_.push_back(packs_[idx].pack_id);
+        removed_state_keys_.push_back(packs_[idx].state_key);
     packs_.erase(packs_.begin() + static_cast<std::ptrdiff_t>(idx));
     dirty_ = true;
 
@@ -787,7 +811,8 @@ void ImagePackEditorView::create_pack_()
 }
 
 void ImagePackEditorView::add_pending_image_to_pack_(
-    std::size_t pack_idx, std::vector<std::uint8_t> bytes, std::string mime)
+    std::size_t pack_idx, std::vector<std::uint8_t> bytes, std::string mime,
+    std::string filename)
 {
     if (pack_idx >= packs_.size() || !can_edit_)
         return;
@@ -795,6 +820,11 @@ void ImagePackEditorView::add_pending_image_to_pack_(
     img.local_id      = ++next_local_id_;
     img.pending_bytes = std::move(bytes);
     img.pending_mime  = std::move(mime);
+    if (!filename.empty())
+    {
+        img.shortcode = dedupe_pack_shortcode(
+            packs_[pack_idx].images, suggest_pack_shortcode_from_filename(filename));
+    }
     packs_[pack_idx].images.push_back(std::move(img));
     const std::size_t new_tile_idx = packs_[pack_idx].images.size() - 1;
     dirty_ = true;
@@ -814,12 +844,13 @@ void ImagePackEditorView::add_pending_image_to_active(
 {
     if (!open_ || !active_pack_index_)
         return;
-    add_pending_image_to_pack_(*active_pack_index_, std::move(bytes), std::move(mime));
+    add_pending_image_to_pack_(*active_pack_index_, std::move(bytes), std::move(mime), {});
 }
 
 void ImagePackEditorView::add_pending_image_at(tk::Point world,
                                                std::vector<std::uint8_t> bytes,
-                                               std::string mime)
+                                               std::string mime,
+                                               std::string filename)
 {
     if (!open_)
         return;
@@ -828,7 +859,7 @@ void ImagePackEditorView::add_pending_image_at(tk::Point world,
         idx = active_pack_index_;
     if (!idx)
         return;
-    add_pending_image_to_pack_(*idx, std::move(bytes), std::move(mime));
+    add_pending_image_to_pack_(*idx, std::move(bytes), std::move(mime), std::move(filename));
 }
 
 void ImagePackEditorView::set_tile_preview(std::uint64_t local_id,
@@ -876,7 +907,7 @@ ImagePackEditorResult ImagePackEditorView::build_result() const
     ImagePackEditorResult result;
     result.room_id          = room_id_;
     result.packs            = packs_;
-    result.removed_pack_ids = removed_pack_ids_;
+    result.removed_state_keys = removed_state_keys_;
     return result;
 }
 

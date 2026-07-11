@@ -45,7 +45,7 @@ void UserPackEditor::set_tile_preview(std::uint64_t local_id,
 }
 
 void UserPackEditor::add_pending_image_(std::vector<std::uint8_t> bytes,
-                                        std::string mime)
+                                        std::string mime, std::string filename)
 {
     if (committing_)
         return;
@@ -53,6 +53,8 @@ void UserPackEditor::add_pending_image_(std::vector<std::uint8_t> bytes,
     img.local_id      = ++next_local_id_;
     img.pending_bytes = std::move(bytes);
     img.pending_mime  = std::move(mime);
+    if (!filename.empty())
+        img.shortcode = dedupe_pack_shortcode(images_, suggest_pack_shortcode_from_filename(filename));
     images_.push_back(std::move(img));
     const std::size_t new_tile_idx = images_.size() - 1;
     dirty_ = true;
@@ -70,14 +72,14 @@ void UserPackEditor::add_pending_image_(std::vector<std::uint8_t> bytes,
 void UserPackEditor::add_pasted_image(std::vector<std::uint8_t> bytes,
                                       std::string mime)
 {
-    add_pending_image_(std::move(bytes), std::move(mime));
+    add_pending_image_(std::move(bytes), std::move(mime), {});
 }
 
 void UserPackEditor::add_dropped_image(tk::Point /*world*/,
                                        std::vector<std::uint8_t> bytes,
-                                       std::string mime)
+                                       std::string mime, std::string filename)
 {
-    add_pending_image_(std::move(bytes), std::move(mime));
+    add_pending_image_(std::move(bytes), std::move(mime), std::move(filename));
 }
 
 tk::Rect UserPackEditor::shortcode_edit_rect() const
@@ -93,6 +95,13 @@ tk::Rect UserPackEditor::shortcode_edit_rect() const
     if (world.bottom() <= bounds_.y || world.y >= bounds_.y + bounds_.h)
         return {}; // scrolled out of the viewport
     return world;
+}
+
+std::string UserPackEditor::shortcode_edit_initial_text() const
+{
+    if (!editing_ || *editing_ >= images_.size())
+        return {};
+    return images_[*editing_].shortcode;
 }
 
 void UserPackEditor::set_editing_shortcode_text(std::string text)
@@ -111,11 +120,23 @@ void UserPackEditor::commit_editing_shortcode()
     layout_changed_();
 }
 
+void UserPackEditor::cancel_editing_shortcode()
+{
+    if (!editing_)
+        return;
+    if (*editing_ < images_.size())
+        images_[*editing_].shortcode = editing_shortcode_original_;
+    editing_.reset();
+    layout_changed_();
+}
+
 void UserPackEditor::begin_editing_shortcode_(std::size_t tile_idx)
 {
     if (tile_idx >= images_.size())
         return;
     editing_ = tile_idx;
+    editing_shortcode_original_ = images_[tile_idx].shortcode;
+    ++shortcode_edit_reset_gen_;
     layout_changed_();
 }
 

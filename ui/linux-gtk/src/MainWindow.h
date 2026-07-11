@@ -365,7 +365,7 @@ private:
     std::unique_ptr<tk::NativeTextField> image_pack_name_field_;
     bool image_pack_name_field_visible_ = false;
     std::unique_ptr<tk::NativeTextField> image_pack_shortcode_field_;
-    bool image_pack_shortcode_field_visible_ = false;
+    std::uint64_t image_pack_shortcode_reset_gen_seen_ = 0;
     std::unique_ptr<tk::NativeTextField> image_pack_rename_field_;
     bool image_pack_rename_field_visible_ = false;
     std::unique_ptr<tk::NativeTextArea> image_pack_paste_catcher_;

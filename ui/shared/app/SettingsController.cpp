@@ -314,6 +314,23 @@ void SettingsController::save_user_pack_changes(
                     if (img.favorite)
                         note(c->toggle_favorite_sticker(img.existing_url));
                 }
+                else if (!img.pending_bytes.empty())
+                {
+                    // Brand-new image (pasted/dropped/picked, never uploaded) —
+                    // upload the raw bytes first, then save under the
+                    // resulting mxc:// exactly like the existing-image branch.
+                    auto upload = c->upload_media(img.pending_bytes, img.pending_mime);
+                    if (!upload.ok)
+                    {
+                        note(upload);
+                        continue;
+                    }
+                    note(c->save_sticker_to_user_pack(img.shortcode, img.body,
+                                                      upload.message,
+                                                      img.info_json));
+                    if (img.favorite)
+                        note(c->toggle_favorite_sticker(upload.message));
+                }
             }
 
             post_to_ui_(

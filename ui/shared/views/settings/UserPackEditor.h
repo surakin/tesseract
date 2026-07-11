@@ -50,13 +50,18 @@ public:
     void set_tile_preview(std::uint64_t local_id, std::shared_ptr<tk::Image> image);
 
     // Clipboard paste has no position — appends to the end of the grid.
+    // Paste never carries a filename, so the new tile's shortcode starts
+    // empty (same as before this existed).
     void add_pasted_image(std::vector<std::uint8_t> bytes, std::string mime);
     // Drag-drop has a position but there is only one grid to land on, so
     // this is equivalent to add_pasted_image — kept as a separate name to
     // mirror ImagePackEditorView's add_pending_image_at call sites in the
     // host and make the "drop vs paste" distinction explicit at call sites.
+    // `filename` (empty if unavailable) seeds the new tile's shortcode via
+    // suggest_pack_shortcode_from_filename, de-duped against the other
+    // staged images.
     void add_dropped_image(tk::Point world, std::vector<std::uint8_t> bytes,
-                           std::string mime);
+                           std::string mime, std::string filename = {});
 
     std::function<void(std::uint64_t local_id,
                        const std::vector<std::uint8_t>& bytes,
@@ -66,9 +71,18 @@ public:
     // NativeTextField overlay rect + text plumbing for the shortcode being
     // edited, mirrors ImagePackEditorView's shortcode_edit_rect/
     // set_editing_shortcode_text/commit_editing_shortcode.
-    tk::Rect shortcode_edit_rect() const;
-    void     set_editing_shortcode_text(std::string text);
-    void     commit_editing_shortcode();
+    tk::Rect    shortcode_edit_rect() const;
+    std::string shortcode_edit_initial_text() const; // seed text once, per shortcode_edit_reset_generation()
+    // Bumped every time a *different* tile starts being edited — see
+    // ImagePackEditorView::shortcode_edit_reset_generation()'s doc comment
+    // for why a visibility rising edge alone isn't enough.
+    std::uint64_t shortcode_edit_reset_generation() const { return shortcode_edit_reset_gen_; }
+    void        set_editing_shortcode_text(std::string text);
+    void        commit_editing_shortcode(); // called by the host on submit/Enter
+    // Discards any edits made since this tile's shortcode field was
+    // opened — called by the host when focus leaves the field by any
+    // means other than Enter.
+    void        cancel_editing_shortcode();
 
     // True once the user has made any edit since the last set_images()
     // baseline (add/remove/rename) — drives ImagePacksSection's Save button
@@ -114,7 +128,8 @@ protected:
     float content_height() const override;
 
 private:
-    void add_pending_image_(std::vector<std::uint8_t> bytes, std::string mime);
+    void add_pending_image_(std::vector<std::uint8_t> bytes, std::string mime,
+                            std::string filename);
     void begin_editing_shortcode_(std::size_t tile_idx);
     void remove_tile_(std::size_t tile_idx);
     void layout_changed_();
@@ -126,6 +141,8 @@ private:
     std::uint64_t next_local_id_ = 0;
 
     std::optional<std::size_t> editing_; // tile index whose shortcode is edited
+    std::uint64_t shortcode_edit_reset_gen_ = 0;
+    std::string editing_shortcode_original_; // snapshot for cancel_editing_shortcode
 
     std::optional<std::size_t> hovered_tile_;
 

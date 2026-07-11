@@ -2484,7 +2484,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     std::unique_ptr<tk::NativeTextField> _imagePackNameField;
     bool _imagePackNameFieldVisible;
     std::unique_ptr<tk::NativeTextField> _imagePackShortcodeField;
-    bool _imagePackShortcodeFieldVisible;
+    std::uint64_t _imagePackShortcodeResetGenSeen;
     std::unique_ptr<tk::NativeTextField> _imagePackRenameField;
     bool _imagePackRenameFieldVisible;
     std::unique_ptr<tk::NativeTextArea> _imagePackPasteCatcher;
@@ -4927,7 +4927,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 MainWindowController* s = weakSelf;
                 if (!focused)
                     if (auto* v = [s _activeRoomSettingsView])
-                        v->commit_image_pack_editing_shortcode();
+                        v->cancel_image_pack_editing_shortcode();
             });
         _imagePackShortcodeField->set_visible(false);
 
@@ -5098,7 +5098,10 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     else if (!hits.empty())
                     {
                         const tk::Image* image =
-                            c->_shell->account_manager_.image_cache().peek(
+                            c->_shell->account_manager_.anim_cache().current_frame(
+                                hits.front().emoticon.url);
+                        if (!image)
+                            image = c->_shell->account_manager_.image_cache().peek(
                                 hits.front().emoticon.url);
                         c->_roomTextArea->insert_emoticon(
                             complete->start, complete->end, hits.front().shortcode,
@@ -5318,7 +5321,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     rsv && !rsv->image_pack_list_rect().empty())
                 {
                     rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                       std::move(mime));
+                                                       std::move(mime), filename);
                     return;
                 }
                 MacShell* shell = c->_shell.get();
@@ -5698,15 +5701,26 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     }
 
                     const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
-                    const bool shortcodeWasVisible =
-                        s->_imagePackShortcodeFieldVisible;
-                    s->_imagePackShortcodeFieldVisible = !scr.empty();
                     s->_imagePackShortcodeField->set_visible(!scr.empty());
                     if (!scr.empty())
                     {
                         s->_imagePackShortcodeField->set_rect(scr);
-                        if (!shortcodeWasVisible)
+                        // The field stays visible continuously across a
+                        // handoff from one tile's shortcode to another
+                        // (e.g. dropping a second image while the
+                        // first's field is still open) — diff the reset
+                        // generation, not a visibility rising edge, so
+                        // the new tile's suggested shortcode always
+                        // replaces whatever was previously displayed.
+                        const std::uint64_t shortcodeGen =
+                            rsv->image_pack_shortcode_edit_reset_generation();
+                        if (shortcodeGen != s->_imagePackShortcodeResetGenSeen)
+                        {
+                            s->_imagePackShortcodeResetGenSeen = shortcodeGen;
+                            s->_imagePackShortcodeField->set_text(
+                                rsv->image_pack_shortcode_edit_initial_text());
                             s->_imagePackShortcodeField->set_focused(true);
+                        }
                     }
 
                     const tk::Rect renr = rsv->image_pack_name_edit_rect();
@@ -6619,7 +6633,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             else
             {
                 const tk::Image* image =
-                    c->_shell->account_manager_.image_cache().peek(s.emoticon.url);
+                    c->_shell->account_manager_.anim_cache().current_frame(s.emoticon.url);
+                if (!image)
+                    image = c->_shell->account_manager_.image_cache().peek(s.emoticon.url);
                 c->_roomTextArea->insert_emoticon(
                     c->_shell->shortcode_active_match_.start,
                     c->_shell->shortcode_active_match_.end, s.shortcode,
@@ -6642,6 +6658,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 if (!c || !c->_shell)
                 {
                     return nullptr;
+                }
+                if (const auto* f =
+                        c->_shell->account_manager_.anim_cache().current_frame(url))
+                {
+                    return f;
                 }
                 return c->_shell->account_manager_.image_cache().peek(url);
             });

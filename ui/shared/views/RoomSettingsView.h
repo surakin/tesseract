@@ -230,16 +230,19 @@ public:
     void set_image_pack_new_pack_name_text(std::string text);
     void set_image_pack_editing_shortcode_text(std::string text);
     void commit_image_pack_editing_shortcode();
+    void cancel_image_pack_editing_shortcode();
     void set_image_pack_editing_name_text(std::string text);
     void commit_image_pack_editing_name();
     // Clipboard paste (no position) — targets the active pack.
     void add_image_pack_pasted_image(std::vector<std::uint8_t> bytes,
                                      std::string mime);
     // Drag-drop (world/surface-space position) — targets whichever pack's
-    // section contains `pos`, falling back to the active pack.
+    // section contains `pos`, falling back to the active pack. `filename`
+    // (empty if unavailable) seeds the new tile's suggested shortcode.
     void add_image_pack_dropped_image(tk::Point pos,
                                       std::vector<std::uint8_t> bytes,
-                                      std::string mime);
+                                      std::string mime,
+                                      std::string filename = {});
 
     // Fired once per pack after set_image_pack_available_packs, not just for
     // one "selected" pack — every listed pack needs its images fetched now
@@ -294,6 +297,8 @@ public:
     tk::Rect image_pack_new_pack_name_field_rect() const;
     std::uint64_t image_pack_new_pack_name_reset_generation() const;
     tk::Rect image_pack_shortcode_edit_rect() const;
+    std::string image_pack_shortcode_edit_initial_text() const;
+    std::uint64_t image_pack_shortcode_edit_reset_generation() const;
     tk::Rect image_pack_name_edit_rect() const;
     std::string image_pack_name_edit_initial_text() const;
     // Scope for the host's drop-target hit-test — non-empty whenever this

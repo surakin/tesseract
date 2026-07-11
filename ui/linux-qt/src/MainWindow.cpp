@@ -1584,7 +1584,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         auto w = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = w.get();
         shortcode_popup_widget_->set_image_provider(
-            make_static_image_provider_());
+            make_static_image_provider_with_fetch_(28, 28));
         shortcode_popup_surface_->set_root(std::move(w));
         auto* lay = new QVBoxLayout(shortcode_popup_frame_);
         lay->setContentsMargins(0, 0, 0, 0);
@@ -1606,7 +1606,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         { return emoticons_for_room_(current_room_id_); };
         sh.fetch_image = [this](const std::string& url)
         { ensure_media_image_(url, 28, 28); };
-        sh.resolve_image = make_static_image_provider_();
+        sh.resolve_image = make_static_image_provider_with_fetch_(28, 28);
         shortcode_controller_ =
             std::make_unique<tesseract::views::ShortcodeController>(
                 roomTextArea_.get(), shortcode_popup_widget_, std::move(sh));
@@ -2024,7 +2024,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         {
             if (!focused)
                 if (auto* v = activeRoomSettingsView_())
-                    v->commit_image_pack_editing_shortcode();
+                    v->cancel_image_pack_editing_shortcode();
         });
     imagePackShortcodeField_->set_visible(false);
 
@@ -2477,14 +2477,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
 
                 const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
                 const bool shortcode_now_visible = !scr.empty();
-                const bool shortcode_was_visible = imagePackShortcodeFieldVisible_;
-                imagePackShortcodeFieldVisible_ = shortcode_now_visible;
                 imagePackShortcodeField_->set_visible(shortcode_now_visible);
                 if (shortcode_now_visible)
                 {
                     imagePackShortcodeField_->set_rect(scr);
-                    if (!shortcode_was_visible)
+                    // The field stays visible continuously across a
+                    // handoff from one tile's shortcode to another (e.g.
+                    // dropping a second image while the first's field is
+                    // still open) — diff the reset generation, not a
+                    // visibility rising edge, so the new tile's suggested
+                    // shortcode always replaces whatever was previously
+                    // displayed.
+                    const std::uint64_t shortcode_gen =
+                        rsv->image_pack_shortcode_edit_reset_generation();
+                    if (shortcode_gen != imagePackShortcodeResetGenSeen_)
+                    {
+                        imagePackShortcodeResetGenSeen_ = shortcode_gen;
+                        imagePackShortcodeField_->set_text(
+                            rsv->image_pack_shortcode_edit_initial_text());
                         imagePackShortcodeField_->set_focused(true);
+                    }
                 }
 
                 const tk::Rect renr = rsv->image_pack_name_edit_rect();
@@ -2530,7 +2542,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 rsv && !rsv->image_pack_list_rect().empty())
             {
                 rsv->add_image_pack_dropped_image(pos, std::move(bytes),
-                                                  std::move(mime));
+                                                  std::move(mime), filename);
                 return;
             }
             auto outcome = tesseract::views::dispatch_file_drop(
