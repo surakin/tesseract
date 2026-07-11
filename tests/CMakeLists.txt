@@ -211,6 +211,19 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_capture_macos.mm"
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+    # tk_test_surface_cg.cpp and canvas_cg.cpp bare-#include CoreGraphics.h,
+    # whose transitive MacTypes.h declares global-namespace `Point`/`Rect`
+    # (legacy QuickDraw types). Many test_tk_*.cpp files have a file-scope
+    # `using namespace tk;`, which under unity batching stays in effect for
+    # the rest of that translation unit — if the batch places one of those
+    # files before either CG file, `Point`/`Rect` become ambiguous between
+    # the global and tk:: versions. Exclude both defensively so they always
+    # compile standalone (mirrors the same-shaped exclusion in the qt6
+    # branch above for canvas_qpainter.cpp).
+    set_source_files_properties(
+        cpp/tk_test_surface_cg.cpp
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg.cpp"
+        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
     target_link_libraries(tesseract_tests PRIVATE
         "-framework CoreGraphics"
         "-framework CoreText"
