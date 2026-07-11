@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+﻿#include <catch2/catch_test_macros.hpp>
 
 #include "views/ImagePackEditorView.h"
 #include "tk_test_surface.h"
@@ -57,7 +57,7 @@ tesseract::ImagePackImage make_image(std::string pack_id, std::string shortcode,
     return img;
 }
 
-// ── Geometry mirrors ImagePackEditorView/ImagePackSectionList's private
+// â”€â”€ Geometry mirrors ImagePackEditorView/ImagePackSectionList's private
 // layout constants for an 800x600 stage. See ImagePackEditorView.cpp's
 // arrange()/compute_layout_() for the derivation:
 //   editor: kPadY=16, kLabelH=16, kLabelGap=4, kRowH=32
@@ -222,11 +222,11 @@ TEST_CASE("ImagePackEditorView: defaults to read-only on open() until "
          "set_field_permissions(true)",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_available_packs({});
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     REQUIRE(v.create_button() != nullptr);
@@ -256,13 +256,13 @@ TEST_CASE("ImagePackEditorView: set_field_permissions(false) disables "
          "the pack as active",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
     v.set_field_permissions(false);
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const std::vector<std::size_t> counts{0};
@@ -329,6 +329,7 @@ TEST_CASE("ImagePackEditorView: set_pack_images for an unknown pack id is "
 TEST_CASE("ImagePackEditorView: clicking a pack header selects it as active",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -336,7 +337,6 @@ TEST_CASE("ImagePackEditorView: clicking a pack header selects it as active",
                            make_pack("p2", "Stickers", "!room:example.org")});
     REQUIRE(*v.active_pack_index() == 0);
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const std::vector<std::size_t> counts{0, 0};
@@ -352,13 +352,13 @@ TEST_CASE("ImagePackEditorView: clicking a header's usage segment sets "
          "that pack's usage",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
     REQUIRE(v.packs()[0].usage == tesseract::PackUsage::Any);
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const std::vector<std::size_t> counts{0};
@@ -380,13 +380,13 @@ TEST_CASE("ImagePackEditorView: clicking a header's remove chip deletes "
          "that pack and records it as removed",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
                            make_pack("p2", "Stickers", "!room:example.org")});
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const std::vector<std::size_t> counts{0, 0};
@@ -399,7 +399,7 @@ TEST_CASE("ImagePackEditorView: clicking a header's remove chip deletes "
     // active_pack_index_ pointed at the removed pack (0) -> cleared.
     CHECK_FALSE(v.active_pack_index().has_value());
 
-    // build_result() is what RoomSettingsView's shared Accept click reads —
+    // build_result() is what RoomSettingsView's shared Accept click reads â€”
     // this view no longer has its own Accept button to click.
     const ImagePackEditorResult accepted = v.build_result();
     REQUIRE(accepted.removed_pack_ids.size() == 1);
@@ -410,6 +410,7 @@ TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
          "record it as removed (it never existed server-side)",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -419,7 +420,6 @@ TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
     REQUIRE(v.create_button() != nullptr);
     // Drive creation through a real click dispatch (press+release), mirroring
     // Accept/Cancel dispatch elsewhere in this file.
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     // Create button sits right after the name field, near the top.
@@ -494,6 +494,7 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at targets the pack "
          "under the drop point, not the active pack",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -501,7 +502,6 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at targets the pack "
                            make_pack("p2", "Stickers", "!room:example.org")});
     REQUIRE(*v.active_pack_index() == 0); // active is p1, but we'll drop on p2
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const std::vector<std::size_t> counts{0, 0};
@@ -519,16 +519,16 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at falls back to the "
          "active pack when the point isn't over any pack's section",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
     REQUIRE(*v.active_pack_index() == 0);
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    // Well above the list (over the new-pack-name row) — not in any section.
+    // Well above the list (over the new-pack-name row) â€” not in any section.
     const tk::Point drop_pt{100.0f, 40.0f};
     v.add_pending_image_at(drop_pt, {7, 8, 9}, "image/png");
 
@@ -540,12 +540,12 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at is a no-op with no "
          "packs at all",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({});
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     v.add_pending_image_at({100.0f, 200.0f}, {1}, "image/png");
@@ -556,6 +556,7 @@ TEST_CASE("ImagePackEditorView: set_tile_preview finds the image across "
          "packs by local_id",
          "[image_pack][view]")
 {
+    auto tmp_surface = TestSurface::create(4, 4);
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -570,7 +571,6 @@ TEST_CASE("ImagePackEditorView: set_tile_preview finds the image across "
     v.add_pending_image_to_active({1, 2, 3}, "image/png");
     REQUIRE(added_id != 0);
 
-    auto tmp_surface = TestSurface::create(4, 4);
     const std::vector<std::uint8_t> pixel{255, 255, 255, 255};
     auto img = tmp_surface->factory().create_image_rgba(pixel.data(), 1, 1);
     REQUIRE(img);
@@ -584,6 +584,7 @@ TEST_CASE("ImagePackEditorView: clicking a tile's shortcode label begins "
          "editing, set_editing_shortcode_text + commit updates it",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -591,7 +592,6 @@ TEST_CASE("ImagePackEditorView: clicking a tile's shortcode label begins "
     v.set_pack_images("p1",
                       {make_image("p1", "happy", "mxc://example.org/1")});
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
     REQUIRE(v.shortcode_edit_rect().empty());
 
@@ -613,6 +613,7 @@ TEST_CASE("ImagePackEditorView: clicking a tile's remove chip removes it "
          "and shifts in-progress editing on later tiles",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -620,7 +621,6 @@ TEST_CASE("ImagePackEditorView: clicking a tile's remove chip removes it "
     v.set_pack_images("p1", {make_image("p1", "a", "mxc://example.org/1"),
                              make_image("p1", "b", "mxc://example.org/2")});
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     const std::vector<std::size_t> counts{2};
@@ -632,7 +632,7 @@ TEST_CASE("ImagePackEditorView: clicking a tile's remove chip removes it "
     }
     REQUIRE_FALSE(v.shortcode_edit_rect().empty());
 
-    // Remove tile 0 ("a") — tile 1 shifts down to index 0; editing_ should
+    // Remove tile 0 ("a") â€” tile 1 shifts down to index 0; editing_ should
     // follow it rather than being clobbered.
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
     const tk::Point rpt = tile_remove_chip_point(counts, 0, 0);
@@ -647,6 +647,7 @@ TEST_CASE("ImagePackEditorView: clicking a tile's remove chip removes it "
 TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -658,7 +659,6 @@ TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll",
                                     "mxc://example.org/" + std::to_string(i)));
     v.set_pack_images("p1", images);
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     REQUIRE(v.list() != nullptr);
@@ -675,6 +675,7 @@ TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
          "pack, including a tile with only pending_bytes",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
@@ -683,10 +684,9 @@ TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
                       {make_image("p1", "happy", "mxc://example.org/1")});
     v.add_pending_image_to_active({9, 9, 9}, "image/png");
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    // RoomSettingsView's shared Accept click reads this directly — this
+    // RoomSettingsView's shared Accept click reads this directly â€” this
     // view no longer has its own Accept button.
     const ImagePackEditorResult accepted = v.build_result();
     CHECK(accepted.room_id == "!room:example.org");
@@ -704,12 +704,12 @@ TEST_CASE("ImagePackEditorView: set_committing(true) disables the Create "
          "button and hides the native-overlay rects",
          "[image_pack][view]")
 {
+    TkImagePackEditorStage st;
     ImagePackEditorView v;
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
 
-    TkImagePackEditorStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     REQUIRE(v.create_button() != nullptr);

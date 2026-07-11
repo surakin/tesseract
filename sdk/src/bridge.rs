@@ -610,6 +610,11 @@ pub mod ffi {
         source_kind: String,
         source_room: String,
         source_state_key: String,
+        /// Only meaningful when `source_kind == "room"`; true when this pack
+        /// is in the user's explicit `m.image_pack.rooms` /
+        /// `im.ponies.emote_rooms` subscription list, as opposed to being
+        /// visible only because the user is joined to the source room.
+        is_subscribed: bool,
     }
 
     /// One image entry inside a pack. `usage_mask` is the per-image usage
@@ -1985,6 +1990,36 @@ pub mod ffi {
         /// whose `url` matches `image_url`. No-op when the sticker isn't in
         /// the user pack (call `save_sticker_to_user_pack` first).
         fn toggle_favorite_sticker(self: &ClientFfi, image_url: &str) -> OpResult;
+
+        /// Remove `shortcode` from the user's personal pack. No-op (ok:true)
+        /// if the shortcode doesn't exist. GET-modify-PUT; local cache
+        /// updates immediately (no need to wait for the next sync).
+        fn remove_user_pack_image(self: &ClientFfi, shortcode: &str) -> OpResult;
+
+        /// Rename `old_shortcode` to `new_shortcode` in the user's personal
+        /// pack. If `new_shortcode` collides with an existing entry, a
+        /// numeric suffix is appended (mirrors `save_sticker_to_user_pack`'s
+        /// collision handling) — on success, `OpResult::message` carries the
+        /// actually-applied shortcode, which may differ from the requested
+        /// one.
+        fn rename_user_pack_image(
+            self: &ClientFfi,
+            old_shortcode: &str,
+            new_shortcode: &str,
+        ) -> OpResult;
+
+        /// Explicitly subscribe/unsubscribe `(room_id, state_key)`'s image
+        /// pack via the user's `m.image_pack.rooms` / `im.ponies.emote_rooms`
+        /// account data (dual-written to both event types). Forces a
+        /// synchronous local rebuild before returning, so
+        /// `ImagePackFfi::is_subscribed` and `list_image_packs()` reflect the
+        /// change immediately; `on_image_packs_updated` fires too.
+        fn set_pack_room_subscribed(
+            self: &ClientFfi,
+            room_id: &str,
+            state_key: &str,
+            subscribed: bool,
+        ) -> OpResult;
 
         // ----- Application prefs (im.gnomos.tesseract global account-data) -----
 

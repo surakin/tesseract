@@ -1376,6 +1376,28 @@ public:
     /// pack — call `save_sticker_to_user_pack` first.
     Result toggle_favorite_sticker(const std::string& image_url);
 
+    /// Remove `shortcode` from the user's personal pack. No-op (ok:true) if
+    /// the shortcode doesn't exist. GET-modify-PUT; local cache updates
+    /// immediately.
+    Result remove_user_pack_image(const std::string& shortcode);
+
+    /// Rename `old_shortcode` to `new_shortcode` in the user's personal
+    /// pack. If `new_shortcode` collides with an existing entry a numeric
+    /// suffix is appended (mirrors `save_sticker_to_user_pack`'s collision
+    /// handling) — on success, `Result::message` carries the
+    /// actually-applied shortcode, which may differ from the requested one.
+    Result rename_user_pack_image(const std::string& old_shortcode,
+                                  const std::string& new_shortcode);
+
+    /// Explicitly subscribe/unsubscribe `(room_id, state_key)`'s image pack
+    /// via the user's `m.image_pack.rooms` / `im.ponies.emote_rooms`
+    /// account data (dual-written). Local cache + `ImagePack::is_subscribed`
+    /// refresh synchronously before this returns; `on_image_packs_updated`
+    /// fires too.
+    Result set_pack_room_subscribed(const std::string& room_id,
+                                    const std::string& state_key,
+                                    bool subscribed);
+
     // ------------------------------------------------------------------
     // Spaces
     // ------------------------------------------------------------------

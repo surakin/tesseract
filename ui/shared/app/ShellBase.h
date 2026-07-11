@@ -68,6 +68,7 @@ class RoomSearchBar;
 class RoomSettingsView;
 class RoomView;
 class SettingsView;
+class UserPackEditor;
 class UserProfilePanel;
 }
 
@@ -2924,6 +2925,14 @@ protected:
                                                 std::vector<uint8_t> bytes,
                                                 std::string mime,
                                                 views::RoomSettingsView* target);
+    // Same decode-off-thread-then-post-back shape as
+    // handle_image_pack_pending_image_added_ above, targeting the global
+    // Settings "Emojis & Stickers" tab's personal-pack editor instead of a
+    // per-room tab.
+    void handle_user_pack_pending_image_added_(std::uint64_t local_id,
+                                               std::vector<uint8_t> bytes,
+                                               std::string mime,
+                                               views::UserPackEditor* target);
 
     // Estimate how many trailing rows of a freshly-loaded snapshot could
     // plausibly be on screen, for build_rows_()'s synchronous media-prefetch

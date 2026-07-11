@@ -28,9 +28,10 @@
 // own layout math, reusing only the scrollbar/wheel/clamp machinery
 // ScrollableBase provides generically.
 
+#include "views/ImagePackTileGridBase.h"
+
 #include "tk/canvas.h"
 #include "tk/controls.h"
-#include "tk/scrollable_base.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
@@ -47,35 +48,8 @@
 namespace tesseract::views
 {
 
-// Host-supplied thumbnail lookup, keyed by mxc:// url. Same shape as
-// AvatarEditControl::ImageProvider / TabbedGridPicker's provider.
-using ImagePackImageProvider =
-    std::function<const tk::Image*(const std::string& mxc)>;
-
-struct StagedPackImage
-{
-    // Stable id assigned by add_pending_image_at()/add_pending_image_to_active()
-    // for a newly-added (not yet uploaded) image, used to correlate the
-    // host's async local-decode result (set_tile_preview) back to this
-    // entry even if some pack's image list has since been reordered or had
-    // entries removed. Globally unique across every pack (one counter on
-    // ImagePackEditorView), so no pack id is needed to disambiguate. 0 for
-    // images loaded from an existing pack — those are identified by
-    // existing_url instead.
-    std::uint64_t local_id = 0;
-
-    std::string shortcode; // editable, click-to-edit
-    std::string existing_url; // mxc:// — empty if newly added, not yet uploaded
-    std::vector<std::uint8_t> pending_bytes; // raw bytes if newly added
-    std::string pending_mime;
-    std::string body;
-    std::string info_json;
-    tesseract::PackUsage usage = tesseract::PackUsage::Any; // per-image override
-    bool favorite = false;
-    // Decoded off-thread by the host for pending_bytes tiles (existing_url
-    // tiles are painted via the host's ImagePackImageProvider instead).
-    std::shared_ptr<tk::Image> local_preview;
-};
+// ImagePackImageProvider / StagedPackImage now live in ImagePackTileGridBase.h
+// (included above), shared with UserPackEditor.
 
 // One list entry — a pack currently shown in the editor, staged in memory.
 struct StagedPack
@@ -105,7 +79,13 @@ struct ImagePackEditorResult
 // the owner's staged pack list (non-owning pointer) and reports clicks/
 // drops back via callbacks. See the file-level comment for why this is a
 // bespoke tk::ScrollableBase subclass rather than a tk::GridView one.
-class ImagePackSectionList : public tk::ScrollableBase
+// Inherits the shared tile-grid mechanics (layout math, tile/hint paint,
+// remove-chip hit-test) from ImagePackTileGridBase — also used by
+// UserPackEditor (ui/shared/views/settings/) for the global Settings
+// personal-pack tab — and keeps everything section/header-specific
+// (multi-pack stacking, pack rename, usage toggle, active-pack selection)
+// local to this class.
+class ImagePackSectionList : public ImagePackTileGridBase
 {
 public:
     ImagePackSectionList();
@@ -113,7 +93,6 @@ public:
     // Non-owning; must outlive this list (or be cleared before it's
     // freed). Call refresh() after any mutation of *packs.
     void set_packs(const std::vector<StagedPack>* packs);
-    void set_image_provider(ImagePackImageProvider provider);
     void set_active_pack_index(std::optional<std::size_t> idx);
     // Gates remove chips (hidden), the usage toggle, and name/shortcode
     // click-to-edit (all no-ops when false) — header-click-to-select-active
@@ -162,10 +141,6 @@ protected:
     float content_height() const override;
 
 private:
-    struct TileLayout
-    {
-        tk::Rect image_rect;
-    };
     struct SectionLayout
     {
         float top = 0.0f;    // un-scrolled y offset of this section's top
@@ -174,8 +149,9 @@ private:
         tk::Rect name_rect;
         tk::Rect usage_rect[3]; // Any / Emoticon / Sticker, left to right
         tk::Rect remove_chip_rect;
-        std::vector<TileLayout> tiles; // 1:1 with that pack's images, plus a
-                                        // trailing hint tile
+        std::vector<tk::Rect> tiles; // 1:1 with that pack's images, plus a
+                                     // trailing hint tile — see
+                                     // ImagePackTileGridBase::layout_tile_row_
     };
 
     // Pure layout computation in LOCAL, un-scrolled coordinates (first
@@ -186,14 +162,8 @@ private:
 
     void paint_header_(tk::PaintCtx&, std::size_t pack_idx, const SectionLayout&,
                        tk::Point origin, bool active, bool hovered_remove) const;
-    void paint_tile_(tk::PaintCtx&, std::size_t pack_idx, std::size_t tile_idx,
-                     const tk::Rect& image_rect, tk::Point origin,
-                     bool hovered_remove) const;
-    void paint_hint_tile_(tk::PaintCtx&, const tk::Rect& image_rect,
-                          tk::Point origin) const;
 
     const std::vector<StagedPack>* packs_ = nullptr;
-    ImagePackImageProvider image_provider_;
     std::optional<std::size_t> active_pack_index_;
     bool can_edit_ = false;
     std::optional<std::pair<std::size_t, std::size_t>> editing_;
@@ -204,20 +174,13 @@ private:
     std::optional<std::pair<std::size_t, std::size_t>> hovered_tile_;
     std::optional<std::size_t> hovered_header_remove_;
 
-    // Lucide "close" (circle-x) icon for remove chips — mutable because
-    // paint_header_/paint_tile_ are const and IconCache::draw() lazily
-    // rasterizes/caches on first use. Separate instances per draw size
-    // (header vs. tile chips) so alternating sizes across one paint pass
-    // doesn't thrash a single cache slot back and forth.
+    // Lucide "close" (circle-x) icon for the header's remove chip — mutable
+    // because paint_header_ is const and IconCache::draw() lazily
+    // rasterizes/caches on first use. Kept separate from the inherited
+    // remove_icon_ (used for tile remove chips) because the two are drawn at
+    // different sizes — see ImagePackTileGridBase's own comment on why a
+    // single IconCache isn't shared across distinct draw sizes.
     mutable tk::IconCache header_remove_icon_;
-    mutable tk::IconCache tile_remove_icon_;
-
-    static constexpr float kImageH      = 76.0f; // thumbnail square side
-    static constexpr float kLabelH      = 20.0f; // shortcode strip below it
-    static constexpr float kTileSize    = 96.0f; // full cell (image+label)
-    static constexpr float kTileSpacing = 8.0f;
-    static constexpr float kTilePad     = 8.0f;
-    static constexpr float kRemoveChipR = 9.0f; // mirrors AvatarEditControl
 
     static constexpr float kHeaderH        = 40.0f;
     static constexpr float kSectionGap     = 16.0f;

@@ -3930,8 +3930,20 @@ void MainWindow::bind_settings_controller_()
     // The SettingsWidget installs its own key/file dialog hooks internally,
     // so there is no separate wire_key_dialog_callbacks_ step on Qt.
     if (settingsWidget_)
+    {
         settingsWidget_->set_controller(settings_controller_.get(),
                                         my_display_name_);
+        settingsWidget_->settings_view()->set_user_pack_image_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        settingsWidget_->settings_view()->on_user_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        {
+            handle_user_pack_pending_image_added_(
+                local_id, bytes, mime,
+                settingsWidget_->settings_view()->user_pack_editor());
+        };
+    }
 }
 
 void MainWindow::pick_image_file_(
@@ -4359,6 +4371,14 @@ void MainWindow::repaint_anim_frame_()
     if (stickerPicker_ && stickerPicker_->isVisible())
     {
         stickerPicker_->invalidateImages();
+    }
+    if (settingsWidget_ && settingsWidget_->isVisible())
+    {
+        // Settings' "Emojis & Stickers" tab hosts its own top-level surface,
+        // separate from mainAppSurface_, so it needs its own animation-tick
+        // invalidation or animated stickers there only advance on
+        // mouse-move-driven repaints.
+        settingsWidget_->update_anim_regions();
     }
 }
 

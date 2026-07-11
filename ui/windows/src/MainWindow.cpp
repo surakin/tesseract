@@ -4750,6 +4750,15 @@ void MainWindow::bind_settings_controller_()
         { if (settings_controller_) settings_controller_->upload_avatar(); };
         settings_view_->on_avatar_remove_requested = [this]
         { if (settings_controller_) settings_controller_->remove_avatar(); };
+        settings_view_->set_user_pack_image_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        settings_view_->on_user_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        {
+            handle_user_pack_pending_image_added_(
+                local_id, bytes, mime, settings_view_->user_pack_editor());
+        };
     }
 
     settings_name_field_ = settings_surface_->host().make_text_field();
@@ -5667,6 +5676,14 @@ void MainWindow::repaint_anim_frame_()
     }
     if (gif_popup_surface_ && gif_popup_visible_())
         gif_popup_surface_->update_anim_regions();
+    if (settings_visible_ && settings_surface_ && settings_surface_->hwnd())
+    {
+        // Settings' "Emojis & Stickers" tab (UserPackEditor/KnownPacksList)
+        // can show animated stickers too — it has its own top-level surface,
+        // separate from main_app_surface_, so it needs its own invalidate
+        // here or animated frames only advance on mouse-move-driven repaints.
+        InvalidateRect(settings_surface_->hwnd(), nullptr, FALSE);
+    }
 }
 
 // ---------------------------------------------------------------------------

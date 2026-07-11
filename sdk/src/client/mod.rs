@@ -1234,7 +1234,8 @@ pub(super) async fn rebuild_image_packs(
                     state_key: state_key.clone(),
                 };
                 let id = crate::image_packs::pack_id_for(&source);
-                if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                    pack.is_subscribed = true;
                     packs.push(pack);
                     found = true;
                 }
@@ -1291,7 +1292,8 @@ pub(super) async fn rebuild_image_packs(
                     state_key: state_key.clone(),
                 };
                 let id = crate::image_packs::pack_id_for(&source);
-                if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                    pack.is_subscribed = true;
                     packs.push(pack);
                 }
             }

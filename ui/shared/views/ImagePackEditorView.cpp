@@ -28,11 +28,6 @@ void ImagePackSectionList::set_packs(const std::vector<StagedPack>* packs)
     refresh();
 }
 
-void ImagePackSectionList::set_image_provider(ImagePackImageProvider provider)
-{
-    image_provider_ = std::move(provider);
-}
-
 void ImagePackSectionList::set_active_pack_index(std::optional<std::size_t> idx)
 {
     active_pack_index_ = idx;
@@ -61,10 +56,6 @@ ImagePackSectionList::compute_layout_(float width) const
     if (!packs_)
         return out;
 
-    const float grid_w = std::max(0.0f, width - 2.0f * kTilePad);
-    const int cols = std::max(
-        1, static_cast<int>((grid_w + kTileSpacing) / (kTileSize + kTileSpacing)));
-
     float y = 0.0f;
     out.reserve(packs_->size());
     for (const auto& pack : *packs_)
@@ -89,23 +80,9 @@ ImagePackSectionList::compute_layout_(float width) const
 
         y += kHeaderH;
 
-        const std::size_t tile_count = pack.images.size() + 1; // + hint tile
-        const int rows = static_cast<int>(
-            (tile_count + static_cast<std::size_t>(cols) - 1) /
-            static_cast<std::size_t>(cols));
-        sec.tiles.reserve(tile_count);
-        for (std::size_t t = 0; t < tile_count; ++t)
-        {
-            const int row = static_cast<int>(t / static_cast<std::size_t>(cols));
-            const int col = static_cast<int>(t % static_cast<std::size_t>(cols));
-            const float tx = kTilePad + col * (kTileSize + kTileSpacing);
-            const float ty = y + kTilePad + row * (kTileSize + kTileSpacing);
-            sec.tiles.push_back({{tx, ty, kTileSize, kTileSize}});
-        }
-        const float grid_h =
-            kTilePad * 2.0f +
-            (rows > 0 ? rows * kTileSize + (rows - 1) * kTileSpacing : 0.0f);
-        y += grid_h + kSectionGap;
+        sec.tiles = layout_tile_row_(width, pack.images.size() + 1, y);
+        const float grid_bottom = sec.tiles.back().y + kTileSize + kTilePad;
+        y = grid_bottom + kSectionGap;
 
         sec.height = y - sec.top;
         out.push_back(std::move(sec));
@@ -134,7 +111,7 @@ tk::Rect ImagePackSectionList::label_rect_at(std::size_t pack_idx,
     const auto& sec = layout[pack_idx];
     if (tile_idx >= sec.tiles.size())
         return {};
-    const auto& r = sec.tiles[tile_idx].image_rect;
+    const auto& r = sec.tiles[tile_idx];
     const tk::Rect world{bounds_.x + r.x, bounds_.y - scroll_y_ + r.y + kImageH, r.w,
                          kLabelH};
     if (world.bottom() <= bounds_.y || world.y >= bounds_.y + bounds_.h)
@@ -264,7 +241,7 @@ bool ImagePackSectionList::on_pointer_down(tk::Point local)
         const auto& images = (*packs_)[i].images;
         for (std::size_t t = 0; t < sec.tiles.size(); ++t)
         {
-            const auto& r = sec.tiles[t].image_rect;
+            const auto& r = sec.tiles[t];
             if (local.x < r.x || local.x >= r.x + r.w || y_content < r.y ||
                 y_content >= r.y + r.h)
                 continue;
@@ -273,12 +250,7 @@ bool ImagePackSectionList::on_pointer_down(tk::Point local)
 
             if (can_edit_)
             {
-                const float ccx = r.x + r.w - kRemoveChipR;
-                const float ccy = r.y + kRemoveChipR;
-                const float dx = local.x - ccx;
-                const float dy = y_content - ccy;
-                const float tol = kRemoveChipR + 4.0f;
-                if ((dx * dx + dy * dy) <= (tol * tol))
+                if (hit_remove_chip_(local, y_content, r))
                 {
                     if (on_tile_remove_requested)
                         on_tile_remove_requested(i, t);
@@ -335,7 +307,7 @@ bool ImagePackSectionList::on_pointer_move(tk::Point local)
         const auto& images = (*packs_)[i].images;
         for (std::size_t t = 0; t < images.size(); ++t)
         {
-            const auto& r = sec.tiles[t].image_rect;
+            const auto& r = sec.tiles[t];
             if (local.x >= r.x && local.x < r.x + r.w && y_content >= r.y &&
                 y_content < r.y + kImageH)
             {
@@ -438,103 +410,6 @@ void ImagePackSectionList::paint_header_(tk::PaintCtx& ctx, std::size_t pack_idx
     ctx.canvas.fill_rect({hdr.x, hdr.bottom() - 1.0f, hdr.w, 1.0f}, pal.separator);
 }
 
-void ImagePackSectionList::paint_tile_(tk::PaintCtx& ctx, std::size_t pack_idx,
-                                       std::size_t tile_idx, const tk::Rect& cell_local,
-                                       tk::Point origin, bool hovered) const
-{
-    const tk::Rect cell{origin.x + cell_local.x, origin.y + cell_local.y, cell_local.w,
-                        cell_local.h};
-    const tk::Rect image_rect{cell.x, cell.y, cell.w, kImageH};
-    const auto& img = (*packs_)[pack_idx].images[tile_idx];
-    const auto& pal = ctx.theme.palette;
-
-    ctx.canvas.fill_rounded_rect(image_rect, 6.0f, pal.subtle_hover);
-
-    const tk::Image* bmp =
-        img.local_preview ? img.local_preview.get()
-                          : (image_provider_ && !img.existing_url.empty()
-                                 ? image_provider_(img.existing_url)
-                                 : nullptr);
-    if (bmp)
-    {
-        const float iw = static_cast<float>(bmp->width());
-        const float ih = static_cast<float>(bmp->height());
-        if (iw > 0 && ih > 0)
-        {
-            const float s  = std::min(image_rect.w / iw, image_rect.h / ih);
-            const float dw = iw * s;
-            const float dh = ih * s;
-            const tk::Rect dst{image_rect.x + (image_rect.w - dw) * 0.5f,
-                              image_rect.y + (image_rect.h - dh) * 0.5f, dw, dh};
-            ctx.canvas.draw_image(*bmp, dst);
-        }
-    }
-
-    const bool is_editing =
-        editing_ && editing_->first == pack_idx && editing_->second == tile_idx;
-    if (!is_editing)
-    {
-        // halign left at default (Leading) — centered manually below via the
-        // measured size; see the comment on the usage-segment labels above
-        // for why halign::Center would double up with that manual offset.
-        tk::TextStyle st;
-        st.role      = tk::FontRole::Small;
-        st.trim      = tk::TextTrim::Ellipsis;
-        st.max_width = cell.w - 4.0f;
-        const std::string text =
-            img.shortcode.empty() ? tk::tr("(no shortcode)") : img.shortcode;
-        auto lay = ctx.factory.build_text(text, st);
-        if (lay)
-        {
-            const tk::Size sz = lay->measure();
-            ctx.canvas.draw_text(
-                *lay,
-                {cell.x + (cell.w - sz.w) * 0.5f,
-                 cell.y + kImageH + (kLabelH - sz.h) * 0.5f},
-                pal.text_muted);
-        }
-    }
-
-    if (hovered && can_edit_)
-    {
-        const float cx = image_rect.x + image_rect.w - kRemoveChipR;
-        const float cy = image_rect.y + kRemoveChipR;
-        const tk::Rect chip{cx - kRemoveChipR, cy - kRemoveChipR, kRemoveChipR * 2.0f,
-                            kRemoveChipR * 2.0f};
-        ctx.canvas.fill_rounded_rect(chip, kRemoveChipR,
-                                    tk::Color::rgba(40, 40, 40, 220));
-        tile_remove_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, chip, 12.0f,
-                              tk::Color::rgb(0xffffff));
-    }
-}
-
-void ImagePackSectionList::paint_hint_tile_(tk::PaintCtx& ctx,
-                                            const tk::Rect& cell_local,
-                                            tk::Point origin) const
-{
-    const tk::Rect cell{origin.x + cell_local.x, origin.y + cell_local.y, cell_local.w,
-                        cell_local.h};
-    const tk::Rect image_rect{cell.x, cell.y, cell.w, kImageH};
-    const auto& pal = ctx.theme.palette;
-    ctx.canvas.stroke_rounded_rect(image_rect, 6.0f, pal.border);
-
-    // halign/valign left at default — centered manually below, same
-    // reasoning as the usage-segment labels' comment above.
-    tk::TextStyle st;
-    st.role      = tk::FontRole::Small;
-    st.wrap      = true;
-    st.max_width = image_rect.w - 8.0f;
-    auto lay = ctx.factory.build_text(tk::tr("Drop image or paste"), st);
-    if (lay)
-    {
-        const tk::Size sz = lay->measure();
-        ctx.canvas.draw_text(*lay,
-                             {image_rect.x + (image_rect.w - sz.w) * 0.5f,
-                              image_rect.y + (image_rect.h - sz.h) * 0.5f},
-                             pal.text_muted);
-    }
-}
-
 void ImagePackSectionList::paint(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
@@ -563,12 +438,16 @@ void ImagePackSectionList::paint(tk::PaintCtx& ctx)
             if (t < images.size())
             {
                 const bool hovered =
-                    hovered_tile_ && hovered_tile_->first == i && hovered_tile_->second == t;
-                paint_tile_(ctx, i, t, sec.tiles[t].image_rect, origin, hovered);
+                    can_edit_ && hovered_tile_ && hovered_tile_->first == i &&
+                    hovered_tile_->second == t;
+                const bool is_editing =
+                    editing_ && editing_->first == i && editing_->second == t;
+                paint_tile_shared_(ctx, images[t], sec.tiles[t], origin, hovered,
+                                   is_editing);
             }
             else
             {
-                paint_hint_tile_(ctx, sec.tiles[t].image_rect, origin);
+                paint_hint_tile_shared_(ctx, sec.tiles[t], origin);
             }
         }
     }

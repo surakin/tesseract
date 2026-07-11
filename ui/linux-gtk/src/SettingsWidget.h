@@ -100,6 +100,14 @@ public:
     void set_autoscroll_unread_pref(bool enabled);
     void set_show_membership_events_pref(bool enabled);
 
+    // Repaint the surface on every ~60Hz animation tick while this widget is
+    // visible, so animated stickers in the Emojis & Stickers tab advance
+    // without needing mouse movement — mirrors
+    // sticker_picker_surface_->relayout()'s brute-force-repaint idiom (GTK4's
+    // partial-region AnimDamageSink path isn't wired up for this view; see
+    // ImagePackTileGridBase, which doesn't call ctx.anim_damage->note_image()).
+    void update_anim_regions();
+
 private:
     std::unique_ptr<tk::gtk4::Surface> surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed

@@ -429,6 +429,10 @@ public:
                                                std::vector<uint8_t> bytes,
                                                std::string mime,
                                                tesseract::views::RoomSettingsView* target);
+    void handle_user_pack_pending_image_added(std::uint64_t local_id,
+                                              std::vector<uint8_t> bytes,
+                                              std::string mime,
+                                              tesseract::views::UserPackEditor* target);
     void wire_main_app_widget(tesseract::views::MainAppWidget* app);
     void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
                                tk::Host& host,
@@ -723,6 +727,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)hideGifPopup;
 - (BOOL)gifPopupVisible;
 - (void)repaintGifPopupAnimRegions;
+- (void)repaintSettingsAnimRegions;
 - (void)_relayoutMentionPopupIfVisible;
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
@@ -1617,6 +1622,7 @@ void MacShell::repaint_anim_frame_()
     if (ctrl_)
     {
         [ctrl_ repaintGifPopupAnimRegions];
+        [ctrl_ repaintSettingsAnimRegions];
     }
 }
 
@@ -2351,6 +2357,10 @@ void MacShell::handle_image_pack_pending_image_added(
     std::uint64_t local_id, std::vector<uint8_t> bytes, std::string mime,
     tesseract::views::RoomSettingsView* target)
     { handle_image_pack_pending_image_added_(local_id, std::move(bytes), std::move(mime), target); }
+void MacShell::handle_user_pack_pending_image_added(
+    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string mime,
+    tesseract::views::UserPackEditor* target)
+    { handle_user_pack_pending_image_added_(local_id, std::move(bytes), std::move(mime), target); }
 void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
     { wire_main_app_widget_(app); }
 void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
@@ -6884,6 +6894,19 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _gifPopupSurface->update_anim_regions();
 }
 
+- (void)repaintSettingsAnimRegions
+{
+    // Settings' "Emojis & Stickers" tab hosts its own top-level surface,
+    // separate from _mainAppSurface, so it needs its own animation-tick
+    // invalidation or animated stickers there only advance on
+    // mouse-move-driven repaints.
+    if (_settingsSurface &&
+        !((__bridge NSView*)_settingsSurface->view_handle()).hidden)
+    {
+        _settingsSurface->update_anim_regions();
+    }
+}
+
 - (void)showGifPopup
 {
     if (!_gifPanel || !_mainAppSurface || !_gifPopupWidget || !_roomTextArea)
@@ -7480,6 +7503,27 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             s->_settingsView->set_avatar_url(mxc);
             if (s->_settingsSurface) s->_settingsSurface->relayout();
             [s _populateUserStrip];
+        };
+
+        _settingsView->set_user_pack_image_provider(
+            [ws](const std::string& url) -> const tk::Image*
+        {
+            MainWindowController* s = ws;
+            if (!s)
+                return nullptr;
+            if (const auto* img = s->_shell->account_manager_.image_cache().peek(url))
+                return img;
+            s->_shell->ensure_media_image(url, 96, 96);
+            return nullptr;
+        });
+        _settingsView->on_user_pack_pending_image_added =
+            [ws](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                const std::string& mime)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            s->_shell->handle_user_pack_pending_image_added(
+                local_id, bytes, mime, s->_settingsView->user_pack_editor());
         };
     }
 

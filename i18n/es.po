@@ -1068,3 +1068,19 @@ msgstr "(sin código corto)"
 #: ui/shared/views/ImagePackEditorView.cpp
 msgid "Drop image or paste"
 msgstr "Suelta una imagen o pégala"
+
+#: ui/shared/views/settings/ImagePacksSection.cpp
+msgid "Your Sticker Pack"
+msgstr "Tu paquete de stickers"
+
+#: ui/shared/views/settings/ImagePacksSection.cpp
+msgid "Subscribed Packs"
+msgstr "Paquetes suscritos"
+
+#: ui/shared/views/settings/ImagePacksSection.cpp
+msgid "Save"
+msgstr "Guardar"
+
+#: ui/shared/views/settings/KnownPacksList.cpp
+msgid "No image packs found yet."
+msgstr "Aún no se han encontrado paquetes de imágenes."

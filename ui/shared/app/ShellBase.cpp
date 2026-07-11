@@ -2385,6 +2385,29 @@ void ShellBase::handle_image_pack_pending_image_added_(
         });
 }
 
+void ShellBase::handle_user_pack_pending_image_added_(
+    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string /*mime*/,
+    views::UserPackEditor* target)
+{
+    run_async_(
+        [this, local_id, bytes = std::move(bytes), target]()
+        {
+            DecodedImage decoded = decode_image_(bytes, 256, 256);
+            std::shared_ptr<tk::Image> preview;
+            if (decoded.still)
+                preview = std::shared_ptr<tk::Image>(std::move(decoded.still));
+            else if (!decoded.frames.empty())
+                preview =
+                    std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
+            post_to_ui_alive_(
+                [this, local_id, target, preview = std::move(preview)]() mutable
+                {
+                    if (target)
+                        target->set_tile_preview(local_id, std::move(preview));
+                });
+        });
+}
+
 void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
                                                         std::string /*json*/)
 {
@@ -6727,6 +6750,11 @@ void ShellBase::handle_image_packs_updated_ui_()
             }
         }
     }
+    // Keep the global Settings "Emojis & Stickers" tab's known-packs list
+    // and personal-pack snapshot current too — cheap (local cache reads
+    // only), same justification as the cached_emoticons_ rebuild above.
+    if (settings_controller_)
+        settings_controller_->load_image_packs();
 }
 
 std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const

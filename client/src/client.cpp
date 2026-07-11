@@ -1953,6 +1953,29 @@ Result Client::toggle_favorite_sticker(const std::string& image_url)
     return from_ffi(impl_->ffi->toggle_favorite_sticker(image_url));
 }
 
+Result Client::remove_user_pack_image(const std::string& shortcode)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->remove_user_pack_image(shortcode));
+}
+
+Result Client::rename_user_pack_image(const std::string& old_shortcode,
+                                      const std::string& new_shortcode)
+{
+    SH_FFI;
+    return from_ffi(
+        impl_->ffi->rename_user_pack_image(old_shortcode, new_shortcode));
+}
+
+Result Client::set_pack_room_subscribed(const std::string& room_id,
+                                        const std::string& state_key,
+                                        bool subscribed)
+{
+    SH_FFI;
+    return from_ffi(
+        impl_->ffi->set_pack_room_subscribed(room_id, state_key, subscribed));
+}
+
 std::vector<std::string>
 Client::space_children(const std::string& space_id) const
 {

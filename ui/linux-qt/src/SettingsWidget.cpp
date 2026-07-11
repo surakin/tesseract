@@ -272,6 +272,12 @@ void SettingsWidget::set_theme(const tk::Theme& t)
     }
 }
 
+void SettingsWidget::update_anim_regions()
+{
+    if (surface_)
+        surface_->update_anim_regions();
+}
+
 void SettingsWidget::resizeEvent(QResizeEvent* e)
 {
     QWidget::resizeEvent(e);

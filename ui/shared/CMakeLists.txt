@@ -137,6 +137,8 @@ set(_tk_sources
     views/ForwardRoomPicker.cpp
     views/MessageSearchView.h
     views/MessageSearchView.cpp
+    views/ImagePackTileGridBase.h
+    views/ImagePackTileGridBase.cpp
     views/ImagePackEditorView.h
     views/ImagePackEditorView.cpp
     views/RoomMediaView.h
@@ -230,6 +232,12 @@ set(_tk_sources
     views/settings/RoomSecuritySection.cpp
     views/settings/RoomPermissionsSection.h
     views/settings/RoomPermissionsSection.cpp
+    views/settings/UserPackEditor.h
+    views/settings/UserPackEditor.cpp
+    views/settings/KnownPacksList.h
+    views/settings/KnownPacksList.cpp
+    views/settings/ImagePacksSection.h
+    views/settings/ImagePacksSection.cpp
 )
 
 # Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,

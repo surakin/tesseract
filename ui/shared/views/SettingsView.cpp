@@ -159,6 +159,17 @@ SettingsView::SettingsView()
     auto about = std::make_unique<AboutSection>();
     about_ = about.get();
 
+    // Emojis & Stickers section.
+    auto image_packs = std::make_unique<ImagePacksSection>();
+    image_packs_ = image_packs.get();
+    image_packs_->on_user_pack_pending_image_added =
+        [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+              const std::string& mime)
+    {
+        if (on_user_pack_pending_image_added)
+            on_user_pack_pending_image_added(local_id, bytes, mime);
+    };
+
     // Language section.
     auto language = std::make_unique<LanguageSection>();
     language->on_language_changed = [this](std::string code)
@@ -180,6 +191,7 @@ SettingsView::SettingsView()
     tabs->add_tab(tk::tr("Media"), std::move(media));
     tabs->add_tab(tk::tr("Privacy"), std::move(privacy));
     tabs->add_tab(tk::tr("Server"), std::move(server));
+    tabs->add_tab(tk::tr("Emojis & Stickers"), std::move(image_packs));
     tabs->add_tab(tk::tr("Language"), std::move(language));
     tabs->add_bottom_tab(tk::tr("About"), std::move(about));
     // First tab is auto-selected by SideTabView::add_tab.
@@ -435,6 +447,49 @@ void SettingsView::set_current_device_id(std::string id)
         devices_->set_current_device_id(std::move(id));
 }
 
+void SettingsView::set_user_pack_images(
+    std::vector<tesseract::ImagePackImage> images)
+{
+    if (image_packs_)
+        image_packs_->set_user_pack_images(std::move(images));
+}
+
+void SettingsView::set_user_pack_image_provider(ImagePackImageProvider p)
+{
+    if (image_packs_)
+        image_packs_->set_user_pack_image_provider(std::move(p));
+}
+
+void SettingsView::set_user_pack_tile_preview(std::uint64_t local_id,
+                                              std::shared_ptr<tk::Image> image)
+{
+    if (image_packs_)
+        image_packs_->set_user_pack_tile_preview(local_id, std::move(image));
+}
+
+void SettingsView::set_user_pack_saving(bool saving)
+{
+    if (image_packs_)
+        image_packs_->set_user_pack_saving(saving);
+}
+
+void SettingsView::set_user_pack_save_result(bool ok, std::string error)
+{
+    if (image_packs_)
+        image_packs_->set_user_pack_save_result(ok, std::move(error));
+}
+
+void SettingsView::set_known_packs(std::vector<tesseract::ImagePack> all_room_packs)
+{
+    if (image_packs_)
+        image_packs_->set_known_packs(std::move(all_room_packs));
+}
+
+UserPackEditor* SettingsView::user_pack_editor() const
+{
+    return image_packs_ ? image_packs_->user_pack_editor() : nullptr;
+}
+
 void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
                                    uint64_t memory_bytes,
                                    uint64_t mem_hits, uint64_t mem_misses,
@@ -665,6 +720,53 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
         privacy_->on_export_keys = [ctrl] { ctrl->export_room_keys(); };
         privacy_->on_import_keys = [ctrl] { ctrl->import_room_keys(); };
     }
+
+    // Wire controller → ImagePacksSection state.
+    ctrl->on_image_packs_loaded =
+        [this](std::vector<tesseract::ImagePack> packs)
+    {
+        if (!image_packs_) return;
+        image_packs_->set_known_packs(std::move(packs));
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_user_pack_images_loaded =
+        [this](std::vector<tesseract::ImagePackImage> images)
+    {
+        if (!image_packs_) return;
+        image_packs_->set_user_pack_images(std::move(images));
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_user_pack_save_result = [this](bool ok, std::string error)
+    {
+        if (!image_packs_) return;
+        image_packs_->set_user_pack_saving(false);
+        image_packs_->set_user_pack_save_result(ok, std::move(error));
+        if (request_repaint_) request_repaint_();
+    };
+
+    // Wire ImagePacksSection click callbacks → controller.
+    image_packs_->on_user_pack_save_clicked = [this, ctrl]
+    {
+        if (!image_packs_ || !image_packs_->user_pack_editor()) return;
+        auto* editor = image_packs_->user_pack_editor();
+        if (!editor->has_changes()) return;
+        image_packs_->set_user_pack_saving(true);
+        if (request_repaint_) request_repaint_();
+        ctrl->save_user_pack_changes(editor->build_result());
+    };
+    image_packs_->on_pack_subscription_toggled =
+        [ctrl](std::string room_id, std::string state_key, bool subscribed)
+    {
+        ctrl->set_pack_subscribed(std::move(room_id), std::move(state_key),
+                                  subscribed);
+    };
+
+    // Kick off the initial image-pack load, exactly like the devices load
+    // above — set_controller is itself only called once per shell at
+    // startup, not on every settings-open, so this is loaded once up front
+    // and kept current afterwards via on_image_packs_updated (see
+    // ShellBase::handle_image_packs_updated_ui_).
+    ctrl->load_image_packs();
 }
 
 void SettingsView::set_name_busy(bool busy)        { account_->set_name_busy(busy); }

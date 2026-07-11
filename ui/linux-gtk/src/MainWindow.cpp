@@ -3793,6 +3793,16 @@ void MainWindow::bind_settings_controller_()
             !own_extended_profile_.tz.empty() ||
             !own_extended_profile_.biography.empty())
             settings_widget_->set_extended_profile(own_extended_profile_);
+        settings_widget_->settings_view()->set_user_pack_image_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        settings_widget_->settings_view()->on_user_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        {
+            handle_user_pack_pending_image_added_(
+                local_id, bytes, mime,
+                settings_widget_->settings_view()->user_pack_editor());
+        };
     }
 }
 

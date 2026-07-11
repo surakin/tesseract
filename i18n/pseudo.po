@@ -411,6 +411,22 @@ msgstr "[(ñö shörtçödé)xx]"
 msgid "Drop image or paste"
 msgstr "[Dröp ïmàgé ör pàstéxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/settings/ImagePacksSection.cpp:13
+msgid "Your Sticker Pack"
+msgstr "[Ýöür Stïçkér Pàçkxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/ImagePacksSection.cpp:27
+msgid "Save"
+msgstr "[Sàvéxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/ImagePacksSection.cpp:37
+msgid "Subscribed Packs"
+msgstr "[Sübsçrïbéd Pàçksxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/KnownPacksList.cpp:28
+msgid "No image packs found yet."
+msgstr "[Nö ïmàgé pàçks föünd ýét.xxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/ImagePackEditorView.cpp:295
 msgid "Emoji & stickers"
 msgstr "[Émöjï & stïçkérsxxx]"

@@ -140,6 +140,12 @@ pub struct ImagePack {
     pub usage: u8,
     pub source: PackSource,
     pub images: Vec<ImageEntry>,
+    /// True only for `PackSource::Room` packs whose `(room_id, state_key)`
+    /// appears in the user's explicit `m.image_pack.rooms` /
+    /// `im.ponies.emote_rooms` account data, as opposed to being visible
+    /// only because the user is joined to the source room. Always `false`
+    /// for `PackSource::User` (subscription has no meaning there).
+    pub is_subscribed: bool,
 }
 
 impl ImagePack {
@@ -278,6 +284,7 @@ pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Op
         usage: pack_usage,
         source,
         images: entries,
+        is_subscribed: false,
     })
 }
 
@@ -348,6 +355,119 @@ pub fn iter_emote_rooms(content: &Value) -> Vec<(String, String)> {
         }
     }
     out
+}
+
+/// Add `(room_id, state_key)` to an `im.ponies.emote_rooms` /
+/// `m.image_pack.rooms` content's `rooms` map. Idempotent — a pair already
+/// present is left unchanged.
+pub fn add_room_pack_subscription(mut content: Value, room_id: &str, state_key: &str) -> Value {
+    if !content.is_object() {
+        content = empty_object();
+    }
+    let obj = content.as_object_mut().expect("just ensured object");
+    let rooms_entry = obj.entry("rooms").or_insert_with(empty_object);
+    if !rooms_entry.is_object() {
+        *rooms_entry = empty_object();
+    }
+    let rooms = rooms_entry.as_object_mut().expect("just ensured object");
+    let room_entry = rooms
+        .entry(room_id.to_owned())
+        .or_insert_with(empty_object);
+    if !room_entry.is_object() {
+        *room_entry = empty_object();
+    }
+    let state_keys = room_entry.as_object_mut().expect("just ensured object");
+    state_keys
+        .entry(state_key.to_owned())
+        .or_insert_with(empty_object);
+    content
+}
+
+/// Remove `(room_id, state_key)` from an `im.ponies.emote_rooms` /
+/// `m.image_pack.rooms` content's `rooms` map. Idempotent — a pair already
+/// absent is a no-op. Drops the room's entry entirely once its last
+/// state_key is removed, so an unsubscribe never leaves a dangling empty
+/// `{}` behind.
+pub fn remove_room_pack_subscription(mut content: Value, room_id: &str, state_key: &str) -> Value {
+    let Some(obj) = content.as_object_mut() else {
+        return content;
+    };
+    let Some(rooms) = obj.get_mut("rooms").and_then(Value::as_object_mut) else {
+        return content;
+    };
+    let mut drop_room = false;
+    if let Some(state_keys) = rooms.get_mut(room_id).and_then(Value::as_object_mut) {
+        state_keys.remove(state_key);
+        drop_room = state_keys.is_empty();
+    }
+    if drop_room {
+        rooms.remove(room_id);
+    }
+    content
+}
+
+/// Remove `images.<shortcode>` from a user-pack content. No-op (content
+/// returned unchanged) if the key doesn't exist.
+pub fn remove_image_from_user_pack(mut content: Value, shortcode: &str) -> Value {
+    if let Some(images) = content
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("images"))
+        .and_then(Value::as_object_mut)
+    {
+        images.remove(shortcode);
+    }
+    content
+}
+
+/// Rename `old_shortcode` to `new_shortcode` in a user-pack content's
+/// `images` map. If `new_shortcode` already exists, a numeric suffix is
+/// appended (mirrors `suggest_shortcode`'s collision handling) — the
+/// actually-applied shortcode is returned alongside the mutated content so
+/// the caller can report it back. No-op (returns the original shortcode)
+/// if `old_shortcode` doesn't exist.
+pub fn rename_image_in_user_pack(
+    mut content: Value,
+    old_shortcode: &str,
+    new_shortcode: &str,
+) -> (Value, String) {
+    let Some(images) = content
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("images"))
+        .and_then(Value::as_object_mut)
+    else {
+        return (content, old_shortcode.to_owned());
+    };
+    if !images.contains_key(old_shortcode) {
+        return (content, old_shortcode.to_owned());
+    }
+    if old_shortcode == new_shortcode {
+        return (content, old_shortcode.to_owned());
+    }
+    let mut applied = new_shortcode.to_owned();
+    if images.contains_key(&applied) {
+        applied = loop_suffixed_shortcode(images, new_shortcode);
+    }
+    let entry = images.remove(old_shortcode).expect("just checked contains_key");
+    images.insert(applied.clone(), entry);
+    (content, applied)
+}
+
+/// Shared numeric-suffix collision resolver for renaming — same shape as
+/// `suggest_shortcode`'s loop, factored out so both can use it.
+fn loop_suffixed_shortcode(existing: &serde_json::Map<String, Value>, base: &str) -> String {
+    for n in 2..=10_000 {
+        let candidate = format!("{base}_{n}");
+        if !existing.contains_key(&candidate) {
+            return candidate;
+        }
+    }
+    format!(
+        "{base}_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )
 }
 
 /// Build a synthetic pack id. `user` for the global user pack; `room:!id/key`
@@ -841,5 +961,99 @@ mod tests {
         let m = serde_json::Map::new();
         assert_eq!(suggest_shortcode("", &m), "sticker");
         assert_eq!(suggest_shortcode("🎉🎉🎉", &m), "sticker");
+    }
+
+    #[test]
+    fn add_room_pack_subscription_round_trips_through_iter_emote_rooms() {
+        let content = add_room_pack_subscription(Value::Null, "!a:h", "main");
+        let pairs = iter_emote_rooms(&content);
+        assert_eq!(pairs, vec![("!a:h".into(), "main".into())]);
+        // Idempotent.
+        let content2 = add_room_pack_subscription(content, "!a:h", "main");
+        assert_eq!(
+            iter_emote_rooms(&content2),
+            vec![("!a:h".into(), "main".into())]
+        );
+    }
+
+    #[test]
+    fn remove_room_pack_subscription_drops_pair_and_empty_room() {
+        let content = add_room_pack_subscription(Value::Null, "!a:h", "main");
+        let content = remove_room_pack_subscription(content, "!a:h", "main");
+        assert!(iter_emote_rooms(&content).is_empty());
+        // The room entry itself should be gone, not left as `{}`.
+        assert!(content.pointer("/rooms/!a:h").is_none());
+    }
+
+    #[test]
+    fn remove_room_pack_subscription_absent_pair_is_noop() {
+        let content = json!({ "rooms": { "!a:h": { "main": {} } } });
+        let out = remove_room_pack_subscription(content.clone(), "!b:h", "other");
+        assert_eq!(out, content);
+    }
+
+    #[test]
+    fn remove_room_pack_subscription_keeps_sibling_state_keys() {
+        let content = json!({ "rooms": { "!a:h": { "main": {}, "second": {} } } });
+        let out = remove_room_pack_subscription(content, "!a:h", "main");
+        let mut pairs = iter_emote_rooms(&out);
+        pairs.sort();
+        assert_eq!(pairs, vec![("!a:h".into(), "second".into())]);
+    }
+
+    #[test]
+    fn remove_image_from_user_pack_removes_shortcode() {
+        let c = json!({ "images": { "a": { "url": "mxc://h/a" }, "b": { "url": "mxc://h/b" } } });
+        let out = remove_image_from_user_pack(c, "a");
+        assert!(out.pointer("/images/a").is_none());
+        assert!(out.pointer("/images/b").is_some());
+    }
+
+    #[test]
+    fn remove_image_from_user_pack_absent_shortcode_is_noop() {
+        let c = json!({ "images": { "a": { "url": "mxc://h/a" } } });
+        let out = remove_image_from_user_pack(c.clone(), "missing");
+        assert_eq!(out, c);
+    }
+
+    #[test]
+    fn rename_image_in_user_pack_renames_key() {
+        let c = json!({ "images": { "a": { "url": "mxc://h/a" } } });
+        let (out, applied) = rename_image_in_user_pack(c, "a", "b");
+        assert_eq!(applied, "b");
+        assert!(out.pointer("/images/a").is_none());
+        assert_eq!(
+            out.pointer("/images/b/url").unwrap().as_str().unwrap(),
+            "mxc://h/a"
+        );
+    }
+
+    #[test]
+    fn rename_image_in_user_pack_collision_appends_suffix() {
+        let c = json!({
+            "images": {
+                "a": { "url": "mxc://h/a" },
+                "b": { "url": "mxc://h/b" }
+            }
+        });
+        let (out, applied) = rename_image_in_user_pack(c, "a", "b");
+        assert_eq!(applied, "b_2");
+        assert!(out.pointer("/images/a").is_none());
+        assert_eq!(
+            out.pointer("/images/b/url").unwrap().as_str().unwrap(),
+            "mxc://h/b"
+        );
+        assert_eq!(
+            out.pointer("/images/b_2/url").unwrap().as_str().unwrap(),
+            "mxc://h/a"
+        );
+    }
+
+    #[test]
+    fn rename_image_in_user_pack_absent_shortcode_is_noop() {
+        let c = json!({ "images": { "a": { "url": "mxc://h/a" } } });
+        let (out, applied) = rename_image_in_user_pack(c.clone(), "missing", "b");
+        assert_eq!(out, c);
+        assert_eq!(applied, "missing");
     }
 }

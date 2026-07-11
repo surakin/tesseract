@@ -63,6 +63,11 @@ struct ImagePack
     /// For `PackSourceKind::Room`, the state_key inside that room. Empty
     /// otherwise. May legitimately be the empty string ("default" pack).
     std::string source_state_key;
+    /// Only meaningful for `PackSourceKind::Room`; true when this pack is in
+    /// the user's explicit `m.image_pack.rooms`/`im.ponies.emote_rooms`
+    /// subscription list, as opposed to being visible only because the user
+    /// is joined to the source room.
+    bool is_subscribed = false;
 };
 
 struct ImagePackImage
