@@ -1,6 +1,7 @@
 #include "StickerPicker.h"
 
 #include "tk/theme.h"
+#include "views/image_pack_order.h"
 
 #include <tesseract/client.h>
 
@@ -57,6 +58,7 @@ void StickerPicker::refresh_packs()
     {
         // Keep only packs whose usage allows stickers (per MSC2545; missing
         // usage means any, which the SDK already normalised to PackUsage::Any).
+        std::vector<tesseract::ImagePack> filtered;
         for (auto& p : client_->list_image_packs())
         {
             if (any(p.usage & PackUsage::Sticker))
@@ -70,9 +72,10 @@ void StickerPicker::refresh_packs()
                     if (!imgs.empty())
                         p.avatar_url = imgs.front().url;
                 }
-                packs_.push_back(std::move(p));
+                filtered.push_back(std::move(p));
             }
         }
+        packs_ = order_picker_packs(std::move(filtered), current_room_id_);
         favorites_ = client_->list_favorite_stickers();
     }
     // If we were on Favorites and there are no longer any, fall back to pack 0.

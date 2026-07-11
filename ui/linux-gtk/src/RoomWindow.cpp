@@ -442,8 +442,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             if (shortcode_popup_surface_)
                 shortcode_popup_surface_->host().request_repaint();
         };
-        sh.emoticons = [this]() -> const std::vector<tesseract::ImagePackImage>&
-        { return shell_emoticons_(); };
+        sh.emoticons = [this]() { return shell_emoticons_(); };
         sh.fetch_image = [this](const std::string& url)
         { shell_ensure_media_image_(url, 28, 28); };
         sh.resolve_image = [this](const std::string& url) -> const tk::Image*
@@ -781,6 +780,7 @@ void RoomWindow::build_emoji_popover_()
         std::make_unique<tk::gtk4::Surface>(surface_->theme());
     auto shared = std::make_unique<tesseract::views::EmojiPicker>();
     emoji_picker_shared_ = shared.get();
+    emoji_picker_shared_->set_current_room_id(room_id_);
     emoji_picker_shared_->set_client(shell_client_());
     emoji_picker_shared_->on_selected = [this](const std::string& glyph)
     {
@@ -861,6 +861,7 @@ void RoomWindow::build_sticker_popover_()
         std::make_unique<tk::gtk4::Surface>(surface_->theme());
     auto shared = std::make_unique<tesseract::views::StickerPicker>();
     sticker_picker_shared_ = shared.get();
+    sticker_picker_shared_->set_current_room_id(room_id_);
     sticker_picker_shared_->set_client(shell_client_());
     sticker_picker_shared_->on_selected =
         [this](const tesseract::ImagePackImage& img)

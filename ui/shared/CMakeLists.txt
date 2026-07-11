@@ -103,6 +103,8 @@ set(_tk_sources
     views/EncryptionSetupOverlay.cpp
     views/StickerPicker.h
     views/StickerPicker.cpp
+    views/image_pack_order.h
+    views/image_pack_order.cpp
     views/ThreadListView.h
     views/ThreadListView.cpp
     views/ThreadView.h

@@ -1014,8 +1014,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     shortcode_popup_surface_->host().request_repaint();
             };
             sh.emoticons =
-                [this]() -> const std::vector<tesseract::ImagePackImage>&
-            { return cached_emoticons_; };
+                [this]() { return emoticons_for_room_(current_room_id_); };
             sh.fetch_image = [this](const std::string& url)
             { ensure_media_image_(url, 28, 28); };
             sh.resolve_image = make_static_image_provider_();
@@ -4668,6 +4667,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                             // one arrange per drain instead of one full arrange
                             // each — keeps the queue short for a pending echo.
                             schedule_relayout_();
+                            if (settings_widget_ &&
+                                gtk_widget_get_visible(settings_widget_->widget()))
+                            {
+                                settings_widget_->request_repaint();
+                            }
                             notify_secondary_media_ready_(cache_key, kind);
                         });
                     return;
@@ -4730,6 +4734,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         gtk_widget_get_visible(account_picker_popover_))
                     {
                         account_picker_surface_->relayout();
+                    }
+                    if (settings_widget_ &&
+                        gtk_widget_get_visible(settings_widget_->widget()))
+                    {
+                        settings_widget_->request_repaint();
                     }
                     notify_secondary_media_ready_(cache_key, kind);
                 });
@@ -5518,6 +5527,7 @@ void MainWindow::refresh_pickers_packs_()
 {
     if (sticker_picker_shared_)
     {
+        sticker_picker_shared_->set_current_room_id(current_room_id_);
         sticker_picker_shared_->refresh_packs();
     }
     if (sticker_picker_surface_)
@@ -5526,6 +5536,7 @@ void MainWindow::refresh_pickers_packs_()
     }
     if (emoji_picker_shared_)
     {
+        emoji_picker_shared_->set_current_room_id(current_room_id_);
         emoji_picker_shared_->refresh_emoticon_packs();
     }
     if (emoji_picker_surface_)

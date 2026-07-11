@@ -48,6 +48,55 @@ impl ClientFfi {
         Vec::new()
     }
 
+    /// Every room-sourced MSC2545 pack known so far, for the "Known Packs"
+    /// settings page (browse rooms with a pack, subscribe/unsubscribe). A
+    /// fast local read — no network I/O: rooms are discovered lazily as the
+    /// user visits them (or as soon as they're in `m.image_pack.rooms` /
+    /// `im.ponies.emote_rooms`, prefilled at session start), and each
+    /// discovery persists to the `room_image_pack_cache` table in
+    /// `app_cache.db` via `rebuild_image_packs`. `is_subscribed` is
+    /// recomputed fresh from live account data on every call since it can
+    /// change independently of whether a room still has a pack.
+    #[cfg(not(test))]
+    pub fn list_known_room_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
+        let cached = {
+            let db = self.app_cache_db.lock();
+            db.as_ref()
+                .map(super::backfill::read_known_room_packs)
+                .unwrap_or_default()
+        };
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        let subscribed_set = self.rt.block_on(super::collect_subscribed_room_refs(&client));
+        cached
+            .into_iter()
+            .map(|(room_id, state_key, display_name)| {
+                let is_subscribed = subscribed_set.contains(&(room_id.clone(), state_key.clone()));
+                let id = crate::image_packs::pack_id_for(&crate::image_packs::PackSource::Room {
+                    room_id: room_id.clone(),
+                    state_key: state_key.clone(),
+                });
+                crate::ffi::ImagePackFfi {
+                    id,
+                    display_name,
+                    avatar_url: String::new(),
+                    attribution: String::new(),
+                    usage_mask: crate::image_packs::USAGE_ANY,
+                    source_kind: "room".to_owned(),
+                    source_room: room_id,
+                    source_state_key: state_key,
+                    is_subscribed,
+                }
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub fn list_known_room_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
+        Vec::new()
+    }
+
     /// Return every entry in `pack_id` whose usage mask intersects
     /// `usage_filter` ("sticker" | "emoticon" | "any" — anything else is
     /// treated as "any"). When `pack_id` doesn't exist, returns empty.
@@ -758,9 +807,12 @@ impl ClientFfi {
             (matrix_sdk::ruma::OwnedRoomId, String),
             Option<serde_json::Value>,
         > = std::collections::HashMap::new();
-        let packs = self
-            .rt
-            .block_on(async move { super::rebuild_image_packs(&client, &mut http_cache).await });
+        let active_rooms_snapshot = self.active_rooms.lock().clone();
+        let app_cache_db = Arc::clone(&self.app_cache_db);
+        let room_state_cache = Arc::clone(&self.room_state_cache);
+        let packs = self.rt.block_on(async move {
+            super::rebuild_image_packs(&client, &mut http_cache, &active_rooms_snapshot, &app_cache_db, &room_state_cache).await
+        });
         {
             let mut cache = self.image_packs.lock();
             *cache = packs;

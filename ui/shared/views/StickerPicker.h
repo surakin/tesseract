@@ -43,6 +43,16 @@ public:
     /// "Loading packs…".
     void set_client(tesseract::Client* c);
 
+    /// Which room this picker is currently being shown for (empty = no
+    /// room context, e.g. viewing the room list). Read by `refresh_packs()`
+    /// to order that room's own pack right after the personal pack — see
+    /// `order_picker_packs`. Callers should set this before calling
+    /// `refresh_packs()`.
+    void set_current_room_id(std::string room_id)
+    {
+        current_room_id_ = std::move(room_id);
+    }
+
     /// Re-pull packs + favourites from the client. The picker calls this
     /// automatically on `set_client`; the host should call it from its
     /// `IEventHandler::on_image_packs_updated` callback.
@@ -129,6 +139,7 @@ private:
     }
 
     tesseract::Client* client_ = nullptr;
+    std::string current_room_id_;
 
     std::vector<tesseract::ImagePack> packs_; // sticker-capable packs only
     std::vector<tesseract::ImagePackImage> favorites_;

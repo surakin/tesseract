@@ -108,6 +108,12 @@ public:
     // ImagePackTileGridBase, which doesn't call ctx.anim_damage->note_image()).
     void update_anim_regions();
 
+    // Repaint the settings surface (no relayout) so newly-decoded static
+    // images (e.g. Emojis & Stickers pack thumbnails) become visible
+    // without waiting for an unrelated relayout/resize — see
+    // MainWindow::on_media_bytes_ready_.
+    void request_repaint();
+
 private:
     std::unique_ptr<tk::gtk4::Surface> surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed

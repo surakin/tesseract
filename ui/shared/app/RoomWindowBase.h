@@ -275,9 +275,11 @@ protected:
     const tk::Image* shell_image_(const std::string& mxc) const;
     void shell_show_status_message_(std::string msg, int auto_clear_ms = 4000);
 
-    // The shell's MSC2545 emoticon flat list (ShellBase::cached_emoticons_) —
-    // the shortcode popup's suggestion source, shared across every composer.
-    const std::vector<tesseract::ImagePackImage>& shell_emoticons_() const;
+    // This pop-out's own shortcode-popup suggestion source (personal +
+    // this window's own room_id_ + subscribed rooms) — a fresh filtered
+    // list per call, via ShellBase::emoticons_for_room_(room_id_), NOT the
+    // main window's current room.
+    std::vector<tesseract::ImagePackImage> shell_emoticons_() const;
     // Trigger an async fetch+decode of a media image (e.g. a custom emoticon
     // thumbnail) into the shell cache so shell_image_() resolves it on a later
     // repaint. Idempotent. Forwards to ShellBase::ensure_media_image_.

@@ -254,6 +254,12 @@ void SettingsWidget::update_anim_regions()
         surface_->relayout();
 }
 
+void SettingsWidget::request_repaint()
+{
+    if (surface_)
+        gtk_widget_queue_draw(surface_->widget());
+}
+
 void SettingsWidget::populate(
     std::string display_name, std::string user_id, std::string avatar_mxc,
     tesseract::views::AccountSection::ImageProvider provider,

@@ -567,9 +567,17 @@ protected:
     views::MainAppWidget* main_app_ = nullptr;
     views::RoomView* room_view_ = nullptr;
 
-    // MSC2545 emoticon flat list (shortcode popup source). Rebuilt on
-    // handle_image_packs_updated_ui_.
+    // MSC2545 emoticon flat list — every pack's images, unfiltered by room.
+    // Rebuilt on handle_image_packs_updated_ui_. Used only by
+    // shortcode_for_mxc_ (rendering an *existing* reaction chip's label,
+    // which must resolve regardless of room scope) — the shortcode popup's
+    // own candidate list is emoticons_for_room_(), not this.
     std::vector<tesseract::ImagePackImage> cached_emoticons_;
+    // Same images as cached_emoticons_, grouped by their owning pack — the
+    // source emoticons_for_room_ filters per composer without re-fetching
+    // from the SDK. Rebuilt alongside cached_emoticons_.
+    std::vector<std::pair<tesseract::ImagePack, std::vector<tesseract::ImagePackImage>>>
+        emoticon_packs_;
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;
@@ -1957,6 +1965,18 @@ protected:
     // re-tap toggle can carry the shortcode out on the wire. Returns an
     // empty string when the mxc isn't in any of the user's emoticon packs.
     std::string shortcode_for_mxc_(const std::string& mxc) const;
+
+    // The shortcode-popup candidate list for a composer showing `room_id`
+    // (personal pack + that room's own pack + every subscribed room's
+    // pack — same visibility rule as views::order_picker_packs, via
+    // views::is_pack_picker_visible, but without the picker-tab ordering
+    // since shortcode lookup ranks by text match). Computed fresh per call
+    // (cheap: at most a few hundred entries) since different open
+    // composers — main window vs. each pop-out — may be showing different
+    // rooms; RoomWindowBase::shell_emoticons_() calls this with its own
+    // persistent room_id_, not the main window's current_room_id_.
+    std::vector<tesseract::ImagePackImage>
+    emoticons_for_room_(const std::string& room_id) const;
 
     // Per-shell media-prefetch for one row. Default = ensure_row_media_.
     // Qt6 overrides to also record decode-size hints (mediaImageSizes_).

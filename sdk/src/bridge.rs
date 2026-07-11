@@ -1929,6 +1929,15 @@ pub mod ffi {
         /// is open before the first sync settles.
         fn list_image_packs(self: &ClientFfi) -> Vec<ImagePackFfi>;
 
+        /// Every room-sourced MSC2545 pack known so far, for the "Known
+        /// Packs" settings page. A fast local read (sqlite + account data,
+        /// no network roundtrip) — rooms are discovered lazily as the user
+        /// visits them or as soon as they're in `m.image_pack.rooms` /
+        /// `im.ponies.emote_rooms`, persisted to `app_cache.db` as they're
+        /// found. A room that's neither subscribed nor yet visited won't
+        /// appear until visited.
+        fn list_known_room_packs(self: &ClientFfi) -> Vec<ImagePackFfi>;
+
         /// Return every image entry in `pack_id` whose usage mask matches
         /// `usage_filter` ("sticker" | "emoticon" | "any"). Order is
         /// well-defined and stable for a given pack snapshot.
@@ -2475,6 +2484,13 @@ pub mod ffi {
         /// currently-subscribed rooms — callers should re-`subscribe_room`
         /// the active room after toggling to refresh it immediately.
         fn set_show_membership_events(self: &ClientFfi, enabled: bool);
+
+        /// Record `room_id` as recently active (main-window tab switch,
+        /// pop-out window open) so the image-pack cache keeps that room's
+        /// own MSC2545 pack fetched over the network even without an
+        /// explicit m.image_pack.rooms subscription. Thread-safe; no-op for
+        /// an empty room_id.
+        fn set_active_room(self: &ClientFfi, room_id: &str);
 
         /// Issue one immediate round of DM presence polls without waiting
         /// for the 60s interval. Used by the UI shell when the window

@@ -35,6 +35,11 @@ public:
     /// Re-pull MSC2545 emoticon packs. Call from on_image_packs_updated.
     void refreshEmoticonPacks();
 
+    /// Which room this picker is currently being shown for — forwarded to
+    /// the wrapped shared picker; call before refreshEmoticonPacks() so the
+    /// room's own pack sorts right after the personal pack.
+    void setCurrentRoomId(const std::string& room_id);
+
     /// Trigger a redraw after new emoticon bitmaps land in the cache.
     void invalidateImages();
 

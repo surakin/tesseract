@@ -1894,6 +1894,18 @@ std::vector<ImagePack> Client::list_image_packs() const
     return ffi_vec<ImagePack>(impl_->ffi->list_image_packs());
 }
 
+std::vector<ImagePack> Client::list_known_room_packs() const
+{
+    SH_FFI;
+    return ffi_vec<ImagePack>(impl_->ffi->list_known_room_packs());
+}
+
+void Client::set_active_room(const std::string& room_id)
+{
+    SH_FFI;
+    impl_->ffi->set_active_room(room_id);
+}
+
 std::vector<ImagePackImage>
 Client::list_pack_images(const std::string& pack_id,
                          PackUsageFilter filter) const

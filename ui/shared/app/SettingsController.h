@@ -127,7 +127,11 @@ private:
     std::atomic<bool> avatar_in_flight_{false};
     std::atomic<bool> name_in_flight_{false};
     std::atomic<bool> devices_loading_{false};
-    std::atomic<bool> image_packs_loading_{false};
+    // Split so Known Packs and the personal pack's images can each reload
+    // independently — see load_image_packs()'s two independent run_async_
+    // dispatches.
+    std::atomic<bool> known_packs_loading_{false};
+    std::atomic<bool> user_pack_images_loading_{false};
 
     std::mutex device_ops_mu_;
     std::set<std::string> device_ops_in_flight_;

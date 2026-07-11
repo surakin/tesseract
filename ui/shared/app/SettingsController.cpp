@@ -207,13 +207,9 @@ void SettingsController::load_devices()
 
 void SettingsController::load_image_packs()
 {
-    if (image_packs_loading_.exchange(true))
-        return;
-
     auto* c = client_;
     if (!c)
     {
-        image_packs_loading_.store(false);
         post_to_ui_([this]()
         {
             if (on_image_packs_loaded)
@@ -224,23 +220,51 @@ void SettingsController::load_image_packs()
         return;
     }
 
+    // Two independent dispatches, not one: even though list_known_room_packs()
+    // below is now a fast local cache read (no network sweep), keeping the
+    // dispatches split still lets each side reload independently and avoids
+    // coupling the personal pack's images to Known Packs' load lifecycle.
+    if (!user_pack_images_loading_.exchange(true))
+    {
+        run_async_(
+            [this, c]()
+            {
+                auto user_images =
+                    c->list_pack_images("user", tesseract::PackUsageFilter::Any);
+                post_to_ui_(
+                    [this, c, user_images = std::move(user_images)]() mutable
+                    {
+                        user_pack_images_loading_.store(false);
+                        if (c != client_)
+                            return;
+                        if (on_user_pack_images_loaded)
+                            on_user_pack_images_loaded(std::move(user_images));
+                    });
+            });
+    }
+
+    if (known_packs_loading_.exchange(true))
+        return;
+
     run_async_(
         [this, c]()
         {
-            auto packs = c->list_image_packs();
-            auto user_images =
-                c->list_pack_images("user", tesseract::PackUsageFilter::Any);
+            // Known Packs browses every room known to have a pack so far
+            // (to subscribe/unsubscribe), not just the ones already kept
+            // warm for the pickers — list_known_room_packs() reads the
+            // lazily-built, persisted cache: rooms are discovered as the
+            // user visits them (or immediately if already subscribed via
+            // m.image_pack.rooms), not swept all at once, so this call is
+            // a fast local read regardless of account size.
+            auto packs = c->list_known_room_packs();
             post_to_ui_(
-                [this, c, packs = std::move(packs),
-                 user_images = std::move(user_images)]() mutable
+                [this, c, packs = std::move(packs)]() mutable
                 {
-                    image_packs_loading_.store(false);
+                    known_packs_loading_.store(false);
                     if (c != client_)
                         return;
                     if (on_image_packs_loaded)
                         on_image_packs_loaded(std::move(packs));
-                    if (on_user_pack_images_loaded)
-                        on_user_pack_images_loaded(std::move(user_images));
                 });
         });
 }

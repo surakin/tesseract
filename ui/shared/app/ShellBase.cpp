@@ -18,6 +18,7 @@
 #include "views/RoomView.h"
 #include "views/UserInfo.h"
 #include "views/html_spans.h"
+#include "views/image_pack_order.h"
 #include "views/map_tiles.h"
 #include <tesseract/paths.h>
 #include <tesseract/session_store.h>
@@ -6739,15 +6740,18 @@ void ShellBase::handle_image_packs_updated_ui_()
 {
     refresh_pickers_packs_();
     cached_emoticons_.clear();
+    emoticon_packs_.clear();
     if (client_)
     {
         for (auto& pack : client_->list_image_packs())
         {
-            for (auto& img : client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
+            auto imgs = client_->list_pack_images(
+                pack.id, tesseract::PackUsageFilter::Emoticon);
+            for (const auto& img : imgs)
             {
-                cached_emoticons_.push_back(std::move(img));
+                cached_emoticons_.push_back(img);
             }
+            emoticon_packs_.emplace_back(pack, std::move(imgs));
         }
     }
     // Keep the global Settings "Emojis & Stickers" tab's known-packs list
@@ -6755,6 +6759,24 @@ void ShellBase::handle_image_packs_updated_ui_()
     // only), same justification as the cached_emoticons_ rebuild above.
     if (settings_controller_)
         settings_controller_->load_image_packs();
+    // Re-seed any currently-open Room Settings "Emojis & Stickers" tab too.
+    // seed_image_pack_tab_ no-ops on its own if the target isn't open or
+    // doesn't match room_id, so this is safe to call unconditionally —
+    // covers the race where the user opens Room Settings for a room whose
+    // pack fetch (kicked off by set_active_room) hasn't resolved yet.
+    if (room_view_)
+    {
+        if (auto* v = room_view_->room_settings_view())
+            seed_image_pack_tab_(v->room_id(), v);
+    }
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        if (w->room_view())
+        {
+            if (auto* v = w->room_view()->room_settings_view())
+                seed_image_pack_tab_(v->room_id(), v);
+        }
+    }
 }
 
 std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
@@ -6771,6 +6793,21 @@ std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
         }
     }
     return {};
+}
+
+std::vector<tesseract::ImagePackImage>
+ShellBase::emoticons_for_room_(const std::string& room_id) const
+{
+    std::vector<tesseract::ImagePackImage> out;
+    for (const auto& [pack, imgs] : emoticon_packs_)
+    {
+        if (!views::is_pack_picker_visible(pack, room_id))
+        {
+            continue;
+        }
+        out.insert(out.end(), imgs.begin(), imgs.end());
+    }
+    return out;
 }
 
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
@@ -7926,6 +7963,16 @@ void ShellBase::after_active_room_changed_()
     // bleed into the new room. The RoomView UI side (bar close + highlights)
     // is handled by RoomView::set_room() when room_changed is true.
     in_room_search_clear_();
+
+    // Keep the current room's own MSC2545 image pack fetched (see
+    // Client::set_active_room's doc comment) and re-order the emoji/sticker
+    // pickers' tabs (personal / current room / subscribed rooms) for the
+    // new room right away, using whatever's already cached — a second
+    // refresh follows once the pack rebuild this may trigger resolves, via
+    // the existing on_image_packs_updated path.
+    if (client_)
+        client_->set_active_room(current_room_id_);
+    refresh_pickers_packs_();
 
     // The room media gallery is scoped to a single room — current_room_id_
     // is already the room we're switching TO at this point, so leaving it

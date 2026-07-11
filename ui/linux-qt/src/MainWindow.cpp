@@ -1602,8 +1602,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             if (shortcode_popup_surface_)
                 shortcode_popup_surface_->update();
         };
-        sh.emoticons = [this]() -> const std::vector<tesseract::ImagePackImage>&
-        { return cached_emoticons_; };
+        sh.emoticons = [this]()
+        { return emoticons_for_room_(current_room_id_); };
         sh.fetch_image = [this](const std::string& url)
         { ensure_media_image_(url, 28, 28); };
         sh.resolve_image = make_static_image_provider_();
@@ -3918,6 +3918,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     schedule_relayout_();
                     if (shortcode_popup_visible_() && shortcode_popup_surface_)
                         shortcode_popup_surface_->update();
+                    if (settingsWidget_ && settingsWidget_->isVisible())
+                        settingsWidget_->request_repaint();
                     notify_secondary_media_ready_(cache_key, kind);
                 });
         });
@@ -4750,9 +4752,18 @@ void MainWindow::openSettings()
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
 
+    // Route through bind_settings_controller_() rather than calling
+    // set_controller() directly: that's the only place that also wires
+    // settings_view()->set_user_pack_image_provider() (and
+    // on_user_pack_pending_image_added). ensure_settings_controller_()
+    // already calls bind_settings_controller_() on login/account-switch,
+    // but at that point settingsWidget_ is still null (created lazily,
+    // right here, on first open) so its `if (settingsWidget_)` guard is a
+    // no-op — the provider never got wired until this call closes that gap,
+    // which is why every pack tile rendered as an empty box despite the
+    // list itself loading correctly.
     if (settings_controller_)
-        settingsWidget_->set_controller(settings_controller_.get(),
-                                        my_display_name_);
+        bind_settings_controller_();
 
     // set_controller creates the NativeTextField overlays; push extended profile
     // after so set_text calls land on live fields.
@@ -4865,10 +4876,12 @@ void MainWindow::refresh_pickers_packs_()
 {
     if (stickerPicker_)
     {
+        stickerPicker_->setCurrentRoomId(current_room_id_);
         stickerPicker_->refreshPacks();
     }
     if (emojiPicker_)
     {
+        emojiPicker_->setCurrentRoomId(current_room_id_);
         emojiPicker_->refreshEmoticonPacks();
     }
 }

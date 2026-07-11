@@ -50,6 +50,14 @@ struct ImagePackImage;
 /// Invalidate the image cache and relayout after new bitmaps land.
 - (void)invalidateImageCache;
 
+/// Which room this panel is currently being shown for (this is a
+/// singleton panel shared across the main window and every pop-out room
+/// window, so whichever caller shows it last determines the room context)
+/// — forwarded to the wrapped shared picker; call before setting `client`
+/// (which re-triggers a pack refresh on every show) so the room's own
+/// pack sorts right after the personal pack.
+- (void)setCurrentRoomId:(const std::string&)roomId;
+
 /// The already-created shared panel, or nil if it was never shown. Lets
 /// the shell re-theme it without force-creating it.
 + (instancetype)existingPanel;

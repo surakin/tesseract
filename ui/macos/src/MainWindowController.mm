@@ -444,7 +444,8 @@ public:
                             std::function<std::string()> get_room_id,
                             std::function<void()> clear_text_fn);
     void schedule_relayout();
-    const std::vector<tesseract::ImagePackImage>& cached_emoticons() const;
+    std::vector<tesseract::ImagePackImage>
+    emoticons_for_room(const std::string& room_id) const;
     std::string gif_src_disk_key(const std::string& url) const;
     const tesseract::ServerInfo& server_info_ref() const;
     using CacheSizeCallback =
@@ -817,6 +818,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutShortcodePopupIfVisible;
 - (void)_relayoutSlashPopupIfVisible;
 - (void)_relayoutAccountPickerIfVisible;
+- (void)_repaintSettingsSurfaceIfVisible;
 - (void)_openJoinRoomSheetWithPrefill:(NSString*)prefill;
 // Designated init for spawned (secondary) windows that share an existing
 // AccountManager instead of owning their own.
@@ -1110,6 +1112,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                         // which already use this here).
                         schedule_relayout_();
                         [c _relayoutShortcodePopupIfVisible];
+                        [c _repaintSettingsSurfaceIfVisible];
                         notify_secondary_media_ready_(key, kind);
                     });
             });
@@ -2381,8 +2384,9 @@ void MacShell::wire_voice_capture(tesseract::views::RoomView* rv,
                         std::move(clear_text_fn));
 }
 void MacShell::schedule_relayout() { schedule_relayout_(); }
-const std::vector<tesseract::ImagePackImage>& MacShell::cached_emoticons() const
-    { return cached_emoticons_; }
+std::vector<tesseract::ImagePackImage>
+MacShell::emoticons_for_room(const std::string& room_id) const
+    { return emoticons_for_room_(room_id); }
 std::string MacShell::gif_src_disk_key(const std::string& url) const
     { return gif_src_disk_key_(url); }
 const tesseract::ServerInfo& MacShell::server_info_ref() const
@@ -5083,7 +5087,9 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 if (complete)
                 {
                     auto hits = c->_shell->shortcode_engine_.lookup(
-                        complete->prefix, c->_shell->cached_emoticons(), 1);
+                        complete->prefix,
+                        c->_shell->emoticons_for_room(c->_shell->current_room_id_),
+                        1);
                     if (!hits.empty() && !hits.front().glyph.empty())
                     {
                         c->_roomTextArea->replace_range(
@@ -5110,7 +5116,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 {
                     c->_shell->shortcode_current_suggestions_ =
                         c->_shell->shortcode_engine_.lookup(
-                            prefix_match->prefix, c->_shell->cached_emoticons());
+                            prefix_match->prefix,
+                            c->_shell->emoticons_for_room(c->_shell->current_room_id_));
                     if (!c->_shell->shortcode_current_suggestions_.empty())
                     {
                         [c hideMentionPopup];
@@ -6428,6 +6435,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         return;
     }
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
+    [panel setCurrentRoomId:_shell->current_room_id_];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
     [panel
@@ -6543,6 +6551,23 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _accountPickerSurface)
     {
         _accountPickerSurface->relayout();
+    }
+}
+
+// Settings' "Emojis & Stickers" tab (UserPackEditor/KnownPacksList) hosts
+// its own top-level surface, separate from the main chat surface, so media
+// completions there need their own repaint or newly-decoded thumbnails stay
+// blank until an unrelated relayout/resize touches that surface.
+- (void)_repaintSettingsSurfaceIfVisible
+{
+    if (!_settingsSurface)
+    {
+        return;
+    }
+    NSView* v = (__bridge NSView*)_settingsSurface->view_handle();
+    if (v && !v.hidden)
+    {
+        [v setNeedsDisplay:YES];
     }
 }
 
@@ -7039,6 +7064,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         return;
     }
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
+    [panel setCurrentRoomId:_shell->current_room_id_];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
     [panel
@@ -9258,6 +9284,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 - (void)handleImagePacksUpdated
 {
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    [panel setCurrentRoomId:_shell->current_room_id_];
     panel.client = _shell->client_;
     [panel refreshPacks];
 }
@@ -9269,6 +9296,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         return;
     }
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    [panel setCurrentRoomId:_shell->current_room_id_];
     panel.client = _shell->client_;
 
     __weak MainWindowController* weakSelf = self;
@@ -9319,6 +9347,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         return;
     }
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    [panel setCurrentRoomId:_shell->current_room_id_];
     panel.client = _shell->client_;
 
     __weak MainWindowController* weakSelf = self;

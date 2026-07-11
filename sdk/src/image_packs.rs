@@ -470,6 +470,28 @@ fn loop_suffixed_shortcode(existing: &serde_json::Map<String, Value>, base: &str
     )
 }
 
+/// Move `room_id` to the front of `list` (a small most-recently-active-room
+/// LRU used to decide which rooms' image packs `rebuild_image_packs` should
+/// keep fetched), inserting it if absent and truncating to `cap` entries.
+/// No-op for an empty `room_id`. Returns `true` iff `room_id` was not
+/// already present (a genuinely new room, distinct from just re-visiting
+/// one already tracked) — callers use this to decide whether a pack rebuild
+/// is actually needed.
+pub fn push_active_room(list: &mut Vec<String>, room_id: &str, cap: usize) -> bool {
+    if room_id.is_empty() {
+        return false;
+    }
+    let was_present = if let Some(pos) = list.iter().position(|r| r == room_id) {
+        list.remove(pos);
+        true
+    } else {
+        false
+    };
+    list.insert(0, room_id.to_owned());
+    list.truncate(cap);
+    !was_present
+}
+
 /// Build a synthetic pack id. `user` for the global user pack; `room:!id/key`
 /// for room packs so each (room, state_key) maps to a unique id stable across
 /// rebuilds.
@@ -749,6 +771,37 @@ mod tests {
         let c = json!({ "rooms": { "!a:h": null } });
         let out = iter_emote_rooms(&c);
         assert_eq!(out, vec![("!a:h".into(), "".into())]);
+    }
+
+    #[test]
+    fn push_active_room_empty_id_is_noop() {
+        let mut list: Vec<String> = vec!["!a:h".into()];
+        assert!(!push_active_room(&mut list, "", 8));
+        assert_eq!(list, vec!["!a:h".to_owned()]);
+    }
+
+    #[test]
+    fn push_active_room_new_id_moves_to_front_and_returns_true() {
+        let mut list: Vec<String> = vec!["!a:h".into()];
+        assert!(push_active_room(&mut list, "!b:h", 8));
+        assert_eq!(list, vec!["!b:h".to_owned(), "!a:h".to_owned()]);
+    }
+
+    #[test]
+    fn push_active_room_existing_id_moves_to_front_without_duplicating() {
+        let mut list: Vec<String> = vec!["!a:h".into(), "!b:h".into(), "!c:h".into()];
+        assert!(!push_active_room(&mut list, "!b:h", 8));
+        assert_eq!(
+            list,
+            vec!["!b:h".to_owned(), "!a:h".to_owned(), "!c:h".to_owned()]
+        );
+    }
+
+    #[test]
+    fn push_active_room_truncates_at_cap() {
+        let mut list: Vec<String> = vec!["!a:h".into(), "!b:h".into()];
+        assert!(push_active_room(&mut list, "!c:h", 2));
+        assert_eq!(list, vec!["!c:h".to_owned(), "!a:h".to_owned()]);
     }
 
     #[test]

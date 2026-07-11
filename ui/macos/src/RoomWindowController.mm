@@ -684,8 +684,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
             if (shortcode_popup_surface_)
                 shortcode_popup_surface_->relayout();
         };
-        sh.emoticons = [this]() -> const std::vector<tesseract::ImagePackImage>&
-        { return shell_emoticons_(); };
+        sh.emoticons = [this]() { return shell_emoticons_(); };
         sh.fetch_image = [this](const std::string& url)
         { shell_ensure_media_image_(url, 28, 28); };
         sh.resolve_image = [this](const std::string& url) -> const tk::Image*
@@ -861,6 +860,7 @@ void MacRoomWindow::show_emoji_panel_(tk::Rect anchor)
     if (!surface_)
         return;
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
+    [panel setCurrentRoomId:room_id_];
     panel.client = shell_client_();
     [panel setTheme:surface_->theme()];
     [panel setImageProvider:picker_image_provider_(false)];
@@ -936,6 +936,7 @@ void MacRoomWindow::show_sticker_panel_(tk::Rect anchor)
     if (!surface_ || room_id_.empty())
         return;
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    [panel setCurrentRoomId:room_id_];
     panel.client = shell_client_();
     [panel setTheme:surface_->theme()];
     [panel setImageProvider:picker_image_provider_(true)];

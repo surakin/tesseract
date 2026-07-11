@@ -7,7 +7,7 @@ use super::{err, ok, ClientFfi};
 
 use crate::ffi::OpResult;
 
-#[cfg(all(not(test), debug_assertions))]
+#[cfg(not(test))]
 use std::sync::Arc;
 
 #[cfg(not(test))]
@@ -1298,9 +1298,8 @@ impl ClientFfi {
         let in_flight = self.in_flight.clone();
         #[cfg(debug_assertions)]
         let in_flight_urls = self.in_flight_urls.clone();
+        let room_state_cache = Arc::clone(&self.room_state_cache);
         self.rt.spawn(async move {
-            use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
-
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
@@ -1315,8 +1314,9 @@ impl ClientFfi {
             let mut guest_access = false;
             let mut history_visibility = "shared".to_string();
 
-            if let Ok(resp) = client.send(state_api::Request::new(rid)).await {
-                for raw in &resp.room_state {
+            {
+                let room_state = super::fetch_room_state_cached(&client, &room_state_cache, &rid).await;
+                for raw in room_state.iter() {
                     let Ok(Some(ty)) = raw.get_field::<String>("type") else {
                         continue;
                     };

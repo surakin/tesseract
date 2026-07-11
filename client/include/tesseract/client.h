@@ -1330,6 +1330,22 @@ public:
     /// notified via `IEventHandler::on_image_packs_updated`.
     std::vector<ImagePack> list_image_packs() const;
 
+    /// Every room-sourced MSC2545 pack known so far, for the "Known Packs"
+    /// settings page (browse rooms with a pack, subscribe/unsubscribe). A
+    /// fast local read — no network I/O: rooms are discovered lazily as
+    /// the user visits them, or as soon as they're in
+    /// m.image_pack.rooms/im.ponies.emote_rooms, and cached persistently.
+    /// A room that's neither subscribed nor yet visited won't appear
+    /// until visited.
+    std::vector<ImagePack> list_known_room_packs() const;
+
+    /// Record `room_id` as recently active (main-window tab switch, pop-out
+    /// window open) so the image-pack cache keeps that room's own MSC2545
+    /// pack fetched over the network even without an explicit
+    /// m.image_pack.rooms subscription — see ImagePack's own doc comment.
+    /// Thread-safe; no-op for an empty room_id.
+    void set_active_room(const std::string& room_id);
+
     /// Return every image entry in `pack_id` whose usage intersects
     /// `filter`. Use `PackUsageFilter::Sticker` for the StickerPicker and
     /// `PackUsageFilter::Emoticon` for the EmojiPicker's custom tab.

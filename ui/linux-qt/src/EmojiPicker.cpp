@@ -88,6 +88,14 @@ void EmojiPicker::refreshEmoticonPacks()
     }
 }
 
+void EmojiPicker::setCurrentRoomId(const std::string& room_id)
+{
+    if (shared_)
+    {
+        shared_->set_current_room_id(room_id);
+    }
+}
+
 void EmojiPicker::invalidateImages()
 {
     if (shared_)

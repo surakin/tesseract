@@ -3552,8 +3552,7 @@ void MainWindow::on_create(HWND hwnd)
                     shortcode_popup_surface_->host().request_repaint();
             };
             sch.emoticons =
-                [this]() -> const std::vector<tesseract::ImagePackImage>&
-            { return cached_emoticons_; };
+                [this]() { return emoticons_for_room_(current_room_id_); };
             sch.fetch_image = [this](const std::string& url)
             { ensure_media_image_(url, 28, 28); };
             sch.resolve_image = make_static_image_provider_();
@@ -5869,6 +5868,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                         if (shortcode_popup_visible_() &&
                             shortcode_popup_surface_)
                             shortcode_popup_surface_->relayout();
+                        if (settings_visible_ && settings_surface_ &&
+                            settings_surface_->hwnd())
+                            InvalidateRect(settings_surface_->hwnd(), nullptr,
+                                          FALSE);
                         notify_secondary_media_ready_(cache_key, kind);
                         if (invalidate_hwnd)
                             InvalidateRect(invalidate_hwnd, nullptr, FALSE);
@@ -7668,6 +7671,7 @@ void MainWindow::refresh_sticker_picker()
 {
     if (sticker_picker_shared_)
     {
+        sticker_picker_shared_->set_current_room_id(current_room_id_);
         sticker_picker_shared_->refresh_packs();
         sticker_picker_shared_->invalidate_image_cache();
     }
@@ -7896,6 +7900,7 @@ void MainWindow::refresh_emoji_picker()
 {
     if (emoji_picker_shared_)
     {
+        emoji_picker_shared_->set_current_room_id(current_room_id_);
         emoji_picker_shared_->refresh_emoticon_packs();
         emoji_picker_shared_->invalidate_image_cache();
     }

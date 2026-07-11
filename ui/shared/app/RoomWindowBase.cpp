@@ -22,6 +22,12 @@ namespace tesseract
 RoomWindowBase::RoomWindowBase(ShellBase* shell, std::string room_id)
     : shell_(shell), room_id_(std::move(room_id))
 {
+    // Pop-outs show one fixed room for their whole lifetime and never go
+    // through ShellBase::after_active_room_changed_() — keep this room's
+    // own MSC2545 pack fetched the same way the main window does on switch
+    // (see Client::set_active_room's doc comment).
+    if (shell_ && shell_->client_)
+        shell_->client_->set_active_room(room_id_);
 }
 
 RoomWindowBase::~RoomWindowBase()
@@ -1739,10 +1745,10 @@ const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const
     return shell_->account_manager_.thumbnail_cache().peek(mxc);
 }
 
-const std::vector<tesseract::ImagePackImage>&
+std::vector<tesseract::ImagePackImage>
 RoomWindowBase::shell_emoticons_() const
 {
-    return shell_->cached_emoticons_;
+    return shell_->emoticons_for_room_(room_id_);
 }
 
 void RoomWindowBase::shell_ensure_media_image_(const std::string& url, int w,

@@ -103,6 +103,14 @@ void StickerPicker::refreshPacks()
     }
 }
 
+void StickerPicker::setCurrentRoomId(const std::string& room_id)
+{
+    if (shared_)
+    {
+        shared_->set_current_room_id(room_id);
+    }
+}
+
 void StickerPicker::invalidateImages()
 {
     if (shared_)

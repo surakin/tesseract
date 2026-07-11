@@ -71,6 +71,12 @@ public:
     /// invalidation doesn't otherwise know about.
     void update_anim_regions();
 
+    /// Repaint the settings surface (its own tk::qt6::Surface, separate
+    /// from mainAppSurface_ — see update_anim_regions()) so newly-decoded
+    /// static images (e.g. Emojis & Stickers pack thumbnails) become
+    /// visible without waiting for an unrelated relayout/resize.
+    void request_repaint();
+
 signals:
     void settingsClosed();
     void logoutRequested();
