@@ -162,11 +162,42 @@ RoomSettingsView::RoomSettingsView()
         if (on_layout_changed) on_layout_changed();
     };
 
+    auto image_packs = std::make_unique<ImagePackEditorView>();
+    image_packs_ = image_packs.get();
+    image_packs_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+    // Cancelling the image-pack tab closes the whole dialog, same outward
+    // effect as the main Cancel button — this tab has no separate "just
+    // reset this one tab" concept, matching how Cancel discards every other
+    // tab's staged edits too.
+    image_packs_->on_cancel = [this]()
+    {
+        if (on_cancel) on_cancel();
+    };
+    image_packs_->on_accept = [this](ImagePackEditorResult result)
+    {
+        if (on_image_pack_accept) on_image_pack_accept(std::move(result));
+    };
+    image_packs_->on_pack_images_needed = [this](std::string pack_id)
+    {
+        if (on_image_pack_images_needed) on_image_pack_images_needed(std::move(pack_id));
+    };
+    image_packs_->on_pending_image_added =
+        [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+              const std::string& mime)
+    {
+        if (on_image_pack_pending_image_added)
+            on_image_pack_pending_image_added(local_id, bytes, mime);
+    };
+
     auto tabs = std::make_unique<tk::SideTabView>();
     tabs->add_tab(tk::tr("General"), std::move(general));
     tabs->add_tab(tk::tr("Media"), std::move(media));
     tabs->add_tab(tk::tr("Security & Privacy"), std::move(security));
     tabs->add_tab(tk::tr("Permissions"), std::move(permissions));
+    tabs->add_tab(tk::tr("Emojis & Stickers"), std::move(image_packs));
     // Switching tabs must re-poll General's NativeTextField/NativeTextArea
     // overlay rects (name_field_rect()/topic_edit_rect() already collapse
     // to {} when General isn't selected) — without this, the shell never
@@ -266,6 +297,12 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     refresh_accept_enabled_();
     cancel_btn_->set_enabled(true);
 
+    // ShellBase's on_room_settings_opened handler pushes the room's actual
+    // packs/images right after this via set_image_pack_available_packs (see
+    // seed_image_pack_tab_) — this just resets the tab's own staged state,
+    // mirroring every other tab's placeholder-then-corrected seeding.
+    image_packs_->open(room_id_);
+
     title_layout_.reset();
 
     open_ = true;
@@ -279,6 +316,7 @@ void RoomSettingsView::close()
     const bool was_open = open_;
     open_ = false;
     set_visible(false);
+    image_packs_->close();
     if (was_open && on_layout_changed) on_layout_changed();
 }
 
@@ -436,6 +474,87 @@ void RoomSettingsView::set_media_override(bool has_override,
     media_->set_override(has_override, mode);
 }
 
+void RoomSettingsView::set_image_pack_available_packs(
+    std::vector<tesseract::ImagePack> packs)
+{
+    image_packs_->set_available_packs(std::move(packs));
+}
+
+void RoomSettingsView::set_image_pack_images(
+    std::string pack_id, std::vector<tesseract::ImagePackImage> images)
+{
+    image_packs_->set_pack_images(std::move(pack_id), std::move(images));
+}
+
+void RoomSettingsView::set_image_pack_provider(ImagePackImageProvider p)
+{
+    image_packs_->set_image_provider(std::move(p));
+}
+
+void RoomSettingsView::set_image_pack_tile_preview(
+    std::uint64_t local_id, std::shared_ptr<tk::Image> image)
+{
+    image_packs_->set_tile_preview(local_id, std::move(image));
+}
+
+void RoomSettingsView::set_image_pack_new_pack_name_text(std::string text)
+{
+    image_packs_->set_new_pack_name_text(std::move(text));
+}
+
+void RoomSettingsView::set_image_pack_editing_shortcode_text(std::string text)
+{
+    image_packs_->set_editing_shortcode_text(std::move(text));
+}
+
+void RoomSettingsView::commit_image_pack_editing_shortcode()
+{
+    image_packs_->commit_editing_shortcode();
+}
+
+void RoomSettingsView::add_image_pack_pasted_image(
+    std::vector<std::uint8_t> bytes, std::string mime)
+{
+    image_packs_->add_pending_image_to_active(std::move(bytes), std::move(mime));
+}
+
+void RoomSettingsView::add_image_pack_dropped_image(
+    tk::Point pos, std::vector<std::uint8_t> bytes, std::string mime)
+{
+    image_packs_->add_pending_image_at(pos, std::move(bytes), std::move(mime));
+}
+
+bool RoomSettingsView::image_pack_tab_selected_() const
+{
+    return open_ && tabs_ && tabs_->selected_idx() == kImagePackTabIndex;
+}
+
+tk::Rect RoomSettingsView::image_pack_new_pack_name_field_rect() const
+{
+    if (!image_pack_tab_selected_())
+        return {};
+    return image_packs_->new_pack_name_field_rect();
+}
+
+std::uint64_t RoomSettingsView::image_pack_new_pack_name_reset_generation() const
+{
+    return image_packs_->new_pack_name_reset_generation();
+}
+
+tk::Rect RoomSettingsView::image_pack_shortcode_edit_rect() const
+{
+    if (!image_pack_tab_selected_())
+        return {};
+    return image_packs_->shortcode_edit_rect();
+}
+
+tk::Rect RoomSettingsView::image_pack_list_rect() const
+{
+    if (!image_pack_tab_selected_())
+        return {};
+    return image_packs_->list_rect();
+}
+
 // ── layout ────────────────────────────────────────────────────────────────
 
 tk::Size RoomSettingsView::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -447,33 +566,48 @@ void RoomSettingsView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
     tk::Widget::arrange(lc, bounds);
 
+    // The image-pack tab manages its own independent Accept/Cancel footer
+    // (see ImagePackEditorView) — give it the full remaining height instead
+    // of reserving space for this view's own footer, and hide/skip that
+    // footer's buttons entirely so there's no double footer or click-through
+    // to a hidden button underneath the tab's own one.
+    const bool image_pack_tab =
+        tabs_ && tabs_->selected_idx() == kImagePackTabIndex;
+
     // Title bar, tabs, and footer bar are chrome sandwiched top/bottom
     // around the tab content — same idiom as SettingsView's back-bar, so
     // the footer reads as part of the same surface rather than a
     // disconnected strip below the tab widget.
-    const float tabs_y      = bounds.y + kBarHeight + 1.0f;
-    const float footer_y    = bounds.y + bounds.h - kFooterH;
-    const float tabs_h      = std::max(0.0f, footer_y - tabs_y);
+    const float tabs_y   = bounds.y + kBarHeight + 1.0f;
+    const float footer_y = image_pack_tab ? bounds.y + bounds.h
+                                          : bounds.y + bounds.h - kFooterH;
+    const float tabs_h   = std::max(0.0f, footer_y - tabs_y);
     if (tabs_)
         tabs_->arrange(lc, {bounds.x, tabs_y, bounds.w, tabs_h});
 
-    // Accept/Cancel — right-aligned within the footer bar, same right
-    // margin (kPadX) the title bar uses.
-    const float btn_w_min = 88.0f;
-    tk::Size accept_sz = accept_btn_ ? accept_btn_->measure(lc, {-1.0f, kBtnH})
-                                     : tk::Size{btn_w_min, kBtnH};
-    tk::Size cancel_sz = cancel_btn_ ? cancel_btn_->measure(lc, {-1.0f, kBtnH})
-                                     : tk::Size{btn_w_min, kBtnH};
-    const float accept_w = std::max(accept_sz.w, btn_w_min);
-    const float cancel_w = std::max(cancel_sz.w, btn_w_min);
-    const float btns_y   = footer_y + (kFooterH - kBtnH) * 0.5f;
-    const float accept_x = bounds.x + bounds.w - kPadX - accept_w;
-    const float cancel_x = accept_x - kBtnGap - cancel_w;
+    if (accept_btn_) accept_btn_->set_visible(!image_pack_tab);
+    if (cancel_btn_) cancel_btn_->set_visible(!image_pack_tab);
 
-    if (cancel_btn_)
-        cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
-    if (accept_btn_)
-        accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
+    if (!image_pack_tab)
+    {
+        // Accept/Cancel — right-aligned within the footer bar, same right
+        // margin (kPadX) the title bar uses.
+        const float btn_w_min = 88.0f;
+        tk::Size accept_sz = accept_btn_ ? accept_btn_->measure(lc, {-1.0f, kBtnH})
+                                        : tk::Size{btn_w_min, kBtnH};
+        tk::Size cancel_sz = cancel_btn_ ? cancel_btn_->measure(lc, {-1.0f, kBtnH})
+                                        : tk::Size{btn_w_min, kBtnH};
+        const float accept_w = std::max(accept_sz.w, btn_w_min);
+        const float cancel_w = std::max(cancel_sz.w, btn_w_min);
+        const float btns_y   = footer_y + (kFooterH - kBtnH) * 0.5f;
+        const float accept_x = bounds.x + bounds.w - kPadX - accept_w;
+        const float cancel_x = accept_x - kBtnGap - cancel_w;
+
+        if (cancel_btn_)
+            cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
+        if (accept_btn_)
+            accept_btn_->arrange(lc, {accept_x, btns_y, accept_w, kBtnH});
+    }
 
     if (toast_)
         toast_->arrange(lc, bounds);
@@ -517,36 +651,44 @@ void RoomSettingsView::paint(tk::PaintCtx& ctx)
     if (tabs_ && tabs_->visible())
         tabs_->paint(ctx);
 
-    // Footer bar — same chrome as the title bar, so Accept/Cancel read as
-    // part of the settings surface rather than a detached bar underneath
-    // the tab widget.
-    const float footer_y = bounds_.y + bounds_.h - kFooterH;
-    const tk::Rect footer_rect = {bounds_.x, footer_y, bounds_.w, kFooterH};
-    cv.fill_rect({bounds_.x, footer_y, bounds_.w, 1.0f}, pal.separator);
-    cv.fill_rect({bounds_.x, footer_y + 1.0f, bounds_.w, kFooterH - 1.0f}, pal.sidebar_bg);
-
-    // Commit error, left-aligned within the footer bar.
-    if (!commit_error_.empty())
+    // The image-pack tab paints its own independent footer inside its own
+    // bounds (see arrange()'s image_pack_tab branch) — skip this view's own
+    // footer bar/buttons entirely rather than drawing a redundant one.
+    const bool image_pack_tab =
+        tabs_ && tabs_->selected_idx() == kImagePackTabIndex;
+    if (!image_pack_tab)
     {
-        if (!commit_error_layout_)
-        {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Small;
-            st.halign    = tk::TextHAlign::Leading;
-            st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
-            commit_error_layout_ = ctx.factory.build_text(commit_error_, st);
-        }
-        if (commit_error_layout_)
-        {
-            const float err_y = footer_rect.y +
-                                (kFooterH - commit_error_layout_->measure().h) * 0.5f;
-            cv.draw_text(*commit_error_layout_, {bounds_.x + kPadX, err_y},
-                         tk::Color::rgb(0xcc3333));
-        }
-    }
+        // Footer bar — same chrome as the title bar, so Accept/Cancel read as
+        // part of the settings surface rather than a detached bar underneath
+        // the tab widget.
+        const float footer_y = bounds_.y + bounds_.h - kFooterH;
+        const tk::Rect footer_rect = {bounds_.x, footer_y, bounds_.w, kFooterH};
+        cv.fill_rect({bounds_.x, footer_y, bounds_.w, 1.0f}, pal.separator);
+        cv.fill_rect({bounds_.x, footer_y + 1.0f, bounds_.w, kFooterH - 1.0f}, pal.sidebar_bg);
 
-    if (cancel_btn_) cancel_btn_->paint(ctx);
-    if (accept_btn_) accept_btn_->paint(ctx);
+        // Commit error, left-aligned within the footer bar.
+        if (!commit_error_.empty())
+        {
+            if (!commit_error_layout_)
+            {
+                tk::TextStyle st{};
+                st.role      = tk::FontRole::Small;
+                st.halign    = tk::TextHAlign::Leading;
+                st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
+                commit_error_layout_ = ctx.factory.build_text(commit_error_, st);
+            }
+            if (commit_error_layout_)
+            {
+                const float err_y = footer_rect.y +
+                                    (kFooterH - commit_error_layout_->measure().h) * 0.5f;
+                cv.draw_text(*commit_error_layout_, {bounds_.x + kPadX, err_y},
+                             tk::Color::rgb(0xcc3333));
+            }
+        }
+
+        if (cancel_btn_) cancel_btn_->paint(ctx);
+        if (accept_btn_) accept_btn_->paint(ctx);
+    }
 
     if (toast_ && toast_->visible()) toast_->paint(ctx);
 }

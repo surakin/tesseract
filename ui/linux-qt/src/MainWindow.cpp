@@ -1247,6 +1247,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 v->set_permissions_field_permissions(false);
                 v->set_own_power_level({});
                 seed_room_media_section_(room_id);
+                seed_image_pack_tab_(room_id);
                 return;
             }
             v->set_field_permissions(client_->can_set_room_name(room_id),
@@ -1263,6 +1264,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             v->set_own_power_level(client_->room_own_power_level(room_id));
             seed_room_media_section_(room_id);
             fetch_room_security_state_(room_id);
+            seed_image_pack_tab_(room_id);
         };
         mainApp_->room_view()->on_room_settings_avatar_upload_requested =
             [this](const std::string& room_id)
@@ -1297,6 +1299,23 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         },
                         Qt::QueuedConnection);
                 });
+        };
+        mainApp_->room_view()->room_settings_view()->set_image_pack_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        mainApp_->room_view()->room_settings_view()->on_image_pack_images_needed =
+            [this](std::string pack_id) { handle_image_pack_images_needed_(pack_id); };
+        mainApp_->room_view()->room_settings_view()->on_image_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        { handle_image_pack_pending_image_added_(local_id, bytes, mime); };
+        mainApp_->room_view()->room_settings_view()->on_image_pack_accept =
+            [this](tesseract::views::ImagePackEditorResult /*result*/)
+        {
+            // No backend to persist this yet (see ImagePackEditorView.h) —
+            // close the dialog so the initial-testing round-trip still
+            // feels complete end to end.
+            if (auto* v = mainApp_->room_view()->room_settings_view())
+                v->close();
         };
         setup_dm_callbacks();
         mainApp_->room_view()->on_ignore_user =
@@ -1858,6 +1877,52 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
     roomSettingsTopicArea_->set_visible(false);
 
+    imagePackNameField_ = mainAppSurface_->host().make_text_field();
+    imagePackNameField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    imagePackNameField_->set_placeholder(tr("Pack name").toStdString());
+    imagePackNameField_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (mainApp_)
+                mainApp_->room_view()->room_settings_view()->set_image_pack_new_pack_name_text(t);
+        });
+    imagePackNameField_->set_visible(false);
+
+    imagePackShortcodeField_ = mainAppSurface_->host().make_text_field();
+    imagePackShortcodeField_->set_compact(true);
+    imagePackShortcodeField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    imagePackShortcodeField_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (mainApp_)
+                mainApp_->room_view()->room_settings_view()->set_image_pack_editing_shortcode_text(t);
+        });
+    imagePackShortcodeField_->set_on_submit(
+        [this]()
+        {
+            if (mainApp_)
+                mainApp_->room_view()->room_settings_view()->commit_image_pack_editing_shortcode();
+        });
+    imagePackShortcodeField_->set_on_focus_changed(
+        [this](bool focused)
+        {
+            if (!focused && mainApp_)
+                mainApp_->room_view()->room_settings_view()->commit_image_pack_editing_shortcode();
+        });
+    imagePackShortcodeField_->set_visible(false);
+
+    imagePackPasteCatcher_ = mainAppSurface_->host().make_text_area();
+    imagePackPasteCatcher_->set_visible(false);
+    imagePackPasteCatcher_->set_on_image_paste(
+        [this](std::vector<std::uint8_t> bytes, std::string mime)
+        {
+            if (mainApp_)
+                mainApp_->room_view()->room_settings_view()->add_image_pack_pasted_image(
+                    std::move(bytes), std::move(mime));
+        });
+
     roomSearchField_ = mainAppSurface_->host().make_text_field();
     roomSearchField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
@@ -2244,14 +2309,72 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         roomSettingsTopicArea_->set_text(rsv->topic_edit_initial_text());
                 }
             }
+
+            if (mainApp_ && imagePackNameField_ && imagePackShortcodeField_ &&
+                imagePackPasteCatcher_)
+            {
+                auto* rsv = mainApp_->room_view()->room_settings_view();
+
+                const tk::Rect pnr = rsv->image_pack_new_pack_name_field_rect();
+                const bool pack_name_now_visible = !pnr.empty();
+                imagePackNameFieldVisible_ = pack_name_now_visible;
+                imagePackNameField_->set_visible(pack_name_now_visible);
+                if (pack_name_now_visible)
+                    imagePackNameField_->set_rect(pnr);
+                // The create-row field stays visible continuously (unlike a
+                // field that shows/hides), so there's no visibility-
+                // transition edge to hook a "clear the displayed text"
+                // reset off of — diff the generation counter instead.
+                const std::uint64_t name_gen =
+                    rsv->image_pack_new_pack_name_reset_generation();
+                if (name_gen != imagePackNameResetGenSeen_)
+                {
+                    imagePackNameResetGenSeen_ = name_gen;
+                    imagePackNameField_->set_text("");
+                }
+
+                const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
+                const bool shortcode_now_visible = !scr.empty();
+                const bool shortcode_was_visible = imagePackShortcodeFieldVisible_;
+                imagePackShortcodeFieldVisible_ = shortcode_now_visible;
+                imagePackShortcodeField_->set_visible(shortcode_now_visible);
+                if (shortcode_now_visible)
+                {
+                    imagePackShortcodeField_->set_rect(scr);
+                    if (!shortcode_was_visible)
+                        imagePackShortcodeField_->set_focused(true);
+                }
+
+                const tk::Rect gr = rsv->image_pack_list_rect();
+                const bool grid_now_visible = !gr.empty();
+                const bool paste_catcher_was_visible = imagePackPasteCatcherVisible_;
+                imagePackPasteCatcherVisible_ = grid_now_visible;
+                imagePackPasteCatcher_->set_visible(grid_now_visible);
+                if (grid_now_visible)
+                {
+                    imagePackPasteCatcher_->set_rect({gr.x, gr.y, 1.0f, 1.0f});
+                    // Focus it only on the open->visible transition — a real
+                    // user click into the name/shortcode field should keep
+                    // its own focus, not get stolen back on the next relayout.
+                    if (!paste_catcher_was_visible)
+                        imagePackPasteCatcher_->set_focused(true);
+                }
+            }
         });
 
     mainAppSurface_->set_on_file_drop(
         [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename)
+               std::string filename, tk::Point pos)
         {
             if (!mainApp_)
                 return;
+            if (auto* rsv = mainApp_->room_view()->room_settings_view();
+                rsv && !rsv->image_pack_list_rect().empty())
+            {
+                rsv->add_image_pack_dropped_image(pos, std::move(bytes),
+                                                  std::move(mime));
+                return;
+            }
             auto outcome = tesseract::views::dispatch_file_drop(
                 *mainApp_->room_view()->compose_bar(), std::move(bytes),
                 std::move(mime), std::move(filename),

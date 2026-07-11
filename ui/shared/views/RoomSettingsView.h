@@ -19,6 +19,7 @@
 #include "tk/controls.h"
 #include "tk/side_tab_view.h"
 #include "tk/widget.h"
+#include "views/ImagePackEditorView.h"
 #include "views/Toast.h"
 #include "views/settings/RoomGeneralSection.h"
 #include "views/settings/RoomMediaSection.h"
@@ -205,6 +206,41 @@ public:
     // so the Room ID copy-toast can auto-dismiss itself.
     void set_post_delayed(std::function<void(int, std::function<void()>)> f);
 
+    // ── Emojis & Stickers tab (ImagePackEditorView) — passthrough API ──────
+    // Mirrors set_avatar_provider/set_media_override's shape: this view has
+    // no Client dependency, so ShellBase fetches and pushes data in, and
+    // receives the raw bytes for a dropped/pasted image back out to decode.
+    void set_image_pack_available_packs(std::vector<tesseract::ImagePack> packs);
+    void set_image_pack_images(std::string pack_id,
+                               std::vector<tesseract::ImagePackImage> images);
+    void set_image_pack_provider(ImagePackImageProvider p);
+    void set_image_pack_tile_preview(std::uint64_t local_id,
+                                     std::shared_ptr<tk::Image> image);
+    void set_image_pack_new_pack_name_text(std::string text);
+    void set_image_pack_editing_shortcode_text(std::string text);
+    void commit_image_pack_editing_shortcode();
+    // Clipboard paste (no position) — targets the active pack.
+    void add_image_pack_pasted_image(std::vector<std::uint8_t> bytes,
+                                     std::string mime);
+    // Drag-drop (world/surface-space position) — targets whichever pack's
+    // section contains `pos`, falling back to the active pack.
+    void add_image_pack_dropped_image(tk::Point pos,
+                                      std::vector<std::uint8_t> bytes,
+                                      std::string mime);
+
+    // Fired once per pack after set_image_pack_available_packs, not just for
+    // one "selected" pack — every listed pack needs its images fetched now
+    // that they're all shown at once.
+    std::function<void(std::string pack_id)> on_image_pack_images_needed;
+    std::function<void(std::uint64_t local_id,
+                       const std::vector<std::uint8_t>& bytes,
+                       const std::string& mime)>
+        on_image_pack_pending_image_added;
+    // No backend to persist this yet (see ImagePackEditorView.h) — wired
+    // through so ShellBase can still react (e.g. close the dialog) once one
+    // exists.
+    std::function<void(ImagePackEditorResult result)> on_image_pack_accept;
+
     // Fired when the user clicks the Room ID row; the shell performs the
     // actual clipboard write (this view has no Host access), then the toast
     // shown by this view is dismissed on its own timer. (Copying an ID to
@@ -236,7 +272,30 @@ public:
     // (mirrors the section's own combo accessors).
     RoomPermissionsSection* permissions_section() const { return permissions_; }
 
+    // Accessor for the "Emojis & Stickers" tab (initial-testing placement —
+    // see ImagePackEditorView.h). This tab manages its own independent
+    // Accept/Cancel lifecycle (image-pack persistence is a structurally
+    // different, currently nonexistent backend write, not one of the
+    // name/topic/security/permissions fields RoomSettingsChanges covers), so
+    // RoomSettingsView's own footer is hidden whenever this tab is selected.
+    ImagePackEditorView* image_pack_editor() const { return image_packs_; }
+
+    // Passthrough NativeTextField overlay rects for the image-pack tab,
+    // mirroring name_field_rect()/topic_edit_rect()'s delegation pattern —
+    // empty whenever this tab isn't the selected one.
+    tk::Rect image_pack_new_pack_name_field_rect() const;
+    std::uint64_t image_pack_new_pack_name_reset_generation() const;
+    tk::Rect image_pack_shortcode_edit_rect() const;
+    // Scope for the host's drop-target hit-test — non-empty whenever this
+    // tab is open, regardless of which pack (if any) a given point lands
+    // on (see ImagePackEditorView::add_pending_image_at for per-pack
+    // routing).
+    tk::Rect image_pack_list_rect() const;
+
 private:
+    bool image_pack_tab_selected_() const;
+
+    static constexpr int kImagePackTabIndex = 4;
     // Recomputes would_lock_out_self_ from staged_permissions_ and
     // own_power_level_, pushes it to permissions_ for the warning banner,
     // and calls refresh_accept_enabled_(). Called whenever either input
@@ -291,6 +350,7 @@ private:
     RoomMediaSection*       media_       = nullptr;
     RoomSecuritySection*    security_    = nullptr;
     RoomPermissionsSection* permissions_ = nullptr;
+    ImagePackEditorView*    image_packs_ = nullptr;
     Toast*                  toast_       = nullptr;
 
     tk::Button* accept_btn_ = nullptr;

@@ -2878,6 +2878,27 @@ protected:
     // RoomSettingsView via set_security_state if the dialog is still open.
     void fetch_room_security_state_(const std::string& room_id);
 
+    // ── Emojis & Stickers tab (ImagePackEditorView), initial-testing
+    // placement — see RoomSettingsView::set_image_pack_*. This view has no
+    // Client dependency, so ShellBase fetches and pushes data in, mirroring
+    // seed_room_media_section_'s shape. list_image_packs()/list_pack_images()
+    // are cached local reads (no network round-trip), so unlike
+    // fetch_room_security_state_ these are synchronous — no request_id
+    // bookkeeping needed. Called from each shell's on_room_settings_opened
+    // handler, right after fetch_room_security_state_.
+    void seed_image_pack_tab_(const std::string& room_id);
+    // Wired once (alongside on_accept) to RoomSettingsView's
+    // on_image_pack_images_needed — fired once per pack (every pack is
+    // shown at once now, not just a single "selected" one) — pushes that
+    // pack's images.
+    void handle_image_pack_images_needed_(const std::string& pack_id);
+    // Wired once to RoomSettingsView's on_image_pack_pending_image_added —
+    // decodes a dropped/pasted image off-thread (decode_image_ is safe to
+    // call from a worker) and pushes the local preview back once ready.
+    void handle_image_pack_pending_image_added_(std::uint64_t local_id,
+                                                std::vector<uint8_t> bytes,
+                                                std::string mime);
+
     // Estimate how many trailing rows of a freshly-loaded snapshot could
     // plausibly be on screen, for build_rows_()'s synchronous media-prefetch
     // window. Real per-row heights (text wrap, inline images) aren't known

@@ -1,6 +1,64 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-10** (v0.8.14-unreleased). 1050 C++ + 336 Rust tests.
+Snapshot of every feature that has landed on `master`. Last updated **2026-07-11** (v0.8.14-unreleased). 1073 C++ + 336 Rust tests.
+
+> **Image Pack Editor widget redesigned to multi-pack + position-aware
+> drag-drop, initial testing placement (2026-07-11, v0.8.14-unreleased).**
+> `ImagePackEditorView` no longer edits one MSC2545 pack at a time via a
+> combobox — it now lists every pack in the room at once, each as its own
+> scrollable section (`ImagePackSectionList : ScrollableBase`, replacing the
+> old `tk::GridView` subclass) with its own name header, its own 3-way
+> usage toggle (sticker/emoji/both), a header remove chip (Lucide "close"
+> icon) that deletes the whole pack, and its own image-tile grid (hover
+> remove chip + click-to-edit shortcode). A fixed create-row above the list
+> (name field + Create button) appends a new empty pack. Clicking a
+> header selects that pack as "active" — the target for paste (which has no
+> position) and the fallback target for a drop that lands outside every
+> pack's grid (e.g. on a header or the create row). Everything stays staged
+> in memory until Accept, which now hands back one `ImagePackEditorResult`
+> (kept/edited/new packs + a `removed_pack_ids` list); there is still no
+> backend to persist any of this (only the user's personal pack has a write
+> path today), so Accept currently just closes the dialog.
+>
+> True position-based drop targeting required extending
+> `tk::FileDropHandler` with a `tk::Point pos` parameter end to end on all
+> four platforms: Qt6 (`QDropEvent::position()`, already in the right
+> coordinate space), GTK4 (`GtkDropTarget`'s callback `x,y`, likewise),
+> Win32 (`IDropTarget::Drop`'s screen-space `POINTL`, converted via
+> `ScreenToClient` + `phys_to_dip`), and macOS (`NSDraggingInfo
+> .draggingLocation`, converted via `convertPoint:fromView:nil` mirroring
+> the existing pointer-event path). Every `set_on_file_drop` call site
+> across all four shells (main window + pop-out `RoomWindow`) was updated
+> for the new signature, and Win32/macOS — which had only ever received the
+> single-pack-era data-plumbing callbacks — got their missing native-overlay
+> wiring (pack-name field, shortcode field, paste-catcher) added to match
+> Qt6/GTK4. Fully wired and consistent (by static reading/pattern-matching
+> against Qt6, the only platform built here) on all four shells; only Qt6
+> is build-verified end to end, GTK4 is user-build-verified per usual
+> practice, and Win32/macOS drop-position code is unverified (no toolchain
+> in this environment). Rewrote all 25 `ImagePackSectionList`/
+> `ImagePackEditorView` C++ tests for the multi-pack model (+7 net vs. the
+> single-pack version). Also fixed a real Qt6 text-rendering bug along the
+> way: `canvas_qpainter.cpp`'s `build_text()` treated an unset `max_width`
+> as an internal 8192px sentinel rather than "natural width," which combined
+> with `halign::Center` to draw the usage-toggle/shortcode/hint-tile labels
+> thousands of pixels off-screen — fixed by dropping the (redundant, given
+> manual origin-centering) `halign`/`valign::Center` on those labels.
+>
+> Mounted as a 5th "Emojis & Stickers" tab in `RoomSettingsView` for initial
+> testing (its own footer replaces the shared Accept/Cancel bar while
+> selected). `ShellBase::seed_image_pack_tab_` mirrors
+> `seed_room_media_section_`'s shape to push every room pack in at once
+> (`on_image_pack_images_needed` fires once per pack); wired on all four
+> shells.
+>
+> Along the way, fixed a latent `i18n-pseudo` bug (`gen_pseudo.py` wrapped a
+> leading/trailing `\n` inside its `[...]` pseudo-localization brackets,
+> which `msgfmt` rejects when msgid/msgstr disagree on leading/trailing
+> newlines) — surfaced by regenerating the catalogs for this feature's new
+> strings, unrelated to image packs itself.
+
+<!-- -->
 
 > **Fixed a runaway pagination loop in the room media gallery
 > (2026-07-10, v0.8.14-unreleased).** Closing the "Media (N)" gallery

@@ -421,6 +421,11 @@ public:
         tesseract::MediaPreviewConfig::Mode mode);
     void seed_room_media_section(const std::string& room_id);
     void fetch_room_security_state(const std::string& room_id);
+    void seed_image_pack_tab(const std::string& room_id);
+    void handle_image_pack_images_needed(const std::string& pack_id);
+    void handle_image_pack_pending_image_added(std::uint64_t local_id,
+                                               std::vector<uint8_t> bytes,
+                                               std::string mime);
     void wire_main_app_widget(tesseract::views::MainAppWidget* app);
     void wire_main_app_viewers(tesseract::views::MainAppWidget* app,
                                tk::Host& host,
@@ -2327,6 +2332,13 @@ void MacShell::seed_room_media_section(const std::string& room_id)
     { seed_room_media_section_(room_id); }
 void MacShell::fetch_room_security_state(const std::string& room_id)
     { fetch_room_security_state_(room_id); }
+void MacShell::seed_image_pack_tab(const std::string& room_id)
+    { seed_image_pack_tab_(room_id); }
+void MacShell::handle_image_pack_images_needed(const std::string& pack_id)
+    { handle_image_pack_images_needed_(pack_id); }
+void MacShell::handle_image_pack_pending_image_added(
+    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string mime)
+    { handle_image_pack_pending_image_added_(local_id, std::move(bytes), std::move(mime)); }
 void MacShell::wire_main_app_widget(tesseract::views::MainAppWidget* app)
     { wire_main_app_widget_(app); }
 void MacShell::wire_main_app_viewers(tesseract::views::MainAppWidget* app,
@@ -2441,6 +2453,15 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     std::unique_ptr<tk::NativeTextField> _roomSettingsNameField;
     bool _roomSettingsNameFieldVisible;
     std::unique_ptr<tk::NativeTextArea> _roomSettingsTopicArea;
+
+    // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
+    std::unique_ptr<tk::NativeTextField> _imagePackNameField;
+    bool _imagePackNameFieldVisible;
+    std::unique_ptr<tk::NativeTextField> _imagePackShortcodeField;
+    bool _imagePackShortcodeFieldVisible;
+    std::unique_ptr<tk::NativeTextArea> _imagePackPasteCatcher;
+    bool _imagePackPasteCatcherVisible;
+    std::uint64_t _imagePackNameResetGenSeen;
 
     // Settings name field — positioned via _settingsSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _settingsNameField;
@@ -3977,6 +3998,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 v->set_permissions_field_permissions(false);
                 v->set_own_power_level({});
                 s->_shell->seed_room_media_section(room_id);
+                s->_shell->seed_image_pack_tab(room_id);
                 return;
             }
             v->set_field_permissions(
@@ -3996,6 +4018,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 s->_shell->client_->room_own_power_level(room_id));
             s->_shell->seed_room_media_section(room_id);
             s->_shell->fetch_room_security_state(room_id);
+            s->_shell->seed_image_pack_tab(room_id);
         };
         _mainApp->room_view()->on_room_settings_avatar_upload_requested =
             [weakSelf](std::string room_id)
@@ -4032,6 +4055,47 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                                 media_override->mode);
                     });
                 });
+        };
+        _mainApp->room_view()->room_settings_view()->set_image_pack_provider(
+            [weakSelf](const std::string& url) -> const tk::Image*
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return nullptr;
+            if (const auto* img = s->_shell->account_manager_.image_cache().peek(url))
+                return img;
+            s->_shell->ensure_media_image(url, 96, 96);
+            return nullptr;
+        });
+        _mainApp->room_view()->room_settings_view()->on_image_pack_images_needed =
+            [weakSelf](std::string pack_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->handle_image_pack_images_needed(pack_id);
+        };
+        _mainApp->room_view()->room_settings_view()->on_image_pack_pending_image_added =
+            [weakSelf](std::uint64_t local_id,
+                      const std::vector<std::uint8_t>& bytes,
+                      const std::string& mime)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->handle_image_pack_pending_image_added(local_id, bytes, mime);
+        };
+        _mainApp->room_view()->room_settings_view()->on_image_pack_accept =
+            [weakSelf](tesseract::views::ImagePackEditorResult /*result*/)
+        {
+            // No backend to persist this yet (see ImagePackEditorView.h) —
+            // close the dialog so the initial-testing round-trip still
+            // feels complete end to end.
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            if (auto* v = s->_mainApp->room_view()->room_settings_view())
+                v->close();
         };
         _shell->setup_dm_callbacks();
         _mainApp->room_view()->on_ignore_user =
@@ -4670,6 +4734,54 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 [s _relayoutChatSurface];
             });
         _roomSettingsTopicArea->set_visible(false);
+
+        _imagePackNameField = _mainAppSurface->host().make_text_field();
+        _imagePackNameField->set_placeholder(tk::tr("Pack name"));
+        _imagePackNameField->set_on_changed(
+            [weakSelf](const std::string& t)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->room_view()->room_settings_view()->set_image_pack_new_pack_name_text(t);
+            });
+        _imagePackNameField->set_visible(false);
+
+        _imagePackShortcodeField = _mainAppSurface->host().make_text_field();
+        _imagePackShortcodeField->set_compact(true);
+        _imagePackShortcodeField->set_on_changed(
+            [weakSelf](const std::string& t)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->room_view()->room_settings_view()->set_image_pack_editing_shortcode_text(t);
+            });
+        _imagePackShortcodeField->set_on_submit(
+            [weakSelf]()
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->room_view()->room_settings_view()->commit_image_pack_editing_shortcode();
+            });
+        _imagePackShortcodeField->set_on_focus_changed(
+            [weakSelf](bool focused)
+            {
+                MainWindowController* s = weakSelf;
+                if (!focused && s && s->_mainApp)
+                    s->_mainApp->room_view()->room_settings_view()->commit_image_pack_editing_shortcode();
+            });
+        _imagePackShortcodeField->set_visible(false);
+
+        _imagePackPasteCatcher = _mainAppSurface->host().make_text_area();
+        _imagePackPasteCatcher->set_visible(false);
+        _imagePackPasteCatcher->set_on_image_paste(
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->room_view()->room_settings_view()->add_image_pack_pasted_image(
+                        std::move(bytes), std::move(mime));
+            });
+
         _roomTextArea->set_on_changed(
             [weakSelf](const std::string& s)
             {
@@ -5007,11 +5119,18 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         _mainAppSurface->set_on_file_drop(
             [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename)
+                       std::string filename, tk::Point pos)
             {
                 MainWindowController* c = weakSelf;
                 if (!c || !c->_roomView)
                 {
+                    return;
+                }
+                if (auto* rsv = c->_roomView->room_settings_view();
+                    rsv && !rsv->image_pack_list_rect().empty())
+                {
+                    rsv->add_image_pack_dropped_image(pos, std::move(bytes),
+                                                       std::move(mime));
                     return;
                 }
                 MacShell* shell = c->_shell.get();
@@ -5364,6 +5483,52 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         if (!topicWasVisible)
                             s->_roomSettingsTopicArea->set_text(
                                 rsv->topic_edit_initial_text());
+                    }
+                }
+                if (s->_imagePackNameField && s->_imagePackShortcodeField &&
+                    s->_imagePackPasteCatcher)
+                {
+                    auto* rsv = app->room_view()->room_settings_view();
+
+                    const tk::Rect pnr = rsv->image_pack_new_pack_name_field_rect();
+                    s->_imagePackNameFieldVisible = !pnr.empty();
+                    s->_imagePackNameField->set_visible(!pnr.empty());
+                    if (!pnr.empty())
+                        s->_imagePackNameField->set_rect(pnr);
+                    // The create-row field stays visible continuously, so
+                    // there's no visibility-transition edge to hook a
+                    // "clear the displayed text" reset off of — diff the
+                    // generation counter instead (mirrors the Qt6 shell).
+                    const std::uint64_t nameGen =
+                        rsv->image_pack_new_pack_name_reset_generation();
+                    if (nameGen != s->_imagePackNameResetGenSeen)
+                    {
+                        s->_imagePackNameResetGenSeen = nameGen;
+                        s->_imagePackNameField->set_text("");
+                    }
+
+                    const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
+                    const bool shortcodeWasVisible =
+                        s->_imagePackShortcodeFieldVisible;
+                    s->_imagePackShortcodeFieldVisible = !scr.empty();
+                    s->_imagePackShortcodeField->set_visible(!scr.empty());
+                    if (!scr.empty())
+                    {
+                        s->_imagePackShortcodeField->set_rect(scr);
+                        if (!shortcodeWasVisible)
+                            s->_imagePackShortcodeField->set_focused(true);
+                    }
+
+                    const tk::Rect gr = rsv->image_pack_list_rect();
+                    const bool pasteCatcherWasVisible =
+                        s->_imagePackPasteCatcherVisible;
+                    s->_imagePackPasteCatcherVisible = !gr.empty();
+                    s->_imagePackPasteCatcher->set_visible(!gr.empty());
+                    if (!gr.empty())
+                    {
+                        s->_imagePackPasteCatcher->set_rect({gr.x, gr.y, 1.0f, 1.0f});
+                        if (!pasteCatcherWasVisible)
+                            s->_imagePackPasteCatcher->set_focused(true);
                     }
                 }
                 applyField(tk::NativeOverlayId::RoomSearchField,

@@ -137,6 +137,8 @@ set(_tk_sources
     views/ForwardRoomPicker.cpp
     views/MessageSearchView.h
     views/MessageSearchView.cpp
+    views/ImagePackEditorView.h
+    views/ImagePackEditorView.cpp
     views/RoomMediaView.h
     views/RoomMediaView.cpp
     views/RoomSearchBar.h

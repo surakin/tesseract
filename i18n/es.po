@@ -1020,3 +1020,47 @@ msgstr "Administrador"
 #, c++-format
 msgid "Custom ({0})"
 msgstr "Personalizado ({0})"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Emojis & Stickers"
+msgstr "Emojis y stickers"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Image pack"
+msgstr "Paquete de imágenes"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Pack name"
+msgstr "Nombre del paquete"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Usage"
+msgstr "Uso"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Emoji & stickers"
+msgstr "Emojis y stickers"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Emoji only"
+msgstr "Solo emojis"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Stickers only"
+msgstr "Solo stickers"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Create new pack"
+msgstr "Crear paquete nuevo"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Unnamed pack"
+msgstr "Paquete sin nombre"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "(no shortcode)"
+msgstr "(sin código corto)"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Drop image or paste"
+msgstr "Suelta una imagen o pégala"

@@ -2330,6 +2330,60 @@ void ShellBase::fetch_room_security_state_(const std::string& room_id)
     client_->fetch_room_security_state_async(req_id, room_id);
 }
 
+void ShellBase::seed_image_pack_tab_(const std::string& room_id)
+{
+    if (!room_view_ || !client_)
+        return;
+    auto* v = room_view_->room_settings_view();
+    if (!v || !v->is_open() || v->room_id() != room_id)
+        return;
+    auto packs = client_->list_image_packs();
+    std::vector<tesseract::ImagePack> room_packs;
+    for (auto& p : packs)
+    {
+        if (p.source_kind == tesseract::PackSourceKind::Room &&
+            p.source_room == room_id)
+            room_packs.push_back(std::move(p));
+    }
+    v->set_image_pack_available_packs(std::move(room_packs));
+}
+
+void ShellBase::handle_image_pack_images_needed_(const std::string& pack_id)
+{
+    if (!room_view_ || !client_)
+        return;
+    auto* v = room_view_->room_settings_view();
+    if (!v || !v->is_open())
+        return;
+    auto images =
+        client_->list_pack_images(pack_id, tesseract::PackUsageFilter::Any);
+    v->set_image_pack_images(pack_id, std::move(images));
+}
+
+void ShellBase::handle_image_pack_pending_image_added_(
+    std::uint64_t local_id, std::vector<uint8_t> bytes, std::string /*mime*/)
+{
+    run_async_(
+        [this, local_id, bytes = std::move(bytes)]()
+        {
+            DecodedImage decoded = decode_image_(bytes, 256, 256);
+            std::shared_ptr<tk::Image> preview;
+            if (decoded.still)
+                preview = std::shared_ptr<tk::Image>(std::move(decoded.still));
+            else if (!decoded.frames.empty())
+                preview =
+                    std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
+            post_to_ui_alive_(
+                [this, local_id, preview = std::move(preview)]() mutable
+                {
+                    if (!room_view_)
+                        return;
+                    if (auto* v = room_view_->room_settings_view())
+                        v->set_image_pack_tile_preview(local_id, std::move(preview));
+                });
+        });
+}
+
 void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
                                                         std::string /*json*/)
 {

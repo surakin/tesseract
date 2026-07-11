@@ -8,10 +8,24 @@ ACCENT_TABLE = str.maketrans('aeiouAEIOUcCnN', 'àéïöùÀÉÏÖÙçÇñÑ')
 
 
 def pseudoize(s):
-    """Apply accent substitution, add brackets and padding."""
+    """Apply accent substitution, add brackets and padding.
+
+    Leading/trailing newlines are kept outside the brackets: gettext
+    requires msgid and msgstr to agree on leading/trailing '\\n' (msgfmt
+    rejects the file otherwise), and wrapping one inside '[...]' broke that
+    for any msgid starting or ending with '\\n'.
+    """
+    leading = ''
+    while s.startswith('\n'):
+        leading += '\n'
+        s = s[1:]
+    trailing = ''
+    while s.endswith('\n'):
+        trailing += '\n'
+        s = s[:-1]
     s = s.translate(ACCENT_TABLE)
     pad = max(1, len(s) // 5)
-    return '[' + s + 'x' * pad + ']'
+    return leading + '[' + s + 'x' * pad + ']' + trailing
 
 
 def unescape(s):

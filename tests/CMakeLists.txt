@@ -68,6 +68,7 @@ add_executable(tesseract_tests
     cpp/test_tk_account_section.cpp
     cpp/test_room_settings_diff.cpp
     cpp/test_tk_room_settings_view.cpp
+    cpp/test_tk_image_pack_editor_view.cpp
     cpp/test_tk_room_media_section.cpp
     cpp/test_tk_room_security_section.cpp
     cpp/test_tk_room_permissions_section.cpp

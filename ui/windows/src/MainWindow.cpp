@@ -2508,6 +2508,7 @@ void MainWindow::on_create(HWND hwnd)
                 v->set_permissions_field_permissions(false);
                 v->set_own_power_level({});
                 seed_room_media_section_(room_id);
+                seed_image_pack_tab_(room_id);
                 return;
             }
             v->set_field_permissions(client_->can_set_room_name(room_id),
@@ -2524,6 +2525,7 @@ void MainWindow::on_create(HWND hwnd)
             v->set_own_power_level(client_->room_own_power_level(room_id));
             seed_room_media_section_(room_id);
             fetch_room_security_state_(room_id);
+            seed_image_pack_tab_(room_id);
         };
         room_view_->on_room_settings_avatar_upload_requested =
             [this](std::string room_id)
@@ -2552,6 +2554,23 @@ void MainWindow::on_create(HWND hwnd)
                                 media_override->mode);
                     });
                 });
+        };
+        room_view_->room_settings_view()->set_image_pack_provider(
+            make_static_image_provider_with_fetch_(96, 96));
+        room_view_->room_settings_view()->on_image_pack_images_needed =
+            [this](std::string pack_id) { handle_image_pack_images_needed_(pack_id); };
+        room_view_->room_settings_view()->on_image_pack_pending_image_added =
+            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
+                  const std::string& mime)
+        { handle_image_pack_pending_image_added_(local_id, bytes, mime); };
+        room_view_->room_settings_view()->on_image_pack_accept =
+            [this](tesseract::views::ImagePackEditorResult /*result*/)
+        {
+            // No backend to persist this yet (see ImagePackEditorView.h) —
+            // close the dialog so the initial-testing round-trip still
+            // feels complete end to end.
+            if (auto* v = room_view_->room_settings_view())
+                v->close();
         };
         setup_dm_callbacks();
         room_view_->on_ignore_user = [this](std::string user_id)
@@ -2640,10 +2659,17 @@ void MainWindow::on_create(HWND hwnd)
         // ── File drop ───────────────────────────────────────────────────────
         main_app_surface_->set_on_file_drop(
             [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename)
+                   std::string filename, tk::Point pos)
             {
                 if (!room_view_)
                 {
+                    return;
+                }
+                if (auto* rsv = room_view_->room_settings_view();
+                    rsv && !rsv->image_pack_list_rect().empty())
+                {
+                    rsv->add_image_pack_dropped_image(pos, std::move(bytes),
+                                                      std::move(mime));
                     return;
                 }
                 auto outcome = tesseract::views::dispatch_file_drop(
@@ -3472,6 +3498,49 @@ void MainWindow::on_create(HWND hwnd)
             });
         room_settings_topic_area_->set_visible(false);
 
+        // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
+        image_pack_name_field_ = main_app_surface_->host().make_text_field();
+        image_pack_name_field_->set_placeholder(tk::tr("Pack name"));
+        image_pack_name_field_->set_on_changed(
+            [this](const std::string& t)
+            {
+                if (room_view_)
+                    room_view_->room_settings_view()->set_image_pack_new_pack_name_text(t);
+            });
+        image_pack_name_field_->set_visible(false);
+
+        image_pack_shortcode_field_ = main_app_surface_->host().make_text_field();
+        image_pack_shortcode_field_->set_compact(true);
+        image_pack_shortcode_field_->set_on_changed(
+            [this](const std::string& t)
+            {
+                if (room_view_)
+                    room_view_->room_settings_view()->set_image_pack_editing_shortcode_text(t);
+            });
+        image_pack_shortcode_field_->set_on_submit(
+            [this]()
+            {
+                if (room_view_)
+                    room_view_->room_settings_view()->commit_image_pack_editing_shortcode();
+            });
+        image_pack_shortcode_field_->set_on_focus_changed(
+            [this](bool focused)
+            {
+                if (!focused && room_view_)
+                    room_view_->room_settings_view()->commit_image_pack_editing_shortcode();
+            });
+        image_pack_shortcode_field_->set_visible(false);
+
+        image_pack_paste_catcher_ = main_app_surface_->host().make_text_area();
+        image_pack_paste_catcher_->set_visible(false);
+        image_pack_paste_catcher_->set_on_image_paste(
+            [this](std::vector<std::uint8_t> bytes, std::string mime)
+            {
+                if (room_view_)
+                    room_view_->room_settings_view()->add_image_pack_pasted_image(
+                        std::move(bytes), std::move(mime));
+            });
+
         // ── VerificationBanner callbacks ─────────────────────────────────────
         verif_shared_->on_verify = [this]
         {
@@ -3935,6 +4004,56 @@ void MainWindow::on_create(HWND hwnd)
                         if (!topic_was_visible)
                             room_settings_topic_area_->set_text(
                                 rsv->topic_edit_initial_text());
+                    }
+                }
+
+                if (image_pack_name_field_ && image_pack_shortcode_field_ &&
+                    image_pack_paste_catcher_)
+                {
+                    auto* rsv = main_app_->room_view()->room_settings_view();
+
+                    const tk::Rect pnr = rsv->image_pack_new_pack_name_field_rect();
+                    const bool pack_name_now_visible = !hide && !pnr.empty();
+                    image_pack_name_field_visible_ = pack_name_now_visible;
+                    image_pack_name_field_->set_visible(pack_name_now_visible);
+                    if (pack_name_now_visible)
+                        image_pack_name_field_->set_rect(pnr);
+                    // The create-row field stays visible continuously, so
+                    // there's no visibility-transition edge to hook a
+                    // "clear the displayed text" reset off of — diff the
+                    // generation counter instead (mirrors the Qt6 shell).
+                    const std::uint64_t name_gen =
+                        rsv->image_pack_new_pack_name_reset_generation();
+                    if (name_gen != image_pack_name_reset_gen_seen_)
+                    {
+                        image_pack_name_reset_gen_seen_ = name_gen;
+                        image_pack_name_field_->set_text("");
+                    }
+
+                    const tk::Rect scr = rsv->image_pack_shortcode_edit_rect();
+                    const bool shortcode_now_visible = !hide && !scr.empty();
+                    const bool shortcode_was_visible =
+                        image_pack_shortcode_field_visible_;
+                    image_pack_shortcode_field_visible_ = shortcode_now_visible;
+                    image_pack_shortcode_field_->set_visible(shortcode_now_visible);
+                    if (shortcode_now_visible)
+                    {
+                        image_pack_shortcode_field_->set_rect(scr);
+                        if (!shortcode_was_visible)
+                            image_pack_shortcode_field_->set_focused(true);
+                    }
+
+                    const tk::Rect gr = rsv->image_pack_list_rect();
+                    const bool grid_now_visible = !hide && !gr.empty();
+                    const bool paste_catcher_was_visible =
+                        image_pack_paste_catcher_visible_;
+                    image_pack_paste_catcher_visible_ = grid_now_visible;
+                    image_pack_paste_catcher_->set_visible(grid_now_visible);
+                    if (grid_now_visible)
+                    {
+                        image_pack_paste_catcher_->set_rect({gr.x, gr.y, 1.0f, 1.0f});
+                        if (!paste_catcher_was_visible)
+                            image_pack_paste_catcher_->set_focused(true);
                     }
                 }
 

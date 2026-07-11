@@ -162,8 +162,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // routes the payload + runs the shell's media probe against this window).
     surface_->set_on_file_drop(
         [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename)
+               std::string filename, tk::Point /*pos*/)
         {
+            // Pop-out room windows have no RoomSettingsView/image-pack tab
+            // to route to by position — always the compose bar.
             handle_file_drop_(std::move(bytes), std::move(mime),
                               std::move(filename));
         });

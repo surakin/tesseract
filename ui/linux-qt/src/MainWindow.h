@@ -371,6 +371,18 @@ private:
     bool roomSettingsNameFieldVisible_ = false;
     std::unique_ptr<tk::NativeTextArea> roomSettingsTopicArea_;
     bool roomSettingsTopicAreaVisible_ = false;
+    // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
+    std::unique_ptr<tk::NativeTextField> imagePackNameField_;
+    bool imagePackNameFieldVisible_ = false;
+    std::unique_ptr<tk::NativeTextField> imagePackShortcodeField_;
+    bool imagePackShortcodeFieldVisible_ = false;
+    // Zero-size clipboard-paste catcher, focused whenever the tab becomes
+    // visible — NativeTextField has no image-paste hook (only
+    // NativeTextArea does), and a paste gesture over the grid itself isn't
+    // aimed at either the name or shortcode field.
+    std::unique_ptr<tk::NativeTextArea> imagePackPasteCatcher_;
+    bool imagePackPasteCatcherVisible_ = false;
+    std::uint64_t imagePackNameResetGenSeen_ = 0;
     bool explicitly_quitting_ = false;  // set before quit actions to bypass hide-to-tray in closeEvent
 
     // Sync-progress status text (initial room hydration + key backfill).
