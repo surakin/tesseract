@@ -366,9 +366,16 @@ private:
     bool image_pack_name_field_visible_ = false;
     std::unique_ptr<tk::NativeTextField> image_pack_shortcode_field_;
     bool image_pack_shortcode_field_visible_ = false;
+    std::unique_ptr<tk::NativeTextField> image_pack_rename_field_;
+    bool image_pack_rename_field_visible_ = false;
     std::unique_ptr<tk::NativeTextArea> image_pack_paste_catcher_;
     bool image_pack_paste_catcher_visible_ = false;
     std::uint64_t image_pack_name_reset_gen_seen_ = 0;
+    // Whichever RoomSettingsView instance currently has a tab open —
+    // room_view_'s (a normal room) or main_app_->space_root()'s (a space
+    // root, since the wrench icon there opens its own separate
+    // RoomSettingsView instance). nullptr if neither is open.
+    tesseract::views::RoomSettingsView* active_room_settings_view_() const;
     GtkWidget* emoji_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> emoji_picker_surface_;
     tesseract::views::EmojiPicker* emoji_picker_shared_ = nullptr;

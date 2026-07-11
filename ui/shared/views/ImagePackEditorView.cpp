@@ -44,6 +44,11 @@ void ImagePackSectionList::set_editing(
     editing_ = pack_and_tile;
 }
 
+void ImagePackSectionList::set_editing_name(std::optional<std::size_t> pack_idx)
+{
+    editing_name_ = pack_idx;
+}
+
 void ImagePackSectionList::refresh()
 {
     clamp_scroll();
@@ -137,6 +142,22 @@ tk::Rect ImagePackSectionList::label_rect_at(std::size_t pack_idx,
     return world;
 }
 
+tk::Rect ImagePackSectionList::name_rect_at(std::size_t pack_idx) const
+{
+    if (!packs_ || pack_idx >= packs_->size())
+        return {};
+    const auto layout = compute_layout_(bounds_.w);
+    if (pack_idx >= layout.size())
+        return {};
+    const auto& sec = layout[pack_idx];
+    const tk::Rect world{bounds_.x + sec.name_rect.x,
+                         bounds_.y - scroll_y_ + sec.name_rect.y, sec.name_rect.w,
+                         sec.name_rect.h};
+    if (world.bottom() <= bounds_.y || world.y >= bounds_.y + bounds_.h)
+        return {}; // scrolled out of the viewport
+    return world;
+}
+
 std::optional<std::size_t> ImagePackSectionList::pack_at(tk::Point world) const
 {
     if (!packs_)
@@ -211,6 +232,16 @@ bool ImagePackSectionList::on_pointer_down(tk::Point local)
             {
                 if (on_pack_usage_changed)
                     on_pack_usage_changed(i, kUsageSlots[seg]);
+                return true;
+            }
+        }
+        {
+            const auto& nr = sec.name_rect;
+            if (local.x >= nr.x && local.x < nr.x + nr.w && y_content >= nr.y &&
+                y_content < nr.y + nr.h)
+            {
+                if (on_pack_name_clicked)
+                    on_pack_name_clicked(i);
                 return true;
             }
         }
@@ -328,6 +359,8 @@ void ImagePackSectionList::paint_header_(tk::PaintCtx& ctx, std::size_t pack_idx
         ctx.canvas.fill_rect({hdr.x, hdr.y, kActiveBarW, hdr.h}, pal.accent);
 
     const auto& pack = (*packs_)[pack_idx];
+    const bool editing_name = editing_name_ && *editing_name_ == pack_idx;
+    if (!editing_name)
     {
         tk::TextStyle st;
         st.role      = tk::FontRole::UiSemibold;
@@ -538,6 +571,7 @@ ImagePackEditorView::ImagePackEditorView()
     list_     = add_child(std::move(list));
     list_->set_packs(&packs_);
     list_->on_pack_header_clicked = [this](std::size_t idx) { select_active_pack_(idx); };
+    list_->on_pack_name_clicked = [this](std::size_t idx) { begin_editing_pack_name_(idx); };
     list_->on_pack_usage_changed =
         [this](std::size_t idx, tesseract::PackUsage u)
     {
@@ -611,9 +645,11 @@ void ImagePackEditorView::open(std::string room_id)
     next_local_id_ = 0;
     new_pack_name_draft_.clear();
     editing_.reset();
+    editing_pack_name_.reset();
 
     list_->set_active_pack_index(std::nullopt);
     list_->set_editing(std::nullopt);
+    list_->set_editing_name(std::nullopt);
     list_->refresh();
 
     create_btn_->set_enabled(true);
@@ -630,7 +666,9 @@ void ImagePackEditorView::close()
         return;
     open_ = false;
     editing_.reset();
+    editing_pack_name_.reset();
     list_->set_editing(std::nullopt);
+    list_->set_editing_name(std::nullopt);
     set_visible(false);
     layout_changed_();
 }
@@ -748,6 +786,46 @@ void ImagePackEditorView::begin_editing_shortcode_(std::size_t pack_idx,
     layout_changed_();
 }
 
+tk::Rect ImagePackEditorView::pack_name_edit_rect() const
+{
+    if (!open_ || !editing_pack_name_)
+        return {};
+    return list_->name_rect_at(*editing_pack_name_);
+}
+
+std::string ImagePackEditorView::pack_name_edit_initial_text() const
+{
+    if (!editing_pack_name_ || *editing_pack_name_ >= packs_.size())
+        return {};
+    return packs_[*editing_pack_name_].display_name;
+}
+
+void ImagePackEditorView::set_editing_pack_name_text(std::string text)
+{
+    if (!editing_pack_name_ || *editing_pack_name_ >= packs_.size())
+        return;
+    packs_[*editing_pack_name_].display_name = std::move(text);
+}
+
+void ImagePackEditorView::commit_editing_pack_name()
+{
+    if (!editing_pack_name_)
+        return;
+    editing_pack_name_.reset();
+    list_->set_editing_name(std::nullopt);
+    layout_changed_();
+}
+
+void ImagePackEditorView::begin_editing_pack_name_(std::size_t pack_idx)
+{
+    if (pack_idx >= packs_.size())
+        return;
+    select_active_pack_(pack_idx);
+    editing_pack_name_ = pack_idx;
+    list_->set_editing_name(editing_pack_name_);
+    layout_changed_();
+}
+
 void ImagePackEditorView::remove_tile_(std::size_t pack_idx, std::size_t tile_idx)
 {
     if (pack_idx >= packs_.size() || tile_idx >= packs_[pack_idx].images.size())
@@ -803,8 +881,16 @@ void ImagePackEditorView::remove_pack_(std::size_t idx)
         else if (editing_->first > idx)
             editing_->first -= 1;
     }
+    if (editing_pack_name_)
+    {
+        if (*editing_pack_name_ == idx)
+            editing_pack_name_.reset();
+        else if (*editing_pack_name_ > idx)
+            *editing_pack_name_ -= 1;
+    }
     list_->set_active_pack_index(active_pack_index_);
     list_->set_editing(editing_);
+    list_->set_editing_name(editing_pack_name_);
     list_->refresh();
     refresh_accept_enabled_();
     layout_changed_();

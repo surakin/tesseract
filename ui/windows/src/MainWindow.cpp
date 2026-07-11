@@ -1691,6 +1691,15 @@ bool MainWindow::create(int nCmdShow)
     return true;
 }
 
+tesseract::views::RoomSettingsView* MainWindow::active_room_settings_view_() const
+{
+    if (room_view_ && room_view_->room_settings_view()->is_open())
+        return room_view_->room_settings_view();
+    if (main_app_)
+        return main_app_->space_root()->settings_view();
+    return nullptr;
+}
+
 void MainWindow::on_create(HWND hwnd)
 {
     // Application accelerator table: Ctrl+K opens the quick switcher even when
@@ -2769,7 +2778,7 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     return;
                 }
-                if (auto* rsv = room_view_->room_settings_view();
+                if (auto* rsv = active_room_settings_view_();
                     rsv && !rsv->image_pack_list_rect().empty())
                 {
                     rsv->add_image_pack_dropped_image(pos, std::move(bytes),
@@ -3576,12 +3585,16 @@ void MainWindow::on_create(HWND hwnd)
             });
         topic_text_area_->set_visible(false);
 
+        // active_room_settings_view_() resolves to whichever RoomSettingsView
+        // instance (room_view_'s or the space-root one) currently has this
+        // tab open — a space's General tab is backed by a separate
+        // RoomSettingsView instance.
         room_settings_name_field_ = main_app_surface_->host().make_text_field();
         room_settings_name_field_->set_on_changed(
             [this](const std::string& t)
             {
-                if (main_app_)
-                    main_app_->room_view()->room_settings_view()->set_name_edit_text(t);
+                if (auto* v = active_room_settings_view_())
+                    v->set_name_edit_text(t);
             });
         room_settings_name_field_->set_visible(false);
 
@@ -3589,27 +3602,31 @@ void MainWindow::on_create(HWND hwnd)
         room_settings_topic_area_->set_on_changed(
             [this](const std::string& t)
             {
-                if (main_app_)
-                    main_app_->room_view()->room_settings_view()->set_topic_edit_text(t);
+                if (auto* v = active_room_settings_view_())
+                    v->set_topic_edit_text(t);
             });
         room_settings_topic_area_->set_on_height_changed(
             [this](float h)
             {
-                if (main_app_)
-                    main_app_->room_view()->room_settings_view()->set_topic_area_natural_height(h);
+                if (auto* v = active_room_settings_view_())
+                    v->set_topic_area_natural_height(h);
                 if (main_app_surface_)
                     main_app_surface_->relayout();
             });
         room_settings_topic_area_->set_visible(false);
 
         // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
+        // active_room_settings_view_() resolves to whichever
+        // RoomSettingsView instance (room_view_'s or the space-root one) has
+        // this tab open, since a space's Emojis & Stickers tab is backed by
+        // a separate RoomSettingsView instance.
         image_pack_name_field_ = main_app_surface_->host().make_text_field();
         image_pack_name_field_->set_placeholder(tk::tr("Pack name"));
         image_pack_name_field_->set_on_changed(
             [this](const std::string& t)
             {
-                if (room_view_)
-                    room_view_->room_settings_view()->set_image_pack_new_pack_name_text(t);
+                if (auto* v = active_room_settings_view_())
+                    v->set_image_pack_new_pack_name_text(t);
             });
         image_pack_name_field_->set_visible(false);
 
@@ -3618,31 +3635,54 @@ void MainWindow::on_create(HWND hwnd)
         image_pack_shortcode_field_->set_on_changed(
             [this](const std::string& t)
             {
-                if (room_view_)
-                    room_view_->room_settings_view()->set_image_pack_editing_shortcode_text(t);
+                if (auto* v = active_room_settings_view_())
+                    v->set_image_pack_editing_shortcode_text(t);
             });
         image_pack_shortcode_field_->set_on_submit(
             [this]()
             {
-                if (room_view_)
-                    room_view_->room_settings_view()->commit_image_pack_editing_shortcode();
+                if (auto* v = active_room_settings_view_())
+                    v->commit_image_pack_editing_shortcode();
             });
         image_pack_shortcode_field_->set_on_focus_changed(
             [this](bool focused)
             {
-                if (!focused && room_view_)
-                    room_view_->room_settings_view()->commit_image_pack_editing_shortcode();
+                if (!focused)
+                    if (auto* v = active_room_settings_view_())
+                        v->commit_image_pack_editing_shortcode();
             });
         image_pack_shortcode_field_->set_visible(false);
+
+        image_pack_rename_field_ = main_app_surface_->host().make_text_field();
+        image_pack_rename_field_->set_compact(true);
+        image_pack_rename_field_->set_on_changed(
+            [this](const std::string& t)
+            {
+                if (auto* v = active_room_settings_view_())
+                    v->set_image_pack_editing_name_text(t);
+            });
+        image_pack_rename_field_->set_on_submit(
+            [this]()
+            {
+                if (auto* v = active_room_settings_view_())
+                    v->commit_image_pack_editing_name();
+            });
+        image_pack_rename_field_->set_on_focus_changed(
+            [this](bool focused)
+            {
+                if (!focused)
+                    if (auto* v = active_room_settings_view_())
+                        v->commit_image_pack_editing_name();
+            });
+        image_pack_rename_field_->set_visible(false);
 
         image_pack_paste_catcher_ = main_app_surface_->host().make_text_area();
         image_pack_paste_catcher_->set_visible(false);
         image_pack_paste_catcher_->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime)
             {
-                if (room_view_)
-                    room_view_->room_settings_view()->add_image_pack_pasted_image(
-                        std::move(bytes), std::move(mime));
+                if (auto* v = active_room_settings_view_())
+                    v->add_image_pack_pasted_image(std::move(bytes), std::move(mime));
             });
 
         // ── VerificationBanner callbacks ─────────────────────────────────────
@@ -4080,9 +4120,10 @@ void MainWindow::on_create(HWND hwnd)
                     }
                 }
 
-                if (room_settings_name_field_ && room_settings_topic_area_)
+                if (room_settings_name_field_ && room_settings_topic_area_ &&
+                    active_room_settings_view_())
                 {
-                    auto* rsv = main_app_->room_view()->room_settings_view();
+                    auto* rsv = active_room_settings_view_();
 
                     const tk::Rect nr = rsv->name_field_rect();
                     const bool name_was_visible = room_settings_name_field_visible_;
@@ -4112,9 +4153,10 @@ void MainWindow::on_create(HWND hwnd)
                 }
 
                 if (image_pack_name_field_ && image_pack_shortcode_field_ &&
-                    image_pack_paste_catcher_)
+                    image_pack_rename_field_ && image_pack_paste_catcher_ &&
+                    active_room_settings_view_())
                 {
-                    auto* rsv = main_app_->room_view()->room_settings_view();
+                    auto* rsv = active_room_settings_view_();
 
                     const tk::Rect pnr = rsv->image_pack_new_pack_name_field_rect();
                     const bool pack_name_now_visible = !hide && !pnr.empty();
@@ -4145,6 +4187,22 @@ void MainWindow::on_create(HWND hwnd)
                         image_pack_shortcode_field_->set_rect(scr);
                         if (!shortcode_was_visible)
                             image_pack_shortcode_field_->set_focused(true);
+                    }
+
+                    const tk::Rect renr = rsv->image_pack_name_edit_rect();
+                    const bool rename_now_visible = !hide && !renr.empty();
+                    const bool rename_was_visible = image_pack_rename_field_visible_;
+                    image_pack_rename_field_visible_ = rename_now_visible;
+                    image_pack_rename_field_->set_visible(rename_now_visible);
+                    if (rename_now_visible)
+                    {
+                        image_pack_rename_field_->set_rect(renr);
+                        if (!rename_was_visible)
+                        {
+                            image_pack_rename_field_->set_text(
+                                rsv->image_pack_name_edit_initial_text());
+                            image_pack_rename_field_->set_focused(true);
+                        }
                     }
 
                     const tk::Rect gr = rsv->image_pack_list_rect();

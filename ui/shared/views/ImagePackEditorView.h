@@ -115,6 +115,10 @@ public:
     void set_image_provider(ImagePackImageProvider provider);
     void set_active_pack_index(std::optional<std::size_t> idx);
     void set_editing(std::optional<std::pair<std::size_t, std::size_t>> pack_and_tile);
+    // Which pack's name header (if any) is being renamed — hides that pack's
+    // name text (the native overlay covers it) mirroring set_editing's tile
+    // shortcode behavior.
+    void set_editing_name(std::optional<std::size_t> pack_idx);
     void refresh();
 
     // Widget-local rect of pack `pack_idx`'s tile `tile_idx`'s shortcode
@@ -122,12 +126,18 @@ public:
     // scrolled out of the viewport.
     tk::Rect label_rect_at(std::size_t pack_idx, std::size_t tile_idx) const;
 
+    // Widget-local rect of pack `pack_idx`'s name header label, for the
+    // host's NativeTextField overlay while renaming. {} if out of range or
+    // scrolled out of the viewport. Mirrors label_rect_at's shape.
+    tk::Rect name_rect_at(std::size_t pack_idx) const;
+
     // Which pack's section (header + grid) contains world-space point
     // `world`, if any — used for position-based drop routing. `world` is
     // assumed already known to be within this widget's own bounds().
     std::optional<std::size_t> pack_at(tk::Point world) const;
 
     std::function<void(std::size_t pack_idx)> on_pack_header_clicked;
+    std::function<void(std::size_t pack_idx)> on_pack_name_clicked;
     std::function<void(std::size_t pack_idx, tesseract::PackUsage)> on_pack_usage_changed;
     std::function<void(std::size_t pack_idx)> on_pack_remove_requested;
     std::function<void(std::size_t pack_idx, std::size_t tile_idx)> on_tile_remove_requested;
@@ -181,6 +191,7 @@ private:
     ImagePackImageProvider image_provider_;
     std::optional<std::size_t> active_pack_index_;
     std::optional<std::pair<std::size_t, std::size_t>> editing_;
+    std::optional<std::size_t> editing_name_;
 
     // Hover state, tracked for repaint-only hover affordances (tile remove
     // chips are hover-only; header remove chips are always visible).
@@ -244,8 +255,7 @@ public:
     void set_image_provider(ImagePackImageProvider p);
 
     // NativeTextField overlay rect + text plumbing for the fixed
-    // "new pack name" row (create-time only — existing packs' names are
-    // read-only header labels, not renameable from this view).
+    // "new pack name" row (create-time only).
     tk::Rect new_pack_name_field_rect() const;
     void     set_new_pack_name_text(std::string text);
     // Bumped every time Create succeeds. The field stays visible
@@ -258,6 +268,14 @@ public:
     tk::Rect shortcode_edit_rect() const; // valid only while a tile is being edited
     void     set_editing_shortcode_text(std::string text);
     void     commit_editing_shortcode(); // called by the host on submit/blur
+
+    // Clicking an existing pack's name header turns it into an editable
+    // NativeTextField overlay (mirrors the shortcode fields above, scoped to
+    // a pack index instead of a (pack, tile) pair).
+    tk::Rect    pack_name_edit_rect() const; // valid only while a pack name is being edited
+    std::string pack_name_edit_initial_text() const; // seed text once, on the visibility rising edge
+    void        set_editing_pack_name_text(std::string text);
+    void        commit_editing_pack_name(); // called by the host on submit/blur
 
     // Clipboard paste has no position — targets the active pack. No-op if
     // there is no active pack (e.g. the room has no packs yet).
@@ -310,6 +328,7 @@ private:
     void remove_pack_(std::size_t idx);
     void create_pack_();
     void begin_editing_shortcode_(std::size_t pack_idx, std::size_t tile_idx);
+    void begin_editing_pack_name_(std::size_t pack_idx);
     void remove_tile_(std::size_t pack_idx, std::size_t tile_idx);
     void refresh_accept_enabled_();
     void layout_changed_();
@@ -332,6 +351,7 @@ private:
     std::uint64_t new_pack_name_reset_gen_ = 0;
 
     std::optional<std::pair<std::size_t, std::size_t>> editing_; // (pack_idx, tile_idx)
+    std::optional<std::size_t> editing_pack_name_;
 
     ImagePackSectionList* list_       = nullptr;
     tk::Button*           create_btn_ = nullptr;

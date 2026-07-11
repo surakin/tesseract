@@ -219,6 +219,8 @@ public:
     void set_image_pack_new_pack_name_text(std::string text);
     void set_image_pack_editing_shortcode_text(std::string text);
     void commit_image_pack_editing_shortcode();
+    void set_image_pack_editing_name_text(std::string text);
+    void commit_image_pack_editing_name();
     // Clipboard paste (no position) — targets the active pack.
     void add_image_pack_pasted_image(std::vector<std::uint8_t> bytes,
                                      std::string mime);
@@ -286,6 +288,8 @@ public:
     tk::Rect image_pack_new_pack_name_field_rect() const;
     std::uint64_t image_pack_new_pack_name_reset_generation() const;
     tk::Rect image_pack_shortcode_edit_rect() const;
+    tk::Rect image_pack_name_edit_rect() const;
+    std::string image_pack_name_edit_initial_text() const;
     // Scope for the host's drop-target hit-test — non-empty whenever this
     // tab is open, regardless of which pack (if any) a given point lands
     // on (see ImagePackEditorView::add_pending_image_at for per-pack

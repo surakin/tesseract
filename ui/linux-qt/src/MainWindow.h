@@ -376,6 +376,8 @@ private:
     bool imagePackNameFieldVisible_ = false;
     std::unique_ptr<tk::NativeTextField> imagePackShortcodeField_;
     bool imagePackShortcodeFieldVisible_ = false;
+    std::unique_ptr<tk::NativeTextField> imagePackRenameField_;
+    bool imagePackRenameFieldVisible_ = false;
     // Zero-size clipboard-paste catcher, focused whenever the tab becomes
     // visible — NativeTextField has no image-paste hook (only
     // NativeTextArea does), and a paste gesture over the grid itself isn't
@@ -383,6 +385,11 @@ private:
     std::unique_ptr<tk::NativeTextArea> imagePackPasteCatcher_;
     bool imagePackPasteCatcherVisible_ = false;
     std::uint64_t imagePackNameResetGenSeen_ = 0;
+    // Whichever RoomSettingsView instance currently has a tab open —
+    // mainApp_->room_view()'s (a normal room) or mainApp_->space_root()'s (a
+    // space root, since the wrench icon there opens its own separate
+    // RoomSettingsView instance). nullptr if neither is open.
+    tesseract::views::RoomSettingsView* activeRoomSettingsView_() const;
     bool explicitly_quitting_ = false;  // set before quit actions to bypass hide-to-tray in closeEvent
 
     // Sync-progress status text (initial room hydration + key backfill).
