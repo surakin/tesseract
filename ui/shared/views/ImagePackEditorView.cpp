@@ -211,6 +211,7 @@ bool ImagePackSectionList::on_pointer_down(tk::Point local)
         if (y_content < sec.top || y_content >= sec.top + sec.height)
             continue;
 
+        if (can_edit_)
         {
             const auto& cr = sec.remove_chip_rect;
             const float ccx = cr.x + cr.w * 0.5f;
@@ -224,17 +225,21 @@ bool ImagePackSectionList::on_pointer_down(tk::Point local)
                 return true;
             }
         }
-        for (int seg = 0; seg < 3; ++seg)
+        if (can_edit_)
         {
-            const auto& sr = sec.usage_rect[seg];
-            if (local.x >= sr.x && local.x < sr.x + sr.w && y_content >= sr.y &&
-                y_content < sr.y + sr.h)
+            for (int seg = 0; seg < 3; ++seg)
             {
-                if (on_pack_usage_changed)
-                    on_pack_usage_changed(i, kUsageSlots[seg]);
-                return true;
+                const auto& sr = sec.usage_rect[seg];
+                if (local.x >= sr.x && local.x < sr.x + sr.w && y_content >= sr.y &&
+                    y_content < sr.y + sr.h)
+                {
+                    if (on_pack_usage_changed)
+                        on_pack_usage_changed(i, kUsageSlots[seg]);
+                    return true;
+                }
             }
         }
+        if (can_edit_)
         {
             const auto& nr = sec.name_rect;
             if (local.x >= nr.x && local.x < nr.x + nr.w && y_content >= nr.y &&
@@ -245,6 +250,10 @@ bool ImagePackSectionList::on_pointer_down(tk::Point local)
                 return true;
             }
         }
+        // Clicking anywhere else in the header (including a disabled
+        // remove chip/usage toggle/name label when !can_edit_) still
+        // selects this pack as active — read-only rooms can still expand/
+        // browse a pack, just not mutate it.
         if (y_content < sec.top + kHeaderH)
         {
             if (on_pack_header_clicked)
@@ -262,22 +271,25 @@ bool ImagePackSectionList::on_pointer_down(tk::Point local)
             if (t >= images.size())
                 break; // hint tile — not interactive
 
-            const float ccx = r.x + r.w - kRemoveChipR;
-            const float ccy = r.y + kRemoveChipR;
-            const float dx = local.x - ccx;
-            const float dy = y_content - ccy;
-            const float tol = kRemoveChipR + 4.0f;
-            if ((dx * dx + dy * dy) <= (tol * tol))
+            if (can_edit_)
             {
-                if (on_tile_remove_requested)
-                    on_tile_remove_requested(i, t);
-                return true;
-            }
-            if (y_content >= r.y + kImageH && y_content < r.y + kImageH + kLabelH)
-            {
-                if (on_tile_shortcode_clicked)
-                    on_tile_shortcode_clicked(i, t);
-                return true;
+                const float ccx = r.x + r.w - kRemoveChipR;
+                const float ccy = r.y + kRemoveChipR;
+                const float dx = local.x - ccx;
+                const float dy = y_content - ccy;
+                const float tol = kRemoveChipR + 4.0f;
+                if ((dx * dx + dy * dy) <= (tol * tol))
+                {
+                    if (on_tile_remove_requested)
+                        on_tile_remove_requested(i, t);
+                    return true;
+                }
+                if (y_content >= r.y + kImageH && y_content < r.y + kImageH + kLabelH)
+                {
+                    if (on_tile_shortcode_clicked)
+                        on_tile_shortcode_clicked(i, t);
+                    return true;
+                }
             }
             break; // clicked the thumbnail itself — no-op
         }
@@ -407,8 +419,11 @@ void ImagePackSectionList::paint_header_(tk::PaintCtx& ctx, std::size_t pack_idx
         }
     }
 
-    // Remove chip — always visible (a persistent header row, unlike a tile
-    // in a dense grid, has no natural hover-to-discover expectation).
+    // Remove chip — always visible when editable (a persistent header row,
+    // unlike a tile in a dense grid, has no natural hover-to-discover
+    // expectation). Hidden entirely without permission, same idiom as
+    // RoomGeneralSection's fields collapsing to static/non-editable.
+    if (can_edit_)
     {
         const tk::Rect cr{origin.x + sec.remove_chip_rect.x,
                           origin.y + sec.remove_chip_rect.y, sec.remove_chip_rect.w,
@@ -480,7 +495,7 @@ void ImagePackSectionList::paint_tile_(tk::PaintCtx& ctx, std::size_t pack_idx,
         }
     }
 
-    if (hovered)
+    if (hovered && can_edit_)
     {
         const float cx = image_rect.x + image_rect.w - kRemoveChipR;
         const float cy = image_rect.y + kRemoveChipR;
@@ -593,7 +608,7 @@ ImagePackEditorView::ImagePackEditorView()
     create_btn_->set_on_click(
         [this]()
         {
-            if (!committing_)
+            if (!committing_ && can_edit_)
                 create_pack_();
         });
 
@@ -609,6 +624,11 @@ void ImagePackEditorView::open(std::string room_id)
     open_       = true;
     committing_ = false;
     dirty_      = false;
+    // Placeholder — the host calls set_field_permissions() right after
+    // open() with the real cached value, same as every other tab's
+    // permission gate (see RoomSettingsView::open()'s general_/security_/
+    // permissions_->set_field_permissions(false, ...) placeholders).
+    can_edit_ = false;
     packs_.clear();
     removed_pack_ids_.clear();
     active_pack_index_.reset();
@@ -618,11 +638,12 @@ void ImagePackEditorView::open(std::string room_id)
     editing_pack_name_.reset();
 
     list_->set_active_pack_index(std::nullopt);
+    list_->set_can_edit(false);
     list_->set_editing(std::nullopt);
     list_->set_editing_name(std::nullopt);
     list_->refresh();
 
-    create_btn_->set_enabled(true);
+    create_btn_->set_enabled(false);
 
     set_visible(true);
     layout_changed_();
@@ -708,7 +729,7 @@ void ImagePackEditorView::set_image_provider(ImagePackImageProvider p)
 
 tk::Rect ImagePackEditorView::new_pack_name_field_rect() const
 {
-    if (!open_ || committing_)
+    if (!open_ || committing_ || !can_edit_)
         return {};
     return new_pack_name_field_rect_;
 }
@@ -720,7 +741,7 @@ void ImagePackEditorView::set_new_pack_name_text(std::string text)
 
 tk::Rect ImagePackEditorView::shortcode_edit_rect() const
 {
-    if (!open_ || !editing_ || committing_)
+    if (!open_ || !editing_ || committing_ || !can_edit_)
         return {};
     return list_->label_rect_at(editing_->first, editing_->second);
 }
@@ -757,7 +778,7 @@ void ImagePackEditorView::begin_editing_shortcode_(std::size_t pack_idx,
 
 tk::Rect ImagePackEditorView::pack_name_edit_rect() const
 {
-    if (!open_ || !editing_pack_name_ || committing_)
+    if (!open_ || !editing_pack_name_ || committing_ || !can_edit_)
         return {};
     return list_->name_rect_at(*editing_pack_name_);
 }
@@ -798,7 +819,8 @@ void ImagePackEditorView::begin_editing_pack_name_(std::size_t pack_idx)
 
 void ImagePackEditorView::remove_tile_(std::size_t pack_idx, std::size_t tile_idx)
 {
-    if (pack_idx >= packs_.size() || tile_idx >= packs_[pack_idx].images.size())
+    if (pack_idx >= packs_.size() || tile_idx >= packs_[pack_idx].images.size() ||
+        !can_edit_)
         return;
     auto& images = packs_[pack_idx].images;
     images.erase(images.begin() + static_cast<std::ptrdiff_t>(tile_idx));
@@ -832,7 +854,7 @@ void ImagePackEditorView::select_active_pack_(std::size_t idx)
 
 void ImagePackEditorView::remove_pack_(std::size_t idx)
 {
-    if (idx >= packs_.size())
+    if (idx >= packs_.size() || !can_edit_)
         return;
     if (!packs_[idx].is_new)
         removed_pack_ids_.push_back(packs_[idx].pack_id);
@@ -888,7 +910,7 @@ void ImagePackEditorView::create_pack_()
 void ImagePackEditorView::add_pending_image_to_pack_(
     std::size_t pack_idx, std::vector<std::uint8_t> bytes, std::string mime)
 {
-    if (pack_idx >= packs_.size())
+    if (pack_idx >= packs_.size() || !can_edit_)
         return;
     StagedPackImage img;
     img.local_id      = ++next_local_id_;
@@ -957,7 +979,16 @@ tk::Rect ImagePackEditorView::list_rect() const
 void ImagePackEditorView::set_committing(bool committing)
 {
     committing_ = committing;
-    create_btn_->set_enabled(!committing_);
+    create_btn_->set_enabled(!committing_ && can_edit_);
+    layout_changed_();
+}
+
+void ImagePackEditorView::set_field_permissions(bool can_edit)
+{
+    can_edit_ = can_edit;
+    create_btn_->set_enabled(can_edit_ && !committing_);
+    list_->set_can_edit(can_edit_);
+    list_->refresh();
     layout_changed_();
 }
 

@@ -1825,6 +1825,42 @@ impl ClientFfi {
     pub fn can_set_room_power_levels(&self, _room_id: &str) -> bool {
         false
     }
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending either the stable or unstable MSC2545 room image-pack state
+    /// event type in this room (see image_packs::ROOM_PACK_TYPES — a room's
+    /// packs may live under either type, so permission to send *either* is
+    /// enough to edit them). Cached read — no network round-trip. False on
+    /// any uncertainty. Mirrors can_set_room_name.
+    #[cfg(not(test))]
+    pub fn can_set_room_image_packs(&self, room_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => crate::image_packs::ROOM_PACK_TYPES
+                .iter()
+                .any(|t| pl.user_can_send_state(user_id, StateEventType::from(*t))),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_set_room_image_packs(&self, _room_id: &str) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------

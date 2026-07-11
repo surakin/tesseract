@@ -189,6 +189,7 @@ TEST_CASE("RoomSettingsView: shared footer stays visible and in the same "
     // other tab (see image_pack_editor()'s doc comment).
     RoomSettingsView v;
     v.open(make_room_info());
+    v.set_image_pack_field_permissions(true);
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -222,6 +223,7 @@ TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
 {
     RoomSettingsView v;
     v.open(make_room_info());
+    v.set_image_pack_field_permissions(true);
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -260,6 +262,36 @@ TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
     REQUIRE(accepted_changes.image_packs.has_value());
     REQUIRE(accepted_changes.image_packs->packs.size() == 1);
     CHECK(accepted_changes.image_packs->packs[0].display_name == "New Pack");
+}
+
+TEST_CASE("RoomSettingsView: set_image_pack_field_permissions forwards to "
+          "the Emojis & Stickers tab, and defaults to read-only",
+          "[room_settings][view]")
+{
+    RoomSettingsView v;
+    v.open(make_room_info());
+
+    TkRoomSettingsViewStage st;
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    // Switch to the Emojis & Stickers tab (see the footer test above for
+    // the sidebar tab-row geometry derivation).
+    const tk::Point tab_pt{100.0f, 211.0f};
+    tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
+    REQUIRE(tab_hit != nullptr);
+    tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+
+    // Read-only by default, before the host ever calls this.
+    CHECK(v.image_pack_new_pack_name_field_rect().empty());
+
+    v.set_image_pack_field_permissions(true);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    CHECK_FALSE(v.image_pack_new_pack_name_field_rect().empty());
+
+    v.set_image_pack_field_permissions(false);
+    st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
+    CHECK(v.image_pack_new_pack_name_field_rect().empty());
 }
 
 TEST_CASE("RoomSettingsView: set_commit_result(true) closes the view",

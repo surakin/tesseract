@@ -1655,6 +1655,12 @@ bool Client::can_set_room_power_levels(const std::string& room_id)
     return impl_->ffi->can_set_room_power_levels(room_id);
 }
 
+bool Client::can_set_room_image_packs(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_image_packs(room_id);
+}
+
 RoomPermissions Client::room_power_levels(const std::string& room_id)
 {
     SH_FFI;

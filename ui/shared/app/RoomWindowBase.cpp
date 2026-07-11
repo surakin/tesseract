@@ -307,6 +307,7 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             v->set_field_permissions(false, false, false);
             v->set_security_field_permissions(false, false, false, false);
             v->set_permissions_field_permissions(false);
+            v->set_image_pack_field_permissions(false);
             v->set_own_power_level({});
             shell_->seed_room_media_section_(room_id);
             return;
@@ -325,6 +326,7 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         v->set_own_power_level(shell_->client_->room_own_power_level(room_id));
         shell_->seed_room_media_section_(room_id);
         shell_->fetch_room_security_state_(room_id);
+        shell_->seed_image_pack_tab_(room_id, v);
     };
     rv->on_room_settings_avatar_upload_requested =
         [this, rv](std::string room_id) {

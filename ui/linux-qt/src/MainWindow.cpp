@@ -1274,6 +1274,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 v->set_field_permissions(false, false, false);
                 v->set_security_field_permissions(false, false, false, false);
                 v->set_permissions_field_permissions(false);
+                v->set_image_pack_field_permissions(false);
                 v->set_own_power_level({});
                 seed_room_media_section_(room_id);
                 seed_image_pack_tab_(room_id, v);
@@ -1355,6 +1356,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 v->set_field_permissions(false, false, false);
                 v->set_security_field_permissions(false, false, false, false);
                 v->set_permissions_field_permissions(false);
+                v->set_image_pack_field_permissions(false);
                 v->set_own_power_level({});
                 seed_image_pack_tab_(room_id, v);
                 return;

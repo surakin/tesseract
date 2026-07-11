@@ -476,6 +476,12 @@ void RoomSettingsView::set_image_pack_available_packs(
     image_packs_->set_available_packs(std::move(packs));
 }
 
+void RoomSettingsView::set_image_pack_field_permissions(bool can_edit)
+{
+    image_packs_->set_field_permissions(can_edit);
+    if (on_layout_changed) on_layout_changed();
+}
+
 void RoomSettingsView::set_image_pack_images(
     std::string pack_id, std::vector<tesseract::ImagePackImage> images)
 {

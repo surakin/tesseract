@@ -115,6 +115,10 @@ public:
     void set_packs(const std::vector<StagedPack>* packs);
     void set_image_provider(ImagePackImageProvider provider);
     void set_active_pack_index(std::optional<std::size_t> idx);
+    // Gates remove chips (hidden), the usage toggle, and name/shortcode
+    // click-to-edit (all no-ops when false) — header-click-to-select-active
+    // stays available regardless, since it doesn't mutate anything.
+    void set_can_edit(bool can_edit) { can_edit_ = can_edit; }
     void set_editing(std::optional<std::pair<std::size_t, std::size_t>> pack_and_tile);
     // Which pack's name header (if any) is being renamed — hides that pack's
     // name text (the native overlay covers it) mirroring set_editing's tile
@@ -191,6 +195,7 @@ private:
     const std::vector<StagedPack>* packs_ = nullptr;
     ImagePackImageProvider image_provider_;
     std::optional<std::size_t> active_pack_index_;
+    bool can_edit_ = false;
     std::optional<std::pair<std::size_t, std::size_t>> editing_;
     std::optional<std::size_t> editing_name_;
 
@@ -244,6 +249,16 @@ public:
     // RoomGeneralSection::set_committing's shallow scope (not a full
     // interaction lock over every list click).
     void set_committing(bool committing);
+
+    // Single all-or-nothing gate for the whole tab (Matrix has no finer
+    // granularity than "can this user send the room's image-pack state
+    // event at all" — mirrors RoomPermissionsSection::set_field_permissions'
+    // shape). false disables pack creation, removal, renaming, usage
+    // changes, shortcode editing, and paste/drop; header-click-to-select-
+    // active still works, since it doesn't mutate anything. Defaults to
+    // false until the host calls this (safe-by-default, same as every
+    // other tab's permission gate before ShellBase seeds the real value).
+    void set_field_permissions(bool can_edit);
 
     // Pushed by the host right after open() (and again if the room's pack
     // list changes while open). Populates the section list with every
@@ -357,6 +372,7 @@ private:
     bool open_       = false;
     bool committing_ = false;
     bool dirty_      = false;
+    bool can_edit_   = false;
 
     std::string room_id_;
     std::vector<StagedPack> packs_;

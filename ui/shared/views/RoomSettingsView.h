@@ -217,6 +217,11 @@ public:
     // no Client dependency, so ShellBase fetches and pushes data in, and
     // receives the raw bytes for a dropped/pasted image back out to decode.
     void set_image_pack_available_packs(std::vector<tesseract::ImagePack> packs);
+    // Single all-or-nothing gate for the whole tab, mirroring
+    // set_permissions_field_permissions' shape (Matrix has no finer
+    // granularity than "can this user send the room's image-pack state
+    // event at all").
+    void set_image_pack_field_permissions(bool can_edit);
     void set_image_pack_images(std::string pack_id,
                                std::vector<tesseract::ImagePackImage> images);
     void set_image_pack_provider(ImagePackImageProvider p);

@@ -1247,6 +1247,13 @@ public:
     /// false on any uncertainty.
     bool can_set_room_power_levels(const std::string& room_id);
 
+    /// True iff the current user's PL meets the requirement for sending the
+    /// room's MSC2545 image-pack state event (either the stable
+    /// m.room.image_pack or unstable im.ponies.room_emotes type —
+    /// permission to send either is enough to edit a room's packs). Cached
+    /// read — no network. Returns false on any uncertainty.
+    bool can_set_room_image_packs(const std::string& room_id);
+
     /// Read the room's current power levels, narrowed to the fields the
     /// Permissions tab edits. Synchronous — cached local read, no network
     /// round-trip (unlike RoomSecurityState, which needs an async GET

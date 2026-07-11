@@ -2337,6 +2337,8 @@ void ShellBase::seed_image_pack_tab_(const std::string& room_id,
         return;
     if (!target->is_open() || target->room_id() != room_id)
         return;
+    target->set_image_pack_field_permissions(
+        client_->can_set_room_image_packs(room_id));
     auto packs = client_->list_image_packs();
     std::vector<tesseract::ImagePack> room_packs;
     for (auto& p : packs)

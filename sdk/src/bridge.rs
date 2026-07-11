@@ -2356,6 +2356,14 @@ pub mod ffi {
         /// thread (reads cached power levels, no network round-trip).
         fn can_set_room_power_levels(self: &ClientFfi, room_id: &str) -> bool;
 
+        /// True iff the current user's power level meets the requirement for
+        /// sending the room's MSC2545 image-pack state event (either the
+        /// stable m.room.image_pack or unstable im.ponies.room_emotes type —
+        /// permission to send either is enough to edit a room's packs).
+        /// False on any uncertainty. Blocks — worker thread (reads cached
+        /// power levels, no network round-trip).
+        fn can_set_room_image_packs(self: &ClientFfi, room_id: &str) -> bool;
+
         /// Read the room's current power levels, narrowed to the fields the
         /// Permissions tab edits. Synchronous — Room::power_levels() is a
         /// cached local read with no network round-trip, unlike the fields
