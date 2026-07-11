@@ -1,62 +1,113 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-07-11** (v0.8.14-unreleased). 1073 C++ + 336 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-11** (v0.8.14-unreleased). 1096 C++ + 364 Rust tests.
 
-> **Image Pack Editor widget redesigned to multi-pack + position-aware
-> drag-drop, initial testing placement (2026-07-11, v0.8.14-unreleased).**
-> `ImagePackEditorView` no longer edits one MSC2545 pack at a time via a
-> combobox — it now lists every pack in the room at once, each as its own
-> scrollable section (`ImagePackSectionList : ScrollableBase`, replacing the
-> old `tk::GridView` subclass) with its own name header, its own 3-way
-> usage toggle (sticker/emoji/both), a header remove chip (Lucide "close"
-> icon) that deletes the whole pack, and its own image-tile grid (hover
-> remove chip + click-to-edit shortcode). A fixed create-row above the list
-> (name field + Create button) appends a new empty pack. Clicking a
-> header selects that pack as "active" — the target for paste (which has no
-> position) and the fallback target for a drop that lands outside every
-> pack's grid (e.g. on a header or the create row). Everything stays staged
-> in memory until Accept, which now hands back one `ImagePackEditorResult`
-> (kept/edited/new packs + a `removed_pack_ids` list); there is still no
-> backend to persist any of this (only the user's personal pack has a write
-> path today), so Accept currently just closes the dialog.
+> **Image pack editor: multi-pack room/space editor + global settings tab,
+> fully wired end to end (2026-07-11, v0.8.14-unreleased).**
+> `ImagePackEditorView` edits every MSC2545 pack in a room (or space) at
+> once, each as its own scrollable section (`ImagePackSectionList :
+> ScrollableBase`) with its own name header (click to rename inline, same
+> pattern as per-tile shortcode editing), a 3-way usage toggle
+> (sticker/emoji/both), a header remove chip that deletes the whole pack,
+> and an image-tile grid (hover remove chip, click-to-edit shortcode,
+> position-aware drag-drop and paste). A fixed create-row above the list
+> adds new empty packs; clicking a header selects that pack as "active" —
+> the paste target and the drop fallback for a drop that lands outside
+> every pack's grid. Position-based drop targeting threads a `tk::Point`
+> through `tk::FileDropHandler` on all four platforms (Qt6
+> `QDropEvent::position()`, GTK4 `GtkDropTarget` callback `x,y`, Win32
+> `IDropTarget::Drop`'s screen-space `POINTL` via `ScreenToClient` +
+> `phys_to_dip`, macOS `NSDraggingInfo.draggingLocation` via
+> `convertPoint:fromView:nil`), with native-overlay wiring (pack-name
+> field, shortcode field, paste-catcher) added to Win32/macOS, which never
+> had it in the single-pack-era editor.
 >
-> True position-based drop targeting required extending
-> `tk::FileDropHandler` with a `tk::Point pos` parameter end to end on all
-> four platforms: Qt6 (`QDropEvent::position()`, already in the right
-> coordinate space), GTK4 (`GtkDropTarget`'s callback `x,y`, likewise),
-> Win32 (`IDropTarget::Drop`'s screen-space `POINTL`, converted via
-> `ScreenToClient` + `phys_to_dip`), and macOS (`NSDraggingInfo
-> .draggingLocation`, converted via `convertPoint:fromView:nil` mirroring
-> the existing pointer-event path). Every `set_on_file_drop` call site
-> across all four shells (main window + pop-out `RoomWindow`) was updated
-> for the new signature, and Win32/macOS — which had only ever received the
-> single-pack-era data-plumbing callbacks — got their missing native-overlay
-> wiring (pack-name field, shortcode field, paste-catcher) added to match
-> Qt6/GTK4. Fully wired and consistent (by static reading/pattern-matching
-> against Qt6, the only platform built here) on all four shells; only Qt6
-> is build-verified end to end, GTK4 is user-build-verified per usual
-> practice, and Win32/macOS drop-position code is unverified (no toolchain
-> in this environment). Rewrote all 25 `ImagePackSectionList`/
-> `ImagePackEditorView` C++ tests for the multi-pack model (+7 net vs. the
-> single-pack version). Also fixed a real Qt6 text-rendering bug along the
-> way: `canvas_qpainter.cpp`'s `build_text()` treated an unset `max_width`
-> as an internal 8192px sentinel rather than "natural width," which combined
-> with `halign::Center` to draw the usage-toggle/shortcode/hint-tile labels
-> thousands of pixels off-screen — fixed by dropping the (redundant, given
-> manual origin-centering) `halign`/`valign::Center` on those labels.
+> Everything stays staged in memory until Accept, which now actually
+> persists: `Client::save_room_pack` wholesale-replaces a pack's images
+> (matching the editor's full-snapshot staging model), assigns a fresh
+> collision-free `state_key` for new packs, and writes back to whichever of
+> the stable (`m.room.image_pack`) / unstable (`im.ponies.room_emotes`)
+> event types an existing pack already uses; `Client::remove_room_pack`
+> empties a pack (Matrix has no true state-event delete) and discovery
+> skips zero-image packs so a removed pack disappears everywhere instead of
+> resurfacing empty. Editing is gated behind the room's actual power
+> levels via `Client::can_set_room_image_packs` (mirrors the
+> `can_set_room_name` family) — Create, remove, the usage toggle,
+> rename/shortcode editing, and paste/drop are all disabled for
+> insufficiently-privileged users; header-click-to-select-active stays
+> enabled since it doesn't mutate anything. Mounted as a 5th "Emojis &
+> Stickers" tab in `RoomSettingsView`, committing through the shared
+> Accept/Cancel footer like every other tab (`RoomSettingsChanges::
+> image_packs`, populated only when `ImagePackEditorView::has_changes()`),
+> and extended to space roots the same way Media/encryption are hidden
+> there instead — image packs are ordinary room state, so a space hosts
+> its own pack the same as any room.
 >
-> Mounted as a 5th "Emojis & Stickers" tab in `RoomSettingsView` for initial
-> testing (its own footer replaces the shared Accept/Cancel bar while
-> selected). `ShellBase::seed_image_pack_tab_` mirrors
-> `seed_room_media_section_`'s shape to push every room pack in at once
-> (`on_image_pack_images_needed` fires once per pack); wired on all four
-> shells.
+> A separate global "Emojis & Stickers" tab in the main `SettingsView`
+> covers the account-wide surface: `UserPackEditor` (single-pack tile-grid
+> editor for the personal `im.ponies.user_emotes` pack — add/remove/rename
+> images, staged until Save, uploading brand-new pasted/dropped images via
+> `upload_media`) and `KnownPacksList` (checkbox list of every known room
+> pack, toggling `m.image_pack.rooms`/`im.ponies.emote_rooms` subscription
+> immediately). `ImagePackTileGridBase` is a shared base for the tile-grid
+> layout/paint/hit-test logic both editors need.
 >
-> Along the way, fixed a latent `i18n-pseudo` bug (`gen_pseudo.py` wrapped a
-> leading/trailing `\n` inside its `[...]` pseudo-localization brackets,
-> which `msgfmt` rejects when msgid/msgstr disagree on leading/trailing
-> newlines) — surfaced by regenerating the catalogs for this feature's new
-> strings, unrelated to image packs itself.
+> Pack **discovery** fetches full per-room state (`RoomStateCache`,
+> triggered on room switch rather than waiting for a sync tick, cached in
+> `room_image_pack_cache`) since sliding sync never delivers custom
+> `m.room.image_pack` state and packs can use non-empty `state_key`s that
+> MSC2545 doesn't require to be empty — the earlier single-guessed-key
+> lookup missed rooms with multiple named packs. What's **shown** in the
+> emoji/sticker pickers and the inline `:shortcode:` popup is scoped to the
+> personal pack, the currently-open room, and explicitly subscribed rooms
+> (each pop-out window computes its own filtered list from its own room).
+> Reads for the personal/enabled-rooms/per-room state events fetch both the
+> stable and unstable MSC2545 event names and combine them
+> (`merge_pack_contents`) rather than stopping at the first hit, so a
+> partially-migrated account or room doesn't silently lose images.
+>
+> Qt6 is build-verified end to end (1096 C++ tests passing); GTK4 is
+> user-build-verified per usual practice; Win32/macOS are verified by
+> static reading/pattern-matching only (no toolchain in this environment).
+> Also fixed along the way: animated stickers/emoji rendering blank in
+> pack editor tiles (the static-image provider never checked
+> `anim_cache_`, shared with the Windows composer's inline custom-emoji
+> preview); animated stickers in the global tab only advancing on mouse
+> move (its view lives on its own top-level surface no shell's per-tick
+> repaint hook knew about); dropped images with no shortcode colliding on
+> a multi-image drop; a stale shortcode field not reseeding on a second
+> drop; clicking outside a shortcode field committing stale text instead
+> of cancelling; the shortcode popup never checking `anim_cache_` for
+> animated custom emoji; a latent `i18n-pseudo` bug in `gen_pseudo.py`
+> (rejected by `msgfmt` on leading/trailing-newline mismatches); a Qt6
+> text-rendering bug where an unset `max_width` sentinel mispositioned
+> centered labels; and image-pack native fields resolving only against the
+> room's `RoomSettingsView` instance, silently no-oping when a space's
+> settings tab was open instead.
+
+<!-- -->
+
+> **Edited plain-text messages no longer render as a bare `*`
+> (2026-07-11, v0.8.14-unreleased).** `ruma-events`' edit-fallback
+> construction (`make_replacement_body()`) unconditionally stamps a
+> synthetic empty-HTML `"* "` fallback onto an edit event's top-level
+> `format`/`formatted_body`, even for edits with no real formatting — the
+> real text stays correct and unprefixed in `m.new_content`.
+> `resanitized_formatted_body` (`sdk/src/client/timeline_convert.rs`)
+> re-read that raw top-level fallback from the edit event's own JSON
+> instead of the resolved content, overriding the correct value with the
+> bogus `"*"`. Now reads from `m.new_content` for `m.replace` events,
+> matching Element/Cinny's handling of the same spec fallback.
+
+<!-- -->
+
+> **Windows: clipboard image paste restored in the BetterText composer
+> (2026-07-11, v0.8.14-unreleased).** `BetterTextArea` handles Ctrl+V
+> internally as a text-only paste and never let `WM_PASTE` reach the host
+> subclass proc, so the existing `WM_PASTE`-based image-paste check was
+> dead code for keyboard paste once the composer moved to BetterText.
+> Intercepts at `WM_KEYDOWN` instead, mirroring the fix already applied to
+> the old windowless RichEdit backend.
 
 <!-- -->
 
@@ -1261,10 +1312,14 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 ## MSC2545 image packs
 
-- **`sdk/src/image_packs.rs` aggregator** — user pack (`im.ponies.user_emotes` / `m.image_pack`), enabled-rooms list (`im.ponies.emote_rooms` / `m.image_pack.rooms`), per-room state events (`im.ponies.room_emotes` / `m.room.image_pack`). 16 unit tests.
+- **`sdk/src/image_packs.rs` aggregator** — user pack (`im.ponies.user_emotes` / `m.image_pack`), enabled-rooms list (`im.ponies.emote_rooms` / `m.image_pack.rooms`), per-room state events (`im.ponies.room_emotes` / `m.room.image_pack`). Reads combine the stable + unstable event names (`merge_pack_contents`) at every read site instead of stopping at the first hit. 16 unit tests.
 - **Spec-correct usage semantics** — missing/empty `usage` → both sticker + emoticon allowed; per-image `usage` overrides pack-level.
-- **FFI surface** — `list_image_packs`, `list_pack_images`, `list_favorite_stickers`, `send_sticker`, `save_sticker_to_user_pack`, `user_pack_has_sticker`, `toggle_favorite_sticker`.
+- **Per-room discovery** — a shared full-state fetch (`RoomStateCache`, triggered on room switch) rather than a single guessed `state_key`, since packs can use non-empty state keys and sliding sync doesn't deliver custom `m.room.image_pack` state; cached in a lazily-built `room_image_pack_cache`.
+- **Picker/popup scoping** — emoji/sticker picker tabs and the inline `:shortcode:` popup filter to the personal pack, the currently-open room, and explicitly subscribed rooms; each pop-out window computes its own filtered list.
+- **FFI surface (reads)** — `list_image_packs`, `list_known_room_packs`, `list_pack_images`, `list_favorite_stickers`, `user_pack_has_sticker`.
+- **FFI surface (writes)** — `send_sticker`, `save_sticker_to_user_pack`, `toggle_favorite_sticker`, `remove_user_pack_image`, `rename_user_pack_image`, `set_pack_room_subscribed` (dual-writes stable + unstable event types, forces a synchronous rebuild so `is_subscribed` is correct before returning), `save_room_pack` (wholesale-replaces a room/space pack's images, matching the editor's full-snapshot staging model), `remove_room_pack` (empties a pack — Matrix has no true state-event delete; discovery skips zero-image packs), `can_set_room_image_packs` (power-level gate, mirrors `can_set_room_name`).
 - **`IEventHandler::on_image_packs_updated`** — fires whenever the cache is rebuilt; pickers refresh in place.
+- **UI** — `ImagePackEditorView` (multi-pack room/space editor, `RoomSettingsView`'s "Emojis & Stickers" tab) and `ImagePacksSection` (`UserPackEditor` + `KnownPacksList`, global `SettingsView` tab) share tile-grid logic via `ImagePackTileGridBase`.
 
 ## Compose bar
 

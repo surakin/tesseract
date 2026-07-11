@@ -54,11 +54,11 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   self-mention emphasis, device rename, new-device warnings, edit history
   viewer, GIF picker.
 - Room upgrades, alias management beyond viewing.
-- **MSC2545 pack management**: list enabled packs UI; toggle subscription
-  via `im.ponies.emote_rooms` (room settings drill-in) — the SDK already
-  supports `emote_rooms` (`bridge.rs`, `client/mod.rs`, `image_packs.rs`);
-  no UI calls it yet. Pack creation/removal flow; sticker delete/rename
-  inside the user pack; manual order/sort.
+- **MSC2545 pack management — manual order/sort.** List/subscribe UI, pack
+  creation/removal, and sticker delete/rename inside the user pack all
+  shipped 2026-07-11 (global "Emojis & Stickers" settings tab +
+  per-room/space editor). No way to reorder packs or images within a pack
+  yet.
 - **Message bubbles / cards** — visual polish pass on the message layout.
 - **Sessions tab — inline rename of device display name.** FFI/Client/Controller
   already plumbed end-to-end (`Client::set_device_display_name`,
