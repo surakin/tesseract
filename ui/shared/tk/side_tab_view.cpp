@@ -55,6 +55,45 @@ void SideTabView::add_bottom_tab(std::string label,
 }
 
 // ---------------------------------------------------------------------------
+// Visibility
+// ---------------------------------------------------------------------------
+
+void SideTabView::set_tab_visible(int idx, bool visible)
+{
+    if (idx < 0 || idx >= static_cast<int>(tabs_.size()))
+    {
+        return;
+    }
+    if (tabs_[idx].visible == visible)
+    {
+        return;
+    }
+    tabs_[idx].visible = visible;
+
+    if (!visible)
+    {
+        tabs_[idx].content->set_visible(false);
+        if (idx == selected_idx_)
+        {
+            selected_idx_ = -1;
+            for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+            {
+                if (tabs_[i].visible)
+                {
+                    select(i);
+                    break;
+                }
+            }
+        }
+    }
+    else if (selected_idx_ < 0)
+    {
+        // Every tab had been hidden; adopt this one now that it's back.
+        select(idx);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------
 
@@ -105,8 +144,10 @@ Size SideTabView::measure(LayoutCtx& ctx, Size constraints)
         content_h = cs.h;
     }
 
-    // Sidebar height is at least the number of tabs × tab height.
-    const float sidebar_h = static_cast<float>(tabs_.size()) * kTabHeight;
+    // Sidebar height is at least the number of visible tabs × tab height.
+    const float sidebar_h =
+        static_cast<float>(num_visible_top_tabs_() + num_visible_bottom_tabs_()) *
+        kTabHeight;
     const float h = avail_h > 0 ? avail_h : std::max(sidebar_h, content_h);
 
     return {avail_w, h};
@@ -155,25 +196,29 @@ void SideTabView::paint(PaintCtx& ctx)
     const float btn_w = kSidebarWidth - kTabInset * 2;
     const float label_w = btn_w - kTabHPad * 2;
 
-    const int n_top = num_top_tabs_();
-    const int n_bot = num_bottom_tabs_();
+    const int n_vis_top = num_visible_top_tabs_();
+    const int n_vis_bot = num_visible_bottom_tabs_();
     const int n_total = static_cast<int>(tabs_.size());
 
     auto button_y = [&](int i) -> float {
-        if (i < n_top)
+        const int slot = visible_slot_(i);
+        if (!tabs_[i].bottom)
         {
-            return bounds_.y + static_cast<float>(i) * kTabHeight;
+            return bounds_.y + static_cast<float>(slot) * kTabHeight;
         }
         // Bottom group: lay out from the bottom of the sidebar upwards.
-        const int bot_idx = i - n_top; // 0..n_bot-1
         const float group_top =
-            bounds_.y + bounds_.h - static_cast<float>(n_bot) * kTabHeight;
-        return group_top + static_cast<float>(bot_idx) * kTabHeight;
+            bounds_.y + bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
+        return group_top + static_cast<float>(slot) * kTabHeight;
     };
 
     for (int i = 0; i < n_total; ++i)
     {
         auto& t = tabs_[i];
+        if (!t.visible)
+        {
+            continue;
+        }
 
         Rect btn{btn_x,
                  button_y(i) + kTabVPad * 0.5f,
@@ -210,12 +255,12 @@ void SideTabView::paint(PaintCtx& ctx)
 
     // Separator line above the bottom-tab group (when both groups exist and
     // there is real space between them).
-    if (n_bot > 0 && n_top > 0)
+    if (n_vis_bot > 0 && n_vis_top > 0)
     {
         const float group_top =
-            bounds_.y + bounds_.h - static_cast<float>(n_bot) * kTabHeight;
+            bounds_.y + bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
         const float top_stack_bottom =
-            bounds_.y + static_cast<float>(n_top) * kTabHeight;
+            bounds_.y + static_cast<float>(n_vis_top) * kTabHeight;
         if (group_top > top_stack_bottom + kTabVPad)
         {
             Rect divider{bounds_.x + kTabInset,
@@ -318,24 +363,26 @@ int SideTabView::tab_at_y(float y) const
         return -1;
     }
 
-    const int n_top = num_top_tabs_();
-    const int n_bot = num_bottom_tabs_();
+    const int n_vis_top = num_visible_top_tabs_();
+    const int n_vis_bot = num_visible_bottom_tabs_();
 
-    // Top group: occupies [0, n_top * kTabHeight).
-    const float top_extent = static_cast<float>(n_top) * kTabHeight;
+    // Top group: occupies [0, n_vis_top * kTabHeight).
+    const float top_extent = static_cast<float>(n_vis_top) * kTabHeight;
     if (y < top_extent)
     {
-        return static_cast<int>(y / kTabHeight);
+        const int slot = static_cast<int>(y / kTabHeight);
+        return tab_at_visible_slot_(slot, /*bottom=*/false);
     }
 
     // Bottom group: anchored at the bottom of the column.
-    if (n_bot > 0)
+    if (n_vis_bot > 0)
     {
-        const float group_top = bounds_.h - static_cast<float>(n_bot) * kTabHeight;
+        const float group_top =
+            bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
         if (y >= group_top && y < bounds_.h)
         {
-            const int bot_idx = static_cast<int>((y - group_top) / kTabHeight);
-            return n_top + bot_idx;
+            const int slot = static_cast<int>((y - group_top) / kTabHeight);
+            return tab_at_visible_slot_(slot, /*bottom=*/true);
         }
     }
 
@@ -359,6 +406,72 @@ int SideTabView::num_top_tabs_() const
 int SideTabView::num_bottom_tabs_() const
 {
     return static_cast<int>(tabs_.size()) - num_top_tabs_();
+}
+
+int SideTabView::num_visible_top_tabs_() const
+{
+    int n = 0;
+    for (const auto& t : tabs_)
+    {
+        if (t.bottom)
+        {
+            break;
+        }
+        if (t.visible)
+        {
+            ++n;
+        }
+    }
+    return n;
+}
+
+int SideTabView::num_visible_bottom_tabs_() const
+{
+    int n = 0;
+    for (const auto& t : tabs_)
+    {
+        if (t.bottom && t.visible)
+        {
+            ++n;
+        }
+    }
+    return n;
+}
+
+int SideTabView::visible_slot_(int idx) const
+{
+    if (idx < 0 || idx >= static_cast<int>(tabs_.size()) || !tabs_[idx].visible)
+    {
+        return -1;
+    }
+    const bool bottom_group = tabs_[idx].bottom;
+    int slot = 0;
+    for (int j = 0; j < idx; ++j)
+    {
+        if (tabs_[j].bottom == bottom_group && tabs_[j].visible)
+        {
+            ++slot;
+        }
+    }
+    return slot;
+}
+
+int SideTabView::tab_at_visible_slot_(int slot, bool bottom) const
+{
+    int seen = 0;
+    for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+    {
+        if (tabs_[i].bottom != bottom || !tabs_[i].visible)
+        {
+            continue;
+        }
+        if (seen == slot)
+        {
+            return i;
+        }
+        ++seen;
+    }
+    return -1;
 }
 
 template <typename Ctx>

@@ -45,6 +45,14 @@ public:
     // [num_top..size)).
     void add_bottom_tab(std::string label, std::unique_ptr<Widget> content);
 
+    // Show/hide the tab at `idx` without removing it — its button and its
+    // slot in the sidebar column disappear entirely (not just disabled).
+    // Hiding the currently-selected tab moves selection to the first
+    // remaining visible tab (top-to-bottom, top group before bottom group),
+    // firing on_tab_selected. No-op if `idx` is out of range or already in
+    // the requested state.
+    void set_tab_visible(int idx, bool visible);
+
     // Switch the visible content to the tab at `idx`. No-op if `idx` is out
     // of range. Fires `on_tab_selected` when the selection actually changes.
     void select(int idx);
@@ -80,6 +88,7 @@ private:
         Widget* content = nullptr; // borrowed; owned via add_child
         bool hovered = false;
         bool bottom = false; // true when added via add_bottom_tab
+        bool visible = true; // false skips this tab's slot entirely (set_tab_visible)
     };
 
     // Pointer hit-testing for the sidebar column.
@@ -95,6 +104,16 @@ private:
     // Count of regular (top-stacked) tabs. Bottom tabs always sit after.
     int num_top_tabs_() const;
     int num_bottom_tabs_() const;
+    // Same, but excluding hidden tabs — these are what layout/hit-test use.
+    int num_visible_top_tabs_() const;
+    int num_visible_bottom_tabs_() const;
+
+    // Position of tab `idx` among visible tabs in its own group (top or
+    // bottom), or -1 if `idx` is hidden.
+    int visible_slot_(int idx) const;
+    // Reverse of visible_slot_: the tab index at visible position `slot`
+    // within the top (bottom=false) or bottom (bottom=true) group, or -1.
+    int tab_at_visible_slot_(int slot, bool bottom) const;
 
     // Ensure the TextLayout for tab `i` is built for the given max width.
     // Called from both arrange (LayoutCtx) and paint (PaintCtx) paths;

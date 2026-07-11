@@ -224,6 +224,11 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
 {
     const bool was_open = open_;
 
+    is_space_ = info.is_space;
+    tabs_->set_tab_visible(kMediaTabIdx, !is_space_);
+    tabs_->set_tab_visible(kImagePackTabIndex, !is_space_);
+    security_->set_encryption_field_visible(!is_space_);
+
     room_id_ = info.id;
     original_name_        = info.name;
     original_topic_       = info.topic;
@@ -639,7 +644,8 @@ void RoomSettingsView::paint(tk::PaintCtx& ctx)
         st.role      = tk::FontRole::UiSemibold;
         st.halign    = tk::TextHAlign::Leading;
         st.max_width = std::max(0.0f, bounds_.w - 2.0f * kPadX);
-        title_layout_ = ctx.factory.build_text(tk::tr("Room Settings"), st);
+        title_layout_ = ctx.factory.build_text(
+            is_space_ ? tk::tr("Space Settings") : tk::tr("Room Settings"), st);
     }
     if (title_layout_)
     {

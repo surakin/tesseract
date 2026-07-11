@@ -499,9 +499,10 @@ public:
     }
 
     // Public methods to call the protected Room Settings helpers.
-    void stage_room_settings_avatar_upload(const std::string& room_id)
+    void stage_room_settings_avatar_upload(const std::string& room_id,
+                                           tesseract::views::RoomSettingsView* target)
     {
-        stage_room_settings_avatar_upload_(room_id);
+        stage_room_settings_avatar_upload_(room_id, target);
     }
     static ShellBase::RoomSettingsCommitOutcome apply_room_settings(
         tesseract::Client* client, const std::string& room_id,
@@ -4026,7 +4027,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = weakSelf;
             if (!s)
                 return;
-            s->_shell->stage_room_settings_avatar_upload(room_id);
+            s->_shell->stage_room_settings_avatar_upload(
+                room_id, s->_mainApp->room_view()->room_settings_view());
         };
         _mainApp->room_view()->room_settings_view()->on_accept =
             [weakSelf](std::string room_id,
@@ -4097,6 +4099,84 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             if (auto* v = s->_mainApp->room_view()->room_settings_view())
                 v->close();
         };
+        // Space-root settings (wrench icon on SpaceRootView): the same
+        // per-room-id permission gating / accept / avatar-upload plumbing
+        // above works unchanged for a space's room id — only the Media tab
+        // and Emojis & Stickers tab seeding are skipped, since
+        // RoomSettingsView hides both entirely in space-root mode (Media
+        // has no meaning for a space; image packs aren't wired to the
+        // space-root settings instance yet).
+        _mainApp->space_root()->on_settings_opened =
+            [weakSelf](std::string room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            auto* v = s->_mainApp->space_root()->settings_view();
+            if (!v)
+                return;
+            if (!s->_shell->client_)
+            {
+                v->set_field_permissions(false, false, false);
+                v->set_security_field_permissions(false, false, false, false);
+                v->set_permissions_field_permissions(false);
+                v->set_own_power_level({});
+                return;
+            }
+            v->set_field_permissions(
+                s->_shell->client_->can_set_room_name(room_id),
+                s->_shell->client_->can_set_room_topic(room_id),
+                s->_shell->client_->can_set_room_avatar(room_id));
+            v->set_security_field_permissions(
+                s->_shell->client_->can_set_room_encryption(room_id),
+                s->_shell->client_->can_set_room_join_rules(room_id),
+                s->_shell->client_->can_set_room_guest_access(room_id),
+                s->_shell->client_->can_set_room_history_visibility(room_id));
+            v->set_permissions_field_permissions(
+                s->_shell->client_->can_set_room_power_levels(room_id));
+            v->set_permissions_state(
+                s->_shell->client_->room_power_levels(room_id));
+            v->set_own_power_level(
+                s->_shell->client_->room_own_power_level(room_id));
+            s->_shell->fetch_room_security_state(room_id);
+        };
+        _mainApp->space_root()->on_settings_avatar_upload_requested =
+            [weakSelf](std::string room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            s->_shell->stage_room_settings_avatar_upload(
+                room_id, s->_mainApp->space_root()->settings_view());
+        };
+        _mainApp->space_root()->settings_view()->on_accept =
+            [weakSelf](std::string room_id,
+                      tesseract::views::RoomSettingsChanges changes)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_)
+                return;
+            auto* c = s->_shell->client_;
+            s->_shell->run_async_mut_(
+                [weakSelf, c, room_id = std::move(room_id),
+                 changes = std::move(changes)]() mutable
+                {
+                    auto outcome = MacShell::apply_room_settings(c, room_id, changes);
+                    auto media_override = changes.media_override;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        MainWindowController* s2 = weakSelf;
+                        if (!s2)
+                            return;
+                        if (auto* v =
+                                s2->_mainApp->space_root()->settings_view())
+                            v->set_commit_result(outcome.ok, outcome.error);
+                        if (outcome.ok && media_override)
+                            s2->_shell->commit_room_media_preview_override(
+                                room_id, media_override->has_override,
+                                media_override->mode);
+                    });
+                });
+        };
         _shell->setup_dm_callbacks();
         _mainApp->room_view()->on_ignore_user =
             [weakSelf](std::string user_id)
@@ -4131,6 +4211,29 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             {
                 [s _relayoutChatSurface];
             }
+        };
+        _mainApp->space_root()->set_post_delayed(
+            [weakSelf](int ms, std::function<void()> fn)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainAppSurface)
+                {
+                    s->_mainAppSurface->host().post_delayed(ms, std::move(fn));
+                }
+            });
+        _mainApp->space_root()->on_layout_changed = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                [s _relayoutChatSurface];
+            }
+        };
+        _mainApp->space_root()->on_copy_to_clipboard = [weakSelf](std::string t)
+        {
+            MainWindowController* s = weakSelf;
+            if (s && s->_mainAppSurface)
+                s->_mainAppSurface->host().set_clipboard_text(t);
         };
 
         _mainAppSurface->set_on_right_click(

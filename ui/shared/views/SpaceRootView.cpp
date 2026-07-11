@@ -1,4 +1,5 @@
 #include "SpaceRootView.h"
+#include "icons.h"
 #include "media_utils.h"
 
 #include "tk/i18n.h"
@@ -12,6 +13,40 @@ namespace tesseract::views
 
 SpaceRootView::SpaceRootView()
 {
+    settings_btn_ = add_child(
+        std::make_unique<tk::Button>("\xF0\x9F\x94\xA7", std::function<void()>{},
+                                     tk::Button::Variant::Icon));
+    settings_btn_->set_on_click([this]() {
+        if (!space_ || !settings_view_) return;
+        settings_view_->open(*space_);
+        if (on_settings_opened) on_settings_opened(space_->id);
+        if (on_layout_changed) on_layout_changed();
+    });
+
+    auto settings = std::make_unique<RoomSettingsView>();
+    settings_view_ = add_child(std::move(settings));
+    settings_view_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+    settings_view_->on_cancel = [this]()
+    {
+        settings_view_->close();
+    };
+    settings_view_->on_avatar_upload_clicked = [this]()
+    {
+        if (on_settings_avatar_upload_requested && space_)
+            on_settings_avatar_upload_requested(space_->id);
+    };
+    settings_view_->on_avatar_remove_clicked = [this]()
+    {
+        settings_view_->set_staged_avatar("");
+    };
+    settings_view_->on_copy_to_clipboard = [this](std::string text)
+    {
+        if (on_copy_to_clipboard) on_copy_to_clipboard(std::move(text));
+    };
+
     set_visible(false);
 }
 
@@ -19,6 +54,10 @@ void SpaceRootView::set_space(const tesseract::RoomInfo& space,
                               std::size_t joined_children,
                               std::size_t unjoined_children)
 {
+    const bool space_changed = !space_ || space_->id != space.id;
+    if (space_changed && settings_view_ && settings_view_->is_open())
+        settings_view_->close();
+
     space_ = space;
     joined_children_ = joined_children;
     unjoined_children_ = unjoined_children;
@@ -28,6 +67,8 @@ void SpaceRootView::set_space(const tesseract::RoomInfo& space,
 
 void SpaceRootView::clear()
 {
+    if (settings_view_ && settings_view_->is_open())
+        settings_view_->close();
     space_.reset();
     joined_children_ = 0;
     unjoined_children_ = 0;
@@ -37,7 +78,14 @@ void SpaceRootView::clear()
 
 void SpaceRootView::set_avatar_provider(AvatarProvider p)
 {
-    avatar_provider_ = std::move(p);
+    avatar_provider_ = p;
+    if (settings_view_) settings_view_->set_avatar_provider(p);
+}
+
+void SpaceRootView::set_post_delayed(
+    std::function<void(int, std::function<void()>)> f)
+{
+    if (settings_view_) settings_view_->set_post_delayed(std::move(f));
 }
 
 tk::Size SpaceRootView::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -45,9 +93,23 @@ tk::Size SpaceRootView::measure(tk::LayoutCtx&, tk::Size constraints)
     return constraints;
 }
 
-void SpaceRootView::arrange(tk::LayoutCtx&, tk::Rect bounds)
+void SpaceRootView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
+
+    const bool settings_open = settings_view_ && settings_view_->is_open();
+    if (settings_btn_)
+        settings_btn_->set_visible(!settings_open);
+
+    if (settings_open)
+    {
+        settings_view_->arrange(ctx, bounds);
+        return;
+    }
+
+    constexpr float kBtnSz = 32.0f;
+    if (settings_btn_)
+        settings_btn_->arrange(ctx, {bounds.x + 8.0f, bounds.y + 8.0f, kBtnSz, kBtnSz});
 }
 
 void SpaceRootView::reset_layouts_()
@@ -81,6 +143,12 @@ std::string SpaceRootView::child_count_label_() const
 
 void SpaceRootView::paint(tk::PaintCtx& ctx)
 {
+    if (settings_view_ && settings_view_->is_open())
+    {
+        settings_view_->paint(ctx);
+        return;
+    }
+
     if (!space_) return;
 
     const auto& pal = ctx.theme.palette;
@@ -212,6 +280,14 @@ void SpaceRootView::paint(tk::PaintCtx& ctx)
                      {cx + (content_w - ht.w) * 0.5f,
                       bottom_block_y + meta_h + kGap},
                      pal.text_muted);
+    }
+
+    if (settings_btn_)
+    {
+        settings_btn_->paint(ctx);
+        settings_icon_.draw(ctx.canvas, ctx.factory, kWrenchSvg,
+                            settings_btn_->bounds(), 16.0f,
+                            pal.text_secondary);
     }
 }
 

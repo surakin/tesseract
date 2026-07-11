@@ -847,6 +847,10 @@ msgstr "Pantalla"
 msgid "Room Settings"
 msgstr "Ajustes de la sala"
 
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Space Settings"
+msgstr "Ajustes del espacio"
+
 #: ui/shared/views/settings/RoomGeneralSection.cpp
 msgid "General"
 msgstr "General"

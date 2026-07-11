@@ -481,6 +481,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                         sfp->host().post_delayed(ms, std::move(fn));
                     }
                 });
+            mainApp_->space_root()->set_post_delayed(
+                [sfp](int ms, std::function<void()> fn)
+                {
+                    if (sfp)
+                    {
+                        sfp->host().post_delayed(ms, std::move(fn));
+                    }
+                });
         }
         mainApp_->room_view()->set_video_player_factory(
             [this]()
@@ -510,8 +518,20 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 mainAppSurface_->relayout();
             }
         };
+        mainApp_->space_root()->on_layout_changed = [this]
+        {
+            if (mainAppSurface_)
+            {
+                mainAppSurface_->relayout();
+            }
+        };
         setup_link_clicked_(mainApp_->room_view());
         mainApp_->room_view()->on_set_clipboard = [this](std::string_view t)
+        {
+            if (mainAppSurface_)
+                mainAppSurface_->host().set_clipboard_text(t);
+        };
+        mainApp_->space_root()->on_copy_to_clipboard = [this](std::string t)
         {
             if (mainAppSurface_)
                 mainAppSurface_->host().set_clipboard_text(t);
@@ -1269,7 +1289,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         mainApp_->room_view()->on_room_settings_avatar_upload_requested =
             [this](const std::string& room_id)
         {
-            stage_room_settings_avatar_upload_(room_id);
+            stage_room_settings_avatar_upload_(room_id, mainApp_->room_view()->room_settings_view());
         };
         mainApp_->room_view()->room_settings_view()->on_accept =
             [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
@@ -1316,6 +1336,76 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             // feels complete end to end.
             if (auto* v = mainApp_->room_view()->room_settings_view())
                 v->close();
+        };
+        // Space-root settings (wrench icon on SpaceRootView): the same
+        // per-room-id permission gating / accept / avatar-upload plumbing
+        // above works unchanged for a space's room id — only the Media tab
+        // and Emojis & Stickers tab seeding are skipped, since
+        // RoomSettingsView hides both entirely in space-root mode (Media
+        // has no meaning for a space; image packs aren't wired to the
+        // space-root settings instance yet).
+        mainApp_->space_root()->on_settings_opened =
+            [this](const std::string& room_id)
+        {
+            auto* v = mainApp_->space_root()->settings_view();
+            if (!v)
+                return;
+            if (!client_)
+            {
+                v->set_field_permissions(false, false, false);
+                v->set_security_field_permissions(false, false, false, false);
+                v->set_permissions_field_permissions(false);
+                v->set_own_power_level({});
+                return;
+            }
+            v->set_field_permissions(client_->can_set_room_name(room_id),
+                                     client_->can_set_room_topic(room_id),
+                                     client_->can_set_room_avatar(room_id));
+            v->set_security_field_permissions(
+                client_->can_set_room_encryption(room_id),
+                client_->can_set_room_join_rules(room_id),
+                client_->can_set_room_guest_access(room_id),
+                client_->can_set_room_history_visibility(room_id));
+            v->set_permissions_field_permissions(
+                client_->can_set_room_power_levels(room_id));
+            v->set_permissions_state(client_->room_power_levels(room_id));
+            v->set_own_power_level(client_->room_own_power_level(room_id));
+            fetch_room_security_state_(room_id);
+        };
+        mainApp_->space_root()->on_settings_avatar_upload_requested =
+            [this](const std::string& room_id)
+        {
+            stage_room_settings_avatar_upload_(
+                room_id, mainApp_->space_root()->settings_view());
+        };
+        mainApp_->space_root()->settings_view()->on_accept =
+            [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            run_async_mut_(
+                [this, c, room_id = std::move(room_id),
+                 changes = std::move(changes)]()
+                {
+                    auto outcome = ShellBase::apply_room_settings_(c, room_id, changes);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, outcome, room_id,
+                         media_override = changes.media_override]()
+                        {
+                            if (!mainApp_)
+                                return;
+                            if (auto* v =
+                                    mainApp_->space_root()->settings_view())
+                                v->set_commit_result(outcome.ok, outcome.error);
+                            if (outcome.ok && media_override)
+                                commit_room_media_preview_override_(
+                                    room_id, media_override->has_override,
+                                    media_override->mode);
+                        },
+                        Qt::QueuedConnection);
+                });
         };
         setup_dm_callbacks();
         mainApp_->room_view()->on_ignore_user =

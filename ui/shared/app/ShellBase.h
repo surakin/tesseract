@@ -65,6 +65,7 @@ namespace views
 class ComposeBar;
 class MainAppWidget;
 class RoomSearchBar;
+class RoomSettingsView;
 class RoomView;
 class SettingsView;
 class UserProfilePanel;
@@ -1619,11 +1620,16 @@ protected:
 
     // Open a file picker, upload the selected image as raw media (never
     // committing it to any room/profile state), and stage the resulting
-    // mxc:// URI into room_view_'s RoomSettingsView via set_staged_avatar().
-    // The room-level m.room.avatar state event is only sent when the user
-    // clicks Accept (see apply_room_settings_). No-op if not logged in or
-    // room_view_ is unset. Call from the UI thread.
-    void stage_room_settings_avatar_upload_(const std::string& room_id);
+    // mxc:// URI into `target` via set_staged_avatar(). The room-level
+    // m.room.avatar state event is only sent when the user clicks Accept
+    // (see apply_room_settings_). No-op if not logged in or `target` is
+    // null. Call from the UI thread. `target` is whichever RoomSettingsView
+    // instance requested the upload — room_view_->room_settings_view() for
+    // a normal room, or main_app_->space_root()->settings_view() for a
+    // space root — both operate on room ids generically, so this one
+    // implementation serves both without duplicating the upload/retry logic.
+    void stage_room_settings_avatar_upload_(const std::string& room_id,
+                                            views::RoomSettingsView* target);
 
     // Outcome of a RoomSettingsView Accept commit.
     struct RoomSettingsCommitOutcome

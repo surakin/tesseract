@@ -1001,6 +1001,10 @@ msgstr "[Émöjïs & Stïçkérsxxx]"
 msgid "Room Settings"
 msgstr "[Rööm Séttïñgsxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/RoomSettingsView.cpp:648
+msgid "Space Settings"
+msgstr "[Spàçé Séttïñgsxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/RoomView.cpp:249
 msgid "Forward message"
 msgstr "[Förwàrd méssàgéxxx]"

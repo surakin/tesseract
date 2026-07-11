@@ -51,6 +51,11 @@ public:
                                bool can_history_visibility);
     void set_committing(bool committing);
 
+    // Hides the entire "Encryption" group (checkbox + warning label) —
+    // used in RoomSettingsView's space-root mode, where encrypting a space
+    // doesn't make sense (spaces carry no message content of their own).
+    void set_encryption_field_visible(bool visible);
+
     // Fired on user interaction; RoomSettingsView copies these straight
     // into its own staged_*_ members. No server write happens here.
     std::function<void(bool)>        on_encryption_changed;
@@ -72,6 +77,7 @@ public:
     // Accessors used by tests to simulate user interaction and inspect
     // state (mirrors RoomMediaSection::override_combo()).
     tk::CheckButton* encryption_checkbox() const { return encryption_check_; }
+    tk::Widget*      encryption_group() const { return encryption_group_; }
     tk::Widget*      encryption_warning() const { return encryption_warning_; }
     tk::ComboBox*    join_rule_combo() const { return join_rule_combo_; }
     tk::Widget*      join_rule_readonly() const { return join_rule_readonly_; }
@@ -82,6 +88,7 @@ private:
     void refresh_encryption_enabled_();
     void refresh_encryption_warning_();
 
+    tk::Widget*      encryption_group_   = nullptr;
     tk::CheckButton* encryption_check_   = nullptr;
     tk::Label*       encryption_warning_ = nullptr;
     tk::ComboBox*    join_rule_combo_    = nullptr;

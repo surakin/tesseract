@@ -844,6 +844,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                         sfp->host().post_delayed(ms, std::move(fn));
                     }
                 });
+            main_app_->space_root()->set_post_delayed(
+                [sfp](int ms, std::function<void()> fn)
+                {
+                    if (sfp)
+                    {
+                        sfp->host().post_delayed(ms, std::move(fn));
+                    }
+                });
         }
 
         // Compose text area overlay.
@@ -1451,6 +1459,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         {
             main_app_surface_->relayout();
         };
+        main_app_->space_root()->on_layout_changed = [this]
+        {
+            if (main_app_surface_)
+                main_app_surface_->relayout();
+        };
 
         room_view_->on_send = [this](const std::string& body)
         {
@@ -1766,6 +1779,11 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             if (main_app_surface_)
                 main_app_surface_->host().set_clipboard_text(t);
         };
+        main_app_->space_root()->on_copy_to_clipboard = [this](std::string t)
+        {
+            if (main_app_surface_)
+                main_app_surface_->host().set_clipboard_text(t);
+        };
         room_view_->message_list()->on_show_copy_menu = [this]()
         {
             if (!copy_ctx_menu_)
@@ -2039,7 +2057,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         room_view_->on_room_settings_avatar_upload_requested =
             [this](std::string room_id)
         {
-            stage_room_settings_avatar_upload_(room_id);
+            stage_room_settings_avatar_upload_(room_id, room_view_->room_settings_view());
         };
         room_view_->room_settings_view()->on_accept =
             [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
@@ -2080,6 +2098,68 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             // feels complete end to end.
             if (auto* v = room_view_->room_settings_view())
                 v->close();
+        };
+        // Space-root settings (wrench icon on SpaceRootView): the same
+        // per-room-id permission gating / accept / avatar-upload plumbing
+        // above works unchanged for a space's room id — only the Media tab
+        // and Emojis & Stickers tab seeding are skipped, since
+        // RoomSettingsView hides both entirely in space-root mode (Media
+        // has no meaning for a space; image packs aren't wired to the
+        // space-root settings instance yet).
+        main_app_->space_root()->on_settings_opened = [this](std::string room_id)
+        {
+            auto* v = main_app_->space_root()->settings_view();
+            if (!v) return;
+            if (!client_)
+            {
+                v->set_field_permissions(false, false, false);
+                v->set_security_field_permissions(false, false, false, false);
+                v->set_permissions_field_permissions(false);
+                v->set_own_power_level({});
+                return;
+            }
+            v->set_field_permissions(client_->can_set_room_name(room_id),
+                                     client_->can_set_room_topic(room_id),
+                                     client_->can_set_room_avatar(room_id));
+            v->set_security_field_permissions(
+                client_->can_set_room_encryption(room_id),
+                client_->can_set_room_join_rules(room_id),
+                client_->can_set_room_guest_access(room_id),
+                client_->can_set_room_history_visibility(room_id));
+            v->set_permissions_field_permissions(
+                client_->can_set_room_power_levels(room_id));
+            v->set_permissions_state(client_->room_power_levels(room_id));
+            v->set_own_power_level(client_->room_own_power_level(room_id));
+            fetch_room_security_state_(room_id);
+        };
+        main_app_->space_root()->on_settings_avatar_upload_requested =
+            [this](std::string room_id)
+        {
+            stage_room_settings_avatar_upload_(
+                room_id, main_app_->space_root()->settings_view());
+        };
+        main_app_->space_root()->settings_view()->on_accept =
+            [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
+        {
+            if (!client_) return;
+            auto* c = client_;
+            run_async_mut_(
+                [this, c, room_id = std::move(room_id),
+                 changes = std::move(changes)]() mutable
+                {
+                    auto outcome = ShellBase::apply_room_settings_(c, room_id, changes);
+                    post_to_ui_([this, outcome, room_id,
+                                 media_override = changes.media_override]() mutable
+                    {
+                        if (!main_app_) return;
+                        if (auto* v = main_app_->space_root()->settings_view())
+                            v->set_commit_result(outcome.ok, outcome.error);
+                        if (outcome.ok && media_override)
+                            commit_room_media_preview_override_(
+                                room_id, media_override->has_override,
+                                media_override->mode);
+                    });
+                });
         };
         setup_dm_callbacks();
         room_view_->on_ignore_user = [this](std::string user_id)

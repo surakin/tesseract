@@ -8245,31 +8245,29 @@ void ShellBase::pick_and_set_room_avatar_(const std::string& room_id)
         });
 }
 
-void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id)
+void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id,
+                                                   views::RoomSettingsView* target)
 {
     auto* c = client_;
-    if (!c || !room_view_)
+    if (!c || !target)
         return;
 
-    if (auto* v = room_view_->room_settings_view())
-        v->set_avatar_busy(true);
+    target->set_avatar_busy(true);
 
     pick_image_file_(
-        [this, c, room_id](std::vector<uint8_t> bytes, std::string mime) mutable
+        [this, c, room_id, target](std::vector<uint8_t> bytes, std::string mime) mutable
         {
             if (bytes.empty())
             {
                 // Cancelled — clear the busy indicator.
-                if (room_view_)
-                    if (auto* v = room_view_->room_settings_view())
-                        v->set_avatar_busy(false);
+                target->set_avatar_busy(false);
                 return;
             }
             if (c != client_)
                 return; // logged out between pick and callback
             auto sess = active_account_;
             run_async_mut_(
-                [this, sess, room_id,
+                [this, sess, room_id, target,
                  bytes = std::move(bytes),
                  mime  = std::move(mime)]() mutable
                 {
@@ -8277,18 +8275,15 @@ void ShellBase::stage_room_settings_avatar_upload_(const std::string& room_id)
                         return;
                     auto upload = sess->client->upload_media(bytes, mime);
                     post_to_ui_alive_(
-                        [this, sess, upload = std::move(upload)]() mutable
+                        [this, sess, target, upload = std::move(upload)]() mutable
                         {
-                            if (sess != active_account_ || !room_view_)
+                            if (sess != active_account_)
                                 return;
-                            auto* v = room_view_->room_settings_view();
-                            if (!v)
-                                return;
-                            v->set_avatar_busy(false);
+                            target->set_avatar_busy(false);
                             if (upload.ok)
-                                v->set_staged_avatar(upload.message);
+                                target->set_staged_avatar(upload.message);
                             else
-                                v->set_avatar_error(upload.message);
+                                target->set_avatar_error(upload.message);
                         });
                 });
         });

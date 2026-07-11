@@ -327,8 +327,8 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         shell_->fetch_room_security_state_(room_id);
     };
     rv->on_room_settings_avatar_upload_requested =
-        [this](std::string room_id) {
-        shell_->stage_room_settings_avatar_upload_(room_id);
+        [this, rv](std::string room_id) {
+        shell_->stage_room_settings_avatar_upload_(room_id, rv->room_settings_view());
     };
     rv->room_settings_view()->on_accept =
         [this, rv](std::string room_id, views::RoomSettingsChanges changes) {

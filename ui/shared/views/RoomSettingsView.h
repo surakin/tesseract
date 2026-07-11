@@ -309,6 +309,12 @@ private:
 
     bool open_       = false;
     bool committing_ = false;
+    // Set from info.is_space in open(). Space-root mode hides the Media tab
+    // and the encryption field (neither applies to a space: it has no
+    // browsable message timeline, and encrypting it is discouraged since it
+    // carries no message content of its own) and swaps the title bar to
+    // "Space Settings".
+    bool is_space_   = false;
 
     std::string room_id_;
     std::string original_name_;
@@ -362,6 +368,11 @@ private:
 
     std::unique_ptr<tk::TextLayout> title_layout_;
     std::unique_ptr<tk::TextLayout> commit_error_layout_;
+
+    // Index of the "Media" tab within tabs_, in add_tab() order (General=0,
+    // Media=1, Security=2, Permissions=3, Emojis & Stickers=kImagePackTabIndex)
+    // — hidden in space-root mode.
+    static constexpr int kMediaTabIdx = 1;
 
     static constexpr float kPadX      = 24.0f;
     static constexpr float kBarHeight = 48.0f; // top title bar, matches SettingsView's back-bar
