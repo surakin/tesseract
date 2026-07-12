@@ -119,6 +119,38 @@ TEST_CASE("SideTabView select out-of-range is a no-op", "[tk][side_tab_view]")
     CHECK(fired == -99);             // callback never called
 }
 
+TEST_CASE("SideTabView tab_visible defaults to true for every added tab",
+          "[tk][side_tab_view]")
+{
+    SideTabView tabs;
+    tabs.add_tab("General", std::make_unique<NullWidget>());
+    tabs.add_bottom_tab("About", std::make_unique<NullWidget>());
+    CHECK(tabs.tab_visible(0));
+    CHECK(tabs.tab_visible(1));
+}
+
+TEST_CASE("SideTabView tab_visible reflects set_tab_visible", "[tk][side_tab_view]")
+{
+    SideTabView tabs;
+    tabs.add_tab("General", std::make_unique<NullWidget>());
+    tabs.add_bottom_tab("Advanced", std::make_unique<NullWidget>());
+
+    tabs.set_tab_visible(1, false);
+    CHECK_FALSE(tabs.tab_visible(1));
+
+    tabs.set_tab_visible(1, true);
+    CHECK(tabs.tab_visible(1));
+}
+
+TEST_CASE("SideTabView tab_visible out-of-range returns false",
+          "[tk][side_tab_view]")
+{
+    SideTabView tabs;
+    tabs.add_tab("General", std::make_unique<NullWidget>());
+    CHECK_FALSE(tabs.tab_visible(-1));
+    CHECK_FALSE(tabs.tab_visible(5));
+}
+
 TEST_CASE("SideTabView measure and paint do not crash with two tabs",
           "[tk][side_tab_view]")
 {

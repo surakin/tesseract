@@ -58,6 +58,15 @@ void SideTabView::add_bottom_tab(std::string label,
 // Visibility
 // ---------------------------------------------------------------------------
 
+bool SideTabView::tab_visible(int idx) const
+{
+    if (idx < 0 || idx >= static_cast<int>(tabs_.size()))
+    {
+        return false;
+    }
+    return tabs_[idx].visible;
+}
+
 void SideTabView::set_tab_visible(int idx, bool visible)
 {
     if (idx < 0 || idx >= static_cast<int>(tabs_.size()))

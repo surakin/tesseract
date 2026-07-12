@@ -209,7 +209,14 @@ SettingsView::SettingsView()
     tabs->add_bottom_tab(tk::tr("About"), std::move(about));
     tabs->add_bottom_tab(tk::tr("Advanced"), std::move(advanced));
     // First tab is auto-selected by SideTabView::add_tab.
-    tabs->on_tab_selected = [this](int) { if (on_tab_changed) on_tab_changed(); };
+    tabs->on_tab_selected = [this](int idx)
+    {
+        // Re-hide Advanced as soon as the user navigates to any other tab —
+        // it should only ever be visible while actively selected.
+        if (idx != kAdvancedTabIdx)
+            tabs_->set_tab_visible(kAdvancedTabIdx, false);
+        if (on_tab_changed) on_tab_changed();
+    };
     tabs_ = add_child(std::move(tabs));
     // Advanced is hidden until the About tab's "Advanced" button reveals it.
     tabs_->set_tab_visible(kAdvancedTabIdx, false);

@@ -53,6 +53,10 @@ public:
     // the requested state.
     void set_tab_visible(int idx, bool visible);
 
+    // Whether the tab at `idx` currently has a visible slot/button. False for
+    // an out-of-range `idx`.
+    bool tab_visible(int idx) const;
+
     // Switch the visible content to the tab at `idx`. No-op if `idx` is out
     // of range. Fires `on_tab_selected` when the selection actually changes.
     void select(int idx);
