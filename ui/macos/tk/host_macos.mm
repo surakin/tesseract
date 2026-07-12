@@ -2034,8 +2034,12 @@ void Host::on_draw(CGContextRef ctx)
     root_->paint(pc);
     popup_ = pending_popup_;
     root_->paint_overlay(pc);
-    paint_tooltip_overlay(pc, {0, 0, static_cast<float>(b.size.width),
-                              static_cast<float>(b.size.height)});
+    if (view_)
+    {
+        NSRect b = view_.bounds;
+        paint_tooltip_overlay(pc, {0, 0, static_cast<float>(b.size.width),
+                                  static_cast<float>(b.size.height)});        
+    }
 
     if (drag_active_ && view_)
     {
