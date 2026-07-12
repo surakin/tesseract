@@ -43,6 +43,7 @@ add_executable(tesseract_tests
     cpp/test_mention_engine.cpp
     cpp/test_tk_image_viewer.cpp
     cpp/test_tk_video_viewer.cpp
+    cpp/test_tk_room_media_view.cpp
     cpp/test_tk_reply.cpp
     cpp/test_tk_side_tab_view.cpp
     cpp/test_tk_quick_switcher.cpp
@@ -87,6 +88,7 @@ add_executable(tesseract_tests
     cpp/test_shell_message_inserted.cpp
     cpp/test_shell_dispatch_room_send.cpp
     cpp/test_shell_media_priority.cpp
+    cpp/test_shell_media_view_pagination.cpp
     cpp/test_shell_roster_invalidation.cpp
     cpp/test_shell_forward_async.cpp
     cpp/test_roomlist_unread.cpp

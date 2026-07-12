@@ -319,9 +319,20 @@ public:
                              const std::string& room_id,
                              std::uint16_t count);
 
-    /// Abort an in-flight `paginate_back_async` request if one is still
-    /// running under `request_id`. No-op if it already completed or was never
-    /// registered. No `on_paginate_result` fires for a cancelled request —
+    /// Backward pagination dedicated to the room-media gallery. Same
+    /// underlying call as `paginate_back_async`, but delivers the result via
+    /// `IEventHandler::on_media_view_paginate_result(request_id, …)`, which
+    /// carries an authoritative Image/Video count read directly from the SDK
+    /// timeline — decoupled from the separate, slower diff-streaming task
+    /// that delivers rendered rows to the UI.
+    void paginate_media_view_back_async(std::uint64_t request_id,
+                                        const std::string& room_id,
+                                        std::uint16_t count);
+
+    /// Abort an in-flight `paginate_back_async` or
+    /// `paginate_media_view_back_async` request if one is still running
+    /// under `request_id`. No-op if it already completed or was never
+    /// registered. No result callback fires for a cancelled request —
     /// callers should tear down their own bookkeeping for `request_id`
     /// immediately rather than waiting on the callback.
     void cancel_paginate_back(std::uint64_t request_id);

@@ -275,6 +275,30 @@ fn filter_membership(ev: Option<TimelineEvent>, show: bool) -> Option<TimelineEv
     ev.filter(|e| show || e.msg_type != "m.room.member")
 }
 
+// Cheap, synchronous Image/Video check on a raw matrix-sdk-ui timeline item —
+// no async conversion (timeline_item_to_ffi does sender-profile/read-receipt/
+// search-index work per event, which is why the diff-streaming task that
+// calls it can lag far behind how fast paginate_backwards() itself resolves).
+// Used by paginate_media_view_back_async to report an authoritative media
+// count synchronously with pagination completion, decoupled from that
+// separate, much slower streaming task.
+#[cfg(not(test))]
+fn timeline_item_is_media(item: &Arc<TimelineItem>) -> bool {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk_ui::timeline::{MsgLikeKind, TimelineItemContent};
+
+    let Some(ev) = item.as_event() else {
+        return false;
+    };
+    let TimelineItemContent::MsgLike(msg_like) = ev.content() else {
+        return false;
+    };
+    let MsgLikeKind::Message(message) = &msg_like.kind else {
+        return false;
+    };
+    matches!(message.msgtype(), MessageType::Image(_) | MessageType::Video(_))
+}
+
 /// Process one VectorDiff, mutating `visible`/`visible_ids` in place and
 /// pushing the resulting emit operation(s) onto `ops`.  Does **not** cross
 /// the FFI boundary — emission is deferred to `emit_timeline_batch` so the
@@ -1189,6 +1213,128 @@ impl ClientFfi {
         }
     }
 
+    /// Backward pagination dedicated to the room-media gallery. Identical to
+    /// `paginate_back_async` except its completion also reports an
+    /// authoritative count of Image/Video timeline items, obtained directly
+    /// from `tl.items()` right after `paginate_backwards()` resolves.
+    ///
+    /// This exists because the gallery's retry/accumulate loop (fire another
+    /// round if there isn't enough media yet) previously relied on the
+    /// separate diff-streaming task (`spawn_timeline_tasks`) having already
+    /// converted and delivered the new rows to C++ — but that task does much
+    /// more work per event (sender-profile resolution, formatting, read
+    /// receipts, search indexing) than a `paginate_backwards()` round does,
+    /// so it can lag far behind dozens of rapid-fire rounds. The retry loop
+    /// would race ahead and stop (or keep going) based on stale C++-side
+    /// state. Querying `tl.items()` here — cheap, synchronous filtering, no
+    /// per-event conversion — gives the retry loop a count that's always
+    /// current as of this round's completion, independent of the streaming
+    /// task's throughput.
+    ///
+    /// Delivers `on_media_view_paginate_result(request_id, ok, reached_start,
+    /// media_count, message)`. Shares `paginate_tasks` with
+    /// `paginate_back_async` so `cancel_paginate_back` cancels either kind.
+    #[cfg(not(test))]
+    pub fn paginate_media_view_back_async(&self, request_id: u64, room_id: &str, count: u16) {
+        let handler = self.handler.clone();
+        let deliver = move |ok: bool, reached_start: bool, media_count: u64, msg: &str| {
+            if let Some(h) = &handler {
+                let g = h.lock();
+                g.on_media_view_paginate_result(request_id, ok, reached_start, media_count, msg);
+            }
+        };
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                deliver(false, false, 0, &format!("invalid room id: {e}"));
+                return;
+            }
+        };
+
+        let tl = {
+            let guard = self.timelines.read();
+            let Some(handle) = guard.get(&room_id) else {
+                deliver(
+                    false,
+                    false,
+                    0,
+                    "room not subscribed; call subscribe_room first",
+                );
+                return;
+            };
+            Arc::clone(&handle.timeline)
+        };
+        let stop_rx = self.stop_rx.clone();
+        let handler = self.handler.clone();
+        let in_flight = Arc::clone(&self.in_flight);
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+
+        let join = self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "timeline/paginate".to_string(),
+            );
+            let deliver = move |ok: bool, reached_start: bool, media_count: u64, msg: &str| {
+                if let Some(h) = &handler {
+                    let g = h.lock();
+                    g.on_media_view_paginate_result(
+                        request_id,
+                        ok,
+                        reached_start,
+                        media_count,
+                        msg,
+                    );
+                }
+            };
+
+            let tl_for_count = Arc::clone(&tl);
+            let result = async move {
+                let paginate = tl.paginate_backwards(count);
+                if let Some(mut rx) = stop_rx {
+                    tokio::select! {
+                        r = paginate => r.map(Some),
+                        _ = async {
+                            loop {
+                                match rx.changed().await {
+                                    Ok(()) => { if *rx.borrow() { return; } }
+                                    Err(_) => return,
+                                }
+                            }
+                        } => Ok(None),
+                    }
+                } else {
+                    paginate.await.map(Some)
+                }
+            }
+            .await;
+
+            match result {
+                Ok(Some(reached_start)) => {
+                    let media_count = tl_for_count
+                        .items()
+                        .await
+                        .iter()
+                        .filter(|item| timeline_item_is_media(item))
+                        .count() as u64;
+                    deliver(true, reached_start, media_count, "");
+                }
+                Ok(None) => deliver(false, false, 0, "shutdown in progress"),
+                Err(e) => deliver(false, false, 0, &e.to_string()),
+            }
+        });
+        {
+            let mut m = self.paginate_tasks.lock();
+            m.retain(|_, h| !h.is_finished());
+            m.insert(request_id, join.abort_handle());
+        }
+    }
+
     /// Abort an in-flight `paginate_back_async` task if one is still running
     /// under `request_id`. No-op if it already completed or was never
     /// registered. No `on_paginate_result` fires for a cancelled request.
@@ -1204,6 +1350,15 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn paginate_back_async(&self, _request_id: u64, _room_id: &str, _count: u16) {}
+
+    #[cfg(test)]
+    pub fn paginate_media_view_back_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _count: u16,
+    ) {
+    }
 
     /// Non-blocking paginate-forward. Spawns the network call as a tokio task
     /// and delivers the result via `on_paginate_result(request_id, ok, false,

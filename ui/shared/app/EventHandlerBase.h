@@ -105,6 +105,10 @@ public:
     void on_paginate_result(std::uint64_t request_id, bool ok,
                             bool reached_start, bool reached_end,
                             const std::string& message) override;
+    void on_media_view_paginate_result(std::uint64_t request_id, bool ok,
+                                       bool reached_start,
+                                       std::uint64_t media_count,
+                                       const std::string& message) override;
     void on_room_action_complete(std::uint64_t request_id, bool ok,
                                  const std::string& joined_room_id,
                                  const std::string& message) override;

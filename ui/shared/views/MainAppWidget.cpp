@@ -941,6 +941,21 @@ void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
 
 void MainAppWidget::show_room()
 {
+    // Switching to a different room must not leave the fullscreen media
+    // lightbox open and its video/audio playing against the room the user
+    // just left — only Escape/close-button/outside-tap tore these down
+    // before, so a plain room switch left video_player_ decoding and
+    // repainting on top of the newly-shown room indefinitely.
+    if (vid_viewer_ && vid_viewer_->is_open())
+    {
+        vid_viewer_->close();
+        vid_viewer_->set_visible(false);
+    }
+    if (img_viewer_ && img_viewer_->is_open())
+    {
+        img_viewer_->close();
+        img_viewer_->set_visible(false);
+    }
     clear_alternate_content_();
     set_room_visible_(true);
 }

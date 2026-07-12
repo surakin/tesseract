@@ -71,6 +71,21 @@ TEST_CASE("VideoViewerOverlay open sets is_open and is_loading true",
     REQUIRE(overlay.is_loading());
 }
 
+TEST_CASE("VideoViewerOverlay on_wheel returns true when open",
+          "[tk][videoviewer]")
+{
+    VideoViewerOverlay overlay;
+    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    CHECK(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
+}
+
+TEST_CASE("VideoViewerOverlay on_wheel returns false when closed",
+          "[tk][videoviewer]")
+{
+    VideoViewerOverlay overlay;
+    CHECK_FALSE(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
+}
+
 TEST_CASE("VideoViewerOverlay close fires on_close and resets is_open",
           "[tk][videoviewer]")
 {

@@ -147,6 +147,10 @@ public:
     void on_paginate_result(std::uint64_t request_id, bool ok,
                             bool reached_start, bool reached_end,
                             rust::Str message) const;
+    void on_media_view_paginate_result(std::uint64_t request_id, bool ok,
+                                       bool reached_start,
+                                       std::uint64_t media_count,
+                                       rust::Str message) const;
     void on_room_action_complete(std::uint64_t request_id, bool ok,
                                  rust::Str joined_room_id,
                                  rust::Str message) const;

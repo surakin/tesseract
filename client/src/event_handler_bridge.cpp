@@ -666,6 +666,19 @@ void EventHandlerBridge::on_paginate_result(std::uint64_t request_id,
           });
 }
 
+void EventHandlerBridge::on_media_view_paginate_result(
+    std::uint64_t request_id, bool ok, bool reached_start,
+    std::uint64_t media_count, rust::Str message) const
+{
+    with_handler("on_media_view_paginate_result", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_media_view_paginate_result(
+                  request_id, ok, reached_start, media_count,
+                  std::string(message));
+          });
+}
+
 void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id,
                                                   bool ok,
                                                   rust::Str joined_room_id,

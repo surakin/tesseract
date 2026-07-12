@@ -7,6 +7,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <cmath>
 #include <ctime>
 #include <cstdio>
 
@@ -160,6 +161,17 @@ RoomMediaView::RoomMediaView() : adapter_(std::make_unique<Adapter>(*this))
     auto list = std::make_unique<MediaGridList>(*this);
     list->set_adapter(adapter_.get());
     list->set_anchor_content_bottom(true);
+    // Without this, ListView::arrange()'s "fill on open" autofill re-fires
+    // on_near_top unconditionally on every relayout whenever the grid's
+    // content is shorter than the viewport (see list_view.cpp) — which a
+    // media-sparse room's gallery, with only a handful of items, never
+    // outgrows. Combined with the shell's retry/accumulate pagination loop
+    // (ShellBase::on_media_view_load_older_), that fired an unbounded chain
+    // of paginate_back_async rounds as fast as each one completed. Mirrors
+    // MessageListView's identical fix for the main timeline: only autofill
+    // while genuinely empty (the open()/set_media() bootstrap case); further
+    // rounds are the user's own scroll via the latched on_near_top path.
+    list->set_autofill_only_when_empty(true);
     list->on_near_top = [this]
     {
         if (on_load_older_media)
@@ -256,6 +268,21 @@ void RoomMediaView::append_live_media(MessageRowData row)
     {
         list_->preserve_top_through([this] { rebuild_rows_(); });
     }
+}
+
+bool RoomMediaView::content_fills_viewport() const
+{
+    return list_ && list_->content_height() >= list_->bounds().h;
+}
+
+std::size_t RoomMediaView::estimated_capacity() const
+{
+    if (!list_ || list_->bounds().h <= 0.0f)
+        return 0;
+    const int rows = std::max(
+        1, static_cast<int>(std::ceil(list_->bounds().h /
+                                       (kCellSize + kCellSpacing))));
+    return static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols_);
 }
 
 void RoomMediaView::set_reached_start(bool reached_start)

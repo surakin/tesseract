@@ -4519,6 +4519,11 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         // Discard any voice/audio play armed in the previous room so a clip
         // whose fetch is still in flight can't auto-start here.
         media_.reset_pending_play();
+        // Stop a clip that is actively playing in the previous room — only
+        // discarding the *pending* state above (see reset_pending_play) left
+        // an already-started voice/audio clip playing indefinitely behind
+        // the newly-shown room.
+        media_.stop_active_playback();
         // Do NOT clear pinned_event_ids_/can_pin_ here: ShellBase already
         // pushed the new room's correct values via set_pinned_event_ids() /
         // set_can_pin() (refresh_pinned_for_current_room_(), called

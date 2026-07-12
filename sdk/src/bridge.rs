@@ -1153,6 +1153,21 @@ pub mod ffi {
             message: &str,
         );
 
+        /// Fired when an async `paginate_media_view_back_async` request
+        /// completes (or fails). `request_id` is the correlation token.
+        /// `media_count` is an authoritative snapshot count of Image/Video
+        /// timeline items, queried directly from the SDK's timeline rather
+        /// than the C++-side row count (which lags behind the separate,
+        /// slower diff-streaming task that delivers rendered rows).
+        fn on_media_view_paginate_result(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            ok: bool,
+            reached_start: bool,
+            media_count: u64,
+            message: &str,
+        );
+
         /// Fired when an async room action (accept_invite_async,
         /// join_room_async, leave_room_async) completes or fails.
         /// `request_id` is the correlation token. `joined_room_id` carries
@@ -1491,6 +1506,20 @@ pub mod ffi {
         /// `on_paginate_result(request_id, ok, reached_start, false, message)`
         /// on completion. Does not pin a C++ worker thread.
         fn paginate_back_async(self: &ClientFfi, request_id: u64, room_id: &str, count: u16);
+
+        /// Backward pagination dedicated to the room-media gallery. Same
+        /// network/local-store call as `paginate_back_async`, but fires
+        /// `on_media_view_paginate_result(request_id, ok, reached_start,
+        /// media_count, message)` — carrying an authoritative Image/Video
+        /// count that doesn't depend on the separate diff-streaming task
+        /// having caught up. Shares the same cancellation registry as
+        /// `paginate_back_async`, so `cancel_paginate_back` cancels either.
+        fn paginate_media_view_back_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            count: u16,
+        );
 
         /// Abort an in-flight `paginate_back_async` task if one is still
         /// running under `request_id`. No-op if it already completed or was

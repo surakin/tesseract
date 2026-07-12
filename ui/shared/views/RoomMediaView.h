@@ -74,6 +74,23 @@ public:
         return items_.size();
     }
 
+    // True once the grid's actual content height reaches its own viewport
+    // height — i.e. there is enough media to fill the visible area, mirroring
+    // the same fullness check tk::ListView::arrange() uses internally for its
+    // "fill on open" autofill.
+    bool content_fills_viewport() const;
+
+    // Roughly how many cells would fill the grid's current viewport (cols_ ×
+    // however many rows fit list_'s arranged height), i.e. the real "enough
+    // to cover a screenful" target — computed from geometry alone, so it's
+    // available the instant a round's authoritative media count comes back,
+    // without waiting for those rows to actually be rendered. Returns 0 if
+    // this widget has never been arranged with a real (nonzero) viewport
+    // height yet (e.g. the very first open() this session, before any
+    // arrange() pass — see open_room_media_view_'s kickoff comment); callers
+    // should fall back to a small fixed floor in that case.
+    std::size_t estimated_capacity() const;
+
     // Replace the full row set (initial seed at open(), or a fresh
     // timeline_reset for the open room). `rows` is unfiltered — Text/File/etc
     // rows are dropped here. Expected oldest-first, matching

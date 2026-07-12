@@ -962,6 +962,20 @@ impl ClientFfi {
                 }
             }
         }
+        // In-flight paginate_back_async / paginate_forward_async tasks would
+        // call back through on_paginate_result after the handler was taken;
+        // abort them for the same use-after-free reason as media_tasks/
+        // space_summary_tasks above. Previously this registry relied solely
+        // on the spawned task's own tokio::select! over stop_rx to notice the
+        // stop signal, which cannot interrupt a task already past that point
+        // (e.g. blocked inside the SQLite write itself) — force-aborting here
+        // closes that gap the same way every sibling registry already does.
+        {
+            let mut m = self.paginate_tasks.lock();
+            for (_, h) in m.drain() {
+                h.abort();
+            }
+        }
         if let Some(svc) = self.sync_service.take() {
             self.rt.block_on(async move {
                 let _ = svc.stop().await;

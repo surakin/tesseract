@@ -185,6 +185,39 @@ TEST_CASE("reset_pending_play discards an armed play (room switch)", "[media]")
     CHECK(controller.playing_event_id().empty());
 }
 
+TEST_CASE("stop_active_playback stops a clip actively playing (room switch)",
+          "[media]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+    controller.set_bytes_provider(
+        [](const std::string&) { return std::vector<std::uint8_t>{9, 9}; });
+
+    controller.handle_voice_play_click(make_voice_row("$ev1", "mxc://x/1"));
+    REQUIRE(fake->playing);
+    REQUIRE(controller.playing_event_id() == "$ev1");
+
+    controller.stop_active_playback();
+
+    CHECK_FALSE(fake->playing);
+    CHECK(controller.playing_event_id().empty());
+}
+
+TEST_CASE("stop_active_playback is a no-op when nothing is playing", "[media]")
+{
+    TimelineMediaController controller;
+    auto                    player = std::make_unique<FakeAudioPlayer>();
+    FakeAudioPlayer*        fake   = player.get();
+    controller.set_player(std::move(player));
+
+    controller.stop_active_playback();
+
+    CHECK(fake->play_count == 0);
+    CHECK(controller.playing_event_id().empty());
+}
+
 TEST_CASE("Voice: natural finish auto-advances via the next-voice lookup",
           "[media][voice][autoadvance]")
 {

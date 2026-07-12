@@ -349,6 +349,18 @@ void Client::paginate_back_async(std::uint64_t request_id,
     impl_->ffi->paginate_back_async(request_id, room_id, count);
 }
 
+void Client::paginate_media_view_back_async(std::uint64_t request_id,
+                                            const std::string& room_id,
+                                            std::uint16_t count)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->paginate_media_view_back_async(request_id, room_id, count);
+}
+
 void Client::cancel_paginate_back(std::uint64_t request_id)
 {
     if (!impl_)

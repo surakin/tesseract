@@ -1673,7 +1673,16 @@ void RoomWindowBase::open_room_media_view_()
     const bool reached_start =
         pit != shell_->pagination_.end() && pit->second.reached_start;
     rmv->set_reached_start(reached_start);
-    if (!reached_start && rmv->item_count() < ShellBase::kMediaViewMinPerRound)
+    // item_count(), not content_fills_viewport(): rmv->open() above just made
+    // the widget visible for the first time this session, so it hasn't had
+    // its own arrange() pass yet and its bounds_ is still {0,0,0,0} — see
+    // ShellBase::open_room_media_view_'s identical comment for why a
+    // viewport-fill check would trivially skip this kickoff. estimated_capacity()
+    // is likewise 0 here for the same reason, so this falls back to
+    // kMediaViewMinTotal, mirroring ShellBase::open_room_media_view_.
+    const std::uint64_t kickoff_target = std::max<std::uint64_t>(
+        rmv->estimated_capacity(), ShellBase::kMediaViewMinTotal);
+    if (!reached_start && rmv->item_count() < kickoff_target)
     {
         request_pagination_back_();
     }

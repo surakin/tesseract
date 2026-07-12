@@ -281,6 +281,18 @@ public:
     {
     }
 
+    /// Fired when an async `Client::paginate_media_view_back_async` request
+    /// completes. `media_count` is an authoritative Image/Video count read
+    /// directly from the SDK's timeline, independent of whatever the
+    /// diff-streaming task has delivered to the UI so far. Default no-op.
+    virtual void on_media_view_paginate_result(std::uint64_t /*request_id*/,
+                                               bool /*ok*/,
+                                               bool /*reached_start*/,
+                                               std::uint64_t /*media_count*/,
+                                               const std::string& /*message*/)
+    {
+    }
+
     /// Fired when an async room action (accept_invite_async, join_room_async,
     /// leave_room_async) completes or fails. `joined_room_id` carries the
     /// canonical room ID returned by join; empty for other actions or on

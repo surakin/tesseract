@@ -441,6 +441,12 @@ void VideoViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
     handle_pointer_up_(local, inside_self);
 }
 
+bool VideoViewerOverlay::on_wheel(tk::Point /*local*/, float /*dx*/,
+                                  float /*dy*/)
+{
+    return is_open();
+}
+
 bool VideoViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
 {
     (void)local;

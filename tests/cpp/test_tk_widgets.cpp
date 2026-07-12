@@ -299,6 +299,35 @@ TEST_CASE("MainAppWidget Escape closes and hides media lightboxes",
     CHECK(app.image_viewer()->visible() == false);
 }
 
+TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox",
+          "[tk][widget]")
+{
+    MainAppWidget app;
+    app.video_viewer()->open("mxc://example.org/v", "", "video/mp4", 0u, 640,
+                             360);
+    app.show_video_viewer(true);
+    REQUIRE(app.video_viewer()->is_open());
+
+    app.show_room();
+
+    CHECK(app.video_viewer()->is_open() == false);
+    CHECK(app.video_viewer()->visible() == false);
+}
+
+TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox",
+          "[tk][widget]")
+{
+    MainAppWidget app;
+    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
+    app.show_image_viewer(true);
+    REQUIRE(app.image_viewer()->is_open());
+
+    app.show_room();
+
+    CHECK(app.image_viewer()->is_open() == false);
+    CHECK(app.image_viewer()->visible() == false);
+}
+
 TEST_CASE("MainAppWidget Escape closes in-room search",
           "[tk][widget][key]")
 {

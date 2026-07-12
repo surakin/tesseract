@@ -1070,32 +1070,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     {
         rmv->on_close = [this] { close_room_media_view_(); };
         rmv->on_load_older_media = [this](std::string room_id)
-        {
-            // tk::ListView's arrange-time autofill (list_view.cpp) fires
-            // on_near_top whenever the loaded content doesn't fill the
-            // viewport, with no visibility check — MainAppWidget::arrange()
-            // keeps re-arranging the gallery every app-wide relayout even
-            // after close() hides it, and RoomMediaView::room_id_ is never
-            // cleared, so this can fire for a stale room long after the
-            // gallery closed. Bail unless it's still the actively-open
-            // gallery's room; otherwise every such call would re-arm
-            // media_view_retries_left_ below and re-fire a real
-            // paginate_back_async forever.
-            if (room_id != media_view_room_id_)
-                return;
-            // Each new scroll-to-top approach gets its own fresh retry
-            // budget. media_view_retries_left_ is a single shared counter
-            // also drained by the automatic retry chain in
-            // handle_paginate_result_ui_ (fired without going through
-            // on_near_top at all) — without resetting it here, once that
-            // chain exhausts the budget (e.g. right after opening the
-            // gallery, before the user gets to scroll at all) every
-            // subsequent scroll-triggered call would silently no-op on the
-            // retries_left <= 0 guard forever, even though there may be
-            // more media further back that was simply never scanned.
-            media_view_retries_left_ = kMediaViewMaxRetries;
-            request_media_view_pagination_back_(room_id);
-        };
+        { on_media_view_load_older_(room_id); };
         rmv->set_image_provider(
             [this](const std::string& key) -> const tk::Image*
             {
@@ -4008,24 +3983,6 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
         if (ok)
             state.reached_start = reached_start;
 
-        // Room-media gallery retry/accumulate loop: a raw pagination batch is
-        // unfiltered, so a media-sparse stretch of history may yield few or
-        // no media rows in a single round. Keep pulling batches (up to a
-        // per-gesture cap) until enough media turned up, reached_start, or
-        // the cap is hit — see request_media_view_pagination_back_.
-        if (room_id == media_view_room_id_ && main_app_ &&
-            main_app_->room_media_view())
-        {
-            main_app_->room_media_view()->set_reached_start(state.reached_start);
-            const bool need_more =
-                !state.reached_start &&
-                media_view_last_round_media_count_ < kMediaViewMinPerRound &&
-                media_view_retries_left_ > 0;
-            media_view_last_round_media_count_ = 0;
-            if (need_more)
-                request_media_view_pagination_back_(room_id);
-        }
-
         if (room_id == current_room_id_ && room_view_)
         {
             room_view_->set_paginating(false);
@@ -4905,7 +4862,8 @@ void ShellBase::open_room_media_view_(const std::string& room_id)
     media_view_group_                 = media_group_for_room_(room_id) ^
                                         0x9E3779B97F4A7C15ull;
     media_view_retries_left_          = kMediaViewMaxRetries;
-    media_view_last_round_media_count_ = 0;
+    media_view_paginate_pending_      = false;
+    media_view_known_media_count_     = 0;
 
     std::string room_name = room_id;
     auto it = std::find_if(rooms_.begin(), rooms_.end(),
@@ -4930,10 +4888,26 @@ void ShellBase::open_room_media_view_(const std::string& room_id)
     // on_wheel/on_near_top both no-op on an empty adapter (nothing to
     // scroll), so scrolling alone can never kick off the first pagination
     // round in that state — proactively start it here instead. Once this
-    // round lands, handle_paginate_result_ui_'s retry chain keeps going
-    // automatically (up to kMediaViewMaxRetries) without needing any more
-    // wheel input, so this single call is enough to escape the empty state.
-    if (!reached_start && rmv->item_count() < kMediaViewMinPerRound)
+    // round lands, handle_media_view_paginate_result_ui_'s retry chain keeps
+    // going automatically until enough media is found or history ends,
+    // without needing any more wheel input, so this single call is enough to
+    // escape the empty state.
+    //
+    // Deliberately item_count(), not content_fills_viewport(): rmv->open()
+    // above just made the widget visible for the first time this session
+    // (tk::Widget::arrange's default child recursion skips invisible
+    // children), so it has not yet received its own arrange() pass — its
+    // bounds_ is still the default-constructed {0,0,0,0}. content_height()
+    // for even a single item is >= that zero height, so
+    // content_fills_viewport() would trivially report "already full" and
+    // skip the kickoff no matter how little media is actually known.
+    // estimated_capacity() is 0 for the same not-yet-arranged reason, so
+    // this falls back to kMediaViewMinTotal here — the same expression used
+    // by handle_media_view_paginate_result_ui_'s retry loop, which picks up
+    // the real target once a genuine arrange() pass has happened.
+    const std::uint64_t kickoff_target =
+        std::max<std::uint64_t>(rmv->estimated_capacity(), kMediaViewMinTotal);
+    if (!reached_start && rmv->item_count() < kickoff_target)
         request_media_view_pagination_back_(room_id);
 
     request_relayout_();
@@ -4961,7 +4935,7 @@ void ShellBase::close_room_media_view_()
     media_view_room_id_.clear();
     media_view_group_                 = 0;
     media_view_retries_left_          = 0;
-    media_view_last_round_media_count_ = 0;
+    media_view_paginate_pending_      = false;
     // Lifting suppression leaves whatever dirty state accumulated from
     // mutations while hidden in place; the request_relayout_() call below
     // is what actually consumes it, in a single catch-up pass.
@@ -4975,6 +4949,11 @@ void ShellBase::close_room_media_view_()
 
 void ShellBase::request_media_view_pagination_back_(const std::string& room_id)
 {
+    // Any fire attempt (manual scroll, the automatic chain, or the deferred
+    // resume) accounts for whatever the pending flag was tracking — clear it
+    // unconditionally so a stale pending state can never cause a redundant
+    // extra fire later. Harmless if it was already false.
+    media_view_paginate_pending_ = false;
     if (!client_)
         return;
     auto& state = pagination_[room_id];
@@ -4987,7 +4966,130 @@ void ShellBase::request_media_view_pagination_back_(const std::string& room_id)
     const auto req_id = next_paginate_id_++;
     pending_paginates_[req_id] = {room_id, /*is_backward=*/true};
     media_view_pending_request_id_ = req_id;
-    client_->paginate_back_async(req_id, room_id, kPaginationBatch);
+    client_->paginate_media_view_back_async(req_id, room_id, kPaginationBatch);
+}
+
+void ShellBase::on_media_view_load_older_(const std::string& room_id)
+{
+    // tk::ListView's arrange-time autofill (list_view.cpp) fires on_near_top
+    // whenever the loaded content doesn't fill the viewport, with no
+    // visibility check — MainAppWidget::arrange() keeps re-arranging the
+    // gallery every app-wide relayout even after close() hides it, and
+    // RoomMediaView::room_id_ is never cleared, so this can fire for a stale
+    // room long after the gallery closed. Bail unless it's still the
+    // actively-open gallery's room; otherwise every such call would re-arm
+    // media_view_retries_left_ below and re-fire a real paginate_back_async
+    // forever.
+    if (room_id != media_view_room_id_)
+        return;
+    // A round for this room is already running — either the automatic
+    // retry/accumulate chain in handle_media_view_paginate_result_ui_, or an
+    // earlier call to this same handler. Rearming the budget here too would let a
+    // user who scrolls repeatedly while waiting (very natural when a
+    // media-sparse room shows no visible progress yet) keep bumping
+    // media_view_retries_left_ back up to kMediaViewMaxRetries on every such
+    // gesture, so the chain never actually stops at its intended cap — it
+    // just keeps finding a freshly-topped-up budget each time the in-flight
+    // round completes. Let the in-flight round finish and consult the
+    // *current* budget on its own instead of blindly resetting it.
+    if (pagination_[room_id].in_flight)
+        return;
+    // No round is running: either the automatic chain never started (the
+    // gallery already had enough media on open) or it ran out its budget and
+    // stopped. Either way this is a genuine new scroll-to-top gesture, so it
+    // gets its own fresh retry budget — without this, once the automatic
+    // chain exhausts kMediaViewMaxRetries, every later real scroll gesture
+    // would silently no-op on the retries_left <= 0 guard forever, even
+    // though there may be more media further back that was simply never
+    // scanned.
+    media_view_retries_left_ = kMediaViewMaxRetries;
+    request_media_view_pagination_back_(room_id);
+}
+
+void ShellBase::handle_media_view_paginate_result_ui_(
+    std::uint64_t request_id, bool ok, bool reached_start,
+    std::uint64_t media_count, std::string /*message*/)
+{
+    auto it = pending_paginates_.find(request_id);
+    if (it == pending_paginates_.end())
+        return;
+    const std::string room_id = it->second.first;
+    pending_paginates_.erase(it);
+    // This request resolved on its own — nothing left for
+    // close_room_media_view_() to cancel.
+    if (request_id == media_view_pending_request_id_)
+        media_view_pending_request_id_ = 0;
+
+    auto& state = pagination_[room_id];
+    state.in_flight = false;
+    if (ok)
+        state.reached_start = reached_start;
+
+    if (room_id != media_view_room_id_ || !main_app_ ||
+        !main_app_->room_media_view())
+        return;
+
+    auto* rmv = main_app_->room_media_view();
+    rmv->set_reached_start(state.reached_start);
+    media_view_known_media_count_ = media_count;
+    // media_count is an authoritative snapshot read directly from the SDK's
+    // timeline (see paginate_media_view_back_async's doc comment) — unlike
+    // a per-round yield count, it doesn't depend on the separate, slower
+    // diff-streaming task having already delivered rows to this widget, so
+    // the retry loop's stopping decision can't race ahead of stale state.
+    // The target itself is the widget's real, geometry-derived capacity
+    // (falling back to kMediaViewMinTotal only while that geometry isn't
+    // known yet — see estimated_capacity()'s doc comment) so this actually
+    // keeps going until the visible area is filled, not until some small
+    // fixed count is reached regardless of how big the viewport really is.
+    const std::uint64_t target =
+        std::max<std::uint64_t>(rmv->estimated_capacity(), kMediaViewMinTotal);
+    const bool need_more = !state.reached_start && media_count < target &&
+                           media_view_retries_left_ > 0;
+    if (!need_more)
+        return;
+
+    // Firing the next round immediately whenever need_more is true — as this
+    // used to do — races ahead of the separate, much slower diff-streaming
+    // task (see kMediaViewMaxRenderGap's doc comment): dozens of rounds can
+    // resolve (often local-store hits) before that task converts and
+    // delivers even the first one's rows, so nothing appears to happen and
+    // then everything lands in one big batch once it drains. Only fire
+    // immediately if rendering is roughly caught up; otherwise defer and let
+    // handle_messages_prepended_ui_ resume this once real rows land.
+    const auto rendered = static_cast<std::uint64_t>(rmv->item_count());
+    const auto gap = media_count > rendered ? media_count - rendered : 0;
+    if (gap <= kMediaViewMaxRenderGap)
+    {
+        request_media_view_pagination_back_(room_id);
+        return;
+    }
+    media_view_paginate_pending_ = true;
+    post_to_ui_after_(kMediaViewPauseFallbackMs,
+        [this, room_id]
+        {
+            // The gallery may have been closed (or reopened for a different
+            // room) while this was pending.
+            if (room_id == media_view_room_id_)
+                maybe_resume_media_view_pagination_ui_(/*force=*/true);
+        });
+}
+
+void ShellBase::maybe_resume_media_view_pagination_ui_(bool force)
+{
+    if (!media_view_paginate_pending_ || !main_app_ ||
+        !main_app_->room_media_view() || media_view_room_id_.empty())
+        return;
+
+    auto* rmv = main_app_->room_media_view();
+    const auto rendered = static_cast<std::uint64_t>(rmv->item_count());
+    const auto gap = media_view_known_media_count_ > rendered
+                          ? media_view_known_media_count_ - rendered
+                          : 0;
+    if (!force && gap > kMediaViewMaxRenderGap)
+        return; // still too far behind — wait for more rows, or the fallback timer
+
+    request_media_view_pagination_back_(media_view_room_id_);
 }
 
 void ShellBase::push_room_list_state_(RoomListState state)
@@ -6276,6 +6378,7 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     {
         main_app_->room_media_view()->append_live_media(
             tesseract::views::make_row_data(*ev, my_user_id_));
+        maybe_resume_media_view_pagination_ui_(/*force=*/false);
     }
     if (!in_thread)
     {
@@ -6353,11 +6456,15 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
         }
     }
 
-    // Room-media gallery retry/accumulate loop (see
-    // request_media_view_pagination_back_): count how much media this raw,
-    // unfiltered batch actually contained — handle_paginate_result_ui_ reads
-    // this right after to decide whether to fire another round. events is
-    // oldest-first, matching prepend_media's documented batch order.
+    // Room-media gallery row rendering: filter this raw, unfiltered batch to
+    // Image/Video and hand it to the gallery widget. events is oldest-first,
+    // matching prepend_media's documented batch order. This is purely for
+    // rendering — the retry/accumulate loop's stop decision (see
+    // request_media_view_pagination_back_ /
+    // handle_media_view_paginate_result_ui_) uses an authoritative count
+    // read directly from the SDK's timeline instead, since this delivery
+    // path runs on a separate task that can lag behind how fast pagination
+    // rounds resolve.
     if (room_id == media_view_room_id_ && !in_thread && main_app_ &&
         main_app_->room_media_view())
     {
@@ -6369,9 +6476,13 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
                 continue;
             media_rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
-        media_view_last_round_media_count_ = static_cast<int>(media_rows.size());
         if (!media_rows.empty())
+        {
             main_app_->room_media_view()->prepend_media(std::move(media_rows));
+            // Rendering just made progress — re-check whether a deferred
+            // automatic round (see kMediaViewMaxRenderGap) can now resume.
+            maybe_resume_media_view_pagination_ui_(/*force=*/false);
+        }
     }
 
     if (!in_thread)

@@ -37,6 +37,7 @@
 #include <array>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <atomic>
 #include <filesystem>
@@ -3229,11 +3230,34 @@ protected:
     // Cancels the gallery's dedicated media-fetch group and clears
     // media_view_room_id_. Called from RoomMediaView::on_close.
     void close_room_media_view_();
-    // Issues one more paginate_back_async batch for the gallery's room,
-    // sharing pagination_[room_id] with the main timeline so the two can
-    // never race. Called from RoomMediaView::on_load_older_media and,
-    // internally, by handle_paginate_result_ui_'s retry/accumulate chain.
+    // Issues one more paginate_media_view_back_async batch for the gallery's
+    // room, sharing pagination_[room_id] with the main timeline so the two
+    // can never race. Called from RoomMediaView::on_load_older_media and,
+    // internally, by handle_media_view_paginate_result_ui_'s retry/accumulate
+    // chain.
     void request_media_view_pagination_back_(const std::string& room_id);
+    // Handler for RoomMediaView::on_load_older_media (a user scroll-to-top
+    // gesture). Only rearms media_view_retries_left_ when no round for this
+    // room is currently in flight — see .cpp for why an unconditional rearm
+    // is wrong.
+    void on_media_view_load_older_(const std::string& room_id);
+    // Completion callback for paginate_media_view_back_async. Decides
+    // whether to fire another round based on an authoritative Image/Video
+    // count read directly from the SDK's timeline — see .cpp and
+    // paginate_media_view_back_async's doc comment for why this replaced an
+    // earlier design that raced against the separate diff-streaming task.
+    void handle_media_view_paginate_result_ui_(std::uint64_t request_id,
+                                               bool ok, bool reached_start,
+                                               std::uint64_t media_count,
+                                               std::string message);
+    // Called after handle_messages_prepended_ui_/handle_message_inserted_ui_
+    // deliver new rows to the gallery, and by the pause fallback timer.
+    // No-op unless a round is actually pending (media_view_paginate_pending_);
+    // fires it once the render gap (media_view_known_media_count_ vs the
+    // widget's actual item_count()) has closed enough, or unconditionally
+    // when force is true (the fallback-timer path). See
+    // kMediaViewMaxRenderGap's doc comment for why this exists.
+    void maybe_resume_media_view_pagination_ui_(bool force);
 
     // Non-zero only while the gallery is open; the room it's open for.
     std::string   media_view_room_id_;
@@ -3244,20 +3268,63 @@ protected:
     // scroll-to-top gesture (reset in open_room_media_view_ and each time
     // on_load_older_media fires a *new* gesture — see RoomMediaView.cpp).
     int media_view_retries_left_ = 0;
-    // Media rows the most recent prepend batch added to the gallery. Read
-    // (and reset to 0) by handle_paginate_result_ui_ right after use.
-    int media_view_last_round_media_count_ = 0;
     // request_id of the gallery's own currently in-flight paginate_back_async
     // call, or 0 if none. Lets close_room_media_view_() cancel it on the Rust
     // side (client_->cancel_paginate_back) instead of merely abandoning it —
     // otherwise the tokio task keeps running and, if the gallery is reopened
     // for the same room before it resolves, its stale result can be
     // misattributed to the new session (room_id is the only correlation key
-    // handle_paginate_result_ui_ has for the gallery). Cleared here and by
-    // handle_paginate_result_ui_ once the request resolves on its own.
+    // handle_media_view_paginate_result_ui_ has for the gallery). Cleared
+    // here and by handle_media_view_paginate_result_ui_ once the request
+    // resolves on its own.
     std::uint64_t media_view_pending_request_id_ = 0;
-    static constexpr int kMediaViewMinPerRound = 6;  // ~one grid row
-    static constexpr int kMediaViewMaxRetries  = 4;  // 4*kPaginationBatch raw events/gesture
+    // True when the automatic chain decided more history is needed but
+    // deferred firing the next round because rendering (see
+    // handle_messages_prepended_ui_) is too far behind
+    // media_view_known_media_count_ — see kMediaViewMaxRenderGap. Cleared
+    // the moment any round actually fires (request_media_view_pagination_back_)
+    // and by close_room_media_view_.
+    bool media_view_paginate_pending_ = false;
+    // The last round's authoritative Image/Video count (see
+    // paginate_media_view_back_async), persisted so
+    // handle_messages_prepended_ui_ / maybe_resume_media_view_pagination_ui_
+    // can recompute the render gap once new rows actually land.
+    std::uint64_t media_view_known_media_count_ = 0;
+    // Per-gesture safety cap, not the primary stop condition — that's
+    // reached_start / kMediaViewMinTotal (see
+    // handle_media_view_paginate_result_ui_). A media-sparse-relative-to-
+    // volume room can legitimately need far more than a handful of rounds;
+    // this cap exists purely to bound a single gesture against a
+    // pathological room that never reports reached_start (e.g. an SDK-side
+    // edge case), not to limit normal "keep going until there's enough to
+    // show" behavior.
+    static constexpr int kMediaViewMaxRetries = 200; // 200*kPaginationBatch raw events/gesture
+    // Fallback floor used only when RoomMediaView::estimated_capacity()
+    // reports 0 — i.e. the widget hasn't been arranged with a real viewport
+    // yet (its very first open() this session; see that method's doc
+    // comment). Once real geometry is known, the actual target is
+    // estimated_capacity() itself (the widget's true grid capacity), not
+    // this constant — using a fixed small number as the *real* target was
+    // the bug: it stopped pagination as soon as a handful of items turned
+    // up, long before the real (often much larger) viewport was full.
+    static constexpr std::uint64_t kMediaViewMinTotal = 6;
+    // Max allowed gap between media_view_known_media_count_ and the gallery
+    // widget's actually-rendered item_count() before the automatic chain
+    // pauses firing further rounds. Keeps the slower diff-streaming task
+    // (see paginate_media_view_back_async's doc comment — it does per-event
+    // async work: sender-profile resolution, formatting, receipts, search
+    // indexing, far more than a pagination round's often-local-store-only
+    // work) from falling arbitrarily far behind a fast run of rounds.
+    // Without this, dozens of rounds' worth of raw events pile up
+    // unconverted, rendering looks stalled, then everything appears at once
+    // ("huge bunch") once it drains.
+    static constexpr std::uint64_t kMediaViewMaxRenderGap = 24;
+    // Safety-net upper bound on how long a paused (render-gap-limited) chain
+    // waits for handle_messages_prepended_ui_ to signal catch-up before
+    // firing anyway. Should essentially never trigger in practice — the
+    // streaming task always makes forward progress — but bounds worst-case
+    // latency against any edge case that stalls rendering entirely.
+    static constexpr int kMediaViewPauseFallbackMs = 3000;
     // Cap on concurrent media fetches the gallery's image provider will
     // kick off. A dense thumbnail grid can make dozens of cells newly
     // visible in one paint pass (opening the gallery, a big scroll) — far

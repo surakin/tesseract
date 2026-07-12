@@ -393,6 +393,19 @@ void EventHandlerBase::on_paginate_result(std::uint64_t request_id, bool ok,
         });
 }
 
+void EventHandlerBase::on_media_view_paginate_result(
+    std::uint64_t request_id, bool ok, bool reached_start,
+    std::uint64_t media_count, const std::string& message)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), request_id, ok, reached_start, media_count,
+         msg = message]() mutable
+        {
+            shell->handle_media_view_paginate_result_ui_(
+                request_id, ok, reached_start, media_count, std::move(msg));
+        });
+}
+
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
     auto rs = rooms; // one copy; moved into the lambda below

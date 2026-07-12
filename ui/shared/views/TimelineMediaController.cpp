@@ -394,6 +394,20 @@ void TimelineMediaController::reset_pending_play()
     pending_play_skip_visibility_gate_ = false;
 }
 
+void TimelineMediaController::stop_active_playback()
+{
+    if (audio_player_ && !playing_event_id_.empty())
+    {
+        switching_clip_ = true;
+        audio_player_->stop();
+        switching_clip_ = false;
+        playing_event_id_.clear();
+        playing_is_active_   = false;
+        playing_ever_active_ = false;
+        playing_position_ms_ = 0;
+    }
+}
+
 void TimelineMediaController::retry_pending_voice_play()
 {
     if (pending_play_event_id_.empty() || !audio_player_ || !voice_bytes_provider_)
