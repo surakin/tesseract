@@ -2671,7 +2671,7 @@ void MainWindow::on_create(HWND hwnd)
                         return;
                     }
                 }
-                if (!room_view_ || !client_)
+                if (!room_view_ || !client_ || room_view_->is_overlay_open())
                 {
                     return;
                 }

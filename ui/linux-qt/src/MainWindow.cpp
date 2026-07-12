@@ -2583,7 +2583,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 onUserStripContextMenu(mainAppSurface_->mapToGlobal(pos));
                 return;
             }
-            if (!mainApp_)
+            if (!mainApp_ || mainApp_->room_view()->is_overlay_open())
             {
                 return;
             }

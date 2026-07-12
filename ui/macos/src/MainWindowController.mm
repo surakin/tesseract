@@ -4259,7 +4259,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     return;
                 }
                 // Sticker context menu.
-                if (!s->_roomView)
+                if (!s->_roomView || s->_roomView->is_overlay_open())
                 {
                     return;
                 }

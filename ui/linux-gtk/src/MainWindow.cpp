@@ -6139,7 +6139,7 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
         }
     }
 
-    if (!self->room_view_)
+    if (!self->room_view_ || self->room_view_->is_overlay_open())
     {
         return;
     }
