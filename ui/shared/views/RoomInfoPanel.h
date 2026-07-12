@@ -3,6 +3,7 @@
 #include "tk/canvas.h"
 #include "tk/combobox.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
@@ -63,9 +64,6 @@ public:
     std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
     std::function<void(std::string room_id, bool)>          on_favourite_changed;
     std::function<void(std::string room_id, bool)>          on_low_priority_changed;
-    // Tooltip for an over-long (>kTopicMaxLines) topic, mirroring RoomHeader.
-    std::function<void(std::string text, tk::Rect anchor)>  on_show_tooltip;
-    std::function<void()>                                   on_hide_tooltip;
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
@@ -101,6 +99,11 @@ public:
     bool     on_wheel(tk::Point local, float dx, float dy) override;
 
 private:
+    // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip for the
+    // over-long topic tooltip.
+    tk::Host* host_ = nullptr;
+
     bool open_ = false;
 
     // Room data

@@ -461,9 +461,6 @@ private:
         return mention_popover_ && gtk_widget_get_visible(mention_popover_);
     }
 
-    GtkWidget* topic_tooltip_popover_ = nullptr;
-    GtkWidget* topic_tooltip_label_ = nullptr;
-
     tesseract::views::ImageViewerOverlay* img_viewer_ = nullptr;
 
     tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;

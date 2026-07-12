@@ -171,14 +171,6 @@ SettingsView::SettingsView()
         if (image_packs_) image_packs_->set_personal_pack_enabled(v);
         if (on_msc2545_legacy_compat_changed) on_msc2545_legacy_compat_changed(v);
     };
-    advanced_->on_show_tooltip = [this](std::string t, tk::Rect a)
-    {
-        if (on_show_tooltip) on_show_tooltip(std::move(t), a);
-    };
-    advanced_->on_hide_tooltip = [this]
-    {
-        if (on_hide_tooltip) on_hide_tooltip();
-    };
 
     // Emojis & Stickers section.
     auto image_packs = std::make_unique<ImagePacksSection>();
@@ -262,16 +254,6 @@ SettingsView::SettingsView()
              .cancel_label  = tk::tr("Cancel"),
              .destructive   = true},
             [this] { if (on_reset_identity) on_reset_identity(); });
-    };
-
-    // Wire tooltip callbacks from AboutSection storage rows to our public callbacks.
-    about_->on_show_tooltip = [this](std::string t, tk::Rect a)
-    {
-        if (on_show_tooltip) on_show_tooltip(std::move(t), a);
-    };
-    about_->on_hide_tooltip = [this]
-    {
-        if (on_hide_tooltip) on_hide_tooltip();
     };
 
     // AboutSection: "Advanced" button reveals the hidden Advanced tab and

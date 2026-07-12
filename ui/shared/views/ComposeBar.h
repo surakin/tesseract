@@ -15,6 +15,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
@@ -352,10 +353,6 @@ public:
     /// Fires when the × cancel button is clicked during recording.
     std::function<void()> on_cancel_voice;
 
-    /// Tooltip callbacks — wired through RoomView to the shell's native tooltip.
-    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()> on_hide_tooltip;
-
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
@@ -368,6 +365,10 @@ public:
     void on_pointer_leave() override;
 
 private:
+    // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
+    tk::Host* host_ = nullptr;
+
     void refresh_send_enabled();
     void recompute_height();
     void notify_size_changed_();

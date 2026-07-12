@@ -6,7 +6,6 @@
 #include <QPoint>
 #include <QPointer>
 #include <QResizeEvent>
-#include <QToolTip>
 
 #include "tk/theme.h"
 #include "tk/i18n.h"
@@ -149,24 +148,6 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     settings_view_->on_clear_caches = [this] { emit clearCachesRequested(); };
 
     settings_view_->on_reset_identity = [this] { emit resetIdentityRequested(); };
-
-    {
-        QPointer<tk::qt6::Surface> sfp = surface_;
-        settings_view_->on_show_tooltip =
-            [sfp](std::string text, tk::Rect anchor)
-        {
-            if (!sfp)
-                return;
-            QPoint local(static_cast<int>(anchor.x),
-                         static_cast<int>(anchor.y + anchor.h));
-            QToolTip::showText(sfp->mapToGlobal(local),
-                               QString::fromStdString(text), sfp);
-        };
-        settings_view_->on_hide_tooltip = []
-        {
-            QToolTip::hideText();
-        };
-    }
 
     surface_->set_root(std::move(view));
 

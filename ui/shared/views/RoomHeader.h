@@ -11,6 +11,7 @@
 #include "DatePickerView.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
@@ -115,15 +116,14 @@ public:
     // hyperlink or calendar button).
     std::function<void()> on_info_requested;
 
-    // Tooltip for truncated topic text. on_show_tooltip fires when the pointer
-    // enters a topic that did not fit in the available width; on_hide_tooltip
-    // fires when the pointer leaves or the topic is not truncated.
-    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()> on_hide_tooltip;
-
 private:
     // Draws a vector padlock icon in `rect` (10×12 logical px), tinted with `tint`.
     void draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint);
+
+    // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip for the
+    // truncated-topic tooltip.
+    tk::Host* host_ = nullptr;
 
     bool condensed_ = false;
     bool show_calendar_btn_ = false;

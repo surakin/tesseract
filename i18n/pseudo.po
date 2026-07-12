@@ -1366,3 +1366,19 @@ msgstr "[Mémbérs (sïñçé jöïñéd)xxxx]"
 #, c++-format
 msgid "{0} (managed elsewhere)"
 msgstr "[{0} (màñàgéd élséwhéré)xxxx]"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Emoji"
+msgstr "[Émöjïx]"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Stickers"
+msgstr "[Stïçkérsx]"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Stop recording"
+msgstr "[Stöp réçördïñgxx]"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Voice message"
+msgstr "[Vöïçé méssàgéxx]"

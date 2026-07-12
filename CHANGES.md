@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- feat(tk): add a generic `tk::Host`-owned tooltip system (dwell-delay, popup-suppressed, custom-drawn above the whole widget tree) and migrate all 8 hand-rolled hover/tooltip sites (RoomHeader, RoomInfoPanel, ComposeBar, MessageListView action pills, LocationMapPanner, AboutSection cache rows, AdvancedSection, TabbedGridPicker) onto it, deleting the old per-platform native tooltip code (Win32 `TOOLTIPS_CLASS`, Qt `QToolTip`, and the macOS/GTK `NSPopover`/`GtkPopover` popovers that were only styled to look like native tooltips)
 - fix(theme): sync every Qt6 native text field's color on theme change instead of just 2 of 13, fixing black-on-dark text in the quick switcher and other search/edit fields
 - fix(forward-picker): wire `ForwardRoomPicker::on_close` on all four shells so Escape/outside-click actually resets the native search field
 - fix(media-viewer): stop a video-lightbox pagination leak (missing wheel-swallow) and fix gallery pagination backpressure/race/shutdown-abort

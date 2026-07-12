@@ -660,15 +660,6 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         if (emoji_popup_)
             emoji_popup_->show_at(surface_->hwnd(), anchor);
     };
-    // Reaction / read-receipt hover tooltips + link-hover cursor.
-    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        show_tooltip_(text, anchor);
-    };
-    room_view_->on_hide_tooltip = [this]
-    {
-        hide_tooltip_();
-    };
     room_view_->on_link_hovered = [this](const std::string& url)
     {
         if (surface_)
@@ -706,11 +697,6 @@ RoomWindow::~RoomWindow()
     // hwnd_, so their surfaces must unwind before the owner is destroyed.
     emoji_popup_.reset();
     sticker_popup_.reset();
-    if (tooltip_hwnd_)
-    {
-        DestroyWindow(tooltip_hwnd_);
-        tooltip_hwnd_ = nullptr;
-    }
     // If the HWND is still alive (e.g. programmatic close that bypassed
     // WM_DESTROY), destroy it now. WM_DESTROY sets hwnd_ = nullptr to prevent
     // re-entry.
@@ -877,63 +863,6 @@ void RoomWindow::on_picker_emoticon_(const tesseract::ImagePackImage& img)
             room_view_->set_current_text(text_area_->text());
         text_area_->set_focused(true);
     }
-}
-
-void RoomWindow::show_tooltip_(const std::string& text, tk::Rect anchor)
-{
-    if (!surface_)
-    {
-        return;
-    }
-    if (!tooltip_hwnd_)
-    {
-        tooltip_hwnd_ = CreateWindowExW(
-            WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
-            WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT,
-            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hwnd_, nullptr,
-            GetModuleHandleW(nullptr), nullptr);
-        SendMessageW(tooltip_hwnd_, TTM_SETMAXTIPWIDTH, 0, 400);
-        TOOLINFOW ti{};
-        ti.cbSize = TTTOOLINFOW_V1_SIZE;
-        ti.uFlags = TTF_TRACK | TTF_ABSOLUTE;
-        ti.hwnd = hwnd_;
-        ti.uId = 1;
-        ti.lpszText = const_cast<LPWSTR>(L"");
-        SendMessageW(tooltip_hwnd_, TTM_ADDTOOLW, 0, (LPARAM)&ti);
-    }
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
-    tooltip_text_.resize(static_cast<std::size_t>(wlen));
-    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, tooltip_text_.data(),
-                        wlen);
-    TOOLINFOW ti{};
-    ti.cbSize = TTTOOLINFOW_V1_SIZE;
-    ti.hwnd = hwnd_;
-    ti.uId = 1;
-    ti.lpszText = tooltip_text_.data();
-    SendMessageW(tooltip_hwnd_, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
-
-    // anchor is surface-local DIP; convert to physical screen coordinates.
-    const float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
-    const float scale = dpi > 0.f ? dpi / 96.f : 1.f;
-    POINT pt{static_cast<LONG>(std::round(anchor.x * scale)),
-             static_cast<LONG>(std::round((anchor.y + anchor.h) * scale))};
-    ClientToScreen(surface_->hwnd(), &pt);
-    SendMessageW(tooltip_hwnd_, TTM_TRACKPOSITION, 0,
-                 MAKELPARAM(static_cast<WORD>(pt.x), static_cast<WORD>(pt.y)));
-    SendMessageW(tooltip_hwnd_, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
-}
-
-void RoomWindow::hide_tooltip_()
-{
-    if (!tooltip_hwnd_)
-    {
-        return;
-    }
-    TOOLINFOW ti{};
-    ti.cbSize = TTTOOLINFOW_V1_SIZE;
-    ti.hwnd = hwnd_;
-    ti.uId = 1;
-    SendMessageW(tooltip_hwnd_, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
 }
 
 // ---------------------------------------------------------------------------

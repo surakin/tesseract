@@ -5,6 +5,7 @@
 #include "views/BrandView.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/i18n.h"
 #include "tk/layout.h"
 #include "tk/theme.h"
@@ -249,13 +250,10 @@ public:
         misses_    = misses;
         has_stats_ = true;
         // Stats may arrive after the initial hover-enter (async load).
-        // Fire the tooltip now so the user doesn't have to re-hover.
-        if (hover_count_ > 0 && on_show_tooltip)
-            on_show_tooltip(format_hit_miss(hits_, misses_), bounds_);
+        // Update the tooltip now so the user doesn't have to re-hover.
+        if (hover_count_ > 0 && host_)
+            host_->update_tooltip_text(this, format_hit_miss(hits_, misses_));
     }
-
-    std::function<void(std::string, tk::Rect)> on_show_tooltip;
-    std::function<void()>                      on_hide_tooltip;
 
     // Override measure so the SettingsGroup reports kNaturalW as its natural
     // cross-axis width. Without this, the HBox would measure to only
@@ -265,6 +263,12 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
         return {std::min(constraints.w, kNaturalW), kAboutSectionRowH};
+    }
+
+    void paint(tk::PaintCtx& ctx) override
+    {
+        host_ = ctx.host;
+        tk::HBox::paint(ctx);
     }
 
 private:
@@ -278,19 +282,23 @@ private:
     // old cell (leave). The counter absorbs that overlap so the tooltip
     // neither flickers nor gets orphaned.
     int hover_count_ = 0;
+    // Cached from paint() so enter_hover_/leave_hover_/set_stats (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip/
+    // update_tooltip_text.
+    tk::Host* host_ = nullptr;
 
     void enter_hover_()
     {
-        if (hover_count_++ == 0 && has_stats_ && on_show_tooltip)
-            on_show_tooltip(format_hit_miss(hits_, misses_), bounds_);
+        if (hover_count_++ == 0 && has_stats_ && host_)
+            host_->show_tooltip(this, format_hit_miss(hits_, misses_), bounds_);
     }
 
     void leave_hover_()
     {
         if (hover_count_ > 0 && --hover_count_ == 0)
         {
-            if (on_hide_tooltip)
-                on_hide_tooltip();
+            if (host_)
+                host_->hide_tooltip(this);
         }
     }
 };
@@ -316,23 +324,6 @@ AboutSection::AboutSection()
         "Clear all caches",
         [this] { if (on_clear_caches) on_clear_caches(); },
         tk::Button::Variant::Destructive));
-
-    // Wire row tooltip callbacks up to the section-level callbacks so callers
-    // only need to hook one pair of functions.
-    auto wire = [this](CacheSizeRow* row)
-    {
-        row->on_show_tooltip = [this](std::string t, tk::Rect a)
-        {
-            if (on_show_tooltip) on_show_tooltip(std::move(t), a);
-        };
-        row->on_hide_tooltip = [this]
-        {
-            if (on_hide_tooltip) on_hide_tooltip();
-        };
-    };
-    wire(memory_row_);
-    wire(local_row_);
-    // sdk_row_ intentionally not wired — no hit/miss data available.
 
     auto hbox = std::make_unique<tk::HBox>();
     hbox->add_child(std::move(sg));

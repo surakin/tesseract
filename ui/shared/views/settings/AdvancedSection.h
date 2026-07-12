@@ -9,6 +9,7 @@
 #include "SettingsPage.h"
 
 #include "tk/controls.h"
+#include "tk/host.h"
 
 #include <functional>
 #include <string>
@@ -22,19 +23,19 @@ public:
     AdvancedSection();
     ~AdvancedSection() override = default;
 
+    void paint(tk::PaintCtx& ctx) override;
+
     // Silently update checkbox state without firing on_msc2545_legacy_compat_changed.
     void set_msc2545_legacy_compat(bool enabled);
 
     // Fired with the new boolean state when the checkbox is toggled.
     std::function<void(bool)> on_msc2545_legacy_compat_changed;
 
-    // Tooltip callbacks — bubbled up from the checkbox. Wire the same way
-    // AboutSection's tooltip callbacks are wired.
-    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()> on_hide_tooltip;
-
 private:
     tk::CheckButton* legacy_compat_cb_ = nullptr;
+    // Cached from paint() so the checkbox's hover callbacks (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
+    tk::Host* host_ = nullptr;
 };
 
 } // namespace tesseract::views

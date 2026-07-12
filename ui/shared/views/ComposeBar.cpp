@@ -928,6 +928,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void ComposeBar::paint(tk::PaintCtx& ctx)
 {
+    host_ = ctx.host;
     ctx.canvas.fill_rect(bounds_, bar_bg(ctx.theme));
     // 1 px top hairline so the bar reads as a separate strip from the
     // message list above it.
@@ -1517,20 +1518,20 @@ bool ComposeBar::on_pointer_move(tk::Point local)
 
     if (next != tooltip_hover_)
     {
-        if (tooltip_hover_ != TooltipBtn::None && on_hide_tooltip)
-            on_hide_tooltip();
+        if (tooltip_hover_ != TooltipBtn::None && host_)
+            host_->hide_tooltip(this);
         tooltip_hover_ = next;
-        if (next != TooltipBtn::None && on_show_tooltip)
+        if (next != TooltipBtn::None && host_)
         {
-            const char* text =
-                next == TooltipBtn::Emoji   ? "Emoji"
-                : next == TooltipBtn::Sticker ? "Stickers"
-                : recording_                  ? "Stop recording"
-                                              : "Voice message";
+            const std::string text =
+                next == TooltipBtn::Emoji   ? tk::tr("Emoji")
+                : next == TooltipBtn::Sticker ? tk::tr("Stickers")
+                : recording_                  ? tk::tr("Stop recording")
+                                              : tk::tr("Voice message");
             tk::Rect anchor = next == TooltipBtn::Emoji   ? emoji_rect_
                               : next == TooltipBtn::Sticker ? sticker_rect_
                                                              : mic_btn_rect_;
-            on_show_tooltip(text, anchor);
+            host_->show_tooltip(this, text, anchor);
         }
     }
     return true;
@@ -1540,8 +1541,7 @@ void ComposeBar::on_pointer_leave()
 {
     if (tooltip_hover_ != TooltipBtn::None)
     {
-        if (on_hide_tooltip)
-            on_hide_tooltip();
+        if (host_) host_->hide_tooltip(this);
         tooltip_hover_ = TooltipBtn::None;
     }
 }

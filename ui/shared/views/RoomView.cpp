@@ -313,14 +313,6 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     {
         if (on_link_hovered) on_link_hovered(url);
     };
-    ml->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        if (on_show_tooltip) on_show_tooltip(std::move(text), anchor);
-    };
-    ml->on_hide_tooltip = [this]()
-    {
-        if (on_hide_tooltip) on_hide_tooltip();
-    };
     ml->on_receipt_needed = [this](const std::string& event_id)
     {
         if (on_receipt_needed) on_receipt_needed(event_id);
@@ -499,16 +491,6 @@ void RoomView::wire_internal_callbacks()
         if (on_cancel_voice)
             on_cancel_voice();
     };
-    compose_bar_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        if (on_show_tooltip)
-            on_show_tooltip(std::move(text), anchor);
-    };
-    compose_bar_->on_hide_tooltip = [this]
-    {
-        if (on_hide_tooltip)
-            on_hide_tooltip();
-    };
     compose_bar_->on_focus_input = [this]
     {
         if (on_focus_input)
@@ -603,20 +585,6 @@ void RoomView::wire_internal_callbacks()
     {
         if (on_unpin_requested) on_unpin_requested(event_id);
     };
-    header_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        if (on_show_tooltip)
-        {
-            on_show_tooltip(std::move(text), anchor);
-        }
-    };
-    header_->on_hide_tooltip = [this]
-    {
-        if (on_hide_tooltip)
-        {
-            on_hide_tooltip();
-        }
-    };
     // Wire header info-requested to show room info panel.
     header_->on_info_requested = [this]() { show_room_info(); };
 
@@ -646,15 +614,6 @@ void RoomView::wire_internal_callbacks()
         [this](std::string room_id, bool on)
     {
         if (on_low_priority_changed) on_low_priority_changed(std::move(room_id), on);
-    };
-    room_info_panel_->on_show_tooltip =
-        [this](std::string text, tk::Rect anchor)
-    {
-        if (on_show_tooltip) on_show_tooltip(std::move(text), anchor);
-    };
-    room_info_panel_->on_hide_tooltip = [this]()
-    {
-        if (on_hide_tooltip) on_hide_tooltip();
     };
     room_info_panel_->on_link_clicked = [this](std::string url)
     {

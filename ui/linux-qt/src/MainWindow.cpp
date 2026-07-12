@@ -569,25 +569,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                 }
             };
         }
-        {
-            QPointer<tk::qt6::Surface> sfp = mainAppSurface_;
-            mainApp_->room_view()->on_show_tooltip =
-                [sfp](std::string text, tk::Rect anchor)
-            {
-                if (!sfp)
-                {
-                    return;
-                }
-                QPoint local(static_cast<int>(anchor.x),
-                             static_cast<int>(anchor.y + anchor.h));
-                QToolTip::showText(sfp->mapToGlobal(local),
-                                   QString::fromStdString(text), sfp);
-            };
-            mainApp_->room_view()->on_hide_tooltip = []
-            {
-                QToolTip::hideText();
-            };
-        }
         mainApp_->room_view()->on_receipt_needed =
             [this](const std::string& eid)
         {

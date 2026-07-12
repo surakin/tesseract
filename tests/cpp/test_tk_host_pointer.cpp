@@ -1,10 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "tk/audio.h"
-#include "tk/audio_capture.h"
 #include "tk/host.h"
-#include "tk/video.h"
 #include "tk/widget.h"
+#include "tk_test_host.h"
 
 #include <memory>
 
@@ -64,77 +62,6 @@ public:
 
 private:
     bool claim_down_;
-};
-
-// Minimal concrete Host: stubs every platform virtual, points input_root_ at a
-// supplied root, and re-exposes the protected dispatch_pointer_* methods.
-class TestHost : public Host
-{
-public:
-    explicit TestHost(Widget* root) : root_(root) {}
-
-    void request_repaint() override { ++repaint_count; }
-    void post_to_ui(std::function<void()>) override {}
-    void post_delayed(int, std::function<void()>) override {}
-    std::unique_ptr<NativeTextField> make_text_field() override
-    {
-        return nullptr;
-    }
-    std::unique_ptr<NativeTextArea> make_text_area() override
-    {
-        return nullptr;
-    }
-    std::unique_ptr<AudioPlayer> make_audio_player() override
-    {
-        return nullptr;
-    }
-    std::unique_ptr<AudioCapture> make_audio_capture() override
-    {
-        return nullptr;
-    }
-    std::unique_ptr<VideoPlayer> make_video_player() override
-    {
-        return nullptr;
-    }
-#ifdef TESSERACT_CALLS_ENABLED
-    std::unique_ptr<AudioPlayback> make_audio_playback() override
-    {
-        return nullptr;
-    }
-#endif
-    EncodedImage encode_for_send(const std::uint8_t*, std::size_t,
-                                 bool) override
-    {
-        return {};
-    }
-    void set_clipboard_text(std::string_view) override {}
-    bool set_clipboard_image(std::span<const std::uint8_t>) override
-    {
-        return false;
-    }
-
-    // Re-expose the protected shared dispatch + tracked state for the test.
-    using Host::dispatch_pointer_down;
-    using Host::dispatch_pointer_leave;
-    using Host::dispatch_pointer_move;
-    using Host::dispatch_pointer_up;
-    using Host::hovered_widget_;
-    using Host::pressed_widget_;
-
-    // Drive the popup the way a paint pass would: register then promote.
-    void set_active_popup(Widget* w)
-    {
-        register_popup(w);
-        popup_ = pending_popup_;
-    }
-
-    int repaint_count = 0;
-
-protected:
-    Widget* input_root_() const override { return root_; }
-
-private:
-    Widget* root_;
 };
 
 } // namespace

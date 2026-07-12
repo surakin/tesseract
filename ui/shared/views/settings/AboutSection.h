@@ -38,11 +38,6 @@ public:
     // reveal and navigate to the hidden Advanced tab.
     std::function<void()> on_advanced_clicked;
 
-    // Tooltip callbacks — bubbled up from the storage rows. Wire to platform
-    // tooltip APIs the same way RoomView tooltip callbacks are wired.
-    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()> on_hide_tooltip;
-
 private:
     class CacheSizeRow;
     CacheSizeRow* memory_row_ = nullptr; // borrowed

@@ -1657,6 +1657,8 @@ public:
         root_->paint(ctx);
         popup_ = pending_popup_;
         root_->paint_overlay(ctx);
+        paint_tooltip_overlay(ctx, {0, 0, static_cast<float>(w),
+                                    static_cast<float>(h)});
         current_canvas_ = nullptr;
         sync_anim_overlays_();
 

@@ -127,6 +127,8 @@ void TabbedGridPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void TabbedGridPicker::paint(tk::PaintCtx& ctx)
 {
+    host_ = ctx.host;
+
     // Backdrop.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
@@ -141,42 +143,19 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
         grid_->paint(ctx);
     }
 
-    // Shortcode tooltip: shown when a grid cell is hovered.
-    if (grid_ && grid_->hovered_index() >= 0)
+    // Shortcode tooltip: shown when a grid cell is hovered. Re-evaluated every
+    // frame (this widget doesn't get a hover-transition event of its own —
+    // GridView tracks hovered_index_ itself), rendered by Host above
+    // everything so it escapes this grid's own clip.
+    if (host_)
     {
-        std::string sc = cell_tooltip(grid_->hovered_index());
+        std::string sc;
+        if (grid_ && grid_->hovered_index() >= 0)
+            sc = cell_tooltip(grid_->hovered_index());
         if (!sc.empty())
-        {
-            tk::TextStyle small_style{};
-            small_style.role = tk::FontRole::Small;
-            auto layout = ctx.factory.build_text(sc, small_style);
-            if (layout)
-            {
-                tk::Size tsz = layout->measure();
-                constexpr float kPad = 4.0f;
-                constexpr float kRadius = 4.0f;
-                tk::Rect cell_r = grid_->rect_at(grid_->hovered_index());
-                float tx = cell_r.x + (cell_r.w - tsz.w) / 2.0f - kPad;
-                float ty = cell_r.y - tsz.h - kPad * 2 - 2.0f;
-                if (ty < bounds_.y)
-                {
-                    ty = cell_r.y + cell_r.h + 2.0f;
-                }
-                // Clamp horizontally so the tooltip stays within picker bounds.
-                tx = std::max(bounds_.x + kPad,
-                              std::min(tx, bounds_.x + bounds_.w - tsz.w -
-                                               kPad * 2 - kPad));
-                tk::Rect bg{tx, ty, tsz.w + kPad * 2, tsz.h + kPad * 2};
-                ctx.canvas.push_clip_rect(bounds_);
-                ctx.canvas.fill_rounded_rect(bg, kRadius,
-                                             ctx.theme.palette.chrome_bg);
-                ctx.canvas.stroke_rounded_rect(
-                    bg, kRadius, ctx.theme.palette.popup_border, 1.0f);
-                ctx.canvas.draw_text(*layout, {bg.x + kPad, bg.y + kPad},
-                                     ctx.theme.palette.text_primary);
-                ctx.canvas.pop_clip();
-            }
-        }
+            host_->show_tooltip(grid_, sc, grid_->rect_at(grid_->hovered_index()));
+        else
+            host_->hide_tooltip(grid_);
     }
 
     // ─── Tab strip ──────────────────────────────────────────────────────

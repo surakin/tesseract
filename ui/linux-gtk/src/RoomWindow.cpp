@@ -675,36 +675,6 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             room_view_->message_list()->set_hover_locked(true);
         popup_emoji_at_rect_(anchor);
     };
-    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        GtkWidget* w = surface_->widget();
-        if (!topic_tooltip_popover_)
-        {
-            topic_tooltip_label_ = gtk_label_new(nullptr);
-            gtk_label_set_wrap(GTK_LABEL(topic_tooltip_label_), TRUE);
-            gtk_label_set_max_width_chars(GTK_LABEL(topic_tooltip_label_), 60);
-            topic_tooltip_popover_ = gtk_popover_new();
-            gtk_widget_add_css_class(topic_tooltip_popover_, "tooltip");
-            gtk_popover_set_child(GTK_POPOVER(topic_tooltip_popover_),
-                                  topic_tooltip_label_);
-            gtk_widget_set_parent(topic_tooltip_popover_, w);
-            gtk_popover_set_autohide(GTK_POPOVER(topic_tooltip_popover_),
-                                     FALSE);
-            gtk_popover_set_has_arrow(GTK_POPOVER(topic_tooltip_popover_),
-                                      FALSE);
-        }
-        gtk_label_set_text(GTK_LABEL(topic_tooltip_label_), text.c_str());
-        GdkRectangle rect{
-            static_cast<int>(anchor.x), static_cast<int>(anchor.y),
-            static_cast<int>(anchor.w), static_cast<int>(anchor.h)};
-        gtk_popover_set_pointing_to(GTK_POPOVER(topic_tooltip_popover_), &rect);
-        gtk_popover_popup(GTK_POPOVER(topic_tooltip_popover_));
-    };
-    room_view_->on_hide_tooltip = [this]
-    {
-        if (topic_tooltip_popover_)
-            gtk_popover_popdown(GTK_POPOVER(topic_tooltip_popover_));
-    };
     room_view_->on_link_hovered = [this](const std::string& url)
     {
         gtk_widget_set_cursor_from_name(surface_->widget(),

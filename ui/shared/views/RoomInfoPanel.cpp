@@ -453,6 +453,7 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
 void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 {
+    host_ = ctx.host;
     if (!open_) return;
 
     auto& cv        = ctx.canvas;
@@ -1017,12 +1018,12 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
     if (over_topic && !hover_topic_)
     {
         hover_topic_ = true;
-        if (on_show_tooltip) on_show_tooltip(topic_, topic_rect_);
+        if (host_) host_->show_tooltip(this, topic_, topic_rect_);
     }
     else if (!over_topic && hover_topic_)
     {
         hover_topic_ = false;
-        if (on_hide_tooltip) on_hide_tooltip();
+        if (host_) host_->hide_tooltip(this);
     }
 
     // Cursor: pointer when hovering a link in the topic.
@@ -1066,7 +1067,7 @@ void RoomInfoPanel::on_pointer_leave()
     press_member_   = -1;
     hover_media_    = false;
     press_media_    = false;
-    if (hover_topic_ && on_hide_tooltip) on_hide_tooltip();
+    if (hover_topic_ && host_) host_->hide_tooltip(this);
     hover_topic_    = false;
     if (!hover_link_url_.empty())
     {

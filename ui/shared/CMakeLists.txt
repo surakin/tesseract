@@ -71,6 +71,8 @@ set(_tk_sources
     tk/blurhash.cpp
     tk/media_disk_cache.h
     tk/media_disk_cache.cpp
+    tk/tooltip.h
+    tk/tooltip.cpp
     views/BrandView.h
     views/BrandView.cpp
     views/LoginView.h

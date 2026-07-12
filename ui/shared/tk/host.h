@@ -16,6 +16,7 @@
 #include "audio_playback.h"
 #include "canvas.h"
 #include "device_listing.h"
+#include "tooltip.h"
 #include "video.h"
 #include "widget.h"
 
@@ -422,6 +423,41 @@ public:
     // Returns the currently active popup (valid between paint frames).
     Widget* popup() const { return popup_; }
 
+    // ── Tooltip management ───────────────────────────────────────────────────
+    // Any widget can request a tooltip near itself. Since on_pointer_move()/
+    // on_pointer_leave() don't receive a PaintCtx, callers cache `ctx.host`
+    // from their own paint() override (see EncryptionSetupOverlay's host_
+    // member for the existing precedent of this idiom) and call these
+    // directly from their hover handlers. `owner` is an opaque identity token
+    // (normally `this`, but any stable pointer works) used only to
+    // disambiguate stale/superseded calls — Host never dereferences it. At
+    // most one tooltip is ever active at a time, and none is shown while a
+    // real popup (register_popup()) is open.
+
+    // Request a tooltip for `owner`, showing `text` near `anchor_world` after
+    // a short dwell delay. A repeated call from the same owner refreshes the
+    // text/anchor in place (immediately if already visible, otherwise the
+    // original delay keeps running); a call from a different owner resets
+    // the delay. No-op while a popup is open.
+    virtual void show_tooltip(const void* owner, std::string text,
+                              Rect anchor_world);
+
+    // Hide (or cancel the pending delay for) the tooltip owned by `owner`.
+    // No-op if `owner` isn't the current tooltip owner.
+    virtual void hide_tooltip(const void* owner);
+
+    // Update the text of a tooltip already owned by `owner`, with no delay —
+    // used when content that wasn't available yet arrives while the pointer
+    // is still parked over the widget/region `owner` represents. If nobody
+    // currently owns the tooltip, this adopts ownership for `owner` and
+    // shows immediately, skipping the dwell delay (the caller is expected to
+    // only call this while it knows itself to be genuinely hovered — e.g. via
+    // its own hover-count bookkeeping — since Host has no way to verify that
+    // for an `owner` token that isn't itself the widget under the pointer,
+    // such as a container tooltipping on behalf of its children). No-op
+    // while a popup is open or while a different owner already holds it.
+    virtual void update_tooltip_text(const void* owner, std::string text);
+
     // ── Shared pointer dispatch ──────────────────────────────────────────────
     // The pointer state machine (drag/hover tracking, release-inside check) and
     // the popup input/hover routing live here, once, for all four backends.
@@ -469,6 +505,26 @@ protected:
     Widget* pressed_widget_ = nullptr;  // captured on pointer-down
     Button* hovered_btn_    = nullptr;  // Button currently under the pointer
     Widget* hovered_widget_ = nullptr;  // widget currently under the pointer
+
+    // Draws the active tooltip (if any) above everything, called by each
+    // backend's paint() right after root_->paint_overlay(ctx). `surface_bounds`
+    // is the same whole-surface Rect used for that frame's measure/arrange.
+    void paint_tooltip_overlay(PaintCtx& ctx, Rect surface_bounds);
+
+    // Clears any active/pending tooltip. Called on every pointer-down (any
+    // click anywhere dismisses a tooltip) and when a real popup opens.
+    void cancel_tooltip_();
+
+    // Tooltip state — protected (not private) so test fakes derived from
+    // Host can assert on it directly (mirrors hovered_widget_ above).
+    std::unique_ptr<Tooltip> tooltip_widget_;
+    const void* tooltip_owner_    = nullptr;
+    std::string tooltip_text_;
+    Rect        tooltip_anchor_{};
+    bool        tooltip_visible_ = false;   // false = still in its dwell delay
+    std::uint64_t tooltip_gen_   = 0;
+    std::shared_ptr<bool> tooltip_alive_{std::make_shared<bool>(true)};
+    static constexpr int kTooltipShowDelayMs = 500;
 
 private:
     std::function<void()> on_user_activity_;

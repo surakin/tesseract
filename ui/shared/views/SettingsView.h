@@ -322,10 +322,6 @@ public:
                          uint64_t mem_hits   = 0, uint64_t mem_misses  = 0,
                          uint64_t disk_hits  = 0, uint64_t disk_misses = 0);
 
-    // Tooltip callbacks — forward from the AboutSection storage rows.
-    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()> on_hide_tooltip;
-
     // Fired when the user selects a different language (BCP47 code or "auto").
     std::function<void(std::string)> on_language_changed;
 

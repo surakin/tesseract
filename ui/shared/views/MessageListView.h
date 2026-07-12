@@ -11,6 +11,7 @@
 
 #include "tk/audio.h"
 #include "tk/canvas.h"
+#include "tk/host.h"
 #include "tk/list_view.h"
 #include "tk/video.h"
 #include "views/LinkLayoutCache.h"
@@ -455,10 +456,6 @@ public:
     // non-empty while hovering, empty when the pointer leaves. Used by the
     // shell to switch the cursor to/from a pointing-hand cursor.
     std::function<void(const std::string& url)> on_link_hovered;
-
-    // Fires to show/hide a native tooltip. `anchor` is in world coordinates.
-    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()> on_hide_tooltip;
 
     // Fires when the user clicks the quote block of a reply to scroll to
     // the original message. If the event is currently loaded the view scrolls
@@ -971,6 +968,10 @@ private:
 
     enum class ActionTooltip { None, React, Reply, Thread, Edit, More };
     ActionTooltip action_tooltip_ = ActionTooltip::None;
+
+    // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
+    tk::Host* host_ = nullptr;
 
     // Press-state — remember which chip the user pressed so we only
     // fire the callback on a clean down-up on the same chip.

@@ -442,12 +442,6 @@ public:
     std::function<void(std::string avatar_url, std::string display_name)>
                                                             on_avatar_clicked;
 
-    // Fired when the pointer enters a topic text that was truncated (i.e. the
-    // topic didn't fit and shows an ellipsis). Shell should show a tooltip with
-    // the full text anchored to `anchor`. on_hide_tooltip fires when the
-    // pointer leaves, so the shell can dismiss it.
-    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()> on_hide_tooltip;
     std::function<void(tk::Rect)> on_emoji;
     std::function<void(tk::Rect)> on_sticker;
 

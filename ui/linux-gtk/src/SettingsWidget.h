@@ -116,8 +116,6 @@ private:
     std::unique_ptr<tk::NativeTextField> pronouns_field_;
     std::unique_ptr<tk::NativeTextField> tz_field_;
     std::unique_ptr<tk::NativeTextField> bio_field_;
-    GtkWidget* cache_tooltip_popover_ = nullptr; // lazy-created GtkPopover
-    GtkWidget* cache_tooltip_label_   = nullptr; // borrowed child of popover
 };
 
 } // namespace gtk4

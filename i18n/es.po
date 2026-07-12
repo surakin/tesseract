@@ -591,6 +591,22 @@ msgstr "Editar"
 msgid "More"
 msgstr "Más"
 
+#: ui/shared/views/ComposeBar.cpp
+msgid "Emoji"
+msgstr "Emoji"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Stickers"
+msgstr "Adhesivos"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Stop recording"
+msgstr "Detener grabación"
+
+#: ui/shared/views/ComposeBar.cpp
+msgid "Voice message"
+msgstr "Mensaje de voz"
+
 #: ui/shared/views/MessageListView.cpp
 msgid "{0} joined the room"
 msgstr "{0} se unió a la sala"

@@ -24,6 +24,7 @@
 //   - cell/tab pixel metrics via the layout-config virtuals.
 
 #include "tk/canvas.h"
+#include "tk/host.h"
 #include "tk/list_view.h"
 #include "tk/widget.h"
 
@@ -145,6 +146,10 @@ private:
     int pressed_tab_idx_ = -1;
     int hovered_tab_idx_ = -1;
     float tab_scroll_offset_ = 0.0f;
+
+    // Cached from paint() so the per-frame tooltip refresh can reach
+    // Host::show_tooltip/hide_tooltip.
+    tk::Host* host_ = nullptr;
 };
 
 } // namespace tesseract::views

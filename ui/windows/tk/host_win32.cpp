@@ -5010,6 +5010,12 @@ public:
             root_->paint(ctx);
             popup_ = pending_popup_;
             root_->paint_overlay(ctx);
+            RECT client_rc;
+            GetClientRect(hwnd_, &client_rc);
+            Rect surface_bounds{
+                0, 0, phys_to_dip(static_cast<float>(client_rc.right)),
+                phys_to_dip(static_cast<float>(client_rc.bottom))};
+            paint_tooltip_overlay(ctx, surface_bounds);
         }
         if (has_dirty)
         {

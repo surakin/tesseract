@@ -503,6 +503,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void RoomHeader::paint(tk::PaintCtx& ctx)
 {
+    host_ = ctx.host;
     if (bounds_.h <= 0.0f)
     {
         return;
@@ -727,17 +728,11 @@ bool RoomHeader::on_pointer_move(tk::Point local)
 
     if (new_hover_topic && !hover_topic_ && topic_truncated_)
     {
-        if (on_show_tooltip)
-        {
-            on_show_tooltip(topic_, topic_rect_);
-        }
+        if (host_) host_->show_tooltip(this, topic_, topic_rect_);
     }
     else if (!new_hover_topic && hover_topic_)
     {
-        if (on_hide_tooltip)
-        {
-            on_hide_tooltip();
-        }
+        if (host_) host_->hide_tooltip(this);
     }
     hover_topic_ = new_hover_topic;
 
@@ -761,9 +756,9 @@ void RoomHeader::on_pointer_leave()
 {
     // Action-button hover/press is owned by the child tk::Button widgets.
     press_info_ = false;
-    if (hover_topic_ && on_hide_tooltip)
+    if (hover_topic_ && host_)
     {
-        on_hide_tooltip();
+        host_->hide_tooltip(this);
     }
     hover_topic_ = false;
     if (!hover_link_url_.empty())

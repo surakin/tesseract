@@ -25,8 +25,9 @@ AdvancedSection::AdvancedSection()
     };
     legacy_compat_cb_->on_hover_enter = [this]
     {
-        if (on_show_tooltip)
-            on_show_tooltip(
+        if (host_)
+            host_->show_tooltip(
+                legacy_compat_cb_,
                 tk::tr("When enabled, reads unstable-named MSC2545 fields from account "
                        "data in addition to the stable names, and enables your personal "
                        "image pack. Disable for strict stable-name-only behavior."),
@@ -34,9 +35,14 @@ AdvancedSection::AdvancedSection()
     };
     legacy_compat_cb_->on_hover_leave = [this]
     {
-        if (on_hide_tooltip)
-            on_hide_tooltip();
+        if (host_) host_->hide_tooltip(legacy_compat_cb_);
     };
+}
+
+void AdvancedSection::paint(tk::PaintCtx& ctx)
+{
+    host_ = ctx.host;
+    SettingsPage::paint(ctx);
 }
 
 void AdvancedSection::set_msc2545_legacy_compat(bool enabled)

@@ -130,9 +130,6 @@ private:
     // pending_reaction_event_id_ is set — send a reaction to that event.
     void on_picker_glyph_(const std::string& glyph);
     void on_picker_emoticon_(const tesseract::ImagePackImage& img);
-    // Native tooltip (reaction / read-receipt hover), owned by hwnd_.
-    void show_tooltip_(const std::string& text, tk::Rect anchor);
-    void hide_tooltip_();
     bool mention_popup_visible_() const
     {
         return mention_popup_hwnd_ && IsWindowVisible(mention_popup_hwnd_);
@@ -177,10 +174,6 @@ private:
     // Set by on_add_reaction_requested; consumed by the next picker selection
     // to send a reaction instead of inserting text. Empty in compose mode.
     std::string pending_reaction_event_id_;
-
-    // Native tracking tooltip + its UTF-16 text backing store.
-    HWND tooltip_hwnd_ = nullptr;
-    std::vector<wchar_t> tooltip_text_;
 
     static constexpr const wchar_t* kClassName = L"TesseractRoomWnd";
     static bool class_registered_;

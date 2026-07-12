@@ -1216,6 +1216,8 @@ public:
         root_->paint(ctx);
         popup_ = pending_popup_;
         root_->paint_overlay(ctx);
+        paint_tooltip_overlay(ctx, {0, 0, static_cast<float>(surface_->width()),
+                                    static_cast<float>(surface_->height())});
     }
 
     // Pointer-event entry points. Each translates the native event to a

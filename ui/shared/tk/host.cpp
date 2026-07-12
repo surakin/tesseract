@@ -21,6 +21,7 @@ namespace tk
 void Host::dispatch_pointer_down(Point world)
 {
     fire_user_activity_();
+    cancel_tooltip_(); // any click anywhere dismisses an active/pending tooltip
     Widget* root = input_root_();
     if (!root)
     {
@@ -201,6 +202,73 @@ void Host::on_subtree_removing(Widget* subtree)
         // be partially torn down when this fires during unmount.
         hovered_widget_ = nullptr;
     }
+}
+
+// ── Tooltip management ──────────────────────────────────────────────────────
+
+void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world)
+{
+    if (popup_) return; // a real popup is open — tooltips are suppressed entirely
+    if (owner == tooltip_owner_)
+    {
+        // Same owner: refresh content/anchor. If already visible, take effect
+        // immediately; if still pending, the original delay keeps running.
+        tooltip_text_ = std::move(text);
+        tooltip_anchor_ = anchor_world;
+        if (tooltip_visible_) request_repaint();
+        return;
+    }
+    // New owner — reset and re-arm the dwell delay.
+    tooltip_owner_   = owner;
+    tooltip_text_    = std::move(text);
+    tooltip_anchor_  = anchor_world;
+    tooltip_visible_ = false;
+    const auto gen = ++tooltip_gen_;
+    std::weak_ptr<bool> weak = tooltip_alive_;
+    post_delayed(kTooltipShowDelayMs, [this, gen, owner, weak] {
+        if (!weak.lock()) return;
+        if (gen != tooltip_gen_ || owner != tooltip_owner_) return; // superseded/cancelled
+        tooltip_visible_ = true;
+        request_repaint();
+    });
+}
+
+void Host::hide_tooltip(const void* owner)
+{
+    if (owner != tooltip_owner_) return;
+    cancel_tooltip_();
+}
+
+void Host::update_tooltip_text(const void* owner, std::string text)
+{
+    if (popup_) return;
+    if (owner != tooltip_owner_)
+    {
+        if (tooltip_owner_ != nullptr) return; // someone else owns it — not ours to steal
+        tooltip_owner_ = owner; // adopt: caller asserts it's genuinely hovered right now
+    }
+    tooltip_text_    = std::move(text);
+    tooltip_visible_ = true;
+    request_repaint();
+}
+
+void Host::cancel_tooltip_()
+{
+    if (tooltip_owner_ == nullptr && !tooltip_visible_ && tooltip_text_.empty())
+        return; // nothing active/pending — avoid a spurious repaint request
+    ++tooltip_gen_; // invalidates any in-flight show timer
+    tooltip_owner_   = nullptr;
+    tooltip_visible_ = false;
+    tooltip_text_.clear();
+    request_repaint();
+}
+
+void Host::paint_tooltip_overlay(PaintCtx& ctx, Rect surface_bounds)
+{
+    if (!tooltip_visible_ || tooltip_text_.empty()) return;
+    if (!tooltip_widget_) tooltip_widget_ = std::make_unique<Tooltip>();
+    tooltip_widget_->set_content(tooltip_text_, tooltip_anchor_);
+    tooltip_widget_->paint_overlay(ctx, surface_bounds);
 }
 
 } // namespace tk

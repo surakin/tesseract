@@ -4340,13 +4340,11 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
     map_panner_.set_tooltip_callbacks(
         [this](std::string text, tk::Rect anchor)
         {
-            if (on_show_tooltip)
-                on_show_tooltip(std::move(text), anchor);
+            if (host_) host_->show_tooltip(&map_panner_, std::move(text), anchor);
         },
         [this]
         {
-            if (on_hide_tooltip)
-                on_hide_tooltip();
+            if (host_) host_->hide_tooltip(&map_panner_);
         });
 
     // The preview card draws its thumbnail via the same image provider as the
@@ -5717,10 +5715,10 @@ bool MessageListView::on_pointer_move(tk::Point local)
 
         if (next != action_tooltip_)
         {
-            if (action_tooltip_ != ActionTooltip::None && on_hide_tooltip)
-                on_hide_tooltip();
+            if (action_tooltip_ != ActionTooltip::None && host_)
+                host_->hide_tooltip(this);
             action_tooltip_ = next;
-            if (next != ActionTooltip::None && on_show_tooltip)
+            if (next != ActionTooltip::None && host_)
             {
                 const char* src =
                     next == ActionTooltip::React  ? "Add reaction"
@@ -5728,7 +5726,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
                     : next == ActionTooltip::Thread ? "Reply in thread"
                     : next == ActionTooltip::Edit   ? "Edit"
                     :                                 "More";
-                on_show_tooltip(tk::tr(src), tip_anchor);
+                host_->show_tooltip(this, tk::tr(src), tip_anchor);
             }
         }
     }
@@ -5771,8 +5769,8 @@ void MessageListView::on_pointer_leave()
     map_panner_.hide_tooltip();
     if (action_tooltip_ != ActionTooltip::None)
     {
-        if (on_hide_tooltip)
-            on_hide_tooltip();
+        if (host_)
+            host_->hide_tooltip(this);
         action_tooltip_ = ActionTooltip::None;
     }
 }
@@ -7301,6 +7299,7 @@ void MessageListView::maybe_notify_visible_range_() const
 
 void MessageListView::paint(tk::PaintCtx& ctx)
 {
+    host_ = ctx.host;
     // Geometry maps are rebuilt by Adapter::paint_row for every painted row.
     // Skip the clear during animation-tick partial repaints (anim_damage != nullptr):
     // the clip covers only the dirty region, so rows outside it aren't repainted and

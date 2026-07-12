@@ -191,7 +191,6 @@ private:
     // Reaction picker: set by on_add_reaction_requested, consumed by the next
     // emoji selection to send a reaction instead of inserting text.
     std::string pending_reaction_event_id_;
-    NSPopover* topic_tooltip_popover_ = nil;
     bool link_hovered_ = false;
     bool window_closed_ = false;
 };
@@ -775,56 +774,6 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         if (room_view_ && room_view_->message_list())
             room_view_->message_list()->set_hover_locked(true);
         show_emoji_panel_(anchor);
-    };
-    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        if (!surface_)
-            return;
-        if (!topic_tooltip_popover_)
-        {
-            NSTextField* lbl = [NSTextField wrappingLabelWithString:@""];
-            lbl.translatesAutoresizingMaskIntoConstraints = NO;
-            NSView* cv = [[NSView alloc] init];
-            cv.translatesAutoresizingMaskIntoConstraints = NO;
-            [cv addSubview:lbl];
-            [NSLayoutConstraint activateConstraints:@[
-                [lbl.leadingAnchor constraintEqualToAnchor:cv.leadingAnchor
-                                                  constant:8],
-                [lbl.trailingAnchor constraintEqualToAnchor:cv.trailingAnchor
-                                                   constant:-8],
-                [lbl.topAnchor constraintEqualToAnchor:cv.topAnchor constant:6],
-                [lbl.bottomAnchor constraintEqualToAnchor:cv.bottomAnchor
-                                                 constant:-6],
-                [cv.widthAnchor constraintLessThanOrEqualToConstant:360],
-            ]];
-            NSViewController* vc = [[NSViewController alloc] init];
-            vc.view = cv;
-            NSPopover* pop = [[NSPopover alloc] init];
-            pop.contentViewController = vc;
-            pop.behavior = NSPopoverBehaviorSemitransient;
-            pop.animates = NO;
-            topic_tooltip_popover_ = pop;
-        }
-        NSTextField* lbl =
-            (NSTextField*)topic_tooltip_popover_.contentViewController.view
-                .subviews.firstObject;
-        lbl.stringValue = [NSString stringWithUTF8String:text.c_str()] ?: @"";
-        [topic_tooltip_popover_.contentViewController.view
-                layoutSubtreeIfNeeded];
-        topic_tooltip_popover_.contentSize =
-            topic_tooltip_popover_.contentViewController.view.fittingSize;
-        NSView* view = (__bridge NSView*)surface_->view_handle();
-        NSRect anchorRect = NSMakeRect(anchor.x, anchor.y, anchor.w, anchor.h);
-        [topic_tooltip_popover_ showRelativeToRect:anchorRect
-                                            ofView:view
-                                     preferredEdge:NSRectEdgeMinY];
-    };
-    room_view_->on_hide_tooltip = [this]
-    {
-        if (topic_tooltip_popover_ && topic_tooltip_popover_.shown)
-        {
-            [topic_tooltip_popover_ close];
-        }
     };
     room_view_->on_link_hovered = [this](const std::string& url)
     {

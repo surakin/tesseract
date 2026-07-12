@@ -16,7 +16,6 @@
 #include <QFileDialog>
 #include <QKeyEvent>
 #include <QResizeEvent>
-#include <QToolTip>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -636,16 +635,6 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             room_view_->message_list()->set_hover_locked(true);
         emojiPicker_->popupAtRect(surface_, anchor);
     };
-    room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        if (!surface_)
-            return;
-        QPoint local(static_cast<int>(anchor.x),
-                     static_cast<int>(anchor.y + anchor.h));
-        QToolTip::showText(surface_->mapToGlobal(local),
-                           QString::fromStdString(text), surface_);
-    };
-    room_view_->on_hide_tooltip = [] { QToolTip::hideText(); };
     room_view_->on_link_hovered = [this](const std::string& url)
     {
         if (surface_)

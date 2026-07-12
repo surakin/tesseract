@@ -160,9 +160,6 @@ private:
     std::unique_ptr<tk::gtk4::Surface> sticker_picker_surface_;
     tesseract::views::StickerPicker* sticker_picker_shared_ = nullptr;
     std::unique_ptr<tk::NativeTextField> sticker_picker_search_field_;
-    // Hover tooltip (reaction / read-receipt info).
-    GtkWidget* topic_tooltip_popover_ = nullptr;
-    GtkWidget* topic_tooltip_label_ = nullptr;
     // Reaction picker target: set by on_add_reaction_requested.
     std::string pending_reaction_event_id_;
 };

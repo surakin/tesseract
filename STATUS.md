@@ -1,6 +1,44 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1120 C++ + 364 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1129 C++ + 376 Rust tests.
+
+> **Generic `tk::Host` tooltip system replaces 8 hand-rolled hover/tooltip
+> implementations and 4 duplicate per-platform native tooltip codepaths
+> (2026-07-12, v0.8.14-unreleased).** Every tooltip in the app used to be
+> independently hand-rolled: a bool/enum hover-state field plus manual rect
+> hit-testing in `on_pointer_move` (often requiring a `dispatch_pointer_move`
+> override just to catch a rect that wasn't a real child widget), bubbling a
+> `text, anchor` pair up through `RoomView`/`SettingsView` to the platform
+> shell. Each of the four shells then rendered it differently — and two of
+> them weren't even using a genuine native tooltip API: macOS faked it with
+> a custom `NSPopover` and GTK4 with a custom `GtkPopover` styled with a
+> `"tooltip"` CSS class; only Windows (`TOOLTIPS_CLASS`) and Qt6
+> (`QToolTip`) used the real thing. None of the 8 sites had a show-delay —
+> every tooltip appeared the instant the pointer crossed the hit-test rect.
+> Replaced with `tk::Host::show_tooltip()`/`hide_tooltip()`/
+> `update_tooltip_text()`, a dedicated tooltip slot on `Host` (separate from
+> `register_popup()`'s popup slot, since tooltips don't need input capture
+> and must be suppressed while a real popup is open) with a 500ms dwell
+> delay via the existing `post_delayed` + generation-counter idiom, and a new
+> `tk::Tooltip` render-only class drawn in the host's `paint_overlay` pass so
+> it escapes every ancestor's clip (needed for e.g. a tooltip anchored on a
+> message action-pill inside the scrolled `MessageListView`). Migrated all 8
+> call sites (`RoomHeader`, `RoomInfoPanel`, `ComposeBar`, `MessageListView`
+> action pills, `LocationMapPanner`, `AboutSection` cache rows —
+> including its reference-counted adjacent-cell hover and async
+> stats-arrival update-in-place case — `AdvancedSection`, and
+> `TabbedGridPicker`'s per-cell shortcode tooltip) and deleted the old
+> `on_show_tooltip`/`on_hide_tooltip` callback plumbing plus all 4 platform
+> shells' native tooltip code. Fixed a pre-existing i18n gap found during
+> the `ComposeBar` migration (4 tooltip strings not wrapped in `tk::tr()`,
+> no `.po` entries). New `tests/cpp/test_tk_tooltip.cpp` (8 cases covering
+> the dwell delay, generation-counter staleness guard, popup suppression,
+> and pointer-down dismissal) plus a shared `tests/cpp/tk_test_host.h`
+> fake `Host` factored out of `test_tk_host_pointer.cpp` for reuse. Verified
+> on Qt6/GTK4 (both build clean, 1129/1129 ctest, 376/376 Rust); Win32/macOS
+> mirror the same pattern but weren't build-verified in this environment.
+
+<!-- -->
 
 > **Native text fields no longer go stale on a theme change; forward-picker
 > close wired on all four shells (2026-07-12, v0.8.14-unreleased).** Qt6's
