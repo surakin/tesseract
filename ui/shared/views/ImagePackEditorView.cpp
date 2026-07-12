@@ -606,6 +606,16 @@ void ImagePackEditorView::set_image_provider(ImagePackImageProvider p)
     list_->set_image_provider(std::move(p));
 }
 
+void ImagePackEditorView::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_new_pack_name_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+    if (auto field = native_shortcode_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+    if (auto field = native_pack_name_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
+
 tk::Rect ImagePackEditorView::new_pack_name_field_rect() const
 {
     if (!open_ || committing_ || !can_edit_)

@@ -212,6 +212,12 @@ void ForwardRoomPicker::close()
         on_close();
 }
 
+void ForwardRoomPicker::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
+
 void ForwardRoomPicker::set_query(const std::string& q)
 {
     query_ = q;

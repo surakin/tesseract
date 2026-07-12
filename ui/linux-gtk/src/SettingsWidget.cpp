@@ -52,7 +52,7 @@ SettingsWidget::SettingsWidget()
             on_logout();
         }
     };
-    settings_view_->on_theme_changed = [this](auto p)
+    settings_view_->on_theme_preference_changed = [this](auto p)
     {
         if (on_theme_changed)
         {
@@ -218,6 +218,7 @@ void SettingsWidget::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
 void SettingsWidget::set_theme(const tk::Theme& t)
 {
     surface_->set_theme(t);
+    surface_->root()->apply_theme(t);
     surface_->relayout();
 }
 
@@ -353,6 +354,8 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
         });
 
     bio_field_ = surface_->host().make_text_field();
+    settings_view_->set_native_fields(name_field_, pronouns_field_, tz_field_,
+                                      bio_field_);
     bio_field_->set_compact(true);
     bio_field_->set_placeholder(_("Short biography"));
     bio_field_->set_visible(false);

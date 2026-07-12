@@ -8,10 +8,12 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace tesseract::views
@@ -49,6 +51,16 @@ public:
     // Returns empty rect when the bar is closed.
     tk::Rect search_field_rect() const { return field_rect_; }
     bool search_field_visible() const { return is_open_; }
+
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_field_ = std::move(field);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
 
     // ── Callbacks ─────────────────────────────────────────────────────────
     std::function<void()> on_close;
@@ -90,6 +102,7 @@ private:
 
     // World-space rect reported to the host for the native text field overlay.
     tk::Rect field_rect_{};
+    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
 };
 
 } // namespace tesseract::views

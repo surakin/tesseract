@@ -309,6 +309,12 @@ bool QRGrantView::check_code_field_visible() const
     return state_ == State::CheckCode;
 }
 
+void QRGrantView::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
+
 // ---------------------------------------------------------------------------
 // Widget tree
 // ---------------------------------------------------------------------------

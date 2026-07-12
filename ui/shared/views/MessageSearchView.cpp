@@ -247,6 +247,12 @@ void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
     }
 }
 
+void MessageSearchView::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
+
 void MessageSearchView::move_selection(int delta)
 {
     if (!list_ || result_count_() == 0)

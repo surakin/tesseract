@@ -199,6 +199,14 @@ void EncryptionSetupOverlay::simulate_select_passphrase_mode()  { passphrase_mod
 void EncryptionSetupOverlay::simulate_check_key_saved()         { key_saved_checked_ = true; }
 void EncryptionSetupOverlay::simulate_sas_link()                { if (on_request_sas) on_request_sas(); }
 
+void EncryptionSetupOverlay::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_passphrase_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+    if (auto field = native_key_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
+
 // ── Field-rect accessors ──────────────────────────────────────────────────────
 
 bool EncryptionSetupOverlay::passphrase_field_rect_visible() const

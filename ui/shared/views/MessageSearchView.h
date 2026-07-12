@@ -20,6 +20,7 @@
 // behaviour and keyboard-driven selection.
 
 #include "tk/canvas.h"
+#include "tk/host.h"
 #include "tk/list_view.h"
 #include "tk/widget.h"
 
@@ -75,6 +76,16 @@ public:
         return is_open_;
     }
 
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_field_ = std::move(field);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
+
     // ── Callbacks ─────────────────────────────────────────────────────────
     // Fires when the overlay should be dismissed (Escape, outside click).
     std::function<void()> on_close;
@@ -119,6 +130,7 @@ private:
 
     tk::Rect card_rect_{};
     tk::Rect search_field_rect_{};
+    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
     // True while a pointer-down landed on the dim backdrop (outside the card);
     // a pointer-up that also lands outside dismisses the overlay.
     bool press_outside_ = false;

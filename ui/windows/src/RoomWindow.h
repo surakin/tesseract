@@ -138,10 +138,12 @@ private:
     MainWindow* parent_;
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> surface_;
-    std::unique_ptr<tk::NativeTextArea> text_area_;
-    std::unique_ptr<tk::NativeTextField> search_field_;
+    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextArea> text_area_;
+    std::shared_ptr<tk::NativeTextField> search_field_;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
+    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
     HWND mention_popup_hwnd_ = nullptr;

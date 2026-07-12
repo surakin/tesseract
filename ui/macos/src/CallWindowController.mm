@@ -103,7 +103,10 @@ void MacCallWindow::close_window()
 void MacCallWindow::apply_theme(const tk::Theme& t)
 {
     if (surface_)
+    {
         surface_->set_theme(t);
+        surface_->root()->apply_theme(t);
+    }
 }
 
 void MacCallWindow::request_relayout()

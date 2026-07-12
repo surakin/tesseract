@@ -117,11 +117,13 @@ private:
     tk::qt6::Surface* surface_ = nullptr;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     tesseract::SettingsController* controller_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> name_field_;
+    // shared_ptr (not unique_ptr) so SettingsView can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextField> name_field_;
     // Extended-profile NativeTextField overlays (MSC4133).
-    std::unique_ptr<tk::NativeTextField> pronouns_field_;
-    std::unique_ptr<tk::NativeTextField> tz_field_;
-    std::unique_ptr<tk::NativeTextField> bio_field_;
+    std::shared_ptr<tk::NativeTextField> pronouns_field_;
+    std::shared_ptr<tk::NativeTextField> tz_field_;
+    std::shared_ptr<tk::NativeTextField> bio_field_;
 };
 
 } // namespace qt6

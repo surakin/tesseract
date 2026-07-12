@@ -247,6 +247,12 @@ void RoomInfoPanel::set_topic_edit_text(std::string t)
     topic_edit_text_ = std::move(t);
 }
 
+void RoomInfoPanel::on_theme_changed(const tk::Theme& t)
+{
+    if (auto area = native_topic_area_.lock())
+        area->set_text_color(t.palette.text_primary);
+}
+
 tk::Rect RoomInfoPanel::topic_edit_rect() const
 {
     if (!editing_topic_) return {};

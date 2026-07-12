@@ -11,6 +11,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/image_view.h"
 #include "tk/layout.h"
 #include "tk/widget.h"
@@ -94,6 +95,16 @@ public:
     bool     check_code_field_visible() const;
     void     set_check_code_text(std::string t) { check_code_text_ = std::move(t); }
 
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_field_ = std::move(field);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
+
     // -----------------------------------------------------------------------
     // Widget interface
     // -----------------------------------------------------------------------
@@ -119,6 +130,7 @@ private:
 
     // Check code text field
     std::string check_code_text_;
+    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
     tk::Rect    check_code_rect_{};
 
     // Worker machinery

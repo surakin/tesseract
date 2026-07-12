@@ -69,6 +69,17 @@ public:
         return recording_ ? tk::Rect{} : text_area_rect_;
     }
 
+    /// Weak reference to the shell-owned tk::NativeTextArea; call once,
+    /// right after make_text_area(), so on_theme_changed() has something to
+    /// push colors onto. Locked (not dereferenced directly) so a destroyed
+    /// field is simply skipped rather than risking a dangling pointer.
+    void set_native_text_area(std::weak_ptr<tk::NativeTextArea> area)
+    {
+        native_text_area_ = std::move(area);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
+
     /// Host bridge: integration code pushes the latest natural height of
     /// the NativeTextArea here on every `on_height_changed` callback.
     /// The compose bar clamps to [kMinHeight, kMaxHeight] internally; the
@@ -400,6 +411,7 @@ private:
     // × glyph for the remove-attachment button (Body size, hover-tinted).
     std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};
+    std::weak_ptr<tk::NativeTextArea> native_text_area_; // see set_native_text_area()
     tk::Rect compose_card_rect_{}; // card outline wrapping text + icon buttons
     tk::Rect emoji_rect_{};
     tk::Rect sticker_rect_{};

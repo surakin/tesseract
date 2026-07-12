@@ -163,10 +163,12 @@ private:
 
     __strong RoomWindowController* controller_ = nil;
     std::unique_ptr<tk::macos::Surface> surface_;
-    std::unique_ptr<tk::NativeTextArea> text_area_;
-    std::unique_ptr<tk::NativeTextField> search_field_;
+    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextArea> text_area_;
+    std::shared_ptr<tk::NativeTextField> search_field_;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
+    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
     NSPanel* mention_panel_ = nil;
@@ -384,6 +386,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── NativeTextArea overlay ────────────────────────────────────────────────
     text_area_ = surface_->host().make_text_area();
+    room_view_->compose_bar()->set_native_text_area(text_area_);
     text_area_->set_font_role(tk::FontRole::Body);
     text_area_->set_placeholder("Message\xe2\x80\xa6");
     text_area_->set_mention_colors(surface_->theme().palette.accent,
@@ -485,6 +488,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── In-room search native text field ─────────────────────────────────
     search_field_ = surface_->host().make_text_field();
+    room_view_->room_search_bar()->set_native_field(search_field_);
     search_field_->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
     search_field_->set_visible(false);
     search_field_->set_on_changed(
@@ -522,6 +526,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
 
     // ── Forward-message picker native search field ─────────────────────────
     forward_picker_field_ = surface_->host().make_text_field();
+    forward_picker_widget_->set_native_field(forward_picker_field_);
     forward_picker_field_->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
     forward_picker_field_->set_visible(false);
     forward_picker_field_->set_on_changed(
@@ -1088,27 +1093,27 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
     if (surface_)
     {
         surface_->set_theme(t);
+        surface_->root()->apply_theme(t);
     }
     if (mention_popup_surface_)
     {
         mention_popup_surface_->set_theme(t);
+        mention_popup_surface_->root()->apply_theme(t);
     }
     if (slash_popup_surface_)
     {
         slash_popup_surface_->set_theme(t);
+        slash_popup_surface_->root()->apply_theme(t);
     }
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(t);
+        shortcode_popup_surface_->root()->apply_theme(t);
     }
     if (gif_popup_surface_)
     {
         gif_popup_surface_->set_theme(t);
-    }
-    if (text_area_)
-    {
-        text_area_->set_mention_colors(t.palette.accent,
-                                       t.palette.text_on_accent);
+        gif_popup_surface_->root()->apply_theme(t);
     }
     // Window chrome follows the app-wide NSApp.appearance set by the main
     // controller's -_applyTheme:, but pin it on this window too so a

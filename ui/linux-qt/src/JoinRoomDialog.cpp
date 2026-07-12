@@ -151,6 +151,7 @@ JoinRoomDialog::JoinRoomDialog(QWidget* parent)
     surface_->set_root(std::move(jrv));
 
     alias_field_ = surface_->host().make_text_field();
+    shared_->set_native_field(alias_field_);
     alias_field_->set_placeholder("#room:server.org");
     alias_field_->set_on_changed(
         [this](const std::string& text)
@@ -178,6 +179,7 @@ void JoinRoomDialog::set_theme(const tk::Theme& t)
     if (surface_)
     {
         surface_->set_theme(t);
+        surface_->root()->apply_theme(t);
     }
 }
 

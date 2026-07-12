@@ -172,6 +172,12 @@ bool JoinRoomView::alias_field_visible() const
     return state_ != State::Joining;
 }
 
+void JoinRoomView::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
+
 tk::Rect JoinRoomView::alias_field_rect() const
 {
     return alias_field_visible() ? alias_field_rect_ : tk::Rect{};

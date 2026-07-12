@@ -351,22 +351,24 @@ private:
 
     // Borrowed pointers into main_app_ (extracted in constructor).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> room_search_field_;
-    std::unique_ptr<tk::NativeTextField> quick_switch_field_;
-    std::unique_ptr<tk::NativeTextField> message_search_field_;
-    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
-    std::unique_ptr<tk::NativeTextField> find_in_room_field_;
-    std::unique_ptr<tk::NativeTextArea> room_text_area_;
-    std::unique_ptr<tk::NativeTextArea> topic_text_area_;
-    std::unique_ptr<tk::NativeTextField> room_settings_name_field_;
+    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextField> room_search_field_;
+    std::shared_ptr<tk::NativeTextField> quick_switch_field_;
+    std::shared_ptr<tk::NativeTextField> message_search_field_;
+    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
+    std::shared_ptr<tk::NativeTextField> find_in_room_field_;
+    std::shared_ptr<tk::NativeTextArea> room_text_area_;
+    std::shared_ptr<tk::NativeTextArea> topic_text_area_;
+    std::shared_ptr<tk::NativeTextField> room_settings_name_field_;
     bool room_settings_name_field_visible_ = false;
-    std::unique_ptr<tk::NativeTextArea> room_settings_topic_area_;
+    std::shared_ptr<tk::NativeTextArea> room_settings_topic_area_;
     // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
-    std::unique_ptr<tk::NativeTextField> image_pack_name_field_;
+    std::shared_ptr<tk::NativeTextField> image_pack_name_field_;
     bool image_pack_name_field_visible_ = false;
-    std::unique_ptr<tk::NativeTextField> image_pack_shortcode_field_;
+    std::shared_ptr<tk::NativeTextField> image_pack_shortcode_field_;
     std::uint64_t image_pack_shortcode_reset_gen_seen_ = 0;
-    std::unique_ptr<tk::NativeTextField> image_pack_rename_field_;
+    std::shared_ptr<tk::NativeTextField> image_pack_rename_field_;
     bool image_pack_rename_field_visible_ = false;
     std::unique_ptr<tk::NativeTextArea> image_pack_paste_catcher_;
     bool image_pack_paste_catcher_visible_ = false;
@@ -470,7 +472,7 @@ private:
     GtkWidget* join_room_dialog_window_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> join_room_surface_;
     tesseract::views::JoinRoomView* join_room_shared_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> join_room_alias_field_;
+    std::shared_ptr<tk::NativeTextField> join_room_alias_field_; // see JoinRoomView::set_native_field()
     uint32_t join_room_gen_ = 0; // guards stale async callbacks
 
     GtkWidget* sticker_ctx_menu_ = nullptr;
@@ -492,9 +494,9 @@ private:
     static gboolean on_sync_status_debounce_(gpointer user_data);
 
     tesseract::views::VerificationBanner* verif_shared_ = nullptr;
-    std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
-    std::unique_ptr<tk::NativeTextField> enc_key_field_;
-    std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
+    std::shared_ptr<tk::NativeTextField> enc_passphrase_field_;
+    std::shared_ptr<tk::NativeTextField> enc_key_field_;
+    std::shared_ptr<tk::NativeTextField> qr_check_code_field_;
 
     GtkWidget*       user_popover_      = nullptr;
 

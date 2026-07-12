@@ -391,6 +391,14 @@ void RoomSettingsView::refresh_accept_enabled_()
     accept_btn_->set_enabled(!committing_ && !would_lock_out_self_);
 }
 
+void RoomSettingsView::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_name_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+    if (auto area = native_topic_area_.lock())
+        area->set_text_color(t.palette.text_primary);
+}
+
 tk::Rect RoomSettingsView::name_field_rect() const
 {
     if (!open_ || !general_ || !tabs_ || tabs_->selected_idx() != 0)

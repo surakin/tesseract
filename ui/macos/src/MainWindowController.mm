@@ -590,11 +590,13 @@ public:
 
     // Native text fields for the encryption-setup overlay. Owned here (not in
     // ObjC ivars) so show_encryption_setup_overlay_() can reach them from C++.
-    std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
-    std::unique_ptr<tk::NativeTextField> enc_key_field_;
+    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextField> enc_passphrase_field_;
+    std::shared_ptr<tk::NativeTextField> enc_key_field_;
 
     // Native text field for the QR grant check-code input.
-    std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
+    std::shared_ptr<tk::NativeTextField> qr_check_code_field_;
 
     // Public forwarder for the protected ShellBase virtual so ObjC++ code can
     // call it through _shell without a friend declaration.
@@ -999,6 +1001,8 @@ void MacShell::show_encryption_setup_overlay_(
     enc_key_field_ = app_surface_->host().make_text_field();
     enc_key_field_->set_password(false);
 
+    ov->set_native_fields(enc_passphrase_field_, enc_key_field_);
+
     wire_encryption_setup_callbacks_(*ov, app_surface_->host(),
                                      enc_passphrase_field_.get(),
                                      enc_key_field_.get());
@@ -1014,6 +1018,7 @@ void MacShell::show_qr_grant_overlay_()
     auto* view = main_app_->qr_grant_view();
     if (!view) return;
     qr_check_code_field_ = app_surface_->host().make_text_field();
+    view->set_native_field(qr_check_code_field_);
     qr_check_code_field_->set_on_changed([view](const std::string& t) {
         view->set_check_code_text(t);
     });
@@ -2479,40 +2484,42 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         _settingsView; // borrowed from _settingsSurface root
 
     // Native overlay fields positioned via _mainAppSurface->set_on_layout().
-    std::unique_ptr<tk::NativeTextField> _roomSearchField;
-    std::unique_ptr<tk::NativeTextField> _quickSwitchField;
-    std::unique_ptr<tk::NativeTextField> _messageSearchField;
-    std::unique_ptr<tk::NativeTextField> _forwardPickerField;
-    std::unique_ptr<tk::NativeTextField> _findInRoomField;
-    std::unique_ptr<tk::NativeTextArea> _roomTextArea;
-    std::unique_ptr<tk::NativeTextArea> _topicTextArea;
-    std::unique_ptr<tk::NativeTextField> _roomSettingsNameField;
+    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextField> _roomSearchField;
+    std::shared_ptr<tk::NativeTextField> _quickSwitchField;
+    std::shared_ptr<tk::NativeTextField> _messageSearchField;
+    std::shared_ptr<tk::NativeTextField> _forwardPickerField;
+    std::shared_ptr<tk::NativeTextField> _findInRoomField;
+    std::shared_ptr<tk::NativeTextArea> _roomTextArea;
+    std::shared_ptr<tk::NativeTextArea> _topicTextArea;
+    std::shared_ptr<tk::NativeTextField> _roomSettingsNameField;
     bool _roomSettingsNameFieldVisible;
-    std::unique_ptr<tk::NativeTextArea> _roomSettingsTopicArea;
+    std::shared_ptr<tk::NativeTextArea> _roomSettingsTopicArea;
 
     // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
-    std::unique_ptr<tk::NativeTextField> _imagePackNameField;
+    std::shared_ptr<tk::NativeTextField> _imagePackNameField;
     bool _imagePackNameFieldVisible;
-    std::unique_ptr<tk::NativeTextField> _imagePackShortcodeField;
+    std::shared_ptr<tk::NativeTextField> _imagePackShortcodeField;
     std::uint64_t _imagePackShortcodeResetGenSeen;
-    std::unique_ptr<tk::NativeTextField> _imagePackRenameField;
+    std::shared_ptr<tk::NativeTextField> _imagePackRenameField;
     bool _imagePackRenameFieldVisible;
     std::unique_ptr<tk::NativeTextArea> _imagePackPasteCatcher;
     bool _imagePackPasteCatcherVisible;
     std::uint64_t _imagePackNameResetGenSeen;
 
     // Settings name field — positioned via _settingsSurface->set_on_layout().
-    std::unique_ptr<tk::NativeTextField> _settingsNameField;
+    std::shared_ptr<tk::NativeTextField> _settingsNameField;
     // Extended-profile NativeTextField overlays (MSC4133).
-    std::unique_ptr<tk::NativeTextField> _settingsPronounsField;
-    std::unique_ptr<tk::NativeTextField> _settingsTzField;
-    std::unique_ptr<tk::NativeTextField> _settingsBioField;
+    std::shared_ptr<tk::NativeTextField> _settingsPronounsField;
+    std::shared_ptr<tk::NativeTextField> _settingsTzField;
+    std::shared_ptr<tk::NativeTextField> _settingsBioField;
 
     // Join Room sheet — NSWindow hosting JoinRoomView, presented as a sheet.
     NSWindow* _joinRoomWindow;
     std::unique_ptr<tk::macos::Surface> _joinRoomSurface;
     tesseract::views::JoinRoomView* _joinRoomView; // borrowed from surface root
-    std::unique_ptr<tk::NativeTextField> _joinRoomAliasField;
+    std::shared_ptr<tk::NativeTextField> _joinRoomAliasField;
     uint32_t _joinRoomGen;
 
     // Borrowed sub-view aliases (set after building _mainAppSurface).
@@ -4268,6 +4275,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         // Native overlays.
         _roomTextArea = _mainAppSurface->host().make_text_area();
+        _mainApp->room_view()->compose_bar()->set_native_text_area(_roomTextArea);
         _roomTextArea->set_font_role(tk::FontRole::Body);
         _roomTextArea->set_placeholder(tk::tr("Message\xe2\x80\xa6"));
         _roomTextArea->set_mention_colors(
@@ -4791,6 +4799,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         }
         // Topic-edit overlay (positioned by set_on_layout below).
         _topicTextArea = _mainAppSurface->host().make_text_area();
+        _mainApp->room_view()->room_info_panel()->set_native_topic_area(_topicTextArea);
         _topicTextArea->set_on_changed(
             [weakSelf](const std::string& t)
             {
@@ -4831,6 +4840,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 [s _relayoutChatSurface];
             });
         _roomSettingsTopicArea->set_visible(false);
+
+        // Wired to both possible RoomSettingsView owners — see
+        // _activeRoomSettingsView above — so on_theme_changed() fires
+        // correctly no matter which one currently has the field visible.
+        _mainApp->room_view()->room_settings_view()->set_native_fields(
+            _roomSettingsNameField, _roomSettingsTopicArea);
+        _mainApp->space_root()->settings_view()->set_native_fields(
+            _roomSettingsNameField, _roomSettingsTopicArea);
 
         _imagePackNameField = _mainAppSurface->host().make_text_field();
         _imagePackNameField->set_placeholder(tk::tr("Pack name"));
@@ -4894,6 +4911,16 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                         v->commit_image_pack_editing_name();
             });
         _imagePackRenameField->set_visible(false);
+
+        // Wired to both possible RoomSettingsView owners' image-pack
+        // editors — see _activeRoomSettingsView above.
+        for (auto* rsv : {_mainApp->room_view()->room_settings_view(),
+                          _mainApp->space_root()->settings_view()})
+        {
+            rsv->image_pack_editor()->set_native_new_pack_name_field(_imagePackNameField);
+            rsv->image_pack_editor()->set_native_shortcode_field(_imagePackShortcodeField);
+            rsv->image_pack_editor()->set_native_pack_name_field(_imagePackRenameField);
+        }
 
         _imagePackPasteCatcher = _mainAppSurface->host().make_text_area();
         _imagePackPasteCatcher->set_visible(false);
@@ -5286,6 +5313,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             });
 
         _roomSearchField = _mainAppSurface->host().make_text_field();
+        _mainApp->room_list_view()->set_native_field(_roomSearchField);
         _roomSearchField->set_placeholder("Search");
         _roomSearchField->set_visible(false);
         _roomSearchField->set_on_changed(
@@ -5305,6 +5333,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         // Quick switcher (⌘K) search field.
         _quickSwitchField = _mainAppSurface->host().make_text_field();
+        _mainApp->quick_switcher()->set_native_field(_quickSwitchField);
         _quickSwitchField->set_placeholder(
             tk::tr("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
         _quickSwitchField->set_visible(false);
@@ -5360,6 +5389,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         // Message search (⌘⇧F) native field — mirrors the quick switcher.
         _messageSearchField = _mainAppSurface->host().make_text_field();
+        _mainApp->message_search()->set_native_field(_messageSearchField);
         _messageSearchField->set_placeholder(tk::tr("Search your messages\xe2\x80\xa6"));
         _messageSearchField->set_visible(false);
         _messageSearchField->set_on_changed(
@@ -5414,6 +5444,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         // Forward room picker native search field.
         _forwardPickerField = _mainAppSurface->host().make_text_field();
+        _mainApp->forward_picker()->set_native_field(_forwardPickerField);
         _forwardPickerField->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
         _forwardPickerField->set_visible(false);
         _forwardPickerField->set_on_changed(
@@ -5468,6 +5499,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
 
         // Per-room "find in conversation" (⌘F) native field.
         _findInRoomField = _mainAppSurface->host().make_text_field();
+        _mainApp->room_view()->room_search_bar()->set_native_field(_findInRoomField);
         _findInRoomField->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));
         _findInRoomField->set_visible(false);
         _findInRoomField->set_on_changed(
@@ -5557,7 +5589,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 const auto overlays = app->native_overlays();
                 auto applyField = [&overlays](
                     tk::NativeOverlayId id,
-                    const std::unique_ptr<tk::NativeTextField>& field)
+                    const std::shared_ptr<tk::NativeTextField>& field)
                 {
                     if (!field)
                         return;
@@ -5569,7 +5601,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                 };
                 auto applyArea = [&overlays](
                     tk::NativeOverlayId id,
-                    const std::unique_ptr<tk::NativeTextArea>& area)
+                    const std::shared_ptr<tk::NativeTextArea>& area)
                 {
                     if (!area)
                         return;
@@ -5927,7 +5959,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
             [s _logoutActiveAccount];
         };
-        _settingsView->on_theme_changed =
+        _settingsView->on_theme_preference_changed =
             [ws](tesseract::Settings::ThemePreference pref)
         {
             MainWindowController* s = ws;
@@ -6250,35 +6282,47 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     if (_brandingSurface)
     {
         _brandingSurface->set_theme(t);
+        _brandingSurface->root()->apply_theme(t);
     }
     if (_mainAppSurface)
     {
         _mainAppSurface->set_theme(t);
+        _mainAppSurface->root()->apply_theme(t);
     }
     if (_accountPickerSurface)
     {
         _accountPickerSurface->set_theme(t);
+        _accountPickerSurface->root()->apply_theme(t);
     }
     if (_settingsSurface)
     {
         _settingsSurface->set_theme(t);
+        _settingsSurface->root()->apply_theme(t);
     }
     if (_shortcodePopupSurface)
     {
         _shortcodePopupSurface->set_theme(t);
+        _shortcodePopupSurface->root()->apply_theme(t);
     }
     if (_slashPopupSurface)
     {
         _slashPopupSurface->set_theme(t);
+        _slashPopupSurface->root()->apply_theme(t);
     }
     if (_mentionPopupSurface)
     {
         _mentionPopupSurface->set_theme(t);
+        _mentionPopupSurface->root()->apply_theme(t);
     }
-    if (_roomTextArea)
+    if (_joinRoomSurface)
     {
-        _roomTextArea->set_mention_colors(t.palette.accent,
-                                          t.palette.text_on_accent);
+        // Previously never re-themed after its initial tk::Theme::light()
+        // (see where it's constructed) — the join-room dialog was stuck on
+        // the light theme regardless of the app's setting. Fixed here since
+        // it's the same class of gap this refactor addresses, and leaving
+        // it would mean _joinRoomAliasField never receives theme updates.
+        _joinRoomSurface->set_theme(t);
+        _joinRoomSurface->root()->apply_theme(t);
     }
     if (_loginView)
     {
@@ -7510,6 +7554,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         });
 
     _settingsBioField = host.make_text_field();
+    _settingsView->set_native_fields(_settingsNameField, _settingsPronounsField,
+                                     _settingsTzField, _settingsBioField);
     _settingsBioField->set_placeholder(tk::tr("Short biography"));
     _settingsBioField->set_visible(false);
     _settingsBioField->set_on_submit(
@@ -7916,6 +7962,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
     _joinRoomSurface->set_theme(tk::Theme::light());
 
     _joinRoomAliasField = _joinRoomSurface->host().make_text_field();
+    _joinRoomView->set_native_field(_joinRoomAliasField);
     _joinRoomAliasField->set_placeholder("#room:server.org");
     _joinRoomAliasField->set_on_changed(
         [ws](const std::string& text)

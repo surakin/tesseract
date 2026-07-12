@@ -280,6 +280,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── Compose text area overlay + @mention autocomplete ─────────────────
     room_text_area_ = surface_->host().make_text_area();
+    room_view_->compose_bar()->set_native_text_area(room_text_area_);
     room_text_area_->set_font_role(tk::FontRole::Body);
     room_text_area_->set_mention_colors(surface_->theme().palette.accent,
                                         surface_->theme().palette.text_on_accent);
@@ -563,6 +564,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── In-room search native text field ─────────────────────────────────
     room_search_field_ = surface_->host().make_text_field();
+    room_view_->room_search_bar()->set_native_field(room_search_field_);
     room_search_field_->set_placeholder(_("Find in conversation\xe2\x80\xa6"));
     room_search_field_->set_visible(false);
     room_search_field_->set_on_changed(
@@ -600,6 +602,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── Forward-message picker native search field ─────────────────────────
     forward_picker_field_ = surface_->host().make_text_field();
+    forward_picker_widget_->set_native_field(forward_picker_field_);
     forward_picker_field_->set_placeholder(_("Search rooms\xe2\x80\xa6"));
     forward_picker_field_->set_visible(false);
     forward_picker_field_->set_on_changed(
@@ -1017,23 +1020,22 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     if (surface_)
     {
         surface_->set_theme(t);
+        surface_->root()->apply_theme(t);
     }
     if (mention_popup_surface_)
     {
         mention_popup_surface_->set_theme(t);
-    }
-    if (room_text_area_)
-    {
-        room_text_area_->set_mention_colors(t.palette.accent,
-                                            t.palette.text_on_accent);
+        mention_popup_surface_->root()->apply_theme(t);
     }
     if (emoji_picker_surface_)
     {
         emoji_picker_surface_->set_theme(t);
+        emoji_picker_surface_->root()->apply_theme(t);
     }
     if (sticker_picker_surface_)
     {
         sticker_picker_surface_->set_theme(t);
+        sticker_picker_surface_->root()->apply_theme(t);
     }
 }
 

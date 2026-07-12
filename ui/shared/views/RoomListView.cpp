@@ -1297,6 +1297,12 @@ bool RoomListView::search_field_visible() const
     return search_field_visible_;
 }
 
+void RoomListView::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
+
 void RoomListView::set_search_text(std::string q)
 {
     if (q == search_text_)

@@ -52,7 +52,7 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         emit settingsClosed();
         emit logoutRequested();
     };
-    settings_view_->on_theme_changed =
+    settings_view_->on_theme_preference_changed =
         [this](tesseract::Settings::ThemePreference pref)
     {
         emit themeChanged(pref);
@@ -228,6 +228,7 @@ void SettingsWidget::set_theme(const tk::Theme& t)
     if (surface_)
     {
         surface_->set_theme(t);
+        surface_->root()->apply_theme(t);
         surface_->relayout();
     }
 }
@@ -401,6 +402,8 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
         });
 
     bio_field_ = surface_->host().make_text_field();
+    settings_view_->set_native_fields(name_field_, pronouns_field_, tz_field_,
+                                      bio_field_);
     bio_field_->set_placeholder(tk::tr("Short biography"));
     bio_field_->set_visible(false);
     bio_field_->set_on_submit(

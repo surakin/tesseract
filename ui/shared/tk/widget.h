@@ -163,6 +163,30 @@ public:
             if (ch->visible()) ch->paint_overlay(ctx);
     }
 
+    // Called on this widget when the active tk::Theme changes. Override to
+    // push fresh colors onto any native (non-canvas) overlay control this
+    // widget positions via a *_rect() getter — a tk::NativeTextField/
+    // NativeTextArea the host has mounted over this widget's bounds. Unlike
+    // this widget's own paint(), which is handed a fresh theme every frame
+    // via PaintCtx, a native control caches its own render state and goes
+    // stale until explicitly told otherwise. Default: no-op.
+    virtual void on_theme_changed(const Theme&) {}
+
+    // Push `theme` through this widget's on_theme_changed(), then recurse
+    // into every child unconditionally — including invisible ones, since a
+    // hidden native field still needs correct colors queued for when it
+    // next shows (unlike paint_overlay(), which only walks visible children
+    // because there's nothing to paint for a hidden widget). Not virtual:
+    // no override should need custom recursion order, and keeping it
+    // non-virtual removes "override forgot to recurse into children" as a
+    // failure mode entirely.
+    void apply_theme(const Theme& theme)
+    {
+        on_theme_changed(theme);
+        for (auto& ch : children())
+            ch->apply_theme(theme);
+    }
+
     // Called by the host when a click lands outside an active popup widget.
     // ComboBox overrides this to collapse the dropdown.
     virtual void on_popup_dismiss() {}

@@ -90,7 +90,10 @@ void CallWindow::close_window()
 void CallWindow::apply_theme(const tk::Theme& t)
 {
     if (surface_)
+    {
         surface_->set_theme(t);
+        surface_->root()->apply_theme(t);
+    }
 }
 
 void CallWindow::request_relayout()

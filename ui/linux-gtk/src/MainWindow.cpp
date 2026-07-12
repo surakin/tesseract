@@ -865,6 +865,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Compose text area overlay.
         room_text_area_ = main_app_surface_->host().make_text_area();
+        main_app_->room_view()->compose_bar()->set_native_text_area(room_text_area_);
         room_text_area_->set_font_role(tk::FontRole::Body);
         room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
         room_text_area_->set_mention_colors(
@@ -1364,6 +1365,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Topic edit text area overlay.
         topic_text_area_ = main_app_surface_->host().make_text_area();
+        main_app_->room_view()->room_info_panel()->set_native_topic_area(topic_text_area_);
         topic_text_area_->set_on_changed([this](const std::string& t)
         {
             if (main_app_) main_app_->room_view()->set_topic_edit_text(t);
@@ -1397,6 +1399,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             main_app_surface_->relayout();
         });
         room_settings_topic_area_->set_visible(false);
+
+        // Wired to both possible RoomSettingsView owners — see
+        // active_room_settings_view_() above — so on_theme_changed() fires
+        // correctly no matter which one currently has the field visible.
+        main_app_->room_view()->room_settings_view()->set_native_fields(
+            room_settings_name_field_, room_settings_topic_area_);
+        main_app_->space_root()->settings_view()->set_native_fields(
+            room_settings_name_field_, room_settings_topic_area_);
 
         // active_room_settings_view_() resolves to whichever RoomSettingsView
         // instance (room_view_'s or the space-root one) has a tab open, since
@@ -1450,6 +1460,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     v->commit_image_pack_editing_name();
         });
         image_pack_rename_field_->set_visible(false);
+
+        // Wired to both possible RoomSettingsView owners' image-pack
+        // editors — see active_room_settings_view_() above.
+        for (auto* rsv : {main_app_->room_view()->room_settings_view(),
+                          main_app_->space_root()->settings_view()})
+        {
+            rsv->image_pack_editor()->set_native_new_pack_name_field(image_pack_name_field_);
+            rsv->image_pack_editor()->set_native_shortcode_field(image_pack_shortcode_field_);
+            rsv->image_pack_editor()->set_native_pack_name_field(image_pack_rename_field_);
+        }
 
         image_pack_paste_catcher_ = main_app_surface_->host().make_text_area();
         image_pack_paste_catcher_->set_visible(false);
@@ -2544,6 +2564,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Room search field overlay.
         room_search_field_ = main_app_surface_->host().make_text_field();
+        main_app_->room_list_view()->set_native_field(room_search_field_);
         room_search_field_->set_placeholder("Search");
         room_search_field_->set_visible(false);
         room_search_field_->set_on_changed(
@@ -2565,6 +2586,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Quick switcher (Ctrl+K) search field.
         quick_switch_field_ = main_app_surface_->host().make_text_field();
+        main_app_->quick_switcher()->set_native_field(quick_switch_field_);
         quick_switch_field_->set_placeholder(
             _("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
         quick_switch_field_->set_visible(false);
@@ -2612,6 +2634,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Message search (Ctrl+Shift+F) native field — mirrors the switcher.
         message_search_field_ = main_app_surface_->host().make_text_field();
+        main_app_->message_search()->set_native_field(message_search_field_);
         message_search_field_->set_placeholder(_("Search your messages\xe2\x80\xa6"));
         message_search_field_->set_visible(false);
         message_search_field_->set_on_changed(
@@ -2658,6 +2681,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Forward room picker native search field.
         forward_picker_field_ = main_app_surface_->host().make_text_field();
+        main_app_->forward_picker()->set_native_field(forward_picker_field_);
         forward_picker_field_->set_placeholder(_("Search rooms\xe2\x80\xa6"));
         forward_picker_field_->set_visible(false);
         forward_picker_field_->set_on_changed(
@@ -2704,6 +2728,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
 
         // Per-room "find in conversation" (Ctrl+F) native field.
         find_in_room_field_ = main_app_surface_->host().make_text_field();
+        main_app_->room_view()->room_search_bar()->set_native_field(find_in_room_field_);
         find_in_room_field_->set_placeholder(_("Find in conversation\xe2\x80\xa6"));
         find_in_room_field_->set_visible(false);
         find_in_room_field_->set_on_changed(
@@ -2755,7 +2780,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 const auto overlays = main_app_->native_overlays();
                 auto apply_field = [&overlays](
                     tk::NativeOverlayId id,
-                    const std::unique_ptr<tk::NativeTextField>& field)
+                    const std::shared_ptr<tk::NativeTextField>& field)
                 {
                     if (!field)
                         return;
@@ -2767,7 +2792,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                 };
                 auto apply_area = [&overlays](
                     tk::NativeOverlayId id,
-                    const std::unique_ptr<tk::NativeTextArea>& area)
+                    const std::shared_ptr<tk::NativeTextArea>& area)
                 {
                     if (!area)
                         return;
@@ -3457,26 +3482,32 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (branding_surface_)
     {
         branding_surface_->set_theme(t);
+        branding_surface_->root()->apply_theme(t);
     }
     if (main_app_surface_)
     {
         main_app_surface_->set_theme(t);
+        main_app_surface_->root()->apply_theme(t);
     }
     if (emoji_picker_surface_)
     {
         emoji_picker_surface_->set_theme(t);
+        emoji_picker_surface_->root()->apply_theme(t);
     }
     if (sticker_picker_surface_)
     {
         sticker_picker_surface_->set_theme(t);
+        sticker_picker_surface_->root()->apply_theme(t);
     }
     if (join_room_surface_)
     {
         join_room_surface_->set_theme(t);
+        join_room_surface_->root()->apply_theme(t);
     }
     if (account_picker_surface_)
     {
         account_picker_surface_->set_theme(t);
+        account_picker_surface_->root()->apply_theme(t);
     }
     if (settings_widget_)
     {
@@ -3485,19 +3516,17 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (slash_popup_surface_)
     {
         slash_popup_surface_->set_theme(t);
+        slash_popup_surface_->root()->apply_theme(t);
     }
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(t);
+        shortcode_popup_surface_->root()->apply_theme(t);
     }
     if (mention_popup_surface_)
     {
         mention_popup_surface_->set_theme(t);
-    }
-    if (room_text_area_)
-    {
-        room_text_area_->set_mention_colors(t.palette.accent,
-                                            t.palette.text_on_accent);
+        mention_popup_surface_->root()->apply_theme(t);
     }
     if (login_view_)
     {
@@ -5379,6 +5408,8 @@ void MainWindow::show_encryption_setup_overlay_(
     enc_key_field_ = main_app_surface_->host().make_text_field();
     enc_key_field_->set_password(false);
 
+    ov->set_native_fields(enc_passphrase_field_, enc_key_field_);
+
     wire_encryption_setup_callbacks_(*ov, main_app_surface_->host(),
                                      enc_passphrase_field_.get(),
                                      enc_key_field_.get());
@@ -5393,6 +5424,7 @@ void MainWindow::show_qr_grant_overlay_()
     auto* view = main_app_->qr_grant_view();
     if (!view) return;
     qr_check_code_field_ = main_app_surface_->host().make_text_field();
+    view->set_native_field(qr_check_code_field_);
     qr_check_code_field_->set_on_changed([view](const std::string& t) {
         view->set_check_code_text(t);
     });
@@ -6953,6 +6985,7 @@ void MainWindow::build_join_room_dialog()
     join_room_surface_->set_root(std::move(jrv));
 
     join_room_alias_field_ = join_room_surface_->host().make_text_field();
+    join_room_shared_->set_native_field(join_room_alias_field_);
     join_room_alias_field_->set_placeholder(_("#room:server.org"));
     join_room_alias_field_->set_on_changed(
         [this](const std::string& text)

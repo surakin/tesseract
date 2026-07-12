@@ -357,6 +357,15 @@ void ComposeBar::set_current_text(std::string text)
     refresh_send_enabled();
 }
 
+void ComposeBar::on_theme_changed(const tk::Theme& t)
+{
+    if (auto area = native_text_area_.lock())
+    {
+        area->set_text_color(t.palette.text_primary);
+        area->set_mention_colors(t.palette.accent, t.palette.text_on_accent);
+    }
+}
+
 void ComposeBar::set_enabled(bool e)
 {
     if (e != enabled())

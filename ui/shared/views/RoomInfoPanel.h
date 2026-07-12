@@ -55,6 +55,16 @@ public:
     void        set_topic_edit_text(std::string t);
     std::string topic_edit_initial_text() const { return topic_edit_text_; }
 
+    // Weak reference to the shell-owned tk::NativeTextArea; call once,
+    // right after make_text_area(), so on_theme_changed() has something to
+    // push colors onto.
+    void set_native_topic_area(std::weak_ptr<tk::NativeTextArea> area)
+    {
+        native_topic_area_ = std::move(area);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
+
     // Fired when editing_topic_ flips so the shell can relayout the surface
     // and show/hide the NativeTextArea overlay.
     std::function<void()> on_layout_changed;
@@ -125,6 +135,7 @@ private:
     bool        editing_topic_  = false;
     std::string topic_edit_text_;
     tk::Rect    topic_edit_rect_{}; // world-space rect for NativeTextArea
+    std::weak_ptr<tk::NativeTextArea> native_topic_area_; // see set_native_topic_area()
 
     // Child widgets (borrowed pointers from add_child)
     tk::ComboBox* notification_combo_ = nullptr;

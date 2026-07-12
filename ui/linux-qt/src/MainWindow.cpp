@@ -1447,6 +1447,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
 
     // ---- Native overlays ----
     roomTextArea_ = mainAppSurface_->host().make_text_area();
+    mainApp_->room_view()->compose_bar()->set_native_text_area(roomTextArea_);
     roomTextArea_->set_font_role(tk::FontRole::Body);
     roomTextArea_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
@@ -1925,6 +1926,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
 
     topicTextArea_ = mainAppSurface_->host().make_text_area();
+    mainApp_->room_view()->room_info_panel()->set_native_topic_area(topicTextArea_);
     topicTextArea_->set_font_role(tk::FontRole::Body);
     topicTextArea_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
@@ -1971,6 +1973,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             mainAppSurface_->relayout();
         });
     roomSettingsTopicArea_->set_visible(false);
+
+    // Wired to both possible RoomSettingsView owners — see
+    // activeRoomSettingsView_() above — so on_theme_changed() fires
+    // correctly no matter which one currently has the field visible.
+    mainApp_->room_view()->room_settings_view()->set_native_fields(
+        roomSettingsNameField_, roomSettingsTopicArea_);
+    mainApp_->space_root()->settings_view()->set_native_fields(
+        roomSettingsNameField_, roomSettingsTopicArea_);
 
     imagePackNameField_ = mainAppSurface_->host().make_text_field();
     imagePackNameField_->set_text_color(
@@ -2034,6 +2044,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
     imagePackRenameField_->set_visible(false);
 
+    // Wired to both possible RoomSettingsView owners' image-pack editors —
+    // see activeRoomSettingsView_() above.
+    for (auto* rsv : {mainApp_->room_view()->room_settings_view(),
+                      mainApp_->space_root()->settings_view()})
+    {
+        rsv->image_pack_editor()->set_native_new_pack_name_field(imagePackNameField_);
+        rsv->image_pack_editor()->set_native_shortcode_field(imagePackShortcodeField_);
+        rsv->image_pack_editor()->set_native_pack_name_field(imagePackRenameField_);
+    }
+
     imagePackPasteCatcher_ = mainAppSurface_->host().make_text_area();
     imagePackPasteCatcher_->set_visible(false);
     imagePackPasteCatcher_->set_on_image_paste(
@@ -2045,6 +2065,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
 
     roomSearchField_ = mainAppSurface_->host().make_text_field();
+    mainApp_->room_list_view()->set_native_field(roomSearchField_);
     roomSearchField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
     roomSearchField_->set_placeholder(
@@ -2067,6 +2088,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
         });
 
     quickSwitchField_ = mainAppSurface_->host().make_text_field();
+    mainApp_->quick_switcher()->set_native_field(quickSwitchField_);
     quickSwitchField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
     quickSwitchField_->set_placeholder(
@@ -2115,6 +2137,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
 
     // Message search (Ctrl+Shift+F) native field — mirrors the quick switcher.
     messageSearchField_ = mainAppSurface_->host().make_text_field();
+    mainApp_->message_search()->set_native_field(messageSearchField_);
     messageSearchField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
     messageSearchField_->set_placeholder(
@@ -2163,6 +2186,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
 
     // Forward room picker native search field.
     forwardPickerField_ = mainAppSurface_->host().make_text_field();
+    mainApp_->forward_picker()->set_native_field(forwardPickerField_);
     forwardPickerField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
     forwardPickerField_->set_placeholder(
@@ -2214,6 +2238,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     // except: no popup-nav (UP/DOWN are button clicks in the strip), submit is
     // a no-op, and Escape closes the bar.
     findInRoomField_ = mainAppSurface_->host().make_text_field();
+    mainApp_->room_view()->room_search_bar()->set_native_field(findInRoomField_);
     findInRoomField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
     findInRoomField_->set_placeholder(
@@ -2351,7 +2376,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
 
             const auto overlays = mainApp_->native_overlays();
             auto apply_field = [&overlays](tk::NativeOverlayId id,
-                                           const std::unique_ptr<tk::NativeTextField>& field)
+                                           const std::shared_ptr<tk::NativeTextField>& field)
             {
                 if (!field)
                     return;
@@ -2362,7 +2387,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
                     field->set_rect(entry->rect);
             };
             auto apply_area = [&overlays](tk::NativeOverlayId id,
-                                          const std::unique_ptr<tk::NativeTextArea>& area)
+                                          const std::shared_ptr<tk::NativeTextArea>& area)
             {
                 if (!area)
                     return;
@@ -5454,6 +5479,8 @@ void MainWindow::show_encryption_setup_overlay_(
     encKeyField_->set_password(false);
     encKeyField_->set_text_color(mainAppSurface_->theme().palette.text_primary);
 
+    ov->set_native_fields(encPassphraseField_, encKeyField_);
+
     wire_encryption_setup_callbacks_(*ov, mainAppSurface_->host(),
                                      encPassphraseField_.get(),
                                      encKeyField_.get());
@@ -5468,6 +5495,7 @@ void MainWindow::show_qr_grant_overlay_()
     auto* view = mainApp_->qr_grant_view();
     if (!view) return;
     qrCheckCodeField_ = mainAppSurface_->host().make_text_field();
+    view->set_native_field(qrCheckCodeField_);
     qrCheckCodeField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
     qrCheckCodeField_->set_on_changed([view](const std::string& t) {
@@ -5822,31 +5850,32 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (brandingSurface_)
     {
         brandingSurface_->set_theme(t);
+        brandingSurface_->root()->apply_theme(t);
     }
     if (mainAppSurface_)
     {
         mainAppSurface_->set_theme(t);
+        mainAppSurface_->root()->apply_theme(t);
     }
     if (accountPickerSurface_)
     {
         accountPickerSurface_->set_theme(t);
+        accountPickerSurface_->root()->apply_theme(t);
     }
     if (slash_popup_surface_)
     {
         slash_popup_surface_->set_theme(t);
+        slash_popup_surface_->root()->apply_theme(t);
     }
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(t);
+        shortcode_popup_surface_->root()->apply_theme(t);
     }
     if (mention_popup_surface_)
     {
         mention_popup_surface_->set_theme(t);
-    }
-    if (roomTextArea_)
-    {
-        roomTextArea_->set_mention_colors(t.palette.accent,
-                                          t.palette.text_on_accent);
+        mention_popup_surface_->root()->apply_theme(t);
     }
     if (settingsWidget_)
     {
@@ -5873,36 +5902,6 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         accountPickerPopover_->setStyleSheet(accountPopoverQss(t));
     }
     apply_theme_to_secondary_windows_(t);
-    if (roomTextArea_)
-        roomTextArea_->set_text_color(t.palette.text_primary);
-    if (roomSearchField_)
-        roomSearchField_->set_text_color(t.palette.text_primary);
-    if (topicTextArea_)
-        topicTextArea_->set_text_color(t.palette.text_primary);
-    if (roomSettingsNameField_)
-        roomSettingsNameField_->set_text_color(t.palette.text_primary);
-    if (roomSettingsTopicArea_)
-        roomSettingsTopicArea_->set_text_color(t.palette.text_primary);
-    if (imagePackNameField_)
-        imagePackNameField_->set_text_color(t.palette.text_primary);
-    if (imagePackShortcodeField_)
-        imagePackShortcodeField_->set_text_color(t.palette.text_primary);
-    if (imagePackRenameField_)
-        imagePackRenameField_->set_text_color(t.palette.text_primary);
-    if (quickSwitchField_)
-        quickSwitchField_->set_text_color(t.palette.text_primary);
-    if (messageSearchField_)
-        messageSearchField_->set_text_color(t.palette.text_primary);
-    if (forwardPickerField_)
-        forwardPickerField_->set_text_color(t.palette.text_primary);
-    if (findInRoomField_)
-        findInRoomField_->set_text_color(t.palette.text_primary);
-    if (encPassphraseField_)
-        encPassphraseField_->set_text_color(t.palette.text_primary);
-    if (encKeyField_)
-        encKeyField_->set_text_color(t.palette.text_primary);
-    if (qrCheckCodeField_)
-        qrCheckCodeField_->set_text_color(t.palette.text_primary);
     {
         const auto& p = t.palette;
         QPalette pal = statusBar()->palette();

@@ -35,6 +35,7 @@
 #include "app/SettingsController.h"
 
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/side_tab_view.h"
 #include "tk/widget.h"
 
@@ -230,6 +231,22 @@ public:
     tk::Rect tz_field_rect() const;
     tk::Rect bio_field_rect() const;
 
+    // Weak references to the shell-owned tk::NativeTextFields; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_fields(std::weak_ptr<tk::NativeTextField> name,
+                           std::weak_ptr<tk::NativeTextField> pronouns,
+                           std::weak_ptr<tk::NativeTextField> tz,
+                           std::weak_ptr<tk::NativeTextField> bio)
+    {
+        native_name_field_     = std::move(name);
+        native_pronouns_field_ = std::move(pronouns);
+        native_tz_field_       = std::move(tz);
+        native_bio_field_      = std::move(bio);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
+
     // Fired when a profile field value changes (on_submit from a
     // NativeTextField). key = MSC key string, value_json = JSON or "null".
     std::function<void(std::string key, std::string value_json)>
@@ -249,8 +266,11 @@ public:
     // Fired after the user confirms the logout dialog.
     std::function<void()> on_logout;
 
-    // Fired when the user selects a different theme.
-    std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
+    // Fired when the user selects a different theme. Named distinctly from
+    // tk::Widget::on_theme_changed() (the app-theme-applied hook this class
+    // also overrides below) to avoid a name collision — this one fires the
+    // other way, up from the Appearance tab's picker to the shell.
+    std::function<void(tesseract::Settings::ThemePreference)> on_theme_preference_changed;
 
     // Fired when the user toggles room-list grouping of inactive rooms.
     std::function<void(bool)> on_group_inactive_changed;
@@ -346,6 +366,10 @@ private:
     tk::Button* back_btn_ = nullptr;
     tk::SideTabView* tabs_ = nullptr;
     AccountSection* account_ = nullptr;
+    std::weak_ptr<tk::NativeTextField> native_name_field_;     // see set_native_fields()
+    std::weak_ptr<tk::NativeTextField> native_pronouns_field_;
+    std::weak_ptr<tk::NativeTextField> native_tz_field_;
+    std::weak_ptr<tk::NativeTextField> native_bio_field_;
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
     MediaSection*    media_          = nullptr;

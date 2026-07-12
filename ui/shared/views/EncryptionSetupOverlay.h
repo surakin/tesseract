@@ -3,9 +3,11 @@
 #include "tk/widget.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace tesseract::views
@@ -86,6 +88,18 @@ public:
     tk::Rect passphrase_field_rect_value()   const;
     bool     key_field_rect_visible()        const;
     tk::Rect key_field_rect_value()          const;
+
+    // Weak references to the shell-owned tk::NativeTextFields; call once,
+    // right after make_text_field(), so on_theme_changed() has something to
+    // push colors onto.
+    void set_native_fields(std::weak_ptr<tk::NativeTextField> passphrase,
+                           std::weak_ptr<tk::NativeTextField> key)
+    {
+        native_passphrase_field_ = std::move(passphrase);
+        native_key_field_        = std::move(key);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
 
     // ── tk::Widget interface ──────────────────────────────────────────────
     tk::Size measure(tk::LayoutCtx& ctx, tk::Size avail) override;
@@ -172,6 +186,9 @@ private:
     // Captured in paint() so pointer handlers can schedule a relayout+repaint
     // (toggling passphrase mode must refresh the native field's visibility).
     tk::Host* host_ = nullptr;
+
+    std::weak_ptr<tk::NativeTextField> native_passphrase_field_; // see set_native_fields()
+    std::weak_ptr<tk::NativeTextField> native_key_field_;
 
     // Spinner animation clock; reset when the Progress step is entered.
     std::chrono::steady_clock::time_point progress_start_{};

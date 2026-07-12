@@ -113,10 +113,12 @@ private:
 
     MainWindow* parent_shell_;
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)
-    std::unique_ptr<tk::NativeTextArea> roomTextArea_;
-    std::unique_ptr<tk::NativeTextField> roomSearchField_;
+    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextArea> roomTextArea_;
+    std::shared_ptr<tk::NativeTextField> roomSearchField_;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
+    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
     tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
     tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
 

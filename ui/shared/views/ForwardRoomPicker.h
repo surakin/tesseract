@@ -11,6 +11,7 @@
 // default, arranged at full bounds, painted last (highest z-order).
 
 #include "tk/canvas.h"
+#include "tk/host.h"
 #include "tk/list_view.h"
 #include "tk/widget.h"
 
@@ -50,6 +51,16 @@ public:
     // ── Native-field rect delegation ──────────────────────────────────────
     tk::Rect search_field_rect() const { return search_field_rect_; }
     bool search_field_visible() const { return is_open_ && !forwarding_; }
+
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_field_ = std::move(field);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
 
     // ── Keyboard ──────────────────────────────────────────────────────────
     void move_selection(int delta);
@@ -124,6 +135,7 @@ private:
 
     tk::Rect card_rect_{};
     tk::Rect search_field_rect_{};
+    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
     tk::Rect cancel_btn_rect_{};
     tk::Rect confirm_btn_rect_{};
 

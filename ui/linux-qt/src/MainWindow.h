@@ -355,28 +355,31 @@ private:
     tk::qt6::Surface* mainAppSurface_ = nullptr;
     tesseract::views::MainAppWidget* mainApp_ = nullptr; // borrowed
 
-    // Native overlays wired to mainAppSurface_.
-    std::unique_ptr<tk::NativeTextField> encPassphraseField_;
-    std::unique_ptr<tk::NativeTextField> encKeyField_;
-    std::unique_ptr<tk::NativeTextField> qrCheckCodeField_;
-    std::unique_ptr<tk::NativeTextField> roomSearchField_;
-    std::unique_ptr<tk::NativeTextField> quickSwitchField_;
-    std::unique_ptr<tk::NativeTextField> messageSearchField_;
-    std::unique_ptr<tk::NativeTextField> forwardPickerField_;
-    std::unique_ptr<tk::NativeTextField> findInRoomField_;
-    std::unique_ptr<tk::NativeTextArea> roomTextArea_;
-    std::unique_ptr<tk::NativeTextArea> topicTextArea_;
+    // Native overlays wired to mainAppSurface_. shared_ptr (not unique_ptr)
+    // so the owning view can hold a weak_ptr for theming (see
+    // tk::Widget::on_theme_changed / apply_theme) without risking a dangling
+    // pointer once the field is destroyed.
+    std::shared_ptr<tk::NativeTextField> encPassphraseField_;
+    std::shared_ptr<tk::NativeTextField> encKeyField_;
+    std::shared_ptr<tk::NativeTextField> qrCheckCodeField_;
+    std::shared_ptr<tk::NativeTextField> roomSearchField_;
+    std::shared_ptr<tk::NativeTextField> quickSwitchField_;
+    std::shared_ptr<tk::NativeTextField> messageSearchField_;
+    std::shared_ptr<tk::NativeTextField> forwardPickerField_;
+    std::shared_ptr<tk::NativeTextField> findInRoomField_;
+    std::shared_ptr<tk::NativeTextArea> roomTextArea_;
+    std::shared_ptr<tk::NativeTextArea> topicTextArea_;
     bool topicTextAreaVisible_ = false; // mirrors topicTextArea_ visibility for transition detection
-    std::unique_ptr<tk::NativeTextField> roomSettingsNameField_;
+    std::shared_ptr<tk::NativeTextField> roomSettingsNameField_;
     bool roomSettingsNameFieldVisible_ = false;
-    std::unique_ptr<tk::NativeTextArea> roomSettingsTopicArea_;
+    std::shared_ptr<tk::NativeTextArea> roomSettingsTopicArea_;
     bool roomSettingsTopicAreaVisible_ = false;
     // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
-    std::unique_ptr<tk::NativeTextField> imagePackNameField_;
+    std::shared_ptr<tk::NativeTextField> imagePackNameField_;
     bool imagePackNameFieldVisible_ = false;
-    std::unique_ptr<tk::NativeTextField> imagePackShortcodeField_;
+    std::shared_ptr<tk::NativeTextField> imagePackShortcodeField_;
     std::uint64_t imagePackShortcodeResetGenSeen_ = 0;
-    std::unique_ptr<tk::NativeTextField> imagePackRenameField_;
+    std::shared_ptr<tk::NativeTextField> imagePackRenameField_;
     bool imagePackRenameFieldVisible_ = false;
     // Zero-size clipboard-paste catcher, focused whenever the tab becomes
     // visible — NativeTextField has no image-paste hook (only

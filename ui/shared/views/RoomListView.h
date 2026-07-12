@@ -19,6 +19,7 @@
 // the initials-disc fallback).
 
 #include "tk/canvas.h"
+#include "tk/host.h"
 #include "tk/list_view.h"
 #include "tk/svg.h"
 
@@ -85,6 +86,16 @@ public:
     // them in `arrange()` based on the inner list's content height.
     tk::Rect search_field_rect() const;
     bool search_field_visible() const;
+
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_field_ = std::move(field);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
 
     // Debounce delay every shell should wait after the last keystroke
     // before pushing the typed query into set_search_text(). Kept here so
@@ -290,6 +301,7 @@ private:
     std::unique_ptr<Adapter> adapter_;
     tk::ListView* list_ = nullptr;
     tk::Rect search_field_rect_{};
+    std::weak_ptr<tk::NativeTextField> native_field_; // see set_native_field()
     tk::Rect search_clear_rect_{};
     tk::Rect join_room_rect_{};
     bool search_field_visible_ = false;

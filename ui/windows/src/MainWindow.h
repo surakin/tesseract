@@ -336,11 +336,13 @@ private:
     std::unique_ptr<tk::win32::Surface> settings_surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     bool settings_visible_ = false;
-    std::unique_ptr<tk::NativeTextField> settings_name_field_;
+    // shared_ptr (not unique_ptr) so the owning view can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextField> settings_name_field_;
     // Extended-profile NativeTextField overlays (MSC4133).
-    std::unique_ptr<tk::NativeTextField> settings_pronouns_field_;
-    std::unique_ptr<tk::NativeTextField> settings_tz_field_;
-    std::unique_ptr<tk::NativeTextField> settings_bio_field_;
+    std::shared_ptr<tk::NativeTextField> settings_pronouns_field_;
+    std::shared_ptr<tk::NativeTextField> settings_tz_field_;
+    std::shared_ptr<tk::NativeTextField> settings_bio_field_;
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
@@ -350,23 +352,23 @@ private:
     tesseract::views::RoomMediaView* room_media_view_ = nullptr;
 
     // Native overlays hosted on main_app_surface_.
-    std::unique_ptr<tk::NativeTextField> room_search_field_;
-    std::unique_ptr<tk::NativeTextField> quick_switch_field_;
-    std::unique_ptr<tk::NativeTextField> message_search_field_;
-    std::unique_ptr<tk::NativeTextField> forward_picker_field_;
-    std::unique_ptr<tk::NativeTextField> find_in_room_field_;
-    std::unique_ptr<tk::NativeTextArea> room_text_area_;
+    std::shared_ptr<tk::NativeTextField> room_search_field_;
+    std::shared_ptr<tk::NativeTextField> quick_switch_field_;
+    std::shared_ptr<tk::NativeTextField> message_search_field_;
+    std::shared_ptr<tk::NativeTextField> forward_picker_field_;
+    std::shared_ptr<tk::NativeTextField> find_in_room_field_;
+    std::shared_ptr<tk::NativeTextArea> room_text_area_;
     bool                                 focus_compose_on_show_ = false;
-    std::unique_ptr<tk::NativeTextArea> topic_text_area_;
-    std::unique_ptr<tk::NativeTextField> room_settings_name_field_;
+    std::shared_ptr<tk::NativeTextArea> topic_text_area_;
+    std::shared_ptr<tk::NativeTextField> room_settings_name_field_;
     bool room_settings_name_field_visible_ = false;
-    std::unique_ptr<tk::NativeTextArea> room_settings_topic_area_;
+    std::shared_ptr<tk::NativeTextArea> room_settings_topic_area_;
     // Emojis & Stickers tab (ImagePackEditorView) — initial-testing wiring.
-    std::unique_ptr<tk::NativeTextField> image_pack_name_field_;
+    std::shared_ptr<tk::NativeTextField> image_pack_name_field_;
     bool image_pack_name_field_visible_ = false;
-    std::unique_ptr<tk::NativeTextField> image_pack_shortcode_field_;
+    std::shared_ptr<tk::NativeTextField> image_pack_shortcode_field_;
     std::uint64_t image_pack_shortcode_reset_gen_seen_ = 0;
-    std::unique_ptr<tk::NativeTextField> image_pack_rename_field_;
+    std::shared_ptr<tk::NativeTextField> image_pack_rename_field_;
     bool image_pack_rename_field_visible_ = false;
     // Whichever RoomSettingsView instance currently has its Emojis & Stickers
     // tab open — room_view_'s (a normal room) or space_root()'s (a space
@@ -376,9 +378,9 @@ private:
     std::unique_ptr<tk::NativeTextArea> image_pack_paste_catcher_;
     bool image_pack_paste_catcher_visible_ = false;
     std::uint64_t image_pack_name_reset_gen_seen_ = 0;
-    std::unique_ptr<tk::NativeTextField> enc_passphrase_field_;
-    std::unique_ptr<tk::NativeTextField> enc_key_field_;
-    std::unique_ptr<tk::NativeTextField> qr_check_code_field_;
+    std::shared_ptr<tk::NativeTextField> enc_passphrase_field_;
+    std::shared_ptr<tk::NativeTextField> enc_key_field_;
+    std::shared_ptr<tk::NativeTextField> qr_check_code_field_;
 
     // ── Slash-command popup ───────────────────────────────────────────────
     HWND                                  slash_popup_hwnd_ = nullptr;
@@ -467,7 +469,7 @@ private:
     HWND hJoinRoom_ = nullptr; // centred WS_POPUP host
     std::unique_ptr<tk::win32::Surface> join_room_surface_;
     tesseract::views::JoinRoomView* join_room_shared_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> join_room_alias_field_;
+    std::shared_ptr<tk::NativeTextField> join_room_alias_field_; // see JoinRoomView::set_native_field()
     uint32_t join_room_gen_ =
         0; // incremented on each open; guards stale callbacks
 

@@ -75,6 +75,30 @@ private:
     int& count_;
 };
 
+class ThemeProbe : public Widget
+{
+public:
+    explicit ThemeProbe(int& count) : count_(count)
+    {
+    }
+
+    Size measure(LayoutCtx&, Size constraints) override
+    {
+        return constraints;
+    }
+
+    void on_theme_changed(const Theme& theme) override
+    {
+        ++count_;
+        last_mode = theme.mode;
+    }
+
+    ThemeMode last_mode = ThemeMode::Light;
+
+private:
+    int& count_;
+};
+
 class KeyProbe : public FixedBox
 {
 public:
@@ -194,6 +218,34 @@ TEST_CASE("Widget default paint traverses visible children",
 
     CHECK(painted_a == 1);
     CHECK(painted_b == 0);
+}
+
+TEST_CASE("Widget::apply_theme visits every descendant, including hidden ones",
+          "[tk][widget][theme]")
+{
+    FixedBox root({100, 100});
+    int themed_visible_child = 0;
+    int themed_hidden_child = 0;
+    int themed_grandchild = 0;
+
+    auto* visible_child = root.add_child(std::make_unique<ThemeProbe>(themed_visible_child));
+    auto* hidden_child = root.add_child(std::make_unique<ThemeProbe>(themed_hidden_child));
+    hidden_child->set_visible(false);
+    auto* grandchild =
+        visible_child->add_child(std::make_unique<ThemeProbe>(themed_grandchild));
+
+    root.apply_theme(Theme::dark());
+
+    // Unlike paint_overlay()/paint(), which skip invisible children, a
+    // hidden native field still needs correct colors queued for the moment
+    // it becomes visible again — so apply_theme() must not gate on
+    // visible().
+    CHECK(themed_visible_child == 1);
+    CHECK(themed_hidden_child == 1);
+    CHECK(themed_grandchild == 1);
+    CHECK(static_cast<ThemeProbe*>(visible_child)->last_mode == ThemeMode::Dark);
+    CHECK(static_cast<ThemeProbe*>(hidden_child)->last_mode == ThemeMode::Dark);
+    CHECK(static_cast<ThemeProbe*>(grandchild)->last_mode == ThemeMode::Dark);
 }
 
 TEST_CASE("Stack arranges visible children to the same bounds",

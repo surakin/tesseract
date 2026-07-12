@@ -32,6 +32,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
@@ -250,6 +251,13 @@ public:
     // control's displayed text" reset off of — it diffs this counter each
     // layout pass instead and calls set_text("") when it changes.
     std::uint64_t new_pack_name_reset_generation() const { return new_pack_name_reset_gen_; }
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_new_pack_name_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_new_pack_name_field_ = std::move(field);
+    }
 
     tk::Rect    shortcode_edit_rect() const; // valid only while a tile is being edited
     std::string shortcode_edit_initial_text() const; // seed text once, per shortcode_edit_reset_generation()
@@ -262,6 +270,13 @@ public:
     // otherwise the field keeps showing whichever tile's text it last
     // held instead of the newly-targeted tile's.
     std::uint64_t shortcode_edit_reset_generation() const { return shortcode_edit_reset_gen_; }
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_shortcode_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_shortcode_field_ = std::move(field);
+    }
     void        set_editing_shortcode_text(std::string text);
     void        commit_editing_shortcode(); // called by the host on submit/Enter
     // Discards any edits made since this tile's shortcode field was
@@ -278,6 +293,15 @@ public:
     std::string pack_name_edit_initial_text() const; // seed text once, on the visibility rising edge
     void        set_editing_pack_name_text(std::string text);
     void        commit_editing_pack_name(); // called by the host on submit/blur
+    // Weak reference to the shell-owned tk::NativeTextField; call once,
+    // right after make_text_field(), so on_theme_changed() has something
+    // to push colors onto.
+    void set_native_pack_name_field(std::weak_ptr<tk::NativeTextField> field)
+    {
+        native_pack_name_field_ = std::move(field);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
 
     // Clipboard paste has no position — targets the active pack. No-op if
     // there is no active pack (e.g. the room has no packs yet). Paste
@@ -368,11 +392,14 @@ private:
 
     std::string new_pack_name_draft_;
     std::uint64_t new_pack_name_reset_gen_ = 0;
+    std::weak_ptr<tk::NativeTextField> native_new_pack_name_field_; // see set_native_new_pack_name_field()
 
     std::optional<std::pair<std::size_t, std::size_t>> editing_; // (pack_idx, tile_idx)
     std::uint64_t shortcode_edit_reset_gen_ = 0;
+    std::weak_ptr<tk::NativeTextField> native_shortcode_field_; // see set_native_shortcode_field()
     std::string editing_shortcode_original_; // snapshot for cancel_editing_shortcode
     std::optional<std::size_t> editing_pack_name_;
+    std::weak_ptr<tk::NativeTextField> native_pack_name_field_; // see set_native_pack_name_field()
 
     ImagePackSectionList* list_       = nullptr;
     tk::Button*           create_btn_ = nullptr;

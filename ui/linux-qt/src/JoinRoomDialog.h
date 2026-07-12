@@ -51,6 +51,8 @@ private:
     tesseract::Client* client_ = nullptr;
     tk::qt6::Surface* surface_ = nullptr;
     tesseract::views::JoinRoomView* shared_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> alias_field_;
+    // shared_ptr (not unique_ptr) so JoinRoomView can hold a weak_ptr for
+    // theming — see tk::Widget::on_theme_changed / apply_theme.
+    std::shared_ptr<tk::NativeTextField> alias_field_;
     uint32_t gen_ = 0; // guards stale async callbacks
 };

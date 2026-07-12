@@ -17,6 +17,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/host.h"
 #include "tk/side_tab_view.h"
 #include "tk/widget.h"
 #include "views/ImagePackEditorView.h"
@@ -185,6 +186,18 @@ public:
     // height on every change; clamped internally by RoomGeneralSection.
     void set_topic_area_natural_height(float h);
 
+    // Weak references to the shell-owned name/topic tk::NativeTextField(Area);
+    // call once, right after make_text_field()/make_text_area(), so
+    // on_theme_changed() has something to push colors onto.
+    void set_native_fields(std::weak_ptr<tk::NativeTextField> name_field,
+                           std::weak_ptr<tk::NativeTextArea>  topic_area)
+    {
+        native_name_field_ = std::move(name_field);
+        native_topic_area_ = std::move(topic_area);
+    }
+
+    void on_theme_changed(const tk::Theme& t) override;
+
     // Avatar staging — the shell calls this once Client::upload_media
     // succeeds. Never touches server room state. "" clears the staged
     // avatar (shown via the AvatarEditControl "x" remove chip / upload
@@ -338,6 +351,8 @@ private:
     std::string staged_name_;
     std::string staged_topic_;
     std::string staged_avatar_mxc_;
+    std::weak_ptr<tk::NativeTextField> native_name_field_;  // see set_native_fields()
+    std::weak_ptr<tk::NativeTextArea>  native_topic_area_;
 
     bool        original_is_encrypted_ = false;
     bool        staged_is_encrypted_   = false;

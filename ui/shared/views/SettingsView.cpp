@@ -40,9 +40,9 @@ SettingsView::SettingsView()
     appearance->on_theme_changed =
         [this](tesseract::Settings::ThemePreference pref)
     {
-        if (on_theme_changed)
+        if (on_theme_preference_changed)
         {
-            on_theme_changed(pref);
+            on_theme_preference_changed(pref);
         }
     };
     appearance->on_group_inactive_changed = [this](bool v)
@@ -832,6 +832,18 @@ void SettingsView::set_avatar_busy(bool busy)      { account_->set_avatar_busy(b
 void SettingsView::set_avatar_error(std::string e) { account_->set_avatar_error(std::move(e)); }
 void SettingsView::set_avatar_url(std::string m)   { account_->set_avatar_url(std::move(m)); }
 void SettingsView::set_display_name_text(std::string n) { account_->set_display_name(std::move(n)); }
+
+void SettingsView::on_theme_changed(const tk::Theme& t)
+{
+    if (auto field = native_name_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+    if (auto field = native_pronouns_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+    if (auto field = native_tz_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+    if (auto field = native_bio_field_.lock())
+        field->set_text_color(t.palette.text_primary);
+}
 
 tk::Rect SettingsView::name_field_rect() const
 {
