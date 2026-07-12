@@ -73,6 +73,41 @@ TEST_CASE("a second show_tooltip call from the same owner refreshes content "
     CHECK(host.tooltip_text_ == "third");
 }
 
+TEST_CASE("a same-owner refresh with unchanged content/anchor does not "
+          "request a repaint",
+          "[tk][host][tooltip]")
+{
+    // Regression test: TabbedGridPicker re-derives and re-asserts the
+    // tooltip unconditionally on every paint() frame while a cell is
+    // hovered (it has no hover-transition event of its own). Once visible,
+    // that turned into an unbounded show_tooltip -> request_repaint ->
+    // paint -> show_tooltip loop on Windows, where InvalidateRect during
+    // WM_PAINT starves the app-wide WM_TIMER-driven animation clock,
+    // freezing every animation while the tooltip stayed on screen.
+    TooltipProbeWidget root({0, 0, 400, 400});
+    TestHost host(&root);
+    int owner = 0;
+
+    host.show_tooltip(&owner, "hello", {10, 10, 20, 20});
+    host.fire_all_delays();
+    REQUIRE(host.tooltip_visible_);
+    host.repaint_count = 0; // isolate repaints from the refresh calls below
+
+    // Identical text and anchor: no-op, no repaint requested.
+    host.show_tooltip(&owner, "hello", {10, 10, 20, 20});
+    CHECK(host.repaint_count == 0);
+    host.show_tooltip(&owner, "hello", {10, 10, 20, 20});
+    CHECK(host.repaint_count == 0);
+
+    // Different text: content genuinely changed, so a repaint is warranted.
+    host.show_tooltip(&owner, "changed", {10, 10, 20, 20});
+    CHECK(host.repaint_count == 1);
+
+    // Different anchor, same text: also warrants a repaint.
+    host.show_tooltip(&owner, "changed", {15, 15, 20, 20});
+    CHECK(host.repaint_count == 2);
+}
+
 TEST_CASE("a new owner mid-dwell invalidates the stale timer", "[tk][host][tooltip]")
 {
     TooltipProbeWidget root({0, 0, 400, 400});

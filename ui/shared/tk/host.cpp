@@ -213,9 +213,22 @@ void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world)
     {
         // Same owner: refresh content/anchor. If already visible, take effect
         // immediately; if still pending, the original delay keeps running.
+        // Only repaint when something actually changed — callers like
+        // TabbedGridPicker re-assert the tooltip unconditionally on every
+        // paint() frame (no hover-transition event of their own), so an
+        // unconditional repaint here would self-sustain a paint loop for as
+        // long as the pointer sits still. Harmless on toolkits that
+        // coalesce redundant invalidations, but fatal on Win32: raw
+        // InvalidateRect during WM_PAINT re-arms immediately and starves
+        // the thread-wide WM_TIMER driving animation frame ticks.
+        const bool changed = text != tooltip_text_ ||
+            anchor_world.x != tooltip_anchor_.x ||
+            anchor_world.y != tooltip_anchor_.y ||
+            anchor_world.w != tooltip_anchor_.w ||
+            anchor_world.h != tooltip_anchor_.h;
         tooltip_text_ = std::move(text);
         tooltip_anchor_ = anchor_world;
-        if (tooltip_visible_) request_repaint();
+        if (tooltip_visible_ && changed) request_repaint();
         return;
     }
     // New owner — reset and re-arm the dwell delay.

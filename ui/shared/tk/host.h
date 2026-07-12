@@ -438,7 +438,10 @@ public:
     // a short dwell delay. A repeated call from the same owner refreshes the
     // text/anchor in place (immediately if already visible, otherwise the
     // original delay keeps running); a call from a different owner resets
-    // the delay. No-op while a popup is open.
+    // the delay. No-op while a popup is open. A repeated call whose text and
+    // anchor are unchanged from what's already stored is a pure no-op (no
+    // repaint requested) — safe for callers that must re-assert the tooltip
+    // on every paint() frame instead of on a hover-transition edge.
     virtual void show_tooltip(const void* owner, std::string text,
                               Rect anchor_world);
 

@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(windows): stop the emoji/sticker picker's shortcode tooltip from freezing every animation in the app while visible — `Host::show_tooltip`'s same-owner refresh now only requests a repaint when the text/anchor actually changed, instead of unconditionally on every call
 - fix(macos): implement `CTRunDelegate`-based inline-image box reservation in the CoreText canvas backend, fixing custom MSC2545 emoji not rendering inline in the timeline at all on macOS (composer/pickers were unaffected — they don't use this code path)
 - feat(image-packs): surface MSC2545 packs from any Space (direct or nested-ancestor) the current room belongs to, in the emoji/sticker pickers and the shortcode popup, alongside the existing personal/current-room/subscribed-room scopes
 - refactor(tk): replace the hand-maintained per-shell native-field theming list with a generic `tk::Widget::apply_theme()` tree traversal, fixing several fields the old list missed entirely (Qt6's `SettingsWidget`/`JoinRoomDialog`/pop-out `RoomWindow`, and macOS's join-room dialog surface never re-theming past its initial light-mode construction)
@@ -65,6 +66,28 @@ Tagged releases summarize all changes since the previous tag.
 
 #### 2026-07-12
 
+- fix(windows): hovering a custom emoji/sticker tile long enough for its
+  shortcode tooltip to appear in the Emoji/Sticker picker froze every
+  visible animation (GIF/APNG emoji, animated stickers, everywhere in the
+  app) for as long as the tooltip stayed on screen, resuming the instant it
+  was dismissed. `TabbedGridPicker::paint()` (shared base of `EmojiPicker`/
+  `StickerPicker`) calls `Host::show_tooltip()` unconditionally on every
+  paint frame while a cell is hovered — it has no hover-transition event of
+  its own, since `GridView` tracks `hovered_index_` itself. `Host::
+  show_tooltip`'s same-owner refresh branch called `request_repaint()`
+  unconditionally too, even when the text/anchor hadn't changed, so once
+  the tooltip became visible this created a self-sustaining `paint() →
+  show_tooltip() → request_repaint() → paint()` loop needing no pointer
+  movement. Harmless on Qt6/GTK4/macOS, whose toolkits coalesce redundant
+  invalidations, but fatal on Win32: `request_repaint()` is a raw
+  `InvalidateRect` on the picker's own popup HWND, and `WM_PAINT` is
+  regenerated/serviced ahead of `WM_TIMER` on the same thread's message
+  queue — starving the single app-wide `SetTimer` that drives every
+  animation's frame advance. Fixed by making `Host::show_tooltip`'s
+  same-owner refresh idempotent: only repaint when the text or anchor
+  actually changed. New regression test in `test_tk_tooltip.cpp`; 1147 C++
+  tests passing. Windows-specific freeze, so the fix is unverified live in
+  this environment — needs a build/manual check on Windows.
 - fix(macos): custom emoji (MSC2545 image-pack emoticons) never rendered
   inline in the timeline on macOS, though they worked fine in the composer
   and pickers. `MessageListView::substitute_image_placeholders` stuffs a

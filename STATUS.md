@@ -1,6 +1,22 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1145 C++ + 369 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1147 C++ + 369 Rust tests.
+
+> **Fixed: the Emoji/Sticker picker's shortcode tooltip froze every
+> animation in the app on Windows while visible (2026-07-12,
+> v0.8.14-unreleased).** `TabbedGridPicker::paint()` re-asserts its tooltip
+> unconditionally every frame (no hover-transition event of its own), and
+> `Host::show_tooltip`'s same-owner refresh used to call `request_repaint()`
+> unconditionally too — together these formed a self-sustaining repaint
+> loop once the tooltip became visible, needing no pointer movement to
+> continue. Harmless on Qt6/GTK4/macOS; fatal on Win32, where a continuous
+> `InvalidateRect`-driven `WM_PAINT` starves the thread-wide `WM_TIMER` that
+> drives every animation's frame advance. `Host::show_tooltip` now only
+> repaints on an actual text/anchor change. New regression test in
+> `test_tk_tooltip.cpp`. Windows-specific; unverified live in this
+> environment (build/manual check needed on Windows).
+
+<!-- -->
 
 > **Custom MSC2545 emoji now render inline in the timeline on macOS
 > (2026-07-12, v0.8.14-unreleased).** They previously rendered fine in the
