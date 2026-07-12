@@ -7,6 +7,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(theme): sync every Qt6 native text field's color on theme change instead of just 2 of 13, fixing black-on-dark text in the quick switcher and other search/edit fields
+- fix(forward-picker): wire `ForwardRoomPicker::on_close` on all four shells so Escape/outside-click actually resets the native search field
+- fix(media-viewer): stop a video-lightbox pagination leak (missing wheel-swallow) and fix gallery pagination backpressure/race/shutdown-abort
+- fix(build): exclude CG test surface files from the unity build to fix `macos-appkit-x86_64-release`
 - feat(windows): vendored BetterText (`third_party/bettertext`), a from-scratch D2D/DirectWrite Win32 text control
 - feat(image-viewer): copy the displayed image to the clipboard from the full-window lightbox, beside the save button
 - feat(composer): render custom MSC2545 emoji inline, end to end
@@ -54,6 +58,70 @@ Tagged releases summarize all changes since the previous tag.
 - fix(edits): stop showing edited plain-text messages as a bare `*` — a `ruma-events` fallback quirk stamped a synthetic HTML body on edit events that a raw-JSON re-read picked up instead of the real `m.new_content`
 
 ### Details
+
+#### 2026-07-12
+
+- fix(theme): the Ctrl+K quick switcher's search field (and several other
+  Qt6 native fields) showed black text after switching to dark mode. Qt6's
+  `QLineEdit`/`QTextEdit` hold an explicit `QPalette` that must be manually
+  kept in sync with the app's `Theme` — unlike GTK4 (CSS-driven theming),
+  macOS (`NSColor.labelColor`, a dynamic system color), or Win32 (a global
+  `WM_CTLCOLOREDIT` message handler), none of which need an explicit sync.
+  `MainWindow::apply_theme_ui_()` only re-applied `set_text_color()` to 2 of
+  the shell's 13 native text fields on a theme change (`roomTextArea_`,
+  `roomSearchField_`); every other field — `quickSwitchField_`,
+  `messageSearchField_`, `forwardPickerField_`, `findInRoomField_`,
+  `topicTextArea_`, `roomSettingsNameField_`, `roomSettingsTopicArea_`, the
+  three image-pack fields, and the encryption/QR-grant fields (three of
+  which had no color set at all) — kept whatever color it got at
+  construction and never updated again. Fixed by refreshing all 13 fields
+  in `apply_theme_ui_()` and giving the three encryption/QR fields an
+  initial color. Qt6-only; the other three shells don't set an explicit
+  text color anywhere and re-theme automatically.
+- fix(forward-picker): auditing every native field for the theme bug above
+  turned up a dangling `if (mainApp_ && mainApp_->forward_picker())` in the
+  Qt6 shell with no body — clang-tidy's misleading-indentation warning
+  caught it. The intended statement, wiring `forward_picker()->on_close`,
+  was simply missing; `quick_switcher()` and `message_search()` both wire
+  their `on_close` the same way, but `forward_picker()` never did on **any**
+  of the four shells. Net effect: closing the forward-message picker via
+  Escape or an outside click never reset `forwardPickerField_` (visibility/
+  focus state). Fixed on all four shells, mirroring the existing
+  `quick_switcher`/`message_search` pattern.
+- fix(media-viewer): several related bugs surfaced while investigating why
+  opening the room media viewer left background work running, delayed
+  local echo, or could hang app shutdown. `VideoViewerOverlay` never
+  swallowed wheel input while open (unlike `ImageViewerOverlay`), so
+  scrolling over the fullscreen video lightbox fell through to the room
+  timeline and silently drove backward pagination, contending with the send
+  queue's durability write on matrix-sdk-sqlite's shared write connection.
+  The `paginate_tasks` Rust task registry was the one registry never
+  force-aborted in `stop_sync()`, unlike `sync_tasks`/`media_tasks`/etc., so
+  an in-flight pagination task could block app shutdown. Neither the media
+  lightbox nor active voice/audio playback was torn down on room switch,
+  leaving them running against a room the user had left. `RoomMediaView`
+  never opted into `autofill_only_when_empty`, so `ListView`'s "fill on
+  open" autofill re-fired `on_near_top` on every relayout in media-sparse
+  rooms, spamming pagination. The gallery's retry/accumulate loop judged
+  progress from rendered row count, populated by a separate, much slower
+  diff-streaming task than the pagination round itself, causing the loop to
+  race ahead on stale state — added a dedicated FFI path
+  (`paginate_media_view_back_async` / `on_media_view_paginate_result`) that
+  reads an authoritative Image/Video count directly from the SDK timeline,
+  decoupled from that race, and replaced a fixed magic-number retry target
+  with `RoomMediaView::estimated_capacity()`. Added render-gap backpressure
+  in `ShellBase` that defers further pagination rounds when the render
+  queue falls more than 24 items behind, resuming once the renderer catches
+  up. 5 new tests; 1120 C++ tests passing.
+- fix(build): several `test_tk_*.cpp` files have a file-scope
+  `using namespace tk;`, which leaks for the rest of a unity-batched
+  translation unit. When the batcher placed one of those files ahead of
+  `tk_test_surface_cg.cpp`/`canvas_cg.cpp`, the leaked using-directive made
+  `tk::Point`/`tk::Rect` ambiguous with the global `Point`/`Rect` QuickDraw
+  types pulled in transitively via `CoreGraphics.h`'s `MacTypes.h`, breaking
+  `macos-appkit-x86_64-release`. Excludes both files from unity batching
+  (mirrors the existing exclusion for `canvas_qpainter.cpp` on the Qt6
+  branch).
 
 #### 2026-07-11
 

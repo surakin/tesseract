@@ -1,6 +1,60 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-07-11** (v0.8.14-unreleased). 1096 C++ + 364 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1120 C++ + 364 Rust tests.
+
+> **Native text fields no longer go stale on a theme change; forward-picker
+> close wired on all four shells (2026-07-12, v0.8.14-unreleased).** Qt6's
+> `QLineEdit`/`QTextEdit` carry an explicit `QPalette` that must be manually
+> kept in sync with the app's `Theme`, unlike GTK4 (CSS-driven), macOS
+> (`NSColor.labelColor`, a dynamic system color), or Win32 (a global
+> `WM_CTLCOLOREDIT` handler) — none of which need an explicit sync.
+> `apply_theme_ui_()` only refreshed 2 of the Qt shell's 13 native text
+> fields on a theme change (`roomTextArea_`, `roomSearchField_`); everything
+> else — including the Ctrl+K quick switcher's search field — kept whatever
+> color it was constructed with, so switching to dark mode left it (and
+> several others) stuck with unreadable black-on-dark text. Now refreshes
+> all 13 (topic/room-settings/image-pack fields, quick switcher, message
+> search, forward picker, find-in-room, and the encryption/QR-grant fields,
+> three of which had no color sync at all). Auditing every native field also
+> surfaced a second, cross-platform bug: `ForwardRoomPicker::on_close` was
+> never wired on any of the four shells — `quick_switcher`/`message_search`
+> both wire it; `forward_picker` (a dangling `if` with no body on Qt6)
+> didn't — so Escape/outside-click on the forward-message picker never reset
+> its native field. Fixed on all four shells. Verified on Qt6/GTK4 (both
+> build clean, 1120/1120 ctest); Win32/macOS mirror the same pattern but
+> weren't build-verified in this environment.
+
+<!-- -->
+
+> **Media lightbox pagination leak + gallery backpressure fixed
+> (2026-07-12, v0.8.14-unreleased).** Follow-up to the 2026-07-10 gallery
+> pagination fix below, covering bugs found while investigating why opening
+> the room media viewer left background work running, delayed local echo,
+> or could hang app shutdown. `VideoViewerOverlay` never swallowed wheel
+> input while open (unlike `ImageViewerOverlay`), so scrolling over the
+> fullscreen video lightbox fell through to the room timeline and silently
+> drove backward pagination — contending with the send queue's durability
+> write on matrix-sdk-sqlite's single write connection. The Rust
+> `paginate_tasks` registry was the one task registry never force-aborted in
+> `stop_sync()` (unlike `sync_tasks`/`media_tasks`/etc.), so an in-flight
+> pagination task could block shutdown. Neither the media lightbox nor
+> active voice/audio playback was torn down on room switch, leaving them
+> running against a room the user had already left. `RoomMediaView` never
+> opted into `autofill_only_when_empty`, so `ListView`'s "fill on open"
+> autofill re-fired `on_near_top` on every relayout in media-sparse rooms,
+> spamming pagination; fixed via `set_autofill_only_when_empty(true)` plus a
+> proper viewport-fill loop (`RoomMediaView::estimated_capacity()` replacing
+> a fixed magic-number retry target) and render-gap backpressure in
+> `ShellBase` that defers further pagination rounds when the render queue
+> falls more than 24 items behind, resuming once the renderer catches up —
+> closing a race where pagination rounds outpaced the diff-streaming task
+> that actually populates rows. Added a dedicated authoritative-count FFI
+> (`paginate_media_view_back_async` / `on_media_view_paginate_result`) so
+> the retry loop judges progress from the SDK's own Image/Video count
+> instead of the slower, racier rendered-row count. 1120 C++ + 364 Rust
+> tests.
+
+<!-- -->
 
 > **Image pack editor: multi-pack room/space editor + global settings tab,
 > fully wired end to end (2026-07-11, v0.8.14-unreleased).**
@@ -1191,8 +1245,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 283 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 892 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 364 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 1120 |
 
 ## Platforms
 
@@ -1348,6 +1402,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
   - **GTK4** — `GtkSettings::gtk-application-prefer-dark-theme` property.
   - **Qt6** — `QStyleHints::colorSchemeChanged` signal; falls back to the XDG Desktop Portal (`org.freedesktop.portal.Settings`, namespace `org.freedesktop.appearance`, key `color-scheme`) when `QStyleHints::colorScheme()` returns `Unknown` (GNOME without QGnomePlatform or Qt < 6.6). The portal value is read at startup and kept current via the `SettingChanged` D-Bus signal.
 - **Live updates** — all four shells re-apply the theme whenever the OS switches, provided `ThemePreference::System` is active. User-pinned Light or Dark is never overridden by OS changes.
+- **Native text field color sync (Qt6)** — `QLineEdit`/`QTextEdit` hold an explicit `QPalette` with no automatic dark-mode following, unlike GTK4/macOS/Win32. `apply_theme_ui_()` re-applies `set_text_color(palette.text_primary)` to every native field on the Qt6 shell (room search, quick switcher, message search, forward picker, find-in-room, topic/room-settings/image-pack fields, encryption/QR-grant fields) on every theme change, not just construction.
 
 ## System tray
 
