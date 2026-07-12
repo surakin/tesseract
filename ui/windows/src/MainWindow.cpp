@@ -4703,6 +4703,22 @@ void MainWindow::bind_settings_controller_()
         };
     }
 
+    if (settings_surface_)
+    {
+        settings_surface_->set_on_file_drop(
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, tk::Point pos)
+            {
+                if (!settings_visible_)
+                    return;
+                if (settings_view_ && !settings_view_->user_pack_list_rect().empty())
+                {
+                    settings_view_->add_user_pack_dropped_image(
+                        pos, std::move(bytes), std::move(mime), filename);
+                }
+            });
+    }
+
     settings_name_field_ = settings_surface_->host().make_text_field();
     settings_name_field_->set_text(my_display_name_);
     settings_name_field_->set_placeholder("Display name");

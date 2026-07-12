@@ -547,6 +547,28 @@ UserPackEditor* SettingsView::user_pack_editor() const
     return image_packs_ ? image_packs_->user_pack_editor() : nullptr;
 }
 
+bool SettingsView::user_pack_tab_selected_() const
+{
+    return tabs_ && tabs_->selected_idx() == kUserPackTabIndex;
+}
+
+tk::Rect SettingsView::user_pack_list_rect() const
+{
+    if (!user_pack_tab_selected_())
+        return {};
+    auto* editor = user_pack_editor();
+    return editor ? editor->list_rect() : tk::Rect{};
+}
+
+void SettingsView::add_user_pack_dropped_image(
+    tk::Point pos, std::vector<std::uint8_t> bytes, std::string mime,
+    std::string filename)
+{
+    if (auto* editor = user_pack_editor())
+        editor->add_dropped_image(pos, std::move(bytes), std::move(mime),
+                                  std::move(filename));
+}
+
 void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
                                    uint64_t memory_bytes,
                                    uint64_t mem_hits, uint64_t mem_misses,

@@ -7522,6 +7522,22 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             s->_shell->handle_user_pack_pending_image_added(
                 local_id, bytes, mime, s->_settingsView->user_pack_editor());
         };
+
+        _settingsSurface->set_on_file_drop(
+            [ws](std::vector<std::uint8_t> bytes, std::string mime,
+                std::string filename, tk::Point pos)
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_settingsSurface) return;
+            if (((__bridge NSView*)s->_settingsSurface->view_handle()).hidden)
+                return;
+            if (s->_settingsView &&
+                !s->_settingsView->user_pack_list_rect().empty())
+            {
+                s->_settingsView->add_user_pack_dropped_image(
+                    pos, std::move(bytes), std::move(mime), filename);
+            }
+        });
     }
 
     // Captured by value in each on_submit lambda; ws is __weak so safe across

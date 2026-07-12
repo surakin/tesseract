@@ -151,6 +151,19 @@ SettingsWidget::SettingsWidget(QWidget* parent)
 
     surface_->set_root(std::move(view));
 
+    surface_->set_on_file_drop(
+        [this](std::vector<std::uint8_t> bytes, std::string mime,
+               std::string filename, tk::Point pos)
+        {
+            if (!isVisible())
+                return;
+            if (settings_view_ && !settings_view_->user_pack_list_rect().empty())
+            {
+                settings_view_->add_user_pack_dropped_image(
+                    pos, std::move(bytes), std::move(mime), filename);
+            }
+        });
+
     surface_->set_on_layout(
         [this]
         {

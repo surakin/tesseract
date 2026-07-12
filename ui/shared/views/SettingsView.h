@@ -179,6 +179,20 @@ public:
     // per-room editor via room_settings_view() itself as the target).
     UserPackEditor* user_pack_editor() const;
 
+    // Scope for the host's drop-target hit-test on the personal pack grid —
+    // mirrors RoomSettingsView::image_pack_list_rect(). Non-empty only when
+    // the "Emojis & Stickers" tab is the one currently selected in tabs_
+    // (SideTabView arranges every tab's content each pass regardless of
+    // selection, so the editor's own list_rect() alone isn't enough).
+    tk::Rect user_pack_list_rect() const;
+
+    // Deposit a dropped image into the personal pack editor at `pos`.
+    // Mirrors RoomSettingsView::add_image_pack_dropped_image(). Callers must
+    // have already checked user_pack_list_rect() is non-empty.
+    void add_user_pack_dropped_image(tk::Point pos,
+                                     std::vector<std::uint8_t> bytes,
+                                     std::string mime, std::string filename);
+
     // Wire the controller: sets controller callbacks → AccountSection state,
     // and AccountSection click callbacks → SettingsView output callbacks.
     void set_controller(tesseract::SettingsController* controller);
@@ -361,6 +375,14 @@ private:
     // tabs_->set_tab_visible(kAdvancedTabIdx, false) until the About tab's
     // "Advanced" button reveals it.
     static constexpr int kAdvancedTabIdx = 10;
+
+    bool user_pack_tab_selected_() const;
+
+    // Index of the "Emojis & Stickers" tab within tabs_, in add_tab() order
+    // (Account=0, Sessions=1, Appearance=2, Notifications=3, Media=4,
+    // Privacy=5, Server=6, Emojis & Stickers=7, Language=8; bottom tabs
+    // About=9, Advanced=kAdvancedTabIdx).
+    static constexpr int kUserPackTabIndex = 7;
 
     // Child widgets — owned via add_child, raw pointers borrowed back.
     tk::Button* back_btn_ = nullptr;
