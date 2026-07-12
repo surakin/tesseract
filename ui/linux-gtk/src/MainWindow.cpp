@@ -2732,6 +2732,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                     return false;
                 }
             });
+        if (main_app_ && main_app_->forward_picker())
+            main_app_->forward_picker()->on_close = [this]
+            { close_forward_picker_(); };
 
         // Per-room "find in conversation" (Ctrl+F) native field.
         find_in_room_field_ = main_app_surface_->host().make_text_field();

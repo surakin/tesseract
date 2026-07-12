@@ -5520,6 +5520,14 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
                     return false;
                 }
             });
+        if (_mainApp->forward_picker())
+            _mainApp->forward_picker()->on_close = [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s)
+                    [s _closeForwardPicker];
+            };
+
         // Per-room "find in conversation" (⌘F) native field.
         _findInRoomField = _mainAppSurface->host().make_text_field();
         _findInRoomField->set_placeholder(tk::tr("Find in conversation\xe2\x80\xa6"));

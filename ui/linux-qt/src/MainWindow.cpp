@@ -2226,6 +2226,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             }
         });
     if (mainApp_ && mainApp_->forward_picker())
+        mainApp_->forward_picker()->on_close = [this] { closeForwardPicker_(); };
 
     // Per-room "find in conversation" (Ctrl+F) native field — docked under the
     // RoomHeader inside the shared search bar strip. Mirrors messageSearchField_
@@ -5462,8 +5463,11 @@ void MainWindow::show_encryption_setup_overlay_(
 
     encPassphraseField_ = mainAppSurface_->host().make_text_field();
     encPassphraseField_->set_password(true);
+    encPassphraseField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
     encKeyField_ = mainAppSurface_->host().make_text_field();
     encKeyField_->set_password(false);
+    encKeyField_->set_text_color(mainAppSurface_->theme().palette.text_primary);
 
     wire_encryption_setup_callbacks_(*ov, mainAppSurface_->host(),
                                      encPassphraseField_.get(),
@@ -5479,6 +5483,8 @@ void MainWindow::show_qr_grant_overlay_()
     auto* view = mainApp_->qr_grant_view();
     if (!view) return;
     qrCheckCodeField_ = mainAppSurface_->host().make_text_field();
+    qrCheckCodeField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
     qrCheckCodeField_->set_on_changed([view](const std::string& t) {
         view->set_check_code_text(t);
     });
@@ -5886,6 +5892,32 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         roomTextArea_->set_text_color(t.palette.text_primary);
     if (roomSearchField_)
         roomSearchField_->set_text_color(t.palette.text_primary);
+    if (topicTextArea_)
+        topicTextArea_->set_text_color(t.palette.text_primary);
+    if (roomSettingsNameField_)
+        roomSettingsNameField_->set_text_color(t.palette.text_primary);
+    if (roomSettingsTopicArea_)
+        roomSettingsTopicArea_->set_text_color(t.palette.text_primary);
+    if (imagePackNameField_)
+        imagePackNameField_->set_text_color(t.palette.text_primary);
+    if (imagePackShortcodeField_)
+        imagePackShortcodeField_->set_text_color(t.palette.text_primary);
+    if (imagePackRenameField_)
+        imagePackRenameField_->set_text_color(t.palette.text_primary);
+    if (quickSwitchField_)
+        quickSwitchField_->set_text_color(t.palette.text_primary);
+    if (messageSearchField_)
+        messageSearchField_->set_text_color(t.palette.text_primary);
+    if (forwardPickerField_)
+        forwardPickerField_->set_text_color(t.palette.text_primary);
+    if (findInRoomField_)
+        findInRoomField_->set_text_color(t.palette.text_primary);
+    if (encPassphraseField_)
+        encPassphraseField_->set_text_color(t.palette.text_primary);
+    if (encKeyField_)
+        encKeyField_->set_text_color(t.palette.text_primary);
+    if (qrCheckCodeField_)
+        qrCheckCodeField_->set_text_color(t.palette.text_primary);
     {
         const auto& p = t.palette;
         QPalette pal = statusBar()->palette();
