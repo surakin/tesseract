@@ -63,6 +63,52 @@ static std::string link_at_world(const LinkLayout& le, tk::Point world)
     return le.layout->link_at(ll);
 }
 
+// Hit-test result for an inline MSC2545 custom emoji under the pointer:
+// its world-space box and its ":shortcode:" text (TextSpan::image_alt).
+// `shortcode` is empty when no emoji span is under the point.
+struct EmojiHit { tk::Rect rect; std::string shortcode; };
+
+// Section-aware hit-test mirroring paint_span_images' box walk: for each
+// is_image span, look up its glyph box(es) via selection_rects() over the
+// span's byte range and check whether `world` falls inside one.
+static EmojiHit emoji_at_world(const LinkLayout& le, tk::Point world)
+{
+    auto scan = [&](const std::vector<tk::TextSpan>& spans,
+                    tk::TextLayout* layout, tk::Point origin) -> EmojiHit
+    {
+        if (!layout)
+            return {};
+        int boff = 0;
+        for (const auto& sp : spans)
+        {
+            int len = static_cast<int>(sp.text.size());
+            if (sp.is_image && len > 0)
+            {
+                for (const tk::Rect& r : layout->selection_rects(boff, boff + len))
+                {
+                    tk::Rect world_r{r.x + origin.x, r.y + origin.y, r.w, r.h};
+                    if (rect_contains(world_r, world))
+                        return {world_r, sp.image_alt};
+                }
+            }
+            boff += len;
+        }
+        return {};
+    };
+
+    if (!le.sections.empty())
+    {
+        for (const auto& sec : le.sections)
+        {
+            EmojiHit hit = scan(sec.spans, sec.layout.get(), sec.origin);
+            if (!hit.shortcode.empty())
+                return hit;
+        }
+        return {};
+    }
+    return scan(le.spans, le.layout.get(), le.origin);
+}
+
 static int char_at_world(const LinkLayout& le, tk::Point world)
 {
     if (!le.sections.empty())
@@ -5802,6 +5848,37 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 host_->show_tooltip(this, tk::tr(src), tip_anchor);
             }
         }
+
+        // Inline custom-emoji shortcode tooltip — only when no action pill
+        // button is hovered (they take priority; see `next` above).
+        std::string emoji_sc;
+        tk::Rect    emoji_rect{};
+        if (next == ActionTooltip::None)
+        {
+            int erow = hovered_row_index();
+            if (erow >= 0 && static_cast<std::size_t>(erow) < messages_.size())
+            {
+                const auto& em = messages_[static_cast<std::size_t>(erow)];
+                if (const LinkLayout* le = link_cache_.peek(em.event_id))
+                {
+                    EmojiHit hit = emoji_at_world(*le, world);
+                    emoji_sc     = std::move(hit.shortcode);
+                    emoji_rect   = hit.rect;
+                }
+            }
+        }
+        if (!emoji_sc.empty())
+        {
+            if (host_)
+                host_->show_tooltip(this, emoji_sc, emoji_rect);
+            hover_emoji_tooltip_ = true;
+        }
+        else if (hover_emoji_tooltip_)
+        {
+            if (host_)
+                host_->hide_tooltip(this);
+            hover_emoji_tooltip_ = false;
+        }
     }
     return true;
 }
@@ -5845,6 +5922,12 @@ void MessageListView::on_pointer_leave()
         if (host_)
             host_->hide_tooltip(this);
         action_tooltip_ = ActionTooltip::None;
+    }
+    if (hover_emoji_tooltip_)
+    {
+        if (host_)
+            host_->hide_tooltip(this);
+        hover_emoji_tooltip_ = false;
     }
 }
 

@@ -969,6 +969,10 @@ private:
     enum class ActionTooltip { None, React, Reply, Thread, Edit, More };
     ActionTooltip action_tooltip_ = ActionTooltip::None;
 
+    // True while an inline custom-emoji shortcode tooltip (hovering an
+    // MSC2545 <img data-mx-emoticon> span in a message body) is showing.
+    bool hover_emoji_tooltip_ = false;
+
     // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
     // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
     tk::Host* host_ = nullptr;
