@@ -2394,6 +2394,36 @@ private:
 
     // ── Message row paint helpers ─────────────────────────────────────────────
 
+    // MSC4278: label shown on the suppressed-media "Load …" pill, keyed by
+    // the row's media kind (Image/Sticker/Video).
+    static std::string hidden_media_label(MessageRowData::Kind kind)
+    {
+        return (kind == MessageRowData::Kind::Video)
+                   ? tk::tr("Load video")
+                   : (kind == MessageRowData::Kind::Sticker)
+                         ? tk::tr("Load sticker")
+                         : tk::tr("Load image");
+    }
+
+    // Minimum tile size needed to draw the "Load …" pill (label + padding,
+    // matching the geometry in paint_hidden_media_placeholder) without
+    // clipping. Shared by the measure and paint passes so a hidden-media
+    // tile is never reserved/drawn smaller than the button it must contain.
+    static tk::Size hidden_media_pill_size(tk::CanvasFactory& factory,
+                                           MessageRowData::Kind kind)
+    {
+        tk::TextStyle ts{};
+        ts.role = tk::FontRole::UiSemibold;
+        auto lo = factory.build_text(hidden_media_label(kind), ts);
+        if (!lo)
+        {
+            return {0.0f, 0.0f};
+        }
+        tk::Size lsz = lo->measure();
+        constexpr float kMsgListPadX = 12.0f, kMsgListPadY = 7.0f;
+        return {lsz.w + kMsgListPadX * 2.0f, lsz.h + kMsgListPadY * 2.0f};
+    }
+
     float measure_body_block_height(const MessageRowData& m, tk::LayoutCtx& ctx,
                                     float col_w) const
     {
@@ -2441,6 +2471,13 @@ private:
                 (img && img->width() > 0 && img->height() > 0)
                     ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
                     : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min =
+                    hidden_media_pill_size(ctx.factory, m.kind);
+                sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
+                sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
+            }
             float h = sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
@@ -2472,6 +2509,13 @@ private:
             {
                 sz = {max_side, max_side};
             }
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min =
+                    hidden_media_pill_size(ctx.factory, m.kind);
+                sz.w = std::max(sz.w, std::min(pill_min.w, max_side));
+                sz.h = std::max(sz.h, std::min(pill_min.h, max_side));
+            }
             return quote_h + sz.h;
         }
         case MessageRowData::Kind::File:
@@ -2493,6 +2537,13 @@ private:
                     ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
                     : tk::Size{std::min(col_w, kImageMaxW),
                                std::min(col_w, kImageMaxW) * 9.0f / 16.0f};
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min =
+                    hidden_media_pill_size(ctx.factory, m.kind);
+                sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
+                sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
+            }
             float h = sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
@@ -2708,6 +2759,13 @@ private:
                 (img && img->width() > 0 && img->height() > 0)
                     ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
                     : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min =
+                    hidden_media_pill_size(ctx.factory, m.kind);
+                sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
+                sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
+            }
             tk::Rect r{x, y, sz.w, sz.h};
             paint_inline_media(m, ctx, r);
             // GIF badge for animated images (MSC4230).
@@ -2777,6 +2835,13 @@ private:
             {
                 sz = {max_side, max_side};
             }
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min =
+                    hidden_media_pill_size(ctx.factory, m.kind);
+                sz.w = std::max(sz.w, std::min(pill_min.w, max_side));
+                sz.h = std::max(sz.h, std::min(pill_min.h, max_side));
+            }
             tk::Rect r{x, y, sz.w, sz.h};
             paint_inline_media(m, ctx, r);
             if (!m.event_id.empty())
@@ -2837,6 +2902,13 @@ private:
                     ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
                     : tk::Size{std::min(col_w, kImageMaxW),
                                std::min(col_w, kImageMaxW) * 9.0f / 16.0f};
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min =
+                    hidden_media_pill_size(ctx.factory, m.kind);
+                sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
+                sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
+            }
             tk::Rect r{x, y, sz.w, sz.h};
             paint_video_card(m, ctx, r);
             if (!m.event_id.empty())
@@ -3899,11 +3971,7 @@ private:
         // Dim scrim so the pill reads over any blurhash.
         ctx.canvas.fill_rounded_rect(dst, 8.0f, tk::Color{0, 0, 0, 90});
 
-        const char* label = (m.kind == MessageRowData::Kind::Video)
-                                 ? "Load video"
-                                 : (m.kind == MessageRowData::Kind::Sticker)
-                                       ? "Load sticker"
-                                       : "Load image";
+        std::string label = hidden_media_label(m.kind);
         tk::TextStyle ts{};
         ts.role = tk::FontRole::UiSemibold;
         auto lo = ctx.factory.build_text(label, ts);
@@ -3912,18 +3980,23 @@ private:
             return;
         }
         tk::Size lsz = lo->measure();
-        constexpr float kMsgListPadX = 12.0f, kMsgListPadY = 7.0f;
-        float pw = lsz.w + kMsgListPadX * 2.0f;
-        float ph = lsz.h + kMsgListPadY * 2.0f;
-        // Keep the pill inside the tile.
+        tk::Size pill_sz = hidden_media_pill_size(ctx.factory, m.kind);
+        float pw = pill_sz.w;
+        float ph = pill_sz.h;
+        // Keep the pill inside the tile. The measure/paint passes already
+        // raise the tile floor to fit the pill (see hidden_media_pill_size),
+        // but clamp+clip here too as a safety net against any undersized dst.
         pw = std::min(pw, dst.w);
+        ph = std::min(ph, dst.h);
         tk::Rect pill{dst.x + (dst.w - pw) * 0.5f, dst.y + (dst.h - ph) * 0.5f,
                       pw, ph};
+        ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
         ctx.canvas.fill_rounded_rect(pill, ph * 0.5f, ctx.theme.palette.accent);
         ctx.canvas.draw_text(*lo,
                              {pill.x + (pw - lsz.w) * 0.5f,
                               pill.y + (ph - lsz.h) * 0.5f},
                              ctx.theme.palette.text_on_accent);
+        ctx.canvas.pop_clip();
     }
 
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,

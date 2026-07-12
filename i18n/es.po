@@ -783,6 +783,18 @@ msgid_plural "{0}'s requests to join were denied"
 msgstr[0] "La solicitud de {0} para unirse fue denegada"
 msgstr[1] "Las solicitudes de {0} para unirse fueron denegadas"
 
+#: ui/shared/views/MessageListView.cpp
+msgid "Load image"
+msgstr "Cargar imagen"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Load sticker"
+msgstr "Cargar pegatina"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Load video"
+msgstr "Cargar vídeo"
+
 #: ui/shared/views/RoomListView.h:163
 msgid "Unread"
 msgstr "No leído"

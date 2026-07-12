@@ -770,6 +770,18 @@ msgstr "[Réàçtéd by:xx]"
 msgid "Reacted with "
 msgstr "[Réàçtéd wïth xx]"
 
+#: ui/shared/views/MessageListView.cpp
+msgid "Load image"
+msgstr "[Löàd ïmàgéxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Load sticker"
+msgstr "[Löàd stïckérxxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Load video"
+msgstr "[Löàd vïdéöxx]"
+
 #: ui/shared/views/IncomingCallBanner.cpp:26
 #: ui/shared/views/VerificationBanner.cpp:70
 #: ui/shared/views/VerificationBanner.cpp:213
