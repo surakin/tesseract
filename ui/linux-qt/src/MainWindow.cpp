@@ -4683,6 +4683,12 @@ void MainWindow::openSettings()
                     if (client_ && !current_room_id_.empty())
                         client_->subscribe_room(current_room_id_);
                 });
+        connect(settingsWidget_, &SettingsWidget::msc2545LegacyCompatChanged,
+                this,
+                [this](bool enabled)
+                {
+                    handle_msc2545_legacy_compat_toggle_(enabled);
+                });
 
         connect(settingsWidget_, &SettingsWidget::clearCachesRequested, this,
                 [this]

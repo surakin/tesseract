@@ -291,6 +291,7 @@ public:
 #ifdef TESSERACT_GITHUB_REPO
     void handle_check_for_updates_toggle(bool enabled);
 #endif
+    void handle_msc2545_legacy_compat_toggle(bool enabled);
 
     // Current-room actions (operate on current_room_id_ internally)
     void handle_compose_text_changed(const std::string& text);
@@ -2145,6 +2146,8 @@ void MacShell::handle_show_membership_events_toggle(bool enabled)
 void MacShell::handle_check_for_updates_toggle(bool enabled)
     { handle_check_for_updates_toggle_(enabled); }
 #endif
+void MacShell::handle_msc2545_legacy_compat_toggle(bool enabled)
+    { handle_msc2545_legacy_compat_toggle_(enabled); }
 void MacShell::begin_crypto_identity_reset() { begin_crypto_identity_reset_(); }
 void MacShell::on_account_picker_select(const std::string& uid)
     { on_account_picker_select_(uid); }
@@ -6111,6 +6114,11 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             if (s) s->_shell->handle_check_for_updates_toggle(enabled);
         };
 #endif
+        _settingsView->on_msc2545_legacy_compat_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_msc2545_legacy_compat_toggle(enabled);
+        };
         _settingsView->on_media_previews_changed =
             [ws](tesseract::Settings::MediaPreviews mode)
         {
@@ -8127,6 +8135,8 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
         tesseract::Settings::instance().autoscroll_unread_rooms);
     _settingsView->set_show_membership_events_pref(
         tesseract::Settings::instance().show_room_join_leave_events);
+    _settingsView->set_msc2545_legacy_compat_pref(
+        tesseract::Settings::instance().msc2545_legacy_compat);
     _settingsView->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
     _settingsView->set_index_messages_pref(

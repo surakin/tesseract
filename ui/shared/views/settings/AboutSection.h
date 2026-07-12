@@ -34,6 +34,10 @@ public:
     // to its shared ConfirmDialog before forwarding to the shell.
     std::function<void()> on_clear_caches;
 
+    // Fired when the user presses "Advanced". SettingsView wires this to
+    // reveal and navigate to the hidden Advanced tab.
+    std::function<void()> on_advanced_clicked;
+
     // Tooltip callbacks — bubbled up from the storage rows. Wire to platform
     // tooltip APIs the same way RoomView tooltip callbacks are wired.
     std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;

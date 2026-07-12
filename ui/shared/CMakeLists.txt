@@ -224,6 +224,8 @@ set(_tk_sources
     views/settings/DevicesSection.cpp
     views/settings/AboutSection.h
     views/settings/AboutSection.cpp
+    views/settings/AdvancedSection.h
+    views/settings/AdvancedSection.cpp
     views/settings/PrivacySection.h
     views/settings/PrivacySection.cpp
     views/settings/RoomGeneralSection.h

@@ -212,6 +212,17 @@ public:
     // Default on. No-op when TESSERACT_GITHUB_REPO is not set at build time.
     bool check_for_updates = true;
 
+    // ── Advanced ─────────────────────────────────────────────────────
+    // MSC2545 image-pack historical compatibility. When true (default), reads/
+    // writes both unstable (im.ponies.*) and stable (m.image_pack*) event-type
+    // names for room image packs and the emote-rooms subscription list, and
+    // loads the user's personal pack (im.ponies.user_emotes, no stable name
+    // exists). OFF is a stricter mode: stable-name-only, personal pack not
+    // loaded. Surfaced in Settings → About → Advanced (hidden tab, revealed
+    // via the "Advanced" button since it's a compatibility knob most users
+    // never need). Drives Client::set_msc2545_legacy_compat().
+    bool msc2545_legacy_compat = true;
+
     // Minimum log level forwarded by the Rust/matrix-sdk tracing subscriber.
     // Accepted values: "error", "warn", "info", "debug", "trace".
     // Overridden at runtime by the RUST_LOG environment variable.

@@ -119,6 +119,11 @@ SettingsWidget::SettingsWidget()
         if (on_show_membership_events_changed)
             on_show_membership_events_changed(v);
     };
+    settings_view_->on_msc2545_legacy_compat_changed = [this](bool v)
+    {
+        if (on_msc2545_legacy_compat_changed)
+            on_msc2545_legacy_compat_changed(v);
+    };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
     settings_view_->on_hide_content_changed = [](bool e)
@@ -468,6 +473,11 @@ void SettingsWidget::set_group_inactive_pref(bool enabled)
 void SettingsWidget::set_show_membership_events_pref(bool enabled)
 {
     settings_view_->set_show_membership_events_pref(enabled);
+}
+
+void SettingsWidget::set_msc2545_legacy_compat_pref(bool enabled)
+{
+    settings_view_->set_msc2545_legacy_compat_pref(enabled);
 }
 
 void SettingsWidget::set_group_unread_pref(bool enabled)

@@ -607,6 +607,13 @@ pub struct ClientFfi {
     /// visibility is decided (see `filter_membership` in `client::timeline`).
     /// Controlled by `set_show_membership_events`.
     pub(super) show_membership_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// When `false`, MSC2545 image-pack code reads/writes only the stable
+    /// event-type names for room packs and the emote-rooms subscription
+    /// list, and the personal pack (`im.ponies.user_emotes`, which has no
+    /// stable name) is not loaded. Default `true` (today's behavior:
+    /// unconditional dual stable+unstable reads, personal pack always
+    /// loaded). Controlled by `set_msc2545_legacy_compat`.
+    pub(super) msc2545_legacy_compat: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Last set of room IDs pushed to `RoomListService::subscribe_to_rooms`.
     /// Used by `sync_room_subscriptions` to skip the re-push (and the SQL
     /// fan-out it triggers inside matrix-sdk) when the subscribed set is
@@ -963,6 +970,7 @@ impl ClientFfi {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             #[cfg(not(test))]
             last_sync_room_subscriptions: Arc::new(parking_lot::Mutex::new(
                 std::collections::HashSet::new(),
@@ -1022,6 +1030,7 @@ impl ClientFfi {
             http_client: reqwest::Client::new(),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             #[cfg(feature = "calls")]
             active_rtc_call: None,
@@ -1229,6 +1238,7 @@ async fn fetch_all_room_pack_contents(
     client: &Client,
     cache: &RoomStateCache,
     room_id: &OwnedRoomId,
+    legacy_compat: bool,
 ) -> Vec<(String, serde_json::Value)> {
     let state = fetch_room_state_cached(client, cache, room_id).await;
 
@@ -1238,7 +1248,7 @@ async fn fetch_all_room_pack_contents(
         let Ok(Some(ty)) = raw.get_field::<String>("type") else {
             continue;
         };
-        if !crate::image_packs::ROOM_PACK_TYPES.contains(&ty.as_str()) {
+        if !crate::image_packs::room_pack_types(legacy_compat).contains(&ty.as_str()) {
             continue;
         }
         let Ok(Some(state_key)) = raw.get_field::<String>("state_key") else {
@@ -1264,8 +1274,9 @@ pub(super) async fn room_pack_state_keys(
     client: &Client,
     cache: &RoomStateCache,
     room_id: &OwnedRoomId,
+    legacy_compat: bool,
 ) -> std::collections::BTreeSet<String> {
-    fetch_all_room_pack_contents(client, cache, room_id)
+    fetch_all_room_pack_contents(client, cache, room_id, legacy_compat)
         .await
         .into_iter()
         .map(|(state_key, _)| state_key)
@@ -1283,10 +1294,11 @@ pub(super) async fn room_pack_event_types_for_key(
     cache: &RoomStateCache,
     room_id: &OwnedRoomId,
     state_key: &str,
+    legacy_compat: bool,
 ) -> Vec<&'static str> {
     let state = fetch_room_state_cached(client, cache, room_id).await;
     let mut types = Vec::new();
-    for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+    for &ev_type_str in crate::image_packs::room_pack_types(legacy_compat) {
         let has_content = state.iter().any(|raw| {
             raw.get_field::<String>("type").ok().flatten().as_deref() == Some(ev_type_str)
                 && raw.get_field::<String>("state_key").ok().flatten().as_deref()
@@ -1311,10 +1323,13 @@ async fn discover_and_parse_room_packs(
     room_id: &OwnedRoomId,
     room_id_str: &str,
     subscribed_set: &std::collections::BTreeSet<(String, String)>,
+    legacy_compat: bool,
 ) -> Vec<crate::image_packs::ImagePack> {
     let mut room_name: Option<String> = None;
     let mut packs = Vec::new();
-    for (state_key, content) in fetch_all_room_pack_contents(client, cache, room_id).await {
+    for (state_key, content) in
+        fetch_all_room_pack_contents(client, cache, room_id, legacy_compat).await
+    {
         let source = crate::image_packs::PackSource::Room {
             room_id: room_id_str.to_owned(),
             state_key: state_key.clone(),
@@ -1355,13 +1370,14 @@ async fn discover_and_parse_room_packs(
 #[cfg(not(test))]
 async fn collect_subscribed_room_refs(
     client: &Client,
+    legacy_compat: bool,
 ) -> std::collections::BTreeSet<(String, String)> {
     use matrix_sdk::ruma::events::GlobalAccountDataEventType;
     use serde_json::Value;
 
     let mut room_refs_set: std::collections::BTreeSet<(String, String)> =
         std::collections::BTreeSet::new();
-    for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
+    for &ev_type_str in crate::image_packs::emote_rooms_types(legacy_compat) {
         let et = GlobalAccountDataEventType::from(ev_type_str);
         let Ok(Some(raw)) = client.account().account_data_raw(et).await else {
             continue;
@@ -1387,6 +1403,7 @@ async fn fetch_room_pack(
     room_id: &OwnedRoomId,
     room_id_str: &str,
     state_key: &str,
+    legacy_compat: bool,
 ) -> Option<crate::image_packs::ImagePack> {
     use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
     use matrix_sdk::ruma::events::StateEventType;
@@ -1405,7 +1422,7 @@ async fn fetch_room_pack(
     // with different images.
     if let Some(room) = client.get_room(room_id) {
         let mut merged: Option<Value> = None;
-        for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+        for &ev_type_str in crate::image_packs::room_pack_types(legacy_compat) {
             let et = StateEventType::from(ev_type_str);
             // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
             // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
@@ -1464,7 +1481,7 @@ async fn fetch_room_pack(
             // success) and combine — a room may carry both with different
             // images.
             let mut fetched: Option<Value> = None;
-            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+            for &ev_type_str in crate::image_packs::room_pack_types(legacy_compat) {
                 let et = StateEventType::from(ev_type_str);
                 let req = get_state_event_for_key::v3::Request::new(
                     room_id.clone(),
@@ -1521,6 +1538,7 @@ pub(super) async fn rebuild_image_packs(
     active_rooms: &[String],
     app_cache_db: &std::sync::Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
     room_state_cache: &RoomStateCache,
+    legacy_compat: bool,
 ) -> Vec<crate::image_packs::ImagePack> {
     use matrix_sdk::ruma::events::GlobalAccountDataEventType;
     use serde_json::Value;
@@ -1529,8 +1547,9 @@ pub(super) async fn rebuild_image_packs(
 
     // -- User pack (account_data) --
     // MSC2545 defines no personal pack, so there is only the de-facto
-    // `im.ponies.user_emotes` — no stable name to prefer.
-    {
+    // `im.ponies.user_emotes` — no stable name to prefer. Only loaded when
+    // legacy_compat is on; it has no stable-name alternative to fall back to.
+    if legacy_compat {
         let et = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
         if let Ok(Some(raw)) = client.account().account_data_raw(et).await {
             if let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) {
@@ -1548,7 +1567,7 @@ pub(super) async fn rebuild_image_packs(
         }
     }
 
-    let subscribed_set = collect_subscribed_room_refs(client).await;
+    let subscribed_set = collect_subscribed_room_refs(client, legacy_compat).await;
     let active_set: std::collections::BTreeSet<String> = active_rooms.iter().cloned().collect();
 
     // -- Recently-active rooms: full discovery, every state_key --
@@ -1567,6 +1586,7 @@ pub(super) async fn rebuild_image_packs(
             &room_id,
             room_id_str,
             &subscribed_set,
+            legacy_compat,
         )
         .await;
         {
@@ -1593,7 +1613,15 @@ pub(super) async fn rebuild_image_packs(
         let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
             continue;
         };
-        let fetched = fetch_room_pack(client, http_cache, &room_id, room_id_str, state_key).await;
+        let fetched = fetch_room_pack(
+            client,
+            http_cache,
+            &room_id,
+            room_id_str,
+            state_key,
+            legacy_compat,
+        )
+        .await;
 
         // Keep the persisted "Known Packs" cache in sync with what we just
         // learned: found a pack -> upsert (also covers display_name
@@ -1648,17 +1676,19 @@ pub(super) async fn refresh_room_packs(
     app_cache_db: &std::sync::Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
     room_state_cache: &RoomStateCache,
     room_id_str: &str,
+    legacy_compat: bool,
 ) -> Vec<crate::image_packs::ImagePack> {
     let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
         return Vec::new();
     };
-    let subscribed_set = collect_subscribed_room_refs(client).await;
+    let subscribed_set = collect_subscribed_room_refs(client, legacy_compat).await;
     let packs = discover_and_parse_room_packs(
         client,
         room_state_cache,
         &room_id,
         room_id_str,
         &subscribed_set,
+        legacy_compat,
     )
     .await;
 
@@ -3081,6 +3111,23 @@ mod tests {
         c.set_show_membership_events(false);
         assert!(!c
             .show_membership_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn set_msc2545_legacy_compat_roundtrips() {
+        let c = ClientFfi::new();
+        // Default is on.
+        assert!(c
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_msc2545_legacy_compat(false);
+        assert!(!c
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_msc2545_legacy_compat(true);
+        assert!(c
+            .msc2545_legacy_compat
             .load(std::sync::atomic::Ordering::Relaxed));
     }
 

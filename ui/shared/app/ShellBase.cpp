@@ -5251,6 +5251,7 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
         session->sync_started = true;
         apply_search_indexing_pref_(*session);
         apply_membership_events_pref_(*session);
+        apply_msc2545_legacy_compat_pref_(*session);
 
         // Per-account notifier (native) and Linux-only UnifiedPush connector.
         install_account_notifier_(*session);
@@ -5380,6 +5381,7 @@ ShellBase::FinalizeLoginResult ShellBase::finalize_login_()
     session->sync_started = true;
     apply_search_indexing_pref_(*session);
     apply_membership_events_pref_(*session);
+    apply_msc2545_legacy_compat_pref_(*session);
 
     // Per-account notifier (native) and Linux-only UnifiedPush connector.
     install_account_notifier_(*session);
@@ -7138,6 +7140,20 @@ void ShellBase::handle_show_membership_events_toggle_(bool enabled)
     }
 }
 
+void ShellBase::handle_msc2545_legacy_compat_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.msc2545_legacy_compat = enabled;
+    s.save_to_disk(tesseract::config_dir());
+
+    // set_msc2545_legacy_compat synchronously rebuilds the image-pack cache
+    // and fires on_image_packs_updated Rust-side, which the shells already
+    // handle to refresh list_image_packs()-driven UI — no extra refresh
+    // call needed here.
+    if (client_)
+        client_->set_msc2545_legacy_compat(enabled);
+}
+
 #ifdef TESSERACT_GITHUB_REPO
 void ShellBase::handle_check_for_updates_toggle_(bool enabled)
 {
@@ -7165,6 +7181,18 @@ void ShellBase::apply_membership_events_pref_(tesseract::AccountSession& session
     // the user to toggle the checkbox after launch.
     if (session.client && tesseract::Settings::instance().show_room_join_leave_events)
         session.client->set_show_membership_events(true);
+}
+
+void ShellBase::apply_msc2545_legacy_compat_pref_(tesseract::AccountSession& session)
+{
+    // Unlike show_room_join_leave_events, the Rust-side AtomicBool already
+    // defaults to true (matching Settings::msc2545_legacy_compat's default),
+    // but push it unconditionally so a session where the user previously
+    // turned it off doesn't silently start back up in the (wrong) default-on
+    // state.
+    if (session.client)
+        session.client->set_msc2545_legacy_compat(
+            tesseract::Settings::instance().msc2545_legacy_compat);
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text)

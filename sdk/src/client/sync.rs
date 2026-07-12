@@ -188,6 +188,7 @@ impl ClientFfi {
             let write_pending = Arc::clone(&self.user_pack_write_pending);
             let packs_dirty = Arc::clone(&self.packs_dirty);
             let active_rooms = Arc::clone(&self.active_rooms);
+            let msc2545_legacy_compat = Arc::clone(&self.msc2545_legacy_compat);
             // Open the per-account cache DBs for this session.
             // Load persisted backfill timestamps now so the first
             // on_rooms_updated() already classifies rooms correctly;
@@ -301,7 +302,8 @@ impl ClientFfi {
                     Option<serde_json::Value>,
                 > = std::collections::HashMap::new();
                 let active_rooms_snapshot = active_rooms.lock().clone();
-                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw).await;
+                let legacy_compat = msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed);
+                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await;
                 { let mut g = packs_cache.lock(); *g = pks; }
                 { let guard = h.lock(); guard.on_image_packs_updated(); }
 
@@ -462,7 +464,8 @@ impl ClientFfi {
                             // a polling timer and out of the event
                             // handler machinery.
                             let active_rooms_snapshot = active_rooms.lock().clone();
-                            let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw).await;
+                            let legacy_compat = msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed);
+                            let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await;
                             {
                                 let mut g = packs_cache.lock();
                                 use std::sync::atomic::Ordering;
@@ -1045,6 +1048,9 @@ impl ClientFfi {
                 let image_packs = Arc::clone(&self.image_packs);
                 let handler = self.handler.clone();
                 let room_id = room_id.to_owned();
+                let legacy_compat = self
+                    .msc2545_legacy_compat
+                    .load(std::sync::atomic::Ordering::Relaxed);
                 if let Ok(rid) = room_id.parse() {
                     super::invalidate_room_state_cache(&self.room_state_cache, &rid);
                 }
@@ -1054,6 +1060,7 @@ impl ClientFfi {
                         &app_cache_db,
                         &room_state_cache,
                         &room_id,
+                        legacy_compat,
                     )
                     .await;
                     {

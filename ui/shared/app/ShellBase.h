@@ -2470,6 +2470,13 @@ protected:
     void handle_check_for_updates_toggle_(bool enabled);
 #endif
 
+    // Toggle handler for the "Use historical MSC2545 compatibility" Advanced
+    // setting. Persists the setting and calls
+    // Client::set_msc2545_legacy_compat() on the active account's client,
+    // which synchronously rebuilds the image-pack cache so the change takes
+    // effect immediately (no restart needed).
+    void handle_msc2545_legacy_compat_toggle_(bool enabled);
+
     // Resume live search indexing for a freshly-synced account if the global
     // "index messages for search" preference is enabled. Called after start_sync.
     void apply_search_indexing_pref_(tesseract::AccountSession& session);
@@ -2479,6 +2486,14 @@ protected:
     // very first room subscription already reflects the setting instead of
     // defaulting to the Rust-side AtomicBool's off default. Non-blocking.
     void apply_membership_events_pref_(tesseract::AccountSession& session);
+
+    // Apply the persisted "Use historical MSC2545 compatibility" preference
+    // to a freshly-synced account's Rust client. Called after start_sync so
+    // the first image-pack rebuild already reflects the setting instead of
+    // defaulting to the Rust-side AtomicBool's on default (harmless when the
+    // setting is already on, but needed for a session where the user
+    // previously turned it off).
+    void apply_msc2545_legacy_compat_pref_(tesseract::AccountSession& session);
 
     // ── Search-index stats (Settings panel) ───────────────────────────────
     // Each shell points `settings_view_` at its shared SettingsView once, and

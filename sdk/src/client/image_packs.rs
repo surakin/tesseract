@@ -68,7 +68,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return Vec::new();
         };
-        let subscribed_set = self.rt.block_on(super::collect_subscribed_room_refs(&client));
+        let legacy_compat = self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let subscribed_set = self
+            .rt
+            .block_on(super::collect_subscribed_room_refs(&client, legacy_compat));
         cached
             .into_iter()
             .map(|(room_id, state_key, display_name)| {
@@ -173,6 +178,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
+        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
+            return err(
+                "personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)",
+            );
+        }
 
         if image_url.is_empty() {
             return err("image_url is empty");
@@ -455,6 +466,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
+        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
+            return err(
+                "personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)",
+            );
+        }
         if image_url.is_empty() {
             return err("image_url is empty");
         }
@@ -543,6 +560,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
+        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
+            return err(
+                "personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)",
+            );
+        }
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
@@ -623,6 +646,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
+        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
+            return err(
+                "personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)",
+            );
+        }
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
             &self.handler,
@@ -729,7 +758,10 @@ impl ClientFfi {
             self.rt.block_on(async move { l.lock_owned().await })
         };
 
-        for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
+        let legacy_compat = self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed);
+        for &ev_type_str in crate::image_packs::emote_rooms_types(legacy_compat) {
             let ev_type = GlobalAccountDataEventType::from(ev_type_str);
             let client_for_read = client.clone();
             let ev_type_for_read = ev_type.clone();
@@ -863,20 +895,28 @@ impl ClientFfi {
             "images": serde_json::Value::Object(images_obj),
         });
 
+        let legacy_compat = self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed);
         let (final_state_key, types_to_write): (String, Vec<&'static str>) = if is_new {
             let existing_keys = self.rt.block_on(super::room_pack_state_keys(
                 &client,
                 &self.room_state_cache,
                 &rid,
+                legacy_compat,
             ));
             let key = crate::image_packs::loop_suffixed_state_key(&existing_keys, display_name);
-            (key, vec![crate::image_packs::TYPE_ROOM_PACK_STABLE])
-        } else {
+            // legacy_compat ON (default) dual-writes both event types for a
+            // brand-new pack, matching pre-flag read behavior; OFF writes
+            // only the stable type.
+            (key, crate::image_packs::room_pack_types(legacy_compat).to_vec())
+        } else if legacy_compat {
             let types = self.rt.block_on(super::room_pack_event_types_for_key(
                 &client,
                 &self.room_state_cache,
                 &rid,
                 state_key,
+                legacy_compat,
             ));
             let types = if types.is_empty() {
                 vec![crate::image_packs::TYPE_ROOM_PACK_STABLE]
@@ -884,6 +924,14 @@ impl ClientFfi {
                 types
             };
             (state_key.to_owned(), types)
+        } else {
+            // legacy_compat OFF: force stable-only, skipping existing-type
+            // preservation — any stale unstable-only copy is left untouched
+            // rather than written to, consistent with OFF not reading it.
+            (
+                state_key.to_owned(),
+                vec![crate::image_packs::TYPE_ROOM_PACK_STABLE],
+            )
         };
 
         for ev_type in &types_to_write {
@@ -944,11 +992,15 @@ impl ClientFfi {
             "image_packs/remove_room_pack".to_string(),
         );
 
+        let legacy_compat = self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed);
         let types = self.rt.block_on(super::room_pack_event_types_for_key(
             &client,
             &self.room_state_cache,
             &rid,
             state_key,
+            legacy_compat,
         ));
         if types.is_empty() {
             // Nothing to remove — no-op success, mirrors remove_user_pack_image's
@@ -1001,8 +1053,11 @@ impl ClientFfi {
         let active_rooms_snapshot = self.active_rooms.lock().clone();
         let app_cache_db = Arc::clone(&self.app_cache_db);
         let room_state_cache = Arc::clone(&self.room_state_cache);
+        let legacy_compat = self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed);
         let packs = self.rt.block_on(async move {
-            super::rebuild_image_packs(&client, &mut http_cache, &active_rooms_snapshot, &app_cache_db, &room_state_cache).await
+            super::rebuild_image_packs(&client, &mut http_cache, &active_rooms_snapshot, &app_cache_db, &room_state_cache, legacy_compat).await
         });
         {
             let mut cache = self.image_packs.lock();
@@ -1012,6 +1067,25 @@ impl ClientFfi {
             let g = h.lock();
             g.on_image_packs_updated();
         }
+    }
+
+    /// Enable/disable MSC2545 "historical compatibility" — see the FFI
+    /// decl's doc comment in bridge.rs for the full contract. Thread-safe;
+    /// synchronously rebuilds the image-pack cache before returning so
+    /// `list_image_packs()` and the personal-pack editor reflect the change
+    /// immediately, mirroring `set_pack_room_subscribed`'s no-round-trip-lag
+    /// guarantee.
+    #[cfg(not(test))]
+    pub fn set_msc2545_legacy_compat(&self, enabled: bool) {
+        self.msc2545_legacy_compat
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+        self.refresh_image_packs_blocking();
+    }
+
+    #[cfg(test)]
+    pub fn set_msc2545_legacy_compat(&self, enabled: bool) {
+        self.msc2545_legacy_compat
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Update only the user pack slot in the in-memory cache from `content`

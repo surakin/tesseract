@@ -20,6 +20,7 @@
 
 #include "views/settings/AboutSection.h"
 #include "views/settings/AccountSection.h"
+#include "views/settings/AdvancedSection.h"
 #include "views/settings/AppearanceSection.h"
 #include "views/settings/DevicesSection.h"
 #include "views/settings/ImagePacksSection.h"
@@ -125,6 +126,11 @@ public:
     // Silently initialise the "check for updates" checkbox.
     void set_check_for_updates_pref(bool enabled);
 #endif
+
+    // ----- Advanced section (hidden tab, revealed via About's "Advanced" button) --
+
+    // Silently initialise the "Use historical MSC2545 compatibility" checkbox.
+    void set_msc2545_legacy_compat_pref(bool enabled);
 
     // Update the search-index stats line under the checkbox (shown only while
     // enabled). Driven by the shell on settings-open and a slow poll.
@@ -285,6 +291,9 @@ public:
     std::function<void(bool)> on_check_for_updates_changed;
 #endif
 
+    // Fired when the user toggles "Use historical MSC2545 compatibility".
+    std::function<void(bool)> on_msc2545_legacy_compat_changed;
+
     // Fired when the active settings tab changes (so shells can relayout
     // native overlays whose visibility depends on the selected tab).
     std::function<void()> on_tab_changed;
@@ -323,6 +332,13 @@ private:
     // Height of the back-bar strip at the top of the view.
     static constexpr float kBarHeight = 48.0f;
 
+    // Index of the hidden "Advanced" bottom tab in tabs_ — computed from the
+    // final tab registration order in the constructor (9 top tabs, indices
+    // 0-8; bottom tabs About=9, Advanced=10). Kept hidden via
+    // tabs_->set_tab_visible(kAdvancedTabIdx, false) until the About tab's
+    // "Advanced" button reveals it.
+    static constexpr int kAdvancedTabIdx = 10;
+
     // Child widgets — owned via add_child, raw pointers borrowed back.
     tk::Button* back_btn_ = nullptr;
     tk::SideTabView* tabs_ = nullptr;
@@ -334,6 +350,7 @@ private:
     ServerSection*   server_section_ = nullptr;
     DevicesSection*  devices_        = nullptr;
     AboutSection*    about_          = nullptr;
+    AdvancedSection* advanced_       = nullptr;
     ConfirmDialog*   confirm_dialog_ = nullptr;
     LanguageSection* language_       = nullptr;
     ImagePacksSection* image_packs_  = nullptr;

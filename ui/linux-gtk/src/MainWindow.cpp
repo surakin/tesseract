@@ -3024,6 +3024,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
             handle_check_for_updates_toggle_(enabled);
         };
 #endif
+        settings_widget_->on_msc2545_legacy_compat_changed = [this](bool enabled)
+        {
+            handle_msc2545_legacy_compat_toggle_(enabled);
+        };
         settings_widget_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)
         {
@@ -5698,6 +5702,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().autoscroll_unread_rooms);
     settings_widget_->set_show_membership_events_pref(
         tesseract::Settings::instance().show_room_join_leave_events);
+    settings_widget_->set_msc2545_legacy_compat_pref(
+        tesseract::Settings::instance().msc2545_legacy_compat);
     if (settings_controller_)
         settings_widget_->set_controller(settings_controller_.get(),
                                          my_display_name_);

@@ -72,9 +72,16 @@ public:
     std::function<void(std::string room_id, std::string state_key, bool subscribed)>
         on_pack_subscription_toggled;
 
+    // Show/hide the "Your Sticker Pack" group — hidden when the "Use
+    // historical MSC2545 compatibility" setting is off, since the personal
+    // pack (im.ponies.user_emotes) has no stable-name equivalent and is not
+    // loaded/editable in that mode.
+    void set_personal_pack_enabled(bool enabled);
+
 private:
     void refresh_save_button_();
 
+    SettingsGroup* user_pack_group_ = nullptr;
     UserPackEditor* user_pack_ = nullptr;
     tk::Button* save_btn_ = nullptr;
     KnownPacksList* known_packs_ = nullptr;

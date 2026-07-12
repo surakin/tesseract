@@ -77,12 +77,13 @@ TEST_CASE("cache size row value cells are at the same x after layout",
     st.run(section, {0, 0, 400, 600});
 
     // Navigate: AboutSection (SettingsPage VBox)
-    //   → last child (outer HBox wrapping the Storage group)
+    //   → second-to-last child (outer HBox wrapping the Storage group —
+    //     the last child is the "Advanced" button row)
     //     → child 0 (SettingsGroup)
     //       → children 0-2 (the three CacheSizeRows)
     auto& page_ch = section.children();
-    REQUIRE(page_ch.size() >= 2);
-    auto* outer_hbox = page_ch.back().get();
+    REQUIRE(page_ch.size() >= 3);
+    auto* outer_hbox = page_ch[page_ch.size() - 2].get();
     REQUIRE(!outer_hbox->children().empty());
     auto* sg = outer_hbox->children()[0].get();
     REQUIRE(sg->children().size() >= 3);

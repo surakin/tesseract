@@ -127,6 +127,31 @@ pub const TYPE_ROOM_PACK_UNSTABLE: &str = "im.ponies.room_emotes";
 pub const EMOTE_ROOMS_TYPES: [&str; 2] = [TYPE_EMOTE_ROOMS_UNSTABLE, TYPE_EMOTE_ROOMS_STABLE];
 pub const ROOM_PACK_TYPES: [&str; 2] = [TYPE_ROOM_PACK_UNSTABLE, TYPE_ROOM_PACK_STABLE];
 
+const ROOM_PACK_TYPES_STABLE_ONLY: [&str; 1] = [TYPE_ROOM_PACK_STABLE];
+const EMOTE_ROOMS_TYPES_STABLE_ONLY: [&str; 1] = [TYPE_EMOTE_ROOMS_STABLE];
+
+/// Which room-pack event type(s) to read/write. `legacy_compat = true`
+/// (default — the "Use historical MSC2545 compatibility" setting) probes/
+/// writes both `im.ponies.room_emotes` and `m.room.image_pack`, matching
+/// pre-flag behavior. `false` is a stricter stable-only mode.
+pub fn room_pack_types(legacy_compat: bool) -> &'static [&'static str] {
+    if legacy_compat {
+        &ROOM_PACK_TYPES
+    } else {
+        &ROOM_PACK_TYPES_STABLE_ONLY
+    }
+}
+
+/// Same as [`room_pack_types`] for the `m.image_pack.rooms` /
+/// `im.ponies.emote_rooms` subscription-list account data.
+pub fn emote_rooms_types(legacy_compat: bool) -> &'static [&'static str] {
+    if legacy_compat {
+        &EMOTE_ROOMS_TYPES
+    } else {
+        &EMOTE_ROOMS_TYPES_STABLE_ONLY
+    }
+}
+
 /// Tesseract-private flag stored alongside image entries to mark favorites.
 /// Spec is open about unknown keys; other clients ignore it.
 pub const FAVORITE_KEY: &str = "im.tesseract.favorite";
@@ -712,6 +737,26 @@ pub fn suggest_shortcode(body: &str, existing: &serde_json::Map<String, Value>) 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn room_pack_types_legacy_compat_true_returns_both() {
+        assert_eq!(room_pack_types(true), &ROOM_PACK_TYPES);
+    }
+
+    #[test]
+    fn room_pack_types_legacy_compat_false_returns_stable_only() {
+        assert_eq!(room_pack_types(false), [TYPE_ROOM_PACK_STABLE]);
+    }
+
+    #[test]
+    fn emote_rooms_types_legacy_compat_true_returns_both() {
+        assert_eq!(emote_rooms_types(true), &EMOTE_ROOMS_TYPES);
+    }
+
+    #[test]
+    fn emote_rooms_types_legacy_compat_false_returns_stable_only() {
+        assert_eq!(emote_rooms_types(false), [TYPE_EMOTE_ROOMS_STABLE]);
+    }
 
     #[test]
     fn type_slices_prefer_unstable_then_stable() {

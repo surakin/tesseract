@@ -5,6 +5,7 @@
 #include "views/BrandView.h"
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/i18n.h"
 #include "tk/layout.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
@@ -336,6 +337,18 @@ AboutSection::AboutSection()
     auto hbox = std::make_unique<tk::HBox>();
     hbox->add_child(std::move(sg));
     add_widget(std::move(hbox));
+
+    // Right-aligned "Advanced" button — reveals the hidden Advanced settings
+    // tab (see SettingsView::kAdvancedTabIdx). BrandView's fill_main above
+    // already pushes everything below it to the bottom, so this row just
+    // stacks under the Storage group.
+    auto btn_row = std::make_unique<tk::HBox>();
+    btn_row->set_main(tk::Main::End);
+    btn_row->add_child(std::make_unique<tk::Button>(
+        tk::tr("Advanced"),
+        [this] { if (on_advanced_clicked) on_advanced_clicked(); },
+        tk::Button::Variant::Subtle));
+    add_widget(std::move(btn_row));
 }
 
 void AboutSection::set_memory_cache_size(uint64_t bytes)

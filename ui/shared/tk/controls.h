@@ -229,6 +229,10 @@ public:
     void set_font_role(FontRole role);
 
     std::function<void(bool)> on_change;
+    // Fired on the false->true hover transition / on leaving hover. Used by
+    // callers that want to show a tooltip for this checkbox.
+    std::function<void()> on_hover_enter;
+    std::function<void()> on_hover_leave;
 
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds) override;

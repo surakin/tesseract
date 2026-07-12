@@ -1084,3 +1084,18 @@ msgstr "Guardar"
 #: ui/shared/views/settings/KnownPacksList.cpp
 msgid "No image packs found yet."
 msgstr "Aún no se han encontrado paquetes de imágenes."
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Use historical MSC2545 compatibility"
+msgstr "Usar compatibilidad histórica con MSC2545"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid ""
+"When enabled, reads unstable-named MSC2545 fields from account data in "
+"addition to the stable names, and enables your personal image pack. Disable "
+"for strict stable-name-only behavior."
+msgstr ""
+"Si está activado, lee los campos de MSC2545 con nombres inestables de los "
+"datos de cuenta además de los nombres estables, y habilita tu paquete de "
+"imágenes personal. Desactívalo para un comportamiento estricto que use "
+"solo nombres estables."

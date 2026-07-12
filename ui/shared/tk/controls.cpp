@@ -525,6 +525,8 @@ bool CheckButton::on_pointer_move(Point /*local*/)
     if (!hovered_)
     {
         hovered_ = true;
+        if (on_hover_enter)
+            on_hover_enter();
         return true;
     }
     return false;
@@ -532,8 +534,11 @@ bool CheckButton::on_pointer_move(Point /*local*/)
 
 void CheckButton::on_pointer_leave()
 {
+    bool was_hovered = hovered_;
     hovered_ = false;
     pressed_ = false;
+    if (was_hovered && on_hover_leave)
+        on_hover_leave();
 }
 
 } // namespace tk

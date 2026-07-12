@@ -10,10 +10,10 @@ namespace tesseract::views
 
 ImagePacksSection::ImagePacksSection()
 {
-    auto* user_pack_group = add_group(tk::tr("Your Sticker Pack"));
+    user_pack_group_ = add_group(tk::tr("Your Sticker Pack"));
 
     auto editor = std::make_unique<UserPackEditor>();
-    user_pack_ = user_pack_group->add_widget(std::move(editor));
+    user_pack_ = user_pack_group_->add_widget(std::move(editor));
     user_pack_->on_layout_changed = [this] { refresh_save_button_(); };
     user_pack_->on_pending_image_added =
         [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
@@ -25,7 +25,7 @@ ImagePacksSection::ImagePacksSection()
 
     auto save_btn = std::make_unique<tk::Button>(
         tk::tr("Save"), std::function<void()>{}, tk::Button::Variant::Primary);
-    save_btn_ = user_pack_group->add_widget(std::move(save_btn));
+    save_btn_ = user_pack_group_->add_widget(std::move(save_btn));
     save_btn_->set_on_click(
         [this]
         {
@@ -103,6 +103,12 @@ void ImagePacksSection::set_known_packs(
 void ImagePacksSection::refresh_save_button_()
 {
     save_btn_->set_enabled(user_pack_->has_changes());
+}
+
+void ImagePacksSection::set_personal_pack_enabled(bool enabled)
+{
+    user_pack_group_->set_visible(enabled);
+    save_btn_->set_enabled(enabled && user_pack_->has_changes());
 }
 
 } // namespace tesseract::views

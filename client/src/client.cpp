@@ -2169,6 +2169,12 @@ void Client::set_show_membership_events(bool enabled)
     impl_->ffi->set_show_membership_events(enabled);
 }
 
+void Client::set_msc2545_legacy_compat(bool enabled)
+{
+    SH_FFI;
+    impl_->ffi->set_msc2545_legacy_compat(enabled);
+}
+
 void Client::poll_presence_now()
 {
     MUT_FFI;

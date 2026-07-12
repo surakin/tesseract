@@ -1849,8 +1849,11 @@ impl ClientFfi {
         let Some(user_id) = client.user_id() else {
             return false;
         };
+        let legacy_compat = self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed);
         match self.rt.block_on(room.power_levels()) {
-            Ok(pl) => crate::image_packs::ROOM_PACK_TYPES
+            Ok(pl) => crate::image_packs::room_pack_types(legacy_compat)
                 .iter()
                 .any(|t| pl.user_can_send_state(user_id, StateEventType::from(*t))),
             Err(_) => false,

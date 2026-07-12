@@ -139,6 +139,10 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         s.save_to_disk(tesseract::config_dir());
         emit membershipEventsPrefChanged(enabled);
     };
+    settings_view_->on_msc2545_legacy_compat_changed = [this](bool enabled)
+    {
+        emit msc2545LegacyCompatChanged(enabled);
+    };
 
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
 
@@ -238,12 +242,19 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().autoscroll_unread_rooms);
     settings_view_->set_show_membership_events_pref(
         tesseract::Settings::instance().show_room_join_leave_events);
+    settings_view_->set_msc2545_legacy_compat_pref(
+        tesseract::Settings::instance().msc2545_legacy_compat);
     surface_->relayout();
 }
 
 void SettingsWidget::set_show_membership_events_pref(bool enabled)
 {
     settings_view_->set_show_membership_events_pref(enabled);
+}
+
+void SettingsWidget::set_msc2545_legacy_compat_pref(bool enabled)
+{
+    settings_view_->set_msc2545_legacy_compat_pref(enabled);
 }
 
 void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)

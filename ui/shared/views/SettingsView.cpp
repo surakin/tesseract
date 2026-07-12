@@ -159,6 +159,27 @@ SettingsView::SettingsView()
     auto about = std::make_unique<AboutSection>();
     about_ = about.get();
 
+    // Advanced section — hidden bottom tab, revealed via About's "Advanced"
+    // button. See kAdvancedTabIdx.
+    auto advanced = std::make_unique<AdvancedSection>();
+    advanced_ = advanced.get();
+    advanced_->on_msc2545_legacy_compat_changed = [this](bool v)
+    {
+        // Reflect immediately in the Emojis & Stickers tab — the personal
+        // pack disappears/reappears without waiting for the async
+        // on_image_packs_updated round-trip from the Rust rebuild.
+        if (image_packs_) image_packs_->set_personal_pack_enabled(v);
+        if (on_msc2545_legacy_compat_changed) on_msc2545_legacy_compat_changed(v);
+    };
+    advanced_->on_show_tooltip = [this](std::string t, tk::Rect a)
+    {
+        if (on_show_tooltip) on_show_tooltip(std::move(t), a);
+    };
+    advanced_->on_hide_tooltip = [this]
+    {
+        if (on_hide_tooltip) on_hide_tooltip();
+    };
+
     // Emojis & Stickers section.
     auto image_packs = std::make_unique<ImagePacksSection>();
     image_packs_ = image_packs.get();
@@ -194,9 +215,12 @@ SettingsView::SettingsView()
     tabs->add_tab(tk::tr("Emojis & Stickers"), std::move(image_packs));
     tabs->add_tab(tk::tr("Language"), std::move(language));
     tabs->add_bottom_tab(tk::tr("About"), std::move(about));
+    tabs->add_bottom_tab(tk::tr("Advanced"), std::move(advanced));
     // First tab is auto-selected by SideTabView::add_tab.
     tabs->on_tab_selected = [this](int) { if (on_tab_changed) on_tab_changed(); };
     tabs_ = add_child(std::move(tabs));
+    // Advanced is hidden until the About tab's "Advanced" button reveals it.
+    tabs_->set_tab_visible(kAdvancedTabIdx, false);
 
     // AccountSection logout: open a confirmation dialog before firing on_logout.
     account_->on_logout = [this]
@@ -248,6 +272,15 @@ SettingsView::SettingsView()
     about_->on_hide_tooltip = [this]
     {
         if (on_hide_tooltip) on_hide_tooltip();
+    };
+
+    // AboutSection: "Advanced" button reveals the hidden Advanced tab and
+    // navigates straight to it.
+    about_->on_advanced_clicked = [this]
+    {
+        tabs_->set_tab_visible(kAdvancedTabIdx, true);
+        tabs_->select(kAdvancedTabIdx);
+        if (on_tab_changed) on_tab_changed();
     };
 
     // ConfirmDialog — painted last so it overlays the entire settings view.
@@ -416,6 +449,18 @@ void SettingsView::set_check_for_updates_pref(bool enabled)
     }
 }
 #endif
+
+void SettingsView::set_msc2545_legacy_compat_pref(bool enabled)
+{
+    if (advanced_)
+    {
+        advanced_->set_msc2545_legacy_compat(enabled);
+    }
+    if (image_packs_)
+    {
+        image_packs_->set_personal_pack_enabled(enabled);
+    }
+}
 
 void SettingsView::set_search_index_stats(
     const tesseract::SearchIndexStats& stats, bool enabled)

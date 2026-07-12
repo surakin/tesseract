@@ -87,6 +87,7 @@ public:
     std::function<void(int)>  on_inactive_period_changed;
     std::function<void(bool)> on_autoscroll_unread_changed;
     std::function<void(bool)> on_show_membership_events_changed;
+    std::function<void(bool)> on_msc2545_legacy_compat_changed;
     // Fired after the user changes their own avatar via Settings. The
     // string is the new mxc URL (or empty for removal). MainWindow uses
     // this to update ShellBase::my_avatar_url_ and repaint the sidebar
@@ -99,6 +100,7 @@ public:
     void set_inactive_period_pref(int days);
     void set_autoscroll_unread_pref(bool enabled);
     void set_show_membership_events_pref(bool enabled);
+    void set_msc2545_legacy_compat_pref(bool enabled);
 
     // Repaint the surface on every ~60Hz animation tick while this widget is
     // visible, so animated stickers in the Emojis & Stickers tab advance

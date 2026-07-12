@@ -63,6 +63,9 @@ public:
     /// Silently initialise the "show room join/leave events" checkbox.
     void set_show_membership_events_pref(bool enabled);
 
+    /// Silently initialise the "Use historical MSC2545 compatibility" checkbox.
+    void set_msc2545_legacy_compat_pref(bool enabled);
+
     /// Repaint just the regions covering animated stickers (Emojis &
     /// Stickers tab). Called from MainWindow::repaint_anim_frame_ on every
     /// ~60Hz animation tick while this widget is visible — mirrors
@@ -94,6 +97,9 @@ signals:
     // MainWindow applies it to the Rust client and re-subscribes the active
     // room so the change takes effect immediately.
     void membershipEventsPrefChanged(bool enabled);
+    // Fired when the user toggles "Use historical MSC2545 compatibility".
+    // MainWindow persists it and applies it to the Rust client.
+    void msc2545LegacyCompatChanged(bool enabled);
     void clearCachesRequested();
     void resetIdentityRequested();
     // Fired after the user changes their own avatar via Settings. The

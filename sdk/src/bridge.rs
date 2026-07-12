@@ -2058,10 +2058,12 @@ pub mod ffi {
 
         /// Explicitly subscribe/unsubscribe `(room_id, state_key)`'s image
         /// pack via the user's `m.image_pack.rooms` / `im.ponies.emote_rooms`
-        /// account data (dual-written to both event types). Forces a
-        /// synchronous local rebuild before returning, so
-        /// `ImagePackFfi::is_subscribed` and `list_image_packs()` reflect the
-        /// change immediately; `on_image_packs_updated` fires too.
+        /// account data. Read/written under both event types when
+        /// `set_msc2545_legacy_compat(true)` (default) is in effect;
+        /// stable-name-only otherwise. Forces a synchronous local rebuild
+        /// before returning, so `ImagePackFfi::is_subscribed` and
+        /// `list_image_packs()` reflect the change immediately;
+        /// `on_image_packs_updated` fires too.
         fn set_pack_room_subscribed(
             self: &ClientFfi,
             room_id: &str,
@@ -2075,13 +2077,16 @@ pub mod ffi {
         /// full snapshot per pack, not a diff. `state_key` is ignored when
         /// `is_new` (a fresh, collision-free key is assigned from
         /// `display_name` and returned in `OpResult::message` on success);
-        /// otherwise it must name an existing pack. A brand-new pack is
-        /// written only to the stable `m.room.image_pack` type; an existing
-        /// pack is written back to exactly whichever of the stable/unstable
-        /// types it currently has content under (both, if both), so this
-        /// never introduces a duplicate copy under a type the room didn't
-        /// already use. Invalidates this room's cached full state and
-        /// forces a synchronous local rebuild before returning (mirrors
+        /// otherwise it must name an existing pack. When
+        /// `set_msc2545_legacy_compat(true)` (default) is in effect: a
+        /// brand-new pack is dual-written to both the stable and unstable
+        /// types, and an existing pack is written back to exactly whichever
+        /// of the stable/unstable types it currently has content under
+        /// (both, if both), so this never introduces a duplicate copy under
+        /// a type the room didn't already use. When compat mode is off,
+        /// every write (new or existing) targets the stable
+        /// `m.room.image_pack` type only. Invalidates this room's cached
+        /// full state and forces a synchronous local rebuild before returning (mirrors
         /// `set_pack_room_subscribed`), so `list_image_packs()` /
         /// `list_known_room_packs()` and `on_image_packs_updated` reflect
         /// the change immediately. Blocks — worker thread.
@@ -2560,6 +2565,18 @@ pub mod ffi {
         /// currently-subscribed rooms — callers should re-`subscribe_room`
         /// the active room after toggling to refresh it immediately.
         fn set_show_membership_events(self: &ClientFfi, enabled: bool);
+
+        /// Enable/disable MSC2545 "historical compatibility": when true
+        /// (default), room image-pack state and the emote-rooms
+        /// subscription list are read/written under both unstable
+        /// (`im.ponies.*`) and stable (`m.image_pack*`) event-type names,
+        /// and the personal pack (`im.ponies.user_emotes`, unstable-only —
+        /// no stable equivalent exists) is loaded/editable. When false, only
+        /// the stable names are used for room-level packs and the personal
+        /// pack is not loaded; personal-pack mutation calls return an error.
+        /// Thread-safe; may be called on any thread. Synchronously rebuilds
+        /// the image-pack cache before returning.
+        fn set_msc2545_legacy_compat(self: &ClientFfi, enabled: bool);
 
         /// Record `room_id` as recently active (main-window tab switch,
         /// pop-out window open) so the image-pack cache keeps that room's

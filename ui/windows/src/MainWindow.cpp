@@ -4401,6 +4401,10 @@ void MainWindow::on_create(HWND hwnd)
             handle_check_for_updates_toggle_(enabled);
         };
 #endif
+        settings_view_->on_msc2545_legacy_compat_changed = [this](bool enabled)
+        {
+            handle_msc2545_legacy_compat_toggle_(enabled);
+        };
         settings_view_->on_media_previews_changed =
             [this](tesseract::Settings::MediaPreviews mode)
         {
@@ -4992,6 +4996,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().autoscroll_unread_rooms);
     settings_view_->set_show_membership_events_pref(
         tesseract::Settings::instance().show_room_join_leave_events);
+    settings_view_->set_msc2545_legacy_compat_pref(
+        tesseract::Settings::instance().msc2545_legacy_compat);
     settings_view_->set_send_presence_pref(
         tesseract::Settings::instance().send_presence);
     settings_view_->set_index_messages_pref(

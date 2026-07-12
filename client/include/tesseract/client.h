@@ -1563,6 +1563,11 @@ public:
     /// refresh it immediately.
     void set_show_membership_events(bool enabled);
 
+    /// Enable/disable MSC2545 "historical compatibility" — see
+    /// Settings::msc2545_legacy_compat's doc comment for the full contract.
+    /// Thread-safe.
+    void set_msc2545_legacy_compat(bool enabled);
+
     /// Issue one immediate round of DM presence polls without waiting for
     /// the 60s interval. Called by the shell when the window returns to
     /// focus so contacts don't appear stale after un-minimize. No-op if
