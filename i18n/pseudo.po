@@ -966,8 +966,8 @@ msgid "(no shortcode)"
 msgstr "[(ñö shörtçödé)xx]"
 
 #: ui/shared/views/ImagePackTileGridBase.cpp:163
-msgid "Drop image or paste"
-msgstr "[Dröp ïmàgé ör pàstéxxx]"
+msgid "Drop image"
+msgstr "[Dröp ïmàgéxxx]"
 
 #: ui/shared/views/SpaceRootView.cpp:131
 #, c++-format

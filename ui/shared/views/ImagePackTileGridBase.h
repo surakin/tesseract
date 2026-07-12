@@ -106,7 +106,7 @@ protected:
                             const tk::Rect& cell_local, tk::Point origin,
                             bool hovered_remove, bool is_editing) const;
 
-    // Shared "Drop image or paste" placeholder tile, painted for the trailing
+    // Shared "Drop image" placeholder tile, painted for the trailing
     // slot after every real image tile.
     void paint_hint_tile_shared_(tk::PaintCtx&, const tk::Rect& cell_local,
                                  tk::Point origin) const;

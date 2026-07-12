@@ -1094,8 +1094,8 @@ msgid "(no shortcode)"
 msgstr "(sin código corto)"
 
 #: ui/shared/views/ImagePackEditorView.cpp
-msgid "Drop image or paste"
-msgstr "Suelta una imagen o pégala"
+msgid "Drop image"
+msgstr "Suelta una imagen"
 
 #: ui/shared/views/settings/ImagePacksSection.cpp
 msgid "Your Sticker Pack"

@@ -160,7 +160,7 @@ void ImagePackTileGridBase::paint_hint_tile_shared_(tk::PaintCtx& ctx,
     st.role      = tk::FontRole::Small;
     st.wrap      = true;
     st.max_width = image_rect.w - 8.0f;
-    auto lay = ctx.factory.build_text(tk::tr("Drop image or paste"), st);
+    auto lay = ctx.factory.build_text(tk::tr("Drop image"), st);
     if (lay)
     {
         const tk::Size sz = lay->measure();

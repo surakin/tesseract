@@ -972,7 +972,7 @@ msgid "(no shortcode)"
 msgstr ""
 
 #: ui/shared/views/ImagePackTileGridBase.cpp:163
-msgid "Drop image or paste"
+msgid "Drop image"
 msgstr ""
 
 #: ui/shared/views/SpaceRootView.cpp:131
