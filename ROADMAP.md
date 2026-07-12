@@ -25,12 +25,16 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   (`linux-debug` builds `tesseract_gtk`/`tesseract_qt`/`tesseract_tests`
   clean, 1050/1050 ctest passing as of 2026-07-10). Still need someone with
   an Xcode toolchain to confirm the macOS build configures and links clean.
-- **MSC2545 custom-emoji inline rendering on GTK4/Qt6.** The timeline
+- **MSC2545 custom-emoji inline rendering on GTK4/Qt6/macOS.** The timeline
   renders inline custom emoticons via each backend's native "reserve a box,
   no fallback glyph" mechanism — `IDWriteInlineObject` (Windows, verified),
-  `PangoAttrShape` (GTK4), `QTextObjectInterface` (Qt6). Only the Windows
-  path has actually been run; GTK4/Qt6 need a real custom emoji sent and
-  viewed to confirm the box renders and sizes correctly.
+  `PangoAttrShape` (GTK4), `QTextObjectInterface` (Qt6), `CTRunDelegate`
+  (macOS, added 2026-07-12 — the timeline previously didn't render custom
+  emoji inline at all on macOS, since this mechanism was simply missing).
+  Only the Windows path has actually been run; GTK4/Qt6/macOS need a real
+  custom emoji sent and viewed to confirm the box renders and sizes
+  correctly (no Xcode toolchain available to build-verify macOS in this
+  environment).
 
 ## Tier 2 — The room-admin cluster, still incomplete
 
@@ -97,11 +101,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   different bytes.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D
   are tested; macOS CGBitmapContext surface is still TODO.
-- **macOS inline custom-emoji rendering still uses the placeholder-glyph
-  approach** — not converted to a `CTRunDelegate`-based native inline
-  object like Windows/GTK4/Qt6; works today, but shares the same class of
-  fragility (a real glyph being drawn and relied on for layout sizing)
-  that caused the original Windows bug.
 - **Code health — god-object decomposition.** Remaining cuts:
   `MessageListView`'s `TextSelectionModel`, `ReactionChipUI`, `ActionPillUI`
   (woven through `paint_row` + the pointer-dispatch switch; smoke-test

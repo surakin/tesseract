@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- fix(macos): implement `CTRunDelegate`-based inline-image box reservation in the CoreText canvas backend, fixing custom MSC2545 emoji not rendering inline in the timeline at all on macOS (composer/pickers were unaffected — they don't use this code path)
 - feat(image-packs): surface MSC2545 packs from any Space (direct or nested-ancestor) the current room belongs to, in the emoji/sticker pickers and the shortcode popup, alongside the existing personal/current-room/subscribed-room scopes
 - refactor(tk): replace the hand-maintained per-shell native-field theming list with a generic `tk::Widget::apply_theme()` tree traversal, fixing several fields the old list missed entirely (Qt6's `SettingsWidget`/`JoinRoomDialog`/pop-out `RoomWindow`, and macOS's join-room dialog surface never re-theming past its initial light-mode construction)
 - feat(tk): add a generic `tk::Host`-owned tooltip system (dwell-delay, popup-suppressed, custom-drawn above the whole widget tree) and migrate all 8 hand-rolled hover/tooltip sites (RoomHeader, RoomInfoPanel, ComposeBar, MessageListView action pills, LocationMapPanner, AboutSection cache rows, AdvancedSection, TabbedGridPicker) onto it, deleting the old per-platform native tooltip code (Win32 `TOOLTIPS_CLASS`, Qt `QToolTip`, and the macOS/GTK `NSPopover`/`GtkPopover` popovers that were only styled to look like native tooltips)
@@ -64,6 +65,27 @@ Tagged releases summarize all changes since the previous tag.
 
 #### 2026-07-12
 
+- fix(macos): custom emoji (MSC2545 image-pack emoticons) never rendered
+  inline in the timeline on macOS, though they worked fine in the composer
+  and pickers. `MessageListView::substitute_image_placeholders` stuffs a
+  U+FFFC object-replacement character into each `is_image` `TextSpan`,
+  expecting each backend's `build_rich_text` to reserve a fixed-size box for
+  it via its own native inline-object mechanism (`IDWriteInlineObject` on
+  Windows, `PangoAttrShape` on GTK4, `QTextObjectInterface` on Qt6) so
+  `paint_span_images`'s `selection_rects()` lookup has a real box to paint
+  the decoded bitmap into. `ui/macos/tk/canvas_cg.cpp`'s CoreText backend
+  never got the same treatment — the U+FFFC code unit fell through as
+  ordinary text with no reserved box, no fallback glyph guarantee. Added a
+  `CTRunDelegate` (fixed `InlineEmoji`-sized ascent/width, zero descent, no
+  draw callback) attached to each `is_image` span's range, mirroring the
+  other three backends. The composer and Emoji/Sticker pickers were
+  unaffected since neither goes through this shared `TextLayout` path — the
+  composer's typed emoji use a native `NSTextAttachment`, and the pickers
+  draw `tk::Image` directly into grid cells. Should also fix the shortcode
+  hover tooltip on macOS as a side effect, since `emoji_at_world` relies on
+  the same `selection_rects()` box. macOS-only change; unverified in this
+  environment (no Xcode toolchain here) — pending a build/manual check on
+  macOS.
 - refactor(tk): the fix below (2026-07-12, "the Ctrl+K quick switcher's
   search field...") patched the symptom — a per-field `set_text_color`
   if-chain in `MainWindow::apply_theme_ui_()` — without changing the

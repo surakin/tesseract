@@ -127,6 +127,42 @@ int macos_system_base_pt()
     return base;
 }
 
+// CTRunDelegate callbacks reserving a fixed emoji-sized box for an is_image
+// span's carrier U+FFFC code unit (see MessageListView::substitute_image_
+// placeholders): a run with an attached delegate is measured via these
+// callbacks and never glyph-rendered by CTLineDraw/CTFrameDraw, so no font's
+// rendering of U+FFFC itself is ever consulted. The real bitmap is painted
+// separately, once decoded, by MessageListView::paint_span_images.
+CGFloat image_run_ascent(void* refCon)
+{
+    return *static_cast<CGFloat*>(refCon);
+}
+
+CGFloat image_run_descent(void*)
+{
+    return 0;
+}
+
+CGFloat image_run_width(void* refCon)
+{
+    return *static_cast<CGFloat*>(refCon);
+}
+
+void image_run_dealloc(void* refCon)
+{
+    delete static_cast<CGFloat*>(refCon);
+}
+
+// One delegate is reused across every is_image span in a single
+// build_rich_text call; nothing needs per-span identity here.
+CTRunDelegateRef create_image_run_delegate(CGFloat box_size)
+{
+    CTRunDelegateCallbacks callbacks = {
+        kCTRunDelegateVersion1, image_run_dealloc, image_run_ascent,
+        image_run_descent, image_run_width};
+    return CTRunDelegateCreate(&callbacks, new CGFloat(box_size));
+}
+
 CTFontRef create_font(FontRole role)
 {
     const CGFloat size =
@@ -1303,6 +1339,7 @@ public:
         const CGFloat base_size =
             static_cast<CGFloat>(font_role_pt(s.role, macos_system_base_pt()));
         std::vector<CTLayout::UrlRange> url_ranges;
+        std::vector<CFRange> image_ranges;
         CFIndex char_offset = 0;
         std::string plain_utf8;
         for (const auto& sp : spans) plain_utf8 += sp.text;
@@ -1408,12 +1445,33 @@ public:
                 url_ranges.push_back(
                     {char_offset, char_offset + span_len, span.url});
             }
+            if (span.is_image)
+            {
+                image_ranges.push_back(CFRangeMake(char_offset, span_len));
+            }
             char_offset += span_len;
         }
 
         if (CFAttributedStringGetLength(mattr.get()) == 0)
         {
             return nullptr;
+        }
+
+        if (!image_ranges.empty())
+        {
+            const CGFloat box_size = static_cast<CGFloat>(
+                font_role_pt(FontRole::InlineEmoji, macos_system_base_pt()));
+            CFRetained<CTRunDelegateRef> delegate{
+                create_image_run_delegate(box_size)};
+            if (delegate.get())
+            {
+                for (const CFRange& r : image_ranges)
+                {
+                    CFAttributedStringSetAttribute(
+                        mattr.get(), r, kCTRunDelegateAttributeName,
+                        delegate.get());
+                }
+            }
         }
 
         CFRetained<CFAttributedStringRef> iattr{

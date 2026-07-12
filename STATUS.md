@@ -2,6 +2,25 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-07-12** (v0.8.14-unreleased). 1145 C++ + 369 Rust tests.
 
+> **Custom MSC2545 emoji now render inline in the timeline on macOS
+> (2026-07-12, v0.8.14-unreleased).** They previously rendered fine in the
+> composer and Emoji/Sticker pickers but never in the timeline itself, on
+> macOS specifically — Windows/GTK4/Qt6 were unaffected. The shared
+> `MessageListView`/`TextSpan` pipeline expects each backend's
+> `build_rich_text` to reserve a fixed-size, no-fallback-glyph box for an
+> `is_image` span's U+FFFC carrier character via that backend's native
+> inline-object mechanism (`IDWriteInlineObject` on Windows, `PangoAttrShape`
+> on GTK4, `QTextObjectInterface` on Qt6), which `paint_span_images` then
+> paints the real bitmap into. `ui/macos/tk/canvas_cg.cpp`'s CoreText
+> backend never implemented this step at all. Added a `CTRunDelegate`
+> (fixed `InlineEmoji`-sized ascent/width, zero descent) attached to each
+> `is_image` span's range in `CGFactory::build_rich_text`, matching the
+> other three backends. macOS-only change, isolated to one file; no shared
+> code changed. Unverified in this environment (no Xcode toolchain here) —
+> pending a build/manual check on macOS.
+
+<!-- -->
+
 > **Emoji/sticker pickers and the shortcode popup now surface packs from
 > any Space the current room belongs to (2026-07-12, v0.8.14-unreleased).**
 > Extends the personal/current-room/subscribed-room pack scopes (see the
