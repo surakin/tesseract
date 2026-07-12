@@ -320,6 +320,8 @@ public:
     void ensure_room_avatar(const tesseract::RoomInfo& r);
     void ensure_media_image(const std::string& url, int max_w, int max_h,
                             std::uint64_t group_id = 0);
+    std::function<const tk::Image*(const std::string&)>
+    make_static_image_provider_with_fetch(int max_w, int max_h);
     void ensure_media_thumbnail(const std::string& url, int w, int h,
                                 bool animated, std::uint64_t group_id = 0);
     void ensure_viewer_fullres(const std::string& url);
@@ -2178,6 +2180,11 @@ void MacShell::ensure_room_avatar(const tesseract::RoomInfo& r)
 void MacShell::ensure_media_image(const std::string& url, int max_w, int max_h,
                                    std::uint64_t group_id)
     { ensure_media_image_(url, max_w, max_h, group_id); }
+std::function<const tk::Image*(const std::string&)>
+MacShell::make_static_image_provider_with_fetch(int max_w, int max_h)
+{
+    return make_static_image_provider_with_fetch_(max_w, max_h);
+}
 void MacShell::ensure_media_thumbnail(const std::string& url, int w, int h,
                                        bool animated, std::uint64_t group_id)
     { ensure_media_thumbnail_(url, w, h, animated, group_id); }
@@ -4092,10 +4099,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = weakSelf;
             if (!s)
                 return nullptr;
-            if (const auto* img = s->_shell->account_manager_.image_cache().peek(url))
-                return img;
-            s->_shell->ensure_media_image(url, 96, 96);
-            return nullptr;
+            return s->_shell->make_static_image_provider_with_fetch(96, 96)(url);
         });
         _mainApp->room_view()->room_settings_view()->on_image_pack_images_needed =
             [weakSelf](std::string pack_id)
@@ -4203,10 +4207,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = weakSelf;
             if (!s)
                 return nullptr;
-            if (const auto* img = s->_shell->account_manager_.image_cache().peek(url))
-                return img;
-            s->_shell->ensure_media_image(url, 96, 96);
-            return nullptr;
+            return s->_shell->make_static_image_provider_with_fetch(96, 96)(url);
         });
         _mainApp->space_root()->settings_view()->on_image_pack_images_needed =
             [weakSelf](std::string pack_id)
@@ -7566,10 +7567,7 @@ const tesseract::RoomInfo* MacShell::room_by_id(const std::string& id) const
             MainWindowController* s = ws;
             if (!s)
                 return nullptr;
-            if (const auto* img = s->_shell->account_manager_.image_cache().peek(url))
-                return img;
-            s->_shell->ensure_media_image(url, 96, 96);
-            return nullptr;
+            return s->_shell->make_static_image_provider_with_fetch(96, 96)(url);
         });
         _settingsView->on_user_pack_pending_image_added =
             [ws](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
